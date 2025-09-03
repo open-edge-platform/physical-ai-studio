@@ -1,0 +1,233 @@
+#
+# Copyright (C) 2025 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+#
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "action_trainer"
+version = "0.1"
+requires-python = ">=3.10"
+authors = [
+  { name="Alfie Roddan", email="alfiex.roddan@intel.com" },
+  { name="Vladislav Sovrsaov", email="vladislav.sovrasov@intel.com" },
+]
+description = "A package for training vision-action models"
+readme = "README.md"
+license = {file = "LICENSE"}
+classifiers = [
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3.10"
+]
+dependencies = [
+    "pillow",
+    "lightning",
+    "lerobot",
+    "gymnasium>=0.29.1",
+    "gym-pusht>=0.1.5",
+    "pymunk>=6.6.0,<7.0.0"
+]
+
+[project.optional-dependencies]
+tests = [
+    "pre-commit",
+    "httpx",
+    "pytest",
+    "pytest-mock",
+]
+
+[project.urls]
+Homepage = "https://github.com/sovrasov/action_trainer"
+Documentation = "https://github.com/sovrasov/action_trainer/blob/main/README.md"
+Repository = "https://github.com/sovrasov/action_trainer.git"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/action_trainer"]
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# MYPY CONFIGURATION.                                                         #
+[tool.mypy]
+ignore_missing_imports = true
+show_error_codes = true
+
+
+[[tool.mypy.overrides]]
+follow_imports = "skip"
+follow_imports_for_stubs = true
+
+
+# RUFF CONFIGURATION                                                          #
+[tool.ruff]
+# Enable preview features
+preview = true
+
+# TODO: Slowly enable all the rules.
+
+# Enable rules
+lint.select = [
+    "F",    # Pyflakes (`F`)
+    "E",    # pycodestyle error (`E`)
+    "W",    # pycodestyle warning (`W`)
+    "C90",  # mccabe (`C90`)
+    "I",    # isort (`I`)
+    # "N",    # pep8-naming (`N`)
+    # "D",    # pydocstyle (`D`)
+    # "UP",   # pyupgrade (`UP`) # need min python version 3.10
+    "YTT",  # flake8-2020 (`YTT`)
+    # "ANN",  # flake8-annotations (`ANN`)
+    "S",    # flake8-bandit (`S`)
+    "BLE",  # flake8-blind-except (`BLE`)
+    "FBT",  # flake8-boolean-trap (`FBT`)
+    # "B",    # flake8-bugbear (`B`)
+    # "A",    # flake8-builtins (`A`)
+    "COM",  # flake8-commas (`COM`)
+    "CPY",  # flake8-copyright (`CPY`)
+    "C4",   # flake8-comprehensions (`C4`)
+    "DTZ",  # flake8-datatimez (`DTZ`)
+    "T10",  # flake8-debugger (`T10`)
+    "EM",   # flake8-errmsg (`EM`)
+    # "FA",   # flake8-future-annotations (`FA`)
+    "ISC",  # flake8-implicit-str-concat (`ISC`)
+    "ICN",  # flake8-import-conventions (`ICN`)
+    "PIE",  # flake8-pie (`PIE`)
+    "PT",   # flake8-pytest-style (`PT`)
+    "RSE",  # flake8-raise (`RSE`)
+    "RET",  # flake8-return (`RET`)
+    "SLF",  # flake8-self (`SLF`)
+    "SIM",  # flake8-simplify (`SIM`)
+    "TID",  # flake8-tidy-imports (`TID`)
+    "TCH",  # flake8-type-checking (`TCH`)
+    "INT",  # flake8-gettext (`INT`)
+    # "ARG",  # flake8-unsused-arguments (`ARG`)
+    "PTH",  # flake8-use-pathlib (`PTH`)
+    # "TD",   # flake8-todos (`TD`)
+    "FIX",  # flake8-fixme (`FIX`)
+    "ERA",  # eradicate (`ERA`)
+    "PD",   # pandas-vet (`PD`)
+    "PGH",  # pygrep-hooks (`PGH`)
+    # "PL",   # pylint (`PL`)
+    # "TRY",  # tryceratos (`TRY`)
+    "FLY",  # flynt (`FLY`)
+    "NPY",  # NumPy-specific rules (`NPY`)
+    # "PERF", # Perflint (`PERF`)
+    "RUF",  # Ruff-specific rules (`RUF`)
+    "FURB", # refurb (`FURB`) - ERROR: Unknown rule selector: `FURB`
+    "LOG",  # flake8-logging (`LOG`) - ERROR: Unknown rule selector: `LOG`
+]
+
+lint.ignore = [
+    # pydocstyle
+    "D107", # Missing docstring in __init__
+
+    # pylint
+    "PLR0913", # Too many arguments to function call
+    "PLR2004", # consider replacing with a constant variable
+    "PLR0912", # Too many branches
+    "PLR0915", # Too many statements
+
+    # NOTE: Disable the following rules for now.
+    "A004", # import is shadowing a Python built-in
+    "A005", # Module is shadowing a Python built-in
+    "B909", # Mutation to loop iterable during iteration
+    "PLC2701", # Private name import
+    "PLC0415", # import should be at the top of the file
+    "PLR0917", # Too many positional arguments
+    "E226", # Missing whitespace around arithmetic operator
+    "E266", # Too many leading `#` before block comment
+
+    "F822", # Undefined name `` in `__all__`
+
+    "PGH004", # Use specific rule codes when using 'ruff: noqa'
+    "PT001", # Use @pytest.fixture over @pytest.fixture()
+    "PLR6104", # Use `*=` to perform an augmented assignment directly
+    "PLR0914", # Too many local variables
+    "PLC0206", # Extracting value from dictionary without calling `.items()`
+    "PLC1901", # can be simplified
+
+    "RUF021", # Parenthesize the `and` subexpression
+    "RUF022", # Apply an isort-style sorting to '__all__'
+    "S404", # `subprocess` module is possibly insecure
+    # End of disable rules
+
+    # flake8-annotations
+    "ANN101", # Missing-type-self
+    "ANN002", # Missing type annotation for *args
+    "ANN003", # Missing type annotation for **kwargs
+
+    # flake8-bandit (`S`)
+    "S101", # Use of assert detected.
+
+    # flake8-boolean-trap (`FBT`)
+    "FBT001", # Boolean positional arg in function definition
+    "FBT002", # Boolean default value in function definition
+
+    # flake8-datatimez (`DTZ`)
+    "DTZ005", # The use of `datetime.datetime.now()` without `tz` argument is not allowed
+
+    # flake8-fixme (`FIX`)
+    "FIX002", # Line contains TODO, consider resolving the issue
+]
+
+# Allow autofix for all enabled rules (when `--fix`) is provided.
+lint.fixable = ["ALL"]
+lint.unfixable = []
+
+# Exclude a variety of commonly ignored directories.
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "docs",
+    "examples",
+    "node_modules",
+    "tests",
+    "venv",
+]
+
+# Same as Black.
+line-length = 120
+
+# Allow unused variables when underscore-prefixed.
+lint.dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+# Assume Python 3.10.
+target-version = "py310"
+
+# Allow imports relative to the "src" and "tests" directories.
+src = ["src", "tests"]
+
+[tool.ruff.lint.mccabe]
+# Unlike Flake8, default to a complexity level of 10.
+max-complexity = 15
+
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.flake8-copyright]
+notice-rgx = """
+# Copyright \\(C\\) (\\d{4}(-\\d{4})?) Intel Corporation
+# SPDX-License-Identifier: Apache-2\\.0
+"""
+[tool.bandit]
+exclude_dirs = ["tests"]
+tests = ["B301","B302","B303","B304","B305","B306","B308","B310","B311","B312","B313","B314","B315","B316","B317","B318","B319","B321","B323","B324","B401","B402","B403","B404","B405","B406","B407","B408","B409","B411","B412","B413"]
+skips = ["B101","B102","B103","B104","B105","B106","B107","B108","B110","B112","B201","B501","B502","B503","B504","B505","B506","B507","B601","B602","B603","B604","B605","B606","B607","B608","B609","B610","B611","B701","B702","B703"]
