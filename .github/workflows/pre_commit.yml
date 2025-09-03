@@ -1,0 +1,62 @@
+name: pre-commit
+permissions: {} # No permissions by default on workflow level
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+  workflow_dispatch: # run on request (no need for PR)
+
+jobs:
+  code-quality:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: CHECKOUT REPOSITORY
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ssh-key: ${{ secrets.PAT }}
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version-file: ".python-version"
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Install uv
+        uses: astral-sh/setup-uv@4959332f0f014c5280e7eac8b70c90cb574c9f9b # v6.6.0
+      - name: Install dependencies
+        run: |
+          cd lib
+          uv sync --locked --all-extras
+      - name: Run pre-commit checks
+        run: |
+          cd lib
+          uv run pre-commit run --all-files
+  unit-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: CHECKOUT REPOSITORY
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ssh-key: ${{ secrets.PAT }}
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version-file: ".python-version"
+      - name: Install uv
+        uses: astral-sh/setup-uv@4959332f0f014c5280e7eac8b70c90cb574c9f9b # v6.6.0
+      - name: Install dependencies
+        run: |
+          cd lib
+          uv sync --locked --extra tests
+      - name: Run python unit tests
+        run: |
+          cd lib
+          uv run pytest tests/unit
