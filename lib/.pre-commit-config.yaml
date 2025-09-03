@@ -1,0 +1,41 @@
+default_language_version:
+  node: 22.10.0
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      # list of supported hooks: https://pre-commit.com/hooks.html
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: debug-statements
+      - id: detect-private-key
+
+  # Ruff version.
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: "v0.12.11"
+    hooks:
+      # Run the linter.
+      - id: ruff
+        args: ["--fix"]
+      # Run the formatter
+      - id: ruff-format
+
+  # python static type checking
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: "v1.17.1"
+    hooks:
+      - id: mypy
+        additional_dependencies: [types-PyYAML, types-setuptools]
+
+  - repo: https://github.com/rbubley/mirrors-prettier
+    rev: v3.6.2
+    hooks:
+      - id: prettier
+
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.45.0
+    hooks:
+      - id: markdownlint
