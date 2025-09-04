@@ -1,0 +1,2 @@
+# Bandit configuration file
+exclude_dirs: ["*/tests/*"]
