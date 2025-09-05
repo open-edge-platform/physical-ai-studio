@@ -100,7 +100,7 @@ class ImageField(TensorField):
 
 @dataclass
 class Observation:
-    """A container for a SINGLE environment observation."""
+    """A container for a single environment observation."""
 
     images: list[ImageField] | None
     state: TensorField | None
@@ -108,9 +108,11 @@ class Observation:
     task: str | None
 
 
-# TODO: Do we need a lerbot specific observation?
+# TODO: Do we need a lerobot specific observation? extra info may be needed for some policies?
 @dataclass
 class LeRobotObservation(Observation):
+    """An Observation from lerobot dataset"""
+
     next_reward: TensorField
     next_success: bool
     episode_index: TensorField
@@ -120,10 +122,12 @@ class LeRobotObservation(Observation):
     timestamp: TensorField
 
 
-# TODO: observation here is actually quite involved
+# TODO: How much of Obstype from gymnasium should we support. This changes our implementation
 # https://gymnasium.farama.org/api/wrappers/observation_wrappers/#gymnasium.ObservationWrapper
 @dataclass
 class GymObservation:
+    """An Observation from gymnasium environment"""
+
     observation: Observation
     reward: TensorField
     termination: bool

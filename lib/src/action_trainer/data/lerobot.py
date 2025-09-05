@@ -74,6 +74,7 @@ class LeRobotActionDataset(ActionDataset):
     def __len__(self):
         return len(self._lerobot_dataset)
 
+    # TODO: Should return Observation. Implement interface.
     def __getitem__(self, idx):
         return self._lerobot_dataset[idx]
 

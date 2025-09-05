@@ -2,8 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-General Action Dataset,
-Should Always return an observation
+Base Action Dataset
 """
 
 from __future__ import annotations
@@ -14,7 +13,7 @@ from typing import TYPE_CHECKING
 from torch.utils.data import Dataset
 
 if TYPE_CHECKING:
-    from action_trainer.data import types
+    from action_trainer.data.types import Observation
 
 
 class ActionDataset(Dataset, ABC):
@@ -23,9 +22,9 @@ class ActionDataset(Dataset, ABC):
     """
 
     @abstractmethod
-    def __getitem__(self, idx: int) -> types.Observation:
-        """Loads and returns an observation at the given index."""
+    def __getitem__(self, idx: int) -> Observation:
+        """Loads and returns an Observation at the given index."""
 
     @abstractmethod
     def __len__(self) -> int:
-        """Returns the total number of observations in the dataset."""
+        """Returns the total number of Observations in the dataset."""
