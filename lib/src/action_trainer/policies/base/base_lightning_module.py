@@ -41,7 +41,7 @@ class ActionTrainerModule(pl.LightningModule, ABC):
         del args, kwargs
         processed_batch = self._preprocess_observation(batch)
         return self.model(processed_batch)
-    
+
     @abstractmethod
     def _preprocess_observation(batch: TensorDict) -> TensorDict:
         """Preprocess the input observation batch before passing it to the torch model."""
