@@ -28,6 +28,9 @@ def convert_lerobot_item_to_observation(lerobot_item: dict) -> LeRobotObservatio
         - action (tensor)
         - task (str)
         - episode_index (tensor[int])
+        - frame_index (tensor[int])
+        - index (tensor[int])
+        - task_index (tensor[int])
         - timestamp (tensor[float])
 
     Args:
