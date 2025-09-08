@@ -24,6 +24,7 @@ classifiers = [
 ]
 dependencies = [
     "pillow",
+    "tensordict",
     "lightning",
     "lerobot>=0.3.3",
     "gymnasium>=0.29.1",
