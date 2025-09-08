@@ -11,8 +11,7 @@ from typing import TYPE_CHECKING
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-from action_trainer.data import ActionDataset
-from action_trainer.data.dataclasses import Observation
+from action_trainer.data import ActionDataset, Observation
 
 if TYPE_CHECKING:
     from collections.abc import Callable

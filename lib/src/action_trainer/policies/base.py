@@ -16,7 +16,7 @@ from torch import nn
 if TYPE_CHECKING:
     import numpy as np
 
-    from action_trainer.data.dataclasses import Observation
+    from action_trainer.data import Observation
 
 
 class ActionPolicy(nn.Module, ABC):

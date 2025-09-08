@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from torch.utils.data import Dataset
 
 if TYPE_CHECKING:
-    from action_trainer.data.dataclasses import Observation
+    from action_trainer.data import Observation
 
 
 class ActionDataset(Dataset, ABC):
