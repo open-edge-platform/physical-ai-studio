@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     import torch
 
 
-def convert_lerobot_item_to_observation(lerobot_item: dict) -> Observation:
+def _convert_lerobot_item_to_observation(lerobot_item: dict) -> Observation:
     """Function converts item from lerobot to our internal representation, observation.
 
     Expect these keys are present in sample from lerobot:
@@ -153,7 +153,7 @@ class LeRobotActionDataset(ActionDataset):
         return len(self._lerobot_dataset)
 
     def __getitem__(self, idx) -> Observation:
-        return convert_lerobot_item_to_observation(self._lerobot_dataset[idx])
+        return _convert_lerobot_item_to_observation(self._lerobot_dataset[idx])
 
     @staticmethod
     def from_lerobot(lerobot_dataset: LeRobotDataset) -> LeRobotActionDataset:
