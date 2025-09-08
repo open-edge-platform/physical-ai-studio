@@ -19,13 +19,13 @@ if TYPE_CHECKING:
 class Observation:
     """A single observation from an imitation learning dataset."""
 
-    # --- Core Components ---
+    # Core Observation
     action: torch.Tensor | np.ndarray | None
     task: str | None
     state: torch.Tensor | np.ndarray | None = None
     images: dict[str, torch.Tensor | np.ndarray] | None = None
 
-    # --- Optional RL & Metadata Fields ---
+    # Optional RL & Metadata Fields
     next_reward: torch.Tensor | np.ndarray | None = None
     next_success: bool | None = None
     episode_index: torch.Tensor | np.ndarray | None = None
