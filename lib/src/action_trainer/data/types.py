@@ -102,7 +102,7 @@ class ImageField(TensorField):
 class Observation:
     """A container for a single environment observation."""
 
-    images: list[ImageField] | None
+    images: list[ImageField] | dict[str, ImageField] | None
     state: TensorField | None
     action: TensorField | None
     task: str | None
@@ -113,8 +113,6 @@ class Observation:
 class LeRobotObservation(Observation):
     """An Observation from lerobot dataset"""
 
-    next_reward: TensorField
-    next_success: bool
     episode_index: TensorField
     frame_index: TensorField
     index: TensorField
