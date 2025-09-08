@@ -59,7 +59,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd lib
-          uv sync --locked --extra tests
+          uv sync --locked --extra --all-extras
       - name: Run python unit tests
         run: |
           cd lib
