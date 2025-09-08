@@ -11,13 +11,91 @@ from typing import TYPE_CHECKING
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-from action_trainer.data import ActionDataset
+from action_trainer.data import ActionDataset, Observation
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    import torch
 
+
+def _convert_lerobot_item_to_observation(lerobot_item: dict) -> Observation:
+    """Function converts item from lerobot to our internal representation, observation.
+
+    Expect these keys are present in sample from lerobot:
+        - an observation either image or state or both (tensor)
+            - if it has images we assume LeRobot auto converts to CHW format
+        - action (tensor)
+        - task (str)
+        - episode_index (tensor[int])
+        - frame_index (tensor[int])
+        - index (tensor[int])
+        - task_index (tensor[int])
+        - timestamp (tensor[float])
+
+    Args:
+        lerobot_item (dict): LeRobotDataset output sample from dataset.
+
+    Returns:
+        observation (Observation): Internal representation of a observation.
+    Raises:
+        AssertionError: If required keys are not present in the lerobot_item.
+    """
+    # Define the required keys for all items
+    required_keys = [
+        "action",
+        "task",
+        "episode_index",
+        "frame_index",
+        "index",
+        "task_index",
+        "timestamp",
+    ]
+
+    # Check for presence of all required keys
+    lerobot_item_keys = lerobot_item.keys()
+    for key in required_keys:
+        assert key in lerobot_item_keys, f"Missing required key: {key}. Available keys: {lerobot_item_keys}"
+
+    # Check if any observation keys are present
+    has_image = any(key.startswith("observation.images.") for key in lerobot_item_keys)
+    has_image_single = "observation.image" in lerobot_item_keys
+    has_state = "observation.state" in lerobot_item_keys
+
+    assert has_image or has_image_single or has_state, (
+        f"Sample must contain some form of observation. Sample keys {lerobot_item_keys}"
+    )
+
+    # Process observations
+    images: dict[str, torch.Tensor] = {}
+    if has_image_single:
+        # Handle the case with a single 'observation.image' key
+        images["image"] = lerobot_item["observation.image"]
+    elif has_image:
+        # Handle multiple images, e.g., 'observation.images.image' and 'observation.images.wrist_image'
+        for key, value in lerobot_item.items():
+            if key.startswith("observation.images."):
+                camera_name = key.split("observation.images.")[1]
+                images[camera_name] = value
+
+    state = lerobot_item.get("observation.state")
+
+    # Create and return the LeRobotObservation object
+    return Observation(
+        images=images,
+        state=state,
+        action=lerobot_item.get("action"),
+        task=lerobot_item.get("task"),
+        episode_index=lerobot_item.get("episode_index"),
+        frame_index=lerobot_item.get("frame_index"),
+        index=lerobot_item.get("index"),
+        task_index=lerobot_item.get("task_index"),
+        timestamp=lerobot_item.get("timestamp"),
+    )
+
+
+# NOTE: Eventually we will need properties from action and lerobot datasets
 class LeRobotActionDataset(ActionDataset):
     """A wrapper class that enables using a LeRobotDataset for action training.
 
@@ -74,8 +152,8 @@ class LeRobotActionDataset(ActionDataset):
     def __len__(self):
         return len(self._lerobot_dataset)
 
-    def __getitem__(self, idx):
-        return self._lerobot_dataset[idx]
+    def __getitem__(self, idx) -> Observation:
+        return _convert_lerobot_item_to_observation(self._lerobot_dataset[idx])
 
     @staticmethod
     def from_lerobot(lerobot_dataset: LeRobotDataset) -> LeRobotActionDataset:

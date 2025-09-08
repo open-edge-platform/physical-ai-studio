@@ -25,7 +25,7 @@ classifiers = [
 dependencies = [
     "pillow",
     "lightning",
-    "lerobot",
+    "lerobot>=0.3.3",
     "gymnasium>=0.29.1",
     "gym-pusht>=0.1.5",
     "pymunk>=6.6.0,<7.0.0"
