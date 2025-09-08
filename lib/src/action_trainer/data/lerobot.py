@@ -12,14 +12,16 @@ from typing import TYPE_CHECKING
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 from action_trainer.data import ActionDataset
-from action_trainer.data.types import ImageField, LeRobotObservation, TensorField
+from action_trainer.data.dataclasses import Observation
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    import torch
 
-def convert_lerobot_item_to_observation(lerobot_item: dict) -> LeRobotObservation:
+
+def convert_lerobot_item_to_observation(lerobot_item: dict) -> Observation:
     """Function converts item from lerobot to our internal representation, observation.
 
     Expect these keys are present in sample from lerobot:
@@ -37,7 +39,7 @@ def convert_lerobot_item_to_observation(lerobot_item: dict) -> LeRobotObservatio
         lerobot_item (dict): LeRobotDataset output sample from dataset.
 
     Returns:
-        observation (LeRobotObservation): Internal representation of a lerobot observation.
+        observation (Observation): Internal representation of a observation.
     Raises:
         AssertionError: If required keys are not present in the lerobot_item.
     """
@@ -67,29 +69,30 @@ def convert_lerobot_item_to_observation(lerobot_item: dict) -> LeRobotObservatio
     )
 
     # Process observations
-    images: dict[str, ImageField] = {}
+    images: dict[str, torch.Tensor] = {}
     if has_image_single:
-        images["image"] = ImageField(data=lerobot_item["observation.image"], format="CHW")
+        # Handle the case with a single 'observation.image' key
+        images["image"] = lerobot_item["observation.image"]
     elif has_image:
+        # Handle multiple images, e.g., 'observation.images.image' and 'observation.images.wrist_image'
         for key, value in lerobot_item.items():
             if key.startswith("observation.images."):
                 camera_name = key.split("observation.images.")[1]
-                images[camera_name] = ImageField(data=value, format="CHW")
+                images[camera_name] = value
 
     state = lerobot_item.get("observation.state")
-    state_field = TensorField(data=state) if state is not None else None
 
-    # Create and return the LeRobotObservation object, converting tensors to TensorFields
-    return LeRobotObservation(
+    # Create and return the LeRobotObservation object
+    return Observation(
         images=images,
-        state=state_field,
-        action=TensorField(data=lerobot_item.get("action")),
+        state=state,
+        action=lerobot_item.get("action"),
         task=lerobot_item.get("task"),
-        episode_index=TensorField(data=lerobot_item.get("episode_index")),
-        frame_index=TensorField(data=lerobot_item.get("frame_index")),
-        index=TensorField(data=lerobot_item.get("index")),
-        task_index=TensorField(data=lerobot_item.get("task_index")),
-        timestamp=TensorField(data=lerobot_item.get("timestamp")),
+        episode_index=lerobot_item.get("episode_index"),
+        frame_index=lerobot_item.get("frame_index"),
+        index=lerobot_item.get("index"),
+        task_index=lerobot_item.get("task_index"),
+        timestamp=lerobot_item.get("timestamp"),
     )
 
 
@@ -150,7 +153,7 @@ class LeRobotActionDataset(ActionDataset):
     def __len__(self):
         return len(self._lerobot_dataset)
 
-    def __getitem__(self, idx) -> LeRobotObservation:
+    def __getitem__(self, idx) -> Observation:
         return convert_lerobot_item_to_observation(self._lerobot_dataset[idx])
 
     @staticmethod
