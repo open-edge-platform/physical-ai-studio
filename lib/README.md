@@ -7,7 +7,7 @@
 Before you begin, ensure you have FFMPEG installed.
 This is a dependency for the LeRobot library.
 
-To install FFMPEG on an Ubuntu system::
+To install FFMPEG on an Ubuntu system:
 
 ```bash
 sudo apt-get install -y ffmpeg
