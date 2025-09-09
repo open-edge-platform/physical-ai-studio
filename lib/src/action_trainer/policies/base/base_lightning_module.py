@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from lightning.pytorch.utilities.types import STEP_OUTPUT
 from lightning.pytorch import Callback
 from torch import nn
-from tensordict import TensorDict
+import torch
 
 
 class ActionTrainerModule(pl.LightningModule, ABC):
@@ -21,17 +21,17 @@ class ActionTrainerModule(pl.LightningModule, ABC):
 
         self.model: nn.Module
 
-    def forward(self, batch: TensorDict, *args, **kwargs) -> TensorDict:
+    def forward(self, batch: dict[str, torch.Tensor], *args, **kwargs) -> torch.Tensor:
         """Perform forward pass of the policy.
         The input batched is preprocessed before being passed to the model.
 
         Args:
-            batch (TensorDict): Input batch
+            batch (dict[str, torch.Tensor]): Input batch
             *args: Additional positional arguments (unused)
             **kwargs: Additional keyword arguments (unused)
 
         Returns:
-            TensorDict: Processed batch with model predictions
+            torch.Tensor: Model predictions
         """
         del args, kwargs
         return self.model(batch)
