@@ -5,9 +5,11 @@ import { redirect } from 'react-router';
 import { createBrowserRouter } from 'react-router-dom';
 import { path } from 'static-path';
 
-import { ErrorMessage, ErrorPage } from './components/error-page/error-page';
+import { ErrorPage } from './components/error-page/error-page';
 import { Layout } from './layout';
-import { Inference } from './routes/inference/inference';
+import { Index as Datasets } from './routes/datasets/index';
+import { Index as Models } from './routes/models/index';
+import { Index as RobotConfiguration } from './routes/robot-configuration/index';
 
 const root = path('/');
 const inference = root.path('/inference');
@@ -53,15 +55,15 @@ export const router = createBrowserRouter([
             },
             {
                 path: paths.robotConfiguration.index.pattern,
-                element: <ErrorMessage message={'Comming soon...'} />,
+                element: <RobotConfiguration />,
             },
             {
                 path: paths.datasets.index.pattern,
-                element: <ErrorMessage message={'Comming soon...'} />,
+                element: <Datasets />,
             },
             {
                 path: paths.models.index.pattern,
-                element: <ErrorMessage message={'Comming soon...'} />,
+                element: <Models />,
             },
             {
                 path: '*',
