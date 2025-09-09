@@ -1,0 +1,167 @@
+name: Geti Action UI checks
+permissions: {} # No permissions by default on workflow level
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+  workflow_dispatch: # run on request (no need for PR)
+
+
+jobs:
+  build:
+    name: Build UI
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # to checkout code
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        id: setup-node
+        with:
+          node-version-file: app/ui/.nvmrc
+
+      - name: Install dependencies
+        working-directory: "app/ui"
+        run: npm ci
+
+      - name: Build UI
+        working-directory: "app/ui"
+        run: npm run build
+
+      - name: Compress build
+        working-directory: "app/ui"
+        run: tar -czf dist.tar.gz dist
+
+      - uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
+        with:
+          name: ui-dist
+          path: "app/ui/dist.tar.gz"
+
+  lint:
+    name: Eslint checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # to checkout code
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        id: setup-node
+        with:
+          node-version-file: app/ui/.nvmrc
+
+      - name: Install dependencies
+        working-directory: "app/ui"
+        run: npm ci
+
+      - name: Build OpenAPI type definitions
+        working-directory: "app/ui"
+        run: npm run build:api
+
+      - name: Prettier
+        working-directory: "app/ui"
+        run: npm run format:check
+
+      - name: Eslint
+        working-directory: "app/ui"
+        run: npm run lint
+
+      - name: Eslint cyclic imports
+        working-directory: "app/ui"
+        run: npm run cyclic-deps-check
+
+      - name: Typescript
+        working-directory: "app/ui"
+        run: npm run type-check
+
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # to checkout code
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        id: setup-node
+        with:
+          node-version-file: app/ui/.nvmrc
+
+      - name: Install dependencies
+        working-directory: "app/ui"
+        run: npm ci
+
+      - name: Build OpenAPI type definitions
+        working-directory: "app/ui"
+        run: npm run build:api
+
+      - name: UI Unit tests
+        working-directory: "app/ui"
+        run: npm run test:unit
+
+  playwright-tests:
+    name: Playwright Tests
+    needs:
+      - build
+    permissions:
+      contents: read # to checkout code
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.54.0-noble
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.2
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref || '' }}
+
+      - uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        id: setup-node
+        with:
+          node-version-file: app/ui/.nvmrc
+
+      - name: Install dependencies
+        working-directory: "app/ui"
+        run: npm ci
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ui-dist
+          path: "app/ui"
+
+      - name: Unpack build
+        working-directory: "app/ui"
+        run: tar -xzf dist.tar.gz
+
+      - name: Build OpenAPI type definitions
+        working-directory: "app/ui"
+        run: npm run build:api
+
+      - name: Run Playwright tests
+        working-directory: "app/ui"
+        run: npm run test:component -- --project "Component tests"
+
+      - name: Upload blob report to GitHub Actions Artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: playwright-report
+          path: app/ui/playwright-report/
+          retention-days: 30
