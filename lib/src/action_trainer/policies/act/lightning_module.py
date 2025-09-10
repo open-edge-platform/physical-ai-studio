@@ -10,4 +10,3 @@ class ACTPolicy(ActionTrainerModule):
     def __init__(self) -> None:
         super().__init__()
         self.model = ACTModel()
-    
