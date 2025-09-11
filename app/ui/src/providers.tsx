@@ -5,7 +5,6 @@ import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react
 import { MemoryRouterProps, RouterProvider } from 'react-router';
 import { MemoryRouter as Router } from 'react-router-dom';
 
-import { WebRTCConnectionProvider } from './components/stream/web-rtc-connection-provider';
 import { ZoomProvider } from './components/zoom/zoom';
 import { router } from './router';
 
@@ -31,11 +30,9 @@ export const Providers = () => {
     return (
         <QueryClientProvider client={queryClient}>
             <ThemeProvider router={router}>
-                <WebRTCConnectionProvider>
-                    <ZoomProvider>
-                        <RouterProvider router={router} />
-                    </ZoomProvider>
-                </WebRTCConnectionProvider>
+                <ZoomProvider>
+                    <RouterProvider router={router} />
+                </ZoomProvider>
             </ThemeProvider>
         </QueryClientProvider>
     );
@@ -45,9 +42,7 @@ export const TestProviders = ({ children, routerProps }: { children: ReactNode; 
     return (
         <QueryClientProvider client={queryClient}>
             <ThemeProvider>
-                <Router {...routerProps}>
-                    <WebRTCConnectionProvider>{children}</WebRTCConnectionProvider>
-                </Router>
+                <Router {...routerProps}>{children}</Router>
             </ThemeProvider>
         </QueryClientProvider>
     );
