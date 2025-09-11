@@ -25,5 +25,3 @@ packages/
 /playwright/.cache/
 
 public/SO101
-src/api/openapi-spec.d.ts
-src/api/openapi-spec.json

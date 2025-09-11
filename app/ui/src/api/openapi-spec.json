@@ -1,0 +1,26 @@
+{
+    "openapi": "3.1.0",
+    "info": { "title": "Geti Action", "version": "0.1.0" },
+    "paths": {
+        "/api/hardware/cameras": {
+            "get": {
+                "summary": "Get Cameras",
+                "operationId": "get_cameras_api_hardware_cameras_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "items": { "additionalProperties": true, "type": "object" },
+                                    "type": "array",
+                                    "title": "Response Get Cameras Api Hardware Cameras Get"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
