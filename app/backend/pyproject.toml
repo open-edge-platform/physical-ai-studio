@@ -6,7 +6,7 @@ requires-python = ">=3.10, <=3.13"
 
 dependencies = [
   "fastapi[standard]",
-  "lerobot[all]",
+  "lerobot>=0.3.3",
   "numpy",
   "websockets",
 ]
