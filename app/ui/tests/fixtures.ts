@@ -9,9 +9,7 @@ interface Fixtures {
 
 const test = testBase.extend<Fixtures>({
     network: createNetworkFixture({
-        initialHandlers: [
-            ...handlers,
-        ],
+        initialHandlers: [...handlers],
     }),
 });
 
