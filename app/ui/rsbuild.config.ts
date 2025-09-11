@@ -22,9 +22,9 @@ export default defineConfig({
         define: {
             ...publicVars,
             'import.meta.env.PUBLIC_API_BASE_URL':
-                publicVars['import.meta.env.PUBLIC_API_BASE_URL'] ?? '"http://localhost:7860"',
+                publicVars['import.meta.env.PUBLIC_API_BASE_URL'] ?? '"http://localhost:3000"',
             'process.env.PUBLIC_API_BASE_URL':
-                publicVars['process.env.PUBLIC_API_BASE_URL'] ?? '"http://localhost:7860"',
+                publicVars['process.env.PUBLIC_API_BASE_URL'] ?? '"http://localhost:3000"',
             // Needed to prevent an issue with spectrum's picker
             // eslint-disable-next-line max-len
             // https://github.com/adobe/react-spectrum/blob/6173beb4dad153aef74fc81575fd97f8afcf6cb3/packages/%40react-spectrum/overlays/src/OpenTransition.tsx#L40
@@ -39,6 +39,16 @@ export default defineConfig({
         rspack: {
             watchOptions: {
                 ignored: ['**/src-tauri/**'],
+            },
+        },
+    },
+    server: {
+        proxy: {
+            '/api': {
+                target: 'http://localhost:7860',
+                changeOrigin: true,
+                ws: true
+                //pathRewrite: { '^/api': '' }, // strip the /api prefix
             },
         },
     },
