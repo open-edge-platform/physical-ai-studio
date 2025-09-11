@@ -5,6 +5,7 @@
         "/api/hardware/cameras": {
             "get": {
                 "summary": "Get Cameras",
+                "description": "Get cameras example request",
                 "operationId": "get_cameras_api_hardware_cameras_get",
                 "responses": {
                     "200": {

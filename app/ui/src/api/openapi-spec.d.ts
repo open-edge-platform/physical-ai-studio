@@ -11,7 +11,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Cameras */
+        /**
+         * Get Cameras
+         * @description Get cameras example request
+         */
         get: operations['get_cameras_api_hardware_cameras_get'];
         put?: never;
         post?: never;
