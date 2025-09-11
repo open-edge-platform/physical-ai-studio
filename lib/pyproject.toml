@@ -38,6 +38,12 @@ tests = [
     "pytest",
     "pytest-mock",
 ]
+[dependency-groups]
+lint = [
+    "ruff==0.9.3",
+    "mypy~=1.17",
+]
+
 
 [project.urls]
 Homepage = "https://github.com/sovrasov/action_trainer"
