@@ -21,6 +21,9 @@ lint = [
   "mypy~=1.17",
 ]
 
+[tool.uv]
+default-groups = "all"
+
 [tool.ruff]
 target-version = "py312"
 line-length = 120
