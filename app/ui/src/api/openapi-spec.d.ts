@@ -24,22 +24,127 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/api/hardware/cameras': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Cameras
+         * @description Get all cameras
+         */
+        get: operations['get_cameras_api_hardware_cameras_get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/api/hardware/robots': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Robots
+         * @description Get all connected Robots
+         */
+        get: operations['get_robots_api_hardware_robots_get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/api/hardware/calibrations': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lerobot Calibrations
+         * @description Get calibrations known to huggingface leRobot
+         */
+        get: operations['get_lerobot_calibrations_api_hardware_calibrations_get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/api/hardware/identify': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Identify Robot */
+        put: operations['identify_robot_api_hardware_identify_put'];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** CalibrationConfig */
+        CalibrationConfig: {
+            /** Id */
+            id: string;
+            /** Path */
+            path: string;
+            /**
+             * Robot Type
+             * @enum {string}
+             */
+            robot_type: 'teleoperator' | 'robot';
+        };
+        /** Camera */
+        Camera: {
+            /**
+             * Name
+             * @description Camera name
+             */
+            name: string;
+            /**
+             * Id
+             * @description Either serial id for  RealSense or port for OpenCV
+             */
+            id: string;
+            /** Type */
+            type: string;
+            default_stream_profile: components['schemas']['CameraProfile'];
+        };
         /** CameraConfig */
         CameraConfig: {
             /**
              * Id
              * @description Camera port or realsense id
              */
-            id?: string;
+            id: string;
             /**
              * Name
              * @description Camera name
              */
-            name?: string;
+            name: string;
             /**
              * Type
              * @enum {string}
@@ -69,6 +174,20 @@ export interface components {
              * @default false
              */
             use_depth: boolean;
+        };
+        /** CameraProfile */
+        CameraProfile: {
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+            /** Fps */
+            fps: number;
+        };
+        /** HTTPValidationError */
+        HTTPValidationError: {
+            /** Detail */
+            detail?: components['schemas']['ValidationError'][];
         };
         /** ProjectConfig */
         ProjectConfig: {
@@ -118,6 +237,24 @@ export interface components {
              */
             serial_id?: string;
         };
+        /** RobotPortInfo */
+        RobotPortInfo: {
+            /** Port */
+            port: string;
+            /** Serial Id */
+            serial_id: string;
+            /** Device Name */
+            device_name: string;
+        };
+        /** ValidationError */
+        ValidationError: {
+            /** Location */
+            loc: (string | number)[];
+            /** Message */
+            msg: string;
+            /** Error Type */
+            type: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -125,9 +262,15 @@ export interface components {
     headers: never;
     pathItems: never;
 }
+export type SchemaCalibrationConfig = components['schemas']['CalibrationConfig'];
+export type SchemaCamera = components['schemas']['Camera'];
 export type SchemaCameraConfig = components['schemas']['CameraConfig'];
+export type SchemaCameraProfile = components['schemas']['CameraProfile'];
+export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
 export type SchemaProjectConfig = components['schemas']['ProjectConfig'];
 export type SchemaRobotConfig = components['schemas']['RobotConfig'];
+export type SchemaRobotPortInfo = components['schemas']['RobotPortInfo'];
+export type SchemaValidationError = components['schemas']['ValidationError'];
 export type $defs = Record<string, never>;
 export interface operations {
     get_projects_api_projects_get: {
@@ -146,6 +289,101 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ProjectConfig'][];
+                };
+            };
+        };
+    };
+    get_cameras_api_hardware_cameras_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Camera'][];
+                };
+            };
+        };
+    };
+    get_robots_api_hardware_robots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['RobotPortInfo'][];
+                };
+            };
+        };
+    };
+    get_lerobot_calibrations_api_hardware_calibrations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CalibrationConfig'][];
+                };
+            };
+        };
+    };
+    identify_robot_api_hardware_identify_put: {
+        parameters: {
+            query?: {
+                joint?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['RobotPortInfo'];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['HTTPValidationError'];
                 };
             };
         };

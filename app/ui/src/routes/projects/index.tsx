@@ -1,14 +1,13 @@
-import { Heading, Flex, Text, View, Button, Link } from '@geti/ui';
+import { Heading, Flex, Text, View } from '@geti/ui';
 import { $api } from '../../api/client';
-import { ErrorMessage } from '../../components/error-page/error-page';
 import { LoadingPage } from '../../components/loading-page/loading-page';
-import { Add, AddCircle, Collapse } from '@geti/ui/icons';
+import {  AddCircle } from '@geti/ui/icons';
 
 import classes from "./index.module.scss";
 import { paths } from '../../router';
 import { useNavigate } from 'react-router';
 
-import { components } from '../../api/openapi-spec';
+import { SchemaProjectConfig } from '../../api/openapi-spec';
 
 const NewProject = () => {
 
@@ -21,7 +20,7 @@ const NewProject = () => {
         width: "calc(50% - size-275 / 2)",
         cursor: "pointer",
       }}
-      onClick={() => navigate(paths.datasets.index.pattern)}
+      onClick={() => navigate(paths.projects.new.pattern)}
     >
       <View
         borderColor={"gray-700"}
@@ -42,7 +41,7 @@ const NewProject = () => {
 }
 
 interface ProjectItemProps {
-  project: components["schemas"]["ProjectConfig"]
+  project: SchemaProjectConfig
 }
 
 const ProjectItem = ({ project }: ProjectItemProps) => {

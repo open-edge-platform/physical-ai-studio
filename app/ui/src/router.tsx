@@ -11,6 +11,7 @@ import { Index as Datasets } from './routes/datasets/index';
 import { Index as Models } from './routes/models/index';
 import { Index as RobotConfiguration } from './routes/robot-configuration/index';
 import { Index as Projects } from './routes/projects/index';
+import { NewProject } from './routes/projects/new/new';
 
 const root = path('/');
 const projects = root.path('/projects');
@@ -26,6 +27,7 @@ export const paths = {
     },
     projects: {
         index: projects,
+        new: projects.path('/new'),
     },
     robotConfiguration: {
         index: robotConfiguration,
@@ -58,7 +60,17 @@ export const router = createBrowserRouter([
             },
             {
                 path: paths.projects.index.pattern,
-                element: <Projects />,
+                children: [
+                    {
+                        index: true, 
+                        element: <Projects />,
+                    },
+                    {
+                        path: paths.projects.new.pattern,
+                        element: <NewProject />,
+                    },
+
+                ]
             },
             {
                 path: paths.datasets.index.pattern,
