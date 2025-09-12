@@ -114,6 +114,7 @@
         "/api/hardware/identify": {
             "put": {
                 "summary": "Identify Robot",
+                "description": "Visually identify the robot by moving given joint on robot",
                 "operationId": "identify_robot_api_hardware_identify_put",
                 "parameters": [
                     {
@@ -223,7 +224,7 @@
             },
             "ProjectConfig": {
                 "properties": {
-                    "id": { "type": "string", "format": "uuid", "title": "Id", "description": "UUID of the project" },
+                    "id": { "type": "string", "title": "Id", "description": "UUID of the project" },
                     "fps": {
                         "type": "integer",
                         "title": "Fps",
@@ -256,7 +257,7 @@
                     }
                 },
                 "type": "object",
-                "required": ["id", "cameras", "robots"],
+                "required": ["id", "name", "cameras", "robots"],
                 "title": "ProjectConfig"
             },
             "RobotConfig": {
@@ -266,7 +267,7 @@
                     "serial_id": { "type": "string", "title": "Serial Id", "description": "Serial port id" }
                 },
                 "type": "object",
-                "required": ["type"],
+                "required": ["id", "type", "serial_id"],
                 "title": "RobotConfig"
             },
             "RobotPortInfo": {

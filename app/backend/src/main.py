@@ -3,8 +3,8 @@ import os
 import uvicorn
 from fastapi import FastAPI
 
-from api.project import router as project_router
 from api.hardware import router as hardware_router
+from api.project import router as project_router
 
 app = FastAPI(title="Geti Action", openapi_url="/api/openapi.json")
 app.include_router(project_router, prefix="/api/projects")

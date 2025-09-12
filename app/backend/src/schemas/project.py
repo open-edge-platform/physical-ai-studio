@@ -1,5 +1,6 @@
+
 from pydantic import BaseModel, Field
-from typing import List
+
 from .camera import CameraConfig
 from .robot import RobotConfig
 
@@ -40,7 +41,7 @@ from .robot import RobotConfig
 class ProjectConfig(BaseModel):
     id: str = Field(..., description="UUID of the project")
     fps: int = Field(30, description="Recording FPS for datasets")
-    name: str = Field(None, min_length=1, max_length=50, description="Project name")
-    datasets: List[str] = Field([], description="Datasets available for this project")
-    cameras: List[CameraConfig]
-    robots: List[RobotConfig]
+    name: str = Field(min_length=1, max_length=50, description="Project name")
+    datasets: list[str] = Field([], description="Datasets available for this project")
+    cameras: list[CameraConfig]
+    robots: list[RobotConfig]

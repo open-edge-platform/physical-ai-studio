@@ -1,11 +1,14 @@
 import os
 from pathlib import Path
+from typing import Literal
+
+from lerobot.constants import HF_LEROBOT_CALIBRATION, ROBOTS, TELEOPERATORS
+
 from schemas import CalibrationConfig
-from lerobot.constants import HF_LEROBOT_CALIBRATION, TELEOPERATORS, ROBOTS
 
-from typing import Literal, List
 
-def get_calibrations() -> List[CalibrationConfig]:
+def get_calibrations() -> list[CalibrationConfig]:
+    """Get all calibrations known to lerobot"""
     teleoperators_path = HF_LEROBOT_CALIBRATION / TELEOPERATORS
     robots_path = HF_LEROBOT_CALIBRATION / ROBOTS
 
@@ -15,7 +18,8 @@ def get_calibrations() -> List[CalibrationConfig]:
     ]
 
 
-def get_calibration_of_folder(folder: str, robot_type: Literal["teleoperator", "robot"]):
+def get_calibration_of_folder(folder: str, robot_type: Literal["teleoperator", "robot"]) -> list[CalibrationConfig]:
+    """Get all calibration configs available for either teleoperator or robot"""
     calibrations = []
     for root, dirs, files in os.walk(folder):
         for file in files:

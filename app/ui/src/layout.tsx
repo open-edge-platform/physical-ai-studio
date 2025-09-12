@@ -18,12 +18,7 @@ const Header = () => {
                         '--spectrum-tabs-selection-indicator-color': 'var(--energy-blue)',
                     }}
                 >
-
-                    <Item
-                        textValue='Projects'
-                        key={paths.projects.index({})}
-                        href={paths.projects.index({})}
-                    >
+                    <Item textValue='Projects' key={paths.projects.index({})} href={paths.projects.index({})}>
                         <Flex alignItems='center' gap='size-100'>
                             Projects
                         </Flex>

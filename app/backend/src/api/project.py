@@ -1,7 +1,7 @@
-from fastapi import APIRouter
-from uuid import uuid4
-from schemas import ProjectConfig, CameraConfig,RobotConfig
 
+from fastapi import APIRouter
+
+from schemas import ProjectConfig
 from storage.storage import load_projects, write_project
 
 router = APIRouter()

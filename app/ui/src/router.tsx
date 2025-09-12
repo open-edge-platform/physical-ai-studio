@@ -9,9 +9,9 @@ import { ErrorPage } from './components/error-page/error-page';
 import { Layout } from './layout';
 import { Index as Datasets } from './routes/datasets/index';
 import { Index as Models } from './routes/models/index';
-import { Index as RobotConfiguration } from './routes/robot-configuration/index';
 import { Index as Projects } from './routes/projects/index';
 import { NewProject } from './routes/projects/new/new';
+import { Index as RobotConfiguration } from './routes/robot-configuration/index';
 
 const root = path('/');
 const projects = root.path('/projects');
@@ -63,7 +63,7 @@ export const router = createBrowserRouter([
                 path: paths.projects.index.pattern,
                 children: [
                     {
-                        index: true, 
+                        index: true,
                         element: <Projects />,
                     },
                     {
@@ -74,8 +74,7 @@ export const router = createBrowserRouter([
                         path: paths.projects.edit.pattern,
                         element: <>Edit</>,
                     },
-
-                ]
+                ],
             },
             {
                 path: paths.datasets.index.pattern,

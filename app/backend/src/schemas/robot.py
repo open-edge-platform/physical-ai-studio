@@ -1,10 +1,12 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
-from typing import List,Literal
+
 
 class RobotConfig(BaseModel):
-    id: str = Field(None, description="Robot calibration id")
+    id: str = Field(description="Robot calibration id")
     type: Literal["follower", "leader"]
-    serial_id: str = Field(None, description="Serial port id")
+    serial_id: str = Field(description="Serial port id")
 
 class RobotPortInfo(BaseModel):
     port: str

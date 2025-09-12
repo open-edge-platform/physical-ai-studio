@@ -1,39 +1,36 @@
-import lerobot
-import time
-from typing import Any, List, Set, Optional
+import asyncio
 
-from schemas import RobotPortInfo
+from lerobot.robots.so101_follower import SO101Follower, SO101FollowerConfig
 from serial.tools import list_ports
 from serial.tools.list_ports_common import ListPortInfo
-from lerobot.robots.so101_follower import SO101Follower, SO101FollowerConfig
+
+from schemas import RobotPortInfo
+
 available_ports = list_ports.comports()
 
 
-def from_port(port: ListPortInfo, device_name: str) -> Optional[RobotPortInfo]:
-    """
-    Detect if the device is a SO-100 robot.π
-    """
+def from_port(port: ListPortInfo, device_name: str) -> RobotPortInfo | None:
+    """ Detect if the device is a SO-100 robot.π """
     # The Feetech UART board CH340 has PID 29987
-    if port.pid == 21971 or port.pid == 29987:
+    if port.pid in {21971, 29987}:
             # The serial number is not always available
             serial_number = port.serial_number or "no_serial"
-            robot = RobotPortInfo(
-            port=port.device,
-            serial_id=serial_number,
-            device_name= device_name
+            return RobotPortInfo(
+                port=port.device,
+                serial_id=serial_number,
+                device_name= device_name
             )
-            return robot
     return None
 
 class RobotConnectionManager:
-    _all_robots: List[RobotPortInfo] = []
-    available_ports: List[ListPortInfo]
+    _all_robots: list[RobotPortInfo] = []
+    available_ports: list[ListPortInfo]
 
     def __init__(self):
         self.available_ports = list_ports.comports()
 
     @property
-    def robots(self) -> List[RobotPortInfo]:
+    def robots(self) -> list[RobotPortInfo]:
         return self._all_robots
 
     async def find_robots(self) -> None:
@@ -47,8 +44,8 @@ class RobotConnectionManager:
 
         # If we are only simulating, we can just use the SO100Hardware class
         # Keep track of connected devices by port name and serial to avoid duplicates
-        connected_devices: Set[str] = set()
-        connected_serials: Set[str] = set()
+        connected_devices: set[str] = set()
+        connected_serials: set[str] = set()
 
         # Try each serial port exactly once
         for port in self.available_ports:
@@ -87,13 +84,15 @@ class RobotConnectionManager:
         if not self._all_robots:
             print("No robot connected.")
 
-async def find_robots() -> List[RobotPortInfo]:
+async def find_robots() -> list[RobotPortInfo]:
+    """Find all robots connected via serial"""
     manager = RobotConnectionManager()
     await manager.find_robots()
     return manager.robots
 
 
-async def identify_robot_visually(robot: RobotPortInfo, joint: str | None = None):
+async def identify_robot_visually(robot: RobotPortInfo, joint: str | None = None) -> None:
+    """Identify the robot by moving the joint from current to min to max to initial position"""
     if robot.device_name != "so-100":
         raise ValueError(f"Trying to identify unsupported robot: {robot.device_name}")
 
@@ -110,9 +109,9 @@ async def identify_robot_visually(robot: RobotPortInfo, joint: str | None = None
     current_position = robot.bus.sync_read(PRESENT_POSITION_KEY, normalize=False)
     gripper_calibration = robot.bus.read_calibration()[joint]
     robot.bus.write(GOAL_POSITION_KEY, joint, gripper_calibration.range_min, normalize=False)
-    time.sleep(1)
+    await asyncio.sleep(1)
     robot.bus.write(GOAL_POSITION_KEY, joint, gripper_calibration.range_max, normalize=False)
-    time.sleep(1)
+    await asyncio.sleep(1)
     robot.bus.write(GOAL_POSITION_KEY, joint, current_position[joint], normalize=False)
-    time.sleep(1)
+    await asyncio.sleep(1)
     robot.bus.disconnect()

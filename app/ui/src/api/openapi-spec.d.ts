@@ -96,7 +96,10 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Identify Robot */
+        /**
+         * Identify Robot
+         * @description Visually identify the robot by moving given joint on robot
+         */
         put: operations['identify_robot_api_hardware_identify_put'];
         post?: never;
         delete?: never;
@@ -200,7 +203,6 @@ export interface components {
         ProjectConfig: {
             /**
              * Id
-             * Format: uuid
              * @description UUID of the project
              */
             id: string;
@@ -214,7 +216,7 @@ export interface components {
              * Name
              * @description Project name
              */
-            name?: string;
+            name: string;
             /**
              * Datasets
              * @description Datasets available for this project
@@ -232,7 +234,7 @@ export interface components {
              * Id
              * @description Robot calibration id
              */
-            id?: string;
+            id: string;
             /**
              * Type
              * @enum {string}
@@ -242,7 +244,7 @@ export interface components {
              * Serial Id
              * @description Serial port id
              */
-            serial_id?: string;
+            serial_id: string;
         };
         /** RobotPortInfo */
         RobotPortInfo: {
