@@ -137,7 +137,7 @@
                         "title": "Id",
                         "description": "Either serial id for  RealSense or port for OpenCV"
                     },
-                    "type": { "type": "string", "title": "Type" },
+                    "type": { "type": "string", "enum": ["RealSense", "OpenCV"], "title": "Type" },
                     "default_stream_profile": { "$ref": "#/components/schemas/CameraProfile" }
                 },
                 "type": "object",

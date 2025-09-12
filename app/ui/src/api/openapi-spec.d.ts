@@ -129,8 +129,11 @@ export interface components {
              * @description Either serial id for  RealSense or port for OpenCV
              */
             id: string;
-            /** Type */
-            type: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: 'RealSense' | 'OpenCV';
             default_stream_profile: components['schemas']['CameraProfile'];
         };
         /** CameraConfig */

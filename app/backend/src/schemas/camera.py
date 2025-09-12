@@ -18,5 +18,5 @@ class CameraProfile(BaseModel):
 class Camera(BaseModel):
     name: str = Field(description="Camera name")
     id: str = Field(description="Either serial id for  RealSense or port for OpenCV")
-    type: str
+    type: Literal["RealSense", "OpenCV"]
     default_stream_profile: CameraProfile

@@ -18,9 +18,16 @@ const CameraEdit = ({ config, availableCameras, updateConfig, deleteCamera }: Ca
     const openCVCameras = availableCameras.filter((c) => c.type == "OpenCV")
 
     const changeCamera = (id: Key | null) => {
-        if (id) {
-            const use_depth = !!realSenseCameras.find((m) => m.id === id)
-            updateConfig({ ...config, id: id as string, use_depth })
+        const selectedCamera = availableCameras.find((m) => m.id === id);
+        if (selectedCamera) {
+            updateConfig({ ...config, 
+                id: selectedCamera.id,
+                type: selectedCamera.type,
+                use_depth: selectedCamera.type === "RealSense",
+                fps: selectedCamera.default_stream_profile.fps,
+                width: selectedCamera.default_stream_profile.width,
+                height: selectedCamera.default_stream_profile.height,
+            })
         }
     }
     return (
@@ -46,7 +53,7 @@ const CameraEdit = ({ config, availableCameras, updateConfig, deleteCamera }: Ca
                 <NumberField label="fps" value={config.fps} onChange={(fps) => updateConfig({ ...config, fps })} />
                 <NumberField label="width" value={config.width} onChange={(width) => updateConfig({ ...config, width })} />
                 <NumberField label="height" value={config.height} onChange={(height) => updateConfig({ ...config, height })} />
-                <Checkbox isSelected={config.use_depth} onChange={(use_depth) => updateConfig({ ...config, use_depth })}>Use depth</Checkbox>
+                <Checkbox isSelected={config.use_depth} isDisabled={config.type !== "RealSense"} onChange={(use_depth) => updateConfig({ ...config, use_depth })}>Use depth</Checkbox>
             </Form>
         </Well>
     )

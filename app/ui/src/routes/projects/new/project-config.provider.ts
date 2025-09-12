@@ -48,8 +48,7 @@ function createEmptyProject(name: string): SchemaProjectConfig {
     datasets: [],
     fps: 30,
     cameras: [
-      createEmptyCamera({ name: "front"}),
-      createEmptyCamera({ name: "grabber"})
+      createEmptyCamera({ name: "front"})
     ],
     robots: [
       createEmptyRobot({type: "follower"}),
@@ -94,13 +93,13 @@ export function createProjectDataContext(): ProjectDataContext {
 
   const isCameraSetupValid = () => {
     return !project.cameras.find((camera) => {
-      return camera.id == ""
+      return camera.id === "" || camera.name === "";
     });
   }
 
   const isRobotSetupValid = () => {
     return !project.robots.find((robot) => {
-      return robot.id == "" || robot.serial_id == ""
+      return robot.id === "" || robot.serial_id === ""
     });
   }
 
