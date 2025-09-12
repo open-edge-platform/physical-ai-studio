@@ -4,7 +4,7 @@
  */
 
 export interface paths {
-    '/api/hardware/cameras': {
+    '/api/projects': {
         parameters: {
             query?: never;
             header?: never;
@@ -12,10 +12,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Cameras
-         * @description Get cameras example request
+         * Get Projects
+         * @description Get all projects
          */
-        get: operations['get_cameras_api_hardware_cameras_get'];
+        get: operations['get_projects_api_projects_get'];
         put?: never;
         post?: never;
         delete?: never;
@@ -27,16 +27,110 @@ export interface paths {
 }
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: never;
+    schemas: {
+        /** CameraConfig */
+        CameraConfig: {
+            /**
+             * Id
+             * @description Camera port or realsense id
+             */
+            id?: string;
+            /**
+             * Name
+             * @description Camera name
+             */
+            name?: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: 'RealSense' | 'OpenCV';
+            /**
+             * Width
+             * @description Frame width
+             * @default 640
+             */
+            width: number;
+            /**
+             * Height
+             * @description Frame height
+             * @default 480
+             */
+            height: number;
+            /**
+             * Fps
+             * @description Camera fps
+             * @default 30
+             */
+            fps: number;
+            /**
+             * Use Depth
+             * @description Use Depth from RealSense
+             * @default false
+             */
+            use_depth: boolean;
+        };
+        /** ProjectConfig */
+        ProjectConfig: {
+            /**
+             * Id
+             * Format: uuid
+             * @description UUID of the project
+             */
+            id: string;
+            /**
+             * Fps
+             * @description Recording FPS for datasets
+             * @default 30
+             */
+            fps: number;
+            /**
+             * Name
+             * @description Project name
+             */
+            name?: string;
+            /**
+             * Datasets
+             * @description Datasets available for this project
+             * @default []
+             */
+            datasets: string[];
+            /** Cameras */
+            cameras: components['schemas']['CameraConfig'][];
+            /** Robots */
+            robots: components['schemas']['RobotConfig'][];
+        };
+        /** RobotConfig */
+        RobotConfig: {
+            /**
+             * Id
+             * @description Robot calibration id
+             */
+            id?: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: 'follower' | 'leader';
+            /**
+             * Serial Id
+             * @description Serial port id
+             */
+            serial_id?: string;
+        };
+    };
     responses: never;
     parameters: never;
     requestBodies: never;
     headers: never;
     pathItems: never;
 }
+export type SchemaCameraConfig = components['schemas']['CameraConfig'];
+export type SchemaProjectConfig = components['schemas']['ProjectConfig'];
+export type SchemaRobotConfig = components['schemas']['RobotConfig'];
 export type $defs = Record<string, never>;
 export interface operations {
-    get_cameras_api_hardware_cameras_get: {
+    get_projects_api_projects_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -51,9 +145,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': {
-                        [key: string]: unknown;
-                    }[];
+                    'application/json': components['schemas']['ProjectConfig'][];
                 };
             };
         };

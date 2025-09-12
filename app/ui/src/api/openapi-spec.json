@@ -2,25 +2,108 @@
     "openapi": "3.1.0",
     "info": { "title": "Geti Action", "version": "0.1.0" },
     "paths": {
-        "/api/hardware/cameras": {
+        "/api/projects": {
             "get": {
-                "summary": "Get Cameras",
-                "description": "Get cameras example request",
-                "operationId": "get_cameras_api_hardware_cameras_get",
+                "summary": "Get Projects",
+                "description": "Get all projects",
+                "operationId": "get_projects_api_projects_get",
                 "responses": {
                     "200": {
                         "description": "Successful Response",
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "items": { "additionalProperties": true, "type": "object" },
+                                    "items": { "$ref": "#/components/schemas/ProjectConfig" },
                                     "type": "array",
-                                    "title": "Response Get Cameras Api Hardware Cameras Get"
+                                    "title": "Response Get Projects Api Projects Get"
                                 }
                             }
                         }
                     }
                 }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "CameraConfig": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "maxLength": 50,
+                        "minLength": 1,
+                        "title": "Id",
+                        "description": "Camera port or realsense id"
+                    },
+                    "name": {
+                        "type": "string",
+                        "maxLength": 50,
+                        "minLength": 1,
+                        "title": "Name",
+                        "description": "Camera name"
+                    },
+                    "type": { "type": "string", "enum": ["RealSense", "OpenCV"], "title": "Type" },
+                    "width": { "type": "integer", "title": "Width", "description": "Frame width", "default": 640 },
+                    "height": { "type": "integer", "title": "Height", "description": "Frame height", "default": 480 },
+                    "fps": { "type": "integer", "title": "Fps", "description": "Camera fps", "default": 30 },
+                    "use_depth": {
+                        "type": "boolean",
+                        "title": "Use Depth",
+                        "description": "Use Depth from RealSense",
+                        "default": false
+                    }
+                },
+                "type": "object",
+                "required": ["type"],
+                "title": "CameraConfig"
+            },
+            "ProjectConfig": {
+                "properties": {
+                    "id": { "type": "string", "format": "uuid", "title": "Id", "description": "UUID of the project" },
+                    "fps": {
+                        "type": "integer",
+                        "title": "Fps",
+                        "description": "Recording FPS for datasets",
+                        "default": 30
+                    },
+                    "name": {
+                        "type": "string",
+                        "maxLength": 50,
+                        "minLength": 1,
+                        "title": "Name",
+                        "description": "Project name"
+                    },
+                    "datasets": {
+                        "items": { "type": "string" },
+                        "type": "array",
+                        "title": "Datasets",
+                        "description": "Datasets available for this project",
+                        "default": []
+                    },
+                    "cameras": {
+                        "items": { "$ref": "#/components/schemas/CameraConfig" },
+                        "type": "array",
+                        "title": "Cameras"
+                    },
+                    "robots": {
+                        "items": { "$ref": "#/components/schemas/RobotConfig" },
+                        "type": "array",
+                        "title": "Robots"
+                    }
+                },
+                "type": "object",
+                "required": ["id", "cameras", "robots"],
+                "title": "ProjectConfig"
+            },
+            "RobotConfig": {
+                "properties": {
+                    "id": { "type": "string", "title": "Id", "description": "Robot calibration id" },
+                    "type": { "type": "string", "enum": ["follower", "leader"], "title": "Type" },
+                    "serial_id": { "type": "string", "title": "Serial Id", "description": "Serial port id" }
+                },
+                "type": "object",
+                "required": ["type"],
+                "title": "RobotConfig"
             }
         }
     }

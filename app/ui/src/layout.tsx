@@ -18,6 +18,16 @@ const Header = () => {
                         '--spectrum-tabs-selection-indicator-color': 'var(--energy-blue)',
                     }}
                 >
+
+                    <Item
+                        textValue='Projects'
+                        key={paths.projects.index({})}
+                        href={paths.projects.index({})}
+                    >
+                        <Flex alignItems='center' gap='size-100'>
+                            Projects
+                        </Flex>
+                    </Item>
                     <Item
                         textValue='Life inference'
                         key={paths.robotConfiguration.index({})}
@@ -63,8 +73,11 @@ export const Layout = () => {
                 height={'100%'}
             >
                 <Header />
-                <View backgroundColor={'gray-50'} gridArea={'content'}>
+                <View backgroundColor={'gray-75'} gridArea={'content'}>
                     <TabPanels height={'100%'} UNSAFE_style={{ border: 'none' }}>
+                        <Item textValue='index' key={paths.projects.index({})}>
+                            <Outlet />
+                        </Item>
                         <Item textValue='index' key={paths.robotConfiguration.index({})}>
                             <Outlet />
                         </Item>
