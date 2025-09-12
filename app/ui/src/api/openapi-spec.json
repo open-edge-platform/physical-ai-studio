@@ -72,6 +72,35 @@
                 }
             }
         },
+        "/api/projects/{project_id}/datasets/{repo}/{id}": {
+            "get": {
+                "summary": "Get Dataset Of Project",
+                "description": "Get dataset of project by id",
+                "operationId": "get_dataset_of_project_api_projects__project_id__datasets__repo___id__get",
+                "parameters": [
+                    {
+                        "name": "project_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": { "type": "string", "title": "Project Id" }
+                    },
+                    { "name": "repo", "in": "path", "required": true, "schema": { "type": "string", "title": "Repo" } },
+                    { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "title": "Id" } }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Dataset" } } }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } }
+                        }
+                    }
+                }
+            }
+        },
         "/api/hardware/cameras": {
             "get": {
                 "summary": "Get Cameras",
@@ -234,6 +263,39 @@
                 "type": "object",
                 "required": ["width", "height", "fps"],
                 "title": "CameraProfile"
+            },
+            "Dataset": {
+                "properties": {
+                    "repo_id": { "type": "string", "title": "Repo Id" },
+                    "episodes": {
+                        "items": { "$ref": "#/components/schemas/Episode" },
+                        "type": "array",
+                        "title": "Episodes"
+                    },
+                    "total_frames": { "type": "integer", "title": "Total Frames" },
+                    "features": { "items": { "type": "string" }, "type": "array", "title": "Features" },
+                    "fps": { "type": "integer", "title": "Fps" }
+                },
+                "type": "object",
+                "required": ["repo_id", "episodes", "total_frames", "features", "fps"],
+                "title": "Dataset"
+            },
+            "Episode": {
+                "properties": {
+                    "episode_index": { "type": "integer", "title": "Episode Index" },
+                    "length": { "type": "integer", "title": "Length" },
+                    "fps": { "type": "integer", "title": "Fps" },
+                    "tasks": { "items": { "type": "string" }, "type": "array", "title": "Tasks" },
+                    "actions": {
+                        "items": { "items": { "type": "number" }, "type": "array" },
+                        "type": "array",
+                        "title": "Actions"
+                    },
+                    "modification_timestamp": { "type": "integer", "title": "Modification Timestamp" }
+                },
+                "type": "object",
+                "required": ["episode_index", "length", "fps", "tasks", "actions", "modification_timestamp"],
+                "title": "Episode"
             },
             "HTTPValidationError": {
                 "properties": {

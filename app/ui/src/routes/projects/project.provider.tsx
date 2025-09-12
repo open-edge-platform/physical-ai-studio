@@ -1,4 +1,4 @@
-import { createContext, ReactNode } from "react";
+import { createContext, ReactNode, useContext } from "react";
 import { SchemaProjectConfig } from "../../api/openapi-spec";
 import { $api } from "../../api/client";
 
@@ -21,4 +21,15 @@ export const ProjectProvider = ({ children, project_id }: { children: ReactNode,
             {children}
         </ProjectContext.Provider>
     )
+}
+
+
+export function useProject(): ProjectContext {
+    const context = useContext(ProjectContext);
+
+    if (context === undefined) {
+        throw new Error('No project context');
+    }
+
+    return context;
 }

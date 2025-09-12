@@ -48,6 +48,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/api/projects/{project_id}/datasets/{repo}/{id}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Dataset Of Project
+         * @description Get dataset of project by id
+         */
+        get: operations['get_dataset_of_project_api_projects__project_id__datasets__repo___id__get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/api/hardware/cameras': {
         parameters: {
             query?: never;
@@ -214,6 +234,34 @@ export interface components {
             /** Fps */
             fps: number;
         };
+        /** Dataset */
+        Dataset: {
+            /** Repo Id */
+            repo_id: string;
+            /** Episodes */
+            episodes: components['schemas']['Episode'][];
+            /** Total Frames */
+            total_frames: number;
+            /** Features */
+            features: string[];
+            /** Fps */
+            fps: number;
+        };
+        /** Episode */
+        Episode: {
+            /** Episode Index */
+            episode_index: number;
+            /** Length */
+            length: number;
+            /** Fps */
+            fps: number;
+            /** Tasks */
+            tasks: string[];
+            /** Actions */
+            actions: number[][];
+            /** Modification Timestamp */
+            modification_timestamp: number;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -295,6 +343,8 @@ export type SchemaCalibrationConfig = components['schemas']['CalibrationConfig']
 export type SchemaCamera = components['schemas']['Camera'];
 export type SchemaCameraConfig = components['schemas']['CameraConfig'];
 export type SchemaCameraProfile = components['schemas']['CameraProfile'];
+export type SchemaDataset = components['schemas']['Dataset'];
+export type SchemaEpisode = components['schemas']['Episode'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
 export type SchemaProjectConfig = components['schemas']['ProjectConfig'];
 export type SchemaRobotConfig = components['schemas']['RobotConfig'];
@@ -373,6 +423,39 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ProjectConfig'];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['HTTPValidationError'];
+                };
+            };
+        };
+    };
+    get_dataset_of_project_api_projects__project_id__datasets__repo___id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                repo: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Dataset'];
                 };
             };
             /** @description Validation Error */
