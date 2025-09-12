@@ -2,9 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
+import abc
 import torch
 from torch import nn
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 
 
 import math
@@ -23,22 +24,48 @@ from torchvision.ops.misc import FrozenBatchNorm2d
 from enum import Enum
 
 
+OBS_ENV_STATE = "observation.environment_state"
+OBS_STATE = "observation.state"
+OBS_IMAGE = "observation.image"
+OBS_IMAGES = "observation.images"
+ACTION = "action"
+REWARD = "next.reward"
+
+ROBOTS = "robots"
+ROBOT_TYPE = "robot_type"
+TELEOPERATORS = "teleoperators"
+
+# files & directories
+CHECKPOINTS_DIR = "checkpoints"
+LAST_CHECKPOINT_LINK = "last"
+PRETRAINED_MODEL_DIR = "pretrained_model"
+TRAINING_STATE_DIR = "training_state"
+RNG_STATE = "rng_state.safetensors"
+TRAINING_STEP = "training_step.json"
+OPTIMIZER_STATE = "optimizer_state.safetensors"
+OPTIMIZER_PARAM_GROUPS = "optimizer_param_groups.json"
+SCHEDULER_STATE = "scheduler_state.json"
+
+
 class ACTModel(nn.Module):
-    def __init__(self):
+    def __init__(self, action_shape: tuple[int, ...] | int, robot_state_shape: tuple[int, ...] | int) -> None:
         super().__init__()
 
-        self.config = ACTConfig()
+        input_features = {"observation.images": PolicyFeature(type=FeatureType.VISUAL, shape=(3,224, 224)), 
+                            "observation.state": PolicyFeature(type=FeatureType.STATE, shape=robot_state_shape)}
+        output_features = {"action": PolicyFeature(type=FeatureType.ACTION, shape=action_shape)}
+        self.config = ACTConfig(input_features=input_features, output_features=output_features)
         self._model = ACT(self.config)
 
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         if self._model.training:
-            batch = self.normalize_inputs(batch)
+            #batch = self.normalize_inputs(batch)
             if self.config.image_features:
                 batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
                 batch[OBS_IMAGES] = [batch[key] for key in self.config.image_features]
 
-            batch = self.normalize_targets(batch)
-            actions_hat, (mu_hat, log_sigma_x2_hat) = self.model(batch)
+            #batch = self.normalize_targets(batch)
+            actions_hat, (mu_hat, log_sigma_x2_hat) = self._model(batch)
 
             l1_loss = (
                 F.l1_loss(batch[ACTION], actions_hat, reduction="none") * ~batch["action_is_pad"].unsqueeze(-1)
@@ -67,13 +94,13 @@ class ACTModel(nn.Module):
         """Predict a chunk of actions given environment observations."""
         self.eval()
 
-        batch = self.normalize_inputs(batch)
+        #batch = self.normalize_inputs(batch)
         if self.config.image_features:
             batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
             batch[OBS_IMAGES] = [batch[key] for key in self.config.image_features]
 
         actions = self._model(batch)[0]
-        actions = self.unnormalize_outputs({ACTION: actions})[ACTION]
+        #actions = self.unnormalize_outputs({ACTION: actions})[ACTION]
         return actions        
 
     @torch.no_grad()
@@ -85,6 +112,32 @@ class NormalizationMode(str, Enum):
     MIN_MAX = "MIN_MAX"
     MEAN_STD = "MEAN_STD"
     IDENTITY = "IDENTITY"
+
+class OptimizerConfig(abc.ABC):
+    lr: float
+    weight_decay: float
+    grad_clip_norm: float
+
+    @property
+    def type(self) -> str:
+        return self.get_choice_name(self.__class__)
+
+    @classmethod
+    def default_choice_name(cls) -> str | None:
+        return "adam"
+
+    @abc.abstractmethod
+    def build(self) -> torch.optim.Optimizer | dict[str, torch.optim.Optimizer]:
+        """
+        Build the optimizer. It can be a single optimizer or a dictionary of optimizers.
+        NOTE: Multiple optimizers are useful when you have different models to optimize.
+        For example, you can have one optimizer for the policy and another one for the value function
+        in reinforcement learning settings.
+
+        Returns:
+            The optimizer or a dictionary of optimizers.
+        """
+        raise NotImplementedError
 
 @dataclass
 class AdamWConfig(OptimizerConfig):
@@ -291,6 +344,49 @@ class ACTConfig:#(PreTrainedConfig):
     @property
     def reward_delta_indices(self) -> None:
         return None
+    
+    @property
+    def robot_state_feature(self) -> PolicyFeature | None:
+        for ft_name, ft in self.input_features.items():
+            if ft.type is FeatureType.STATE and ft_name == OBS_STATE:
+                return ft
+        return None
+
+    @property
+    def image_features(self) -> dict[str, PolicyFeature]:
+        return {key: ft for key, ft in self.input_features.items() if ft.type is FeatureType.VISUAL}
+
+    @property
+    def env_state_feature(self) -> PolicyFeature | None:
+        for _, ft in self.input_features.items():
+            if ft.type is FeatureType.ENV:
+                return ft
+        return None
+    
+    def __post_init__(self):
+        self.pretrained_path = None
+        self.use_amp = False
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        '''
+        if not self.device or not is_torch_device_available(self.device):
+            auto_device = auto_select_torch_device()
+            logging.warning(f"Device '{self.device}' is not available. Switching to '{auto_device}'.")
+            self.device = auto_device.type
+
+        # Automatically deactivate AMP if necessary
+        if self.use_amp and not is_amp_available(self.device):
+            logging.warning(
+                f"Automatic Mixed Precision (amp) is not available on device '{self.device}'. Deactivating AMP."
+            )
+            self.use_amp = False
+        '''
+    
+    @property
+    def action_feature(self) -> PolicyFeature | None:
+        for ft_name, ft in self.output_features.items():
+            if ft.type is FeatureType.ACTION and ft_name == ACTION:
+                return ft
+        return None
 
 
 
@@ -458,6 +554,8 @@ class ACT(nn.Module):
 
             if self.config.robot_state_feature:
                 vae_encoder_input = [cls_embed, robot_state_embed, action_embed]  # (B, S+2, D)
+                for el in vae_encoder_input:
+                    print(el.shape)
             else:
                 vae_encoder_input = [cls_embed, action_embed]
             vae_encoder_input = torch.cat(vae_encoder_input, axis=1)
@@ -790,3 +888,20 @@ def get_activation_fn(activation: str) -> Callable:
     if activation == "glu":
         return F.glu
     raise RuntimeError(f"activation should be relu/gelu/glu, not {activation}.")
+
+
+if __name__ == "__main__":
+    model = ACTModel((10,), (10,))
+
+    batch = {
+        'observation.images': torch.randn(2, 3, 224, 224),
+        'action': torch.randn(2, 100, 10,),
+        'observation.state': torch.randn(2,10,),
+        "action_is_pad": torch.zeros(2, 100, dtype=torch.bool),
+    }
+    model.eval()
+    action = model(batch)
+    print(action.shape)
+    model.train()
+    loss = model(batch)
+    print(loss)
