@@ -8,7 +8,7 @@ dependencies = [
   "opencv-python",
   "pyrealsense2",
   "fastapi[standard]",
-  "lerobot[all]>=0.3.3",
+  "lerobot[feetech]>=0.3.3",
   "numpy",
   "websockets",
 ]
