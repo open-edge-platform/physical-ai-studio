@@ -28,6 +28,7 @@ export const paths = {
     projects: {
         index: projects,
         new: projects.path('/new'),
+        edit: projects.path('/edit/:projectId'),
     },
     robotConfiguration: {
         index: robotConfiguration,
@@ -68,6 +69,10 @@ export const router = createBrowserRouter([
                     {
                         path: paths.projects.new.pattern,
                         element: <NewProject />,
+                    },
+                    {
+                        path: paths.projects.edit.pattern,
+                        element: <>Edit</>,
                     },
 
                 ]

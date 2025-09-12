@@ -45,12 +45,23 @@ interface ProjectItemProps {
 }
 
 const ProjectItem = ({ project }: ProjectItemProps) => {
+  const navigate = useNavigate();
   return (
+    <div
+      style={{
+        display: 'flex',
+        flex: 1,
+        width: "calc(50% - size-275 / 2)",
+        cursor: "pointer",
+      }}
+      onClick={() => navigate(paths.projects.edit({projectId: project.id}))}
+    >
+
     <View
       borderColor={"gray-200"}
       borderWidth={"thin"}
       borderRadius={"regular"}
-      width="calc(50% - size-275 / 2)"
+      width="100%"
       backgroundColor={'gray-50'}
       height="156px"
       padding="size-300"
@@ -58,12 +69,13 @@ const ProjectItem = ({ project }: ProjectItemProps) => {
       <Flex direction={'column'} height={'100%'} justifyContent={'space-between'}>
         <Heading>{project.name}</Heading>
         <Flex direction={'column'}>
-          <Text>Datsets: {project.datasets.join(", ")}</Text>
+          <Text>Datasets: {project.datasets.join(", ")}</Text>
           <Text>Cameras: {project.cameras.map((c) => c.name).join(", ")}</Text>
           <Text>Robots: {project.robots.map((c) => c.id).join(", ")}</Text>
         </Flex>
       </Flex>
     </View>
+    </div>
   )
 }
 

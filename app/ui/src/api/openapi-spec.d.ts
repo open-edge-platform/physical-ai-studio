@@ -16,7 +16,11 @@ export interface paths {
          * @description Get all projects
          */
         get: operations['get_projects_api_projects_get'];
-        put?: never;
+        /**
+         * Create Project
+         * @description Create a new project
+         */
+        put: operations['create_project_api_projects_put'];
         post?: never;
         delete?: never;
         options?: never;
@@ -292,6 +296,39 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ProjectConfig'][];
+                };
+            };
+        };
+    };
+    create_project_api_projects_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ProjectConfig'];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['HTTPValidationError'];
                 };
             };
         };

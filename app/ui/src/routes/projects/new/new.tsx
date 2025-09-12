@@ -4,17 +4,34 @@ import { CamerasView } from './cameras';
 import { RobotsView } from './robots';
 import { PropertiesView } from './properties';
 import { Gear, Contract, FitScreen } from '@geti/ui/icons';
+import { $api } from '../../../api/client';
+import { useNavigate } from 'react-router';
+import { paths } from '../../../router';
 
 
 export const ProjectForm = () => {
-    const { isValid, isCameraSetupValid, isRobotSetupValid } = useProjectDataContext();
+    const { project, isValid, isCameraSetupValid, isRobotSetupValid } = useProjectDataContext();
+
+    const navigate = useNavigate();
+
+    const saveMutation = $api.useMutation('put','/api/projects')
+
+    const save = () => {
+        console.log(project);
+        saveMutation.mutateAsync({
+            body: project
+        }).then((projectId) => {
+            navigate(paths.projects.edit({projectId}));
+        })
+    }
+
     return (
         <Flex width="100%" height="100%" direction={"column"} alignItems="center">
             <View flex={1} width={"100%"} maxWidth="1320px" paddingTop="size-400">
                 <Flex justifyContent={"space-between"}>
                     <Heading>New Project</Heading>
                     <ButtonGroup>
-                        <Button isDisabled={!isValid()}>Save</Button>
+                        <Button isDisabled={!isValid() || saveMutation.isPending} onPress={save}>Save</Button>
                     </ButtonGroup>
                 </Flex>
                 <Tabs aria-label="NewProject">

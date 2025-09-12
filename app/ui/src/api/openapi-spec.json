@@ -21,6 +21,31 @@
                         }
                     }
                 }
+            },
+            "put": {
+                "summary": "Create Project",
+                "description": "Create a new project",
+                "operationId": "create_project_api_projects_put",
+                "requestBody": {
+                    "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProjectConfig" } } },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": { "type": "string", "title": "Response Create Project Api Projects Put" }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } }
+                        }
+                    }
+                }
             }
         },
         "/api/hardware/cameras": {
