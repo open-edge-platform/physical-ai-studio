@@ -12,10 +12,12 @@ class CameraConfig(BaseModel):
     fps: int = Field(30, description="Camera fps")
     use_depth: bool = Field(False, description="Use Depth from RealSense")
 
+
 class CameraProfile(BaseModel):
     width: int
     height: int
     fps: int
+
 
 class Camera(BaseModel):
     name: str = Field(description="Camera name")

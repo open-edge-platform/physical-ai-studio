@@ -6,6 +6,7 @@ from lerobot.find_cameras import find_all_opencv_cameras as le_robot_find_all_op
 
 VIDEO4LINUX_PATH = "/sys/class/video4linux"
 
+
 def get_realsense_dev_ports() -> list[str]:
     """
     Use video4linux to get the /dev/video* ports of realsense cameras
@@ -24,6 +25,7 @@ def get_realsense_dev_ports() -> list[str]:
         pass
     return realsense_ports
 
+
 def add_device_name_to_opencv_camera(camera: dict[str, Any]) -> dict[str, Any]:
     """Uses video4linux to get a better name for the camera"""
     port = os.path.basename(camera["id"])
@@ -36,6 +38,7 @@ def add_device_name_to_opencv_camera(camera: dict[str, Any]) -> dict[str, Any]:
         pass
 
     return camera
+
 
 def find_all_opencv_cameras() -> list[dict[str, Any]]:
     """Get all cameras that are not realsense and find a more user friendly name"""

@@ -10,17 +10,14 @@ available_ports = list_ports.comports()
 
 
 def from_port(port: ListPortInfo, device_name: str) -> RobotPortInfo | None:
-    """ Detect if the device is a SO-100 robot.π """
+    """Detect if the device is a SO-100 robot.π"""
     # The Feetech UART board CH340 has PID 29987
     if port.pid in {21971, 29987}:
-            # The serial number is not always available
-            serial_number = port.serial_number or "no_serial"
-            return RobotPortInfo(
-                port=port.device,
-                serial_id=serial_number,
-                device_name= device_name
-            )
+        # The serial number is not always available
+        serial_number = port.serial_number or "no_serial"
+        return RobotPortInfo(port=port.device, serial_id=serial_number, device_name=device_name)
     return None
+
 
 class RobotConnectionManager:
     _all_robots: list[RobotPortInfo] = []
@@ -51,26 +48,20 @@ class RobotConnectionManager:
         for port in self.available_ports:
             serial_num = getattr(port, "serial_number", None)
             # Skip if this port or its serial has already been connected
-            if port.device in connected_devices or (
-                serial_num and serial_num in connected_serials
-            ):
+            if port.device in connected_devices or (serial_num and serial_num in connected_serials):
                 print(f"Skipping {port.device}: already connected (or alias).")
                 continue
 
             for name in [
                 "so-100",
             ]:
-                print(
-                    f"Trying to connect to {name} on {port.device}."
-                )
+                print(f"Trying to connect to {name} on {port.device}.")
                 robot = from_port(port, device_name=name)
                 if robot is None:
-                    print(
-                        f"Failed to create robot from {name} on {port.device}."
-                    )
+                    print(f"Failed to create robot from {name} on {port.device}.")
                     continue
                 print(f"Robot created: {robot}")
-                #await robot.connect()
+                # await robot.connect()
 
                 if robot is not None:
                     print(f"Connected to {name} on {port.device}.")
@@ -83,6 +74,7 @@ class RobotConnectionManager:
 
         if not self._all_robots:
             print("No robot connected.")
+
 
 async def find_robots() -> list[RobotPortInfo]:
     """Find all robots connected via serial"""
@@ -99,7 +91,7 @@ async def identify_robot_visually(robot: RobotPortInfo, joint: str | None = None
     if joint is None:
         joint = "gripper"
 
-    #Assume follower since leader shares same FeetechMotorBus layout
+    # Assume follower since leader shares same FeetechMotorBus layout
     robot = SO101Follower(SO101FollowerConfig(port=robot.port))
     robot.bus.connect()
 

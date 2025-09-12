@@ -8,6 +8,7 @@ class RobotConfig(BaseModel):
     type: Literal["follower", "leader"]
     serial_id: str = Field(description="Serial port id")
 
+
 class RobotPortInfo(BaseModel):
     port: str
     serial_id: str
