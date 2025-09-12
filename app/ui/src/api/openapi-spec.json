@@ -48,6 +48,30 @@
                 }
             }
         },
+        "/api/projects/{id}": {
+            "get": {
+                "summary": "Get Project",
+                "description": "Get project by id",
+                "operationId": "get_project_api_projects__id__get",
+                "parameters": [
+                    { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "title": "Id" } }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": { "schema": { "$ref": "#/components/schemas/ProjectConfig" } }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } }
+                        }
+                    }
+                }
+            }
+        },
         "/api/hardware/cameras": {
             "get": {
                 "summary": "Get Cameras",

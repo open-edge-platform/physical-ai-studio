@@ -53,7 +53,7 @@ const ProjectItem = ({ project }: ProjectItemProps) => {
                 width: 'calc(50% - size-275 / 2)',
                 cursor: 'pointer',
             }}
-            onClick={() => navigate(paths.projects.edit({ projectId: project.id }))}
+            onClick={() => navigate(paths.project.datasets({ project_id: project.id }))}
         >
             <View
                 borderColor={'gray-200'}

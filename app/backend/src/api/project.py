@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
 from schemas import ProjectConfig
-from storage.storage import load_projects, write_project
+from storage.storage import load_project, load_projects, write_project
 
 router = APIRouter()
 
@@ -18,3 +18,9 @@ async def create_project(project: ProjectConfig) -> str:
     """Create a new project"""
     write_project(project)
     return project.id
+
+@router.get("/{id}")
+async def get_project(id: str) -> ProjectConfig:
+    """Get project by id"""
+
+    return load_project(id)
