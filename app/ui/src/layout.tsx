@@ -42,6 +42,11 @@ const Header = () => {
                             Models
                         </Flex>
                     </Item>
+                    <Item textValue='Life inference' key={paths.openapi({})} href={paths.openapi({})}>
+                        <Flex alignItems='center' gap='size-100'>
+                            OpenAPI
+                        </Flex>
+                    </Item>
                 </TabList>
             </Flex>
         </View>
@@ -70,16 +75,19 @@ export const Layout = () => {
                 <Header />
                 <View backgroundColor={'gray-75'} gridArea={'content'}>
                     <TabPanels height={'100%'} UNSAFE_style={{ border: 'none' }}>
-                        <Item textValue='index' key={paths.projects.index({})}>
+                        <Item textValue='Projects' key={paths.projects.index({})}>
                             <Outlet />
                         </Item>
-                        <Item textValue='index' key={paths.robotConfiguration.index({})}>
+                        <Item textValue='Robot configuration route' key={paths.robotConfiguration.index({})}>
                             <Outlet />
                         </Item>
-                        <Item textValue='index' key={paths.datasets.index({})}>
+                        <Item textValue='Datasets route' key={paths.datasets.index({})}>
                             <Outlet />
                         </Item>
-                        <Item textValue='index' key={paths.models.index({})}>
+                        <Item textValue='Models route' key={paths.models.index({})}>
+                            <Outlet />
+                        </Item>
+                        <Item textValue='OpenAPI route' key={paths.openapi({})}>
                             <Outlet />
                         </Item>
                     </TabPanels>
