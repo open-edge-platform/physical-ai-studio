@@ -10,7 +10,6 @@ from abc import ABC
 from typing import TYPE_CHECKING
 
 import lightning as L
-import numpy as np
 import torch
 from torch import nn
 
@@ -99,10 +98,8 @@ class ActionTrainerModule(L.LightningModule, ABC):
         frames = []
         done = False
         step_count = 0
-        max_episode_steps = env.get_max_episode_steps()
-        max_episode_steps = np.inf if max_episode_steps is None else max_episode_steps
 
-        while not done and step_count < max_episode_steps:
+        while not done:
             observation = self.process_observation(obs)
             frames.append(obs["pixels"].transpose(2, 0, 1))
 
@@ -113,9 +110,12 @@ class ActionTrainerModule(L.LightningModule, ABC):
 
             action_np = action.squeeze(0).detach().cpu().numpy()
             obs, reward, terminated, truncated, _ = env.step(action_np)
+
             rewards.append(reward)
             step_count += 1
+
             done = terminated or truncated
+            print(f"step count {step_count} = {done}")
 
         return {
             "success": terminated,
