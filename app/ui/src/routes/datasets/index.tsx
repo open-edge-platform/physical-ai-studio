@@ -1,39 +1,57 @@
 import { $api } from '../../api/client';
 import { ErrorMessage } from '../../components/error-page/error-page';
 import { useProject } from '../projects/project.provider';
-import { View, Text, Flex, Divider, Well, Tabs, TabList, TabPanels, Item } from '@geti/ui'
+import { View, ActionButton, Text, Flex, Key, Well, Tabs, TabList, TabPanels, Item } from '@geti/ui'
 import { DatasetViewer } from './dataset-viewer';
 import { DatasetProvider } from './dataset.provider';
+import { Add } from '@geti/ui/icons';
 
 export const Index = () => {
     const { project } = useProject();
+    const datasets = project.datasets;
     const dataset = project.datasets[0];
+    if (datasets.length === 0) {
+        return <div>No datasets yet!</div>
+    }
+
+    const onSelectionChange = (key: Key) => {
+        if (key.toString() === "#new-dataset") {
+            alert("Navigate to new dataset");
+        }
+    }
+
     return (
-        <Flex direction={'column'} height={'100%'}>
-            <Tabs>
-                <TabList>
-                    <Item key="Test 1">Test</Item>
-                    <Item key="Test 2">Test</Item>
-                </TabList>
+        <View padding="size-200" flex="1">
+            <Flex height="100%">
+                <Tabs onSelectionChange={onSelectionChange} flex="1">
+                    <TabList>
+                        {[
+                            ...datasets.map((dataset) => <Item key={dataset}>{dataset}</Item>),
+                            <Item key="#new-dataset"><Add fill="white" height="10px" /> New dataset</Item>
+                        ]}
+                    </TabList>
 
-                <TabPanels>
-                    <Item key="Test 1">
-                        <Well flex={1}>
-                            {dataset === undefined
-                                ? <Text>No datasets yet...</Text>
-                                : (
-                                    <DatasetProvider project_id={project.id} repo_id={dataset}>
-                                        <DatasetViewer />
-                                    </DatasetProvider>
-                                    )
-                            }
-                        </Well>
-                  
-                    </Item>
+                    <TabPanels>
+                        <Item key={dataset}>
+                            <Flex height="100%">
+                                <Well flex={1}>
+                                    {dataset === undefined
+                                        ? <Text>No datasets yet...</Text>
+                                        : (
+                                            <DatasetProvider project_id={project.id} repo_id={dataset}>
+                                                <DatasetViewer />
+                                            </DatasetProvider>
+                                        )
+                                    }
+                                </Well>
+                            </Flex>
 
-                </TabPanels>
+                        </Item>
 
-            </Tabs>
-        </Flex>
+                    </TabPanels>
+
+                </Tabs>
+            </Flex>
+        </View>
     )
 };

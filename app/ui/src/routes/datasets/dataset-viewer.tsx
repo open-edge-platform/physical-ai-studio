@@ -9,10 +9,8 @@ interface Key {
 }
 export const DatasetViewer = () => {
     const { dataset } = useDataset();
-
-    const [episodeIndexKey, setEpisodeIndexKey] = useState<Selection>();
-    const episodeIndex = episodeIndexKey && (episodeIndexKey as unknown as Key).currentKey;
-
+    const [episodeIndexKey, setEpisodeIndexKey] = useState<Selection>(new Set([0]));
+    const [currentEpisode] = (episodeIndexKey as Set<number>);
     const episodes = dataset.episodes.map((m, index) => ({ id: index, name: `Episode ${index + 1}` }));
 
     return (
@@ -27,9 +25,9 @@ export const DatasetViewer = () => {
                     {(item) => <Item>{item.name}</Item>}
                 </ListView>
             </View>
-            {episodeIndex !== undefined && (
+            {currentEpisode !== undefined && (
                 <View flex={1}>
-                    <EpisodeViewer episodeIndex={episodeIndex} episode={dataset.episodes[episodeIndex]} />
+                    <EpisodeViewer episodeIndex={currentEpisode} episode={dataset.episodes[currentEpisode]} />
                 </View>
             )}
         </Flex>

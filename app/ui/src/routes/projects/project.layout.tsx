@@ -72,7 +72,7 @@ export const ProjectLayout = () => {
                     >
                         <Header project_id={project_id} />
                         <View backgroundColor={'gray-75'} gridArea={'content'}>
-                            <TabPanels height={'100%'} UNSAFE_style={{ border: 'none' }}>
+                            <TabPanels height={'100%'} UNSAFE_style={{ border: 'none', display: 'flex' }}>
                                 <Item
                                     textValue='Robot configuration'
                                     key={paths.project.robotConfiguration({ project_id })}
