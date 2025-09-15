@@ -3,6 +3,7 @@
 
 
 import abc
+from action_trainer.data.dataclasses import NormalizationMap, NormalizationParameters
 import torch
 from torch import nn
 from dataclasses import dataclass, field, asdict
@@ -24,47 +25,67 @@ from torchvision.ops.misc import FrozenBatchNorm2d
 from enum import Enum
 
 
-OBS_ENV_STATE = "observation.environment_state"
 OBS_STATE = "observation.state"
-OBS_IMAGE = "observation.image"
 OBS_IMAGES = "observation.images"
 ACTION = "action"
-REWARD = "next.reward"
 
-ROBOTS = "robots"
-ROBOT_TYPE = "robot_type"
-TELEOPERATORS = "teleoperators"
 
-# files & directories
-CHECKPOINTS_DIR = "checkpoints"
-LAST_CHECKPOINT_LINK = "last"
-PRETRAINED_MODEL_DIR = "pretrained_model"
-TRAINING_STATE_DIR = "training_state"
-RNG_STATE = "rng_state.safetensors"
-TRAINING_STEP = "training_step.json"
-OPTIMIZER_STATE = "optimizer_state.safetensors"
-OPTIMIZER_PARAM_GROUPS = "optimizer_param_groups.json"
-SCHEDULER_STATE = "scheduler_state.json"
+class NormalizeTransform:
+    def __init__(self, normalization_parameters: dict, inverse: bool = False) -> None:
+        self._normalization_parameters = normalization_parameters
+        self._inverse = inverse
+
+    def _apply_normalization(self, tensor: torch.Tensor, params: NormalizationParameters) -> torch.Tensor:
+        if params.method == NormalizationMode.MIN_MAX:
+            if params.min is None or params.max is None:
+                raise ValueError("Min and max must be provided for min-max normalization.")
+            if self._inverse:
+                tensor = tensor * (params.max - params.min) / 2 + (params.max + params.min) / 2
+            else:
+                tensor = 2 * (tensor - params.min) / (params.max - params.min) - 1
+        elif params.method == NormalizationMode.MEAN_STD:
+            if params.mean is None or params.std is None:
+                raise ValueError("Mean and std must be provided for mean-std normalization.")
+            if self._inverse:
+                tensor = tensor * params.std + params.mean
+            else:
+                tensor = (tensor - params.mean) / params.std
+        else:
+            raise ValueError(f"Unknown normalization method: {params.method}")
+
+        return tensor
+
+    def __call__(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        for k in self._normalization_parameters:
+            if k in batch:
+                params = self._normalization_parameters[k]
+                batch[k] = self._apply_normalization(batch[k], params)
+
+        return batch
 
 
 class ACTModel(nn.Module):
-    def __init__(self, action_shape: tuple[int, ...] | int, robot_state_shape: tuple[int, ...] | int) -> None:
+    def __init__(self, action_shape: tuple[int, ...] | int, robot_state_shape: tuple[int, ...] | int,
+                 chunk_size: int = 100, normalization_map: NormalizationMap | None = None
+                 ) -> None:
         super().__init__()
 
-        input_features = {"observation.images": PolicyFeature(type=FeatureType.VISUAL, shape=(3,224, 224)), 
+        input_features = {"observation.images": PolicyFeature(type=FeatureType.VISUAL, shape=(3,224, 224)),
                             "observation.state": PolicyFeature(type=FeatureType.STATE, shape=robot_state_shape)}
         output_features = {"action": PolicyFeature(type=FeatureType.ACTION, shape=action_shape)}
-        self.config = ACTConfig(input_features=input_features, output_features=output_features)
+        self.config = ACTConfig(input_features=input_features, output_features=output_features, chunk_size=chunk_size)
+        self.input_normalizer = NormalizeTransform({OBS_STATE: normalization_map.state,
+                                                    OBS_IMAGES: normalization_map.images})
+        self.output_denormalizer = NormalizeTransform({ACTION: normalization_map.action}, inverse=True)
         self._model = ACT(self.config)
 
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         if self._model.training:
-            #batch = self.normalize_inputs(batch)
+            batch = self.input_normalizer(batch)
             if self.config.image_features:
                 batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
                 batch[OBS_IMAGES] = [batch[key] for key in self.config.image_features]
 
-            #batch = self.normalize_targets(batch)
             actions_hat, (mu_hat, log_sigma_x2_hat) = self._model(batch)
 
             l1_loss = (
@@ -94,19 +115,19 @@ class ACTModel(nn.Module):
         """Predict a chunk of actions given environment observations."""
         self.eval()
 
-        #batch = self.normalize_inputs(batch)
+        batch = self.input_normalizer(batch)
         if self.config.image_features:
             batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
             batch[OBS_IMAGES] = [batch[key] for key in self.config.image_features]
 
-        actions = self._model(batch)[0]
-        #actions = self.unnormalize_outputs({ACTION: actions})[ACTION]
-        return actions        
+        actions = self._model(batch)[0] # only select the actions, ignore the latent params
+        actions = self.output_denormalizer({ACTION: actions})[ACTION]
+        return actions
 
     @torch.no_grad()
     def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         pass
-    
+
 
 class NormalizationMode(str, Enum):
     MIN_MAX = "MIN_MAX"
@@ -153,13 +174,11 @@ class AdamWConfig(OptimizerConfig):
         return torch.optim.AdamW(params, **kwargs)
 
 
-
 class FeatureType(str, Enum):
     STATE = "STATE"
     VISUAL = "VISUAL"
     ENV = "ENV"
     ACTION = "ACTION"
-    REWARD = "REWARD"
 
 
 @dataclass
@@ -342,10 +361,6 @@ class ACTConfig:#(PreTrainedConfig):
         return list(range(self.chunk_size))
 
     @property
-    def reward_delta_indices(self) -> None:
-        return None
-    
-    @property
     def robot_state_feature(self) -> PolicyFeature | None:
         for ft_name, ft in self.input_features.items():
             if ft.type is FeatureType.STATE and ft_name == OBS_STATE:
@@ -362,7 +377,7 @@ class ACTConfig:#(PreTrainedConfig):
             if ft.type is FeatureType.ENV:
                 return ft
         return None
-    
+
     def __post_init__(self):
         self.pretrained_path = None
         self.use_amp = False
@@ -380,7 +395,7 @@ class ACTConfig:#(PreTrainedConfig):
             )
             self.use_amp = False
         '''
-    
+
     @property
     def action_feature(self) -> PolicyFeature | None:
         for ft_name, ft in self.output_features.items():
@@ -554,8 +569,6 @@ class ACT(nn.Module):
 
             if self.config.robot_state_feature:
                 vae_encoder_input = [cls_embed, robot_state_embed, action_embed]  # (B, S+2, D)
-                for el in vae_encoder_input:
-                    print(el.shape)
             else:
                 vae_encoder_input = [cls_embed, action_embed]
             vae_encoder_input = torch.cat(vae_encoder_input, axis=1)
@@ -891,7 +904,10 @@ def get_activation_fn(activation: str) -> Callable:
 
 
 if __name__ == "__main__":
-    model = ACTModel((10,), (10,))
+    normalization_config = NormalizationMap(state=NormalizationParameters(method=NormalizationMode.MIN_MAX, min=0, max=1),
+                                            action=NormalizationParameters(method=NormalizationMode.MIN_MAX, min=0, max=1),
+                                            images=NormalizationParameters(method=NormalizationMode.MEAN_STD, mean=0, std=1))
+    model = ACTModel((10,), (10,), chunk_size=100, normalization_map=normalization_config)
 
     batch = {
         'observation.images': torch.randn(2, 3, 224, 224),
