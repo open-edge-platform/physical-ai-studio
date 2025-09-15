@@ -20,7 +20,7 @@ export const ProjectForm = () => {
                 body: project,
             })
             .then((project_id) => {
-                navigate(paths.project.index({ project_id }));
+                navigate(paths.project.datasets.index({ project_id }));
             });
     };
 

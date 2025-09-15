@@ -8,16 +8,16 @@ import { path } from 'static-path';
 import { ErrorPage } from './components/error-page/error-page';
 import { Layout } from './layout';
 import { Index as Datasets } from './routes/datasets/index';
+import { Record } from './routes/datasets/record/record';
 import { Index as Models } from './routes/models/index';
 import { Index as Projects } from './routes/projects/index';
 import { NewProject } from './routes/projects/new/new';
-import { Index as RobotConfiguration } from './routes/robot-configuration/index';
 import { ProjectLayout } from './routes/projects/project.layout';
-import { Record } from './routes/datasets/record/record';
+import { Index as RobotConfiguration } from './routes/robot-configuration/index';
 
 const root = path('/');
 const projects = root.path('/projects');
-const project = root.path('/project/:project_id')
+const project = root.path('/project/:project_id');
 const inference = root.path('/inference');
 const robotConfiguration = project.path('/robot-configuration');
 const datasets = project.path('/datasets');
@@ -39,7 +39,7 @@ export const paths = {
         },
         robotConfiguration,
         models,
-    }
+    },
 };
 
 export const router = createBrowserRouter([
@@ -64,8 +64,7 @@ export const router = createBrowserRouter([
                         path: paths.projects.new.pattern,
                         element: <NewProject />,
                     },
-                ]
-
+                ],
             },
             {
                 element: <ProjectLayout />,
@@ -81,7 +80,7 @@ export const router = createBrowserRouter([
                                 path: paths.project.datasets.record.pattern,
                                 element: <Record />,
                             },
-                        ]
+                        ],
                     },
                     {
                         path: paths.project.models.pattern,
@@ -91,7 +90,7 @@ export const router = createBrowserRouter([
                         path: paths.project.robotConfiguration.pattern,
                         element: <RobotConfiguration />,
                     },
-                ]
+                ],
             },
             {
                 path: '*',

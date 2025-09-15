@@ -1,11 +1,13 @@
-from lerobot.datasets.lerobot_dataset import LeRobotDataset
-
-from schemas import EpisodeInfo, Dataset, Episode
-import torch
 from os import path, stat
 
+import torch
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+from schemas import Dataset, Episode, EpisodeInfo
+
+
 def get_dataset(repo_id: str) -> Dataset:
-    """Load dataset from LeRobot cache and get info """
+    """Load dataset from LeRobot cache and get info"""
     dataset = LeRobotDataset(repo_id)
     metadata = dataset.meta
     episodes = metadata.episodes
@@ -21,12 +23,14 @@ def get_dataset(repo_id: str) -> Dataset:
     for episode_index in episodes:
         full_path = path.join(metadata.root, metadata.get_data_file_path(episode_index))
         stat_result = stat(full_path)
-        result.episodes.append(Episode(
-            actions = get_episode_actions(dataset, episodes[episode_index]),
-            fps = metadata.fps,
-            modification_timestamp = stat_result.st_mtime_ns // 1e6,
-            **episodes[episode_index]
-        ))
+        result.episodes.append(
+            Episode(
+                actions=get_episode_actions(dataset, episodes[episode_index]),
+                fps=metadata.fps,
+                modification_timestamp=stat_result.st_mtime_ns // 1e6,
+                **episodes[episode_index],
+            )
+        )
 
     return result
 
@@ -37,5 +41,4 @@ def get_episode_actions(dataset: LeRobotDataset, episode: EpisodeInfo) -> torch.
     from_idx = dataset.episode_data_index["from"][episode_index].item()
     to_idx = dataset.episode_data_index["to"][episode_index].item()
     actions = dataset.hf_dataset["action"][from_idx:to_idx]
-    actions_tensor = torch.stack(actions)
-    return actions_tensor
+    return torch.stack(actions)

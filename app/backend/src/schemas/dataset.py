@@ -1,10 +1,11 @@
-from pydantic import BaseModel, Field
-from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
+from pydantic import BaseModel
+
 
 class EpisodeInfo(BaseModel):
     episode_index: int
     tasks: list[str]
     length: int
+
 
 class Episode(BaseModel):
     episode_index: int
@@ -13,6 +14,7 @@ class Episode(BaseModel):
     tasks: list[str]
     actions: list[list[float]]
     modification_timestamp: int
+
 
 class Dataset(BaseModel):
     repo_id: str

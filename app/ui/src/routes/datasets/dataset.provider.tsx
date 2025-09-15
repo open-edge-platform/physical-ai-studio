@@ -1,13 +1,12 @@
-import { createContext, ReactNode, useContext } from "react";
-import { SchemaDataset } from "../../api/openapi-spec";
-import { $api } from "../../api/client";
+import { createContext, ReactNode, useContext } from 'react';
 
+import { $api } from '../../api/client';
+import { SchemaDataset } from '../../api/openapi-spec';
 
 interface DatasetContext {
-    dataset: SchemaDataset
+    dataset: SchemaDataset;
 }
 export const DatasetContext = createContext<DatasetContext | undefined>(undefined);
-
 
 interface DatasetProviderProps {
     children: ReactNode;
@@ -15,20 +14,21 @@ interface DatasetProviderProps {
     repo_id: string;
 }
 export const DatasetProvider = ({ children, project_id, repo_id }: DatasetProviderProps) => {
-    const [repo, id] = repo_id.split("/");
-    const {data: dataset} = $api.useSuspenseQuery('get','/api/projects/{project_id}/datasets/{repo}/{id}', {
+    const [repo, id] = repo_id.split('/');
+    const { data: dataset } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/datasets/{repo}/{id}', {
         params: { path: { project_id, repo, id } },
     });
 
     return (
-        <DatasetContext.Provider value={{
-            dataset,
-        }}>
+        <DatasetContext.Provider
+            value={{
+                dataset,
+            }}
+        >
             {children}
         </DatasetContext.Provider>
-    )
-}
-
+    );
+};
 
 export function useDataset(): DatasetContext {
     const context = useContext(DatasetContext);
@@ -39,4 +39,3 @@ export function useDataset(): DatasetContext {
 
     return context;
 }
-

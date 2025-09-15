@@ -1,3 +1,7 @@
+from collections.abc import Generator
+from typing import Literal
+
+import cv2
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from lerobot.find_cameras import find_all_realsense_cameras
@@ -6,11 +10,6 @@ from schemas import CalibrationConfig, Camera, RobotPortInfo
 from utils.calibration import get_calibrations
 from utils.camera import find_all_opencv_cameras
 from utils.robot import find_robots, identify_robot_visually
-
-from pydantic import BaseModel
-from typing import Literal, Generator
-
-import cv2
 
 router = APIRouter()
 
@@ -46,33 +45,22 @@ def gen_frames(id: str, type: Literal["RealSense", "OpenCV"]) -> Generator[bytes
     """
 
     if type == "OpenCV":
-        camera = cv2.VideoCapture(id)        
+        camera = cv2.VideoCapture(id)
     while True:
         success, frame = camera.read()
         if not success:
-            # If the frame could not be captured, stop the generator.
             break
 
-        # Encode frame as JPEG
-        ret, buffer = cv2.imencode('.jpg', frame)
+        ret, buffer = cv2.imencode(".jpg", frame)
         if not ret:
             continue
 
-        # Convert to bytes
         jpg_bytes = buffer.tobytes()
 
-        # Yield in multipart format
-        #   --frame\r\n
-        #   Content-Type: image/jpeg\r\n\r\n
-        #   <binary data>\r\n
-        yield (
-            b'--frame\r\n'
-            b'Content-Type: image/jpeg\r\n\r\n' + jpg_bytes + b'\r\n'
-        )
+        yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpg_bytes + b"\r\n")
+
 
 @router.get("/camera_feed")
 async def get_camera_feed(id: str, type: Literal["RealSense", "OpenCV"]) -> StreamingResponse:
-    return StreamingResponse(
-        gen_frames(id, type),
-        media_type='multipart/x-mixed-replace; boundary=frame'
-    )
+    """Get a streaming response from the camera"""
+    return StreamingResponse(gen_frames(id, type), media_type="multipart/x-mixed-replace; boundary=frame")

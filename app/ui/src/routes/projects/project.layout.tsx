@@ -1,11 +1,9 @@
-import { Outlet, useLocation, useNavigate, useParams } from "react-router"
-import { ProjectProvider } from "./project.provider";
-import { redirect } from 'react-router';
-import { paths } from "../../router";
 import { ActionButton, Flex, Grid, Item, TabList, TabPanels, Tabs, View } from '@geti/ui';
-import { ChevronLeft } from "@geti/ui/icons";
+import { ChevronLeft } from '@geti/ui/icons';
+import { Outlet, redirect, useLocation, useNavigate, useParams } from 'react-router';
 
-
+import { paths } from '../../router';
+import { ProjectProvider } from './project.provider';
 
 const Header = ({ project_id }: { project_id: string }) => {
     const navigate = useNavigate();
@@ -26,7 +24,11 @@ const Header = ({ project_id }: { project_id: string }) => {
                         '--spectrum-tabs-selection-indicator-color': 'var(--energy-blue)',
                     }}
                 >
-                    <Item textValue='Life inference' key={'datasets'} href={paths.project.datasets.index({ project_id })}>
+                    <Item
+                        textValue='Life inference'
+                        key={'datasets'}
+                        href={paths.project.datasets.index({ project_id })}
+                    >
                         <Flex alignItems='center' gap='size-100'>
                             Datasets
                         </Flex>
@@ -52,22 +54,21 @@ const Header = ({ project_id }: { project_id: string }) => {
 };
 
 const getMainPageInProjectUrl = (pathname: string) => {
-    const regexp = /\/project\/[\w-]*\/([\w-]*)/g
+    const regexp = /\/project\/[\w-]*\/([\w-]*)/g;
     const found = [...pathname.matchAll(regexp)];
     if (found.length) {
         const [_base, main] = found[0];
         return main;
     } else {
-        return "datasets";
+        return 'datasets';
     }
-}
+};
 
 export const ProjectLayout = () => {
     const { project_id } = useParams();
     const { pathname } = useLocation();
 
     const pageName = getMainPageInProjectUrl(pathname);
-    console.log(pageName)
 
     if (project_id === undefined) {
         redirect(paths.root.pattern);
@@ -87,15 +88,13 @@ export const ProjectLayout = () => {
                         <Header project_id={project_id} />
                         <View backgroundColor={'gray-75'} gridArea={'content'}>
                             <TabPanels height={'100%'} UNSAFE_style={{ border: 'none', display: 'flex' }}>
-                                <Item
-                                    textValue='Robot configuration'
-                                    key={'robot-configuration'}>
+                                <Item textValue='Robot configuration' key={'robot-configuration'}>
                                     <Outlet />
                                 </Item>
-                                <Item textValue='Life inference' key="datasets">
+                                <Item textValue='Life inference' key='datasets'>
                                     <Outlet />
                                 </Item>
-                                <Item textValue='Life inference' key="models">
+                                <Item textValue='Life inference' key='models'>
                                     <Outlet />
                                 </Item>
                             </TabPanels>
@@ -105,4 +104,4 @@ export const ProjectLayout = () => {
             </ProjectProvider>
         );
     }
-}
+};
