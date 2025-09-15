@@ -10,7 +10,7 @@ import { Layout } from './layout';
 import { Index as Datasets } from './routes/datasets/index';
 import { Index as Models } from './routes/models/index';
 import { Index as Projects } from './routes/projects/index';
-import { NewProject } from './routes/projects/new/new';
+import { NewProjectPage } from './routes/projects/new/new';
 import { Index as RobotConfiguration } from './routes/robot-configuration/index';
 
 const root = path('/');
@@ -68,7 +68,7 @@ export const router = createBrowserRouter([
                     },
                     {
                         path: paths.projects.new.pattern,
-                        element: <NewProject />,
+                        element: <NewProjectPage />,
                     },
                     {
                         path: paths.projects.edit.pattern,

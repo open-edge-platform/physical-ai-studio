@@ -2,14 +2,14 @@ import { Button, Flex, Form, Heading, Item, Key, Picker, View } from '@geti/ui';
 
 import { $api } from '../../../api/client';
 import { SchemaRobotConfig } from '../../../api/openapi-spec';
-import { useProjectDataContext } from './project-config.provider';
+import { useNewProject } from './new-project.provider';
 
 interface RobotPropertiesProps {
     robot: SchemaRobotConfig;
     type: 'leader' | 'follower';
 }
 const RobotProperties = ({ robot, type }: RobotPropertiesProps) => {
-    const { project, setProject, availableRobots, leaderCalibrations, followerCalibrations } = useProjectDataContext();
+    const { project, setProject, availableRobots, leaderCalibrations, followerCalibrations } = useNewProject();
 
     const identifyMutation = $api.useMutation('put', '/api/hardware/identify');
 
@@ -79,7 +79,7 @@ const RobotProperties = ({ robot, type }: RobotPropertiesProps) => {
 };
 
 export const RobotsView = () => {
-    const { project } = useProjectDataContext();
+    const { project } = useNewProject();
     const follower = project.robots.find((f) => f.type === 'follower');
     const leader = project.robots.find((f) => f.type === 'leader');
     return (

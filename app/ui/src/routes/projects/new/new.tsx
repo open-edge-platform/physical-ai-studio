@@ -5,12 +5,12 @@ import { useNavigate } from 'react-router';
 import { $api } from '../../../api/client';
 import { paths } from '../../../router';
 import { CamerasView } from './cameras';
-import { ProjectData, useProjectDataContext } from './project-config.provider';
+import { NewProject, useNewProject } from './new-project.provider';
 import { PropertiesView } from './properties';
 import { RobotsView } from './robots';
 
 export const ProjectForm = () => {
-    const { project, isValid, isCameraSetupValid, isRobotSetupValid } = useProjectDataContext();
+    const { project, isValid, isCameraSetupValid, isRobotSetupValid } = useNewProject();
     const navigate = useNavigate();
     const saveMutation = $api.useMutation('put', '/api/projects');
 
@@ -73,10 +73,10 @@ export const ProjectForm = () => {
     );
 };
 
-export const NewProject = () => {
+export const NewProjectPage = () => {
     return (
-        <ProjectData>
+        <NewProject>
             <ProjectForm />
-        </ProjectData>
+        </NewProject>
     );
 };

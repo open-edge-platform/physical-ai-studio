@@ -1,9 +1,9 @@
 import { Form, NumberField, TextField } from '@geti/ui';
 
-import { useProjectDataContext } from './project-config.provider';
+import { useNewProject } from './new-project.provider';
 
 export const PropertiesView = () => {
-    const { project, setProject } = useProjectDataContext();
+    const { project, setProject } = useNewProject();
 
     const setProjectName = (name: string) => setProject({ ...project, name });
     const setProjectFPS = (fps: number) => setProject({ ...project, fps });

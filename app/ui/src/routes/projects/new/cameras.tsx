@@ -19,7 +19,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { $api } from '../../../api/client';
 import { SchemaCamera, SchemaCameraConfig } from '../../../api/openapi-spec';
-import { createEmptyCamera, useProjectDataContext } from './project-config.provider';
+import { createEmptyCamera, useNewProject } from './new-project.provider';
 
 interface CameraEditProps {
     availableCameras: SchemaCamera[];
@@ -96,7 +96,7 @@ const CameraEdit = ({ config, availableCameras, updateConfig, deleteCamera }: Ca
 
 type CameraConfig = SchemaCameraConfig & { uuid: string };
 export const CamerasView = () => {
-    const { project, setProject } = useProjectDataContext();
+    const { project, setProject } = useNewProject();
     const { data: availableCameras } = $api.useQuery('get', '/api/hardware/cameras');
     const [cameras, setCameras] = useState<CameraConfig[]>(
         project.cameras.map((camera) => {
