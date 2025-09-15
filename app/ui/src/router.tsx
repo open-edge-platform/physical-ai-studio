@@ -9,6 +9,7 @@ import { ErrorPage } from './components/error-page/error-page';
 import { Layout } from './layout';
 import { Index as Datasets } from './routes/datasets/index';
 import { Index as Models } from './routes/models/index';
+import { OpenApi } from './routes/openapi';
 import { Index as Projects } from './routes/projects/index';
 import { NewProjectPage } from './routes/projects/new/new';
 import { Index as RobotConfiguration } from './routes/robot-configuration/index';
@@ -22,6 +23,7 @@ const models = root.path('/models');
 
 export const paths = {
     root,
+    openapi: root.path('/openapi'),
     inference: {
         index: inference,
     },
@@ -83,6 +85,10 @@ export const router = createBrowserRouter([
             {
                 path: paths.models.index.pattern,
                 element: <Models />,
+            },
+            {
+                path: paths.openapi.pattern,
+                element: <OpenApi />,
             },
             {
                 path: '*',
