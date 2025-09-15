@@ -38,17 +38,19 @@ export const ProjectForm = () => {
                 <Tabs aria-label='NewProject'>
                     <TabList>
                         <Item key='Properties' textValue='Properties'>
-                            <Gear fill={'white'} />
+                            <Gear height='10px' fill={'white'} />
                             <Text>Properties</Text>
                         </Item>
                         <Item key='Robots' textValue='Robots'>
                             <Contract
+                                height='10px'
                                 fill={isRobotSetupValid() ? 'white' : 'var(--spectrum-semantic-notice-color-icon)'}
                             />
                             <Text>Robots</Text>
                         </Item>
                         <Item key='Cameras' textValue='Cameras'>
                             <FitScreen
+                                height='10px'
                                 fill={isCameraSetupValid() ? 'white' : 'var(--spectrum-semantic-notice-color-icon)'}
                             />
                             <Text>Cameras</Text>

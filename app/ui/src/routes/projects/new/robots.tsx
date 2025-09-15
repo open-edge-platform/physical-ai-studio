@@ -29,7 +29,7 @@ const RobotProperties = ({ robot, type }: RobotPropertiesProps) => {
     };
 
     const selectRobot = (id: Key | null) => {
-        const serial_id = id as string;
+        const serial_id = String(id);
         const robots = project.robots.map((r) => {
             if (r.type == type) {
                 return { ...r, serial_id };
