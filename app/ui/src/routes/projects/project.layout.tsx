@@ -26,21 +26,21 @@ const Header = ({ project_id }: { project_id: string }) => {
                         '--spectrum-tabs-selection-indicator-color': 'var(--energy-blue)',
                     }}
                 >
-                    <Item textValue='Life inference' key={paths.project.datasets({ project_id })} href={paths.project.datasets({ project_id })}>
+                    <Item textValue='Life inference' key={'datasets'} href={paths.project.datasets.index({ project_id })}>
                         <Flex alignItems='center' gap='size-100'>
                             Datasets
                         </Flex>
                     </Item>
                     <Item
                         textValue='Robot configuration'
-                        key={paths.project.robotConfiguration({ project_id })}
+                        key={'robot-configuration'}
                         href={paths.project.robotConfiguration({ project_id })}
                     >
                         <Flex alignItems='center' gap='size-100'>
                             Robot Configuration
                         </Flex>
                     </Item>
-                    <Item textValue='Life inference' key={paths.project.models({ project_id })} href={paths.project.models({ project_id })}>
+                    <Item textValue='Life inference' key={'models'} href={paths.project.models({ project_id })}>
                         <Flex alignItems='center' gap='size-100'>
                             Models
                         </Flex>
@@ -51,16 +51,25 @@ const Header = ({ project_id }: { project_id: string }) => {
     );
 };
 
+const getMainPageInProjectUrl = (pathname: string) => {
+    const regexp = /\/project\/[\w-]*\/([\w-]*)/g
+    const [_base, main] = [...pathname.matchAll(regexp)][0];
+    return main;
+}
+
 export const ProjectLayout = () => {
     const { project_id } = useParams();
     const { pathname } = useLocation();
+
+    const pageName = getMainPageInProjectUrl(pathname);
+    console.log(pageName)
 
     if (project_id === undefined) {
         redirect(paths.root.pattern);
     } else {
         return (
             <ProjectProvider project_id={project_id}>
-                <Tabs aria-label='Header navigation' selectedKey={pathname}>
+                <Tabs aria-label='Header navigation' selectedKey={pageName}>
                     <Grid
                         areas={['header', 'content']}
                         UNSAFE_style={{
@@ -75,15 +84,13 @@ export const ProjectLayout = () => {
                             <TabPanels height={'100%'} UNSAFE_style={{ border: 'none', display: 'flex' }}>
                                 <Item
                                     textValue='Robot configuration'
-                                    key={paths.project.robotConfiguration({ project_id })}
-                                    href={paths.project.robotConfiguration({ project_id })}
-                                >
+                                    key={'robot-configuration'}>
                                     <Outlet />
                                 </Item>
-                                <Item textValue='Life inference' key={paths.project.datasets({ project_id })} href={paths.project.datasets({ project_id })}>
+                                <Item textValue='Life inference' key="datasets">
                                     <Outlet />
                                 </Item>
-                                <Item textValue='Life inference' key={paths.project.models({ project_id })} href={paths.project.models({ project_id })}>
+                                <Item textValue='Life inference' key="models">
                                     <Outlet />
                                 </Item>
                             </TabPanels>

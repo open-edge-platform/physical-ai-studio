@@ -5,8 +5,11 @@ import { View, ActionButton, Text, Flex, Key, Well, Tabs, TabList, TabPanels, It
 import { DatasetViewer } from './dataset-viewer';
 import { DatasetProvider } from './dataset.provider';
 import { Add } from '@geti/ui/icons';
+import { useNavigate } from 'react-router';
+import { paths } from '../../router';
 
 export const Index = () => {
+    const navigate = useNavigate();
     const { project } = useProject();
     const datasets = project.datasets;
     const dataset = project.datasets[0];
@@ -16,7 +19,7 @@ export const Index = () => {
 
     const onSelectionChange = (key: Key) => {
         if (key.toString() === "#new-dataset") {
-            alert("Navigate to new dataset");
+            navigate(paths.project.datasets.record({project_id: project.id}));
         }
     }
 

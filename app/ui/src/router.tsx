@@ -13,6 +13,7 @@ import { Index as Projects } from './routes/projects/index';
 import { NewProject } from './routes/projects/new/new';
 import { Index as RobotConfiguration } from './routes/robot-configuration/index';
 import { ProjectLayout } from './routes/projects/project.layout';
+import { Record } from './routes/datasets/record/record';
 
 const root = path('/');
 const projects = root.path('/projects');
@@ -33,7 +34,10 @@ export const paths = {
     },
     project: {
         index: project,
-        datasets,
+        datasets: {
+            index: datasets,
+            record: datasets.path('/record'),
+        },
         robotConfiguration,
         models,
     }
@@ -73,8 +77,17 @@ export const router = createBrowserRouter([
                         element: <Models />,
                     },
                     {
-                        path: paths.project.datasets.pattern,
-                        element: <Datasets />,
+                        path: paths.project.datasets.index.pattern,
+                        children: [
+                            {
+                                index: true,
+                                element: <Datasets />,
+                            },
+                            {
+                                path: paths.project.datasets.record.pattern,
+                                element: <Record />,
+                            },
+                        ]
                     },
                     {
                         path: paths.project.robotConfiguration.pattern,
