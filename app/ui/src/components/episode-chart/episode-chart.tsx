@@ -31,7 +31,7 @@ export default function EpisodeChart({ actions, joints, fps}: EpisodeChartProps)
     <ResponsiveContainer width="100%" height={400}>
       <LineChart data={chartData} margin={{ top: 20, right: 20, left: 20, bottom: 20 }}>
         <CartesianGrid strokeDasharray="3 3" />
-        <XAxis dataKey="index" label={{ value: "Index", position: "insideBottomRight", offset: -10 }} />
+        <XAxis dataKey="index" label={{ value: "Time (s)", position: "insideBottomRight", offset: -10 }} />
         <YAxis label={{ value: "Value (deg)", angle: -90, position: "insideLeft" }} />
 
         <Tooltip />
