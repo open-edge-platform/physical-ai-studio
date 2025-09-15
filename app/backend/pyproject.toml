@@ -5,8 +5,10 @@ description = "Geti Action server"
 requires-python = ">=3.10, <=3.13"
 
 dependencies = [
+  "opencv-python",
+  "pyrealsense2",
   "fastapi[standard]",
-  "lerobot>=0.3.3",
+  "lerobot[feetech]>=0.3.3",
   "numpy",
   "websockets",
 ]
