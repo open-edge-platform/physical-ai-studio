@@ -27,26 +27,21 @@ class BaseGym:
     def __init__(
         self,
         gym_id: str,
-        obs_type: str,
-        max_episode_steps: int,
+        **extra_gym_kwargs,
     ) -> None:
         """Initializes the base Gym environment wrapper.
 
         Args:
             gym_id (str): The identifier for the Gymnasium environment.
-            obs_type (str): The type of observation to use (e.g., 'pixels', 'state').
-            max_episode_steps (int): The maximum number of steps allowed per episode.
+            extra_gym_kwargs (Any): Any extra arguments required for the environment
         """
 
-        self._max_episode_steps = max_episode_steps
         self._gym_id = gym_id
-        self._obs_type = obs_type
 
         # create wrapped environment
         self.env = gym.make(
             self._gym_id,
-            obs_type=self._obs_type,
-            max_episode_steps=self._max_episode_steps,
+            **extra_gym_kwargs,
         )
 
         # Assign the observation and action spaces from the wrapped environment
@@ -96,7 +91,13 @@ class BaseGym:
         """Closes the environment and releases resources."""
         return self.env.close()
 
-    @property
-    def max_episode_steps(self) -> int:
-        """The maximum number of steps allowed per episode."""
-        return self._max_episode_steps
+    def sample_action(self) -> Any:
+        """Samples a random action in the environment"""
+        return self.env.action_space.sample()
+
+    def get_max_episode_steps(self) -> int | None:
+        """Returns the maximum number of steps for the underlying environment."""
+        try:
+            return self.env.get_wrapper_attr("max_episode_steps")
+        except AttributeError:
+            return None

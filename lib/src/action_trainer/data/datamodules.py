@@ -13,15 +13,16 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 import torch
+from gymnasium.wrappers import TimeLimit
 from lightning.pytorch import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
 from action_trainer.data import Observation
 from action_trainer.data.gym import GymDataset
+from action_trainer.gyms import BaseGym
 
 if TYPE_CHECKING:
     from action_trainer.data import ActionDataset
-    from action_trainer.gyms import BaseGym
 
 
 def collate_env(batch: list[Any]) -> dict[str, Any]:
@@ -112,6 +113,7 @@ class ActionDataModule(LightningDataModule):
         num_rollouts_eval: int = 10,
         test_gyms: BaseGym | list[BaseGym] | None = None,
         num_rollouts_test: int = 10,
+        max_episode_steps: int | None = 300,
     ) -> None:
         """
         Initialize the ActionDataModule.
@@ -120,7 +122,10 @@ class ActionDataModule(LightningDataModule):
             train_dataset (ActionDataset): Dataset for training.
             train_batch_size (int): Batch size for training DataLoader.
             eval_gyms (BaseGym, list[BaseGym], None]): Evaluation environments.
+            num_rollouts_eval (int): Number of rollouts to run for evaluation environments.
             test_gyms (BaseGym, list[BaseGym], None]): Test environments.
+            num_rollouts_test (int): Number of rollouts to run for test environments.
+            max_episode_steps (int, None): Maximum steps allowed per episode. If None, no time limit.
         """
         super().__init__()
 
@@ -135,6 +140,33 @@ class ActionDataModule(LightningDataModule):
         self.test_gyms: BaseGym | list[BaseGym] | None = test_gyms
         self.test_dataset: Optional[Dataset[Any]] = None
         self.num_rollouts_test: int = num_rollouts_test
+        self.max_episode_steps = max_episode_steps
+
+        # setup time limit if max_episode steps
+        if (self.max_episode_steps is not None) and self.eval_gyms is not None:
+            if isinstance(self.eval_gyms, BaseGym):
+                self.eval_gyms.env = TimeLimit(
+                    env=self.eval_gyms.env,
+                    max_episode_steps=self.max_episode_steps,
+                )
+            elif isinstance(self.eval_gyms, list):
+                for eval_gym in self.eval_gyms:
+                    eval_gym.env = TimeLimit(
+                        env=eval_gym.env,
+                        max_episode_steps=self.max_episode_steps,
+                    )
+        if (self.max_episode_steps is not None) and self.test_gyms is not None:
+            if isinstance(self.test_gyms, BaseGym):
+                self.test_gyms.env = TimeLimit(
+                    env=self.test_gyms.env,
+                    max_episode_steps=self.max_episode_steps,
+                )
+            elif isinstance(self.test_gyms, list):
+                for test_gym in self.test_gyms:
+                    test_gym.env = TimeLimit(
+                        env=test_gym.env,
+                        max_episode_steps=self.max_episode_steps,
+                    )
 
     def setup(self, stage: str) -> None:
         """
