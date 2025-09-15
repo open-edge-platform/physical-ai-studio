@@ -53,8 +53,13 @@ const Header = ({ project_id }: { project_id: string }) => {
 
 const getMainPageInProjectUrl = (pathname: string) => {
     const regexp = /\/project\/[\w-]*\/([\w-]*)/g
-    const [_base, main] = [...pathname.matchAll(regexp)][0];
-    return main;
+    const found = [...pathname.matchAll(regexp)];
+    if (found.length) {
+        const [_base, main] = found[0];
+        return main;
+    } else {
+        return "datasets";
+    }
 }
 
 export const ProjectLayout = () => {

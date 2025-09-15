@@ -274,10 +274,11 @@
                     },
                     "total_frames": { "type": "integer", "title": "Total Frames" },
                     "features": { "items": { "type": "string" }, "type": "array", "title": "Features" },
+                    "tasks": { "items": { "type": "string" }, "type": "array", "title": "Tasks" },
                     "fps": { "type": "integer", "title": "Fps" }
                 },
                 "type": "object",
-                "required": ["repo_id", "episodes", "total_frames", "features", "fps"],
+                "required": ["repo_id", "episodes", "total_frames", "features", "tasks", "fps"],
                 "title": "Dataset"
             },
             "Episode": {

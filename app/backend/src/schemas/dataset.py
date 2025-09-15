@@ -19,16 +19,5 @@ class Dataset(BaseModel):
     episodes: list[Episode]
     total_frames: int
     features: list[str]
+    tasks: list[str]
     fps: int
-
-    @classmethod
-    def fromLeRobotMetaData(cls, data: LeRobotDatasetMetadata) -> 'Dataset':
-        """Convert LeRobotMetaData to Dataset"""
-        return Dataset(
-            repo_id=data.repo_id,
-            episodes=data.total_episodes,
-            total_frames=data.total_frames,
-            features=data.features.keys(),
-            fps=data.fps,
-        )
-

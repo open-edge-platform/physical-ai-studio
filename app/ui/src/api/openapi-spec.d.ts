@@ -244,6 +244,8 @@ export interface components {
             total_frames: number;
             /** Features */
             features: string[];
+            /** Tasks */
+            tasks: string[];
             /** Fps */
             fps: number;
         };

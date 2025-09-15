@@ -7,19 +7,20 @@ import { DatasetProvider } from './dataset.provider';
 import { Add } from '@geti/ui/icons';
 import { useNavigate } from 'react-router';
 import { paths } from '../../router';
+import { useState } from 'react';
 
 export const Index = () => {
     const navigate = useNavigate();
     const { project } = useProject();
     const datasets = project.datasets;
-    const dataset = project.datasets[0];
-    if (datasets.length === 0) {
-        return <div>No datasets yet!</div>
-    }
+    const [dataset, setDataset] = useState<string>(datasets.length > 0 ? datasets[0] : "");
 
+    console.log("WAat?");
     const onSelectionChange = (key: Key) => {
         if (key.toString() === "#new-dataset") {
             navigate(paths.project.datasets.record({project_id: project.id}));
+        } else {
+            setDataset(key.toString());
         }
     }
 

@@ -13,6 +13,7 @@ def get_dataset(repo_id: str) -> Dataset:
         episodes=[],
         features=metadata.features.keys(),
         fps=metadata.fps,
+        tasks=list(metadata.tasks.values()),
         repo_id=repo_id,
         total_frames=metadata.total_frames,
     )
