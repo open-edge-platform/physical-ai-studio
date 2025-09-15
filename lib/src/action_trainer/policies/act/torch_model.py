@@ -16,7 +16,7 @@ class ACTModel(nn.Module):
     @torch.no_grad()
     def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         pass
-    
+
     @torch.no_grad()
     def predict_action_chunk(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         pass

@@ -3,16 +3,14 @@
 
 """Base Lightning Module for Policies"""
 
+from abc import ABC
 
-import lightning as pl
-from abc import ABC, abstractmethod
-from lightning.pytorch.utilities.types import STEP_OUTPUT
-from lightning.pytorch import Callback
-from torch import nn
+import lightning as L
 import torch
+from torch import nn
 
 
-class ActionTrainerModule(pl.LightningModule, ABC):
+class ActionTrainerModule(L.LightningModule, ABC):
     def __init__(
         self,
     ) -> None:

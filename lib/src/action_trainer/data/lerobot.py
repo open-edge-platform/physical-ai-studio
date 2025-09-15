@@ -172,3 +172,9 @@ class LeRobotActionDataset(ActionDataset):
         # Bypassing __init__ to set the internal dataset
         instance._lerobot_dataset = lerobot_dataset  # noqa: SLF001
         return instance
+
+    @property
+    def action_features(self):
+        """Action features from LeRobot dataset"""
+        dataset_features = self._lerobot_dataset.features
+        return {key: ft for key, ft in dataset_features.items() if key.startswith("action")}

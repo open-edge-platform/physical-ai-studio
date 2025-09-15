@@ -5,7 +5,7 @@
 
 import pytest
 import torch
-from action_trainer.data import ActionDataset, LeRobotDataModule, Observation
+from action_trainer.data import ActionDataset, ActionDataModule, Observation
 
 
 class FakeActionDataset(ActionDataset):
@@ -26,8 +26,8 @@ class FakeActionDataset(ActionDataset):
 
 
 # TODO: Add tests for gym envs concat
-class TestLeRobotDataModule:
-    """Groups all tests for the LeRobotDataModule."""
+class TestActionDataModule:
+    """Groups all tests for the ActionDataModule."""
 
     @pytest.fixture
     def mock_train_dataset(self) -> FakeActionDataset:
@@ -36,7 +36,7 @@ class TestLeRobotDataModule:
 
     def test_initialization(self, mock_train_dataset: FakeActionDataset):
         """Tests if the DataModule initializes attributes correctly."""
-        dm = LeRobotDataModule(
+        dm = ActionDataModule(
             train_dataset=mock_train_dataset,
             train_batch_size=32
         )
