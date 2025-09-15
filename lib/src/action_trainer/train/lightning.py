@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader
 from action_trainer.data.datamodules import collate_env
 from action_trainer.data.gym import GymDataset
 from action_trainer.train.callbacks import ActionMetricsCallback
+from action_trainer.train.utils import reformat_dataset_to_match_policy
 
 if TYPE_CHECKING:
     from action_trainer.data import ActionDataModule
@@ -40,20 +41,12 @@ class LightningActionTrainer:
             ]
         self.datamodule = datamodule
         self.model = model
-        self.model, self.datamodule = self.reformat_dataset_to_match_policy(
-            model=self.model,
-            datamodule=self.datamodule,
-        )
+        reformat_dataset_to_match_policy(policy=self.model, datamodule=self.datamodule)
         self.trainer = lightning.Trainer(
             callbacks=callbacks,
             num_sanity_val_steps=num_sanity_val_steps,
             **lightning_trainer_kwargs,
         )
-
-    @staticmethod
-    def reformat_dataset_to_match_policy(model: ActionTrainerModule, datamodule: ActionDataModule):
-        # do something here
-        return model, datamodule
 
     def fit(self, **lightning_fit_kwargs):
         self.trainer.fit(

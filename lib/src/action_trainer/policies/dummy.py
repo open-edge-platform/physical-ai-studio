@@ -34,11 +34,17 @@ class DummyModel(nn.Module):
         action_shape: torch.Size,
         n_action_steps: int = 1,
         temporal_ensemble_coeff: float | None = None,
+        n_obs_steps: int = 1,
+        horizon: int | None = None,
     ):
         super().__init__()
         self.action_shape = action_shape
         self.n_action_steps = n_action_steps
         self.temporal_ensemble_coeff = temporal_ensemble_coeff
+
+        # default horizon = number of action steps
+        self.n_obs_steps = n_obs_steps
+        self.horizon = horizon if horizon is not None else n_action_steps
 
         if self.temporal_ensemble_coeff is not None:
             # simple placeholder for temporal ensemble
@@ -48,6 +54,21 @@ class DummyModel(nn.Module):
 
         # dummy parameter for optimizer and backward
         self.dummy_param = nn.Parameter(torch.zeros(1))
+
+    @property
+    def observation_delta_indices(self) -> list[int]:
+        """Indices of observations relative to current timestep."""
+        return list(range(1 - self.n_obs_steps, 1))
+
+    @property
+    def action_delta_indices(self) -> list[int]:
+        """Indices of actions relative to current timestep."""
+        return list(range(0 - self.n_obs_steps, 1 - self.n_obs_steps + self.horizon))
+
+    @property
+    def reward_delta_indices(self) -> None:
+        # return list(range(self.horizon))  # noqa: ERA001
+        return None
 
     def reset(self):
         """Reset buffers (like ACTPolicy.reset)."""

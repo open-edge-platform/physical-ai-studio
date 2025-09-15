@@ -174,7 +174,32 @@ class LeRobotActionDataset(ActionDataset):
         return instance
 
     @property
+    def features(self):
+        """Raw dataset features"""
+        return self._lerobot_dataset.features
+
+    @property
     def action_features(self):
         """Action features from LeRobot dataset"""
         dataset_features = self._lerobot_dataset.features
         return {key: ft for key, ft in dataset_features.items() if key.startswith("action")}
+
+    @property
+    def fps(self):
+        """frames per second of dataset"""
+        return self._lerobot_dataset.fps
+
+    @property
+    def tolerance_s(self):
+        """Tolerance to keep delta timestamps in sync with fps"""
+        return self._lerobot_dataset.tolerance_s
+
+    @property
+    def delta_indices(self) -> dict[str, list[int]]:
+        """Expose delta_indices from the dataset."""
+        return self._lerobot_dataset.delta_indices
+
+    @delta_indices.setter
+    def delta_indices(self, indices: dict[str, list[int]]):
+        """Allow setting delta_indices on the dataset."""
+        self._lerobot_dataset.delta_indices = indices

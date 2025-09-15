@@ -115,7 +115,6 @@ class ActionTrainerModule(L.LightningModule, ABC):
             step_count += 1
 
             done = terminated or truncated
-            print(f"step count {step_count} = {done}")
 
         return {
             "success": terminated,

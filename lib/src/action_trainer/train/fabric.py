@@ -6,16 +6,14 @@ Trainer with Fabric backend, heavily adapted from,
 https://github.com/Lightning-AI/pytorch-lightning/blob/master/examples/fabric/build_your_own_trainer/trainer.py
 """
 
-from collections.abc import Iterable
+from __future__ import annotations
+
 from functools import partial
 from pathlib import Path
-from typing import Any, Literal, Mapping
+from typing import TYPE_CHECKING, Any, Literal, Mapping
 
 import lightning as L
 import torch
-from lightning.fabric.accelerators import Accelerator
-from lightning.fabric.loggers import Logger
-from lightning.fabric.strategies import Strategy
 from lightning.fabric.wrappers import _unwrap_objects
 from lightning.pytorch.utilities.model_helpers import is_overridden
 from lightning_utilities import apply_to_collection
@@ -24,13 +22,24 @@ from tqdm import tqdm
 
 from action_trainer.data.datamodules import collate_env
 from action_trainer.data.gym import GymDataset
+from action_trainer.train.utils import reformat_dataset_to_match_policy
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from lightning.fabric.accelerators import Accelerator
+    from lightning.fabric.loggers import Logger
+    from lightning.fabric.strategies import Strategy
+
+    from action_trainer.data import ActionDataModule
+    from action_trainer.policies.base.base_lightning_module import ActionTrainerModule
 
 
 class FabricActionTrainer:
     def __init__(
         self,
-        model: L.LightningModule,
-        datamodule: Any,
+        datamodule: ActionDataModule,
+        model: ActionTrainerModule,
         accelerator: str | Accelerator = "auto",
         strategy: str | Strategy = "auto",
         devices: int | list[int] | str = "auto",
@@ -47,6 +56,7 @@ class FabricActionTrainer:
     ):
         self.model = model
         self.datamodule = datamodule
+        reformat_dataset_to_match_policy(policy=self.model, datamodule=self.datamodule)
         self.fabric = L.Fabric(
             accelerator=accelerator,
             strategy=strategy,
