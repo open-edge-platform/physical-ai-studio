@@ -194,6 +194,33 @@
                     }
                 }
             }
+        },
+        "/api/hardware/camera_feed": {
+            "get": {
+                "summary": "Get Camera Feed",
+                "operationId": "get_camera_feed_api_hardware_camera_feed_get",
+                "parameters": [
+                    { "name": "id", "in": "query", "required": true, "schema": { "type": "string", "title": "Id" } },
+                    {
+                        "name": "type",
+                        "in": "query",
+                        "required": true,
+                        "schema": { "enum": ["RealSense", "OpenCV"], "type": "string", "title": "Type" }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": { "application/json": { "schema": {} } }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } }
+                        }
+                    }
+                }
+            }
         }
     },
     "components": {

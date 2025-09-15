@@ -33,7 +33,6 @@ export const paths = {
         new: projects.path('/new'),
     },
     project: {
-        index: project,
         datasets: {
             index: datasets,
             record: datasets.path('/record'),
@@ -69,13 +68,8 @@ export const router = createBrowserRouter([
 
             },
             {
-                path: paths.project.index.pattern,
                 element: <ProjectLayout />,
                 children: [
-                    {
-                        path: paths.project.models.pattern,
-                        element: <Models />,
-                    },
                     {
                         path: paths.project.datasets.index.pattern,
                         children: [
@@ -88,6 +82,10 @@ export const router = createBrowserRouter([
                                 element: <Record />,
                             },
                         ]
+                    },
+                    {
+                        path: paths.project.models.pattern,
+                        element: <Models />,
                     },
                     {
                         path: paths.project.robotConfiguration.pattern,

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useDataset } from "./dataset.provider"
-import { View, Text, Flex, Divider, Well, ListBox, Item, ListView, Selection } from '@geti/ui'
+import { View, Button, Flex, Divider, Well, ListBox, Item, ListView, Selection } from '@geti/ui'
 import { EpisodeViewer } from "./episode-viewer";
 
 
