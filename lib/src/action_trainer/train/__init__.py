@@ -3,6 +3,7 @@
 
 """Action trainer"""
 
+from .fabric import FabricActionTrainer
 from .lightning import LightningActionTrainer
 
-__all__ = ["LightningActionTrainer"]
+__all__ = ["LightningActionTrainer", "FabricActionTrainer"]

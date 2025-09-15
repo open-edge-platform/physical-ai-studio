@@ -62,7 +62,7 @@ class LightningActionTrainer:
             **lightning_fit_kwargs,
         )
 
-    def test(self, env: BaseGym | None, num_rollouts: int | None, **lightning_test_kwargs):
+    def test(self, env: BaseGym | None = None, num_rollouts: int | None = None, **lightning_test_kwargs):
         if (env is not None) and (num_rollouts is not None):
             test_dataset = GymDataset(env=env, num_rollouts=num_rollouts)
             test_dataloader = DataLoader(test_dataset, batch_size=1, collate_fn=collate_env, shuffle=False)
