@@ -8,12 +8,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import lightning
-from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
+from lightning.pytorch.callbacks import LearningRateMonitor
 from torch.utils.data import DataLoader
 
 from action_trainer.data.datamodules import collate_env
 from action_trainer.data.gym import GymDataset
-from action_trainer.train.callbacks import ActionMetricsCallback, TestVideoLogger
+from action_trainer.train.callbacks import ActionMetricsCallback
 
 if TYPE_CHECKING:
     from action_trainer.data import ActionDataModule
@@ -36,16 +36,7 @@ class LightningActionTrainer:
             callbacks = [
                 ActionMetricsCallback("val"),
                 ActionMetricsCallback("test"),
-                TestVideoLogger(),
                 LearningRateMonitor("step"),
-                ModelCheckpoint(
-                    dirpath=None,
-                    filename="{epoch}-{step}-{val-success:.4f}",
-                    monitor="val/success",
-                    mode="max",
-                    save_top_k=1,
-                    save_last=True,
-                ),
             ]
         self.datamodule = datamodule
         self.model = model
@@ -64,11 +55,10 @@ class LightningActionTrainer:
         # do something here
         return model, datamodule
 
-    def fit(self, training_steps: int, **lightning_fit_kwargs):
+    def fit(self, **lightning_fit_kwargs):
         self.trainer.fit(
             datamodule=self.datamodule,
             model=self.model,
-            training_steps=training_steps,
             **lightning_fit_kwargs,
         )
 

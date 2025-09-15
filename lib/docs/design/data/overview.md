@@ -32,7 +32,7 @@ dataset = LeRobotActionDataset("hf/path/or/normal/path")
 More generally we want to do something like this:
 
 ```python
-from action_trainer.data import LeRobotDataModule, LeRobotActionDataset
+from action_trainer.data import ActionDataModule, LeRobotActionDataset
 from action_trainer.gyms import PushTGym
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
@@ -40,7 +40,7 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset
 # you can also do this
 hf_pusht_dataset = LeRobotDataset("lerobot/pusht")
 pusht_dataset = LeRobotActionDataset.from_lerobot(hf_pusht_dataset)
-pusht_datamodule = LeRobotDataModule(
+pusht_datamodule = ActionDataModule(
         train_batch_size=4,
         train_dataset=pusht_dataset)
 ```
@@ -48,7 +48,7 @@ pusht_datamodule = LeRobotDataModule(
 and integration with simulation environments for eval/testing with gyms
 
 ```python
-from action_trainer.data import LeRobotDataModule, LeRobotActionDataset
+from action_trainer.data import ActionDataModule, LeRobotActionDataset
 from action_trainer.gyms import PushTGym
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
@@ -60,7 +60,7 @@ pusht_dataset = LeRobotActionDataset.from_lerobot(hf_pusht_dataset)
 pusht_gym = PushTGym(max_episode_steps=300)
 
 # last step is to load the datamodule
-pusht_datamodule = LeRobotDataModule(
+pusht_datamodule = ActionDataModule(
     train_batch_size=4,
     train_dataset=pusht_dataset,
     eval_gyms=pusht_gym,
@@ -75,7 +75,7 @@ val_dataloader = pusht_datamodule.val_dataloader()
 
 # how about with multiple envs...for generalist policies
 pusht_gym2 = PushTGym(max_episode_steps=200)
-pusht_datamodule = LeRobotDataModule(
+pusht_datamodule = ActionDataModule(
     train_batch_size=4,
     train_dataset=pusht_dataset,
     eval_gyms=[pusht_gym, pusht_gym2],
