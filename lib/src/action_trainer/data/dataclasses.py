@@ -20,8 +20,8 @@ class Observation:
     """A single observation from an imitation learning dataset."""
 
     # Core Observation
-    action: torch.Tensor | np.ndarray | None
-    task: str | None
+    action: torch.Tensor | np.ndarray | None = None
+    task: str | None = None
     state: torch.Tensor | np.ndarray | None = None
     images: dict[str, torch.Tensor | np.ndarray] | None = None
 

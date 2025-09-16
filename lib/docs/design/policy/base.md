@@ -1,0 +1,20 @@
+# ActionTrainerModule
+
+Base class for `Lighting Modules`.
+
+```mermaid
+classDiagram
+    class LightningModule
+    class nn_Module
+
+    class ActionTrainerModule {
+        +__init__()
+        +forward(batch: dict[str, torch.Tensor], *args, **kwargs) torch.Tensor
+        <<abstract>> +select_action(batch: dict[str, torch.Tensor]) torch.Tensor
+        -model: nn.Module
+    }
+
+    ActionTrainerModule --|> LightningModule : inherits
+    ActionTrainerModule --> nn_Module : uses
+
+```

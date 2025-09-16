@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from action_trainer.data import ActionDataset
 
 
-def collate_env(batch: list[Any]) -> dict[str, Any]:
+def _collate_env(batch: list[Any]) -> dict[str, Any]:
     """
     Collate a batch of environments for a DataLoader.
 
@@ -39,7 +39,7 @@ def collate_env(batch: list[Any]) -> dict[str, Any]:
     return {"env": batch[0]}
 
 
-def collate_observations(batch: list[Observation]) -> dict[str, Any]:
+def _collate_observations(batch: list[Observation]) -> dict[str, Any]:
     """
     Collate a batch of Observations to a dict for training format.
 
@@ -206,7 +206,7 @@ class ActionDataModule(LightningDataModule):
             batch_size=self.train_batch_size,
             shuffle=True,
             drop_last=True,
-            collate_fn=collate_observations,
+            collate_fn=_collate_observations,
         )
 
     def val_dataloader(self) -> DataLoader[Any]:
@@ -219,7 +219,7 @@ class ActionDataModule(LightningDataModule):
         return DataLoader(
             self.eval_dataset,
             batch_size=1,
-            collate_fn=collate_env,  # type: ignore[arg-type]
+            collate_fn=_collate_env,  # type: ignore[arg-type]
             shuffle=False,
         )
 
@@ -233,7 +233,7 @@ class ActionDataModule(LightningDataModule):
         return DataLoader(
             self.test_dataset,
             batch_size=1,
-            collate_fn=collate_env,  # type: ignore[arg-type]
+            collate_fn=_collate_env,  # type: ignore[arg-type]
             shuffle=False,
         )
 

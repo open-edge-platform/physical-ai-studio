@@ -8,6 +8,6 @@ Action trainer datamodules
 from .action import ActionDataset
 from .dataclasses import Observation
 from .datamodules import ActionDataModule
-from .lerobot import LeRobotActionDataset
+from .lerobot import LeRobotActionDataModule, LeRobotActionDataset
 
-__all__ = ["ActionDataset", "Observation", "LeRobotActionDataset", "ActionDataModule"]
+__all__ = ["ActionDataset", "Observation", "LeRobotActionDataset", "ActionDataModule", "LeRobotActionDataModule"]

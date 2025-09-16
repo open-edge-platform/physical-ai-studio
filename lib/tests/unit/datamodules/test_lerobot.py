@@ -24,6 +24,49 @@ class FakeActionDataset(ActionDataset):
             index=idx,
         )
 
+    @property
+    def features(self) -> dict:
+        """
+        Raw dataset features.
+        """
+        return {}
+
+    @property
+    def action_features(self) -> dict:
+        """
+        Action features from the dataset.
+        """
+        return {}
+
+    @property
+    def fps(self) -> int:
+        """
+        Frames per second of the dataset.
+        """
+        return 30
+
+    @property
+    def tolerance_s(self) -> float:
+        """
+        Tolerance to keep delta timestamps in sync with fps.
+        """
+        return 0.1
+
+    @property
+    def delta_indices(self) -> dict[str, list[int]]:
+        """
+        Exposes delta_indices from the dataset.
+        """
+        return {"test": [1, 2]}
+
+    @delta_indices.setter
+    def delta_indices(self, indices: dict[str, list[int]]):
+        """
+        Allows setting delta_indices on the dataset.
+        """
+        pass
+
+
 
 # TODO: Add tests for gym envs concat
 class TestActionDataModule:

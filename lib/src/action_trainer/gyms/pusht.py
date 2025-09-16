@@ -26,8 +26,6 @@ class PushTGym(BaseGym):
         Args:
             gym_id (str): The identifier for the environment.
             obs_type (str): The type of observation to use (e.g., pixels, state).
-            num_rollouts (int): Number of rollouts to perform.
-            max_episode_steps (int): Maximum steps allowed per episode.
         """
         super().__init__(
             gym_id=gym_id,

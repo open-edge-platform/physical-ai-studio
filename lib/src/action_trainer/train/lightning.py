@@ -3,65 +3,79 @@
 
 """Trainer with Lightning backend"""
 
-from __future__ import annotations
+from typing import Callable
 
-from typing import TYPE_CHECKING, Any
+import lightning as L
+from lightning.pytorch.callbacks import Callback
 
-import lightning
-from lightning.pytorch.callbacks import LearningRateMonitor
-from torch.utils.data import DataLoader
-
-from action_trainer.data.datamodules import collate_env
-from action_trainer.data.gym import GymDataset
-from action_trainer.train.callbacks import ActionMetricsCallback
+from action_trainer.data import ActionDataModule
+from action_trainer.policies.base import ActionTrainerModule
 from action_trainer.train.utils import reformat_dataset_to_match_policy
 
-if TYPE_CHECKING:
-    from action_trainer.data import ActionDataModule
-    from action_trainer.gyms import BaseGym
-    from action_trainer.policies.base.base_lightning_module import ActionTrainerModule
+
+class PolicyDatasetInteractionCallback(Callback):
+    """Callback to interact the policy and dataset before training starts."""
+
+    def __init__(self, hook_fn: Callable[[L.Trainer, L.LightningModule], None]):
+        """
+        Args:
+            hook_fn (Callable): Function that takes (trainer, model) and
+                performs the interaction, e.g., calling
+                `reformat_dataset_to_match_policy`.
+        """
+        self.hook_fn = hook_fn
+
+    def on_fit_start(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
+        """Called at the start of `trainer.fit()`."""
+        self.hook_fn(trainer, pl_module)
 
 
 class LightningActionTrainer:
-    _NO_DEFAULT = object()  # sentinel to detect "not passed"
+    """Lightning Trainer wrapper with policy-datamodule interaction hook."""
 
     def __init__(
         self,
-        datamodule: ActionDataModule,
-        model: ActionTrainerModule,
         num_sanity_val_steps: int = 0,
-        callbacks: Any = _NO_DEFAULT,  # if user sets callbacks=None we will not override
-        **lightning_trainer_kwargs,
+        callbacks: list | None = None,
+        **trainer_kwargs,
     ):
-        if callbacks is self._NO_DEFAULT:
-            callbacks = [
-                ActionMetricsCallback("val"),
-                ActionMetricsCallback("test"),
-                LearningRateMonitor("step"),
-            ]
-        self.datamodule = datamodule
-        self.model = model
-        reformat_dataset_to_match_policy(policy=self.model, datamodule=self.datamodule)
-        self.trainer = lightning.Trainer(
+        """
+        Args:
+            num_sanity_val_steps (int): Number of validation sanity steps.
+            callbacks (list, optional): User callbacks. Defaults to None.
+            **trainer_kwargs: Other Lightning Trainer kwargs.
+        """
+        if callbacks is None:
+            callbacks = []
+
+        # Add the policy-dataset interaction callback automatically
+        def _interact_policy_dataset(trainer: L.Trainer, model: L.LightningModule):
+            # Assumes trainer has a datamodule attached
+            if hasattr(trainer, "datamodule") and trainer.datamodule is not None:
+                reformat_dataset_to_match_policy(policy=model, datamodule=trainer.datamodule)
+
+        callbacks.append(PolicyDatasetInteractionCallback(_interact_policy_dataset))
+
+        self.trainer = L.Trainer(
             callbacks=callbacks,
             num_sanity_val_steps=num_sanity_val_steps,
-            **lightning_trainer_kwargs,
+            **trainer_kwargs,
         )
 
-    def fit(self, **lightning_fit_kwargs):
-        self.trainer.fit(
-            datamodule=self.datamodule,
-            model=self.model,
-            **lightning_fit_kwargs,
-        )
+    def fit(self, model: ActionTrainerModule, datamodule: ActionDataModule, **kwargs):
+        # if we don't have any validation datasets, limit batch size to zero
+        if datamodule.eval_dataset is None:
+            self.trainer.limit_val_batches = 0
+        return self.trainer.fit(model=model, datamodule=datamodule, **kwargs)
 
-    def test(self, env: BaseGym | None = None, num_rollouts: int | None = None, **lightning_test_kwargs):
-        if (env is not None) and (num_rollouts is not None):
-            test_dataset = GymDataset(env=env, num_rollouts=num_rollouts)
-            test_dataloader = DataLoader(test_dataset, batch_size=1, collate_fn=collate_env, shuffle=False)
-            self.trainer.test(model=self.model, dataloaders=test_dataloader, **lightning_test_kwargs)
-        else:
-            self.trainer.test(model=self.model, datamodule=self.datamodule, **lightning_test_kwargs)
+    def test(self, *args, **kwargs):
+        del args, kwargs
+        raise NotImplementedError
 
-    def predict(self):
+    def predict(self, *args, **kwargs):
+        del args, kwargs
+        raise NotImplementedError
+
+    def validate(self, *args, **kwargs):
+        del args, kwargs
         raise NotImplementedError

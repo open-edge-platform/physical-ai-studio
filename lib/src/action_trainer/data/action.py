@@ -28,3 +28,45 @@ class ActionDataset(Dataset, ABC):
     @abstractmethod
     def __len__(self) -> int:
         """Returns the total number of Observations in the dataset."""
+
+    @property
+    @abstractmethod
+    def features(self) -> dict:
+        """
+        Raw dataset features.
+        """
+
+    @property
+    @abstractmethod
+    def action_features(self) -> dict:
+        """
+        Action features from the dataset.
+        """
+
+    @property
+    @abstractmethod
+    def fps(self) -> int:
+        """
+        Frames per second of the dataset.
+        """
+
+    @property
+    @abstractmethod
+    def tolerance_s(self) -> float:
+        """
+        Tolerance to keep delta timestamps in sync with fps.
+        """
+
+    @property
+    @abstractmethod
+    def delta_indices(self) -> dict[str, list[int]]:
+        """
+        Exposes delta_indices from the dataset.
+        """
+
+    @delta_indices.setter
+    @abstractmethod
+    def delta_indices(self, indices: dict[str, list[int]]):
+        """
+        Allows setting delta_indices on the dataset.
+        """
