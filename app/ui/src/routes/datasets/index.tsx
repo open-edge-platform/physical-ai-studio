@@ -7,7 +7,6 @@ import { useNavigate } from 'react-router';
 import { paths } from '../../router';
 import { useProject } from '../projects/project.provider';
 import { DatasetViewer } from './dataset-viewer';
-import { DatasetProvider } from './dataset.provider';
 
 export const Index = () => {
     const navigate = useNavigate();
@@ -55,9 +54,7 @@ export const Index = () => {
                                     {dataset === undefined ? (
                                         <Text>No datasets yet...</Text>
                                     ) : (
-                                        <DatasetProvider project_id={project.id} repo_id={dataset}>
-                                            <DatasetViewer />
-                                        </DatasetProvider>
+                                        <DatasetViewer repo_id={dataset} />
                                     )}
                                 </Well>
                             </Flex>
