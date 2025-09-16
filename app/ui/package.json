@@ -93,8 +93,12 @@
         "vite-plugin-svgr": "^4.3.0",
         "vitest": "^3.2.4"
     },
-    "workspaces": ["packages/*"],
+    "workspaces": [
+        "packages/*"
+    ],
     "msw": {
-        "workerDirectory": ["public"]
+        "workerDirectory": [
+            "public"
+        ]
     }
 }

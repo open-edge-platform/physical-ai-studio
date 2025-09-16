@@ -24,11 +24,7 @@ const Header = ({ project_id }: { project_id: string }) => {
                         '--spectrum-tabs-selection-indicator-color': 'var(--energy-blue)',
                     }}
                 >
-                    <Item
-                        textValue='Datasets'
-                        key={'datasets'}
-                        href={paths.project.datasets.index({ project_id })}
-                    >
+                    <Item textValue='Datasets' key={'datasets'} href={paths.project.datasets.index({ project_id })}>
                         <Flex alignItems='center' gap='size-100'>
                             Datasets
                         </Flex>

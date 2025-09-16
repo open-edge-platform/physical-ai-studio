@@ -12,8 +12,8 @@ import { Record } from './routes/datasets/record/record';
 import { Index as Models } from './routes/models/index';
 import { OpenApi } from './routes/openapi';
 import { Index as Projects } from './routes/projects/index';
-import { ProjectLayout } from './routes/projects/project.layout';
 import { NewProjectPage } from './routes/projects/new/new';
+import { ProjectLayout } from './routes/projects/project.layout';
 import { Index as RobotConfiguration } from './routes/robot-configuration/index';
 
 const root = path('/');
