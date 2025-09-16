@@ -1,6 +1,8 @@
 import os
 import re
-from typing import Any
+from typing import Any, Literal
+from collections.abc import Generator
+import cv2
 
 from lerobot.find_cameras import find_all_opencv_cameras as le_robot_find_all_opencv_cameras
 
@@ -45,3 +47,25 @@ def find_all_opencv_cameras() -> list[dict[str, Any]]:
     realsense_ports = get_realsense_dev_ports()
     cameras = [cam for cam in le_robot_find_all_opencv_cameras() if cam["id"] not in realsense_ports]
     return [add_device_name_to_opencv_camera(camera) for camera in cameras]
+
+
+def gen_frames(id: str, type: Literal["RealSense", "OpenCV"]) -> Generator[bytes, None, None]:
+    """
+    Continuously capture frames, encode them as JPEG,
+    and yield them in the multipart format expected by browsers.
+    """
+
+    if type == "OpenCV":
+        camera = cv2.VideoCapture(id)
+    while True:
+        success, frame = camera.read()
+        if not success:
+            break
+
+        ret, buffer = cv2.imencode(".jpg", frame)
+        if not ret:
+            continue
+
+        jpg_bytes = buffer.tobytes()
+
+        yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpg_bytes + b"\r\n")
