@@ -1,4 +1,5 @@
 from typing import Literal
+
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from lerobot.find_cameras import find_all_realsense_cameras

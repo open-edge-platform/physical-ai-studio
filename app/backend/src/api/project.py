@@ -32,7 +32,7 @@ async def get_project(id: str) -> ProjectConfig:
 @router.get("/{project_id}/datasets/{repo}/{id}")
 async def get_dataset_of_project(project_id: str, repo: str, id: str) -> Dataset:
     """Get dataset of project by id"""
-    project =  load_project(project_id)
+    project = load_project(project_id)
     repo_id = f"{repo}/{id}"
     if repo_id in project.datasets:
         return get_dataset(repo_id)

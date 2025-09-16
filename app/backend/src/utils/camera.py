@@ -1,9 +1,9 @@
 import os
 import re
-from typing import Any, Literal
 from collections.abc import Generator
-import cv2
+from typing import Any, Literal
 
+import cv2
 from lerobot.find_cameras import find_all_opencv_cameras as le_robot_find_all_opencv_cameras
 
 VIDEO4LINUX_PATH = "/sys/class/video4linux"
