@@ -1,4 +1,4 @@
-import { Flex, Grid, Tabs, View } from '@geti/ui';
+import { Flex, Grid, Tabs, TabList, Item, View } from '@geti/ui';
 import { Outlet, useLocation, useNavigate } from 'react-router';
 
 import { paths } from './router';
@@ -13,6 +13,19 @@ const Header = () => {
                         Geti Action
                     </span>
                 </View>
+                <TabList
+                    height={'100%'}
+                    UNSAFE_style={{
+                        '--spectrum-tabs-rule-height': '4px',
+                        '--spectrum-tabs-selection-indicator-color': 'var(--energy-blue)',
+                    }}
+                >
+                    <Item textValue='OpenAPI' key={'models'} href={paths.openapi({})}>
+                        <Flex alignItems='center' gap='size-100'>
+                            OpenAPI
+                        </Flex>
+                    </Item>
+                </TabList>
             </Flex>
         </View>
     );

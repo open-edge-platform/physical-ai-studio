@@ -46,7 +46,7 @@ const useErrorMessage = () => {
 
 export const ErrorMessage = ({ message }: { message: string }) => {
     return (
-        <View height={'100vh'}>
+        <View height={'100vh'} flex="1">
             <IllustratedMessage>
                 <NotFound />
                 <Heading>{message}</Heading>

@@ -5,12 +5,12 @@ import { useNavigate } from 'react-router';
 import { $api } from '../../../api/client';
 import { paths } from '../../../router';
 import { CamerasView } from './cameras';
-import { ProjectData, useProjectDataContext } from './project-config.provider';
+import { NewProject, useNewProject } from './new-project.provider';
 import { PropertiesView } from './properties';
 import { RobotsView } from './robots';
 
 export const ProjectForm = () => {
-    const { project, isValid, isCameraSetupValid, isRobotSetupValid } = useProjectDataContext();
+    const { project, isValid, isCameraSetupValid, isRobotSetupValid } = useNewProject();
     const navigate = useNavigate();
     const saveMutation = $api.useMutation('put', '/api/projects');
 
@@ -41,17 +41,19 @@ export const ProjectForm = () => {
                 <Tabs aria-label='NewProject'>
                     <TabList>
                         <Item key='Properties' textValue='Properties'>
-                            <Gear fill={'white'} />
+                            <Gear height='10px' fill={'white'} />
                             <Text>Properties</Text>
                         </Item>
                         <Item key='Robots' textValue='Robots'>
                             <Contract
+                                height='10px'
                                 fill={isRobotSetupValid() ? 'white' : 'var(--spectrum-semantic-notice-color-icon)'}
                             />
                             <Text>Robots</Text>
                         </Item>
                         <Item key='Cameras' textValue='Cameras'>
                             <FitScreen
+                                height='10px'
                                 fill={isCameraSetupValid() ? 'white' : 'var(--spectrum-semantic-notice-color-icon)'}
                             />
                             <Text>Cameras</Text>
@@ -74,10 +76,10 @@ export const ProjectForm = () => {
     );
 };
 
-export const NewProject = () => {
+export const NewProjectPage = () => {
     return (
-        <ProjectData>
+        <NewProject>
             <ProjectForm />
-        </ProjectData>
+        </NewProject>
     );
 };

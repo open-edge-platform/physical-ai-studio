@@ -11,7 +11,7 @@ import {
     SchemaRobotPortInfo,
 } from '../../../api/openapi-spec';
 
-interface ProjectDataContext {
+interface NewProjectContext {
     project: SchemaProjectConfig;
     setProject: Dispatch<SetStateAction<SchemaProjectConfig>>;
     updateCamera: (name: string, data: SchemaCameraConfig) => void;
@@ -57,10 +57,10 @@ function createEmptyProject(name: string): SchemaProjectConfig {
         robots: [createEmptyRobot({ type: 'follower' }), createEmptyRobot({ type: 'leader' })],
     };
 }
-export const ProjectDataContext = createContext<ProjectDataContext | undefined>(undefined);
+export const NewProjectContext = createContext<NewProjectContext | undefined>(undefined);
 
-export function useProjectDataContext(): ProjectDataContext {
-    const context = useContext(ProjectDataContext);
+export function useNewProject(): NewProjectContext {
+    const context = useContext(NewProjectContext);
 
     if (context === undefined) {
         throw new Error('No project data context');
@@ -69,7 +69,7 @@ export function useProjectDataContext(): ProjectDataContext {
     return context;
 }
 
-export const ProjectData = ({ children }: { children: ReactNode }) => {
+export const NewProject = ({ children }: { children: ReactNode }) => {
     const [project, setProject] = useState<SchemaProjectConfig>(createEmptyProject('New Project'));
     const robotsQuery = $api.useQuery('get', '/api/hardware/robots');
     const { data: calibrations } = $api.useQuery('get', '/api/hardware/calibrations');
@@ -120,7 +120,7 @@ export const ProjectData = ({ children }: { children: ReactNode }) => {
     };
 
     return (
-        <ProjectDataContext.Provider
+        <NewProjectContext.Provider
             value={{
                 project,
                 setProject,
@@ -135,6 +135,6 @@ export const ProjectData = ({ children }: { children: ReactNode }) => {
             }}
         >
             {children}
-        </ProjectDataContext.Provider>
+        </NewProjectContext.Provider>
     );
 };

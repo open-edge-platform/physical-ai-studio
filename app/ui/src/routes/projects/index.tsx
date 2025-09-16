@@ -1,26 +1,15 @@
-import { Flex, Heading, Text, View } from '@geti/ui';
+import { Flex, Heading, Link, Text, View } from '@geti/ui';
 import { AddCircle } from '@geti/ui/icons';
-import { useNavigate } from 'react-router';
 
 import { $api } from '../../api/client';
 import { SchemaProjectConfig } from '../../api/openapi-spec';
-import { LoadingPage } from '../../components/loading-page/loading-page';
 import { paths } from '../../router';
 
 import classes from './index.module.scss';
 
 const NewProject = () => {
-    const navigate = useNavigate();
     return (
-        <div
-            style={{
-                display: 'flex',
-                flex: 1,
-                width: 'calc(50% - size-275 / 2)',
-                cursor: 'pointer',
-            }}
-            onClick={() => navigate(paths.projects.new.pattern)}
-        >
+        <Link href={paths.projects.new({})} UNSAFE_className={classes.link}>
             <View
                 borderColor={'gray-700'}
                 borderWidth={'thin'}
@@ -35,7 +24,7 @@ const NewProject = () => {
                     <Text>Add Project</Text>
                 </Flex>
             </View>
-        </div>
+        </Link>
     );
 };
 
@@ -44,17 +33,8 @@ interface ProjectItemProps {
 }
 
 const ProjectItem = ({ project }: ProjectItemProps) => {
-    const navigate = useNavigate();
     return (
-        <div
-            style={{
-                display: 'flex',
-                flex: 1,
-                width: 'calc(50% - size-275 / 2)',
-                cursor: 'pointer',
-            }}
-            onClick={() => navigate(paths.project.datasets.index({ project_id: project.id }))}
-        >
+        <Link href={paths.project.datasets.index({ project_id: project.id })} UNSAFE_className={classes.link}>
             <View
                 borderColor={'gray-200'}
                 borderWidth={'thin'}
@@ -73,15 +53,12 @@ const ProjectItem = ({ project }: ProjectItemProps) => {
                     </Flex>
                 </Flex>
             </View>
-        </div>
+        </Link>
     );
 };
 
 export const Index = () => {
-    const { data: projects } = $api.useQuery('get', '/api/projects');
-    if (projects === undefined) {
-        return <LoadingPage />;
-    }
+    const { data: projects } = $api.useSuspenseQuery('get', '/api/projects');
     return (
         <Flex width='100%' height='100%' direction={'column'} alignItems='center'>
             <Flex direction={'column'} maxWidth='1320px' flex={0}>
@@ -102,7 +79,7 @@ export const Index = () => {
                 </View>
                 <Flex direction={'row'} wrap={'wrap'} gap={'size-275'}>
                     <NewProject />
-                    {(projects ?? []).map((project) => (
+                    {projects.map((project) => (
                         <ProjectItem key={project.id} project={project} />
                     ))}
                 </Flex>

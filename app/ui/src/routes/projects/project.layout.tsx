@@ -25,7 +25,7 @@ const Header = ({ project_id }: { project_id: string }) => {
                     }}
                 >
                     <Item
-                        textValue='Life inference'
+                        textValue='Datasets'
                         key={'datasets'}
                         href={paths.project.datasets.index({ project_id })}
                     >
@@ -42,9 +42,14 @@ const Header = ({ project_id }: { project_id: string }) => {
                             Robot Configuration
                         </Flex>
                     </Item>
-                    <Item textValue='Life inference' key={'models'} href={paths.project.models({ project_id })}>
+                    <Item textValue='Models' key={'models'} href={paths.project.models({ project_id })}>
                         <Flex alignItems='center' gap='size-100'>
                             Models
+                        </Flex>
+                    </Item>
+                    <Item textValue='OpenAPI' key={'openapi'} href={paths.openapi({})}>
+                        <Flex alignItems='center' gap='size-100'>
+                            OpenAPI
                         </Flex>
                     </Item>
                 </TabList>
@@ -88,13 +93,13 @@ export const ProjectLayout = () => {
                         <Header project_id={project_id} />
                         <View backgroundColor={'gray-75'} gridArea={'content'}>
                             <TabPanels height={'100%'} UNSAFE_style={{ border: 'none', display: 'flex' }}>
-                                <Item textValue='Robot configuration' key={'robot-configuration'}>
+                                <Item textValue='Robot Configuration' key={'robot-configuration'}>
                                     <Outlet />
                                 </Item>
-                                <Item textValue='Life inference' key='datasets'>
+                                <Item textValue='Datasets' key='datasets'>
                                     <Outlet />
                                 </Item>
-                                <Item textValue='Life inference' key='models'>
+                                <Item textValue='models' key='models'>
                                     <Outlet />
                                 </Item>
                             </TabPanels>

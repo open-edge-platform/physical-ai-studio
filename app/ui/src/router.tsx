@@ -10,9 +10,10 @@ import { Layout } from './layout';
 import { Index as Datasets } from './routes/datasets/index';
 import { Record } from './routes/datasets/record/record';
 import { Index as Models } from './routes/models/index';
+import { OpenApi } from './routes/openapi';
 import { Index as Projects } from './routes/projects/index';
-import { NewProject } from './routes/projects/new/new';
 import { ProjectLayout } from './routes/projects/project.layout';
+import { NewProjectPage } from './routes/projects/new/new';
 import { Index as RobotConfiguration } from './routes/robot-configuration/index';
 
 const root = path('/');
@@ -25,6 +26,7 @@ const models = project.path('/models');
 
 export const paths = {
     root,
+    openapi: root.path('/openapi'),
     inference: {
         index: inference,
     },
@@ -68,7 +70,7 @@ export const router = createBrowserRouter([
                     },
                     {
                         path: paths.projects.new.pattern,
-                        element: <NewProject />,
+                        element: <NewProjectPage />,
                     },
                 ],
             },
@@ -97,6 +99,10 @@ export const router = createBrowserRouter([
                         element: <RobotConfiguration />,
                     },
                 ],
+            },
+            {
+                path: paths.openapi.pattern,
+                element: <OpenApi />,
             },
             {
                 path: '*',
