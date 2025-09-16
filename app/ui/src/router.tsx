@@ -53,6 +53,12 @@ export const router = createBrowserRouter([
         errorElement: <ErrorPage />,
         children: [
             {
+                index: true,
+                loader: () => {
+                    return redirect(paths.projects.index({}));
+                },
+            },
+            {
                 path: paths.projects.index.pattern,
                 element: <Layout />,
                 children: [

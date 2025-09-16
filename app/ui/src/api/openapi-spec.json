@@ -198,6 +198,7 @@
         "/api/hardware/camera_feed": {
             "get": {
                 "summary": "Get Camera Feed",
+                "description": "Get a streaming response from the camera",
                 "operationId": "get_camera_feed_api_hardware_camera_feed_get",
                 "parameters": [
                     { "name": "id", "in": "query", "required": true, "schema": { "type": "string", "title": "Id" } },

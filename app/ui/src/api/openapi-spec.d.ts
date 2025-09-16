@@ -155,7 +155,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Camera Feed */
+        /**
+         * Get Camera Feed
+         * @description Get a streaming response from the camera
+         */
         get: operations['get_camera_feed_api_hardware_camera_feed_get'];
         put?: never;
         post?: never;
