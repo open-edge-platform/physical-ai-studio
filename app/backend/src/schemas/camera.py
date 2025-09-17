@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -19,7 +19,7 @@ class CameraProfile(BaseModel):
     fps: int
 
     @field_validator("fps", mode="before")
-    def round_fps(cls, v: any) -> int:
+    def round_fps(cls, v: Any) -> int:
         return round(float(v))
 
 
@@ -30,5 +30,5 @@ class Camera(BaseModel):
     default_stream_profile: CameraProfile
 
     @field_validator("id", mode="before")
-    def cast_id_to_str(cls, v: any) -> str:
+    def cast_id_to_str(cls, v: Any) -> str:
         return str(v)
