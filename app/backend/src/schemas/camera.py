@@ -19,7 +19,7 @@ class CameraProfile(BaseModel):
     fps: int
 
     @field_validator("fps", mode="before")
-    def round_fps(cls, v):
+    def round_fps(cls, v: any) -> int:
         return round(float(v))
 
 class Camera(BaseModel):
@@ -29,5 +29,5 @@ class Camera(BaseModel):
     default_stream_profile: CameraProfile
 
     @field_validator("id", mode="before")
-    def cast_id_to_str(cls, v):
+    def cast_id_to_str(cls, v: any) -> str:
         return str(v)
