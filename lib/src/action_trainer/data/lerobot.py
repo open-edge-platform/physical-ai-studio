@@ -322,7 +322,7 @@ class LeRobotActionDataModule(ActionDataModule):
         """
         instance = LeRobotActionDataModule.__new__(LeRobotActionDataModule)
         super(LeRobotActionDataModule, instance).__init__(
-            train_dataset=LeRobotActionDataset.from_lerobot(lerobot_dataset=LeRobotActionDataset),
+            train_dataset=LeRobotActionDataset.from_lerobot(lerobot_dataset=lerobot_dataset),
             train_batch_size=train_batch_size,
             **action_datamodule_kwargs,
         )

@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 from action_trainer.train.lightning import LightningActionTrainer
 
 class TestLightningActionTrainer:
-    """Simpler tests for LightningActionTrainer without testing the callback."""
+    """Tests for LightningActionTrainer without testing the callback."""
 
     @pytest.fixture
     def dummy_datamodule(self):

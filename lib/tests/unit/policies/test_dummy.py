@@ -5,7 +5,7 @@ from collections import deque
 from action_trainer.policies.dummy import DummyPolicy, DummyModel
 
 class TestDummyPolicy:
-    """Simpler tests for DummyPolicy and DummyModel."""
+    """Tests for DummyPolicy and DummyModel."""
 
     @pytest.fixture
     def policy(self):
