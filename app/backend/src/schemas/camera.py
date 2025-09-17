@@ -22,6 +22,7 @@ class CameraProfile(BaseModel):
     def round_fps(cls, v: any) -> int:
         return round(float(v))
 
+
 class Camera(BaseModel):
     name: str = Field(description="Camera name")
     id: str = Field(description="Either serial id for  RealSense or port for OpenCV")
