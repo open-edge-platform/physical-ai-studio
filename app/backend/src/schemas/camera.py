@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class CameraConfig(BaseModel):
@@ -18,9 +18,16 @@ class CameraProfile(BaseModel):
     height: int
     fps: int
 
+    @field_validator("fps", mode="before")
+    def round_fps(cls, v):
+        return round(float(v))
 
 class Camera(BaseModel):
     name: str = Field(description="Camera name")
     id: str = Field(description="Either serial id for  RealSense or port for OpenCV")
     type: Literal["RealSense", "OpenCV"]
     default_stream_profile: CameraProfile
+
+    @field_validator("id", mode="before")
+    def cast_id_to_str(cls, v):
+        return str(v)

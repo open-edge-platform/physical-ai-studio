@@ -6,11 +6,12 @@ requires-python = ">=3.10, <=3.13"
 
 dependencies = [
   "opencv-python",
-  "pyrealsense2",
   "fastapi[standard]",
   "lerobot[feetech]>=0.3.3",
   "numpy",
   "websockets",
+  'pyrealsense2-macosx; sys_platform == "darwin"',
+  'pyrealsense2; sys_platform != "darwin"'
 ]
 
 [dependency-groups]
