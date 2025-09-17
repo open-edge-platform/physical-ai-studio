@@ -20,78 +20,96 @@ if TYPE_CHECKING:
     import torch
 
 
-def _convert_lerobot_item_to_observation(lerobot_item: dict) -> Observation:
-    """Function converts item from lerobot to our internal representation, observation.
-
-    Expect these keys are present in sample from lerobot:
-        - an observation either image or state or both (tensor)
-            - if it has images we assume LeRobot auto converts to CHW format
-        - action (tensor)
-        - task (str)
-        - episode_index (tensor[int])
-        - frame_index (tensor[int])
-        - index (tensor[int])
-        - task_index (tensor[int])
-        - timestamp (tensor[float])
-
-    Args:
-        lerobot_item (dict): LeRobotDataset output sample from dataset.
-
-    Returns:
-        observation (Observation): Internal representation of a observation.
-    Raises:
-        AssertionError: If required keys are not present in the lerobot_item.
+def _collect_field(
+    item: dict,
+    base_key: str,
+    prefix: str | None = None,
+) -> tuple[dict[str, torch.Tensor] | torch.Tensor | None, set[str]]:
     """
-    # Define the required keys for all items
+    Collect fields from `item` based on `base_key` and `prefix`.
+    Returns:
+        - Either a single tensor, a dict, or None
+        - The set of keys that were consumed
+    """
+    if prefix is None:
+        prefix = base_key + "."
+
+    collected: dict[str, torch.Tensor] = {}
+    used_keys: set[str] = set()
+
+    # exact single key
+    if base_key in item:
+        collected[base_key] = item[base_key]
+        used_keys.add(base_key)
+
+    # prefixed subkeys
+    for key, value in item.items():
+        if key.startswith(prefix):
+            subkey = key.split(prefix, 1)[1]
+            collected[subkey] = value
+            used_keys.add(key)
+
+    if not collected:
+        return None, used_keys
+    if len(collected) == 1 and base_key in collected:
+        return collected[base_key], used_keys
+    return collected, used_keys
+
+
+def _convert_lerobot_item_to_observation(lerobot_item: dict) -> Observation:
+    """Convert item from lerobot to our internal Observation format."""
+
     required_keys = [
-        "action",
-        "task",
         "episode_index",
         "frame_index",
         "index",
         "task_index",
         "timestamp",
     ]
-
-    # Check for presence of all required keys
     lerobot_item_keys = lerobot_item.keys()
     for key in required_keys:
         assert key in lerobot_item_keys, f"Missing required key: {key}. Available keys: {lerobot_item_keys}"
 
-    # Check if any observation keys are present
-    has_image = any(key.startswith("observation.images.") for key in lerobot_item_keys)
-    has_image_single = "observation.image" in lerobot_item_keys
-    has_state = "observation.state" in lerobot_item_keys
-
-    assert has_image or has_image_single or has_state, (
+    assert any(k.startswith("observation") for k in lerobot_item_keys), (
         f"Sample must contain some form of observation. Sample keys {lerobot_item_keys}"
     )
+    assert any(k.startswith("action") for k in lerobot_item_keys), (
+        f"Sample must contain an action. Sample keys {lerobot_item_keys}"
+    )
 
-    # Process observations
-    images: dict[str, torch.Tensor] = {}
-    if has_image_single:
-        # Handle the case with a single 'observation.image' key
-        images["image"] = lerobot_item["observation.image"]
-    elif has_image:
-        # Handle multiple images, e.g., 'observation.images.image' and 'observation.images.wrist_image'
-        for key, value in lerobot_item.items():
-            if key.startswith("observation.images."):
-                camera_name = key.split("observation.images.")[1]
-                images[camera_name] = value
+    used_keys: set[str] = set()
 
-    state = lerobot_item.get("observation.state")
+    # Observation images
+    images, used = _collect_field(lerobot_item, "observation.image", "observation.images.")
+    used_keys |= used
 
-    # Create and return the LeRobotObservation object
+    # Observation states
+    state, used = _collect_field(lerobot_item, "observation.state", "observation.state.")
+    used_keys |= used
+
+    # Actions
+    action, used = _collect_field(lerobot_item, "action", "action.")
+    used_keys |= used
+
+    # Tasks
+    task, used = _collect_field(lerobot_item, "task", "task.")
+    used_keys |= used
+
+    # Extra keys
+    reserved = set(required_keys) | used_keys
+    extra = {k: v for k, v in lerobot_item.items() if k not in reserved}
+
     return Observation(
-        images=images,
-        state=state,
-        action=lerobot_item.get("action"),
-        task=lerobot_item.get("task"),
-        episode_index=lerobot_item.get("episode_index"),
-        frame_index=lerobot_item.get("frame_index"),
-        index=lerobot_item.get("index"),
-        task_index=lerobot_item.get("task_index"),
-        timestamp=lerobot_item.get("timestamp"),
+        images=images if images is not None else {},
+        state=state if state is not None else None,
+        action=action if action is not None else None,
+        task=task if task is not None else None,
+        episode_index=lerobot_item["episode_index"],
+        frame_index=lerobot_item["frame_index"],
+        index=lerobot_item["index"],
+        task_index=lerobot_item["task_index"],
+        timestamp=lerobot_item["timestamp"],
+        extra=extra,
     )
 
 
