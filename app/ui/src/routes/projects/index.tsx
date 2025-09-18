@@ -34,7 +34,7 @@ interface ProjectItemProps {
 
 const ProjectItem = ({ project }: ProjectItemProps) => {
     return (
-        <Link href={paths.projects.edit({ projectId: project.id })} UNSAFE_className={classes.link}>
+        <Link href={paths.project.datasets.index({ project_id: project.id })} UNSAFE_className={classes.link}>
             <View
                 borderColor={'gray-200'}
                 borderWidth={'thin'}

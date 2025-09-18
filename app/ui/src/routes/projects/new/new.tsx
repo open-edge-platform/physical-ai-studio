@@ -19,8 +19,8 @@ export const ProjectForm = () => {
             .mutateAsync({
                 body: project,
             })
-            .then((projectId) => {
-                navigate(paths.projects.edit({ projectId }));
+            .then((project_id) => {
+                navigate(paths.project.datasets.index({ project_id }));
             });
     };
 
@@ -30,6 +30,9 @@ export const ProjectForm = () => {
                 <Flex justifyContent={'space-between'}>
                     <Heading>New Project</Heading>
                     <ButtonGroup>
+                        <Button variant='secondary' onPress={() => navigate(paths.projects.index.pattern)}>
+                            Cancel
+                        </Button>
                         <Button isDisabled={!isValid() || saveMutation.isPending} onPress={save}>
                             Save
                         </Button>

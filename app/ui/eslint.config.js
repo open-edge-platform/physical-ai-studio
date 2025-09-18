@@ -4,10 +4,10 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import reactCompiler from 'eslint-plugin-react-compiler';
 import { FlatCompat } from '@eslint/eslintrc';
 import js from '@eslint/js';
 import sharedEslintConfig from '@geti/config/lint';
+import reactCompiler from 'eslint-plugin-react-compiler';
 
 const filename = fileURLToPath(import.meta.url);
 const dirname = path.dirname(filename);

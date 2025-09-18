@@ -28,6 +28,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/api/projects/{id}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Project
+         * @description Get project by id
+         */
+        get: operations['get_project_api_projects__id__get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/api/projects/{project_id}/datasets/{repo}/{id}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Dataset Of Project
+         * @description Get dataset of project by id
+         */
+        get: operations['get_dataset_of_project_api_projects__project_id__datasets__repo___id__get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/api/hardware/cameras': {
         parameters: {
             query?: never;
@@ -101,6 +141,26 @@ export interface paths {
          * @description Visually identify the robot by moving given joint on robot
          */
         put: operations['identify_robot_api_hardware_identify_put'];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/api/hardware/camera_feed': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Camera Feed
+         * @description Get a streaming response from the camera
+         */
+        get: operations['get_camera_feed_api_hardware_camera_feed_get'];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -194,6 +254,36 @@ export interface components {
             /** Fps */
             fps: number;
         };
+        /** Dataset */
+        Dataset: {
+            /** Repo Id */
+            repo_id: string;
+            /** Episodes */
+            episodes: components['schemas']['Episode'][];
+            /** Total Frames */
+            total_frames: number;
+            /** Features */
+            features: string[];
+            /** Tasks */
+            tasks: string[];
+            /** Fps */
+            fps: number;
+        };
+        /** Episode */
+        Episode: {
+            /** Episode Index */
+            episode_index: number;
+            /** Length */
+            length: number;
+            /** Fps */
+            fps: number;
+            /** Tasks */
+            tasks: string[];
+            /** Actions */
+            actions: number[][];
+            /** Modification Timestamp */
+            modification_timestamp: number;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -275,6 +365,8 @@ export type SchemaCalibrationConfig = components['schemas']['CalibrationConfig']
 export type SchemaCamera = components['schemas']['Camera'];
 export type SchemaCameraConfig = components['schemas']['CameraConfig'];
 export type SchemaCameraProfile = components['schemas']['CameraProfile'];
+export type SchemaDataset = components['schemas']['Dataset'];
+export type SchemaEpisode = components['schemas']['Episode'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
 export type SchemaProjectConfig = components['schemas']['ProjectConfig'];
 export type SchemaRobotConfig = components['schemas']['RobotConfig'];
@@ -322,6 +414,70 @@ export interface operations {
                 };
                 content: {
                     'application/json': string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['HTTPValidationError'];
+                };
+            };
+        };
+    };
+    get_project_api_projects__id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ProjectConfig'];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['HTTPValidationError'];
+                };
+            };
+        };
+    };
+    get_dataset_of_project_api_projects__project_id__datasets__repo___id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                repo: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Dataset'];
                 };
             };
             /** @description Validation Error */
@@ -409,6 +565,38 @@ export interface operations {
                 'application/json': components['schemas']['RobotPortInfo'];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['HTTPValidationError'];
+                };
+            };
+        };
+    };
+    get_camera_feed_api_hardware_camera_feed_get: {
+        parameters: {
+            query: {
+                id: string;
+                type: 'RealSense' | 'OpenCV';
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

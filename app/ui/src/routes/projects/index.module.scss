@@ -3,7 +3,7 @@
 }
 
 .link {
-    flex: 1;
+    width: calc(50% - var(--spectrum-global-dimension-size-275) / 2);
     color: white;
     text-decoration: none;
 }
