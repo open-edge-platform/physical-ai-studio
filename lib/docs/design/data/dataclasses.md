@@ -10,11 +10,10 @@ the policy must learn to predict.
 ```mermaid
 classDiagram
     class Observation {
-        <<dataclass>>
-        + torch.Tensor | np.ndarray | None action
-        + str | None task
-        + torch.Tensor | np.ndarray | None state
-        + dict~str, torch.Tensor | np.ndarray~ | None images
+        + dict[str, torch.Tensor|np.ndarray] | torch.Tensor | np.ndarray | None action
+        + dict[str, torch.Tensor|np.ndarray] | torch.Tensor | np.ndarray | None task
+        + dict[str, torch.Tensor|np.ndarray] | torch.Tensor | np.ndarray | None state
+        + dict[str, torch.Tensor|np.ndarray] | torch.Tensor | np.ndarray | None images
         + torch.Tensor | np.ndarray | None next_reward
         + bool | None next_success
         + torch.Tensor | np.ndarray | None episode_index
@@ -22,7 +21,8 @@ classDiagram
         + torch.Tensor | np.ndarray | None index
         + torch.Tensor | np.ndarray | None task_index
         + torch.Tensor | np.ndarray | None timestamp
-        + dict~str, Any~ | None info
+        + dict[str, Any] | None info
+        + dict[str, Any] | None extra
     }
 ```
 
