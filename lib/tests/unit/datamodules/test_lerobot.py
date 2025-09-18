@@ -5,10 +5,10 @@
 
 import pytest
 import torch
-from action_trainer.data import ActionDataset, ActionDataModule, Observation
+from action_trainer.data import Dataset, DataModule, Observation
 
 
-class FakeActionDataset(ActionDataset):
+class FakeActionDataset(Dataset):
     """A fake ActionDataset for testing purposes."""
     def __init__(self, length: int = 100):
         self._length = length
@@ -79,7 +79,7 @@ class TestActionDataModule:
 
     def test_initialization(self, mock_train_dataset: FakeActionDataset):
         """Tests if the DataModule initializes attributes correctly."""
-        dm = ActionDataModule(
+        dm = DataModule(
             train_dataset=mock_train_dataset,
             train_batch_size=32
         )

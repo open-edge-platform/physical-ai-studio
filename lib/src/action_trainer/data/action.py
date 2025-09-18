@@ -10,13 +10,13 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset as TorchDataset
 
 if TYPE_CHECKING:
     from action_trainer.data import Observation
 
 
-class ActionDataset(Dataset, ABC):
+class Dataset(TorchDataset, ABC):
     """
     An abstract base class for datasets that return observations.
     """

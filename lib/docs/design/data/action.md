@@ -1,13 +1,13 @@
-# ActionDataset
+# Dataset
 
-The `ActionDataset` represents the
+The `Dataset` represents a PyTorch Dataset which should return an Observation.
 
 ```mermaid
 classDiagram
-    class Dataset
+    class torch.utils.data.Dataset
     class ABC
 
-    class ActionDataset {
+    class Dataset {
         <<abstract>>
         + __getitem__(idx: int) Observation
         + __len__() int
@@ -19,6 +19,6 @@ classDiagram
         + delta_indices(indices: dict)
     }
 
-    ActionDataset --|> Dataset
-    ActionDataset --|> ABC
+    Dataset --|> torch.utils.data.Dataset
+    Dataset --|> ABC
 ```

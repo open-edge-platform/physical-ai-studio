@@ -3,6 +3,6 @@
 
 """Base classes for policies."""
 
-from .base_lightning_module import ActionTrainerModule
+from .base_lightning_module import TrainerModule
 
-__all__ = ["ActionTrainerModule"]
+__all__ = ["TrainerModule"]

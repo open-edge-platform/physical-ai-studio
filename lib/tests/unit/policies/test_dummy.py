@@ -2,14 +2,16 @@ import pytest
 import torch
 from torch import nn
 from collections import deque
-from action_trainer.policies.dummy import DummyPolicy, DummyModel
+from action_trainer.policies import Dummy, DummyConfig
+from action_trainer.policies.dummy.model import Dummy as DummyModel
 
 class TestDummyPolicy:
     """Tests for DummyPolicy and DummyModel."""
 
     @pytest.fixture
     def policy(self):
-        return DummyPolicy(action_shape=(3,))
+        config = DummyConfig(action_shape=(3,))
+        return Dummy(config)
 
     @pytest.fixture
     def batch(self):

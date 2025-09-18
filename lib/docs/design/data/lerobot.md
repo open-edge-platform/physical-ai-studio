@@ -1,6 +1,6 @@
 # LeRobot
 
-## LeRobotActionDataset
+## LeRobotDatasetWrapper
 
 To support but not re-implement LeRobot data standard have an interface.
 
@@ -8,68 +8,64 @@ The LeRobot dataset format is described in the [lerobot documentation](https://g
 
 ```mermaid
 classDiagram
-    class ActionDataset
+    class Dataset
     class LeRobotDataset
     class Observation
 
-    class LeRobotActionDataset {
-        + _lerobot_dataset: LeRobotDataset
-        + __init__(...)
+    class LeRobotDatasetWrapper {
+        - LeRobotDataset _lerobot_dataset
         + __len__() int
         + __getitem__(idx) Observation
-        + from_lerobot(lerobot_dataset: LeRobotDataset) LeRobotActionDataset
-        + features dict
-        + action_features dict
-        + fps int
-        + tolerance_s float
-        + delta_indices dict~str, list~int~~
-        + delta_indices(indices)
+        + from_lerobot(LeRobotDataset) LeRobotDatasetWrapper
+        + features
+        + action_features
+        + fps
+        + tolerance_s
+        + delta_indices
     }
 
-    LeRobotActionDataset --|> ActionDataset : inherits
-    LeRobotActionDataset --o LeRobotDataset : aggregates
-    LeRobotActionDataset ..> Observation : uses
+    Dataset <|-- LeRobotDatasetWrapper
+    LeRobotDatasetWrapper --> LeRobotDataset
+    LeRobotDatasetWrapper --> Observation
 ```
 
 Example (these examples will download data onto your disk):
 
 ```python
-from action_trainer.data import LeRobotActionDataset
+from action_trainer.data import LeRobotDatasetWrapper
 
-pusht_dataset = LeRobotActionDataset("lerobot/pusht")
+pusht_dataset = LeRobotDatasetWrapper("lerobot/pusht")
 
-s0100_dataset = LeRobotActionDataset("lerobot/svla_so100_pickplace")
+s0100_dataset = LeRobotDatasetWrapper("lerobot/svla_so100_pickplace")
 ```
 
 or from `LeRobot` itself:
 
 ```python
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
-from action_trainer.data import LeRobotActionDataset
+from action_trainer.data import LeRobotDatasetWrapper
 pusht_lerobot_dataset = LeRobotDataset("lerobot/pusht")
-pusht_action_dataset = LeRobotActionDataset.from_lerobot(pusht_lerobot_dataset)
+pusht_action_dataset = LeRobotDatasetWrapper.from_lerobot(pusht_lerobot_dataset)
 ```
 
-## LeRobotActionDataModule
+## LeRobotDataModule
 
-This serves as a wrapper of the `ActionDataModule`,
+This serves as a wrapper of the `DataModule`,
 specifically for ease of use with `LeRobot`.
 
 ```mermaid
 classDiagram
-    class ActionDataModule {
+    class DataModule
+    class LeRobotDatasetWrapper
+    class LeRobotDataset
+
+    class LeRobotDataModule {
+        + __init__(train_batch_size, repo_id, dataset, ...)
     }
 
-    class LeRobotDataset {
-    }
-
-    class LeRobotActionDataModule {
-        +__init__(repo_id: str, train_batch_size: int, ...)
-        +from_lerobot(lerobot_dataset: LeRobotDataset, ...) LeRobotActionDataModule
-    }
-
-    LeRobotActionDataModule --|> ActionDataModule : inherits
-    LeRobotActionDataModule ..> LeRobotDataset : wraps
+    DataModule <|-- LeRobotDataModule
+    LeRobotDataModule --> LeRobotDatasetWrapper
+    LeRobotDataModule --> LeRobotDataset
 ```
 
 Example (this will download data to disk if not cached already):

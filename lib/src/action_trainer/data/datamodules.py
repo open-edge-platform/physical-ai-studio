@@ -22,7 +22,7 @@ from action_trainer.data.gym import GymDataset
 from action_trainer.gyms import BaseGym
 
 if TYPE_CHECKING:
-    from action_trainer.data import ActionDataset
+    from action_trainer.data import Dataset
 
 
 def _collate_env(batch: list[Any]) -> dict[str, Any]:
@@ -97,7 +97,7 @@ def _collate_observations(batch: list[Observation]) -> dict[str, Any]:
     return collated_data
 
 
-class ActionDataModule(LightningDataModule):
+class DataModule(LightningDataModule):
     """
     PyTorch Lightning DataModule for action datasets and Gym environments.
 
@@ -107,8 +107,8 @@ class ActionDataModule(LightningDataModule):
 
     def __init__(
         self,
-        train_dataset: ActionDataset,
-        train_batch_size: int,
+        train_dataset: Dataset,
+        train_batch_size: int = 16,
         eval_gyms: BaseGym | list[BaseGym] | None = None,
         num_rollouts_eval: int = 10,
         test_gyms: BaseGym | list[BaseGym] | None = None,
@@ -130,7 +130,7 @@ class ActionDataModule(LightningDataModule):
         super().__init__()
 
         # dataset
-        self.train_dataset: ActionDataset = train_dataset
+        self.train_dataset: Dataset = train_dataset
         self.train_batch_size: int = train_batch_size
 
         # gym environments

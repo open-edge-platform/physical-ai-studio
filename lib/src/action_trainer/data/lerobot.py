@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-from action_trainer.data import ActionDataModule, ActionDataset, Observation
+from action_trainer.data import DataModule, Dataset, Observation
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -114,26 +114,13 @@ def _convert_lerobot_item_to_observation(lerobot_item: dict) -> Observation:
 
 
 # NOTE: Eventually we will need properties from action and lerobot datasets
-class LeRobotActionDataset(ActionDataset):
+class LeRobotDatasetWrapper(Dataset):
     """A wrapper class that enables using a LeRobotDataset for action training.
 
     This class uses the **composition** pattern, holding a `LeRobotDataset` instance
     and delegating all data loading operations to it. This design allows for
     the addition of action-specific logic without modifying the original
     `LeRobotDataset` class.
-
-    Args:
-        repo_id (str): The Hugging Face Hub repository ID.
-        root (str | Path | None, optional): Local directory for caching files. Defaults to None.
-        episodes (list[int] | None, optional): A list of episode indices to load. Defaults to None.
-        image_transforms (Callable | None, optional): A callable to apply to image data. Defaults to None.
-        delta_timestamps (dict[str, list[float]] | None, optional): A dict of timestamps. Defaults to None.
-        tolerance_s (float, optional): Tolerance in seconds for timestamp synchronization. Defaults to 1e-4.
-        revision (str | None, optional): A Git revision ID for the dataset. Defaults to None.
-        force_cache_sync (bool, optional): Flag to force synchronization with the Hugging Face Hub. Defaults to False.
-        download_videos (bool, optional): Flag to download video files. Defaults to True.
-        video_backend (str | None, optional): The video decoding backend to use. Defaults to None.
-        batch_encoding_size (int, optional): The number of episodes to encode in a batch. Defaults to 1.
     """
 
     def __init__(
@@ -174,7 +161,7 @@ class LeRobotActionDataset(ActionDataset):
         return _convert_lerobot_item_to_observation(self._lerobot_dataset[idx])
 
     @staticmethod
-    def from_lerobot(lerobot_dataset: LeRobotDataset) -> LeRobotActionDataset:
+    def from_lerobot(lerobot_dataset: LeRobotDataset) -> LeRobotDatasetWrapper:
         """Creates an instance of LeRobotActionDataset from an existing LeRobotDataset instance.
 
         This static method is useful when you already have a `LeRobotDataset` object
@@ -186,7 +173,7 @@ class LeRobotActionDataset(ActionDataset):
         Returns:
             LeRobotActionDataset: A new LeRobotActionDataset instance that uses the provided dataset.
         """
-        instance = LeRobotActionDataset.__new__(LeRobotActionDataset)
+        instance = LeRobotDatasetWrapper.__new__(LeRobotDatasetWrapper)
         # Bypassing __init__ to set the internal dataset
         instance._lerobot_dataset = lerobot_dataset  # noqa: SLF001
         return instance
@@ -223,11 +210,12 @@ class LeRobotActionDataset(ActionDataset):
         self._lerobot_dataset.delta_indices = indices
 
 
-class LeRobotActionDataModule(ActionDataModule):
+class LeRobotDataModule(DataModule):
     def __init__(
         self,
-        repo_id: str,
-        train_batch_size: int,
+        train_batch_size: int = 16,
+        repo_id: str | None = None,
+        dataset: LeRobotDatasetWrapper | LeRobotDataset | None = None,
         # LeRobot Dataset kwargs
         root: str | Path | None = None,
         episodes: list[int] | None = None,
@@ -276,20 +264,33 @@ class LeRobotActionDataModule(ActionDataModule):
             ValueError: If dataset initialization fails due to invalid
                 arguments.
         """
-        # Initialize the LeRobot dataset
-        train_dataset = LeRobotActionDataset(
-            repo_id=repo_id,
-            root=root,
-            episodes=episodes,
-            image_transforms=image_transforms,
-            delta_timestamps=delta_timestamps,
-            tolerance_s=tolerance_s,
-            revision=revision,
-            force_cache_sync=force_cache_sync,
-            download_videos=download_videos,
-            video_backend=video_backend,
-            batch_encoding_size=batch_encoding_size,
-        )
+
+        # if dataset is passed, it is preffered
+        if dataset:
+            if isinstance(dataset, LeRobotDatasetWrapper):
+                train_dataset = dataset
+            elif isinstance(dataset, LeRobotDataset):
+                train_dataset = LeRobotDatasetWrapper.from_lerobot(dataset)
+            else:
+                raise TypeError
+        elif repo_id:
+            # Initialize the LeRobot dataset
+            train_dataset = LeRobotDatasetWrapper(
+                repo_id=repo_id,
+                root=root,
+                episodes=episodes,
+                image_transforms=image_transforms,
+                delta_timestamps=delta_timestamps,
+                tolerance_s=tolerance_s,
+                revision=revision,
+                force_cache_sync=force_cache_sync,
+                download_videos=download_videos,
+                video_backend=video_backend,
+                batch_encoding_size=batch_encoding_size,
+            )
+        else:
+            msg = "Must provide either repo_id or a dataset"
+            raise ValueError(msg)
 
         # Pass initialized dataset into the parent class
         super().__init__(
@@ -297,33 +298,3 @@ class LeRobotActionDataModule(ActionDataModule):
             train_batch_size=train_batch_size,
             **action_datamodule_kwargs,
         )
-
-    @staticmethod
-    def from_lerobot(
-        lerobot_dataset: LeRobotDataset,
-        train_batch_size: int,
-        **action_datamodule_kwargs,
-    ) -> "LeRobotActionDataModule":
-        """Creates an instance of LeRobotActionDataModule from an existing LeRobotDataset.
-
-        This static method is useful when you already have a
-        `LeRobotDataset` object and want to wrap it in a data
-        module for action training.
-
-        Args:
-            lerobot_dataset (LeRobotDataset): The existing dataset instance.
-            train_batch_size (int): Batch size for the training dataloader.
-            **action_datamodule_kwargs: Additional keyword arguments passed
-                to the `ActionDataModule`.
-
-        Returns:
-            LeRobotActionDataModule: A new data module wrapping the
-            provided dataset.
-        """
-        instance = LeRobotActionDataModule.__new__(LeRobotActionDataModule)
-        super(LeRobotActionDataModule, instance).__init__(
-            train_dataset=LeRobotActionDataset.from_lerobot(lerobot_dataset=lerobot_dataset),
-            train_batch_size=train_batch_size,
-            **action_datamodule_kwargs,
-        )
-        return instance

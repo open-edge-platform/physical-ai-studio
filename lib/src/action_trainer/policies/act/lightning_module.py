@@ -3,10 +3,10 @@
 
 
 from action_trainer.policies.act.torch_model import ACTModel
-from action_trainer.policies.base.base_lightning_module import ActionTrainerModule
+from action_trainer.policies.base.base_lightning_module import TrainerModule
 
 
-class ACTPolicy(ActionTrainerModule):
+class ACTPolicy(TrainerModule):
     def __init__(self) -> None:
         super().__init__()
         self.model = ACTModel()

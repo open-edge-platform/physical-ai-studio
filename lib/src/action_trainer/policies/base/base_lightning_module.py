@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 
 
-class ActionTrainerModule(L.LightningModule, ABC):
+class TrainerModule(L.LightningModule, ABC):
     def __init__(
         self,
     ) -> None:

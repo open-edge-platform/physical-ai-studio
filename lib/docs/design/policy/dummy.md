@@ -10,21 +10,27 @@ The idea is to use in integration with our `Trainer`.
 
 ```mermaid
 classDiagram
-    class ActionTrainerModule {
+    class TrainerModule
+    class DummyModel
+    class DummyConfig
+
+    class Dummy {
+        - DummyConfig config
+        - torch.Size action_shape
+        - DummyModel model
+        + __init__(config: DummyConfig)
+        + _validate_action_shape(shape: torch.Size|Iterable) torch.Size
+        + select_action(batch: dict[str, torch.Tensor]) torch.Tensor
+        + training_step(batch: dict[str, torch.Tensor], batch_idx: int) dict
+        + configure_optimizers() torch.optim.Optimizer
+        + evaluation_step(batch: dict[str, torch.Tensor], stage: str) None
+        + validation_step(batch: dict[str, torch.Tensor], batch_idx: int) None
+        + test_step(batch: dict[str, torch.Tensor], batch_idx: int) None
     }
 
-    class DummyModel {
-    }
-
-    class DummyPolicy {
-        - action_shape: torch.Size
-        - model: DummyModel
-        + __init__(action_shape: torch.Size | Iterable)
-        - _validate_action_shape(shape: torch.Size | Iterable) torch.Size
-    }
-
-    DummyPolicy --|> ActionTrainerModule : inherits
-    DummyPolicy *-- DummyModel : contains
+    TrainerModule <|-- Dummy
+    Dummy --> DummyModel
+    Dummy --> DummyConfig
 ```
 
 ## Dummy Model
@@ -37,7 +43,7 @@ classDiagram
     class nn.Module {
     }
 
-    class DummyModel {
+    class Dummy {
         - action_shape: torch.Size
         - n_action_steps: int
         - temporal_ensemble_coeff: float | None
@@ -62,18 +68,10 @@ classDiagram
 Example:
 
 ```python
-from action_trainer.data import LeRobotActionDataModule
-from action_trainer.policies.dummy import DummyPolicy
-action_shape = (2,)
-policy = DummyPolicy(action_shape=action_shape)
-```
+from action_trainer.data import LeRobotDataModule
+from action_trainer.policies import Dummy, DummyConfig
 
-or from a `ActionDataModule`:
-
-```python
-from action_trainer.data import LeRobotActionDataModule
-from action_trainer.policies.dummy import DummyPolicy
-lerobot_action_datamodule = LeRobotActionDataModule(repo_id="lerobot/pusht", train_batch_size=16)
-action_shape = lerobot_action_datamodule.train_dataset.action_features["action"]["shape"]
-policy = DummyPolicy(action_shape=action_shape)
+if __name__ == "__main__":
+    l_dm = LeRobotDataModule(repo_id="lerobot/pusht")
+    policy = Dummy(DummyConfig(action_shape=l_dm.train_dataset.action_features["action"]["shape"]))
 ```
