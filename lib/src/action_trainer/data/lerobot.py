@@ -117,10 +117,9 @@ def _convert_lerobot_item_to_observation(lerobot_item: dict) -> Observation:
 class LeRobotDatasetWrapper(Dataset):
     """A wrapper class that enables using a LeRobotDataset for action training.
 
-    This class uses the **composition** pattern, holding a `LeRobotDataset` instance
-    and delegating all data loading operations to it. This design allows for
-    the addition of action-specific logic without modifying the original
-    `LeRobotDataset` class.
+    This class uses the **composition** pattern by holding a `LeRobotDataset` instance
+    and delegating all data loading operations to it. This allows adding action-specific
+    logic without modifying the original `LeRobotDataset`.
     """
 
     def __init__(
@@ -137,6 +136,29 @@ class LeRobotDatasetWrapper(Dataset):
         video_backend: str | None = None,
         batch_encoding_size: int = 1,
     ):
+        """
+        Initialize a LeRobotDatasetWrapper.
+
+        This wrapper initializes an internal `LeRobotDataset` using the provided
+        configuration and exposes the same dataset interface for action training.
+
+        Args:
+            repo_id (str): Repository ID of the LeRobot dataset.
+            root (str | Path | None, optional): Local root directory to cache dataset files. Defaults to None.
+            episodes (list[int] | None, optional): Specific episode indices to include. Defaults to None.
+            image_transforms (Callable | None, optional): Transformations to apply to images. Defaults to None.
+            delta_timestamps (dict[str, list[float]] | None, optional): Mapping of signal keys to timestamp offsets.
+            Defaults to None.
+            tolerance_s (float, optional): Tolerance in seconds when aligning timestamps. Defaults to 1e-4.
+            revision (str | None, optional): Dataset version or branch to use. Defaults to None.
+            force_cache_sync (bool, optional): If True, forces synchronization of the dataset cache. Defaults to False.
+            download_videos (bool, optional): Whether to download associated videos. Defaults to True.
+            video_backend (str | None, optional): Backend to use for video decoding. Defaults to None.
+            batch_encoding_size (int, optional): Number of samples per encoded batch. Defaults to 1.
+
+        Raises:
+            ValueError: If required arguments are missing or invalid.
+        """
         super().__init__()
 
         # All arguments are passed
@@ -229,40 +251,35 @@ class LeRobotDataModule(DataModule):
         batch_encoding_size: int = 1,
         **action_datamodule_kwargs,
     ):
-        """LeRobot-specific implementation of an ActionDataModule.
+        """
+        Initialize a LeRobot-specific Action DataModule.
 
-        This class wraps the `LeRobotDataset` and integrates it with
-        the base `ActionDataModule`.
+        This class wraps a `LeRobotDataset` (or `LeRobotDatasetWrapper`) and
+        integrates it with the base `ActionDataModule` functionality, providing
+        training, evaluation, and test data loaders for imitation learning tasks.
 
         Args:
-            repo_id (str): The repository ID for the LeRobot dataset.
-            train_batch_size (int): Batch size for the training dataloader.
-            root (str | Path | None, optional): Local root directory for caching
-                the dataset. Defaults to `None`.
-            episodes (list[int] | None, optional): Specific episode indices
-                to include. Defaults to `None`.
-            image_transforms (Callable | None, optional): Transformations
-                applied to images. Defaults to `None`.
-            delta_timestamps (dict[str, list[float]] | None, optional): Mapping
-                of signal keys to timestamp offsets. Defaults to `None`.
-            tolerance_s (float, optional): Tolerance in seconds when aligning
-                timestamps. Defaults to `1e-4`.
-            revision (str | None, optional): Dataset version or branch to use.
-                Defaults to `None`.
-            force_cache_sync (bool, optional): If `True`, forces cache
-                synchronization. Defaults to `False`.
-            download_videos (bool, optional): Whether to download videos
-                alongside the dataset. Defaults to `True`.
-            video_backend (str | None, optional): Video decoding backend.
-                Defaults to `None`.
-            batch_encoding_size (int, optional): Number of samples per
-                encoded batch. Defaults to `1`.
-            **action_datamodule_kwargs: Additional keyword arguments passed
-                through to the `ActionDataModule`.
+            train_batch_size (int, optional): Batch size for the training DataLoader. Defaults to 16.
+            repo_id (str | None, optional): Repository ID for the LeRobot dataset.
+            Required if `dataset` is not provided.
+            dataset (LeRobotDatasetWrapper | LeRobotDataset | None, optional): Pre-initialized dataset instance.
+            Defaults to None.
+            root (str | Path | None, optional): Local directory for caching dataset files. Defaults to None.
+            episodes (list[int] | None, optional): Specific episode indices to include. Defaults to None.
+            image_transforms (Callable | None, optional): Transformations to apply to images. Defaults to None.
+            delta_timestamps (dict[str, list[float]] | None, optional): Mapping of signal keys to timestamp offsets.
+            Defaults to None.
+            tolerance_s (float, optional): Tolerance in seconds for aligning timestamps. Defaults to 1e-4.
+            revision (str | None, optional): Dataset version or branch to use. Defaults to None.
+            force_cache_sync (bool, optional): If True, forces synchronization of the dataset cache. Defaults to False.
+            download_videos (bool, optional): Whether to download associated videos. Defaults to True.
+            video_backend (str | None, optional): Backend to use for video decoding. Defaults to None.
+            batch_encoding_size (int, optional): Number of samples per encoded batch. Defaults to 1.
+            **action_datamodule_kwargs: Additional keyword arguments passed to the base `ActionDataModule`.
 
         Raises:
-            ValueError: If dataset initialization fails due to invalid
-                arguments.
+            ValueError: If neither `repo_id` nor `dataset` is provided, or if the dataset type is invalid.
+            TypeError: If `dataset` is not of type `LeRobotDataset` or `LeRobotDatasetWrapper`.
         """
 
         # if dataset is passed, it is preffered

@@ -13,17 +13,20 @@ from action_trainer.policies.dummy.model import Dummy as DummyModel
 
 
 class Dummy(TrainerModule):
-    """A dummy policy wrapper for the DummyModel.
-
-    This class integrates `DummyModel` into an `ActionTrainerModule`,
-    validating action shapes and providing a training-ready interface.
-    """
-
     def __init__(self, config: DummyConfig) -> None:
-        """Initialize the DummyPolicy.
+        """
+        Initialize the Dummy policy wrapper.
+
+        This class wraps a `DummyModel` and integrates it into a `TrainerModule`,
+        validating the action shape and preparing the model for training.
 
         Args:
-            action_shape (torch.Size | Iterable): Shape of a single action.
+            config (DummyConfig): Configuration object containing the action shape
+                and other hyperparameters required for initializing the policy.
+
+        Raises:
+            ValueError: If the `action_shape` in the configuration is None.
+            TypeError: If the `action_shape` is not a valid type (e.g., string or non-iterable).
         """
         super().__init__()
         self.config = config
