@@ -1,4 +1,4 @@
-import { ActionButton, Flex, Grid, Item, TabList, TabPanels, Tabs, View } from '@geti/ui';
+import { ActionButton, Flex, Grid, Item, TabList, Tabs, View } from '@geti/ui';
 import { ChevronLeft } from '@geti/ui/icons';
 import { Outlet, redirect, useLocation, useNavigate, useParams } from 'react-router';
 
@@ -88,17 +88,7 @@ export const ProjectLayout = () => {
                     >
                         <Header project_id={project_id} />
                         <View backgroundColor={'gray-75'} gridArea={'content'}>
-                            <TabPanels height={'100%'} UNSAFE_style={{ border: 'none', display: 'flex' }}>
-                                <Item textValue='Robot Configuration' key={'robot-configuration'}>
-                                    <Outlet />
-                                </Item>
-                                <Item textValue='Datasets' key='datasets'>
-                                    <Outlet />
-                                </Item>
-                                <Item textValue='models' key='models'>
-                                    <Outlet />
-                                </Item>
-                            </TabPanels>
+                            <Outlet />
                         </View>
                     </Grid>
                 </Tabs>
