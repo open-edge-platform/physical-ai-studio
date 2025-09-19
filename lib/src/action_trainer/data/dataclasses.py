@@ -21,10 +21,10 @@ class Observation:
     """A single observation from an imitation learning dataset."""
 
     # Core Observation
-    action: torch.Tensor | np.ndarray | None
-    task: str | None
-    state: torch.Tensor | np.ndarray | None = None
-    images: dict[str, torch.Tensor | np.ndarray] | None = None
+    action: dict[str, torch.Tensor | np.ndarray] | torch.Tensor | np.ndarray | None = None
+    task: dict[str, torch.Tensor | np.ndarray] | torch.Tensor | np.ndarray | None = None
+    state: dict[str, torch.Tensor | np.ndarray] | torch.Tensor | np.ndarray | None = None
+    images: dict[str, torch.Tensor | np.ndarray] | torch.Tensor | np.ndarray | None = None
 
     # Optional RL & Metadata Fields
     next_reward: torch.Tensor | np.ndarray | None = None
@@ -35,6 +35,7 @@ class Observation:
     task_index: torch.Tensor | np.ndarray | None = None
     timestamp: torch.Tensor | np.ndarray | None = None
     info: dict[str, Any] | None = None
+    extra: dict[str, Any] | None = None
 
 
 class NormalizationType(str, Enum):
@@ -60,3 +61,4 @@ class NormalizationMap:
     action: NormalizationParameters | None = None
     images: NormalizationParameters | None = None
     extra_normalizers: dict[str, NormalizationParameters] | None = None
+    extra: dict[str, Any] | None = None

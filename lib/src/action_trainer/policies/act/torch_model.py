@@ -128,6 +128,10 @@ class ACTModel(nn.Module):
     def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         pass
 
+    @torch.no_grad()
+    def predict_action_chunk(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        pass
+
 
 class NormalizationMode(str, Enum):
     MIN_MAX = "MIN_MAX"

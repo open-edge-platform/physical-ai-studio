@@ -1,16 +1,18 @@
-import { Flex, Grid, Item, TabList, TabPanels, Tabs, View } from '@geti/ui';
-import { Outlet, useLocation } from 'react-router';
+import { Flex, Grid, Item, TabList, Tabs, View } from '@geti/ui';
+import { Outlet, useLocation, useNavigate } from 'react-router';
 
 import { paths } from './router';
 
 const Header = () => {
+    const navigate = useNavigate();
     return (
         <View backgroundColor={'gray-300'} gridArea={'header'}>
             <Flex height='100%' alignItems={'center'} marginX='1rem' gap='size-200'>
                 <View marginEnd='size-200' maxWidth={'5ch'}>
-                    <span>Geti Action</span>
+                    <span style={{ cursor: 'pointer' }} onClick={() => navigate(paths.projects.index.pattern)}>
+                        Geti Action
+                    </span>
                 </View>
-
                 <TabList
                     height={'100%'}
                     UNSAFE_style={{
@@ -18,23 +20,9 @@ const Header = () => {
                         '--spectrum-tabs-selection-indicator-color': 'var(--energy-blue)',
                     }}
                 >
-                    <Item
-                        textValue='Life inference'
-                        key={paths.robotConfiguration.index({})}
-                        href={paths.robotConfiguration.index({})}
-                    >
+                    <Item textValue='OpenAPI' key={'models'} href={paths.openapi({})}>
                         <Flex alignItems='center' gap='size-100'>
-                            Robot Configuration
-                        </Flex>
-                    </Item>
-                    <Item textValue='Life inference' key={paths.datasets.index({})} href={paths.datasets.index({})}>
-                        <Flex alignItems='center' gap='size-100'>
-                            Datasets
-                        </Flex>
-                    </Item>
-                    <Item textValue='Life inference' key={paths.models.index({})} href={paths.models.index({})}>
-                        <Flex alignItems='center' gap='size-100'>
-                            Models
+                            OpenAPI
                         </Flex>
                     </Item>
                 </TabList>
@@ -63,18 +51,8 @@ export const Layout = () => {
                 height={'100%'}
             >
                 <Header />
-                <View backgroundColor={'gray-50'} gridArea={'content'}>
-                    <TabPanels height={'100%'} UNSAFE_style={{ border: 'none' }}>
-                        <Item textValue='index' key={paths.robotConfiguration.index({})}>
-                            <Outlet />
-                        </Item>
-                        <Item textValue='index' key={paths.datasets.index({})}>
-                            <Outlet />
-                        </Item>
-                        <Item textValue='index' key={paths.models.index({})}>
-                            <Outlet />
-                        </Item>
-                    </TabPanels>
+                <View backgroundColor={'gray-75'} gridArea={'content'}>
+                    <Outlet />
                 </View>
             </Grid>
         </Tabs>

@@ -1,3 +1,5 @@
+<!-- markdownlint-disable MD013 -->
+
 # Phases
 
 Splitting app development into phases helps manage complexity, reduce risks, and improve planning. Each phase focuses on specific goals, allowing for incremental progress, easier troubleshooting, and better resource allocation.
@@ -18,8 +20,19 @@ Initial training implementation:
 - Model interface
 - Training engine
 - Models: Diffusion Policy (simple pusht), ACT
+- Configs:
+  - Dataclass for policy configs
+  - Expose required attributes for full train pipeline.
 
 ## Phase 2
+
+Design preperation for:
+
+- Gymansium Wrapping to internal representation
+- Augmentations
+- Trainer class for different backends
+
+## Phase 3
 
 - Reiterate on model configuration process
 - Look at RL datasets
