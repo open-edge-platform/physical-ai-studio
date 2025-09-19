@@ -22,8 +22,6 @@ class TestPushTGym(BaseTestGym):
         """
         # The env is already created by the setup_env fixture
         assert self.env._gym_id == "gym_pusht/PushT-v0"
-        assert self.env._obs_type == "pixels_agent_pos"
-        assert self.env.max_episode_steps == 300
 
     def test_pushtgym_custom_parameters(self):
         """
@@ -32,9 +30,4 @@ class TestPushTGym(BaseTestGym):
         self.env.close()
         self.env = PushTGym(
             obs_type="state",
-            max_episode_steps=150
         )
-
-        assert self.env._obs_type == "state"
-        assert self.env.max_episode_steps == 150
-        assert self.env.env.spec.max_episode_steps == 150

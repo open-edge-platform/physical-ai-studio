@@ -19,7 +19,6 @@ class PushTGym(BaseGym):
         self,
         gym_id: str = "gym_pusht/PushT-v0",
         obs_type: str = "pixels_agent_pos",
-        max_episode_steps: int = 300,
     ) -> None:
         """
         Initialize the PushT Gym environment.
@@ -27,11 +26,8 @@ class PushTGym(BaseGym):
         Args:
             gym_id (str): The identifier for the environment.
             obs_type (str): The type of observation to use (e.g., pixels, state).
-            num_rollouts (int): Number of rollouts to perform.
-            max_episode_steps (int): Maximum steps allowed per episode.
         """
         super().__init__(
             gym_id=gym_id,
             obs_type=obs_type,
-            max_episode_steps=max_episode_steps,
         )

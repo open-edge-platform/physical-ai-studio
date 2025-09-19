@@ -3,16 +3,14 @@
 
 """Base Lightning Module for Policies"""
 
-
-import lightning as pl
 from abc import ABC, abstractmethod
-from lightning.pytorch.utilities.types import STEP_OUTPUT
-from lightning.pytorch import Callback
-from torch import nn
+
+import lightning as L
 import torch
+import torch.nn as nn
 
 
-class ActionTrainerModule(pl.LightningModule, ABC):
+class TrainerModule(L.LightningModule, ABC):
     def __init__(
         self,
     ) -> None:
@@ -35,3 +33,14 @@ class ActionTrainerModule(pl.LightningModule, ABC):
         """
         del args, kwargs
         return self.model(batch)
+
+    @abstractmethod
+    def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        """Select an action using the policy model.
+
+        Args:
+            batch (Dict[str, torch.Tensor]): Input batch of observations.
+
+        Returns:
+            torch.Tensor: Selected actions.
+        """

@@ -3,7 +3,7 @@
 
 """Test for lerobot dataset using a mock to avoid ffmpeg/network dependencies."""
 
-from action_trainer.data import ActionDataset, LeRobotActionDataset, Observation
+from action_trainer.data import Dataset, LeRobotDatasetWrapper, Observation
 import torch
 import pytest
 
@@ -23,72 +23,132 @@ class FakeLeRobotDataset:
             raise IndexError("Index out of range")
         torch.manual_seed(idx)
         return {
-            "observation.images.image": torch.randn(3, 64, 64),
+            "observation.images.wrist": torch.randn(3, 64, 64),
             "observation.state": torch.randn(8),
             "action": torch.randn(7),
             "episode_index": torch.tensor(0),
             "frame_index": torch.tensor(idx),
             "index": torch.tensor(idx),
-            "task": "pusht",
+            "task.instructions": "pusht",
+            "task_index": torch.tensor(0),
+            "timestamp": torch.tensor(float(idx) / 10.0),
+            "random": ["thing"]
+        }
+
+
+class FakeLeRobotDataset2:
+    """A mock that mimics LeRobotDataset without needing ffmpeg or network access."""
+    def __init__(self, repo_id=None, episodes=None, **kwargs):
+        """Accepts arguments but does nothing with them."""
+        self._length = 150  # A fixed length for our mock dataset
+
+    def __len__(self) -> int:
+        return self._length
+
+    def __getitem__(self, idx: int) -> dict:
+        """Returns a fake data dictionary, similar to the real dataset."""
+        if idx >= self._length:
+            raise IndexError("Index out of range")
+        torch.manual_seed(idx)
+        return {
+            "observation.images.wrist": torch.randn(3, 64, 64),
+            "observation.state": torch.randn(8),
+            "action.continuous": torch.randn(7),
+            "action.discrete": torch.randint(low=0, high=10, size=(7,)),
+            "episode_index": torch.tensor(0),
+            "frame_index": torch.tensor(idx),
+            "index": torch.tensor(idx),
+            "task.instructions": "pusht",
             "task_index": torch.tensor(0),
             "timestamp": torch.tensor(float(idx) / 10.0),
         }
 
 
+class FakeLeRobotDataset_no_task_or_image:
+    """A mock that mimics LeRobotDataset without needing ffmpeg or network access."""
+    def __init__(self, repo_id=None, episodes=None, **kwargs):
+        """Accepts arguments but does nothing with them."""
+        self._length = 150  # A fixed length for our mock dataset
+
+    def __len__(self) -> int:
+        return self._length
+
+    def __getitem__(self, idx: int) -> dict:
+        """Returns a fake data dictionary, similar to the real dataset."""
+        if idx >= self._length:
+            raise IndexError("Index out of range")
+        torch.manual_seed(idx)
+        return {
+            "observation.state": torch.randn(8),
+            "action": torch.randint(low=0, high=10, size=(7,)),
+            "episode_index": torch.tensor(0),
+            "frame_index": torch.tensor(idx),
+            "index": torch.tensor(idx),
+            "task_index": torch.tensor(0),
+            "timestamp": torch.tensor(float(idx) / 10.0),
+        }
+
+
+@pytest.mark.parametrize(
+    "dataset_cls",
+    [FakeLeRobotDataset, FakeLeRobotDataset2, FakeLeRobotDataset_no_task_or_image],
+)
 class TestLeRobotActionDataset:
-    """Groups tests for the LeRobotActionDataset wrapper, using a mock dataset."""
+    """Groups tests for the LeRobotActionDataset wrapper, using multiple mock datasets."""
 
-    @pytest.fixture(scope="class")
-    def raw_lerobot_dataset(self) -> FakeLeRobotDataset:
-        """
-        Fixture to provide a MOCK LeRobotDataset instance,
-        loaded only once per class.
-        """
-        return FakeLeRobotDataset()
+    @pytest.fixture
+    def raw_lerobot_dataset(self, dataset_cls):
+        """Fixture to provide a mock dataset instance for the current parameter."""
+        return dataset_cls()
 
-    def test_initialization(self, monkeypatch):
-        """
-        Tests that LeRobotActionDataset initializes correctly by patching
-        the real LeRobotDataset with our mock.
-        """
-        # Replace the real LeRobotDataset with our mock at the point of use
+    def test_initialization(self, monkeypatch, dataset_cls):
+        """Tests that LeRobotActionDataset initializes correctly by patching."""
         monkeypatch.setattr(
-            "action_trainer.data.lerobot.LeRobotDataset", FakeLeRobotDataset
+            "action_trainer.data.lerobot.LeRobotDataset", dataset_cls
         )
 
-        # This now calls MockLeRobotDataset's constructor instead of the real one
-        dataset = LeRobotActionDataset(repo_id="any/repo", episodes=[0])
+        dataset = LeRobotDatasetWrapper(repo_id="any/repo", episodes=[0])
 
-        assert isinstance(dataset, ActionDataset)
-        # Check that the internal attribute is an instance of our mock
-        assert isinstance(dataset._lerobot_dataset, FakeLeRobotDataset)
+        assert isinstance(dataset, Dataset)
+        assert isinstance(dataset._lerobot_dataset, dataset_cls)
         assert len(dataset) > 0
 
-    def test_len_delegation(self, raw_lerobot_dataset: FakeLeRobotDataset):
+    def test_len_delegation(self, raw_lerobot_dataset):
         """Tests that __len__ correctly delegates to the mock dataset."""
-        action_dataset = LeRobotActionDataset.from_lerobot(raw_lerobot_dataset)
+        action_dataset = LeRobotDatasetWrapper.from_lerobot(raw_lerobot_dataset)
         assert len(action_dataset) == len(raw_lerobot_dataset)
-        assert len(action_dataset) == 150 # Check against the mock's fixed length
+        assert len(action_dataset) == 150
 
-    def test_getitem_returns_observation(self, raw_lerobot_dataset: FakeLeRobotDataset):
+    def test_getitem_returns_observation(self, raw_lerobot_dataset):
         """Tests that __getitem__ returns a correctly formatted Observation object."""
-        action_dataset = LeRobotActionDataset.from_lerobot(raw_lerobot_dataset)
-        observation = action_dataset[5]  # Get an arbitrary item
+        action_dataset = LeRobotDatasetWrapper.from_lerobot(raw_lerobot_dataset)
+        observation = action_dataset[5]
 
-        assert isinstance(observation, Observation)
-        assert isinstance(observation.images, dict)
-        assert "image" in observation.images
-        assert isinstance(observation.state, torch.Tensor)
+        assert isinstance(observation, Observation), "Returned object must be Observation"
+
+        # Images may or may not exist depending on dataset variant
+        if "observation.images.wrist" in raw_lerobot_dataset[0]:
+            assert isinstance(observation.images, dict)
+            assert "wrist" in observation.images
+        else:
+            assert observation.images == {}
+
+        # Episode index should always be present
         assert observation.episode_index == 0
 
-    def test_from_lerobot_factory_method(self, raw_lerobot_dataset: FakeLeRobotDataset):
+    def test_from_lerobot_factory_method(self, raw_lerobot_dataset):
         """Tests the `from_lerobot` static method with a mock instance."""
-        action_dataset = LeRobotActionDataset.from_lerobot(raw_lerobot_dataset)
+        action_dataset = LeRobotDatasetWrapper.from_lerobot(raw_lerobot_dataset)
 
-        # Check that the internal dataset is the *exact same object*
         assert action_dataset._lerobot_dataset is raw_lerobot_dataset
 
-        # Check that item access and conversion work
         observation = action_dataset[0]
         raw_item = raw_lerobot_dataset[0]
-        assert torch.equal(observation.action, raw_item["action"])
+
+        # Action may be continuous or discrete
+        if "action" in raw_item:
+            assert torch.equal(observation.action, raw_item["action"])
+        elif "action.continuous" in raw_item:
+            assert torch.equal(observation.action["continuous"], raw_item["action.continuous"])
+        else:
+            raise AssertionError("No recognizable action field in mock dataset")
