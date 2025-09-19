@@ -30,13 +30,17 @@ def get_realsense_dev_ports() -> list[str]:
 
 def add_device_name_to_opencv_camera(camera: dict[str, Any]) -> dict[str, Any]:
     """Uses video4linux to get a better name for the camera"""
-    port = os.path.basename(camera["id"])
-    name_path = os.path.join(VIDEO4LINUX_PATH, port, "name")
     try:
+        port = os.path.basename(camera["id"])
+        name_path = os.path.join(VIDEO4LINUX_PATH, port, "name")
+
         with open(name_path) as name_file:
             name = name_file.read().strip("\n")
             camera["name"] = name
     except FileNotFoundError:
+        pass
+    except TypeError:
+        # Camera id can be an int on macOS
         pass
 
     return camera
