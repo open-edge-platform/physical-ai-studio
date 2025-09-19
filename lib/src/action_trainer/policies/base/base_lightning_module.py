@@ -4,7 +4,6 @@
 """Base Lightning Module for Policies"""
 
 from abc import ABC, abstractmethod
-from typing import Dict
 
 import lightning as L
 import torch
@@ -36,7 +35,7 @@ class TrainerModule(L.LightningModule, ABC):
         return self.model(batch)
 
     @abstractmethod
-    def select_action(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+    def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """Select an action using the policy model.
 
         Args:
