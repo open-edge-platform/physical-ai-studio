@@ -38,4 +38,4 @@ def reformat_dataset_to_match_policy(policy: TrainerModule, datamodule: DataModu
         # in place change the lerobot dataset
         if delta_timestamps:
             check_delta_timestamps(delta_timestamps, lerobot_dataset.fps, lerobot_dataset.tolerance_s)
-            lerobot_dataset.set_delta_indices = get_delta_indices(delta_timestamps, lerobot_dataset.fps)
+            lerobot_dataset.delta_indices = get_delta_indices(delta_timestamps, lerobot_dataset.fps)
