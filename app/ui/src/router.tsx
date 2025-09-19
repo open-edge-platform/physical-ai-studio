@@ -7,6 +7,9 @@ import { path } from 'static-path';
 
 import { ErrorPage } from './components/error-page/error-page';
 import { Layout } from './layout';
+import { Camera, CameraOverview } from './routes/cameras/camera';
+import { Layout as CamerasLayout } from './routes/cameras/layout';
+import { CameraWebcam } from './routes/cameras/webcam';
 import { Index as Datasets } from './routes/datasets/index';
 import { Record } from './routes/datasets/record/record';
 import { Index as Models } from './routes/models/index';
@@ -23,6 +26,7 @@ const inference = root.path('/inference');
 const robotConfiguration = project.path('/robot-configuration');
 const datasets = project.path('/datasets');
 const models = project.path('/models');
+const cameras = project.path('cameras');
 
 export const paths = {
     root,
@@ -38,6 +42,13 @@ export const paths = {
         datasets: {
             index: datasets,
             record: datasets.path('/record'),
+        },
+        cameras: {
+            index: cameras,
+            webcam: cameras.path('/webcam'),
+            overview: cameras.path('/overview'),
+            new: cameras.path('/new'),
+            show: cameras.path(':camera_id'),
         },
         robotConfiguration,
         models,
@@ -97,6 +108,32 @@ export const router = createBrowserRouter([
                     {
                         path: paths.project.robotConfiguration.pattern,
                         element: <RobotConfiguration />,
+                    },
+                    {
+                        path: paths.project.cameras.index.pattern,
+                        element: <CamerasLayout />,
+                        children: [
+                            {
+                                index: true,
+                                element: <div>Select a camera or create a new one</div>,
+                            },
+                            {
+                                path: paths.project.cameras.new.pattern,
+                                element: <div>New</div>,
+                            },
+                            {
+                                path: paths.project.cameras.show.pattern,
+                                element: <Camera />,
+                            },
+                            {
+                                path: paths.project.cameras.overview.pattern,
+                                element: <CameraOverview />,
+                            },
+                            {
+                                path: paths.project.cameras.webcam.pattern,
+                                element: <CameraWebcam />,
+                            },
+                        ],
                     },
                 ],
             },
