@@ -139,7 +139,7 @@ class ACTModel(nn.Module):
         Returns:
             list[int]: A list of relative action indices.
         """
-        return list(range(0 - self.n_obs_steps, 1 - self.n_obs_steps + self.horizon))
+        return list(range(self.chunk_size))
 
     @property
     def reward_delta_indices(self) -> None:
