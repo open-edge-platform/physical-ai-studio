@@ -132,6 +132,26 @@ class ACTModel(nn.Module):
     def predict_action_chunk(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         pass
 
+    @property
+    def action_delta_indices(self) -> list[int]:
+        """Get indices of actions relative to the current timestep.
+
+        Returns:
+            list[int]: A list of relative action indices.
+        """
+        return list(range(0 - self.n_obs_steps, 1 - self.n_obs_steps + self.horizon))
+
+    @property
+    def reward_delta_indices(self) -> None:
+        """Return reward indices.
+
+        Currently returns `None` as rewards are not implemented.
+
+        Returns:
+            None
+        """
+        return None
+
 
 class NormalizationMode(str, Enum):
     MIN_MAX = "MIN_MAX"
