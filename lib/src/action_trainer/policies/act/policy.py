@@ -8,9 +8,9 @@ from action_trainer.policies.base.base_lightning_module import TrainerModule
 
 
 class ACT(TrainerModule):
-    def __init__(self, action_shape: tuple[int, ...] | int, robot_state_shape: tuple[int, ...] | int,) -> None:
+    def __init__(self, action_shape: tuple[int, ...] | int, robot_state_shape: tuple[int, ...] | int, normalization_map = None) -> None:
         super().__init__()
-        self.model = ACTModel(action_shape, robot_state_shape)
+        self.model = ACTModel(action_shape, robot_state_shape, normalization_map=normalization_map)
 
     def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """Select an action using the policy model.

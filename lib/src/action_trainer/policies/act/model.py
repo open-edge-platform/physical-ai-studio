@@ -30,40 +30,6 @@ OBS_IMAGES = "observation.images"
 ACTION = "action"
 
 
-class NormalizeTransform:
-    def __init__(self, normalization_parameters: dict, inverse: bool = False) -> None:
-        self._normalization_parameters = normalization_parameters
-        self._inverse = inverse
-
-    def _apply_normalization(self, tensor: torch.Tensor, params: NormalizationParameters) -> torch.Tensor:
-        if params.method == NormalizationMode.MIN_MAX:
-            if params.min is None or params.max is None:
-                raise ValueError("Min and max must be provided for min-max normalization.")
-            if self._inverse:
-                tensor = tensor * (params.max - params.min) / 2 + (params.max + params.min) / 2
-            else:
-                tensor = 2 * (tensor - params.min) / (params.max - params.min) - 1
-        elif params.method == NormalizationMode.MEAN_STD:
-            if params.mean is None or params.std is None:
-                raise ValueError("Mean and std must be provided for mean-std normalization.")
-            if self._inverse:
-                tensor = tensor * params.std + params.mean
-            else:
-                tensor = (tensor - params.mean) / params.std
-        else:
-            raise ValueError(f"Unknown normalization method: {params.method}")
-
-        return tensor
-
-    def __call__(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-        for k in self._normalization_parameters:
-            if k in batch:
-                params = self._normalization_parameters[k]
-                batch[k] = self._apply_normalization(batch[k], params)
-
-        return batch
-
-
 class ACT(nn.Module):
     def __init__(self, action_shape: tuple[int, ...] | int, robot_state_shape: tuple[int, ...] | int,
                  chunk_size: int = 100, normalization_map: NormalizationMap | None = None
@@ -129,15 +95,6 @@ class ACT(nn.Module):
         pass
 
     @property
-    def action_delta_indices(self) -> list[int]:
-        """Get indices of actions relative to the current timestep.
-
-        Returns:
-            list[int]: A list of relative action indices.
-        """
-        return list(range(self.chunk_size))
-
-    @property
     def reward_delta_indices(self) -> None:
         """Return reward indices.
 
@@ -147,6 +104,58 @@ class ACT(nn.Module):
             None
         """
         return None
+
+    @property
+    def action_delta_indices(self) -> list[int]:
+        """Get indices of actions relative to the current timestep.
+
+        Returns:
+            list[int]: A list of relative action indices.
+        """
+        return list(range(self.config.chunk_size))
+
+    @property
+    def observation_delta_indices(self) -> None:
+        """Get indices of observations relative to the current timestep.
+
+        Returns:
+            list[int]: A list of relative observation indices.
+        """
+        return None
+
+
+class NormalizeTransform:
+    def __init__(self, normalization_parameters: dict, inverse: bool = False) -> None:
+        self._normalization_parameters = normalization_parameters
+        self._inverse = inverse
+
+    def _apply_normalization(self, tensor: torch.Tensor, params: NormalizationParameters) -> torch.Tensor:
+        if params.method == NormalizationMode.MIN_MAX:
+            if params.min is None or params.max is None:
+                raise ValueError("Min and max must be provided for min-max normalization.")
+            if self._inverse:
+                tensor = tensor * (params.max - params.min) / 2 + (params.max + params.min) / 2
+            else:
+                tensor = 2 * (tensor - params.min) / (params.max - params.min) - 1
+        elif params.method == NormalizationMode.MEAN_STD:
+            if params.mean is None or params.std is None:
+                raise ValueError("Mean and std must be provided for mean-std normalization.")
+            if self._inverse:
+                tensor = tensor * params.std + params.mean
+            else:
+                tensor = (tensor - params.mean) / params.std
+        else:
+            raise ValueError(f"Unknown normalization method: {params.method}")
+
+        return tensor
+
+    def __call__(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        for k in self._normalization_parameters:
+            if k in batch:
+                params = self._normalization_parameters[k]
+                batch[k] = self._apply_normalization(batch[k], params)
+
+        return batch
 
 
 class NormalizationMode(str, Enum):
@@ -371,14 +380,6 @@ class ACTConfig:#(PreTrainedConfig):
     def validate_features(self) -> None:
         if not self.image_features and not self.env_state_feature:
             raise ValueError("You must provide at least one image or the environment state among the inputs.")
-
-    @property
-    def observation_delta_indices(self) -> None:
-        return None
-
-    @property
-    def action_delta_indices(self) -> list:
-        return list(range(self.chunk_size))
 
     @property
     def robot_state_feature(self) -> PolicyFeature | None:
@@ -927,7 +928,7 @@ if __name__ == "__main__":
     normalization_config = NormalizationMap(state=NormalizationParameters(method=NormalizationMode.MIN_MAX, min=0, max=1),
                                             action=NormalizationParameters(method=NormalizationMode.MIN_MAX, min=0, max=1),
                                             images=NormalizationParameters(method=NormalizationMode.MEAN_STD, mean=0, std=1))
-    model = ACTModel((10,), (10,), chunk_size=100, normalization_map=normalization_config)
+    model = ACT((10,), (10,), chunk_size=100, normalization_map=normalization_config)
 
     batch = {
         'observation.images': torch.randn(2, 3, 224, 224),
