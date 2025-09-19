@@ -64,7 +64,7 @@ class NormalizeTransform:
         return batch
 
 
-class ACTModel(nn.Module):
+class ACT(nn.Module):
     def __init__(self, action_shape: tuple[int, ...] | int, robot_state_shape: tuple[int, ...] | int,
                  chunk_size: int = 100, normalization_map: NormalizationMap | None = None
                  ) -> None:
@@ -77,7 +77,7 @@ class ACTModel(nn.Module):
         self.input_normalizer = NormalizeTransform({OBS_STATE: normalization_map.state,
                                                     OBS_IMAGES: normalization_map.images})
         self.output_denormalizer = NormalizeTransform({ACTION: normalization_map.action}, inverse=True)
-        self._model = ACT(self.config)
+        self._model = _ACT(self.config)
 
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         if self._model.training:
@@ -126,10 +126,6 @@ class ACTModel(nn.Module):
 
     @torch.no_grad()
     def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
-        pass
-
-    @torch.no_grad()
-    def predict_action_chunk(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         pass
 
     @property
@@ -429,7 +425,7 @@ class ACTConfig:#(PreTrainedConfig):
 
 
 
-class ACT(nn.Module):
+class _ACT(nn.Module):
     """Action Chunking Transformer: The underlying neural network for ACTPolicy.
 
     Note: In this code we use the terms `vae_encoder`, 'encoder', `decoder`. The meanings are as follows.
