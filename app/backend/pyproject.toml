@@ -11,7 +11,8 @@ dependencies = [
   "numpy",
   "websockets",
   'pyrealsense2-macosx; sys_platform == "darwin"',
-  'pyrealsense2; sys_platform != "darwin"'
+  'pyrealsense2; sys_platform != "darwin"',
+  "aiortc>=1.13.0",
 ]
 
 [dependency-groups]
