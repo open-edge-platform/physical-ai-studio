@@ -222,10 +222,50 @@
                     }
                 }
             }
+        },
+        "/api/cameras/offer/camera": {
+            "post": {
+                "summary": "Offer Camera",
+                "description": "Create a WebRTC offer",
+                "operationId": "offer_camera_api_cameras_offer_camera_post",
+                "parameters": [
+                    {
+                        "name": "camera",
+                        "in": "query",
+                        "required": true,
+                        "schema": { "type": "string", "title": "Camera" }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Offer" } } }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Answer" } } }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": { "schema": { "$ref": "#/components/schemas/HTTPValidationError" } }
+                        }
+                    }
+                }
+            }
         }
     },
     "components": {
         "schemas": {
+            "Answer": {
+                "properties": {
+                    "sdp": { "type": "string", "title": "Sdp" },
+                    "type": { "type": "string", "title": "Type" }
+                },
+                "type": "object",
+                "required": ["sdp", "type"],
+                "title": "Answer"
+            },
             "CalibrationConfig": {
                 "properties": {
                     "id": { "type": "string", "title": "Id" },
@@ -336,6 +376,16 @@
                 },
                 "type": "object",
                 "title": "HTTPValidationError"
+            },
+            "Offer": {
+                "properties": {
+                    "sdp": { "type": "string", "title": "Sdp" },
+                    "type": { "type": "string", "title": "Type" },
+                    "webrtc_id": { "type": "string", "title": "Webrtc Id" }
+                },
+                "type": "object",
+                "required": ["sdp", "type", "webrtc_id"],
+                "title": "Offer"
             },
             "ProjectConfig": {
                 "properties": {

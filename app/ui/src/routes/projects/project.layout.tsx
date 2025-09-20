@@ -1,4 +1,4 @@
-import { ActionButton, Flex, Grid, Item, TabList, TabPanels, Tabs, View } from '@geti/ui';
+import { ActionButton, Flex, Grid, Item, TabList, Tabs, View } from '@geti/ui';
 import { ChevronLeft } from '@geti/ui/icons';
 import { Outlet, redirect, useLocation, useNavigate, useParams } from 'react-router';
 
@@ -41,6 +41,11 @@ const Header = ({ project_id }: { project_id: string }) => {
                     <Item textValue='Models' key={'models'} href={paths.project.models({ project_id })}>
                         <Flex alignItems='center' gap='size-100'>
                             Models
+                        </Flex>
+                    </Item>
+                    <Item textValue='Cameras' key={'cameras'} href={paths.project.cameras.index({ project_id })}>
+                        <Flex alignItems='center' gap='size-100'>
+                            Cameras
                         </Flex>
                     </Item>
                     <Item textValue='OpenAPI' key={'openapi'} href={paths.openapi({})}>
@@ -88,17 +93,7 @@ export const ProjectLayout = () => {
                     >
                         <Header project_id={project_id} />
                         <View backgroundColor={'gray-75'} gridArea={'content'}>
-                            <TabPanels height={'100%'} UNSAFE_style={{ border: 'none', display: 'flex' }}>
-                                <Item textValue='Robot Configuration' key={'robot-configuration'}>
-                                    <Outlet />
-                                </Item>
-                                <Item textValue='Datasets' key='datasets'>
-                                    <Outlet />
-                                </Item>
-                                <Item textValue='models' key='models'>
-                                    <Outlet />
-                                </Item>
-                            </TabPanels>
+                            <Outlet />
                         </View>
                     </Grid>
                 </Tabs>

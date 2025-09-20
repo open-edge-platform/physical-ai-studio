@@ -168,10 +168,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/api/cameras/offer/camera': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Offer Camera
+         * @description Create a WebRTC offer
+         */
+        post: operations['offer_camera_api_cameras_offer_camera_post'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Answer */
+        Answer: {
+            /** Sdp */
+            sdp: string;
+            /** Type */
+            type: string;
+        };
         /** CalibrationConfig */
         CalibrationConfig: {
             /** Id */
@@ -289,6 +316,15 @@ export interface components {
             /** Detail */
             detail?: components['schemas']['ValidationError'][];
         };
+        /** Offer */
+        Offer: {
+            /** Sdp */
+            sdp: string;
+            /** Type */
+            type: string;
+            /** Webrtc Id */
+            webrtc_id: string;
+        };
         /** ProjectConfig */
         ProjectConfig: {
             /**
@@ -361,6 +397,7 @@ export interface components {
     headers: never;
     pathItems: never;
 }
+export type SchemaAnswer = components['schemas']['Answer'];
 export type SchemaCalibrationConfig = components['schemas']['CalibrationConfig'];
 export type SchemaCamera = components['schemas']['Camera'];
 export type SchemaCameraConfig = components['schemas']['CameraConfig'];
@@ -368,6 +405,7 @@ export type SchemaCameraProfile = components['schemas']['CameraProfile'];
 export type SchemaDataset = components['schemas']['Dataset'];
 export type SchemaEpisode = components['schemas']['Episode'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
+export type SchemaOffer = components['schemas']['Offer'];
 export type SchemaProjectConfig = components['schemas']['ProjectConfig'];
 export type SchemaRobotConfig = components['schemas']['RobotConfig'];
 export type SchemaRobotPortInfo = components['schemas']['RobotPortInfo'];
@@ -605,6 +643,41 @@ export interface operations {
                 };
                 content: {
                     'application/json': unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['HTTPValidationError'];
+                };
+            };
+        };
+    };
+    offer_camera_api_cameras_offer_camera_post: {
+        parameters: {
+            query: {
+                camera: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['Offer'];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Answer'];
                 };
             };
             /** @description Validation Error */
