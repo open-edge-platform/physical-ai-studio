@@ -28,19 +28,19 @@ jobs:
           version: "0.8.8"
 
       - name: Prepare venv and install Python dependencies
-        working-directory: app/backend
+        working-directory: application/backend
         run: |
           uv lock --check
           uv sync --frozen --all-extras
 
       - name: Check formatting with ruff
-        working-directory: app/backend
+        working-directory: application/backend
         run: |
           uv run ruff check --output-format=github .
           uv run ruff format --check .
 
       - name: Check source code with mypy
-        working-directory: app/backend
+        working-directory: application/backend
         run: |
           uv run mypy . --config-file=pyproject.toml
 
