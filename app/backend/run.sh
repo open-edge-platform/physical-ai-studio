@@ -13,8 +13,8 @@ set -euo pipefail
 #   ./run.sh                    # Run server without seeding
 #
 # Environment variables:
-#   SEED_DB       If set to "true", runs `uv run app/cli seed` before starting the server.
-#   APP_MODULE    Python module to run (default: app/main.py)
+#   SEED_DB       If set to "true", runs `uv run application/cli seed` before starting the server.
+#   APP_MODULE    Python module to run (default: application/main.py)
 #   UV_CMD        Command to launch Uvicorn (default: "uv run")
 #
 # Requirements:
@@ -31,8 +31,8 @@ export PYTHONPATH=.
 
 if [[ "$SEED_DB" == "true" ]]; then
   echo "Seeding the database..."
-  $UV_CMD app/cli.py init-db
-  $UV_CMD app/cli.py seed --with-model=True
+  $UV_CMD application/cli.py init-db
+  $UV_CMD application/cli.py seed --with-model=True
 fi
 
 echo "Starting FastAPI server..."
