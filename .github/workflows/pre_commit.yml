@@ -33,9 +33,10 @@ jobs:
           node-version: 22
       - name: Install uv
         uses: astral-sh/setup-uv@4959332f0f014c5280e7eac8b70c90cb574c9f9b # v6.6.0
+      - name: Generate lock file
+        run: uv lock --all-extras
       - name: Install dependencies
         run: |
-          cd library
           uv sync --locked --all-extras
       - name: Run pre-commit checks
         run: |
@@ -56,9 +57,10 @@ jobs:
           python-version-file: "./library/.python-version"
       - name: Install uv
         uses: astral-sh/setup-uv@4959332f0f014c5280e7eac8b70c90cb574c9f9b # v6.6.0
+      - name: Generate lock file
+        run: uv lock --all-extras
       - name: Install dependencies
         run: |
-          cd library
           uv sync --locked --all-extras
       - name: Run python unit tests
         run: |
