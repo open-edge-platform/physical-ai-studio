@@ -26,20 +26,21 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version-file: "./lib/.python-version"
+          python-version-file: "./library/.python-version"
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
       - name: Install uv
         uses: astral-sh/setup-uv@4959332f0f014c5280e7eac8b70c90cb574c9f9b # v6.6.0
+      - name: Generate lock file
+        run: uv lock
       - name: Install dependencies
         run: |
-          cd lib
           uv sync --locked --all-extras
       - name: Run pre-commit checks
         run: |
-          cd lib
+          cd library
           uv run pre-commit run --files ./*
   unit-tests:
     runs-on: ubuntu-24.04
@@ -53,16 +54,17 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version-file: "./lib/.python-version"
+          python-version-file: "./library/.python-version"
       - name: Install uv
         uses: astral-sh/setup-uv@4959332f0f014c5280e7eac8b70c90cb574c9f9b # v6.6.0
+      - name: Generate lock file
+        run: uv lock
       - name: Install dependencies
         run: |
-          cd lib
           uv sync --locked --all-extras
       - name: Run python unit tests
         run: |
-          cd lib
+          cd library
           uv run pytest tests/unit
 
   zizmor-scan-pr:

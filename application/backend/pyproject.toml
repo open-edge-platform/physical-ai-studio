@@ -24,9 +24,14 @@ lint = [
   "ruff~=0.11.2",
   "mypy~=1.17",
 ]
+all = [
+  "ruff~=0.11.2",
+  "pre-commit~=4.1",
+  "mypy~=1.17",
+]
 
 [tool.uv]
-default-groups = "all"
+default-groups = ["all"]
 
 [tool.ruff]
 target-version = "py312"

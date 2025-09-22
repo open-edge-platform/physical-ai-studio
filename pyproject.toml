@@ -1,0 +1,9 @@
+# Copyright (C) 2025 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+
+[tool.uv.workspace]
+members = ["library", "application/backend"]
+
+[tool.uv.sources]
+action_trainer = { workspace = true }
