@@ -22,7 +22,6 @@ import { Index as RobotConfiguration } from './routes/robot-configuration/index'
 const root = path('/');
 const projects = root.path('/projects');
 const project = root.path('/project/:project_id');
-const inference = root.path('/inference');
 const robotConfiguration = project.path('/robot-configuration');
 const datasets = project.path('/datasets');
 const models = project.path('/models');
@@ -31,9 +30,6 @@ const cameras = project.path('cameras');
 export const paths = {
     root,
     openapi: root.path('/openapi'),
-    inference: {
-        index: inference,
-    },
     projects: {
         index: projects,
         new: projects.path('/new'),
