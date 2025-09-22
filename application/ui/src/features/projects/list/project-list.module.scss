@@ -1,0 +1,95 @@
+.dialog {
+    background-color: var(--spectrum-gray-100);
+    background-image: url('./../../../assets/background.png');
+    background-blend-mode: luminosity;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+}
+
+.button {
+    path {
+        fill: currentColor;
+    }
+}
+
+.description {
+    display: block;
+    text-align: center;
+    margin: auto;
+    max-width: 50rem;
+    font-size: var(--spectrum-global-dimension-font-size-200);
+    line-height: var(--spectrum-global-dimension-font-size-500);
+    margin-bottom: var(--spectrum-global-dimension-font-size-1000);
+}
+
+.card {
+    border-width: var(--spectrum-global-dimension-size-25);
+    border-color: var(--spectrum-global-color-gray-200);
+    border-style: solid;
+    border-radius: var(--spectrum-global-dimension-size-50);
+    background-color: var(--spectrum-global-color-gray-50);
+    overflow: hidden;
+
+    transition:
+        background-color 100ms ease-in-out 150ms,
+        border 100ms ease-in-out 150ms;
+
+    &:hover {
+        transition-delay: 0ms, 0ms;
+        background-color: var(--spectrum-global-color-gray-100);
+        border-color: var(--energy-blue);
+    }
+
+    img {
+        height: 100%;
+        object-fit: cover;
+    }
+}
+
+.activeCard {
+    border: var(--spectrum-global-dimension-size-25) solid var(--energy-blue);
+
+    h3 {
+        color: var(--energy-blue);
+    }
+}
+
+.tag {
+    width: fit-content;
+    color: var(--spectrum-gray-50);
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--spectrum-global-color-gray-800);
+    padding: var(--spectrum-global-dimension-size-25);
+    border-radius: var(--spectrum-global-dimension-size-50);
+}
+
+.activeTag {
+    color: var(--spectrum-gray-50);
+
+    background-color: var(--energy-blue) !important;
+}
+
+.link {
+    cursor: pointer;
+    border: 1px dashed var(--spectrum-gray-700) !important;
+    display: flex;
+    align-items: center;
+    flex-direction: column;
+    justify-content: center;
+    border-radius: regular;
+    background-color: var(--spectrum-global-color-gray-300);
+    gap: var(--spectrum-global-dimension-size-200);
+    padding: var(--spectrum-global-dimension-size-275);
+    min-height: var(--spectrum-global-dimension-size-1000);
+
+    transition:
+        background-color 100ms ease-in-out 150ms,
+        border 100ms ease-in-out 150ms;
+
+    &:hover {
+        transition-delay: 0ms, 0ms;
+        background-color: var(--spectrum-global-color-gray-100);
+        border: var(--spectrum-global-dimension-size-25) dashed var(--energy-blue) !important;
+    }
+}

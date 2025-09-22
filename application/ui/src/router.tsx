@@ -6,7 +6,6 @@ import { createBrowserRouter } from 'react-router-dom';
 import { path } from 'static-path';
 
 import { ErrorPage } from './components/error-page/error-page';
-import { Layout } from './layout';
 import { Camera, CameraOverview } from './routes/cameras/camera';
 import { Layout as CamerasLayout } from './routes/cameras/layout';
 import { CameraWebcam } from './routes/cameras/webcam';
@@ -69,7 +68,6 @@ export const router = createBrowserRouter([
             },
             {
                 path: paths.projects.index.pattern,
-                element: <Layout />,
                 children: [
                     {
                         index: true,
