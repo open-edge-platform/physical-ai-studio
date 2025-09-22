@@ -1,8 +1,7 @@
 import { Suspense } from 'react';
 
-import { ActionButton, Flex, Grid, Item, Loading, TabList, Tabs, View } from '@geti/ui';
-import { ChevronLeft } from '@geti/ui/icons';
-import { Outlet, useLocation, useNavigate } from 'react-router';
+import { Flex, Grid, Item, Loading, TabList, Tabs, View } from '@geti/ui';
+import { Outlet, useLocation } from 'react-router';
 
 import { ProjectsListPanel } from '../../features/projects/menu/projects-list-panel.component';
 import { useProjectId } from '../../features/projects/use-project';
@@ -10,19 +9,14 @@ import { paths } from '../../router';
 import { ReactComponent as DatasetIcon } from './../../assets/icons/dataset-icon.svg';
 import { ReactComponent as ModelsIcon } from './../../assets/icons/models-icon.svg';
 import { ReactComponent as RobotIcon } from './../../assets/icons/robot-icon.svg';
-import { ReactComponent as TestsIcon } from './../../assets/icons/tests-icon.svg';
 
 const Header = ({ project_id }: { project_id: string }) => {
-    const navigate = useNavigate();
     return (
         <View backgroundColor={'gray-300'} gridArea={'header'}>
             <Flex height='100%' alignItems={'center'} marginX='1rem' gap='size-200'>
                 <View marginEnd='size-200' maxWidth={'5ch'}>
                     <span>Geti Action</span>
                 </View>
-                <ActionButton isQuiet onPress={() => navigate(paths.projects.index.pattern)}>
-                    <ChevronLeft fill={'white'} />
-                </ActionButton>
 
                 <TabList
                     height={'100%'}
@@ -51,17 +45,6 @@ const Header = ({ project_id }: { project_id: string }) => {
                         <Flex alignItems='center' gap='size-100'>
                             <ModelsIcon />
                             Models
-                        </Flex>
-                    </Item>
-                    <Item textValue='Cameras' key={'cameras'} href={paths.project.cameras.index({ project_id })}>
-                        <Flex alignItems='center' gap='size-100'>
-                            Cameras
-                        </Flex>
-                    </Item>
-                    <Item textValue='OpenAPI' key={'openapi'} href={paths.openapi({})}>
-                        <Flex alignItems='center' gap='size-100'>
-                            <TestsIcon />
-                            OpenAPI
                         </Flex>
                     </Item>
                 </TabList>
