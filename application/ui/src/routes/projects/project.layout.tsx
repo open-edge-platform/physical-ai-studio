@@ -4,6 +4,7 @@ import { ActionButton, Flex, Grid, Item, Loading, TabList, Tabs, View } from '@g
 import { ChevronLeft } from '@geti/ui/icons';
 import { Outlet, useLocation, useNavigate } from 'react-router';
 
+import { ProjectsListPanel } from '../../features/projects/menu/projects-list-panel.component';
 import { useProjectId } from '../../features/projects/use-project';
 import { paths } from '../../router';
 import { ReactComponent as DatasetIcon } from './../../assets/icons/dataset-icon.svg';
@@ -64,6 +65,9 @@ const Header = ({ project_id }: { project_id: string }) => {
                         </Flex>
                     </Item>
                 </TabList>
+                <Flex alignItems={'center'} height={'100%'} marginStart='auto'>
+                    <ProjectsListPanel />
+                </Flex>
             </Flex>
         </View>
     );
