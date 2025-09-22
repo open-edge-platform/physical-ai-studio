@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 import { Flex, Item, ListView, Selection, View } from '@geti/ui';
 
-import { useProject } from '../projects/project.provider';
+import { useProject } from '../../features/projects/use-project';
 import { EpisodeViewer } from './episode-viewer';
 import { useDataset } from './use-dataset';
 
@@ -10,7 +10,7 @@ interface DatasetViewerProps {
     repo_id: string;
 }
 export const DatasetViewer = ({ repo_id }: DatasetViewerProps) => {
-    const { project } = useProject();
+    const project = useProject();
     const { dataset } = useDataset(project.id, repo_id);
     const [episodeIndexKey, setEpisodeIndexKey] = useState<Selection>(new Set([0]));
     const [currentEpisode] = episodeIndexKey as Set<number>;

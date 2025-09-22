@@ -1,13 +1,15 @@
-import { ActionButton, Flex, Grid, Item, TabList, Tabs, View } from '@geti/ui';
-import { ChevronLeft } from '@geti/ui/icons';
-import { Outlet, redirect, useLocation, useNavigate, useParams } from 'react-router';
+import { Suspense } from 'react';
 
+import { ActionButton, Flex, Grid, Item, Loading, TabList, Tabs, View } from '@geti/ui';
+import { ChevronLeft } from '@geti/ui/icons';
+import { Outlet, useLocation, useNavigate } from 'react-router';
+
+import { useProjectId } from '../../features/projects/use-project';
 import { paths } from '../../router';
 import { ReactComponent as DatasetIcon } from './../../assets/icons/dataset-icon.svg';
 import { ReactComponent as ModelsIcon } from './../../assets/icons/models-icon.svg';
 import { ReactComponent as RobotIcon } from './../../assets/icons/robot-icon.svg';
 import { ReactComponent as TestsIcon } from './../../assets/icons/tests-icon.svg';
-import { ProjectProvider } from './project.provider';
 
 const Header = ({ project_id }: { project_id: string }) => {
     const navigate = useNavigate();
@@ -79,33 +81,29 @@ const getMainPageInProjectUrl = (pathname: string) => {
 };
 
 export const ProjectLayout = () => {
-    const { project_id } = useParams();
+    const { project_id } = useProjectId();
     const { pathname } = useLocation();
 
     const pageName = getMainPageInProjectUrl(pathname);
 
-    if (project_id === undefined) {
-        redirect(paths.root.pattern);
-    } else {
-        return (
-            <ProjectProvider project_id={project_id}>
-                <Tabs aria-label='Header navigation' selectedKey={pageName}>
-                    <Grid
-                        areas={['header', 'content']}
-                        UNSAFE_style={{
-                            gridTemplateRows: 'var(--spectrum-global-dimension-size-800, 4rem) auto',
-                        }}
-                        minHeight={'100vh'}
-                        maxHeight={'100vh'}
-                        height={'100%'}
-                    >
-                        <Header project_id={project_id} />
-                        <View backgroundColor={'gray-75'} gridArea={'content'}>
-                            <Outlet />
-                        </View>
-                    </Grid>
-                </Tabs>
-            </ProjectProvider>
-        );
-    }
+    return (
+        <Tabs aria-label='Header navigation' selectedKey={pageName}>
+            <Grid
+                areas={['header', 'content']}
+                UNSAFE_style={{
+                    gridTemplateRows: 'var(--spectrum-global-dimension-size-800, 4rem) auto',
+                }}
+                minHeight={'100vh'}
+                maxHeight={'100vh'}
+                height={'100%'}
+            >
+                <Header project_id={project_id} />
+                <View gridArea={'content'}>
+                    <Suspense fallback={<Loading mode='overlay' />}>
+                        <Outlet />
+                    </Suspense>
+                </View>
+            </Grid>
+        </Tabs>
+    );
 };
