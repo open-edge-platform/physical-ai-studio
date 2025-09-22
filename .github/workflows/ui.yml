@@ -12,7 +12,6 @@ on:
       - ready_for_review
   workflow_dispatch: # run on request (no need for PR)
 
-
 jobs:
   build:
     name: Build UI
