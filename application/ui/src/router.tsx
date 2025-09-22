@@ -21,8 +21,8 @@ import { Index as RobotConfiguration } from './routes/robot-configuration/index'
 
 const root = path('/');
 const projects = root.path('/projects');
-const project = root.path('/project/:project_id');
-const robotConfiguration = project.path('/robot-configuration');
+const project = root.path('/projects/:project_id');
+const robotConfiguration = project.path('robots');
 const datasets = project.path('/datasets');
 const models = project.path('/models');
 const cameras = project.path('cameras');

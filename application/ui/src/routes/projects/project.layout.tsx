@@ -3,6 +3,10 @@ import { ChevronLeft } from '@geti/ui/icons';
 import { Outlet, redirect, useLocation, useNavigate, useParams } from 'react-router';
 
 import { paths } from '../../router';
+import { ReactComponent as DatasetIcon } from './../../assets/icons/dataset-icon.svg';
+import { ReactComponent as ModelsIcon } from './../../assets/icons/models-icon.svg';
+import { ReactComponent as RobotIcon } from './../../assets/icons/robot-icon.svg';
+import { ReactComponent as TestsIcon } from './../../assets/icons/tests-icon.svg';
 import { ProjectProvider } from './project.provider';
 
 const Header = ({ project_id }: { project_id: string }) => {
@@ -24,22 +28,25 @@ const Header = ({ project_id }: { project_id: string }) => {
                         '--spectrum-tabs-selection-indicator-color': 'var(--energy-blue)',
                     }}
                 >
-                    <Item textValue='Datasets' key={'datasets'} href={paths.project.datasets.index({ project_id })}>
-                        <Flex alignItems='center' gap='size-100'>
-                            Datasets
-                        </Flex>
-                    </Item>
                     <Item
                         textValue='Robot configuration'
-                        key={'robot-configuration'}
+                        key={'robots'}
                         href={paths.project.robotConfiguration({ project_id })}
                     >
                         <Flex alignItems='center' gap='size-100'>
-                            Robot Configuration
+                            <RobotIcon />
+                            Robots
+                        </Flex>
+                    </Item>
+                    <Item textValue='Datasets' key={'datasets'} href={paths.project.datasets.index({ project_id })}>
+                        <Flex alignItems='center' gap='size-100'>
+                            <DatasetIcon />
+                            Datasets
                         </Flex>
                     </Item>
                     <Item textValue='Models' key={'models'} href={paths.project.models({ project_id })}>
                         <Flex alignItems='center' gap='size-100'>
+                            <ModelsIcon />
                             Models
                         </Flex>
                     </Item>
@@ -50,6 +57,7 @@ const Header = ({ project_id }: { project_id: string }) => {
                     </Item>
                     <Item textValue='OpenAPI' key={'openapi'} href={paths.openapi({})}>
                         <Flex alignItems='center' gap='size-100'>
+                            <TestsIcon />
                             OpenAPI
                         </Flex>
                     </Item>
@@ -60,7 +68,7 @@ const Header = ({ project_id }: { project_id: string }) => {
 };
 
 const getMainPageInProjectUrl = (pathname: string) => {
-    const regexp = /\/project\/[\w-]*\/([\w-]*)/g;
+    const regexp = /\/projects\/[\w-]*\/([\w-]*)/g;
     const found = [...pathname.matchAll(regexp)];
     if (found.length) {
         const [_base, main] = found[0];
