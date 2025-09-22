@@ -26,7 +26,7 @@ lint = [
 ]
 
 [tool.uv]
-default-groups = "all"
+default-groups = ["all"]
 
 [tool.ruff]
 target-version = "py312"
