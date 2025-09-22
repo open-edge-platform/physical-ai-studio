@@ -43,4 +43,3 @@ jobs:
         working-directory: application/backend
         run: |
           uv run mypy . --config-file=pyproject.toml
-
