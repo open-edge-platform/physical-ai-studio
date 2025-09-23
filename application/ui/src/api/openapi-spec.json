@@ -1,21 +1,25 @@
 {
     "openapi": "3.1.0",
-    "info": { "title": "Geti Action", "version": "0.1.0" },
+    "info": {
+        "title": "Geti Action",
+        "description": "Geti Action is a framework to train robots.It allows the user to create datasets, models and the run inference ",
+        "version": "0.1.0"
+    },
     "paths": {
         "/api/projects": {
             "get": {
-                "summary": "Get Projects",
-                "description": "Get all projects",
-                "operationId": "get_projects_api_projects_get",
+                "summary": "List Projects",
+                "description": "Fetch all projects",
+                "operationId": "list_projects_api_projects_get",
                 "responses": {
                     "200": {
                         "description": "Successful Response",
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "items": { "$ref": "#/components/schemas/ProjectConfig" },
+                                    "items": { "$ref": "#/components/schemas/Project" },
                                     "type": "array",
-                                    "title": "Response Get Projects Api Projects Get"
+                                    "title": "Response List Projects Api Projects Get"
                                 }
                             }
                         }
@@ -27,17 +31,13 @@
                 "description": "Create a new project",
                 "operationId": "create_project_api_projects_put",
                 "requestBody": {
-                    "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProjectConfig" } } },
+                    "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Project" } } },
                     "required": true
                 },
                 "responses": {
                     "200": {
                         "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": { "type": "string", "title": "Response Create Project Api Projects Put" }
-                            }
-                        }
+                        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Project" } } }
                     },
                     "422": {
                         "description": "Validation Error",
@@ -386,6 +386,15 @@
                 "type": "object",
                 "required": ["sdp", "type", "webrtc_id"],
                 "title": "Offer"
+            },
+            "Project": {
+                "properties": {
+                    "id": { "type": "string", "format": "uuid", "title": "Id" },
+                    "name": { "type": "string", "title": "Name", "default": "Default Name" }
+                },
+                "type": "object",
+                "title": "Project",
+                "example": { "id": "7b073838-99d3-42ff-9018-4e901eb047fc", "name": "SO101 Teleoperation" }
             },
             "ProjectConfig": {
                 "properties": {

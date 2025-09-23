@@ -2,7 +2,7 @@ import { Flex, Heading, Tag, Text, View } from '@geti/ui';
 import { clsx } from 'clsx';
 import { NavLink } from 'react-router-dom';
 
-import { SchemaProjectConfig } from '../../../api/openapi-spec';
+import { SchemaProject } from '../../../api/openapi-spec';
 import thumbnailUrl from '../../../assets/mocked-project-thumbnail.png';
 import { paths } from '../../../router';
 import { MenuActions } from './menu-actions.component';
@@ -10,13 +10,13 @@ import { MenuActions } from './menu-actions.component';
 import classes from './project-list.module.scss';
 
 type ProjectCardProps = {
-    item: SchemaProjectConfig;
+    item: SchemaProject;
     isActive: boolean;
 };
 
 export const ProjectCard = ({ item, isActive }: ProjectCardProps) => {
     return (
-        <NavLink to={paths.project.robotConfiguration({ project_id: item.id })}>
+        <NavLink to={paths.project.robotConfiguration({ project_id: item.id! })}>
             <Flex UNSAFE_className={clsx({ [classes.card]: true, [classes.activeCard]: isActive })}>
                 <View aria-label={'project thumbnail'}>
                     <img src={thumbnailUrl} alt={item.name} />
@@ -37,10 +37,10 @@ export const ProjectCard = ({ item, isActive }: ProjectCardProps) => {
 
                     <Flex alignItems={'center'} gap={'size-100'} direction={'row'} wrap='wrap'>
                         <Text>• Edited: 2025-08-07 06:05 AM</Text>
-                        <Text>• Datasets: {item.datasets.join(', ')}</Text>
-                        <Text>• Cameras: {item.cameras.map((c) => c.name).join(', ')}</Text>
+                        <Text>• Datasets: </Text>
+                        <Text>• Cameras: </Text>
                         <Text>
-                            • Robots: {item.robots.map((r) => `${r.id}: ${r.type} (${r.serial_id})`).join(', ')}
+                            • Robots: 
                         </Text>
                     </Flex>
                 </View>

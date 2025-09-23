@@ -12,10 +12,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Projects
-         * @description Get all projects
+         * List Projects
+         * @description Fetch all projects
          */
-        get: operations['get_projects_api_projects_get'];
+        get: operations['list_projects_api_projects_get'];
         /**
          * Create Project
          * @description Create a new project
@@ -325,6 +325,25 @@ export interface components {
             /** Webrtc Id */
             webrtc_id: string;
         };
+        /**
+         * Project
+         * @example {
+         *       "id": "7b073838-99d3-42ff-9018-4e901eb047fc",
+         *       "name": "SO101 Teleoperation"
+         *     }
+         */
+        Project: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id?: string;
+            /**
+             * Name
+             * @default Default Name
+             */
+            name: string;
+        };
         /** ProjectConfig */
         ProjectConfig: {
             /**
@@ -406,13 +425,14 @@ export type SchemaDataset = components['schemas']['Dataset'];
 export type SchemaEpisode = components['schemas']['Episode'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
 export type SchemaOffer = components['schemas']['Offer'];
+export type SchemaProject = components['schemas']['Project'];
 export type SchemaProjectConfig = components['schemas']['ProjectConfig'];
 export type SchemaRobotConfig = components['schemas']['RobotConfig'];
 export type SchemaRobotPortInfo = components['schemas']['RobotPortInfo'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type $defs = Record<string, never>;
 export interface operations {
-    get_projects_api_projects_get: {
+    list_projects_api_projects_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -427,7 +447,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['ProjectConfig'][];
+                    'application/json': components['schemas']['Project'][];
                 };
             };
         };
@@ -441,7 +461,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                'application/json': components['schemas']['ProjectConfig'];
+                'application/json': components['schemas']['Project'];
             };
         };
         responses: {
@@ -451,7 +471,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': string;
+                    'application/json': components['schemas']['Project'];
                 };
             };
             /** @description Validation Error */
