@@ -3,12 +3,20 @@ import os
 import uvicorn
 from fastapi import FastAPI
 
-from api.camera import lifespan
 from api.camera import router as camera_router
 from api.hardware import router as hardware_router
 from api.project import router as project_router
+from core import lifespan
+from settings import get_settings
 
-app = FastAPI(title="Geti Action", openapi_url="/api/openapi.json", lifespan=lifespan)
+settings = get_settings()
+app = FastAPI(
+    title=settings.app_name,
+    openapi_url=settings.openapi_url,
+    version=settings.version,
+    description=settings.description,
+    lifespan=lifespan
+)
 
 app.include_router(project_router, prefix="/api/projects")
 app.include_router(hardware_router, prefix="/api/hardware")

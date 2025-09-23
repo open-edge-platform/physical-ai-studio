@@ -1,26 +1,13 @@
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from typing import Annotated
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, Depends
 
+from api.dependencies import get_webrtc_manager
 from webrtc.manager import Answer, Offer, WebRTCManager
 
 router = APIRouter()
-manager = WebRTCManager()
-
 
 @router.post("/offer/camera")
-async def offer_camera(offer: Offer, camera: str) -> Answer:
+async def offer_camera(offer: Offer, camera: str, webrtc_manager: Annotated[WebRTCManager, Depends(get_webrtc_manager)]) -> Answer:
     """Create a WebRTC offer"""
-    return await manager.handle_offer(offer.sdp, offer.type, offer.webrtc_id, camera)
-
-
-@asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
-    """FastAPI lifespan context manager for WebRTCManager"""
-    # Startup
-    print("🚀 Starting up WebRTCManager")
-    yield
-    # Shutdown
-    print("🛑 Cleaning up WebRTCManager")
-    await manager.cleanup()
+    return await webrtc_manager.handle_offer(offer.sdp, offer.type, offer.webrtc_id, camera)
