@@ -1,0 +1,59 @@
+.projectMenu {
+    & li[class*='spectrum-Menu-divider'] {
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+        background-color: var(--spectrum-global-color-gray-100) !important;
+        text-decoration-thickness: auto !important;
+    }
+}
+
+.panelContent {
+    div[class*='_spectrum-Menu-wrapper'] {
+        width: 100%;
+        border: none;
+        background-color: transparent;
+    }
+}
+
+.panelButtons {
+    padding-block-start: 0;
+}
+
+.addProjectButton {
+    color: var(--spectrum-global-color-gray-900) !important;
+    padding: var(--spectrum-global-dimension-size-400);
+    background-color: rgba(0, 0, 0, 0) !important;
+
+    display: flex;
+    align-items: center;
+    gap: var(--spectrum-global-dimension-size-100);
+
+    border: var(--spectrum-alias-border-size-thin) solid transparent !important;
+    border-radius: var(--spectrum-alias-border-radius-small) !important;
+
+    &[class*='is-hovered'] {
+        border: var(--spectrum-alias-border-size-thin) solid var(--spectrum-global-color-gray-300) !important;
+        background-color: var(--spectrum-global-color-gray-100) !important;
+        text-decoration: none;
+    }
+}
+
+.openApiLink {
+    display: block;
+    background-color: var(--spectrum-global-color-gray-50) !important;
+    padding: var(--spectrum-global-dimension-size-200) !important;
+    border: var(--spectrum-alias-border-size-thin) solid transparent !important;
+
+    &[class*='is-hovered'] {
+        border: var(--spectrum-alias-border-size-thin) solid var(--spectrum-global-color-gray-300) !important;
+        background-color: var(--spectrum-global-color-gray-100) !important;
+        text-decoration: none;
+    }
+}
+
+.dialog {
+    & div[class*='spectrum-Dialog-grid'] {
+        --spectrum-dialog-padding-x: 0px;
+        --spectrum-dialog-padding-y: var(--spectrum-global-dimension-size-250);
+    }
+}
