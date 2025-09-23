@@ -17,13 +17,7 @@ from repositories.base import BaseRepository
 class ResourceType(StrEnum):
     """Enumeration for resource types."""
 
-    SOURCE = "Source"
-    SINK = "Sink"
-    MODEL = "Model"
-    PIPELINE = "Pipeline"
     PROJECT = "Project"
-    DATASET_ITEM = "DatasetItem"
-    LABEL = "Label"
 
 
 class ResourceError(Exception):

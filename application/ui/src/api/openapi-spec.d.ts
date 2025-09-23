@@ -230,48 +230,6 @@ export interface components {
             type: 'RealSense' | 'OpenCV';
             default_stream_profile: components['schemas']['CameraProfile'];
         };
-        /** CameraConfig */
-        CameraConfig: {
-            /**
-             * Id
-             * @description Camera port or realsense id
-             */
-            id: string;
-            /**
-             * Name
-             * @description Camera name
-             */
-            name: string;
-            /**
-             * Type
-             * @enum {string}
-             */
-            type: 'RealSense' | 'OpenCV';
-            /**
-             * Width
-             * @description Frame width
-             * @default 640
-             */
-            width: number;
-            /**
-             * Height
-             * @description Frame height
-             * @default 480
-             */
-            height: number;
-            /**
-             * Fps
-             * @description Camera fps
-             * @default 30
-             */
-            fps: number;
-            /**
-             * Use Depth
-             * @description Use Depth from RealSense
-             * @default false
-             */
-            use_depth: boolean;
-        };
         /** CameraProfile */
         CameraProfile: {
             /** Width */
@@ -344,53 +302,6 @@ export interface components {
              */
             name: string;
         };
-        /** ProjectConfig */
-        ProjectConfig: {
-            /**
-             * Id
-             * @description UUID of the project
-             */
-            id: string;
-            /**
-             * Fps
-             * @description Recording FPS for datasets
-             * @default 30
-             */
-            fps: number;
-            /**
-             * Name
-             * @description Project name
-             */
-            name: string;
-            /**
-             * Datasets
-             * @description Datasets available for this project
-             * @default []
-             */
-            datasets: string[];
-            /** Cameras */
-            cameras: components['schemas']['CameraConfig'][];
-            /** Robots */
-            robots: components['schemas']['RobotConfig'][];
-        };
-        /** RobotConfig */
-        RobotConfig: {
-            /**
-             * Id
-             * @description Robot calibration id
-             */
-            id: string;
-            /**
-             * Type
-             * @enum {string}
-             */
-            type: 'follower' | 'leader';
-            /**
-             * Serial Id
-             * @description Serial port id
-             */
-            serial_id: string;
-        };
         /** RobotPortInfo */
         RobotPortInfo: {
             /** Port */
@@ -419,15 +330,12 @@ export interface components {
 export type SchemaAnswer = components['schemas']['Answer'];
 export type SchemaCalibrationConfig = components['schemas']['CalibrationConfig'];
 export type SchemaCamera = components['schemas']['Camera'];
-export type SchemaCameraConfig = components['schemas']['CameraConfig'];
 export type SchemaCameraProfile = components['schemas']['CameraProfile'];
 export type SchemaDataset = components['schemas']['Dataset'];
 export type SchemaEpisode = components['schemas']['Episode'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
 export type SchemaOffer = components['schemas']['Offer'];
 export type SchemaProject = components['schemas']['Project'];
-export type SchemaProjectConfig = components['schemas']['ProjectConfig'];
-export type SchemaRobotConfig = components['schemas']['RobotConfig'];
 export type SchemaRobotPortInfo = components['schemas']['RobotPortInfo'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type $defs = Record<string, never>;
@@ -502,7 +410,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['ProjectConfig'];
+                    'application/json': components['schemas']['Project'];
                 };
             };
             /** @description Validation Error */

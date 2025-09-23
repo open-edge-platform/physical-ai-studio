@@ -8,7 +8,7 @@ class ProjectMapper:
     @staticmethod
     def to_schema(project_db: ProjectDB) -> Project:
         """Convert Project db entity to schema."""
-        return Project.model_validate({"id": project_db.id, "name": project_db.name})
+        return Project.model_validate({"id": project_db.id, "name": project_db.name, "updated_at": project_db.updated_at})
 
     @staticmethod
     def from_schema(project: Project) -> ProjectDB:

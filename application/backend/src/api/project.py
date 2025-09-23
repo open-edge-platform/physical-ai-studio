@@ -15,7 +15,9 @@ router = APIRouter()
 @router.get("")
 async def list_projects(project_service: Annotated[ProjectService, Depends(get_project_service)]) -> list[Project]:
     """Fetch all projects"""
-    return project_service.list_projects()
+    projects =  project_service.list_projects()
+    print(projects)
+    return projects
 
 @router.put("")
 async def create_project(

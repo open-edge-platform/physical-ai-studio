@@ -2,7 +2,7 @@
 name = "geti-action"
 version = "1.0.0"
 description = "Geti Action server"
-requires-python = ">=3.10, <=3.13"
+requires-python = ">=3.12, <=3.13"
 
 dependencies = [
   "opencv-python",

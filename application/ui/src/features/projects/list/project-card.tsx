@@ -36,7 +36,7 @@ export const ProjectCard = ({ item, isActive }: ProjectCardProps) => {
                     </Flex>
 
                     <Flex alignItems={'center'} gap={'size-100'} direction={'row'} wrap='wrap'>
-                        <Text>• Edited: 2025-08-07 06:05 AM</Text>
+                        <Text>• Edited: {new Date(item.updated_at).toLocaleString()}</Text>
                         <Text>• Datasets: </Text>
                         <Text>• Cameras: </Text>
                         <Text>

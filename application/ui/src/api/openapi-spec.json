@@ -59,9 +59,7 @@
                 "responses": {
                     "200": {
                         "description": "Successful Response",
-                        "content": {
-                            "application/json": { "schema": { "$ref": "#/components/schemas/ProjectConfig" } }
-                        }
+                        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Project" } } }
                     },
                     "422": {
                         "description": "Validation Error",
@@ -291,37 +289,6 @@
                 "required": ["name", "id", "type", "default_stream_profile"],
                 "title": "Camera"
             },
-            "CameraConfig": {
-                "properties": {
-                    "id": {
-                        "type": "string",
-                        "maxLength": 50,
-                        "minLength": 1,
-                        "title": "Id",
-                        "description": "Camera port or realsense id"
-                    },
-                    "name": {
-                        "type": "string",
-                        "maxLength": 50,
-                        "minLength": 1,
-                        "title": "Name",
-                        "description": "Camera name"
-                    },
-                    "type": { "type": "string", "enum": ["RealSense", "OpenCV"], "title": "Type" },
-                    "width": { "type": "integer", "title": "Width", "description": "Frame width", "default": 640 },
-                    "height": { "type": "integer", "title": "Height", "description": "Frame height", "default": 480 },
-                    "fps": { "type": "integer", "title": "Fps", "description": "Camera fps", "default": 30 },
-                    "use_depth": {
-                        "type": "boolean",
-                        "title": "Use Depth",
-                        "description": "Use Depth from RealSense",
-                        "default": false
-                    }
-                },
-                "type": "object",
-                "required": ["id", "name", "type"],
-                "title": "CameraConfig"
-            },
             "CameraProfile": {
                 "properties": {
                     "width": { "type": "integer", "title": "Width" },
@@ -395,54 +362,6 @@
                 "type": "object",
                 "title": "Project",
                 "example": { "id": "7b073838-99d3-42ff-9018-4e901eb047fc", "name": "SO101 Teleoperation" }
-            },
-            "ProjectConfig": {
-                "properties": {
-                    "id": { "type": "string", "title": "Id", "description": "UUID of the project" },
-                    "fps": {
-                        "type": "integer",
-                        "title": "Fps",
-                        "description": "Recording FPS for datasets",
-                        "default": 30
-                    },
-                    "name": {
-                        "type": "string",
-                        "maxLength": 50,
-                        "minLength": 1,
-                        "title": "Name",
-                        "description": "Project name"
-                    },
-                    "datasets": {
-                        "items": { "type": "string" },
-                        "type": "array",
-                        "title": "Datasets",
-                        "description": "Datasets available for this project",
-                        "default": []
-                    },
-                    "cameras": {
-                        "items": { "$ref": "#/components/schemas/CameraConfig" },
-                        "type": "array",
-                        "title": "Cameras"
-                    },
-                    "robots": {
-                        "items": { "$ref": "#/components/schemas/RobotConfig" },
-                        "type": "array",
-                        "title": "Robots"
-                    }
-                },
-                "type": "object",
-                "required": ["id", "name", "cameras", "robots"],
-                "title": "ProjectConfig"
-            },
-            "RobotConfig": {
-                "properties": {
-                    "id": { "type": "string", "title": "Id", "description": "Robot calibration id" },
-                    "type": { "type": "string", "enum": ["follower", "leader"], "title": "Type" },
-                    "serial_id": { "type": "string", "title": "Serial Id", "description": "Serial port id" }
-                },
-                "type": "object",
-                "required": ["id", "type", "serial_id"],
-                "title": "RobotConfig"
             },
             "RobotPortInfo": {
                 "properties": {
