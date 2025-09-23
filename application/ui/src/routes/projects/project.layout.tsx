@@ -1,9 +1,15 @@
-import { ActionButton, Flex, Grid, Item, TabList, Tabs, View } from '@geti/ui';
-import { ChevronLeft } from '@geti/ui/icons';
-import { Outlet, redirect, useLocation, useNavigate, useParams } from 'react-router';
+import { Suspense } from 'react';
 
+import { ActionButton, Flex, Grid, Item, Loading, TabList, Tabs, View } from '@geti/ui';
+import { ChevronLeft } from '@geti/ui/icons';
+import { Outlet, useLocation, useNavigate } from 'react-router';
+
+import { useProjectId } from '../../features/projects/use-project';
 import { paths } from '../../router';
-import { ProjectProvider } from './project.provider';
+import { ReactComponent as DatasetIcon } from './../../assets/icons/dataset-icon.svg';
+import { ReactComponent as ModelsIcon } from './../../assets/icons/models-icon.svg';
+import { ReactComponent as RobotIcon } from './../../assets/icons/robot-icon.svg';
+import { ReactComponent as TestsIcon } from './../../assets/icons/tests-icon.svg';
 
 const Header = ({ project_id }: { project_id: string }) => {
     const navigate = useNavigate();
@@ -24,22 +30,25 @@ const Header = ({ project_id }: { project_id: string }) => {
                         '--spectrum-tabs-selection-indicator-color': 'var(--energy-blue)',
                     }}
                 >
-                    <Item textValue='Datasets' key={'datasets'} href={paths.project.datasets.index({ project_id })}>
-                        <Flex alignItems='center' gap='size-100'>
-                            Datasets
-                        </Flex>
-                    </Item>
                     <Item
                         textValue='Robot configuration'
-                        key={'robot-configuration'}
+                        key={'robots'}
                         href={paths.project.robotConfiguration({ project_id })}
                     >
                         <Flex alignItems='center' gap='size-100'>
-                            Robot Configuration
+                            <RobotIcon />
+                            Robots
+                        </Flex>
+                    </Item>
+                    <Item textValue='Datasets' key={'datasets'} href={paths.project.datasets.index({ project_id })}>
+                        <Flex alignItems='center' gap='size-100'>
+                            <DatasetIcon />
+                            Datasets
                         </Flex>
                     </Item>
                     <Item textValue='Models' key={'models'} href={paths.project.models({ project_id })}>
                         <Flex alignItems='center' gap='size-100'>
+                            <ModelsIcon />
                             Models
                         </Flex>
                     </Item>
@@ -50,6 +59,7 @@ const Header = ({ project_id }: { project_id: string }) => {
                     </Item>
                     <Item textValue='OpenAPI' key={'openapi'} href={paths.openapi({})}>
                         <Flex alignItems='center' gap='size-100'>
+                            <TestsIcon />
                             OpenAPI
                         </Flex>
                     </Item>
@@ -60,7 +70,7 @@ const Header = ({ project_id }: { project_id: string }) => {
 };
 
 const getMainPageInProjectUrl = (pathname: string) => {
-    const regexp = /\/project\/[\w-]*\/([\w-]*)/g;
+    const regexp = /\/projects\/[\w-]*\/([\w-]*)/g;
     const found = [...pathname.matchAll(regexp)];
     if (found.length) {
         const [_base, main] = found[0];
@@ -71,33 +81,29 @@ const getMainPageInProjectUrl = (pathname: string) => {
 };
 
 export const ProjectLayout = () => {
-    const { project_id } = useParams();
+    const { project_id } = useProjectId();
     const { pathname } = useLocation();
 
     const pageName = getMainPageInProjectUrl(pathname);
 
-    if (project_id === undefined) {
-        redirect(paths.root.pattern);
-    } else {
-        return (
-            <ProjectProvider project_id={project_id}>
-                <Tabs aria-label='Header navigation' selectedKey={pageName}>
-                    <Grid
-                        areas={['header', 'content']}
-                        UNSAFE_style={{
-                            gridTemplateRows: 'var(--spectrum-global-dimension-size-800, 4rem) auto',
-                        }}
-                        minHeight={'100vh'}
-                        maxHeight={'100vh'}
-                        height={'100%'}
-                    >
-                        <Header project_id={project_id} />
-                        <View backgroundColor={'gray-75'} gridArea={'content'}>
-                            <Outlet />
-                        </View>
-                    </Grid>
-                </Tabs>
-            </ProjectProvider>
-        );
-    }
+    return (
+        <Tabs aria-label='Header navigation' selectedKey={pageName}>
+            <Grid
+                areas={['header', 'content']}
+                UNSAFE_style={{
+                    gridTemplateRows: 'var(--spectrum-global-dimension-size-800, 4rem) auto',
+                }}
+                minHeight={'100vh'}
+                maxHeight={'100vh'}
+                height={'100%'}
+            >
+                <Header project_id={project_id} />
+                <View gridArea={'content'}>
+                    <Suspense fallback={<Loading mode='overlay' />}>
+                        <Outlet />
+                    </Suspense>
+                </View>
+            </Grid>
+        </Tabs>
+    );
 };

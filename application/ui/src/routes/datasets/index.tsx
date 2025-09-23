@@ -4,13 +4,13 @@ import { Button, Flex, Item, Key, Link, TabList, TabPanels, Tabs, Text, View, We
 import { Add } from '@geti/ui/icons';
 import { useNavigate } from 'react-router';
 
+import { useProject } from '../../features/projects/use-project';
 import { paths } from '../../router';
-import { useProject } from '../projects/project.provider';
 import { DatasetViewer } from './dataset-viewer';
 
 export const Index = () => {
     const navigate = useNavigate();
-    const { project } = useProject();
+    const project = useProject();
     const datasets = project.datasets;
     const [dataset, setDataset] = useState<string>(datasets.length > 0 ? datasets[0] : '');
 

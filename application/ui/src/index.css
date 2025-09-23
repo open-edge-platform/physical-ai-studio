@@ -50,7 +50,21 @@ body,
 html {
     margin: 0;
     padding: 0;
-    background-color: var(--background);
+}
+
+body {
+    background-color: var(--spectrum-global-color-gray-75, #2e2f32);
+    background-image: url('./assets/background.png');
+    background-blend-mode: luminosity;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+    min-height: 100vh;
+}
+
+/* This should be a safe reset option thanks to https://github.com/adobe/react-spectrum/pull/4180 */
+* {
+    box-sizing: border-box;
 }
 
 h1,
