@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 #from app.core.scheduler import Scheduler
-#from app.db import MigrationManager
+from db import MigrationManager
 from settings import get_settings
 from webrtc.manager import WebRTCManager
 
@@ -21,6 +21,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     webrtc_manager = WebRTCManager()
     app.state.webrtc_manager = webrtc_manager
     logger.info("Application startup completed")
+
+    migration_manager = MigrationManager(settings)
+    if not migration_manager.initialize_database():
+        logger.error("Failed to initialize database. Application cannot start.")
+        raise RuntimeError("Database initialization failed")
+
 
     yield
 
