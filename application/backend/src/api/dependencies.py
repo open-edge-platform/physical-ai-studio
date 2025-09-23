@@ -1,7 +1,9 @@
-from fastapi import Request
 from functools import lru_cache
-from webrtc.manager import WebRTCManager
+
+from fastapi import Request
+
 from services.project_service import ProjectService
+from webrtc.manager import WebRTCManager
 
 
 def get_webrtc_manager(request: Request) -> WebRTCManager:

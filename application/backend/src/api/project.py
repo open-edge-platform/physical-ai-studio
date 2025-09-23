@@ -6,7 +6,7 @@ from fastapi.exceptions import HTTPException
 from api.dependencies import get_project_service
 from schemas import Dataset, Project, ProjectConfig
 from services.project_service import ProjectService
-from storage.storage import load_project, load_projects, write_project
+from storage.storage import load_project, write_project
 from utils.dataset import get_dataset
 
 router = APIRouter()
@@ -14,6 +14,7 @@ router = APIRouter()
 
 @router.get("")
 async def list_projects(project_service: Annotated[ProjectService, Depends(get_project_service)]) -> list[Project]:
+    """Fetch all projects"""
     return project_service.list_projects()
 
 @router.put("")

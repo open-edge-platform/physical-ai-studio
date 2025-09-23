@@ -1,17 +1,11 @@
 from uuid import UUID
 
-from services.mappers.project_mapper import ProjectMapper
-from services.parent_process_guard import parent_process_only
-
 from db import get_db_session
 from repositories import ProjectRepository
 from schemas import Project
-from services.base import (
-    GenericPersistenceService,
-    ResourceNotFoundError,
-    ResourceType,
-    ServiceConfig,
-)
+from services.base import GenericPersistenceService, ResourceNotFoundError, ResourceType, ServiceConfig
+from services.mappers.project_mapper import ProjectMapper
+from services.parent_process_guard import parent_process_only
 
 MSG_ERR_DELETE_ACTIVE_PROJECT = "Cannot delete a project with a running pipeline."
 
