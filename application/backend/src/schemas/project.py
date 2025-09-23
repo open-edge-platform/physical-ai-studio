@@ -1,4 +1,8 @@
+from enum import StrEnum
+
 from pydantic import BaseModel, Field
+
+from schemas.base import BaseIDNameModel
 
 from .camera import CameraConfig
 from .robot import RobotConfig
@@ -36,6 +40,15 @@ from .robot import RobotConfig
 #        }
 #    }
 
+class Project(BaseIDNameModel):
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "id": "7b073838-99d3-42ff-9018-4e901eb047fc",
+                "name": "SO101 Teleoperation",
+            }
+        }
+    }
 
 class ProjectConfig(BaseModel):
     id: str = Field(..., description="UUID of the project")
