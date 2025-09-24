@@ -18,6 +18,7 @@ class ResourceType(StrEnum):
     """Enumeration for resource types."""
 
     PROJECT = "Project"
+    DATASET = "Dataset"
 
 
 class ResourceError(Exception):
@@ -115,7 +116,9 @@ class GenericPersistenceService(Generic[S, R]):
     def update(self, item: S, partial_config: dict, db: Session | None = None) -> S:
         with self._get_repo(db) as repo:
             to_update = item.model_copy(update=partial_config)
+            print(to_update)
             updated = repo.update(self.config.mapper_class.from_schema(to_update))
+            print(updated.config)
             return self.config.mapper_class.to_schema(updated)
 
     def delete_by_id(self, item_id: UUID, db: Session | None = None) -> None:

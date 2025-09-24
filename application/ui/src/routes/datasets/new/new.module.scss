@@ -1,0 +1,13 @@
+.card {
+    color: white;
+    border-width: var(--spectrum-global-dimension-size-25);
+    border-color: var(--spectrum-global-color-gray-200);
+    border-style: solid;
+    border-radius: var(--spectrum-global-dimension-size-50);
+    background-color: var(--spectrum-global-color-gray-50);
+    overflow: hidden;
+
+    transition:
+        background-color 100ms ease-in-out 150ms,
+        border 100ms ease-in-out 150ms;
+}

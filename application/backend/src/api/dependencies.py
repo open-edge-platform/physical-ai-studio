@@ -1,9 +1,10 @@
 from functools import lru_cache
 from uuid import UUID
 
-from fastapi import Request
+from fastapi import Request, status
+from fastapi.exceptions import HTTPException
 
-from services.project_service import ProjectService
+from services import ProjectService, DatasetService
 from webrtc.manager import WebRTCManager
 
 
@@ -29,6 +30,11 @@ def get_webrtc_manager(request: Request) -> WebRTCManager:
 def get_project_service() -> ProjectService:
     """Provides a ProjectService instance for managing projects."""
     return ProjectService()
+
+@lru_cache
+def get_dataset_service() -> DatasetService:
+    """Provides a ProjectService instance for managing projects."""
+    return DatasetService()
 
 
 def get_project_id(project_id: str) -> UUID:

@@ -22,7 +22,12 @@ class ProjectDB(Base):
         cascade="all, delete-orphan",
         lazy="selectin"
     )
-
+    datasets: Mapped[list["DatasetDB"]] = relationship(
+        "DatasetDB",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
 
 class ProjectConfigDB(Base):
@@ -33,4 +38,18 @@ class ProjectConfigDB(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
-    project = relationship("ProjectDB", back_populates="config")
+    project: Mapped["ProjectDB"] = relationship("ProjectDB", back_populates="config")
+
+
+class DatasetDB(Base):
+    __tablename__ = "datasets"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=lambda: str(uuid4()))
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    path: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
+    project: Mapped["ProjectDB"] = relationship(
+        "ProjectDB", back_populates="datasets"
+    )

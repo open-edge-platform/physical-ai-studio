@@ -38,6 +38,16 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
     )
+    op.create_table(
+        "datasets",
+        sa.Column("project_id", sa.Text(), nullable=False),
+        sa.Column("id", sa.Text(), nullable=False),
+        sa.Column("name", sa.String(length=255), nullable=False),
+        sa.Column("path", sa.String(length=255), nullable=False),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False),
+        sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
+    )
 
 
 def downgrade() -> None:

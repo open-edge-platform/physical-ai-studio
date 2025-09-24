@@ -1,5 +1,5 @@
 from db.schema import ProjectConfigDB
-from schemas import ProjectConfig
+from schemas import ProjectConfig, LeRobotDataset
 
 
 class ProjectConfigMapper:
@@ -16,5 +16,11 @@ class ProjectConfigMapper:
     @staticmethod
     def from_schema(config: ProjectConfig) -> ProjectConfigDB:
         """Convert Label schema to db model."""
-
         return ProjectConfigDB(**config.model_dump(mode="json"))
+
+    @staticmethod
+    def from_lerobot_dataset(dataset: LeRobotDataset) -> ProjectConfig:
+        """Create a config from a lerobot dataset."""
+        return ProjectConfig(
+            fps=dataset.fps
+        )

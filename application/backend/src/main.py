@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from api.camera import router as camera_router
 from api.hardware import router as hardware_router
 from api.project import router as project_router
+from api.dataset import router as dataset_router
 from core import lifespan
 from settings import get_settings
 
@@ -21,6 +22,7 @@ app = FastAPI(
 app.include_router(project_router, prefix="/api/projects")
 app.include_router(hardware_router, prefix="/api/hardware")
 app.include_router(camera_router, prefix="/api/cameras")
+app.include_router(dataset_router, prefix="/api/dataset")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from schemas.base import BaseIDNameModel, BaseIDNameModel
 
 
 class EpisodeInfo(BaseModel):
@@ -16,10 +17,23 @@ class Episode(BaseModel):
     modification_timestamp: int
 
 
-class Dataset(BaseModel):
+class LeRobotDataset(BaseModel):
+    root: str
     repo_id: str
-    episodes: list[Episode]
+    total_episodes: int
     total_frames: int
     features: list[str]
-    tasks: list[str]
     fps: int
+
+
+class Dataset(BaseIDNameModel):
+    path: str
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "name": "Collect blocks",
+                "path": "/some/path/to/dataset",
+            }
+        }
+    }

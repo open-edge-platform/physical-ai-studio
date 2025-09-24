@@ -7,18 +7,20 @@ import { useNavigate } from 'react-router';
 import { useProject } from '../../features/projects/use-project';
 import { paths } from '../../router';
 import { DatasetViewer } from './dataset-viewer';
+import { SchemaDataset } from '../../api/openapi-spec';
+import { NewDataset } from './new/new';
 
 export const Index = () => {
     const navigate = useNavigate();
     const project = useProject();
-    const datasets = project.datasets;
-    const [dataset, setDataset] = useState<string>(datasets.length > 0 ? datasets[0] : '');
+    const datasets = project.datasets
+    const [dataset, setDataset] = useState<SchemaDataset | undefined>(datasets.length > 0 ? datasets[0] : undefined);
 
     const onSelectionChange = (key: Key) => {
         if (key.toString() === '#new-dataset') {
-            navigate(paths.project.datasets.record({ project_id: project.id }));
+        //    navigate(paths.project.datasets.record({ project_id: project.id! }));
         } else {
-            setDataset(key.toString());
+            setDataset(datasets.find((d) => d.id === key.toString()));
         }
     };
 
@@ -29,7 +31,7 @@ export const Index = () => {
                     <Flex alignItems={'end'}>
                         <TabList flex={1}>
                             {[
-                                ...datasets.map((data) => <Item key={data}>{data}</Item>),
+                                ...datasets.map((data) => <Item key={data.id}>{data.name}</Item>),
                                 <Item key='#new-dataset'>
                                     <Add fill='white' height='10px' /> New dataset
                                 </Item>,
@@ -39,7 +41,7 @@ export const Index = () => {
                             <View padding={'size-30'}>
                                 <Link
                                     href={paths.project.datasets
-                                        .record({ project_id: project.id })
+                                        .record({ project_id: project.id! })
                                         .concat(`?dataset=${dataset}`)}
                                 >
                                     <Button>Start recording</Button>
@@ -48,13 +50,16 @@ export const Index = () => {
                         )}
                     </Flex>
                     <TabPanels>
-                        <Item key={dataset}>
+                        <Item key={"#new-dataset"}>
+                            <NewDataset />
+                        </Item>
+                        <Item key={dataset?.id}>
                             <Flex height='100%'>
                                 <Well flex={1}>
                                     {dataset === undefined ? (
                                         <Text>No datasets yet...</Text>
                                     ) : (
-                                        <DatasetViewer repo_id={dataset} />
+                                        <DatasetViewer repo_id={dataset.name} />
                                     )}
                                 </Well>
                             </Flex>

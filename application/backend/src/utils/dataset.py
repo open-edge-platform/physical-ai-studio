@@ -1,7 +1,12 @@
-from os import path, stat
+from os import path, stat, listdir
 
+from pathlib import Path
+from typing import List
 import torch
-from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
+from lerobot.constants import HF_LEROBOT_HOME
+from huggingface_hub.errors import RepositoryNotFoundError
+
 
 from schemas import Dataset, Episode, EpisodeInfo
 
@@ -42,3 +47,33 @@ def get_episode_actions(dataset: LeRobotDataset, episode: EpisodeInfo) -> torch.
     to_idx = dataset.episode_data_index["to"][episode_index].item()
     actions = dataset.hf_dataset["action"][from_idx:to_idx]
     return torch.stack(actions)
+
+
+def get_local_repository_ids(home: str | Path | None = None) -> List[str]:
+    home = Path(home) if home is not None else HF_LEROBOT_HOME
+
+    repo_ids: List[str] = []
+    for folder in listdir(home):
+        if folder == "calibration":
+            continue
+
+        owner = folder
+
+        for repo in listdir(home / folder):
+            repo_ids.append(f"{owner}/{repo}")
+
+    return repo_ids
+
+
+def get_local_repositories(home: str | Path | None = None) -> List[LeRobotDatasetMetadata]:
+    home = Path(home) if home is not None else HF_LEROBOT_HOME
+
+    result: List[LeRobotDatasetMetadata] = []
+    for repo_id in get_local_repository_ids(home):
+        try:
+            metadata = LeRobotDatasetMetadata(repo_id, home / repo_id, None, force_cache_sync=False)
+            result.append(metadata)
+        except RepositoryNotFoundError:
+            print(f"Could not find local repository online: {repo_id}")
+
+    return result

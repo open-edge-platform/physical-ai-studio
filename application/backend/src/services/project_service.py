@@ -23,6 +23,20 @@ class ProjectService:
     def list_projects(self) -> list[Project]:
         return self._persistence.list_all()
 
+    @parent_process_only
+    def update_project(self, project: Project, partial_config: dict) -> Project:
+        return self._persistence.update(project, partial_config)
+
+    #@parent_process_only
+    #def import_dataset(self, project_id: UUID, dataset: Dataset, config: ProjectConfig) -> Project:
+    #    with get_db_session() as db:
+    #        project = self.get_project_by_id(project_id)
+    #        project.config = config
+    #        project.datasets.append(dataset)
+    #        print(project)
+    #        db.commit()
+    #        return project
+
     def get_project_by_id(self, project_id: UUID) -> Project:
         project = self._persistence.get_by_id(project_id)
         if not project:

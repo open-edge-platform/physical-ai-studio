@@ -28,6 +28,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/import_dataset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Impport Dataset
+         * @description Sets the project from a dataset, only available when config has not been set yet
+         */
+        put: operations["impport_dataset_api_projects__project_id__import_dataset_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}": {
         parameters: {
             query?: never;
@@ -38,7 +58,10 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Delete Project */
+        /**
+         * Delete Project
+         * @description Delete a project
+         */
         delete: operations["delete_project_api_projects__project_id__delete"];
         options?: never;
         head?: never;
@@ -205,6 +228,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dataset/lerobot_datasets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Leorobot Datasets
+         * @description Get all local lerobot datasets from huggingface cache
+         */
+        get: operations["list_leorobot_datasets_api_dataset_lerobot_datasets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Datasets */
+        get: operations["list_datasets_api_dataset_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -256,40 +316,46 @@ export interface components {
             /** Fps */
             fps: number;
         };
-        /** Dataset */
+        /**
+         * Dataset
+         * @example {
+         *       "name": "Collect blocks",
+         *       "path": "/some/path/to/dataset"
+         *     }
+         */
         Dataset: {
-            /** Repo Id */
-            repo_id: string;
-            /** Episodes */
-            episodes: components["schemas"]["Episode"][];
-            /** Total Frames */
-            total_frames: number;
-            /** Features */
-            features: string[];
-            /** Tasks */
-            tasks: string[];
-            /** Fps */
-            fps: number;
-        };
-        /** Episode */
-        Episode: {
-            /** Episode Index */
-            episode_index: number;
-            /** Length */
-            length: number;
-            /** Fps */
-            fps: number;
-            /** Tasks */
-            tasks: string[];
-            /** Actions */
-            actions: number[][];
-            /** Modification Timestamp */
-            modification_timestamp: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id?: string;
+            /**
+             * Name
+             * @default Default Name
+             */
+            name: string;
+            /** Path */
+            path: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** LeRobotDataset */
+        LeRobotDataset: {
+            /** Root */
+            root: string;
+            /** Repo Id */
+            repo_id: string;
+            /** Total Episodes */
+            total_episodes: number;
+            /** Total Frames */
+            total_frames: number;
+            /** Features */
+            features: string[];
+            /** Fps */
+            fps: number;
         };
         /** Offer */
         Offer: {
@@ -303,6 +369,13 @@ export interface components {
         /**
          * Project
          * @example {
+         *       "datasets": [
+         *         {
+         *           "id": "fec4a691-76ee-4f66-8dea-aad3110e16d6",
+         *           "name": "Collect blocks",
+         *           "path": "/some/path/to/dataset"
+         *         }
+         *       ],
          *       "id": "7b073838-99d3-42ff-9018-4e901eb047fc",
          *       "name": "SO101 Teleoperation",
          *       "updated_at": "2021-06-29T16:24:30.928000+00:00"
@@ -323,6 +396,12 @@ export interface components {
             updated_at?: string | null;
             /** @description Project config */
             config?: components["schemas"]["ProjectConfig"] | null;
+            /**
+             * Datasets
+             * @description Datasets
+             * @default []
+             */
+            datasets: components["schemas"]["Dataset"][];
         };
         /**
          * ProjectConfig
@@ -373,8 +452,8 @@ export type SchemaCalibrationConfig = components['schemas']['CalibrationConfig']
 export type SchemaCamera = components['schemas']['Camera'];
 export type SchemaCameraProfile = components['schemas']['CameraProfile'];
 export type SchemaDataset = components['schemas']['Dataset'];
-export type SchemaEpisode = components['schemas']['Episode'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
+export type SchemaLeRobotDataset = components['schemas']['LeRobotDataset'];
 export type SchemaOffer = components['schemas']['Offer'];
 export type SchemaProject = components['schemas']['Project'];
 export type SchemaProjectConfig = components['schemas']['ProjectConfig'];
@@ -412,6 +491,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["Project"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    impport_dataset_api_projects__project_id__import_dataset_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LeRobotDataset"];
             };
         };
         responses: {
@@ -516,7 +630,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Dataset"];
+                    "application/json": components["schemas"]["LeRobotDataset"];
                 };
             };
             /** @description Validation Error */
@@ -688,6 +802,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_leorobot_datasets_api_dataset_lerobot_datasets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeRobotDataset"][];
+                };
+            };
+        };
+    };
+    list_datasets_api_dataset_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Dataset"][];
                 };
             };
         };
