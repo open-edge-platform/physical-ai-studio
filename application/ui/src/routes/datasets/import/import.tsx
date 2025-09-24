@@ -1,5 +1,5 @@
 import { clsx } from 'clsx';
-import { Button, Flex, Item, Key, Link, Heading, TabList, TabPanels, Tabs, Text, View, Well } from '@geti/ui';
+import { Button, Flex, Heading, Text, View } from '@geti/ui';
 import { $api } from "../../../api/client"
 import { SchemaLeRobotDatasetInfo } from '../../../api/openapi-spec';
 import { useProjectId } from '../../../features/projects/use-project';
