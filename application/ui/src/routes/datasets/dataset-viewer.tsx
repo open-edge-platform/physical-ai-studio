@@ -2,19 +2,25 @@ import { useState } from 'react';
 
 import { Flex, Item, ListView, Selection, View } from '@geti/ui';
 
-import { useProject } from '../../features/projects/use-project';
 import { EpisodeViewer } from './episode-viewer';
-import { useDataset } from './use-dataset';
+import { $api } from '../../api/client';
 
 interface DatasetViewerProps {
-    repo_id: string;
+    id: string;
 }
-export const DatasetViewer = ({ repo_id }: DatasetViewerProps) => {
-    const project = useProject();
-    const { dataset } = useDataset(project.id, repo_id);
+export const DatasetViewer = ({ id: dataset_id }: DatasetViewerProps) => {
+    const { data: episodes } = $api.useSuspenseQuery('get', '/api/dataset/{dataset_id}/episodes', {
+        params: {
+            path: {
+                dataset_id
+            }
+        }
+    })
+
     const [episodeIndexKey, setEpisodeIndexKey] = useState<Selection>(new Set([0]));
     const [currentEpisode] = episodeIndexKey as Set<number>;
-    const episodes = dataset.episodes.map((_, index) => ({ id: index, name: `Episode ${index + 1}` }));
+    const items = episodes.map((_, index) => ({ id: index, name: `Episode ${index + 1}` }));
+
 
     return (
         <Flex direction={'row'}>
@@ -22,7 +28,7 @@ export const DatasetViewer = ({ repo_id }: DatasetViewerProps) => {
                 <ListView
                     selectedKeys={episodeIndexKey}
                     selectionMode={'single'}
-                    items={episodes}
+                    items={items}
                     selectionStyle='highlight'
                     onSelectionChange={setEpisodeIndexKey}
                 >
@@ -31,7 +37,7 @@ export const DatasetViewer = ({ repo_id }: DatasetViewerProps) => {
             </View>
             {currentEpisode !== undefined && (
                 <View flex={1}>
-                    <EpisodeViewer episode={dataset.episodes[currentEpisode]} />
+                    <EpisodeViewer episode={episodes[currentEpisode]} />
                 </View>
             )}
         </Flex>

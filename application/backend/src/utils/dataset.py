@@ -7,28 +7,19 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetad
 from lerobot.constants import HF_LEROBOT_HOME
 from huggingface_hub.errors import RepositoryNotFoundError
 
+from schemas import Episode, EpisodeInfo
 
-from schemas import Dataset, Episode, EpisodeInfo
 
-
-def get_dataset(repo_id: str) -> Dataset:
+def get_dataset_episodes(repo_id: str, root: str | None) -> list[Episode]:
     """Load dataset from LeRobot cache and get info"""
-    dataset = LeRobotDataset(repo_id)
+    dataset = LeRobotDataset(repo_id, root)
     metadata = dataset.meta
     episodes = metadata.episodes
-    result = Dataset(
-        episodes=[],
-        features=metadata.features.keys(),
-        fps=metadata.fps,
-        tasks=list(metadata.tasks.values()),
-        repo_id=repo_id,
-        total_frames=metadata.total_frames,
-    )
-
+    result = []
     for episode_index in episodes:
         full_path = path.join(metadata.root, metadata.get_data_file_path(episode_index))
         stat_result = stat(full_path)
-        result.episodes.append(
+        result.append(
             Episode(
                 actions=get_episode_actions(dataset, episodes[episode_index]),
                 fps=metadata.fps,
@@ -65,13 +56,17 @@ def get_local_repository_ids(home: str | Path | None = None) -> List[str]:
     return repo_ids
 
 
-def get_local_repositories(home: str | Path | None = None) -> List[LeRobotDatasetMetadata]:
+def get_local_repositories(
+    home: str | Path | None = None,
+) -> List[LeRobotDatasetMetadata]:
     home = Path(home) if home is not None else HF_LEROBOT_HOME
 
     result: List[LeRobotDatasetMetadata] = []
     for repo_id in get_local_repository_ids(home):
         try:
-            metadata = LeRobotDatasetMetadata(repo_id, home / repo_id, None, force_cache_sync=False)
+            metadata = LeRobotDatasetMetadata(
+                repo_id, home / repo_id, None, force_cache_sync=False
+            )
             result.append(metadata)
         except RepositoryNotFoundError:
             print(f"Could not find local repository online: {repo_id}")

@@ -13,12 +13,12 @@ export interface paths {
         };
         /**
          * List Projects
-         * @description Fetch all projects
+         * @description Fetch all projects.
          */
         get: operations["list_projects_api_projects_get"];
         /**
          * Create Project
-         * @description Create a new project
+         * @description Create a new project.
          */
         put: operations["create_project_api_projects_put"];
         post?: never;
@@ -37,10 +37,10 @@ export interface paths {
         };
         get?: never;
         /**
-         * Impport Dataset
-         * @description Sets the project from a dataset, only available when config has not been set yet
+         * Import Dataset
+         * @description Set the project from a dataset, only available when config is None.
          */
-        put: operations["impport_dataset_api_projects__project_id__import_dataset_put"];
+        put: operations["import_dataset_api_projects__project_id__import_dataset_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -60,7 +60,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Project
-         * @description Delete a project
+         * @description Delete a project.
          */
         delete: operations["delete_project_api_projects__project_id__delete"];
         options?: never;
@@ -77,29 +77,9 @@ export interface paths {
         };
         /**
          * Get Project
-         * @description Get project by id
+         * @description Get project by id.
          */
         get: operations["get_project_api_projects__id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/datasets/{repo}/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Dataset Of Project
-         * @description Get dataset of project by id
-         */
-        get: operations["get_dataset_of_project_api_projects__project_id__datasets__repo___id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -248,15 +228,18 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/dataset": {
+    "/api/dataset/{dataset_id}/episodes": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List Datasets */
-        get: operations["list_datasets_api_dataset_get"];
+        /**
+         * Get Episodes Of Dataset
+         * @description Get dataset episodes of dataset by id.
+         */
+        get: operations["get_episodes_of_dataset_api_dataset__dataset_id__episodes_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -337,13 +320,28 @@ export interface components {
             /** Path */
             path: string;
         };
+        /** Episode */
+        Episode: {
+            /** Episode Index */
+            episode_index: number;
+            /** Length */
+            length: number;
+            /** Fps */
+            fps: number;
+            /** Tasks */
+            tasks: string[];
+            /** Actions */
+            actions: number[][];
+            /** Modification Timestamp */
+            modification_timestamp: number;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
-        /** LeRobotDataset */
-        LeRobotDataset: {
+        /** LeRobotDatasetInfo */
+        LeRobotDatasetInfo: {
             /** Root */
             root: string;
             /** Repo Id */
@@ -452,8 +450,9 @@ export type SchemaCalibrationConfig = components['schemas']['CalibrationConfig']
 export type SchemaCamera = components['schemas']['Camera'];
 export type SchemaCameraProfile = components['schemas']['CameraProfile'];
 export type SchemaDataset = components['schemas']['Dataset'];
+export type SchemaEpisode = components['schemas']['Episode'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
-export type SchemaLeRobotDataset = components['schemas']['LeRobotDataset'];
+export type SchemaLeRobotDatasetInfo = components['schemas']['LeRobotDatasetInfo'];
 export type SchemaOffer = components['schemas']['Offer'];
 export type SchemaProject = components['schemas']['Project'];
 export type SchemaProjectConfig = components['schemas']['ProjectConfig'];
@@ -514,7 +513,7 @@ export interface operations {
             };
         };
     };
-    impport_dataset_api_projects__project_id__import_dataset_put: {
+    import_dataset_api_projects__project_id__import_dataset_put: {
         parameters: {
             query?: never;
             header?: never;
@@ -525,7 +524,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["LeRobotDataset"];
+                "application/json": components["schemas"]["LeRobotDatasetInfo"];
             };
         };
         responses: {
@@ -598,39 +597,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Project"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_dataset_of_project_api_projects__project_id__datasets__repo___id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                repo: string;
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LeRobotDataset"];
                 };
             };
             /** @description Validation Error */
@@ -821,16 +787,18 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LeRobotDataset"][];
+                    "application/json": components["schemas"]["LeRobotDatasetInfo"][];
                 };
             };
         };
     };
-    list_datasets_api_dataset_get: {
+    get_episodes_of_dataset_api_dataset__dataset_id__episodes_get: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                dataset_id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -841,7 +809,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Dataset"][];
+                    "application/json": components["schemas"]["Episode"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -59,7 +59,7 @@ export const Index = () => {
                                     {dataset === undefined ? (
                                         <Text>No datasets yet...</Text>
                                     ) : (
-                                        <DatasetViewer repo_id={dataset.name} />
+                                        <DatasetViewer id={dataset.id!} />
                                     )}
                                 </Well>
                             </Flex>

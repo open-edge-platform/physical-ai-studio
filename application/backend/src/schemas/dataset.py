@@ -17,7 +17,7 @@ class Episode(BaseModel):
     modification_timestamp: int
 
 
-class LeRobotDataset(BaseModel):
+class LeRobotDatasetInfo(BaseModel):
     root: str
     repo_id: str
     total_episodes: int

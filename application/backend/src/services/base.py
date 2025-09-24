@@ -33,7 +33,9 @@ class ResourceError(Exception):
 class ResourceNotFoundError(ResourceError):
     """Exception raised when a resource is not found."""
 
-    def __init__(self, resource_type: ResourceType, resource_id: str, message: str | None = None):
+    def __init__(
+        self, resource_type: ResourceType, resource_id: str, message: str | None = None
+    ):
         msg = message or f"{resource_type} with ID {resource_id} not found."
         super().__init__(resource_type, resource_id, msg)
 
@@ -41,15 +43,25 @@ class ResourceNotFoundError(ResourceError):
 class ResourceInUseError(ResourceError):
     """Exception raised when trying to delete a resource that is currently in use."""
 
-    def __init__(self, resource_type: ResourceType, resource_id: str, message: str | None = None):
-        msg = message or f"{resource_type} with ID {resource_id} cannot be deleted because it is in use."
+    def __init__(
+        self, resource_type: ResourceType, resource_id: str, message: str | None = None
+    ):
+        msg = (
+            message
+            or f"{resource_type} with ID {resource_id} cannot be deleted because it is in use."
+        )
         super().__init__(resource_type, resource_id, msg)
 
 
 class ResourceAlreadyExistsError(ResourceError):
     """Exception raised when a resource with the same name already exists."""
 
-    def __init__(self, resource_type: ResourceType, resource_name: str, message: str | None = None):
+    def __init__(
+        self,
+        resource_type: ResourceType,
+        resource_name: str,
+        message: str | None = None,
+    ):
         msg = message or f"{resource_type} with name '{resource_name}' already exists."
         super().__init__(resource_type, resource_name, msg)
 
@@ -110,15 +122,15 @@ class GenericPersistenceService(Generic[S, R]):
                 return self.config.mapper_class.to_schema(item_db)
         except IntegrityError as e:
             if "unique constraint failed" in str(e).lower():
-                raise ResourceAlreadyExistsError(self.config.resource_type, getattr(item, "name", str(item.id)))  # type: ignore[attr-defined]
+                raise ResourceAlreadyExistsError(
+                    self.config.resource_type, getattr(item, "name", str(item.id))
+                )  # type: ignore[attr-defined]
             raise
 
     def update(self, item: S, partial_config: dict, db: Session | None = None) -> S:
         with self._get_repo(db) as repo:
             to_update = item.model_copy(update=partial_config)
-            print(to_update)
             updated = repo.update(self.config.mapper_class.from_schema(to_update))
-            print(updated.config)
             return self.config.mapper_class.to_schema(updated)
 
     def delete_by_id(self, item_id: UUID, db: Session | None = None) -> None:

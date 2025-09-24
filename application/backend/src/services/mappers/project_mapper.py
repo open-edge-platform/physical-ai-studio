@@ -19,7 +19,7 @@ class ProjectMapper:
         })
 
     @staticmethod
-    def from_schema(project: Project) -> Project:
+    def from_schema(project: Project) -> ProjectDB:
         """Convert Project schema to db model."""
         return ProjectDB(
             id=str(project.id),
