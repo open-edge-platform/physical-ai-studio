@@ -11,7 +11,6 @@ from .camera import CameraConfig
 class ProjectConfig(BaseIDModel):
     fps: int = Field(30, description="Recording FPS for datasets")
     cameras: list[CameraConfig] = Field([], description="Project cameras")
-    # datasets: list[str] = Field([], description="Datasets available for this project")
     # robots: list[RobotConfig]
 
     model_config = {
@@ -51,7 +50,20 @@ class Project(BaseIDNameModel):
                         "path": "/some/path/to/dataset",
                     }
                 ],
-                # "config": { "fps": "30" } #optional
+                "config": {
+                    "fps": "30",
+                    "cameras": [
+                        {
+                            "port_or_id": "/dev/video0",
+                            "name": "WebCam",
+                            "type": "OpenCV",
+                            "width": 640,
+                            "height": 480,
+                            "fps": 30,
+                            "use_depth": False,
+                        }
+                    ],
+                },
             }
         }
     }
