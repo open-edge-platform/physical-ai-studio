@@ -1,14 +1,14 @@
 from typing import Annotated
 from uuid import UUID
 
-from api.dependencies import get_project_id, get_project_service
 from fastapi import APIRouter, Depends, status
 from fastapi.exceptions import HTTPException
+
+from api.dependencies import get_project_id, get_project_service
 from schemas import LeRobotDatasetInfo, Project, TeleoperationConfig
 from services import ProjectService
 from services.base import ResourceInUseError, ResourceNotFoundError
 from services.mappers.datasets_mapper import DatasetMapper
-from services.mappers.project_mapper import ProjectConfigMapper
 from utils.dataset import build_project_config_from_dataset
 
 router = APIRouter()
@@ -19,8 +19,7 @@ async def list_projects(
     project_service: Annotated[ProjectService, Depends(get_project_service)],
 ) -> list[Project]:
     """Fetch all projects."""
-    projects = project_service.list_projects()
-    return projects
+    return project_service.list_projects()
 
 
 @router.put("")
@@ -62,9 +61,7 @@ async def delete_project(
 
 
 @router.get("/{id}")
-async def get_project(
-    id: str, project_service: Annotated[ProjectService, Depends(get_project_service)]
-) -> Project:
+async def get_project(id: str, project_service: Annotated[ProjectService, Depends(get_project_service)]) -> Project:
     """Get project by id."""
     return project_service.get_project_by_id(id)
 

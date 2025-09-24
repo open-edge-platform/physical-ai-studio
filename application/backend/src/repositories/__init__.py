@@ -1,8 +1,7 @@
-from .project_repo import ProjectRepository
 from .dataset_repo import DatasetRepository
+from .project_repo import ProjectRepository
 
 __all__ = [
-    "ProjectRepository",
     "DatasetRepository",
+    "ProjectRepository",
 ]
-

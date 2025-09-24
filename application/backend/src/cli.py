@@ -6,7 +6,7 @@ import sys
 import click
 
 from db import MigrationManager, get_db_session
-from db.schema import ProjectDB, ProjectConfigDB, DatasetDB, CameraConfigDB
+from db.schema import CameraConfigDB, DatasetDB, ProjectConfigDB, ProjectDB
 from settings import get_settings
 
 logging.basicConfig(level=logging.INFO)
@@ -18,6 +18,7 @@ migration_manager = MigrationManager(settings)
 @click.group()
 def cli() -> None:
     """Geti Action CLI"""
+
 
 @cli.command()
 @click.option("--target-path", default="docs/openapi.json")
@@ -33,6 +34,7 @@ def gen_api(target_path: str) -> None:
         click.echo(f"✗ Failed to generate OpenAPI specification: {e}")
         sys.exit(1)
     click.echo("Waiting for threading to finish...")
+
 
 @cli.command()
 def init_db() -> None:
@@ -57,6 +59,7 @@ def clean_db() -> None:
         db.query(CameraConfigDB).delete()
         db.commit()
     click.echo("✓ Database cleaned successfully!")
+
 
 @cli.command()
 def migrate() -> None:

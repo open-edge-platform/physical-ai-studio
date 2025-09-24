@@ -3,22 +3,15 @@ from uuid import UUID
 from db import get_db_session
 from repositories import ProjectRepository
 from schemas import Project
-from services.base import (
-    GenericPersistenceService,
-    ResourceNotFoundError,
-    ResourceType,
-    ServiceConfig,
-)
+from services.base import GenericPersistenceService, ResourceNotFoundError, ResourceType, ServiceConfig
 from services.mappers.project_mapper import ProjectMapper
 from services.parent_process_guard import parent_process_only
 
 
 class ProjectService:
     def __init__(self) -> None:
-        self._persistence: GenericPersistenceService[Project, ProjectRepository] = (
-            GenericPersistenceService(
-                ServiceConfig(ProjectRepository, ProjectMapper, ResourceType.PROJECT)
-            )
+        self._persistence: GenericPersistenceService[Project, ProjectRepository] = GenericPersistenceService(
+            ServiceConfig(ProjectRepository, ProjectMapper, ResourceType.PROJECT)
         )
 
     @parent_process_only

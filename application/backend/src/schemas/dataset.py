@@ -1,5 +1,6 @@
 from pydantic import BaseModel
-from schemas.base import BaseIDNameModel, BaseIDNameModel
+
+from schemas.base import BaseIDNameModel
 
 
 class EpisodeInfo(BaseModel):

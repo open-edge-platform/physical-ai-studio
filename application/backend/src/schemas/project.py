@@ -1,10 +1,11 @@
-from pydantic import Field
 from datetime import datetime
-from schemas.base import BaseIDNameModel, BaseIDModel
+
+from pydantic import Field
+
 from schemas import Dataset
+from schemas.base import BaseIDModel, BaseIDNameModel
 
 from .camera import CameraConfig
-from .robot import RobotConfig
 
 
 class ProjectConfig(BaseIDModel):

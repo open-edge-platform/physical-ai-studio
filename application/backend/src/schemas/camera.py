@@ -1,7 +1,8 @@
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
-from schemas.base import BaseIDNameModel, BaseIDModel
+
+from schemas.base import BaseIDModel
 
 
 class CameraConfig(BaseIDModel):
@@ -22,11 +23,10 @@ class CameraConfig(BaseIDModel):
                 "width": 640,
                 "height": 480,
                 "fps": 30,
-                "use_depth": False
+                "use_depth": False,
             }
         }
     }
-
 
 
 class CameraProfile(BaseModel):

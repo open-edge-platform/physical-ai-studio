@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 
-from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from .camera import CameraConfig
 from .robot import RobotConfig

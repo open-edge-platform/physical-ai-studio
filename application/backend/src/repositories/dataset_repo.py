@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from db.schema import DatasetDB
 from repositories.base import BaseRepository
 
+
 class DatasetRepository(BaseRepository[DatasetDB]):
     """Repository for project-related database operations."""
 

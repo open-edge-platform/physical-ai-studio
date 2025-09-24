@@ -1,5 +1,5 @@
 from db.schema import DatasetDB
-from schemas import Dataset,LeRobotDatasetInfo
+from schemas import Dataset, LeRobotDatasetInfo
 
 
 class DatasetMapper:
@@ -9,7 +9,7 @@ class DatasetMapper:
     def to_schema(dataset_db: DatasetDB | None) -> Dataset | None:
         """Convert Dataset db entity to schema."""
         if dataset_db is None:
-            return
+            return None
 
         return Dataset.model_validate(dataset_db, from_attributes=True)
 

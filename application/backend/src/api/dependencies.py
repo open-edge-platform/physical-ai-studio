@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import Request, status
 from fastapi.exceptions import HTTPException
 
-from services import ProjectService, DatasetService
+from services import DatasetService, ProjectService
 from webrtc.manager import WebRTCManager
 
 
@@ -26,10 +26,12 @@ def get_webrtc_manager(request: Request) -> WebRTCManager:
     """Provides the global WebRTCManager instance from FastAPI application's state."""
     return request.app.state.webrtc_manager
 
+
 @lru_cache
 def get_project_service() -> ProjectService:
     """Provides a ProjectService instance for managing projects."""
     return ProjectService()
+
 
 @lru_cache
 def get_dataset_service() -> DatasetService:

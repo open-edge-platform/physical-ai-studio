@@ -1,5 +1,5 @@
 from uuid import UUID
-from db import get_db_session
+
 from repositories import DatasetRepository
 from schemas import Dataset
 from services.base import GenericPersistenceService, ResourceNotFoundError, ResourceType, ServiceConfig

@@ -1,6 +1,7 @@
 from db.schema import CameraConfigDB
 from schemas import CameraConfig
 
+
 class CameraConfigMapper:
     """Mapper for Camera schema entity <-> DB entity conversions."""
 
@@ -8,7 +9,7 @@ class CameraConfigMapper:
     def to_schema(camera_config_db: CameraConfigDB | None) -> CameraConfig | None:
         """Convert Label db entity to schema."""
         if camera_config_db is None:
-            return
+            return None
 
         return CameraConfig.model_validate(camera_config_db, from_attributes=True)
 
@@ -16,5 +17,5 @@ class CameraConfigMapper:
     def from_schema(config: CameraConfig | None) -> CameraConfigDB | None:
         """Convert Label schema to db model."""
         if config is None:
-            return
+            return None
         return CameraConfigDB(**config.model_dump(mode="json"))

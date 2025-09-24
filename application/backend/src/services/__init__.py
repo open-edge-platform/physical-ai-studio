@@ -1,7 +1,7 @@
-from .project_service import ProjectService
 from .dataset_service import DatasetService
+from .project_service import ProjectService
 
 __all__ = [
-    "ProjectService",
     "DatasetService",
+    "ProjectService",
 ]

@@ -4,9 +4,9 @@ import uvicorn
 from fastapi import FastAPI
 
 from api.camera import router as camera_router
+from api.dataset import router as dataset_router
 from api.hardware import router as hardware_router
 from api.project import router as project_router
-from api.dataset import router as dataset_router
 from core import lifespan
 from settings import get_settings
 
@@ -16,7 +16,7 @@ app = FastAPI(
     openapi_url=settings.openapi_url,
     version=settings.version,
     description=settings.description,
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 app.include_router(project_router, prefix="/api/projects")

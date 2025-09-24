@@ -1,10 +1,11 @@
 """empty message
 
 Revision ID: 83896f9ae316
-Revises: 
+Revises:
 Create Date: 2025-09-23 12:51:04.790062
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
