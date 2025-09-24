@@ -6,7 +6,8 @@ import sys
 
 import click
 
-from db import MigrationManager
+from db import MigrationManager, get_db_session
+from db.schema import ProjectDB, ProjectConfigDB
 from settings import get_settings
 
 logging.basicConfig(level=logging.INFO)
@@ -31,6 +32,16 @@ def init_db() -> None:
     else:
         click.echo("✗ Database initialization failed!")
         sys.exit(1)
+
+
+@cli.command()
+def clean_db() -> None:
+    """Remove all data from the database (clean but don't drop tables)."""
+    with get_db_session() as db:
+        db.query(ProjectDB).delete()
+        db.query(ProjectConfigDB).delete()
+        db.commit()
+    click.echo("✓ Database cleaned successfully!")
 
 
 @cli.command()

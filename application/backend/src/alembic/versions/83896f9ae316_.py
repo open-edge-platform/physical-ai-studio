@@ -28,8 +28,19 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
+    op.create_table(
+        "project_configs",
+        sa.Column("project_id", sa.Text(), nullable=False),
+        sa.Column("id", sa.Text(), nullable=False),
+        sa.Column("fps", sa.Integer(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+        sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
+    )
 
 
 def downgrade() -> None:
     """Downgrade schema."""
     op.drop_table("projects")
+    op.drop_table("project_configs")

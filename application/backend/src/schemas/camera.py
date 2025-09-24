@@ -1,10 +1,11 @@
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
+from schemas.base import BaseIDNameModel, BaseIDModel
 
 
-class CameraConfig(BaseModel):
-    id: str = Field(min_length=1, max_length=50, description="Camera port or realsense id")
+class CameraConfig(BaseIDModel):
+    port_or_id: str = Field(min_length=1, max_length=50, description="Camera port or realsense id")
     name: str = Field(min_length=1, max_length=50, description="Camera name")
     type: Literal["RealSense", "OpenCV"]
     width: int = Field(640, description="Frame width")

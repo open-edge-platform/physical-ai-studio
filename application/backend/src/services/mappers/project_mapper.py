@@ -1,4 +1,5 @@
 from db.schema import ProjectDB
+from .config_mapper import ProjectConfigMapper
 from schemas import Project
 
 
@@ -8,7 +9,12 @@ class ProjectMapper:
     @staticmethod
     def to_schema(project_db: ProjectDB) -> Project:
         """Convert Project db entity to schema."""
-        return Project.model_validate({"id": project_db.id, "name": project_db.name, "updated_at": project_db.updated_at})
+        return Project.model_validate({
+            "id": project_db.id,
+            "name": project_db.name,
+            "updated_at": project_db.updated_at,
+            "config": ProjectConfigMapper.to_schema(project_db.config),
+        })
 
     @staticmethod
     def from_schema(project: Project) -> ProjectDB:
