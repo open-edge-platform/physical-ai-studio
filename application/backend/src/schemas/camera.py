@@ -19,7 +19,7 @@ class CameraConfig(BaseIDModel):
             "example": {
                 "port_or_id": "/dev/video0",
                 "name": "WebCam",
-                "type": "OpenCV",
+                "driver": "webcam",
                 "width": 640,
                 "height": 480,
                 "fps": 30,
@@ -41,10 +41,10 @@ class CameraProfile(BaseModel):
 
 class Camera(BaseModel):
     name: str = Field(description="Camera name")
-    id: str = Field(description="Either serial id for  RealSense or port for OpenCV")
+    port_or_device_id: str = Field(description="Either serial id for  RealSense or port for OpenCV")
     driver: str = Field(description="Driver used for Camera access")
     default_stream_profile: CameraProfile
 
-    @field_validator("id", mode="before")
+    @field_validator("port_or_device_id", mode="before")
     def cast_id_to_str(cls, v: Any) -> str:
         return str(v)

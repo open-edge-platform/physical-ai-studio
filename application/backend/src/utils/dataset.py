@@ -1,3 +1,5 @@
+import os
+import uuid
 from os import listdir, path, stat
 from pathlib import Path
 
@@ -45,13 +47,17 @@ def get_local_repository_ids(home: str | Path | None = None) -> list[str]:
 
     repo_ids: list[str] = []
     for folder in listdir(home):
+        if not os.path.isdir(home / folder):
+            continue
+
         if folder == "calibration":
             continue
 
         owner = folder
 
         for repo in listdir(home / folder):
-            repo_ids.append(f"{owner}/{repo}")
+            if os.path.isdir(home / folder / repo):
+                repo_ids.append(f"{owner}/{repo}")
 
     return repo_ids
 
@@ -83,9 +89,10 @@ def camera_config_from_dataset_features(
             width=feature["info"]["video.width"],
             height=feature["info"]["video.height"],
             fps=feature["info"]["video.fps"],
-            type="OpenCV",
+            driver="webcam",
             use_depth=False,
             port_or_device_id="",
+            id=uuid.uuid4()
         )
         for name, feature in dataset.features.items()
         if feature["dtype"] == "video"
@@ -99,12 +106,10 @@ def build_project_config_from_dataset(dataset: LeRobotDatasetInfo) -> ProjectCon
         fps=dataset.fps,
         cameras=camera_config_from_dataset_features(metadata),
         robot_type=dataset.robot_type,
+        id=uuid.uuid4(),
     )
 
 
 def build_dataset_from_lerobot_dataset(dataset: LeRobotDatasetInfo) -> Dataset:
     """Build dataset from LeRobotDatasetInfo."""
-    return Dataset(
-        name=dataset.repo_id,
-        path=dataset.root,
-    )
+    return Dataset(name=dataset.repo_id, path=dataset.root, id=uuid.uuid4())

@@ -60,7 +60,10 @@ def gen_frames(id: str, driver: str) -> Generator[bytes, None, None]:
     and yield them in the multipart format expected by browsers.
     """
 
-    cam = FrameSourceFactory.create(driver, id)
+    _id = id
+    if _id.isdigit():
+        _id = int(_id)
+    cam = FrameSourceFactory.create(driver, _id)
     cam.connect()
 
     while True:

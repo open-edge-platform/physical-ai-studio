@@ -1,14 +1,11 @@
-from typing import Literal
-
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
-from lerobot.find_cameras import find_all_realsense_cameras
-
-from schemas import CalibrationConfig, Camera, RobotPortInfo, CameraProfile
-from utils.calibration import get_calibrations
-from utils.camera import find_all_opencv_cameras, gen_frames
-from utils.robot import find_robots, identify_robot_visually
 from frame_source import FrameSourceFactory
+
+from schemas import CalibrationConfig, Camera, CameraProfile, RobotPortInfo
+from utils.calibration import get_calibrations
+from utils.camera import gen_frames
+from utils.robot import find_robots, identify_robot_visually
 
 router = APIRouter(prefix="/api/hardware", tags=["Hardware"])
 
@@ -16,13 +13,13 @@ router = APIRouter(prefix="/api/hardware", tags=["Hardware"])
 @router.get("/cameras")
 async def get_cameras() -> list[Camera]:
     """Get all cameras"""
-    cameras = FrameSourceFactory.enumerate_devices()
+    cameras = FrameSourceFactory.discover_devices(sources=['webcam', 'realsense', 'genicam', 'basler'])
     res = []
     sp = CameraProfile(width=0, height=0, fps=0)
 
     for driver, cams in cameras.items():
         for cam in cams:
-            res.append(Camera(name=cam["name"], id=cam["id"], driver=driver, default_stream_profile=sp))
+            res.append(Camera(name=cam["name"], port_or_device_id=cam["id"], driver=driver, default_stream_profile=sp))
 
     return res
 

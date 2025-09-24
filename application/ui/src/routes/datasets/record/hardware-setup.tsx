@@ -39,14 +39,14 @@ export const HardwareSetup = ({ config, setConfig }: HardwareSetupProps) => {
 
     const navigate = useNavigate();
 
-    const updateCamera = (name: string, id: string, oldId: string) => {
+    const updateCamera = (name: string, id: string, oldId: string, driver: string, oldDriver: string) => {
         setConfig({
             ...config,
             cameras: config.cameras.map((c) => {
                 if (c.name === name) {
-                    return { ...c, id };
-                } else if (c.id === id) {
-                    return { ...c, id: oldId };
+                    return { ...c, port_or_device_id: id, driver };
+                } else if (c.port_or_device_id === id && c.driver === driver) {
+                    return { ...c, port_or_device_id: oldId, driver: oldDriver };
                 } else {
                     return c;
                 }
