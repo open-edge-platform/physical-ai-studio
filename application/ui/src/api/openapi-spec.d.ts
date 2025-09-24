@@ -4,7 +4,7 @@
  */
 
 export interface paths {
-    '/api/projects': {
+    "/api/projects": {
         parameters: {
             query?: never;
             header?: never;
@@ -15,12 +15,12 @@ export interface paths {
          * List Projects
          * @description Fetch all projects
          */
-        get: operations['list_projects_api_projects_get'];
+        get: operations["list_projects_api_projects_get"];
         /**
          * Create Project
          * @description Create a new project
          */
-        put: operations['create_project_api_projects_put'];
+        put: operations["create_project_api_projects_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -28,7 +28,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    '/api/projects/{id}': {
+    "/api/projects/{project_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Project */
+        delete: operations["delete_project_api_projects__project_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -39,7 +56,7 @@ export interface paths {
          * Get Project
          * @description Get project by id
          */
-        get: operations['get_project_api_projects__id__get'];
+        get: operations["get_project_api_projects__id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -48,7 +65,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    '/api/projects/{project_id}/datasets/{repo}/{id}': {
+    "/api/projects/{project_id}/datasets/{repo}/{id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -59,7 +76,7 @@ export interface paths {
          * Get Dataset Of Project
          * @description Get dataset of project by id
          */
-        get: operations['get_dataset_of_project_api_projects__project_id__datasets__repo___id__get'];
+        get: operations["get_dataset_of_project_api_projects__project_id__datasets__repo___id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -68,7 +85,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    '/api/hardware/cameras': {
+    "/api/hardware/cameras": {
         parameters: {
             query?: never;
             header?: never;
@@ -79,7 +96,7 @@ export interface paths {
          * Get Cameras
          * @description Get all cameras
          */
-        get: operations['get_cameras_api_hardware_cameras_get'];
+        get: operations["get_cameras_api_hardware_cameras_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -88,7 +105,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    '/api/hardware/robots': {
+    "/api/hardware/robots": {
         parameters: {
             query?: never;
             header?: never;
@@ -99,7 +116,7 @@ export interface paths {
          * Get Robots
          * @description Get all connected Robots
          */
-        get: operations['get_robots_api_hardware_robots_get'];
+        get: operations["get_robots_api_hardware_robots_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -108,7 +125,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    '/api/hardware/calibrations': {
+    "/api/hardware/calibrations": {
         parameters: {
             query?: never;
             header?: never;
@@ -119,7 +136,7 @@ export interface paths {
          * Get Lerobot Calibrations
          * @description Get calibrations known to huggingface leRobot
          */
-        get: operations['get_lerobot_calibrations_api_hardware_calibrations_get'];
+        get: operations["get_lerobot_calibrations_api_hardware_calibrations_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -128,7 +145,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    '/api/hardware/identify': {
+    "/api/hardware/identify": {
         parameters: {
             query?: never;
             header?: never;
@@ -140,7 +157,7 @@ export interface paths {
          * Identify Robot
          * @description Visually identify the robot by moving given joint on robot
          */
-        put: operations['identify_robot_api_hardware_identify_put'];
+        put: operations["identify_robot_api_hardware_identify_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -148,7 +165,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    '/api/hardware/camera_feed': {
+    "/api/hardware/camera_feed": {
         parameters: {
             query?: never;
             header?: never;
@@ -159,7 +176,7 @@ export interface paths {
          * Get Camera Feed
          * @description Get a streaming response from the camera
          */
-        get: operations['get_camera_feed_api_hardware_camera_feed_get'];
+        get: operations["get_camera_feed_api_hardware_camera_feed_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -168,7 +185,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    '/api/cameras/offer/camera': {
+    "/api/cameras/offer/camera": {
         parameters: {
             query?: never;
             header?: never;
@@ -181,7 +198,7 @@ export interface paths {
          * Offer Camera
          * @description Create a WebRTC offer
          */
-        post: operations['offer_camera_api_cameras_offer_camera_post'];
+        post: operations["offer_camera_api_cameras_offer_camera_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -209,7 +226,7 @@ export interface components {
              * Robot Type
              * @enum {string}
              */
-            robot_type: 'teleoperator' | 'robot';
+            robot_type: "teleoperator" | "robot";
         };
         /** Camera */
         Camera: {
@@ -227,8 +244,8 @@ export interface components {
              * Type
              * @enum {string}
              */
-            type: 'RealSense' | 'OpenCV';
-            default_stream_profile: components['schemas']['CameraProfile'];
+            type: "RealSense" | "OpenCV";
+            default_stream_profile: components["schemas"]["CameraProfile"];
         };
         /** CameraProfile */
         CameraProfile: {
@@ -244,7 +261,7 @@ export interface components {
             /** Repo Id */
             repo_id: string;
             /** Episodes */
-            episodes: components['schemas']['Episode'][];
+            episodes: components["schemas"]["Episode"][];
             /** Total Frames */
             total_frames: number;
             /** Features */
@@ -272,7 +289,7 @@ export interface components {
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
-            detail?: components['schemas']['ValidationError'][];
+            detail?: components["schemas"]["ValidationError"][];
         };
         /** Offer */
         Offer: {
@@ -287,7 +304,8 @@ export interface components {
          * Project
          * @example {
          *       "id": "7b073838-99d3-42ff-9018-4e901eb047fc",
-         *       "name": "SO101 Teleoperation"
+         *       "name": "SO101 Teleoperation",
+         *       "updated_at": "2021-06-29T16:24:30.928000+00:00"
          *     }
          */
         Project: {
@@ -301,6 +319,29 @@ export interface components {
              * @default Default Name
              */
             name: string;
+            /** Updated At */
+            updated_at?: string | null;
+            /** @description Project config */
+            config?: components["schemas"]["ProjectConfig"] | null;
+        };
+        /**
+         * ProjectConfig
+         * @example {
+         *       "fps": "30"
+         *     }
+         */
+        ProjectConfig: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id?: string;
+            /**
+             * Fps
+             * @description Recording FPS for datasets
+             * @default 30
+             */
+            fps: number;
         };
         /** RobotPortInfo */
         RobotPortInfo: {
@@ -336,6 +377,7 @@ export type SchemaEpisode = components['schemas']['Episode'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
 export type SchemaOffer = components['schemas']['Offer'];
 export type SchemaProject = components['schemas']['Project'];
+export type SchemaProjectConfig = components['schemas']['ProjectConfig'];
 export type SchemaRobotPortInfo = components['schemas']['RobotPortInfo'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type $defs = Record<string, never>;
@@ -355,7 +397,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['Project'][];
+                    "application/json": components["schemas"]["Project"][];
                 };
             };
         };
@@ -369,7 +411,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                'application/json': components['schemas']['Project'];
+                "application/json": components["schemas"]["Project"];
             };
         };
         responses: {
@@ -379,7 +421,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['Project'];
+                    "application/json": components["schemas"]["Project"];
                 };
             };
             /** @description Validation Error */
@@ -388,7 +430,38 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['HTTPValidationError'];
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_project_api_projects__project_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -410,7 +483,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['Project'];
+                    "application/json": components["schemas"]["Project"];
                 };
             };
             /** @description Validation Error */
@@ -419,7 +492,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['HTTPValidationError'];
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -443,7 +516,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['Dataset'];
+                    "application/json": components["schemas"]["Dataset"];
                 };
             };
             /** @description Validation Error */
@@ -452,7 +525,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['HTTPValidationError'];
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -472,7 +545,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['Camera'][];
+                    "application/json": components["schemas"]["Camera"][];
                 };
             };
         };
@@ -492,7 +565,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['RobotPortInfo'][];
+                    "application/json": components["schemas"]["RobotPortInfo"][];
                 };
             };
         };
@@ -512,7 +585,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['CalibrationConfig'][];
+                    "application/json": components["schemas"]["CalibrationConfig"][];
                 };
             };
         };
@@ -528,7 +601,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                'application/json': components['schemas']['RobotPortInfo'];
+                "application/json": components["schemas"]["RobotPortInfo"];
             };
         };
         responses: {
@@ -538,7 +611,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': unknown;
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -547,7 +620,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['HTTPValidationError'];
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -556,7 +629,7 @@ export interface operations {
         parameters: {
             query: {
                 id: string;
-                type: 'RealSense' | 'OpenCV';
+                type: "RealSense" | "OpenCV";
             };
             header?: never;
             path?: never;
@@ -570,7 +643,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': unknown;
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -579,7 +652,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['HTTPValidationError'];
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -595,7 +668,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                'application/json': components['schemas']['Offer'];
+                "application/json": components["schemas"]["Offer"];
             };
         };
         responses: {
@@ -605,7 +678,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['Answer'];
+                    "application/json": components["schemas"]["Answer"];
                 };
             };
             /** @description Validation Error */
@@ -614,7 +687,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['HTTPValidationError'];
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

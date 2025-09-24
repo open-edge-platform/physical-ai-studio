@@ -18,34 +18,35 @@ export const NewProjectPage = () => {
         return project.name !== "";
     }
 
-    const save = () => {
+    const save = (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
         saveMutation
             .mutateAsync({
                 body: project,
             })
             .then((project) => {
-                navigate(paths.project.datasets.index({ project_id: project.id }));
+                navigate(paths.project.datasets.index({ project_id: project.id! }));
             });
     };
 
     return (
         <Flex width='100%' height='100%' direction={'column'} alignItems='center'>
             <View flex={1} width={'100%'} maxWidth='1320px' paddingTop='size-400'>
-                <Flex justifyContent={'space-between'}>
-                    <Heading>New Project</Heading>
-                    <ButtonGroup>
-                        <Button variant='secondary' href={paths.projects.index.pattern}>
-                            Cancel
-                        </Button>
-                        <Button isDisabled={!isValid() || saveMutation.isPending} onPress={save}>
-                            Save
-                        </Button>
-                    </ButtonGroup>
-                </Flex>
-                <Form maxWidth='size-3600'>
-                    <TextField label='name' value={project.name} onChange={(name) => setProject((p) => ({ ...p, name }))} />
+                <Form maxWidth='size-3600' onSubmit={save}>
+                    <Flex justifyContent={'space-between'}>
+                        <Heading>New Project</Heading>
+                        <ButtonGroup>
+                            <Button variant='secondary' href={paths.projects.index.pattern}>
+                                Cancel
+                            </Button>
+                            <Button isDisabled={!isValid()} type="submit" >
+                                Save
+                            </Button>
+                        </ButtonGroup>
+                    </Flex>
+                    <TextField isRequired label='name' value={project.name} onChange={(name) => setProject((p) => ({...p, name}))}/>
                 </Form>
             </View>
-        </Flex>
+        </Flex >
     );
 };

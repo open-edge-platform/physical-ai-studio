@@ -2,8 +2,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from fastapi.exceptions import HTTPException
-
-from api.dependencies import get_project_service
+from uuid import UUID
+from api.dependencies import get_project_service, get_project_id
 from schemas import Dataset, Project
 from services.project_service import ProjectService
 from storage.storage import load_project, write_project
@@ -25,6 +25,18 @@ async def create_project(
     project_service: Annotated[ProjectService, Depends(get_project_service)]) -> Project:
     """Create a new project"""
     return project_service.create_project(project)
+
+@router.delete("/{project_id}")
+async def delete_project(
+    project_id: Annotated[UUID, Depends(get_project_id)],
+    project_service: Annotated[ProjectService, Depends(get_project_service)]) -> None:
+    """Delete a project"""
+    try:
+        project_service.delete_project_by_id(project_id)
+    except ResourceNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except ResourceInUseError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
 
 @router.get("/{id}")
