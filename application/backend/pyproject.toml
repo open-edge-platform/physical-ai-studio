@@ -16,6 +16,7 @@ dependencies = [
   "pydantic-settings>=2.10.1",
   "sqlalchemy>=2.0.43",
   "alembic>=1.16.5",
+  "click>=8.3.0",
 ]
 
 [dependency-groups]
