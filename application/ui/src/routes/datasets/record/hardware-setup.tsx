@@ -14,22 +14,22 @@ import {
     TextField,
     View,
 } from '@geti/ui';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 import { $api } from '../../../api/client';
 import { SchemaTeleoperationConfig } from '../../../api/openapi-spec';
+import { useProject } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
 import { CameraSetup } from './camera-setup';
 import { RobotSetup } from './robot-setup';
-import { useProject } from '../../../features/projects/use-project';
 
 interface HardwareSetupProps {
     config: SchemaTeleoperationConfig;
     setConfig: Dispatch<SetStateAction<SchemaTeleoperationConfig>>;
 }
 export const HardwareSetup = ({ config, setConfig }: HardwareSetupProps) => {
-    const project = useProject()
-    const datasetName = config.dataset_id && project.datasets.find((d) => d.id === config.dataset_id)?.name
+    const project = useProject();
+    const datasetName = config.dataset_id && project.datasets.find((d) => d.id === config.dataset_id)?.name;
 
     const { data: availableCameras } = $api.useQuery('get', '/api/hardware/cameras');
     const { data: foundRobots } = $api.useQuery('get', '/api/hardware/robots');

@@ -1,14 +1,14 @@
-import { Flex, Heading, Tag, Text, View, Key } from '@geti/ui';
+import { Flex, Heading, Key, Tag, Text, View } from '@geti/ui';
 import { clsx } from 'clsx';
 import { NavLink } from 'react-router-dom';
 
+import { $api } from '../../../api/client';
 import { SchemaProject } from '../../../api/openapi-spec';
 import thumbnailUrl from '../../../assets/mocked-project-thumbnail.png';
 import { paths } from '../../../router';
 import { MenuActions } from './menu-actions.component';
 
 import classes from './project-list.module.scss';
-import { $api } from '../../../api/client';
 
 type ProjectCardProps = {
     item: SchemaProject;
@@ -16,19 +16,19 @@ type ProjectCardProps = {
 };
 
 export const ProjectCard = ({ item, isActive }: ProjectCardProps) => {
-    const deleteMutation = $api.useMutation("delete", "/api/projects/{project_id}")
+    const deleteMutation = $api.useMutation('delete', '/api/projects/{project_id}');
 
     const onAction = (key: Key) => {
-        switch(key.toString()) {
-            case "delete":
-                if (item.id !== undefined){
+        switch (key.toString()) {
+            case 'delete':
+                if (item.id !== undefined) {
                     deleteMutation.mutate({
-                        params: { path: { project_id: item.id } }
-                    })
+                        params: { path: { project_id: item.id } },
+                    });
                 }
-                return
+                return;
         }
-    }
+    };
 
     return (
         <NavLink to={paths.project.robotConfiguration({ project_id: item.id! })}>
@@ -51,12 +51,12 @@ export const ProjectCard = ({ item, isActive }: ProjectCardProps) => {
                     </Flex>
 
                     <Flex alignItems={'center'} gap={'size-100'} direction={'row'} wrap='wrap'>
-                        {item.updated_at !== undefined && <Text>• Edited: {new Date(item.updated_at!).toLocaleString()}</Text>}
+                        {item.updated_at !== undefined && (
+                            <Text>• Edited: {new Date(item.updated_at!).toLocaleString()}</Text>
+                        )}
                         <Text>• Datasets: </Text>
                         <Text>• Cameras: </Text>
-                        <Text>
-                            • Robots: 
-                        </Text>
+                        <Text>• Robots:</Text>
                     </Flex>
                 </View>
             </Flex>

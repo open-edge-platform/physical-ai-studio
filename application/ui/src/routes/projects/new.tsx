@@ -1,9 +1,9 @@
-import { Button, ButtonGroup, Flex, Heading, Form, NumberField, TextField, Item, TabList, TabPanels, Tabs, Text, View } from '@geti/ui';
-import { Contract, FitScreen, Gear } from '@geti/ui/icons';
+import { useState } from 'react';
+
+import { Button, ButtonGroup, Flex, Form, Heading, TextField, View } from '@geti/ui';
 import { useNavigate } from 'react-router';
 
 import { $api } from '../../api/client';
-import { useState } from 'react';
 import { SchemaProjectInput } from '../../api/openapi-spec';
 import { paths } from '../../router';
 
@@ -11,13 +11,13 @@ export const NewProjectPage = () => {
     const navigate = useNavigate();
     const saveMutation = $api.useMutation('put', '/api/projects');
     const [project, setProject] = useState<SchemaProjectInput>({
-        name: "",
+        name: '',
         datasets: [],
     });
 
     const isValid = () => {
-        return project.name !== "";
-    }
+        return project.name !== '';
+    };
 
     const save = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
@@ -25,8 +25,8 @@ export const NewProjectPage = () => {
             .mutateAsync({
                 body: project,
             })
-            .then((project) => {
-                navigate(paths.project.datasets.index({ project_id: project.id! }));
+            .then(({ id }) => {
+                navigate(paths.project.datasets.index({ project_id: id! }));
             });
     };
 
@@ -40,14 +40,19 @@ export const NewProjectPage = () => {
                             <Button variant='secondary' href={paths.projects.index.pattern}>
                                 Cancel
                             </Button>
-                            <Button isDisabled={!isValid()} type="submit" >
+                            <Button isDisabled={!isValid()} type='submit'>
                                 Save
                             </Button>
                         </ButtonGroup>
                     </Flex>
-                    <TextField isRequired label='name' value={project.name} onChange={(name) => setProject((p) => ({...p, name}))}/>
+                    <TextField
+                        isRequired
+                        label='name'
+                        value={project.name}
+                        onChange={(name) => setProject((p) => ({ ...p, name }))}
+                    />
                 </Form>
             </View>
-        </Flex >
+        </Flex>
     );
 };

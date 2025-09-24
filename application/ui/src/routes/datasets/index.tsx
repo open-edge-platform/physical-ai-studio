@@ -4,22 +4,22 @@ import { Button, Flex, Item, Key, Link, TabList, TabPanels, Tabs, Text, View, We
 import { Add } from '@geti/ui/icons';
 import { useNavigate } from 'react-router';
 
+import { SchemaDataset } from '../../api/openapi-spec';
 import { useProject } from '../../features/projects/use-project';
 import { paths } from '../../router';
 import { DatasetViewer } from './dataset-viewer';
-import { SchemaDataset } from '../../api/openapi-spec';
 import { ImportDataset } from './import/import';
 
 export const Index = () => {
     const navigate = useNavigate();
     const project = useProject();
-    const datasets = project.datasets
+    const datasets = project.datasets;
     const [dataset, setDataset] = useState<SchemaDataset | undefined>(datasets.length > 0 ? datasets[0] : undefined);
 
     const onSelectionChange = (key: Key) => {
         if (key.toString() === '#new-dataset') {
             if (datasets.length === 0) {
-                setDataset(undefined)
+                setDataset(undefined);
             } else {
                 navigate(paths.project.datasets.record_new({ project_id: project.id! }));
             }
@@ -43,14 +43,19 @@ export const Index = () => {
                         </TabList>
                         {dataset !== undefined && (
                             <View padding={'size-30'}>
-                                <Link href={paths.project.datasets.record({ project_id: project.id!, dataset_id: dataset.id! })} >
+                                <Link
+                                    href={paths.project.datasets.record({
+                                        project_id: project.id!,
+                                        dataset_id: dataset.id!,
+                                    })}
+                                >
                                     <Button>Start recording</Button>
                                 </Link>
                             </View>
                         )}
                     </Flex>
                     <TabPanels>
-                        <Item key={"#new-dataset"}>
+                        <Item key={'#new-dataset'}>
                             <ImportDataset />
                         </Item>
                         <Item key={dataset?.id}>
