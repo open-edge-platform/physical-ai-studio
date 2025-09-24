@@ -3,7 +3,7 @@ import { clsx } from 'clsx';
 import { NavLink } from 'react-router-dom';
 
 import { $api } from '../../../api/client';
-import { SchemaProject } from '../../../api/openapi-spec';
+import { SchemaProjectInput } from '../../../api/openapi-spec';
 import thumbnailUrl from '../../../assets/mocked-project-thumbnail.png';
 import { paths } from '../../../router';
 import { MenuActions } from './menu-actions.component';
@@ -11,7 +11,7 @@ import { MenuActions } from './menu-actions.component';
 import classes from './project-list.module.scss';
 
 type ProjectCardProps = {
-    item: SchemaProject;
+    item: SchemaProjectInput;
     isActive: boolean;
 };
 
