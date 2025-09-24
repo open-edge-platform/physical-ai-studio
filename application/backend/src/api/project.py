@@ -4,7 +4,7 @@ from uuid import UUID
 from api.dependencies import get_project_id, get_project_service
 from fastapi import APIRouter, Depends, status
 from fastapi.exceptions import HTTPException
-from schemas import LeRobotDatasetInfo, Project
+from schemas import LeRobotDatasetInfo, Project, TeleoperationConfig
 from services import ProjectService
 from services.base import ResourceInUseError, ResourceNotFoundError
 from services.mappers.datasets_mapper import DatasetMapper
@@ -67,3 +67,9 @@ async def get_project(
 ) -> Project:
     """Get project by id."""
     return project_service.get_project_by_id(id)
+
+
+@router.get("/example_teleoperation_config")
+async def get_example_teleoperation_config() -> TeleoperationConfig:
+    """Stub call to get definition in ui, probably will be used later."""
+    return TeleoperationConfig()

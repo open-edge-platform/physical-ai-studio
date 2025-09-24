@@ -1,13 +1,13 @@
 import { clsx } from 'clsx';
 import { Button, Flex, Item, Key, Link, Heading, TabList, TabPanels, Tabs, Text, View, Well } from '@geti/ui';
 import { $api } from "../../../api/client"
-import { SchemaLeRobotDataset } from '../../../api/openapi-spec';
+import { SchemaLeRobotDatasetInfo } from '../../../api/openapi-spec';
 import { useProjectId } from '../../../features/projects/use-project';
 
-import classes from './new.module.scss';
+import classes from './import.module.scss';
 
 interface ImportableDatasetProps {
-    dataset: SchemaLeRobotDataset
+    dataset: SchemaLeRobotDatasetInfo
 }
 const ImportableDataset = ({ dataset }: ImportableDatasetProps) => {
     const { project_id } = useProjectId();
@@ -44,7 +44,7 @@ const ImportableDataset = ({ dataset }: ImportableDatasetProps) => {
     )
 }
 
-export const NewDataset = () => {
+export const ImportDataset = () => {
     const { data: lerobotDatasets } = $api.useSuspenseQuery('get', '/api/dataset/lerobot_datasets')
 
     return (

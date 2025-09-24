@@ -88,6 +88,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/example_teleoperation_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Example Teleoperation Config
+         * @description Stub call to get definition in ui, probably will be used later.
+         */
+        get: operations["get_example_teleoperation_config_api_projects_example_teleoperation_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hardware/cameras": {
         parameters: {
             query?: never;
@@ -217,7 +237,7 @@ export interface paths {
         };
         /**
          * List Leorobot Datasets
-         * @description Get all local lerobot datasets from huggingface cache
+         * @description Get all local lerobot datasets from huggingface cache.
          */
         get: operations["list_leorobot_datasets_api_dataset_lerobot_datasets_get"];
         put?: never;
@@ -289,6 +309,65 @@ export interface components {
              */
             type: "RealSense" | "OpenCV";
             default_stream_profile: components["schemas"]["CameraProfile"];
+        };
+        /**
+         * CameraConfig
+         * @example {
+         *       "fps": 30,
+         *       "height": 480,
+         *       "name": "WebCam",
+         *       "port_or_id": "/dev/video0",
+         *       "type": "OpenCV",
+         *       "use_depth": false,
+         *       "width": 640
+         *     }
+         */
+        CameraConfig: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id?: string;
+            /**
+             * Port Or Id
+             * @description Camera port or realsense id
+             * @default
+             */
+            port_or_id: string;
+            /**
+             * Name
+             * @description Camera name
+             */
+            name: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "RealSense" | "OpenCV";
+            /**
+             * Width
+             * @description Frame width
+             * @default 640
+             */
+            width: number;
+            /**
+             * Height
+             * @description Frame height
+             * @default 480
+             */
+            height: number;
+            /**
+             * Fps
+             * @description Camera fps
+             * @default 30
+             */
+            fps: number;
+            /**
+             * Use Depth
+             * @description Use Depth from RealSense
+             * @default false
+             */
+            use_depth: boolean;
         };
         /** CameraProfile */
         CameraProfile: {
@@ -379,7 +458,44 @@ export interface components {
          *       "updated_at": "2021-06-29T16:24:30.928000+00:00"
          *     }
          */
-        Project: {
+        "Project-Input": {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id?: string;
+            /**
+             * Name
+             * @default Default Name
+             */
+            name: string;
+            /** Updated At */
+            updated_at?: string | null;
+            /** @description Project config */
+            config?: components["schemas"]["ProjectConfig"] | null;
+            /**
+             * Datasets
+             * @description Datasets
+             * @default []
+             */
+            datasets: components["schemas"]["Dataset"][];
+        };
+        /**
+         * Project
+         * @example {
+         *       "datasets": [
+         *         {
+         *           "id": "fec4a691-76ee-4f66-8dea-aad3110e16d6",
+         *           "name": "Collect blocks",
+         *           "path": "/some/path/to/dataset"
+         *         }
+         *       ],
+         *       "id": "7b073838-99d3-42ff-9018-4e901eb047fc",
+         *       "name": "SO101 Teleoperation",
+         *       "updated_at": "2021-06-29T16:24:30.928000+00:00"
+         *     }
+         */
+        "Project-Output": {
             /**
              * Id
              * Format: uuid
@@ -404,6 +520,17 @@ export interface components {
         /**
          * ProjectConfig
          * @example {
+         *       "cameras": [
+         *         {
+         *           "fps": 30,
+         *           "height": 480,
+         *           "name": "WebCam",
+         *           "port_or_id": "/dev/video0",
+         *           "type": "OpenCV",
+         *           "use_depth": false,
+         *           "width": 640
+         *         }
+         *       ],
          *       "fps": "30"
          *     }
          */
@@ -419,6 +546,30 @@ export interface components {
              * @default 30
              */
             fps: number;
+            /**
+             * Cameras
+             * @description Project cameras
+             * @default []
+             */
+            cameras: components["schemas"]["CameraConfig"][];
+        };
+        /** RobotConfig */
+        RobotConfig: {
+            /**
+             * Id
+             * @description Robot calibration id
+             */
+            id: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "follower" | "leader";
+            /**
+             * Serial Id
+             * @description Serial port id
+             */
+            serial_id: string;
         };
         /** RobotPortInfo */
         RobotPortInfo: {
@@ -428,6 +579,17 @@ export interface components {
             serial_id: string;
             /** Device Name */
             device_name: string;
+        };
+        /** TeleoperationConfig */
+        TeleoperationConfig: {
+            /** Task */
+            task: string;
+            /** Dataset Id */
+            dataset_id: string | null;
+            /** Cameras */
+            cameras: components["schemas"]["CameraConfig"][];
+            /** Robots */
+            robots: components["schemas"]["RobotConfig"][];
         };
         /** ValidationError */
         ValidationError: {
@@ -448,15 +610,19 @@ export interface components {
 export type SchemaAnswer = components['schemas']['Answer'];
 export type SchemaCalibrationConfig = components['schemas']['CalibrationConfig'];
 export type SchemaCamera = components['schemas']['Camera'];
+export type SchemaCameraConfig = components['schemas']['CameraConfig'];
 export type SchemaCameraProfile = components['schemas']['CameraProfile'];
 export type SchemaDataset = components['schemas']['Dataset'];
 export type SchemaEpisode = components['schemas']['Episode'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
 export type SchemaLeRobotDatasetInfo = components['schemas']['LeRobotDatasetInfo'];
 export type SchemaOffer = components['schemas']['Offer'];
-export type SchemaProject = components['schemas']['Project'];
+export type SchemaProjectInput = components['schemas']['Project-Input'];
+export type SchemaProjectOutput = components['schemas']['Project-Output'];
 export type SchemaProjectConfig = components['schemas']['ProjectConfig'];
+export type SchemaRobotConfig = components['schemas']['RobotConfig'];
 export type SchemaRobotPortInfo = components['schemas']['RobotPortInfo'];
+export type SchemaTeleoperationConfig = components['schemas']['TeleoperationConfig'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type $defs = Record<string, never>;
 export interface operations {
@@ -475,7 +641,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Project"][];
+                    "application/json": components["schemas"]["Project-Output"][];
                 };
             };
         };
@@ -489,7 +655,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["Project"];
+                "application/json": components["schemas"]["Project-Input"];
             };
         };
         responses: {
@@ -499,7 +665,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Project"];
+                    "application/json": components["schemas"]["Project-Output"];
                 };
             };
             /** @description Validation Error */
@@ -534,7 +700,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Project"];
+                    "application/json": components["schemas"]["Project-Output"];
                 };
             };
             /** @description Validation Error */
@@ -596,7 +762,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Project"];
+                    "application/json": components["schemas"]["Project-Output"];
                 };
             };
             /** @description Validation Error */
@@ -606,6 +772,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_example_teleoperation_config_api_projects_example_teleoperation_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeleoperationConfig"];
                 };
             };
         };

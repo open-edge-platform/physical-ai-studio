@@ -8,7 +8,7 @@ import { useProject } from '../../features/projects/use-project';
 import { paths } from '../../router';
 import { DatasetViewer } from './dataset-viewer';
 import { SchemaDataset } from '../../api/openapi-spec';
-import { NewDataset } from './new/new';
+import { ImportDataset } from './import/import';
 
 export const Index = () => {
     const navigate = useNavigate();
@@ -18,7 +18,11 @@ export const Index = () => {
 
     const onSelectionChange = (key: Key) => {
         if (key.toString() === '#new-dataset') {
-        //    navigate(paths.project.datasets.record({ project_id: project.id! }));
+            if (datasets.length === 0) {
+                setDataset(undefined)
+            } else {
+                navigate(paths.project.datasets.record_new({ project_id: project.id! }));
+            }
         } else {
             setDataset(datasets.find((d) => d.id === key.toString()));
         }
@@ -39,11 +43,7 @@ export const Index = () => {
                         </TabList>
                         {dataset !== undefined && (
                             <View padding={'size-30'}>
-                                <Link
-                                    href={paths.project.datasets
-                                        .record({ project_id: project.id! })
-                                        .concat(`?dataset=${dataset}`)}
-                                >
+                                <Link href={paths.project.datasets.record({ project_id: project.id!, dataset_id: dataset.id! })} >
                                     <Button>Start recording</Button>
                                 </Link>
                             </View>
@@ -51,7 +51,7 @@ export const Index = () => {
                     </Flex>
                     <TabPanels>
                         <Item key={"#new-dataset"}>
-                            <NewDataset />
+                            <ImportDataset />
                         </Item>
                         <Item key={dataset?.id}>
                             <Flex height='100%'>

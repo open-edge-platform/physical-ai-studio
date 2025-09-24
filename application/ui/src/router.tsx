@@ -36,7 +36,8 @@ export const paths = {
     project: {
         datasets: {
             index: datasets,
-            record: datasets.path('/record'),
+            record: datasets.path('/:dataset_id/record'),
+            record_new: datasets.path('/record/new'),
         },
         cameras: {
             index: cameras,
@@ -91,6 +92,10 @@ export const router = createBrowserRouter([
                             },
                             {
                                 path: paths.project.datasets.record.pattern,
+                                element: <Record />,
+                            },
+                            {
+                                path: paths.project.datasets.record_new.pattern,
                                 element: <Record />,
                             },
                         ],

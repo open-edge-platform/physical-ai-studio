@@ -4,14 +4,15 @@ import { useNavigate } from 'react-router';
 
 import { $api } from '../../api/client';
 import { useState } from 'react';
-import { SchemaProject } from '../../api/openapi-spec';
+import { SchemaProjectInput } from '../../api/openapi-spec';
 import { paths } from '../../router';
 
 export const NewProjectPage = () => {
     const navigate = useNavigate();
     const saveMutation = $api.useMutation('put', '/api/projects');
-    const [project, setProject] = useState<SchemaProject>({
-        name: ""
+    const [project, setProject] = useState<SchemaProjectInput>({
+        name: "",
+        datasets: [],
     });
 
     const isValid = () => {
