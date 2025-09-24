@@ -6,6 +6,8 @@ requires-python = ">=3.12, <=3.13"
 
 dependencies = [
   "opencv-python",
+  "cv2-enumerate-cameras",
+  "harvesters",
   "fastapi[standard]",
   "lerobot[feetech]>=0.3.3",
   "numpy",
@@ -17,7 +19,11 @@ dependencies = [
   "sqlalchemy>=2.0.43",
   "alembic>=1.16.5",
   "click>=8.3.0",
+  "FrameSource"
 ]
+
+[tool.uv.sources]
+FrameSource = { path = "/Users/akramer/FrameSource" }
 
 [dependency-groups]
 dev = [

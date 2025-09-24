@@ -4,6 +4,7 @@ from collections.abc import Generator
 from typing import Any, Literal
 
 import cv2
+from frame_source import FrameSourceFactory
 from lerobot.find_cameras import find_all_opencv_cameras as le_robot_find_all_opencv_cameras
 
 VIDEO4LINUX_PATH = "/sys/class/video4linux"
@@ -53,16 +54,17 @@ def find_all_opencv_cameras() -> list[dict[str, Any]]:
     return [add_device_name_to_opencv_camera(camera) for camera in cameras]
 
 
-def gen_frames(id: str, type: Literal["RealSense", "OpenCV"]) -> Generator[bytes, None, None]:
+def gen_frames(id: str, driver: str) -> Generator[bytes, None, None]:
     """
     Continuously capture frames, encode them as JPEG,
     and yield them in the multipart format expected by browsers.
     """
 
-    if type == "OpenCV":
-        camera = cv2.VideoCapture(id)
+    cam = FrameSourceFactory.create(driver, id)
+    cam.connect()
+
     while True:
-        success, frame = camera.read()
+        success, frame = cam.read()
         if not success:
             break
 

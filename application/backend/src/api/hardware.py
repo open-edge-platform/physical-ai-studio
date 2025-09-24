@@ -4,10 +4,11 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from lerobot.find_cameras import find_all_realsense_cameras
 
-from schemas import CalibrationConfig, Camera, RobotPortInfo
+from schemas import CalibrationConfig, Camera, RobotPortInfo, CameraProfile
 from utils.calibration import get_calibrations
 from utils.camera import find_all_opencv_cameras, gen_frames
 from utils.robot import find_robots, identify_robot_visually
+from frame_source import FrameSourceFactory
 
 router = APIRouter(prefix="/api/hardware", tags=["Hardware"])
 
@@ -15,7 +16,15 @@ router = APIRouter(prefix="/api/hardware", tags=["Hardware"])
 @router.get("/cameras")
 async def get_cameras() -> list[Camera]:
     """Get all cameras"""
-    return [Camera(**config) for config in find_all_realsense_cameras() + find_all_opencv_cameras()]
+    cameras = FrameSourceFactory.enumerate_devices()
+    res = []
+    sp = CameraProfile(width=0, height=0, fps=0)
+
+    for driver, cams in cameras.items():
+        for cam in cams:
+            res.append(Camera(name=cam["name"], id=cam["id"], driver=driver, default_stream_profile=sp))
+
+    return res
 
 
 @router.get("/robots")
@@ -37,6 +46,6 @@ async def identify_robot(robot: RobotPortInfo, joint: str | None = None) -> None
 
 
 @router.get("/camera_feed")
-async def get_camera_feed(id: str, type: Literal["RealSense", "OpenCV"]) -> StreamingResponse:
+async def get_camera_feed(id: str, driver: str) -> StreamingResponse:
     """Get a streaming response from the camera"""
-    return StreamingResponse(gen_frames(id, type), media_type="multipart/x-mixed-replace; boundary=frame")
+    return StreamingResponse(gen_frames(id, driver), media_type="multipart/x-mixed-replace; boundary=frame")
