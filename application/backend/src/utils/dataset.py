@@ -7,7 +7,13 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetad
 from lerobot.constants import HF_LEROBOT_HOME
 from huggingface_hub.errors import RepositoryNotFoundError
 
-from schemas import Episode, EpisodeInfo
+from schemas import (
+    Episode,
+    EpisodeInfo,
+    LeRobotDatasetInfo,
+    ProjectConfig,
+    CameraConfig,
+)
 
 
 def get_dataset_episodes(repo_id: str, root: str | None) -> list[Episode]:
@@ -72,3 +78,28 @@ def get_local_repositories(
             print(f"Could not find local repository online: {repo_id}")
 
     return result
+
+
+def camera_config_from_dataset_features(
+    dataset: LeRobotDatasetMetadata,
+) -> list[CameraConfig]:
+    return [
+        CameraConfig(
+            name=name.split(".")[-1],
+            width=feature["info"]["video.width"],
+            height=feature["info"]["video.height"],
+            fps=feature["info"]["video.fps"],
+            type="OpenCV",
+            use_depth=False,
+            port_or_id="",
+        )
+        for name, feature in dataset.features.items()
+        if feature["dtype"] == "video"
+    ]
+
+
+def build_project_config_from_dataset(dataset: LeRobotDatasetInfo) -> ProjectConfig:
+    metadata = LeRobotDatasetMetadata(dataset.repo_id, dataset.root)
+    return ProjectConfig(
+        fps=dataset.fps, cameras=camera_config_from_dataset_features(metadata)
+    )

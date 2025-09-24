@@ -49,6 +49,22 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
     )
 
+    op.create_table(
+        "camera_configs",
+        sa.Column("project_config_id", sa.Text(), nullable=False),
+        sa.Column("id", sa.Text(), nullable=False),
+        sa.Column("name", sa.String(length=255), nullable=False),
+        sa.Column("port_or_id", sa.String(length=255), nullable=False),
+        sa.Column("type", sa.String(length=255), nullable=False),
+        sa.Column("width", sa.Integer(), nullable=False),
+        sa.Column("height", sa.Integer(), nullable=False),
+        sa.Column("fps", sa.Integer(), nullable=False),
+        sa.Column("use_depth", sa.Boolean(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False),
+        sa.ForeignKeyConstraint(["project_config_id"], ["project_configs.id"], ondelete="CASCADE"),
+    )
+
 
 def downgrade() -> None:
     """Downgrade schema."""

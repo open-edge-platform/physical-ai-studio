@@ -1,4 +1,3 @@
-
 from pydantic import Field
 from datetime import datetime
 from schemas.base import BaseIDNameModel, BaseIDModel
@@ -10,14 +9,25 @@ from .robot import RobotConfig
 
 class ProjectConfig(BaseIDModel):
     fps: int = Field(30, description="Recording FPS for datasets")
-    #datasets: list[str] = Field([], description="Datasets available for this project")
-    #cameras: list[CameraConfig]
-    #robots: list[RobotConfig]
+    cameras: list[CameraConfig] = Field([], description="Project cameras")
+    # datasets: list[str] = Field([], description="Datasets available for this project")
+    # robots: list[RobotConfig]
 
     model_config = {
         "json_schema_extra": {
             "example": {
                 "fps": "30",
+                "cameras": [
+                    {
+                        "port_or_id": "/dev/video0",
+                        "name": "WebCam",
+                        "type": "OpenCV",
+                        "width": 640,
+                        "height": 480,
+                        "fps": 30,
+                        "use_depth": False,
+                    }
+                ],
             }
         }
     }
@@ -39,9 +49,8 @@ class Project(BaseIDNameModel):
                         "name": "Collect blocks",
                         "path": "/some/path/to/dataset",
                     }
-                ]
+                ],
                 # "config": { "fps": "30" } #optional
             }
         }
     }
-

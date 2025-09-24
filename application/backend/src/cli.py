@@ -6,7 +6,7 @@ import sys
 import click
 
 from db import MigrationManager, get_db_session
-from db.schema import ProjectDB, ProjectConfigDB, DatasetsDB
+from db.schema import ProjectDB, ProjectConfigDB, DatasetDB, CameraConfigDB
 from settings import get_settings
 
 logging.basicConfig(level=logging.INFO)
@@ -53,7 +53,8 @@ def clean_db() -> None:
     with get_db_session() as db:
         db.query(ProjectDB).delete()
         db.query(ProjectConfigDB).delete()
-        db.query(DatasetsDB).delete()
+        db.query(DatasetDB).delete()
+        db.query(CameraConfigDB).delete()
         db.commit()
     click.echo("✓ Database cleaned successfully!")
 
