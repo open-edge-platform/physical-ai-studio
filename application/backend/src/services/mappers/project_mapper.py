@@ -2,7 +2,7 @@ from db.schema import ProjectDB
 from schemas import Project
 
 from .config_mapper import ProjectConfigMapper
-from .datasets_mapper import DatasetMapper
+from .dataset_mapper import DatasetMapper
 
 
 class ProjectMapper:
