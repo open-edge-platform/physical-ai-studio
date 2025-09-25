@@ -25,6 +25,7 @@ class LeRobotDatasetInfo(BaseModel):
     total_frames: int
     features: list[str]
     fps: int
+    robot_type: str
 
 
 class Dataset(BaseIDNameModel):

@@ -34,6 +34,7 @@ def upgrade() -> None:
         sa.Column("project_id", sa.Text(), nullable=False),
         sa.Column("id", sa.Text(), nullable=False),
         sa.Column("fps", sa.Integer(), nullable=False),
+        sa.Column("robot_type", sa.Text(), nullable=False),
         sa.Column("created_at", sa.DateTime(), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False),
         sa.Column("updated_at", sa.DateTime(), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False),
         sa.PrimaryKeyConstraint("id"),
@@ -49,7 +50,6 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False),
         sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
     )
-
     op.create_table(
         "camera_configs",
         sa.Column("project_config_id", sa.Text(), nullable=False),

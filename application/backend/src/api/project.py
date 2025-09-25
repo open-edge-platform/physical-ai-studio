@@ -62,7 +62,10 @@ async def delete_project(
 @router.get("/{id}")
 async def get_project(id: str, project_service: Annotated[ProjectService, Depends(get_project_service)]) -> Project:
     """Get project by id."""
-    return project_service.get_project_by_id(id)
+    try:
+        return project_service.get_project_by_id(id)
+    except ResourceNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
 @router.get("/example_teleoperation_config")

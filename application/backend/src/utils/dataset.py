@@ -95,7 +95,11 @@ def camera_config_from_dataset_features(
 def build_project_config_from_dataset(dataset: LeRobotDatasetInfo) -> ProjectConfig:
     """Build Project Config from LeRobotDatasetInfo."""
     metadata = LeRobotDatasetMetadata(dataset.repo_id, dataset.root)
-    return ProjectConfig(fps=dataset.fps, cameras=camera_config_from_dataset_features(metadata))
+    return ProjectConfig(
+        fps=dataset.fps,
+        cameras=camera_config_from_dataset_features(metadata),
+        robot_type=dataset.robot_type,
+    )
 
 
 def build_dataset_from_lerobot_dataset(dataset: LeRobotDatasetInfo) -> Dataset:

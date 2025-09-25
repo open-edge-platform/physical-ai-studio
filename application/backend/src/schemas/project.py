@@ -11,7 +11,7 @@ from .camera import CameraConfig
 class ProjectConfig(BaseIDModel):
     fps: int = Field(30, description="Recording FPS for datasets")
     cameras: list[CameraConfig] = Field([], description="Project cameras")
-    # robots: list[RobotConfig]
+    robot_type: str = Field(description="Robot type")
 
     model_config = {
         "json_schema_extra": {

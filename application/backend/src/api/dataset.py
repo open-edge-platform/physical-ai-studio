@@ -11,7 +11,7 @@ router = APIRouter()
 
 
 @router.get("/lerobot_datasets")
-async def list_leorobot_datasets() -> list[LeRobotDatasetInfo]:
+async def list_le_robot_datasets() -> list[LeRobotDatasetInfo]:
     """Get all local lerobot datasets from huggingface cache."""
     return [
         LeRobotDatasetInfo(
@@ -21,6 +21,7 @@ async def list_leorobot_datasets() -> list[LeRobotDatasetInfo]:
             total_frames=dataset.total_frames,
             fps=dataset.fps,
             features=list(dataset.features),
+            robot_type=dataset.robot_type,
         )
         for dataset in get_local_repositories()
     ]

@@ -16,6 +16,7 @@ class ProjectConfigMapper:
         return ProjectConfig.model_validate(
             {
                 "fps": project_config_db.fps,
+                "robot_type": project_config_db.robot_type,
                 "cameras": [CameraConfigMapper.to_schema(camera) for camera in project_config_db.cameras],
             },
             from_attributes=True,
@@ -27,5 +28,7 @@ class ProjectConfigMapper:
         if config is None:
             return None
         return ProjectConfigDB(
-            fps=config.fps, cameras=[CameraConfigMapper.from_schema(camera) for camera in config.cameras]
+            fps=config.fps,
+            cameras=[CameraConfigMapper.from_schema(camera) for camera in config.cameras],
+            robot_type=config.robot_type,
         )
