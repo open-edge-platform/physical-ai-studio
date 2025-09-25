@@ -1,5 +1,5 @@
 from db.schema import DatasetDB
-from schemas import Dataset, LeRobotDatasetInfo
+from schemas import Dataset
 
 
 class DatasetMapper:
@@ -21,12 +21,4 @@ class DatasetMapper:
             id=str(dataset.id),
             name=dataset.name,
             path=dataset.path,
-        )
-
-    @staticmethod
-    def from_lerobot_dataset(dataset: LeRobotDatasetInfo) -> Dataset:
-        """Create a config from a lerobot dataset."""
-        return Dataset(
-            name=dataset.repo_id,
-            path=dataset.root,
         )

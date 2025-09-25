@@ -3,7 +3,7 @@ from uuid import UUID
 from repositories import DatasetRepository
 from schemas import Dataset
 from services.base import GenericPersistenceService, ResourceNotFoundError, ResourceType, ServiceConfig
-from services.mappers.datasets_mapper import DatasetMapper
+from services.mappers import DatasetMapper
 from services.parent_process_guard import parent_process_only
 
 

@@ -4,7 +4,7 @@ from db import get_db_session
 from repositories import ProjectRepository
 from schemas import Project
 from services.base import GenericPersistenceService, ResourceNotFoundError, ResourceType, ServiceConfig
-from services.mappers.project_mapper import ProjectMapper
+from services.mappers import ProjectMapper
 from services.parent_process_guard import parent_process_only
 
 

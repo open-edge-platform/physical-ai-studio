@@ -6,7 +6,7 @@ from huggingface_hub.errors import RepositoryNotFoundError
 from lerobot.constants import HF_LEROBOT_HOME
 from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
 
-from schemas import CameraConfig, Episode, EpisodeInfo, LeRobotDatasetInfo, ProjectConfig
+from schemas import CameraConfig, Dataset, Episode, EpisodeInfo, LeRobotDatasetInfo, ProjectConfig
 
 
 def get_dataset_episodes(repo_id: str, root: str | None) -> list[Episode]:
@@ -96,3 +96,11 @@ def build_project_config_from_dataset(dataset: LeRobotDatasetInfo) -> ProjectCon
     """Build Project Config from LeRobotDatasetInfo."""
     metadata = LeRobotDatasetMetadata(dataset.repo_id, dataset.root)
     return ProjectConfig(fps=dataset.fps, cameras=camera_config_from_dataset_features(metadata))
+
+
+def build_dataset_from_lerobot_dataset(dataset: LeRobotDatasetInfo) -> Dataset:
+    """Build dataset from LeRobotDatasetInfo."""
+    return Dataset(
+        name=dataset.repo_id,
+        path=dataset.root,
+    )

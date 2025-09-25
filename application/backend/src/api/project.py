@@ -8,8 +8,7 @@ from api.dependencies import get_project_id, get_project_service
 from schemas import LeRobotDatasetInfo, Project, TeleoperationConfig
 from services import ProjectService
 from services.base import ResourceInUseError, ResourceNotFoundError
-from services.mappers.datasets_mapper import DatasetMapper
-from utils.dataset import build_project_config_from_dataset
+from utils.dataset import build_dataset_from_lerobot_dataset, build_project_config_from_dataset
 
 router = APIRouter()
 
@@ -42,7 +41,7 @@ async def import_dataset(
     update = {}
     if project.config is None:
         update["config"] = build_project_config_from_dataset(lerobot_dataset)
-    update["datasets"] = [DatasetMapper.from_lerobot_dataset(lerobot_dataset)]
+    update["datasets"] = [build_dataset_from_lerobot_dataset(lerobot_dataset)]
     return project_service.update_project(project, update)
 
 

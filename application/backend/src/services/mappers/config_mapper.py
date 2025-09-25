@@ -1,5 +1,5 @@
 from db.schema import ProjectConfigDB
-from schemas import LeRobotDatasetInfo, ProjectConfig
+from schemas import ProjectConfig
 
 from .camera_config_mapper import CameraConfigMapper
 
@@ -28,11 +28,4 @@ class ProjectConfigMapper:
             return None
         return ProjectConfigDB(
             fps=config.fps, cameras=[CameraConfigMapper.from_schema(camera) for camera in config.cameras]
-        )
-
-    @staticmethod
-    def from_lerobot_dataset(dataset: LeRobotDatasetInfo) -> ProjectConfig:
-        """Create a config from a lerobot dataset."""
-        return ProjectConfig(
-            fps=dataset.fps,
         )
