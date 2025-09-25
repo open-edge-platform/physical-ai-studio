@@ -17,6 +17,7 @@ class ProjectConfig(BaseIDModel):
         "json_schema_extra": {
             "example": {
                 "fps": "30",
+                "robot_type": "so101_follower",
                 "cameras": [
                     {
                         "port_or_id": "/dev/video0",
@@ -52,6 +53,7 @@ class Project(BaseIDNameModel):
                 ],
                 "config": {
                     "fps": "30",
+                    "robot_type": "so101_follower",
                     "cameras": [
                         {
                             "port_or_id": "/dev/video0",
