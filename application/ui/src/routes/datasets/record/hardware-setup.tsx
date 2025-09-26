@@ -2,6 +2,8 @@ import { Dispatch, SetStateAction, useState } from 'react';
 
 import {
     Button,
+    ComboBox,
+    Section,
     ButtonGroup,
     Flex,
     Form,
@@ -36,9 +38,17 @@ export const HardwareSetup = ({ config, setConfig }: HardwareSetupProps) => {
     const { data: availableCalibrations, refetch: refreshCalibrations  } = $api.useQuery('get', '/api/hardware/calibrations');
     const isNewDataset = datasetName === undefined;
     const [dataset, setDataset] = useState<string>(datasetName ?? '');
-    const [task, setTask] = useState<string>('');
 
-    console.log(foundRobots)
+    const { data: projectTasks } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/tasks', {
+        params: {
+            path: { project_id: project.id! },
+        },
+    });
+
+
+    const initialTask = isNewDataset ? '' : Object.values(projectTasks).flat()[0];
+    const [task, setTask] = useState<string>(initialTask);
+
 
     const navigate = useNavigate();
 
@@ -118,13 +128,21 @@ export const HardwareSetup = ({ config, setConfig }: HardwareSetupProps) => {
                             isDisabled={!isNewDataset}
                             onChange={setDataset}
                         />
-                        <TextField
+                        <ComboBox
                             validationState={task === '' ? 'invalid' : 'valid'}
                             isRequired
                             label='Task'
-                            value={task}
-                            onChange={setTask}
-                        />
+                            allowsCustomValue
+                            onInputChange={setTask}
+                        >
+                            {Object.keys(projectTasks).map((datasetName) => (
+                                <Section key={datasetName} title={datasetName}>
+                                    {projectTasks[datasetName].map((task) => (
+                                        <Item key={task}>{task}</Item>
+                                    ))}
+                                </Section>
+                            ))}
+                        </ComboBox>
                     </Form>
                     <View height={'330px'}>
                         <Tabs onSelectionChange={onTabSwitch} selectedKey={activeTab}>

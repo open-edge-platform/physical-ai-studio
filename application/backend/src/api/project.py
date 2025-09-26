@@ -10,6 +10,8 @@ from services import ProjectService
 from services.base import ResourceInUseError, ResourceNotFoundError
 from utils.dataset import build_dataset_from_lerobot_dataset, build_project_config_from_dataset
 
+from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
+
 router = APIRouter()
 
 
@@ -72,3 +74,13 @@ async def get_project(id: str, project_service: Annotated[ProjectService, Depend
 async def get_example_teleoperation_config() -> TeleoperationConfig:
     """Stub call to get definition in ui, probably will be used later."""
     return TeleoperationConfig()
+
+
+@router.get("/{project_id}/tasks")
+async def get_tasks_for_dataset(
+    project_id: Annotated[UUID, Depends(get_project_id)],
+    project_service: Annotated[ProjectService, Depends(get_project_service)],
+) -> dict[str, list[str]]:
+    """Get all dataset tasks of a project."""
+    project = project_service.get_project_by_id(project_id)
+    return {dataset.name: list(LeRobotDatasetMetadata(dataset.name, dataset.path).tasks.values()) for dataset in project.datasets}
