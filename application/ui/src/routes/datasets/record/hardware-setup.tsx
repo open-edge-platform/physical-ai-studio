@@ -17,7 +17,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 
 import { $api } from '../../../api/client';
-import { SchemaTeleoperationConfig } from '../../../api/openapi-spec';
+import { SchemaRobotConfig, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
 import { useProject } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
 import { CameraSetup } from './camera-setup';
@@ -31,11 +31,14 @@ export const HardwareSetup = ({ config, setConfig }: HardwareSetupProps) => {
     const project = useProject();
     const datasetName = config.dataset_id && project.datasets.find((d) => d.id === config.dataset_id)?.name;
 
-    const { data: availableCameras } = $api.useQuery('get', '/api/hardware/cameras');
-    const { data: foundRobots } = $api.useQuery('get', '/api/hardware/robots');
+    const { data: availableCameras, refetch: refreshCameras } = $api.useQuery('get', '/api/hardware/cameras');
+    const { data: foundRobots, refetch: refreshRobots  } = $api.useQuery('get', '/api/hardware/robots');
+    const { data: availableCalibrations, refetch: refreshCalibrations  } = $api.useQuery('get', '/api/hardware/calibrations');
     const isNewDataset = datasetName === undefined;
     const [dataset, setDataset] = useState<string>(datasetName ?? '');
     const [task, setTask] = useState<string>('');
+
+    console.log(foundRobots)
 
     const navigate = useNavigate();
 
@@ -52,7 +55,18 @@ export const HardwareSetup = ({ config, setConfig }: HardwareSetupProps) => {
                 }
             }),
         });
-    };
+    }
+
+    const updateRobot = (type: "leader" | "follower", robot_config: SchemaRobotConfig) => {
+        //Update robot, but importantly swap the serial ids if the id was already selected by other robot config
+        const other = type == "leader" ? "follower" : "leader";
+
+        setConfig((config) => ({
+            ...config,
+            [other]: {...config[other], serial_id: config[other].serial_id == robot_config.serial_id ? config[type].serial_id : config[other].serial_id},
+            [type]: robot_config,
+        }));
+    }
 
     const [activeTab, setActiveTab] = useState<string>('cameras');
 
@@ -81,6 +95,12 @@ export const HardwareSetup = ({ config, setConfig }: HardwareSetupProps) => {
         const taskValid = task !== '';
         return datasetNameValid && taskValid;
     };
+
+    const onRefresh = () => {
+        refreshCameras();
+        refreshRobots();
+        refreshCalibrations();
+    }
 
     return (
         <Flex justifyContent={'center'} flex='1'>
@@ -127,13 +147,20 @@ export const HardwareSetup = ({ config, setConfig }: HardwareSetupProps) => {
                                 </Item>
                                 <Item key='robots'>
                                     <Flex gap='40px'>
-                                        {config.robots.map((robot) => (
-                                            <RobotSetup
-                                                key={robot.serial_id}
-                                                config={robot}
-                                                portInfos={foundRobots ?? []}
-                                            />
-                                        ))}
+                                        <RobotSetup
+                                            key={"leader"}
+                                            config={config.leader}
+                                            portInfos={foundRobots ?? []}
+                                            calibrations={availableCalibrations ?? []}
+                                            setConfig={(config) => updateRobot('leader', config)}
+                                        />
+                                        <RobotSetup
+                                            key={"follower"}
+                                            config={config.follower}
+                                            portInfos={foundRobots ?? []}
+                                            calibrations={availableCalibrations ?? []}
+                                            setConfig={(config) => updateRobot('follower', config)}
+                                        />
                                     </Flex>
                                 </Item>
                             </TabPanels>
@@ -142,6 +169,9 @@ export const HardwareSetup = ({ config, setConfig }: HardwareSetupProps) => {
                     <Flex justifyContent={'end'}>
                         <View paddingTop={'size-300'}>
                             <ButtonGroup>
+                                <Button onPress={onRefresh} variant='secondary'>
+                                    Refresh
+                                </Button>
                                 <Button onPress={onBack} variant='secondary'>
                                     {activeTab === 'robots' ? 'Back' : 'Cancel'}
                                 </Button>

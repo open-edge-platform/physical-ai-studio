@@ -9,13 +9,13 @@ from schemas import RobotPortInfo
 available_ports = list_ports.comports()
 
 
-def from_port(port: ListPortInfo, device_name: str) -> RobotPortInfo | None:
+def from_port(port: ListPortInfo, robot_type: str) -> RobotPortInfo | None:
     """Detect if the device is a SO-100 robot.π"""
     # The Feetech UART board CH340 has PID 29987
     if port.pid in {21971, 29987}:
         # The serial number is not always available
         serial_number = port.serial_number or "no_serial"
-        return RobotPortInfo(port=port.device, serial_id=serial_number, device_name=device_name)
+        return RobotPortInfo(port=port.device, serial_id=serial_number, robot_type=robot_type)
     return None
 
 
@@ -56,7 +56,7 @@ class RobotConnectionManager:
                 "so-100",
             ]:
                 print(f"Trying to connect to {name} on {port.device}.")
-                robot = from_port(port, device_name=name)
+                robot = from_port(port, robot_type=name)
                 if robot is None:
                     print(f"Failed to create robot from {name} on {port.device}.")
                     continue
@@ -85,8 +85,8 @@ async def find_robots() -> list[RobotPortInfo]:
 
 async def identify_robot_visually(robot: RobotPortInfo, joint: str | None = None) -> None:
     """Identify the robot by moving the joint from current to min to max to initial position"""
-    if robot.device_name != "so-100":
-        raise ValueError(f"Trying to identify unsupported robot: {robot.device_name}")
+    if robot.robot_type != "so-100":
+        raise ValueError(f"Trying to identify unsupported robot: {robot.robot_type}")
 
     if joint is None:
         joint = "gripper"

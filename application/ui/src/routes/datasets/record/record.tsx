@@ -13,8 +13,20 @@ export const Record = () => {
     const [teleoperationConfig, setTeleoperationConfig] = useState<SchemaTeleoperationConfig>({
         dataset_id: dataset_id!,
         cameras: project.config?.cameras ?? [],
-        robots: [],
-        task: '',
+        follower: {
+            id: "",
+            robot_type: project.config?.robot_type ?? "",
+            serial_id: "",
+            port: "",
+            type: "follower",
+        },
+        leader: {
+            id: "",
+            robot_type: project.config?.robot_type ?? "",
+            serial_id: "",
+            port: "",
+            type: "leader",
+        },
     });
 
     return <HardwareSetup config={teleoperationConfig} setConfig={setTeleoperationConfig} />;
