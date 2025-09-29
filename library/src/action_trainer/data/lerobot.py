@@ -1,13 +1,11 @@
-# Copyright (C) 2025-2026 Intel Corporation
+# Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-LeRobotDataset standard
-"""
+"""LeRobotDataset standard."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
@@ -25,8 +23,8 @@ def _collect_field(
     base_key: str,
     prefix: str | None = None,
 ) -> tuple[dict[str, torch.Tensor] | torch.Tensor | None, set[str]]:
-    """
-    Collect fields from `item` based on `base_key` and `prefix`.
+    """Collect fields from `item` based on `base_key` and `prefix`.
+
     Returns:
         - Either a single tensor, a dict, or None
         - The set of keys that were consumed
@@ -57,8 +55,17 @@ def _collect_field(
 
 
 def _convert_lerobot_item_to_observation(lerobot_item: dict) -> Observation:
-    """Convert item from lerobot to our internal Observation format."""
+    """Convert item from lerobot to our internal Observation format.
 
+    Args:
+        lerobot_item (dict): The item from the lerobot dataset.
+
+    Returns:
+        Observation: The observation in our internal format.
+
+    Raises:
+        ValueError: If the item is missing a required key.
+    """
     required_keys = [
         "episode_index",
         "frame_index",
@@ -68,14 +75,16 @@ def _convert_lerobot_item_to_observation(lerobot_item: dict) -> Observation:
     ]
     lerobot_item_keys = lerobot_item.keys()
     for key in required_keys:
-        assert key in lerobot_item_keys, f"Missing required key: {key}. Available keys: {lerobot_item_keys}"
+        if key not in lerobot_item_keys:
+            msg = f"Missing required key: {key}. Available keys: {lerobot_item_keys}"
+            raise ValueError(msg)
 
-    assert any(k.startswith("observation") for k in lerobot_item_keys), (
-        f"Sample must contain some form of observation. Sample keys {lerobot_item_keys}"
-    )
-    assert any(k.startswith("action") for k in lerobot_item_keys), (
-        f"Sample must contain an action. Sample keys {lerobot_item_keys}"
-    )
+    if not any(k.startswith("observation") for k in lerobot_item_keys):
+        msg = f"Sample must contain some form of observation. Sample keys {lerobot_item_keys}"
+        raise ValueError(msg)
+    if not any(k.startswith("action") for k in lerobot_item_keys):
+        msg = f"Sample must contain an action. Sample keys {lerobot_item_keys}"
+        raise ValueError(msg)
 
     used_keys: set[str] = set()
 
@@ -126,18 +135,18 @@ class LeRobotDatasetWrapper(Dataset):
         self,
         repo_id: str,
         root: str | Path | None = None,
+        *,
         episodes: list[int] | None = None,
         image_transforms: Callable | None = None,
-        delta_timestamps: dict[str, list[float]] | None = None,
+        delta_timestamps: dict[list[float], str] | None = None,
         tolerance_s: float = 1e-4,
         revision: str | None = None,
         force_cache_sync: bool = False,
         download_videos: bool = True,
         video_backend: str | None = None,
         batch_encoding_size: int = 1,
-    ):
-        """
-        Initialize a LeRobotDatasetWrapper.
+    ) -> None:
+        """Initialize a LeRobotDatasetWrapper.
 
         This wrapper initializes an internal `LeRobotDataset` using the provided
         configuration and exposes the same dataset interface for action training.
@@ -155,9 +164,6 @@ class LeRobotDatasetWrapper(Dataset):
             download_videos (bool, optional): Whether to download associated videos. Defaults to True.
             video_backend (str | None, optional): Backend to use for video decoding. Defaults to None.
             batch_encoding_size (int, optional): Number of samples per encoded batch. Defaults to 1.
-
-        Raises:
-            ValueError: If required arguments are missing or invalid.
         """
         super().__init__()
 
@@ -176,10 +182,23 @@ class LeRobotDatasetWrapper(Dataset):
             batch_encoding_size=batch_encoding_size,
         )
 
-    def __len__(self):
+    def __len__(self) -> int:
+        """Get the length of the dataset.
+
+        Returns:
+            int: The length of the dataset.
+        """
         return len(self._lerobot_dataset)
 
-    def __getitem__(self, idx) -> Observation:
+    def __getitem__(self, idx: int) -> Observation:
+        """Get an item from the dataset.
+
+        Args:
+            idx (int): The index of the item to get.
+
+        Returns:
+            Observation: The item from the dataset.
+        """
         return _convert_lerobot_item_to_observation(self._lerobot_dataset[idx])
 
     @staticmethod
@@ -201,24 +220,24 @@ class LeRobotDatasetWrapper(Dataset):
         return instance
 
     @property
-    def features(self):
-        """Raw dataset features"""
+    def features(self) -> dict[str, dict[Any, Any]]:
+        """Raw dataset features."""
         return self._lerobot_dataset.features
 
     @property
-    def action_features(self):
-        """Action features from LeRobot dataset"""
+    def action_features(self) -> dict[str, dict[Any, Any]]:
+        """Action features from LeRobot dataset."""
         dataset_features = self._lerobot_dataset.features
         return {key: ft for key, ft in dataset_features.items() if key.startswith("action")}
 
     @property
-    def fps(self):
-        """frames per second of dataset"""
+    def fps(self) -> float:
+        """Frames per second of dataset."""
         return self._lerobot_dataset.fps
 
     @property
-    def tolerance_s(self):
-        """Tolerance to keep delta timestamps in sync with fps"""
+    def tolerance_s(self) -> float:
+        """Tolerance to keep delta timestamps in sync with fps."""
         return self._lerobot_dataset.tolerance_s
 
     @property
@@ -227,32 +246,34 @@ class LeRobotDatasetWrapper(Dataset):
         return self._lerobot_dataset.delta_indices
 
     @delta_indices.setter
-    def delta_indices(self, indices: dict[str, list[int]]):
+    def delta_indices(self, indices: dict[str, list[int]]) -> None:
         """Allow setting delta_indices on the dataset."""
         self._lerobot_dataset.delta_indices = indices
 
 
 class LeRobotDataModule(DataModule):
+    """LeRobot-specific Action DataModule."""
+
     def __init__(
         self,
         train_batch_size: int = 16,
         repo_id: str | None = None,
         dataset: LeRobotDatasetWrapper | LeRobotDataset | None = None,
         # LeRobot Dataset kwargs
+        *,
         root: str | Path | None = None,
         episodes: list[int] | None = None,
         image_transforms: Callable | None = None,
-        delta_timestamps: dict[str, list[float]] | None = None,
+        delta_timestamps: dict[list[float], str] | None = None,
         tolerance_s: float = 1e-4,
         revision: str | None = None,
         force_cache_sync: bool = False,
         download_videos: bool = True,
         video_backend: str | None = None,
         batch_encoding_size: int = 1,
-        **action_datamodule_kwargs,
-    ):
-        """
-        Initialize a LeRobot-specific Action DataModule.
+        **action_datamodule_kwargs,  # noqa: ANN003
+    ) -> None:
+        """Initialize a LeRobot-specific Action DataModule.
 
         This class wraps a `LeRobotDataset` (or `LeRobotDatasetWrapper`) and
         integrates it with the base `ActionDataModule` functionality, providing
@@ -281,7 +302,6 @@ class LeRobotDataModule(DataModule):
             ValueError: If neither `repo_id` nor `dataset` is provided, or if the dataset type is invalid.
             TypeError: If `dataset` is not of type `LeRobotDataset` or `LeRobotDatasetWrapper`.
         """
-
         # if dataset is passed, it is preffered
         if dataset:
             if isinstance(dataset, LeRobotDatasetWrapper):

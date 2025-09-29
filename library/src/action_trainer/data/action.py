@@ -1,9 +1,7 @@
-# Copyright (C) 2025-2026 Intel Corporation
+# Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-Base Action Dataset
-"""
+"""Base Action Dataset."""
 
 from __future__ import annotations
 
@@ -17,9 +15,7 @@ if TYPE_CHECKING:
 
 
 class Dataset(TorchDataset, ABC):
-    """
-    An abstract base class for datasets that return observations.
-    """
+    """An abstract base class for datasets that return observations."""
 
     @abstractmethod
     def __getitem__(self, idx: int) -> Observation:
@@ -32,41 +28,29 @@ class Dataset(TorchDataset, ABC):
     @property
     @abstractmethod
     def features(self) -> dict:
-        """
-        Raw dataset features.
-        """
+        """Raw dataset features."""
 
     @property
     @abstractmethod
     def action_features(self) -> dict:
-        """
-        Action features from the dataset.
-        """
+        """Action features from the dataset."""
 
     @property
     @abstractmethod
     def fps(self) -> int:
-        """
-        Frames per second of the dataset.
-        """
+        """Frames per second of the dataset."""
 
     @property
     @abstractmethod
     def tolerance_s(self) -> float:
-        """
-        Tolerance to keep delta timestamps in sync with fps.
-        """
+        """Tolerance to keep delta timestamps in sync with fps."""
 
     @property
     @abstractmethod
     def delta_indices(self) -> dict[str, list[int]]:
-        """
-        Exposes delta_indices from the dataset.
-        """
+        """Exposes delta_indices from the dataset."""
 
     @delta_indices.setter
     @abstractmethod
-    def delta_indices(self, indices: dict[str, list[int]]):
-        """
-        Allows setting delta_indices on the dataset.
-        """
+    def delta_indices(self, indices: dict[str, list[int]]) -> None:
+        """Allows setting delta_indices on the dataset."""

@@ -1,13 +1,13 @@
-# Copyright (C) 2025-2026 Intel Corporation
+# Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Dummy policy for testing usage"""
+"""Dummy policy for testing usage."""
 
 from collections import deque
 from typing import Any
 
 import torch
-import torch.nn.functional as F
+import torch.nn.functional as F  # noqa: N812
 from torch import nn
 
 
@@ -48,7 +48,7 @@ class Dummy(nn.Module):
         temporal_ensemble_coeff: float | None = None,
         n_obs_steps: int = 1,
         horizon: int | None = None,
-    ):
+    ) -> None:
         """Initialize the DummyModel.
 
         Args:
@@ -110,7 +110,7 @@ class Dummy(nn.Module):
         """
         return None
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset internal buffers.
 
         Clears the temporal buffer (if using temporal ensemble) or the
