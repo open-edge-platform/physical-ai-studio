@@ -5,7 +5,7 @@
 
 from abc import ABC, abstractmethod
 
-import lightning as L
+import lightning as L  # noqa: N812
 import torch
 from torch import nn
 

@@ -3,7 +3,7 @@
 
 """Callbacks for training."""
 
-import lightning as L
+import lightning as L  # noqa: N812
 from lightning.pytorch.callbacks import Callback
 
 from action_trainer.train.utils import reformat_dataset_to_match_policy

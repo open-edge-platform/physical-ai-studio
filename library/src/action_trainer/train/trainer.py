@@ -3,7 +3,7 @@
 
 """Trainer with Lightning backend."""
 
-import lightning as L
+import lightning as L  # noqa: N812
 
 from action_trainer.data import DataModule
 from action_trainer.policies.base import TrainerModule
