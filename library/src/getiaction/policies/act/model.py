@@ -3,15 +3,10 @@
 
 
 import abc
-from getiaction.data.dataclasses import NormalizationMap, NormalizationParameters
-import torch
-from torch import nn
-from dataclasses import dataclass, field, asdict
-
-
 import math
-from collections import deque
 from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
+from enum import Enum
 from itertools import chain
 
 import einops
@@ -22,8 +17,8 @@ import torchvision
 from torch import Tensor, nn
 from torchvision.models._utils import IntermediateLayerGetter
 from torchvision.ops.misc import FrozenBatchNorm2d
-from enum import Enum
 
+from getiaction.data.dataclasses import NormalizationMap, NormalizationParameters
 
 OBS_STATE = "state"
 OBS_IMAGES = "images"
@@ -31,17 +26,25 @@ ACTION = "action"
 
 
 class ACT(nn.Module):
-    def __init__(self, action_shape: tuple[int, ...] | int, robot_state_shape: tuple[int, ...] | int,
-                 chunk_size: int = 100, normalization_map: NormalizationMap | None = None
-                 ) -> None:
+    def __init__(
+        self,
+        action_shape: tuple[int, ...] | int,
+        robot_state_shape: tuple[int, ...] | int,
+        chunk_size: int = 100,
+        normalization_map: NormalizationMap | None = None,
+    ) -> None:
         super().__init__()
 
-        input_features = {OBS_IMAGES: PolicyFeature(type=FeatureType.VISUAL, shape=(3,224, 224)),
-                            OBS_STATE: PolicyFeature(type=FeatureType.STATE, shape=robot_state_shape)}
+        input_features = {
+            OBS_IMAGES: PolicyFeature(type=FeatureType.VISUAL, shape=(3, 224, 224)),
+            OBS_STATE: PolicyFeature(type=FeatureType.STATE, shape=robot_state_shape),
+        }
         output_features = {ACTION: PolicyFeature(type=FeatureType.ACTION, shape=action_shape)}
         self.config = ACTConfig(input_features=input_features, output_features=output_features, chunk_size=chunk_size)
-        self.input_normalizer = NormalizeTransform({OBS_STATE: normalization_map.state,
-                                                    OBS_IMAGES: normalization_map.images})
+        self.input_normalizer = NormalizeTransform({
+            OBS_STATE: normalization_map.state,
+            OBS_IMAGES: normalization_map.images,
+        })
         self.output_denormalizer = NormalizeTransform({ACTION: normalization_map.action}, inverse=True)
         self._model = _ACT(self.config)
 
@@ -64,17 +67,14 @@ class ACT(nn.Module):
                 # each dimension independently, we sum over the latent dimension to get the total
                 # KL-divergence per batch element, then take the mean over the batch.
                 # (See App. B of https://huggingface.co/papers/1312.6114 for more details).
-                mean_kld = (
-                    (-0.5 * (1 + log_sigma_x2_hat - mu_hat.pow(2) - (log_sigma_x2_hat).exp())).sum(-1).mean()
-                )
+                mean_kld = (-0.5 * (1 + log_sigma_x2_hat - mu_hat.pow(2) - (log_sigma_x2_hat).exp())).sum(-1).mean()
                 loss_dict["kld_loss"] = mean_kld.item()
                 loss = l1_loss + mean_kld * self.config.kl_weight
             else:
                 loss = l1_loss
 
             return loss, loss_dict
-        else:
-            return self.predict_action_chunk(batch)
+        return self.predict_action_chunk(batch)
 
     @torch.no_grad()
     def predict_action_chunk(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
@@ -86,7 +86,7 @@ class ACT(nn.Module):
             batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
             batch[OBS_IMAGES] = [batch[key] for key in self.config.image_features]
 
-        actions = self._model(batch)[0] # only select the actions, ignore the latent params
+        actions = self._model(batch)[0]  # only select the actions, ignore the latent params
         actions = self.output_denormalizer({ACTION: actions})[ACTION]
         return actions
 
@@ -163,6 +163,7 @@ class NormalizationMode(str, Enum):
     MEAN_STD = "MEAN_STD"
     IDENTITY = "IDENTITY"
 
+
 class OptimizerConfig(abc.ABC):
     lr: float
     weight_decay: float
@@ -178,8 +179,7 @@ class OptimizerConfig(abc.ABC):
 
     @abc.abstractmethod
     def build(self) -> torch.optim.Optimizer | dict[str, torch.optim.Optimizer]:
-        """
-        Build the optimizer. It can be a single optimizer or a dictionary of optimizers.
+        """Build the optimizer. It can be a single optimizer or a dictionary of optimizers.
         NOTE: Multiple optimizers are useful when you have different models to optimize.
         For example, you can have one optimizer for the policy and another one for the value function
         in reinforcement learning settings.
@@ -188,6 +188,7 @@ class OptimizerConfig(abc.ABC):
             The optimizer or a dictionary of optimizers.
         """
         raise NotImplementedError
+
 
 @dataclass
 class AdamWConfig(OptimizerConfig):
@@ -217,7 +218,7 @@ class PolicyFeature:
 
 
 @dataclass
-class ACTConfig:#(PreTrainedConfig):
+class ACTConfig:  # (PreTrainedConfig):
     """Configuration class for the Action Chunking Transformers policy.
 
     Defaults are configured for training on bimanual Aloha tasks like "insertion" or "transfer".
@@ -286,8 +287,8 @@ class ACTConfig:#(PreTrainedConfig):
     """
 
     # fror main config
-    #n_obs_steps: int = 1
-    #normalization_mapping: dict[str, NormalizationMode] = field(default_factory=dict)
+    # n_obs_steps: int = 1
+    # normalization_mapping: dict[str, NormalizationMode] = field(default_factory=dict)
 
     input_features: dict[str, PolicyFeature] = field(default_factory=dict)
     output_features: dict[str, PolicyFeature] = field(default_factory=dict)
@@ -296,7 +297,6 @@ class ACTConfig:#(PreTrainedConfig):
     # `use_amp` determines whether to use Automatic Mixed Precision (AMP) for training and evaluation. With AMP,
     # automatic gradient scaling is used.
     use_amp: bool = False
-
 
     # Input / output structure.
     n_obs_steps: int = 1
@@ -308,7 +308,7 @@ class ACTConfig:#(PreTrainedConfig):
             "VISUAL": NormalizationMode.MEAN_STD,
             "STATE": NormalizationMode.MEAN_STD,
             "ACTION": NormalizationMode.MEAN_STD,
-        }
+        },
     )
 
     # Architecture.
@@ -351,21 +351,21 @@ class ACTConfig:#(PreTrainedConfig):
         """Input validation (not exhaustive)."""
         if not self.vision_backbone.startswith("resnet"):
             raise ValueError(
-                f"`vision_backbone` must be one of the ResNet variants. Got {self.vision_backbone}."
+                f"`vision_backbone` must be one of the ResNet variants. Got {self.vision_backbone}.",
             )
         if self.temporal_ensemble_coeff is not None and self.n_action_steps > 1:
             raise NotImplementedError(
                 "`n_action_steps` must be 1 when using temporal ensembling. This is "
-                "because the policy needs to be queried every step to compute the ensembled action."
+                "because the policy needs to be queried every step to compute the ensembled action.",
             )
         if self.n_action_steps > self.chunk_size:
             raise ValueError(
                 f"The chunk size is the upper bound for the number of action steps per model invocation. Got "
-                f"{self.n_action_steps} for `n_action_steps` and {self.chunk_size} for `chunk_size`."
+                f"{self.n_action_steps} for `n_action_steps` and {self.chunk_size} for `chunk_size`.",
             )
         if self.n_obs_steps != 1:
             raise ValueError(
-                f"Multiple observation steps not handled yet. Got `nobs_steps={self.n_obs_steps}`"
+                f"Multiple observation steps not handled yet. Got `nobs_steps={self.n_obs_steps}`",
             )
 
     def get_optimizer_preset(self) -> AdamWConfig:
@@ -403,7 +403,7 @@ class ACTConfig:#(PreTrainedConfig):
         self.pretrained_path = None
         self.use_amp = False
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        '''
+        """
         if not self.device or not is_torch_device_available(self.device):
             auto_device = auto_select_torch_device()
             logging.warning(f"Device '{self.device}' is not available. Switching to '{auto_device}'.")
@@ -415,7 +415,7 @@ class ACTConfig:#(PreTrainedConfig):
                 f"Automatic Mixed Precision (amp) is not available on device '{self.device}'. Deactivating AMP."
             )
             self.use_amp = False
-        '''
+        """
 
     @property
     def action_feature(self) -> PolicyFeature | None:
@@ -423,7 +423,6 @@ class ACTConfig:#(PreTrainedConfig):
             if ft.type is FeatureType.ACTION and ft_name == ACTION:
                 return ft
         return None
-
 
 
 class _ACT(nn.Module):
@@ -473,7 +472,8 @@ class _ACT(nn.Module):
             # Projection layer for joint-space configuration to hidden dimension.
             if self.config.robot_state_feature:
                 self.vae_encoder_robot_state_input_proj = nn.Linear(
-                    self.config.robot_state_feature.shape[0], config.dim_model
+                    self.config.robot_state_feature.shape[0],
+                    config.dim_model,
                 )
             # Projection layer for action (joint-space target) to hidden dimension.
             self.vae_encoder_action_input_proj = nn.Linear(
@@ -512,16 +512,20 @@ class _ACT(nn.Module):
         # [latent, (robot_state), (env_state), (image_feature_map_pixels)].
         if self.config.robot_state_feature:
             self.encoder_robot_state_input_proj = nn.Linear(
-                self.config.robot_state_feature.shape[0], config.dim_model
+                self.config.robot_state_feature.shape[0],
+                config.dim_model,
             )
         if self.config.env_state_feature:
             self.encoder_env_state_input_proj = nn.Linear(
-                self.config.env_state_feature.shape[0], config.dim_model
+                self.config.env_state_feature.shape[0],
+                config.dim_model,
             )
         self.encoder_latent_input_proj = nn.Linear(config.latent_dim, config.dim_model)
         if self.config.image_features:
             self.encoder_img_feat_input_proj = nn.Conv2d(
-                backbone_model.fc.in_features, config.dim_model, kernel_size=1
+                backbone_model.fc.in_features,
+                config.dim_model,
+                kernel_size=1,
             )
         # Transformer encoder positional embeddings.
         n_1d_tokens = 1  # for the latent
@@ -568,9 +572,7 @@ class _ACT(nn.Module):
             latent dimension.
         """
         if self.config.use_vae and self.training:
-            assert "action" in batch, (
-                "actions must be provided when using the variational objective in training mode."
-            )
+            assert "action" in batch, "actions must be provided when using the variational objective in training mode."
 
         if "images" in batch:
             batch_size = batch["images"][0].shape[0]
@@ -581,7 +583,9 @@ class _ACT(nn.Module):
         if self.config.use_vae and "action" in batch and self.training:
             # Prepare the input to the VAE encoder: [cls, *joint_space_configuration, *action_sequence].
             cls_embed = einops.repeat(
-                self.vae_encoder_cls_embed.weight, "1 d -> b 1 d", b=batch_size
+                self.vae_encoder_cls_embed.weight,
+                "1 d -> b 1 d",
+                b=batch_size,
             )  # (B, 1, D)
             if self.config.robot_state_feature:
                 robot_state_embed = self.vae_encoder_robot_state_input_proj(batch["state"])
@@ -607,7 +611,8 @@ class _ACT(nn.Module):
                 device=batch["state"].device,
             )
             key_padding_mask = torch.cat(
-                [cls_joint_is_pad, batch["extra"]["action_is_pad"]], axis=1
+                [cls_joint_is_pad, batch["extra"]["action_is_pad"]],
+                axis=1,
             )  # (bs, seq+1 or 2)
 
             # Forward pass through VAE encoder to get the latent PDF parameters.
@@ -628,7 +633,7 @@ class _ACT(nn.Module):
             mu = log_sigma_x2 = None
             # TODO(rcadene, alexander-soare): remove call to `.to` to speedup forward ; precompute and use buffer
             latent_sample = torch.zeros([batch_size, self.config.latent_dim], dtype=torch.float32).to(
-                batch["state"].device
+                batch["state"].device,
             )
 
         # Prepare transformer encoder inputs.
@@ -640,7 +645,7 @@ class _ACT(nn.Module):
         # Environment state token.
         if self.config.env_state_feature:
             encoder_in_tokens.append(
-                self.encoder_env_state_input_proj(batch["environment_state"])
+                self.encoder_env_state_input_proj(batch["environment_state"]),
             )
 
         if self.config.image_features:
@@ -699,7 +704,10 @@ class ACTEncoder(nn.Module):
         self.norm = nn.LayerNorm(config.dim_model) if config.pre_norm else nn.Identity()
 
     def forward(
-        self, x: Tensor, pos_embed: Tensor | None = None, key_padding_mask: Tensor | None = None
+        self,
+        x: Tensor,
+        pos_embed: Tensor | None = None,
+        key_padding_mask: Tensor | None = None,
     ) -> Tensor:
         for layer in self.layers:
             x = layer(x, pos_embed=pos_embed, key_padding_mask=key_padding_mask)
@@ -762,7 +770,10 @@ class ACTDecoder(nn.Module):
     ) -> Tensor:
         for layer in self.layers:
             x = layer(
-                x, encoder_out, decoder_pos_embed=decoder_pos_embed, encoder_pos_embed=encoder_pos_embed
+                x,
+                encoder_out,
+                decoder_pos_embed=decoder_pos_embed,
+                encoder_pos_embed=encoder_pos_embed,
             )
         if self.norm is not None:
             x = self.norm(x)
@@ -800,13 +811,13 @@ class ACTDecoderLayer(nn.Module):
         decoder_pos_embed: Tensor | None = None,
         encoder_pos_embed: Tensor | None = None,
     ) -> Tensor:
-        """
-        Args:
+        """Args:
             x: (Decoder Sequence, Batch, Channel) tensor of input tokens.
             encoder_out: (Encoder Sequence, B, C) output features from the last layer of the encoder we are
                 cross-attending with.
             decoder_pos_embed: (ES, 1, C) positional embedding for keys (from the encoder).
             encoder_pos_embed: (DS, 1, C) Positional_embedding for the queries (from the decoder).
+
         Returns:
             (DS, B, C) tensor of decoder output features.
         """
@@ -867,9 +878,8 @@ class ACTSinusoidalPositionEmbedding2d(nn.Module):
     """
 
     def __init__(self, dimension: int):
-        """
-        Args:
-            dimension: The desired dimension of the embeddings.
+        """Args:
+        dimension: The desired dimension of the embeddings.
         """
         super().__init__()
         self.dimension = dimension
@@ -879,9 +889,9 @@ class ACTSinusoidalPositionEmbedding2d(nn.Module):
         self._temperature = 10000
 
     def forward(self, x: Tensor) -> Tensor:
-        """
-        Args:
+        """Args:
             x: A (B, C, H, W) batch of 2D feature map to generate the embeddings for.
+
         Returns:
             A (1, C, H, W) batch of corresponding sinusoidal positional embeddings.
         """
@@ -925,15 +935,17 @@ def get_activation_fn(activation: str) -> Callable:
 
 
 if __name__ == "__main__":
-    normalization_config = NormalizationMap(state=NormalizationParameters(method=NormalizationMode.MIN_MAX, min=0, max=1),
-                                            action=NormalizationParameters(method=NormalizationMode.MIN_MAX, min=0, max=1),
-                                            images=NormalizationParameters(method=NormalizationMode.MEAN_STD, mean=0, std=1))
+    normalization_config = NormalizationMap(
+        state=NormalizationParameters(method=NormalizationMode.MIN_MAX, min=0, max=1),
+        action=NormalizationParameters(method=NormalizationMode.MIN_MAX, min=0, max=1),
+        images=NormalizationParameters(method=NormalizationMode.MEAN_STD, mean=0, std=1),
+    )
     model = ACT((10,), (10,), chunk_size=100, normalization_map=normalization_config)
 
     batch = {
-        'observation.images': torch.randn(2, 3, 224, 224),
-        'action': torch.randn(2, 100, 10,),
-        'observation.state': torch.randn(2,10,),
+        "observation.images": torch.randn(2, 3, 224, 224),
+        "action": torch.randn(2, 100, 10),
+        "observation.state": torch.randn(2, 10),
         "action_is_pad": torch.zeros(2, 100, dtype=torch.bool),
     }
     model.eval()

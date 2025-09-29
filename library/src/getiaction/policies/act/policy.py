@@ -3,12 +3,18 @@
 
 
 import torch
+
 from getiaction.policies.act.model import ACT as ACTModel
 from getiaction.policies.base.base_lightning_module import TrainerModule
 
 
 class ACT(TrainerModule):
-    def __init__(self, action_shape: tuple[int, ...] | int, robot_state_shape: tuple[int, ...] | int, normalization_map = None) -> None:
+    def __init__(
+        self,
+        action_shape: tuple[int, ...] | int,
+        robot_state_shape: tuple[int, ...] | int,
+        normalization_map=None,
+    ) -> None:
         super().__init__()
         self.model = ACTModel(action_shape, robot_state_shape, normalization_map=normalization_map)
 
