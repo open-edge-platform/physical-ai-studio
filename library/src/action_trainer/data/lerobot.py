@@ -223,7 +223,7 @@ class LeRobotDatasetWrapper(Dataset):
         return self._lerobot_dataset.delta_indices
 
     @delta_indices.setter
-    def delta_indices(self, indices: dict[str, list[int]]):
+    def delta_indices(self, indices: dict[str, list[int]]) -> None:
         """Allow setting delta_indices on the dataset."""
         self._lerobot_dataset.delta_indices = indices
 
