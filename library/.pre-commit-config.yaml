@@ -34,8 +34,10 @@ repos:
     rev: v3.6.2
     hooks:
       - id: prettier
+        types_or: [markdown, yaml, json]
 
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.45.0
     hooks:
       - id: markdownlint
+        args: ["--fix"]
