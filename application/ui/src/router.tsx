@@ -21,7 +21,8 @@ import { Index as RobotConfiguration } from './routes/robot-configuration/index'
 const root = path('/');
 const projects = root.path('/projects');
 const project = root.path('/projects/:project_id');
-const robotConfiguration = project.path('robots');
+const robots = project.path('robots');
+const robot = robots.path(':robot_id');
 const datasets = project.path('/datasets');
 const models = project.path('/models');
 const cameras = project.path('cameras');
@@ -46,8 +47,12 @@ export const paths = {
             new: cameras.path('/new'),
             show: cameras.path(':camera_id'),
         },
-        robotConfiguration,
-        models,
+        robotConfiguration: {
+            index: robots,
+        },
+        models: {
+            index: models,
+        },
     },
 };
 
@@ -101,11 +106,11 @@ export const router = createBrowserRouter([
                         ],
                     },
                     {
-                        path: paths.project.models.pattern,
+                        path: paths.project.models.index.pattern,
                         element: <Models />,
                     },
                     {
-                        path: paths.project.robotConfiguration.pattern,
+                        path: paths.project.robotConfiguration.index.pattern,
                         element: <RobotConfiguration />,
                     },
                     {

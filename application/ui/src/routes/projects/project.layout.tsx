@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 
-import { Flex, Grid, Item, Loading, TabList, Tabs, View } from '@geti/ui';
+import { Flex, Grid, Item, Link, Loading, TabList, Tabs, View } from '@geti/ui';
 import { Outlet, useLocation } from 'react-router';
 
 import { ProjectsListPanel } from '../../features/projects/menu/projects-list-panel.component';
@@ -14,9 +14,11 @@ const Header = ({ project_id }: { project_id: string }) => {
     return (
         <View backgroundColor={'gray-300'} gridArea={'header'}>
             <Flex height='100%' alignItems={'center'} marginX='1rem' gap='size-200'>
-                <View marginEnd='size-200' maxWidth={'5ch'}>
-                    <span>Geti Action</span>
-                </View>
+                <Link href='/' isQuiet variant='overBackground'>
+                    <View marginEnd='size-200' maxWidth={'5ch'}>
+                        Geti Action
+                    </View>
+                </Link>
 
                 <TabList
                     height={'100%'}
@@ -28,7 +30,7 @@ const Header = ({ project_id }: { project_id: string }) => {
                     <Item
                         textValue='Robot configuration'
                         key={'robots'}
-                        href={paths.project.robotConfiguration({ project_id })}
+                        href={paths.project.robotConfiguration.index({ project_id })}
                     >
                         <Flex alignItems='center' gap='size-100'>
                             <RobotIcon />
@@ -41,7 +43,7 @@ const Header = ({ project_id }: { project_id: string }) => {
                             Datasets
                         </Flex>
                     </Item>
-                    <Item textValue='Models' key={'models'} href={paths.project.models({ project_id })}>
+                    <Item textValue='Models' key={'models'} href={paths.project.models.index({ project_id })}>
                         <Flex alignItems='center' gap='size-100'>
                             <ModelsIcon />
                             Models
