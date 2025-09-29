@@ -16,7 +16,7 @@ import { OpenApi } from './routes/openapi';
 import { Index as Projects } from './routes/projects/index';
 import { NewProjectPage } from './routes/projects/new';
 import { ProjectLayout } from './routes/projects/project.layout';
-import { Index as RobotConfiguration } from './routes/robot-configuration/index';
+import { Layout as RobotConfigurationLayout } from './routes/robots/layout';
 
 const root = path('/');
 const projects = root.path('/projects');
@@ -50,6 +50,8 @@ export const paths = {
         },
         robotConfiguration: {
             index: robots,
+            new: robots.path('new'),
+            show: robot,
         },
         models: {
             index: models,
@@ -127,7 +129,21 @@ export const router = createBrowserRouter([
                     },
                     {
                         path: paths.project.robotConfiguration.index.pattern,
-                        element: <RobotConfiguration />,
+                        element: <RobotConfigurationLayout />,
+                        children: [
+                            {
+                                index: true,
+                                element: <ErrorMessage message={'Coming soon...'} />,
+                            },
+                            {
+                                path: paths.project.robotConfiguration.new.pattern,
+                                element: <ErrorMessage message={'Coming soon...'} />,
+                            },
+                            {
+                                path: paths.project.robotConfiguration.show.pattern,
+                                element: <ErrorMessage message={'Coming soon...'} />,
+                            },
+                        ],
                     },
                     {
                         path: paths.project.cameras.index.pattern,
