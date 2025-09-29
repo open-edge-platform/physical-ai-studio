@@ -49,6 +49,7 @@ tests = [
     "httpx",
     "pytest",
     "pytest-mock",
+    "mypy",
 ]
 
 [project.urls]
