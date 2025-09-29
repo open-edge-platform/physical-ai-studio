@@ -7,10 +7,10 @@ from schemas import Episode, LeRobotDatasetInfo
 from services import DatasetService
 from utils.dataset import get_dataset_episodes, get_local_repositories
 
-router = APIRouter()
+router = APIRouter(prefix="/api/dataset")
 
 
-@router.get("/lerobot_datasets")
+@router.get("/lerobot")
 async def list_le_robot_datasets() -> list[LeRobotDatasetInfo]:
     """Get all local lerobot datasets from huggingface cache."""
     return [

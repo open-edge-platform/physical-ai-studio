@@ -19,10 +19,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.include_router(project_router, prefix="/api/projects")
-app.include_router(hardware_router, prefix="/api/hardware")
-app.include_router(camera_router, prefix="/api/cameras")
-app.include_router(dataset_router, prefix="/api/dataset")
+app.include_router(project_router)
+app.include_router(hardware_router)
+app.include_router(camera_router)
+app.include_router(dataset_router)
 
 
 if __name__ == "__main__":

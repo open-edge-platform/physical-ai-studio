@@ -9,7 +9,7 @@ import { paths } from '../../router';
 
 export const NewProjectPage = () => {
     const navigate = useNavigate();
-    const saveMutation = $api.useMutation('put', '/api/projects');
+    const saveMutation = $api.useMutation('post', '/api/projects');
     const [project, setProject] = useState<SchemaProjectInput>({
         name: '',
         datasets: [],

@@ -3,6 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 from fastapi.exceptions import HTTPException
+from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
 
 from api.dependencies import get_project_id, get_project_service
 from schemas import LeRobotDatasetInfo, Project, TeleoperationConfig
@@ -10,9 +11,7 @@ from services import ProjectService
 from services.base import ResourceInUseError, ResourceNotFoundError
 from utils.dataset import build_dataset_from_lerobot_dataset, build_project_config_from_dataset
 
-from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
-
-router = APIRouter()
+router = APIRouter(prefix="/api/projects")
 
 
 @router.get("")
@@ -23,7 +22,7 @@ async def list_projects(
     return project_service.list_projects()
 
 
-@router.put("")
+@router.post("")
 async def create_project(
     project: Project,
     project_service: Annotated[ProjectService, Depends(get_project_service)],
@@ -32,7 +31,7 @@ async def create_project(
     return project_service.create_project(project)
 
 
-@router.put("/{project_id}/import_dataset")
+@router.post("/{project_id}/import_dataset")
 async def import_dataset(
     project_id: Annotated[UUID, Depends(get_project_id)],
     lerobot_dataset: LeRobotDatasetInfo,
@@ -83,4 +82,5 @@ async def get_tasks_for_dataset(
 ) -> dict[str, list[str]]:
     """Get all dataset tasks of a project."""
     project = project_service.get_project_by_id(project_id)
-    return {dataset.name: list(LeRobotDatasetMetadata(dataset.name, dataset.path).tasks.values()) for dataset in project.datasets}
+    return {dataset.name: list(LeRobotDatasetMetadata(dataset.name, dataset.path).tasks.values())
+            for dataset in project.datasets}

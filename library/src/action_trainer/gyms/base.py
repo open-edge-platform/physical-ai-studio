@@ -1,9 +1,7 @@
-# Copyright (C) 2025-2026 Intel Corporation
+# Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-Base class for gym environments
-"""
+"""Base class for gym environments."""
 
 from __future__ import annotations
 
@@ -16,8 +14,7 @@ if TYPE_CHECKING:
 
 
 class BaseGym:
-    """Base class for Gym environments with configurable observation type,
-    number of rollouts, and maximum episode steps.
+    """Base class for Gym environments.
 
     This class wraps a Gym environment and provides standard methods
     like `reset`, `step`, `render`, and `close`. It also exposes
@@ -27,7 +24,7 @@ class BaseGym:
     def __init__(
         self,
         gym_id: str,
-        **extra_gym_kwargs,
+        **extra_gym_kwargs,  # noqa: ANN003
     ) -> None:
         """Initializes the base Gym environment wrapper.
 
@@ -35,7 +32,6 @@ class BaseGym:
             gym_id (str): The identifier for the Gymnasium environment.
             extra_gym_kwargs (Any): Any extra arguments required for the environment
         """
-
         self._gym_id = gym_id
 
         # create wrapped environment
@@ -83,20 +79,36 @@ class BaseGym:
         """
         return self.env.step(action)
 
-    def render(self, *args: Any, **kwargs: Any) -> Any:
-        """Renders the environment for visualization."""
+    def render(self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+        """Renders the environment for visualization.
+
+        Args:
+            *args: Additional positional arguments.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            Any: The rendered environment.
+        """
         return self.env.render(*args, **kwargs)
 
     def close(self) -> None:
         """Closes the environment and releases resources."""
         return self.env.close()
 
-    def sample_action(self) -> Any:
-        """Samples a random action in the environment"""
+    def sample_action(self) -> Any:  # noqa: ANN401
+        """Samples a random action in the environment.
+
+        Returns:
+            Any: A random action from the environment's action space.
+        """
         return self.env.action_space.sample()
 
     def get_max_episode_steps(self) -> int | None:
-        """Returns the maximum number of steps for the underlying environment."""
+        """Returns the maximum number of steps for the underlying environment.
+
+        Returns:
+            int | None: The maximum number of steps for the underlying environment.
+        """
         try:
             return self.env.get_wrapper_attr("max_episode_steps")
         except AttributeError:
