@@ -12,7 +12,7 @@ export const CameraSetup = ({ camera, availableCameras, updateCamera }: CameraSe
 
     const onSelection = (key: Key | null) => {
         if (key) {
-            updateCamera(camera.name, String(key), camera.id);
+            updateCamera(camera.name, String(key), camera.id ?? '');
         }
     };
 

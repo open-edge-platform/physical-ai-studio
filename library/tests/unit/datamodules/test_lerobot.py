@@ -5,7 +5,7 @@
 
 import pytest
 import torch
-from action_trainer.data import Dataset, DataModule, Observation
+from getiaction.data import Dataset, DataModule, Observation
 
 
 class FakeActionDataset(Dataset):

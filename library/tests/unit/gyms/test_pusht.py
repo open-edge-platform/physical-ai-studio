@@ -3,7 +3,7 @@
 
 """Unit Tests - MVTecLoco Datamodule."""
 
-from action_trainer.gyms import PushTGym
+from getiaction.gyms import PushTGym
 from tests.unit.gyms.base import BaseTestGym
 
 

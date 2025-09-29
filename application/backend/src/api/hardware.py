@@ -9,7 +9,7 @@ from utils.calibration import get_calibrations
 from utils.camera import find_all_opencv_cameras, gen_frames
 from utils.robot import find_robots, identify_robot_visually
 
-router = APIRouter()
+router = APIRouter(prefix="/api/hardware")
 
 
 @router.get("/cameras")
@@ -30,7 +30,7 @@ async def get_lerobot_calibrations() -> list[CalibrationConfig]:
     return get_calibrations()
 
 
-@router.put("/identify")
+@router.post("/identify")
 async def identify_robot(robot: RobotPortInfo, joint: str | None = None) -> None:
     """Visually identify the robot by moving given joint on robot"""
     await identify_robot_visually(robot, joint)

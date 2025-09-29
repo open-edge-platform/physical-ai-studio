@@ -1,7 +1,7 @@
 import { useParams } from 'react-router';
 
 import { $api } from '../../api/client';
-import { SchemaProjectConfig } from '../../api/openapi-spec';
+import { SchemaProjectInput } from '../../api/openapi-spec';
 
 export function useProjectId(): { project_id: string } {
     const { project_id } = useParams<{ project_id: string }>();
@@ -13,7 +13,7 @@ export function useProjectId(): { project_id: string } {
     return { project_id };
 }
 
-export function useProject(): SchemaProjectConfig {
+export function useProject(): SchemaProjectInput {
     const { project_id } = useProjectId();
 
     const { data: project } = $api.useSuspenseQuery('get', '/api/projects/{id}', {

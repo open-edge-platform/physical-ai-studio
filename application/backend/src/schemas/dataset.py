@@ -1,5 +1,7 @@
 from pydantic import BaseModel
 
+from .base import BaseIDModel
+
 
 class EpisodeInfo(BaseModel):
     episode_index: int
@@ -16,10 +18,26 @@ class Episode(BaseModel):
     modification_timestamp: int
 
 
-class Dataset(BaseModel):
+class LeRobotDatasetInfo(BaseModel):
+    root: str
     repo_id: str
-    episodes: list[Episode]
+    total_episodes: int
     total_frames: int
     features: list[str]
-    tasks: list[str]
     fps: int
+    robot_type: str
+
+
+class Dataset(BaseIDModel):
+    name: str = "Default Name"
+    path: str
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "id": "7b073838-99d3-42ff-9018-4e901eb047fc",
+                "name": "Collect blocks",
+                "path": "/some/path/to/dataset",
+            }
+        }
+    }
