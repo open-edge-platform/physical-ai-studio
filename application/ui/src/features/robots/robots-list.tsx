@@ -1,7 +1,7 @@
 import { Grid, StatusLight } from '@adobe/react-spectrum';
-import { ActionButton, Button, Flex, Heading, Item, Menu, MenuTrigger, View } from '@geti/ui';
+import { ActionButton, Flex, Heading, Item, Menu, MenuTrigger, View } from '@geti/ui';
 import { MoreMenu } from '@geti/ui/icons';
-import { NavLink, useParams } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 
 import { $api } from '../../api/client';
 import { paths } from '../../router';
@@ -23,135 +23,151 @@ const MenuActions = () => {
     );
 };
 
-const RobotListItem = ({ id, name, status }: { id: string; name: string; status: 'connected' | 'disconnected' }) => {
-    const { project_id } = useProjectId();
+const RobotListItem = ({
+    id,
+    name,
+    status,
+    isActive,
+    type,
+    port,
+}: {
+    id: string;
+    name: string;
+    type: string;
+    status: 'connected' | 'disconnected';
+    port: string | undefined;
+    isActive: boolean;
+}) => {
     return (
-        <NavLink to={paths.project.robotConfiguration.show({ project_id: project_id, robot_id: id })}>
-            {({ isActive, isPending, isTransitioning }) => {
-                return (
-                    <View
-                        backgroundColor={'gray-50'}
-                        padding='size-200'
-                        UNSAFE_style={
-                            isActive
-                                ? {
-                                      border: '1px solid var(--energy-blue)',
-                                  }
-                                : {
-                                      border: '1px solid var(--spectrum-global-color-gray-200)',
-                                  }
-                        }
-                    >
-                        <Flex justifyContent={'space-between'} direction='column' gap='size-100'>
-                            <Grid
-                                areas={['icon name menu', 'icon type menu']}
-                                columns={['auto', '1fr']}
-                                columnGap={'size-100'}
-                            >
-                                <View gridArea={'icon'} padding='size-100'>
-                                    <img src={RobotArm} style={{ maxWidth: '32px' }} />
-                                </View>
-                                <Heading level={2} gridArea='name' UNSAFE_style={{ color: 'var(--energy-blue)' }}>
-                                    {name}
-                                </Heading>
-                                <View
-                                    gridArea='type'
-                                    UNSAFE_style={{
-                                        fontSize: '14px',
-                                    }}
-                                >
-                                    {name} Type_SO101_Leader
-                                </View>
-                                <View gridArea='menu'>
-                                    <MenuActions />
-                                </View>
-                            </Grid>
-                            <Flex direction={'row'} justifyContent={'space-between'}>
-                                <View>
-                                    <ul
-                                        style={{
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            gap: 'var(--spectrum-global-dimension-size-10)',
-                                            listStyleType: 'disc',
-                                            fontSize: '10px',
-                                        }}
-                                    >
-                                        <li style={{ marginLeft: 'var(--spectrum-global-dimension-size-200)' }}>
-                                            Port:{' '}
-                                            <pre style={{ margin: 0, display: 'inline' }}>tty.usb.modem.5787345555</pre>
-                                        </li>
-                                        <li style={{ marginLeft: 'var(--spectrum-global-dimension-size-200)' }}>
-                                            ID:{' '}
-                                            <pre style={{ margin: 0, display: 'inline' }}>Robot_id_set_by_the_user</pre>
-                                        </li>
-                                        <li style={{ marginLeft: 'var(--spectrum-global-dimension-size-200)' }}>
-                                            Calibrated: 09/02/2025 7:34 PM
-                                        </li>
-                                    </ul>
-                                </View>
-                                <View alignSelf={'end'}>
-                                    {status === 'connected' ? (
-                                        <StatusLight
-                                            variant='positive'
-                                            UNSAFE_style={{
-                                                background: 'var(--spectrum-global-color-gray-100)',
-                                                borderRadius: '4px',
-                                                paddingRight: '1em',
-                                                scale: 0.7,
-                                                transformOrigin: 'bottom right',
-                                            }}
-                                        >
-                                            Connected
-                                        </StatusLight>
-                                    ) : (
-                                        <StatusLight
-                                            variant='negative'
-                                            UNSAFE_style={{
-                                                background: 'var(--spectrum-global-color-gray-100)',
-                                                borderRadius: '4px',
-                                                paddingRight: '1em',
-                                                scale: 0.7,
-                                                transformOrigin: 'bottom right',
-                                            }}
-                                        >
-                                            Disconnected
-                                        </StatusLight>
-                                    )}
-                                </View>
-                            </Flex>
-                        </Flex>
+        <View
+            backgroundColor={'gray-50'}
+            padding='size-200'
+            UNSAFE_style={
+                isActive
+                    ? {
+                          border: '1px solid var(--energy-blue)',
+                      }
+                    : {
+                          border: '1px solid var(--spectrum-global-color-gray-200)',
+                      }
+            }
+        >
+            <Flex justifyContent={'space-between'} direction='column' gap='size-100'>
+                <Grid areas={['icon name menu', 'icon type menu']} columns={['auto', '1fr']} columnGap={'size-100'}>
+                    <View gridArea={'icon'} padding='size-100'>
+                        <img src={RobotArm} style={{ maxWidth: '32px' }} alt='Robot arm icon' />
                     </View>
-                );
-            }}
-        </NavLink>
+                    <Heading level={2} gridArea='name' UNSAFE_style={{ color: 'var(--energy-blue)' }}>
+                        {name}
+                    </Heading>
+                    <View
+                        gridArea='type'
+                        UNSAFE_style={{
+                            fontSize: '14px',
+                        }}
+                    >
+                        {type}
+                    </View>
+                    <View gridArea='menu'>
+                        <MenuActions />
+                    </View>
+                </Grid>
+                <Flex direction={'row'} justifyContent={'space-between'}>
+                    <View>
+                        <ul
+                            style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 'var(--spectrum-global-dimension-size-10)',
+                                listStyleType: 'disc',
+                                fontSize: '10px',
+                            }}
+                        >
+                            <li style={{ marginLeft: 'var(--spectrum-global-dimension-size-200)' }}>
+                                Port:{' '}
+                                <pre style={{ margin: 0, display: 'inline' }}>
+                                    {port === undefined ? 'Unknown' : port}
+                                </pre>
+                            </li>
+                            <li style={{ marginLeft: 'var(--spectrum-global-dimension-size-200)' }}>
+                                ID: <pre style={{ margin: 0, display: 'inline' }}>{id}</pre>
+                            </li>
+                            <li style={{ marginLeft: 'var(--spectrum-global-dimension-size-200)' }}>
+                                Calibrated: 09/02/2025 7:34 PM
+                            </li>
+                        </ul>
+                    </View>
+                    <View alignSelf={'end'}>
+                        {status === 'connected' ? (
+                            <StatusLight
+                                variant='positive'
+                                UNSAFE_style={{
+                                    background: 'var(--spectrum-global-color-gray-100)',
+                                    borderRadius: '4px',
+                                    paddingRight: '1em',
+                                    scale: 0.7,
+                                    transformOrigin: 'bottom right',
+                                }}
+                            >
+                                Connected
+                            </StatusLight>
+                        ) : (
+                            <StatusLight
+                                variant='negative'
+                                UNSAFE_style={{
+                                    background: 'var(--spectrum-global-color-gray-100)',
+                                    borderRadius: '4px',
+                                    paddingRight: '1em',
+                                    scale: 0.7,
+                                    transformOrigin: 'bottom right',
+                                }}
+                            >
+                                Disconnected
+                            </StatusLight>
+                        )}
+                    </View>
+                </Flex>
+            </Flex>
+        </View>
     );
 };
 
 export const RobotsList = () => {
     const { project_id } = useProjectId();
     const { data: robots } = $api.useSuspenseQuery('get', '/api/hardware/robots');
-    const { data: cameras } = $api.useSuspenseQuery('get', '/api/hardware/cameras');
-    const { data: calibrations } = $api.useSuspenseQuery('get', '/api/hardware/calibrations');
-
-    console.log({ robots, cameras, calibrations });
+    const { data: project } = $api.useSuspenseQuery('get', '/api/projects/{id}', {
+        params: { path: { id: project_id } },
+    });
 
     return (
         <Flex direction={'column'} gap='size-200'>
-            <Flex justifyContent={'space-between'}>
-                <Heading level={4} marginY='size-100'>
-                    Robot list
-                </Heading>
-
-                <Button href={paths.project.robotConfiguration.new({ project_id: project_id })} variant='accent'>
-                    Add
-                </Button>
-            </Flex>
-
             <Flex direction='column' gap='size-100'>
-                <RobotListItem id='0' name='Follower robot' status='connected' />
-                <RobotListItem id='1' name='Follower robot' status='disconnected' />
-                <RobotListItem id='2' name='Leader robot' status='disconnected' />
+                {project.robots.map((robot) => {
+                    const hardwareRobot = robots.find(({ serial_id }) => serial_id === robot.serial_id);
+
+                    const to = paths.project.robotConfiguration.show({
+                        project_id,
+                        robot_id: robot.serial_id,
+                    });
+
+                    return (
+                        <NavLink key={robot.serial_id} to={to}>
+                            {({ isActive }) => {
+                                return (
+                                    <RobotListItem
+                                        id={robot.serial_id}
+                                        name={hardwareRobot?.device_name ?? ''}
+                                        type={robot.type}
+                                        port={hardwareRobot?.port}
+                                        // Fake connected mode for now
+                                        status={hardwareRobot?.port === '/dev/ttyACM1' ? 'connected' : 'disconnected'}
+                                        isActive={isActive}
+                                    />
+                                );
+                            }}
+                        </NavLink>
+                    );
+                })}
             </Flex>
         </Flex>
     );
