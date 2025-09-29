@@ -6,3 +6,4 @@
 from .train import Trainer
 
 __all__ = ["Trainer"]
+__version__ = "0.1.0"

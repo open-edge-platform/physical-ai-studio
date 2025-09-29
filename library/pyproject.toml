@@ -8,12 +8,13 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "action_trainer"
-version = "0.1"
+name = "getiaction"
+dynamic = ["version"]
 requires-python = ">=3.10"
 authors = [
   { name="Alfie Roddan", email="alfiex.roddan@intel.com" },
   { name="Vladislav Sovrsaov", email="vladislav.sovrasov@intel.com" },
+  { name="Samet Akcay", email="samet.akcay@intel.com" },
 ]
 description = "A package for training vision-action models"
 readme = "README.md"
@@ -40,12 +41,15 @@ tests = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/sovrasov/action_trainer"
-Documentation = "https://github.com/sovrasov/action_trainer/blob/main/README.md"
-Repository = "https://github.com/sovrasov/action_trainer.git"
+Homepage = "https://github.com/sovrasov/geti-action"
+Documentation = "https://github.com/sovrasov/geti-action/blob/main/README.md"
+Repository = "https://github.com/sovrasov/geti-action.git"
+
+[tool.hatch.version]
+path = "src/getiaction/__init__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/action_trainer"]
+packages = ["src/getiaction"]
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 # MYPY CONFIGURATION.                                                         #

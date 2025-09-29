@@ -9,11 +9,11 @@ from typing import TYPE_CHECKING
 
 from lerobot.datasets.utils import check_delta_timestamps, get_delta_indices
 
-from action_trainer.data import LeRobotDatasetWrapper
+from getiaction.data import LeRobotDatasetWrapper
 
 if TYPE_CHECKING:
-    from action_trainer.data import DataModule
-    from action_trainer.policies.base.base_lightning_module import TrainerModule
+    from getiaction.data import DataModule
+    from getiaction.policies.base.base_lightning_module import TrainerModule
 
 
 def reformat_dataset_to_match_policy(policy: TrainerModule, datamodule: DataModule) -> None:

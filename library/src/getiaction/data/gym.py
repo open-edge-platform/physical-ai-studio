@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from torch.utils.data import Dataset
 
-from action_trainer.gyms import BaseGym
+from getiaction.gyms import BaseGym
 
 
 class GymDataset(Dataset[BaseGym]):

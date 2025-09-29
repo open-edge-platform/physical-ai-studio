@@ -3,8 +3,8 @@
 
 """ACT policy implementation via Lightning module."""
 
-from action_trainer.policies.act.torch_model import ACTModel
-from action_trainer.policies.base.base_lightning_module import TrainerModule
+from getiaction.policies.act.torch_model import ACTModel
+from getiaction.policies.base.base_lightning_module import TrainerModule
 
 
 class ACTPolicy(TrainerModule):

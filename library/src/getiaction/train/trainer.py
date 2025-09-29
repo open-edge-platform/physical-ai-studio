@@ -7,9 +7,9 @@ from abc import abstractmethod
 
 import lightning as L  # noqa: N812
 
-from action_trainer.data import DataModule
-from action_trainer.policies.base import TrainerModule
-from action_trainer.train.callbacks import PolicyDatasetInteraction
+from getiaction.data import DataModule
+from getiaction.policies.base import TrainerModule
+from getiaction.train.callbacks import PolicyDatasetInteraction
 
 
 class Trainer:

@@ -29,7 +29,7 @@ classDiagram
 Example:
 
 ```python
-from action_trainer.data import Observation
+from getiaction.data import Observation
 import torch
 obs_1 = Observation(
     action=torch.randn((10,)),

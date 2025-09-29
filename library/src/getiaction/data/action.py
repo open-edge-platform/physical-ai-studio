@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from torch.utils.data import Dataset as TorchDataset
 
 if TYPE_CHECKING:
-    from action_trainer.data import Observation
+    from getiaction.data import Observation
 
 
 class Dataset(TorchDataset, ABC):
