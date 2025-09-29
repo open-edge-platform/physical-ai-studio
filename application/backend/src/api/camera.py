@@ -1,9 +1,13 @@
 from typing import Annotated
+import asyncio
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
 from api.dependencies import get_webrtc_manager
 from webrtc.manager import Answer, Offer, WebRTCManager
+from utils.camera import gen_camera_frames
+
+from schemas import CameraConfig
 
 router = APIRouter(prefix="/api/cameras")
 
@@ -14,3 +18,19 @@ async def offer_camera(
 ) -> Answer:
     """Create a WebRTC offer"""
     return await webrtc_manager.handle_offer(offer.sdp, offer.type, offer.webrtc_id, camera)
+
+
+@router.websocket("/offer/camera/ws")
+async def camera_feed_websocket(websocket: WebSocket) -> None:
+    """Camera feed. Awaits json package with CameraConfig."""
+    await websocket.accept()
+    stop_event = asyncio.Event()
+    print("Connected...")
+    try:
+        data = await websocket.receive_json("text")
+        print(data)
+        config = CameraConfig(**data)
+        await gen_camera_frames(websocket, stop_event, config)
+    except WebSocketDisconnect:
+        stop_event.set()
+        print("Disconnected")

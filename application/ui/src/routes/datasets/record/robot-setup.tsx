@@ -33,7 +33,7 @@ export const RobotSetup = ({ config, portInfos, calibrations, setConfig }: Robot
     const portInfo = portInfos.find((m) => m.serial_id === config.serial_id);
     const connected = portInfo !== undefined;
 
-    const identifyMutation = $api.useMutation('put', '/api/hardware/identify');
+    const identifyMutation = $api.useMutation('post', '/api/hardware/identify');
 
     const serialIdOptions = portInfos.filter((portInfo) => matchRobotType(portInfo, config)).map((r) => ({ id: r.serial_id, name: r.serial_id }));
     const calibrationOptions = calibrations.filter((c) => c.robot_type === config.type).map((r) => ({ id: r.id, name: r.id }));

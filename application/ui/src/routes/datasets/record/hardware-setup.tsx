@@ -50,14 +50,16 @@ export const HardwareSetup = ({ config, setConfig }: HardwareSetupProps) => {
 
     const navigate = useNavigate();
 
-    const updateCamera = (name: string, id: string, oldId: string) => {
+    console.log(config);
+
+    const updateCamera = (name: string, port_or_device_id: string, oldId: string) => {
         setConfig({
             ...config,
             cameras: config.cameras.map((c) => {
                 if (c.name === name) {
-                    return { ...c, id };
-                } else if (c.id === id) {
-                    return { ...c, id: oldId };
+                    return { ...c, port_or_device_id };
+                } else if (c.port_or_device_id === port_or_device_id) {
+                    return { ...c, port_or_device_id: oldId };
                 } else {
                     return c;
                 }
@@ -154,7 +156,7 @@ export const HardwareSetup = ({ config, setConfig }: HardwareSetupProps) => {
                                     <Flex gap='40px'>
                                         {config.cameras.map((camera) => (
                                             <CameraSetup
-                                                key={camera.name}
+                                                key={`${camera.name}${camera.port_or_device_id}`}
                                                 camera={camera}
                                                 availableCameras={availableCameras ?? []}
                                                 updateCamera={updateCamera}

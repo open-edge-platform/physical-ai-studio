@@ -1,10 +1,21 @@
 import os
+import base64
 import re
+import asyncio
 from collections.abc import Generator
 from typing import Any, Literal
 
+import time
 import cv2
 from lerobot.find_cameras import find_all_opencv_cameras as le_robot_find_all_opencv_cameras
+from fastapi import WebSocket
+from lerobot.cameras import Camera
+from lerobot.cameras import CameraConfig as LeRobotCameraConfig
+from lerobot.cameras.opencv import OpenCVCamera, OpenCVCameraConfig
+from lerobot.cameras.realsense import RealSenseCamera, RealSenseCameraConfig
+from lerobot.errors import DeviceNotConnectedError
+
+from schemas import CameraConfig
 
 VIDEO4LINUX_PATH = "/sys/class/video4linux"
 
@@ -73,3 +84,57 @@ def gen_frames(id: str, type: Literal["RealSense", "OpenCV"]) -> Generator[bytes
         jpg_bytes = buffer.tobytes()
 
         yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpg_bytes + b"\r\n")
+
+
+async def gen_camera_frames(websocket: WebSocket, stop_event: asyncio.Event, config: CameraConfig) -> None:
+    """
+    Continuously capture frames, encode them as JPEG,
+    and pass that as string to the websocket
+    """
+    camera_config = build_camera_config(config)
+    camera = initialize_camera(camera_config)
+    attempts = 0
+    while not camera.is_connected and attempts < 3:
+        try:
+            camera.connect()
+            break
+        except DeviceNotConnectedError:
+            attempts += 1
+            await asyncio.sleep(1)
+
+    while not stop_event.is_set():
+        start_loop_t = time.perf_counter()
+        _, buffer = cv2.imencode(".jpg", camera.read())
+        data = base64.b64encode(buffer).decode()
+        await asyncio.create_task(websocket.send_text(data))
+        dt_s = time.perf_counter() - start_loop_t
+        await asyncio.sleep(1 / camera.fps - dt_s)
+
+
+def build_camera_config(camera_config: CameraConfig) -> LeRobotCameraConfig:
+    """Build either realsense or opencv camera config from CameraConfig BaseModel"""
+    if camera_config.type == "RealSense":
+        return RealSenseCameraConfig(
+            serial_number_or_name=camera_config.port_or_device_id,
+            fps=camera_config.fps,
+            width=camera_config.width,
+            height=camera_config.height,
+            use_depth=camera_config.use_depth,
+        )
+    if camera_config.type == "OpenCV":
+        return OpenCVCameraConfig(
+            index_or_path=camera_config.port_or_device_id,
+            width=camera_config.width,
+            height=camera_config.height,
+            fps=camera_config.fps,
+        )
+    raise ValueError(f"Unknown CameraConfig type: {camera_config.type}")
+
+
+def initialize_camera(cfg: LeRobotCameraConfig) -> Camera:
+    """Initialize a LeRobot Camera object from LeRobot CameraConfig"""
+    if cfg.type == "opencv":
+        return OpenCVCamera(cfg)
+    if cfg.type == "intelrealsense":
+        return RealSenseCamera(cfg)
+    raise ValueError(f"The motor type '{cfg.type}' is not valid.")
