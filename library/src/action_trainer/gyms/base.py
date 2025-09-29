@@ -79,7 +79,7 @@ class BaseGym:
         """
         return self.env.step(action)
 
-    def render(self, *args: Any, **kwargs: Any) -> Any:
+    def render(self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
         """Renders the environment for visualization.
 
         Args:
@@ -95,7 +95,7 @@ class BaseGym:
         """Closes the environment and releases resources."""
         return self.env.close()
 
-    def sample_action(self) -> Any:
+    def sample_action(self) -> Any:  # noqa: ANN401
         """Samples a random action in the environment.
 
         Returns:
