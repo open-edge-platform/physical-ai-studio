@@ -23,6 +23,23 @@ const MenuActions = () => {
     );
 };
 
+const ConnectionStatus = ({ status }: { status: 'connected' | 'disconnected' }) => {
+    return (
+        <StatusLight
+            variant={status === 'connected' ? 'positive' : 'negative'}
+            UNSAFE_style={{
+                background: 'var(--spectrum-global-color-gray-100)',
+                borderRadius: '4px',
+                paddingRight: '1em',
+                scale: 0.7,
+                transformOrigin: 'top right',
+            }}
+        >
+            {status === 'connected' ? 'Connected' : 'Disconnected'}
+        </StatusLight>
+    );
+};
+
 const RobotListItem = ({
     id,
     name,
@@ -42,34 +59,23 @@ const RobotListItem = ({
         <View
             backgroundColor={'gray-50'}
             padding='size-200'
-            UNSAFE_style={
-                isActive
-                    ? {
-                          border: '1px solid var(--energy-blue)',
-                      }
-                    : {
-                          border: '1px solid var(--spectrum-global-color-gray-200)',
-                      }
-            }
+            UNSAFE_style={{
+                border: `1px solid ${isActive ? 'var(--energy-blue)' : 'var(--spectrum-global-color-gray-200)'}`,
+            }}
         >
             <Flex justifyContent={'space-between'} direction='column' gap='size-100'>
-                <Grid areas={['icon name menu', 'icon type menu']} columns={['auto', '1fr']} columnGap={'size-100'}>
+                <Grid areas={['icon name status', 'icon type status']} columns={['auto', '1fr']} columnGap={'size-100'}>
                     <View gridArea={'icon'} padding='size-100'>
                         <img src={RobotArm} style={{ maxWidth: '32px' }} alt='Robot arm icon' />
                     </View>
-                    <Heading level={2} gridArea='name' UNSAFE_style={{ color: 'var(--energy-blue)' }}>
+                    <Heading level={2} gridArea='name' UNSAFE_style={isActive ? { color: 'var(--energy-blue)' } : {}}>
                         {name}
                     </Heading>
-                    <View
-                        gridArea='type'
-                        UNSAFE_style={{
-                            fontSize: '14px',
-                        }}
-                    >
+                    <View gridArea='type' UNSAFE_style={{ fontSize: '14px' }}>
                         {type}
                     </View>
-                    <View gridArea='menu'>
-                        <MenuActions />
+                    <View gridArea='status'>
+                        <ConnectionStatus status={status} />
                     </View>
                 </Grid>
                 <Flex direction={'row'} justifyContent={'space-between'}>
@@ -98,33 +104,7 @@ const RobotListItem = ({
                         </ul>
                     </View>
                     <View alignSelf={'end'}>
-                        {status === 'connected' ? (
-                            <StatusLight
-                                variant='positive'
-                                UNSAFE_style={{
-                                    background: 'var(--spectrum-global-color-gray-100)',
-                                    borderRadius: '4px',
-                                    paddingRight: '1em',
-                                    scale: 0.7,
-                                    transformOrigin: 'bottom right',
-                                }}
-                            >
-                                Connected
-                            </StatusLight>
-                        ) : (
-                            <StatusLight
-                                variant='negative'
-                                UNSAFE_style={{
-                                    background: 'var(--spectrum-global-color-gray-100)',
-                                    borderRadius: '4px',
-                                    paddingRight: '1em',
-                                    scale: 0.7,
-                                    transformOrigin: 'bottom right',
-                                }}
-                            >
-                                Disconnected
-                            </StatusLight>
-                        )}
+                        <MenuActions />
                     </View>
                 </Flex>
             </Flex>
@@ -140,35 +120,33 @@ export const RobotsList = () => {
     });
 
     return (
-        <Flex direction={'column'} gap='size-200'>
-            <Flex direction='column' gap='size-100'>
-                {project.robots.map((robot) => {
-                    const hardwareRobot = robots.find(({ serial_id }) => serial_id === robot.serial_id);
+        <Flex direction='column' gap='size-100'>
+            {project.robots.map((robot) => {
+                const hardwareRobot = robots.find(({ serial_id }) => serial_id === robot.serial_id);
 
-                    const to = paths.project.robotConfiguration.show({
-                        project_id,
-                        robot_id: robot.serial_id,
-                    });
+                const to = paths.project.robotConfiguration.show({
+                    project_id,
+                    robot_id: robot.serial_id,
+                });
 
-                    return (
-                        <NavLink key={robot.serial_id} to={to}>
-                            {({ isActive }) => {
-                                return (
-                                    <RobotListItem
-                                        id={robot.serial_id}
-                                        name={hardwareRobot?.device_name ?? ''}
-                                        type={robot.type}
-                                        port={hardwareRobot?.port}
-                                        // Fake connected mode for now
-                                        status={hardwareRobot?.port === '/dev/ttyACM1' ? 'connected' : 'disconnected'}
-                                        isActive={isActive}
-                                    />
-                                );
-                            }}
-                        </NavLink>
-                    );
-                })}
-            </Flex>
+                return (
+                    <NavLink key={robot.serial_id} to={to}>
+                        {({ isActive }) => {
+                            return (
+                                <RobotListItem
+                                    id={robot.serial_id}
+                                    name={hardwareRobot?.device_name ?? ''}
+                                    type={robot.type}
+                                    port={hardwareRobot?.port}
+                                    // Fake connected mode for now
+                                    status={hardwareRobot?.port === '/dev/ttyACM1' ? 'connected' : 'disconnected'}
+                                    isActive={isActive}
+                                />
+                            );
+                        }}
+                    </NavLink>
+                );
+            })}
         </Flex>
     );
 };
