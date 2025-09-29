@@ -3,8 +3,8 @@
 
 
 import torch
-from action_trainer.policies.act.model import ACT as ACTModel
-from action_trainer.policies.base.base_lightning_module import TrainerModule
+from getiaction.policies.act.model import ACT as ACTModel
+from getiaction.policies.base.base_lightning_module import TrainerModule
 
 
 class ACT(TrainerModule):

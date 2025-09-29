@@ -3,7 +3,7 @@
 
 
 import abc
-from action_trainer.data.dataclasses import NormalizationMap, NormalizationParameters
+from getiaction.data.dataclasses import NormalizationMap, NormalizationParameters
 import torch
 from torch import nn
 from dataclasses import dataclass, field, asdict
