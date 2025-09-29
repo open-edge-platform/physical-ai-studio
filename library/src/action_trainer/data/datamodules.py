@@ -66,10 +66,8 @@ def _collate_observations(batch: list[Observation]) -> dict[str, Any]:
 
         # Handle tensors and NumPy arrays
         if isinstance(first_non_none, (torch.Tensor, np.ndarray)):
-            tensors_to_stack = []
-            for v in non_none_values:
-                # Convert NumPy arrays to PyTorch tensors before stacking
-                tensors_to_stack.append(torch.from_numpy(v) if isinstance(v, np.ndarray) else v)
+            # Convert NumPy arrays to PyTorch tensors before stacking
+            tensors_to_stack = [torch.from_numpy(v) if isinstance(v, np.ndarray) else v for v in non_none_values]
             collated_data[key] = torch.stack(tensors_to_stack, dim=0)
 
         # Handle nested dictionaries, such as the `images` field
