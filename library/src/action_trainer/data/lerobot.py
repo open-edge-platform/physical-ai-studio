@@ -178,9 +178,22 @@ class LeRobotDatasetWrapper(Dataset):
         )
 
     def __len__(self) -> int:
+        """Get the length of the dataset.
+
+        Returns:
+            int: The length of the dataset.
+        """
         return len(self._lerobot_dataset)
 
     def __getitem__(self, idx: int) -> Observation:
+        """Get an item from the dataset.
+
+        Args:
+            idx (int): The index of the item to get.
+
+        Returns:
+            Observation: The item from the dataset.
+        """
         return _convert_lerobot_item_to_observation(self._lerobot_dataset[idx])
 
     @staticmethod
