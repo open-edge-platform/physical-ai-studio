@@ -151,9 +151,6 @@ class LeRobotDatasetWrapper(Dataset):
             download_videos (bool, optional): Whether to download associated videos. Defaults to True.
             video_backend (str | None, optional): Backend to use for video decoding. Defaults to None.
             batch_encoding_size (int, optional): Number of samples per encoded batch. Defaults to 1.
-
-        Raises:
-            ValueError: If required arguments are missing or invalid.
         """
         super().__init__()
 

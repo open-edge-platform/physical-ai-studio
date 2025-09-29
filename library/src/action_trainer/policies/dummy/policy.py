@@ -24,10 +24,6 @@ class Dummy(TrainerModule):
         Args:
             config (DummyConfig): Configuration object containing the action shape
                 and other hyperparameters required for initializing the policy.
-
-        Raises:
-            ValueError: If the `action_shape` in the configuration is None.
-            TypeError: If the `action_shape` is not a valid type (e.g., string or non-iterable).
         """
         super().__init__()
         self.config = config
