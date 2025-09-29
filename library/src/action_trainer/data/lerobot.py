@@ -1,9 +1,7 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-LeRobotDataset standard
-"""
+"""LeRobotDataset standard"""
 
 from __future__ import annotations
 
@@ -25,8 +23,8 @@ def _collect_field(
     base_key: str,
     prefix: str | None = None,
 ) -> tuple[dict[str, torch.Tensor] | torch.Tensor | None, set[str]]:
-    """
-    Collect fields from `item` based on `base_key` and `prefix`.
+    """Collect fields from `item` based on `base_key` and `prefix`.
+
     Returns:
         - Either a single tensor, a dict, or None
         - The set of keys that were consumed
@@ -58,7 +56,6 @@ def _collect_field(
 
 def _convert_lerobot_item_to_observation(lerobot_item: dict) -> Observation:
     """Convert item from lerobot to our internal Observation format."""
-
     required_keys = [
         "episode_index",
         "frame_index",
@@ -136,8 +133,7 @@ class LeRobotDatasetWrapper(Dataset):
         video_backend: str | None = None,
         batch_encoding_size: int = 1,
     ):
-        """
-        Initialize a LeRobotDatasetWrapper.
+        """Initialize a LeRobotDatasetWrapper.
 
         This wrapper initializes an internal `LeRobotDataset` using the provided
         configuration and exposes the same dataset interface for action training.
@@ -213,7 +209,7 @@ class LeRobotDatasetWrapper(Dataset):
 
     @property
     def fps(self):
-        """frames per second of dataset"""
+        """Frames per second of dataset"""
         return self._lerobot_dataset.fps
 
     @property
@@ -249,10 +245,9 @@ class LeRobotDataModule(DataModule):
         download_videos: bool = True,
         video_backend: str | None = None,
         batch_encoding_size: int = 1,
-        **action_datamodule_kwargs,
+        **action_datamodule_kwargs,  # noqa: ANN003
     ):
-        """
-        Initialize a LeRobot-specific Action DataModule.
+        """Initialize a LeRobot-specific Action DataModule.
 
         This class wraps a `LeRobotDataset` (or `LeRobotDatasetWrapper`) and
         integrates it with the base `ActionDataModule` functionality, providing
@@ -281,7 +276,6 @@ class LeRobotDataModule(DataModule):
             ValueError: If neither `repo_id` nor `dataset` is provided, or if the dataset type is invalid.
             TypeError: If `dataset` is not of type `LeRobotDataset` or `LeRobotDatasetWrapper`.
         """
-
         # if dataset is passed, it is preffered
         if dataset:
             if isinstance(dataset, LeRobotDatasetWrapper):

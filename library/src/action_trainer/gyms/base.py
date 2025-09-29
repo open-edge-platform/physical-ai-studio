@@ -1,9 +1,7 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-Base class for gym environments
-"""
+"""Base class for gym environments"""
 
 from __future__ import annotations
 
@@ -27,7 +25,7 @@ class BaseGym:
     def __init__(
         self,
         gym_id: str,
-        **extra_gym_kwargs,
+        **extra_gym_kwargs,  # noqa: ANN003
     ) -> None:
         """Initializes the base Gym environment wrapper.
 
@@ -35,7 +33,6 @@ class BaseGym:
             gym_id (str): The identifier for the Gymnasium environment.
             extra_gym_kwargs (Any): Any extra arguments required for the environment
         """
-
         self._gym_id = gym_id
 
         # create wrapped environment
