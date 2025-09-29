@@ -45,10 +45,8 @@ export const HardwareSetup = ({ config, setConfig }: HardwareSetupProps) => {
         },
     });
 
-
     const initialTask = isNewDataset ? '' : Object.values(projectTasks).flat()[0];
     const [task, setTask] = useState<string>(initialTask);
-
 
     const navigate = useNavigate();
 
@@ -133,6 +131,7 @@ export const HardwareSetup = ({ config, setConfig }: HardwareSetupProps) => {
                             isRequired
                             label='Task'
                             allowsCustomValue
+                            inputValue={task}
                             onInputChange={setTask}
                         >
                             {Object.keys(projectTasks).map((datasetName) => (
