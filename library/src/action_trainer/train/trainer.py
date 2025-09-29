@@ -15,6 +15,7 @@ class Trainer:
 
     def __init__(
         self,
+        *,
         num_sanity_val_steps: int = 0,
         callbacks: list | bool | None = None,
         **trainer_kwargs,  # noqa: ANN003
