@@ -168,7 +168,8 @@ class DataModule(LightningDataModule):
         """
         if stage == "fit" and self.eval_gyms:
             if isinstance(self.eval_gyms, list):
-                # TODO: ensure metrics are seperable between two different gyms
+                # TODO(alfie-roddan-intel): https://github.com/open-edge-platform/geti-action/issues/33  # noqa: FIX002
+                # ensure metrics are seperable between two different gyms
                 self.eval_dataset = ConcatDataset([
                     GymDataset(env=gym, num_rollouts=self.num_rollouts_eval) for gym in self.eval_gyms
                 ])
@@ -177,7 +178,8 @@ class DataModule(LightningDataModule):
 
         if stage == "test" and self.test_gyms:
             if isinstance(self.test_gyms, list):
-                # TODO: ensure metrics are seperable between two different gyms
+                # TODO(alfie-roddan-intel): https://github.com/open-edge-platform/geti-action/issues/33  # noqa: FIX002
+                # ensure metrics are seperable between two different gyms
                 self.test_dataset = ConcatDataset([
                     GymDataset(env=gym, num_rollouts=self.num_rollouts_test) for gym in self.test_gyms
                 ])
