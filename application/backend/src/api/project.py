@@ -10,7 +10,7 @@ from services import ProjectService
 from services.base import ResourceInUseError, ResourceNotFoundError
 from utils.dataset import build_dataset_from_lerobot_dataset, build_project_config_from_dataset
 
-router = APIRouter()
+router = APIRouter(prefix="/api/projects")
 
 
 @router.get("")
@@ -21,7 +21,7 @@ async def list_projects(
     return project_service.list_projects()
 
 
-@router.put("")
+@router.post("")
 async def create_project(
     project: Project,
     project_service: Annotated[ProjectService, Depends(get_project_service)],
@@ -30,7 +30,7 @@ async def create_project(
     return project_service.create_project(project)
 
 
-@router.put("/{project_id}/import_dataset")
+@router.post("/{project_id}/import_dataset")
 async def import_dataset(
     project_id: Annotated[UUID, Depends(get_project_id)],
     lerobot_dataset: LeRobotDatasetInfo,

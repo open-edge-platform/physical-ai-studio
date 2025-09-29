@@ -12,7 +12,7 @@ interface ImportableDatasetProps {
 }
 const ImportableDataset = ({ dataset }: ImportableDatasetProps) => {
     const { project_id } = useProjectId();
-    const importDatasetMutation = $api.useMutation('put', '/api/projects/{project_id}/import_dataset');
+    const importDatasetMutation = $api.useMutation('post', '/api/projects/{project_id}/import_dataset');
 
     const importDataset = () => {
         importDatasetMutation.mutateAsync({
@@ -49,7 +49,7 @@ const ImportableDataset = ({ dataset }: ImportableDatasetProps) => {
 };
 
 export const ImportDataset = () => {
-    const { data: lerobotDatasets } = $api.useSuspenseQuery('get', '/api/dataset/lerobot_datasets');
+    const { data: lerobotDatasets } = $api.useSuspenseQuery('get', '/api/dataset/lerobot');
 
     return (
         <View>

@@ -6,7 +6,7 @@ from schemas.base import BaseIDModel
 
 
 class CameraConfig(BaseIDModel):
-    port_or_id: str = Field("", description="Camera port or realsense id")
+    port_or_device_id: str = Field("", description="Camera port or realsense id")
     name: str = Field(min_length=1, max_length=50, description="Camera name")
     type: Literal["RealSense", "OpenCV"]
     width: int = Field(640, description="Frame width")

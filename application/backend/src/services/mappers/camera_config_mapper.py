@@ -7,7 +7,7 @@ class CameraConfigMapper:
 
     @staticmethod
     def to_schema(camera_config_db: CameraConfigDB | None) -> CameraConfig | None:
-        """Convert Label db entity to schema."""
+        """Convert db entity to schema."""
         if camera_config_db is None:
             return None
 
@@ -15,7 +15,7 @@ class CameraConfigMapper:
 
     @staticmethod
     def from_schema(config: CameraConfig | None) -> CameraConfigDB | None:
-        """Convert Label schema to db model."""
+        """Convert schema to db model."""
         if config is None:
             return None
         return CameraConfigDB(**config.model_dump(mode="json"))

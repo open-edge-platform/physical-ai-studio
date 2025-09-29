@@ -51,7 +51,7 @@ class CameraConfigDB(Base):
 
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=lambda: str(uuid4()))
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    port_or_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    port_or_device_id: Mapped[str] = mapped_column(String(255), nullable=False)
     type: Mapped[str] = mapped_column(String(255), nullable=False)
     width: Mapped[int] = mapped_column(Integer(), nullable=False)
     height: Mapped[int] = mapped_column(Integer(), nullable=False)

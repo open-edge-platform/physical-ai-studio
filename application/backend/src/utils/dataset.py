@@ -85,7 +85,7 @@ def camera_config_from_dataset_features(
             fps=feature["info"]["video.fps"],
             type="OpenCV",
             use_depth=False,
-            port_or_id="",
+            port_or_device_id="",
         )
         for name, feature in dataset.features.items()
         if feature["dtype"] == "video"
