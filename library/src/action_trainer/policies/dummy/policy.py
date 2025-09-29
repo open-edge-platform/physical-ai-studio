@@ -3,7 +3,7 @@
 
 """Dummy lightning module and policy for testing usage"""
 
-from typing import Iterable
+from collections.abc import Iterable
 
 import torch
 
@@ -14,8 +14,7 @@ from action_trainer.policies.dummy.model import Dummy as DummyModel
 
 class Dummy(TrainerModule):
     def __init__(self, config: DummyConfig) -> None:
-        """
-        Initialize the Dummy policy wrapper.
+        """Initialize the Dummy policy wrapper.
 
         This class wraps a `DummyModel` and integrates it into a `TrainerModule`,
         validating the action shape and preparing the model for training.
@@ -86,6 +85,7 @@ class Dummy(TrainerModule):
         Returns:
             Dict[str, torch.Tensor]: Dictionary containing the loss.
         """
+        del batch_idx  # Unused variable
         loss, loss_dict = self.forward(batch)  # noqa: RUF059
         self.log("train/loss_step", loss, on_step=True, on_epoch=False, prog_bar=True, logger=True)
         self.log(
@@ -114,7 +114,7 @@ class Dummy(TrainerModule):
             batch (Dict[str, torch.Tensor]): Input batch.
             stage (str): Evaluation stage, e.g., "val" or "test".
         """
-        return
+        del batch, stage  # Unused variables
 
     def validation_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> None:
         """Validation step (calls evaluation_step).
@@ -123,6 +123,7 @@ class Dummy(TrainerModule):
             batch (Dict[str, torch.Tensor]): Input batch.
             batch_idx (int): Index of the batch.
         """
+        del batch_idx  # Unused variable
         return self.evaluation_step(batch=batch, stage="val")
 
     def test_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> None:
@@ -132,4 +133,5 @@ class Dummy(TrainerModule):
             batch (Dict[str, torch.Tensor]): Input batch.
             batch_idx (int): Index of the batch.
         """
+        del batch_idx  # Unused variable
         return self.evaluation_step(batch=batch, stage="test")
