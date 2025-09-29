@@ -32,7 +32,8 @@ class Dummy(TrainerModule):
         # model
         self.model = DummyModel(self.action_shape)
 
-    def _validate_action_shape(self, shape: torch.Size | Iterable) -> torch.Size:
+    @staticmethod
+    def _validate_action_shape(shape: torch.Size | Iterable) -> torch.Size:
         """Validate and normalize the action shape.
 
         Args:
@@ -105,7 +106,8 @@ class Dummy(TrainerModule):
         """
         return torch.optim.Adam(self.model.parameters(), lr=1e-4)
 
-    def evaluation_step(self, batch: dict[str, torch.Tensor], stage: str) -> None:
+    @staticmethod
+    def evaluation_step(batch: dict[str, torch.Tensor], stage: str) -> None:
         """Evaluation step (no-op by default).
 
         Args:

@@ -12,7 +12,8 @@ from action_trainer.train.utils import reformat_dataset_to_match_policy
 class PolicyDatasetInteraction(Callback):
     """Callback to interact the policy and dataset before training starts."""
 
-    def _interact_policy_dataset(self, trainer: L.Trainer, model: L.LightningModule) -> None:
+    @staticmethod
+    def _interact_policy_dataset(trainer: L.Trainer, model: L.LightningModule) -> None:
         # Assumes trainer has a datamodule attached
         if hasattr(trainer, "datamodule") and trainer.datamodule is not None:
             reformat_dataset_to_match_policy(policy=model, datamodule=trainer.datamodule)

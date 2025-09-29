@@ -3,6 +3,8 @@
 
 """Trainer with Lightning backend."""
 
+from abc import abstractmethod
+
 import lightning as L  # noqa: N812
 
 from action_trainer.data import DataModule
@@ -46,17 +48,14 @@ class Trainer:
             self.backend.limit_val_batches = 0
         return self.backend.fit(model=model, datamodule=datamodule, **kwargs)
 
+    @abstractmethod
     def test(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
         """Test the model."""
-        del args, kwargs
-        raise NotImplementedError
 
+    @abstractmethod
     def predict(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
         """Predict the model."""
-        del args, kwargs
-        raise NotImplementedError
 
+    @abstractmethod
     def validate(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
         """Validate the model."""
-        del args, kwargs
-        raise NotImplementedError
