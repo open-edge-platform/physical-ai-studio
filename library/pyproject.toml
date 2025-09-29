@@ -41,9 +41,9 @@ tests = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/sovrasov/geti-action"
-Documentation = "https://github.com/sovrasov/geti-action/blob/main/README.md"
-Repository = "https://github.com/sovrasov/geti-action.git"
+Homepage = "https://github.com/open-edge-platform/geti-action"
+Documentation = "https://github.com/open-edge-platform/geti-action/blob/main/README.md"
+Repository = "https://github.com/open-edge-platform/geti-action.git"
 
 [tool.hatch.version]
 path = "src/getiaction/__init__.py"
