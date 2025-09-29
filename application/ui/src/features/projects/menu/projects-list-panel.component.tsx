@@ -27,7 +27,7 @@ import styles from './projects-list.module.scss';
 
 interface Project {
     name: string;
-    id: string;
+    id?: string;
 }
 interface ProjectListProps {
     menuWidth?: string;
@@ -41,7 +41,7 @@ export const ProjectsList = ({ menuWidth = '100%', projects }: ProjectListProps)
                 <Item
                     key={item.id}
                     textValue={item.name}
-                    href={paths.project.robotConfiguration({ project_id: item.id })}
+                    href={paths.project.robotConfiguration({ project_id: item.id! })}
                 >
                     <Text>
                         <Flex justifyContent='space-between' alignItems='center' marginX={'size-200'}>

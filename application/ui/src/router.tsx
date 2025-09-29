@@ -14,7 +14,7 @@ import { Record } from './routes/datasets/record/record';
 import { Index as Models } from './routes/models/index';
 import { OpenApi } from './routes/openapi';
 import { Index as Projects } from './routes/projects/index';
-import { NewProjectPage } from './routes/projects/new/new';
+import { NewProjectPage } from './routes/projects/new';
 import { ProjectLayout } from './routes/projects/project.layout';
 import { Index as RobotConfiguration } from './routes/robot-configuration/index';
 
@@ -36,7 +36,8 @@ export const paths = {
     project: {
         datasets: {
             index: datasets,
-            record: datasets.path('/record'),
+            record: datasets.path('/:dataset_id/record'),
+            record_new: datasets.path('/record/new'),
         },
         cameras: {
             index: cameras,
@@ -91,6 +92,10 @@ export const router = createBrowserRouter([
                             },
                             {
                                 path: paths.project.datasets.record.pattern,
+                                element: <Record />,
+                            },
+                            {
+                                path: paths.project.datasets.record_new.pattern,
                                 element: <Record />,
                             },
                         ],

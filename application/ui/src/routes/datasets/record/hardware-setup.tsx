@@ -14,34 +14,35 @@ import {
     TextField,
     View,
 } from '@geti/ui';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 import { $api } from '../../../api/client';
-import { SchemaProjectConfig } from '../../../api/openapi-spec';
+import { SchemaTeleoperationConfig } from '../../../api/openapi-spec';
+import { useProject } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
 import { CameraSetup } from './camera-setup';
 import { RobotSetup } from './robot-setup';
 
 interface HardwareSetupProps {
-    project: SchemaProjectConfig;
-    setProject: Dispatch<SetStateAction<SchemaProjectConfig>>;
+    config: SchemaTeleoperationConfig;
+    setConfig: Dispatch<SetStateAction<SchemaTeleoperationConfig>>;
 }
-export const HardwareSetup = ({ project, setProject }: HardwareSetupProps) => {
-    const [searchParams] = useSearchParams();
-    const datasetName = searchParams.get('dataset');
+export const HardwareSetup = ({ config, setConfig }: HardwareSetupProps) => {
+    const project = useProject();
+    const datasetName = config.dataset_id && project.datasets.find((d) => d.id === config.dataset_id)?.name;
 
     const { data: availableCameras } = $api.useQuery('get', '/api/hardware/cameras');
     const { data: foundRobots } = $api.useQuery('get', '/api/hardware/robots');
-    const isNewDataset = datasetName === null;
+    const isNewDataset = datasetName === undefined;
     const [dataset, setDataset] = useState<string>(datasetName ?? '');
     const [task, setTask] = useState<string>('');
 
     const navigate = useNavigate();
 
     const updateCamera = (name: string, id: string, oldId: string) => {
-        setProject({
-            ...project,
-            cameras: project.cameras.map((c) => {
+        setConfig({
+            ...config,
+            cameras: config.cameras.map((c) => {
                 if (c.name === name) {
                     return { ...c, id };
                 } else if (c.id === id) {
@@ -71,7 +72,7 @@ export const HardwareSetup = ({ project, setProject }: HardwareSetupProps) => {
         if (activeTab === 'robots') {
             setActiveTab('cameras');
         } else {
-            navigate(paths.project.datasets.index({ project_id: project.id }));
+            navigate(paths.project.datasets.index({ project_id: project.id! }));
         }
     };
 
@@ -114,7 +115,7 @@ export const HardwareSetup = ({ project, setProject }: HardwareSetupProps) => {
                             <TabPanels>
                                 <Item key='cameras'>
                                     <Flex gap='40px'>
-                                        {project.cameras.map((camera) => (
+                                        {config.cameras.map((camera) => (
                                             <CameraSetup
                                                 key={camera.name}
                                                 camera={camera}
@@ -126,7 +127,7 @@ export const HardwareSetup = ({ project, setProject }: HardwareSetupProps) => {
                                 </Item>
                                 <Item key='robots'>
                                     <Flex gap='40px'>
-                                        {project.robots.map((robot) => (
+                                        {config.robots.map((robot) => (
                                             <RobotSetup
                                                 key={robot.serial_id}
                                                 config={robot}

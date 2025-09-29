@@ -5,7 +5,7 @@ import { $api } from '../../../api/client';
 import { NewProjectLink } from './new-project-link.component';
 import { ProjectCard } from './project-card';
 
-import classes from './/project-list.module.scss';
+import classes from './project-list.module.scss';
 
 export const ProjectList = () => {
     const { data: projects } = $api.useSuspenseQuery('get', '/api/projects');
