@@ -70,56 +70,56 @@ preview = true
 lint.select = ["ALL"]
 
 lint.ignore = [
-    # pydocstyle
-    "D107", # Missing docstring in __init__
+    # # pydocstyle
+    # "D107", # Missing docstring in __init__
 
-    # pylint
-    "PLR0913", # Too many arguments to function call
-    "PLR2004", # consider replacing with a constant variable
-    "PLR0912", # Too many branches
-    "PLR0915", # Too many statements
+    # # pylint
+    # "PLR0913", # Too many arguments to function call
+    # "PLR2004", # consider replacing with a constant variable
+    # "PLR0912", # Too many branches
+    # "PLR0915", # Too many statements
 
-    # NOTE: Disable the following rules for now.
-    "A004", # import is shadowing a Python built-in
-    "A005", # Module is shadowing a Python built-in
-    "B909", # Mutation to loop iterable during iteration
-    "PLC2701", # Private name import
-    "PLC0415", # import should be at the top of the file
-    "PLR0917", # Too many positional arguments
-    "E226", # Missing whitespace around arithmetic operator
-    "E266", # Too many leading `#` before block comment
+    # # NOTE: Disable the following rules for now.
+    # "A004", # import is shadowing a Python built-in
+    # "A005", # Module is shadowing a Python built-in
+    # "B909", # Mutation to loop iterable during iteration
+    # "PLC2701", # Private name import
+    # "PLC0415", # import should be at the top of the file
+    # "PLR0917", # Too many positional arguments
+    # "E226", # Missing whitespace around arithmetic operator
+    # "E266", # Too many leading `#` before block comment
 
-    "F822", # Undefined name `` in `__all__`
+    # "F822", # Undefined name `` in `__all__`
 
-    "PGH004", # Use specific rule codes when using 'ruff: noqa'
-    "PT001", # Use @pytest.fixture over @pytest.fixture()
-    "PLR6104", # Use `*=` to perform an augmented assignment directly
-    "PLR0914", # Too many local variables
-    "PLC0206", # Extracting value from dictionary without calling `.items()`
-    "PLC1901", # can be simplified
+    # "PGH004", # Use specific rule codes when using 'ruff: noqa'
+    # "PT001", # Use @pytest.fixture over @pytest.fixture()
+    # "PLR6104", # Use `*=` to perform an augmented assignment directly
+    # "PLR0914", # Too many local variables
+    # "PLC0206", # Extracting value from dictionary without calling `.items()`
+    # "PLC1901", # can be simplified
 
-    "RUF021", # Parenthesize the `and` subexpression
-    "RUF022", # Apply an isort-style sorting to '__all__'
-    "S404", # `subprocess` module is possibly insecure
-    # End of disable rules
+    # "RUF021", # Parenthesize the `and` subexpression
+    # "RUF022", # Apply an isort-style sorting to '__all__'
+    # "S404", # `subprocess` module is possibly insecure
+    # # End of disable rules
 
-    # flake8-annotations
-    "ANN101", # Missing-type-self
-    "ANN002", # Missing type annotation for *args
-    "ANN003", # Missing type annotation for **kwargs
+    # # flake8-annotations
+    # "ANN101", # Missing-type-self
+    # "ANN002", # Missing type annotation for *args
+    # "ANN003", # Missing type annotation for **kwargs
 
-    # flake8-bandit (`S`)
-    "S101", # Use of assert detected.
+    # # flake8-bandit (`S`)
+    # "S101", # Use of assert detected.
 
-    # flake8-boolean-trap (`FBT`)
-    "FBT001", # Boolean positional arg in function definition
-    "FBT002", # Boolean default value in function definition
+    # # flake8-boolean-trap (`FBT`)
+    # "FBT001", # Boolean positional arg in function definition
+    # "FBT002", # Boolean default value in function definition
 
-    # flake8-datatimez (`DTZ`)
-    "DTZ005", # The use of `datetime.datetime.now()` without `tz` argument is not allowed
+    # # flake8-datatimez (`DTZ`)
+    # "DTZ005", # The use of `datetime.datetime.now()` without `tz` argument is not allowed
 
-    # flake8-fixme (`FIX`)
-    "FIX002", # Line contains TODO, consider resolving the issue
+    # # flake8-fixme (`FIX`)
+    # "FIX002", # Line contains TODO, consider resolving the issue
 ]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided.
