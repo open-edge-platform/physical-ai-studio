@@ -2,14 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-"""
-Lightning datamodules
-"""
+"""Lightning datamodules."""
 
 from __future__ import annotations
 
 from dataclasses import fields
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
@@ -26,8 +24,7 @@ if TYPE_CHECKING:
 
 
 def _collate_env(batch: list[Any]) -> dict[str, Any]:
-    """
-    Collate a batch of environments for a DataLoader.
+    """Collate a batch of environments for a DataLoader.
 
     Args:
         batch (list[Any]): A list containing a single environment.
@@ -40,10 +37,9 @@ def _collate_env(batch: list[Any]) -> dict[str, Any]:
 
 
 def _collate_observations(batch: list[Observation]) -> dict[str, Any]:
-    """
-    Collate a batch of Observations to a dict for training format.
+    """Collate a batch of Observations to a dict for training format.
 
-    args:
+    Args:
         batch (list[Any]): A list containing Observations.
 
     Returns:
@@ -98,8 +94,7 @@ def _collate_observations(batch: list[Observation]) -> dict[str, Any]:
 
 
 class DataModule(LightningDataModule):
-    """
-    PyTorch Lightning DataModule for action datasets and Gym environments.
+    """PyTorch Lightning DataModule for action datasets and Gym environments.
 
     Handles training, evaluation, and test datasets, including Gym environments
     wrapped as datasets. Provides DataLoaders for training, validation, and testing.
@@ -115,8 +110,7 @@ class DataModule(LightningDataModule):
         num_rollouts_test: int = 10,
         max_episode_steps: int | None = 300,
     ) -> None:
-        """
-        Initialize the ActionDataModule.
+        """Initialize the ActionDataModule.
 
         Args:
             train_dataset (ActionDataset): Dataset for training.
@@ -135,10 +129,10 @@ class DataModule(LightningDataModule):
 
         # gym environments
         self.eval_gyms: BaseGym | list[BaseGym] | None = eval_gyms
-        self.eval_dataset: Optional[Dataset[Any]] = None
+        self.eval_dataset: Dataset[Any] | None = None
         self.num_rollouts_eval: int = num_rollouts_eval
         self.test_gyms: BaseGym | list[BaseGym] | None = test_gyms
-        self.test_dataset: Optional[Dataset[Any]] = None
+        self.test_dataset: Dataset[Any] | None = None
         self.num_rollouts_test: int = num_rollouts_test
         self.max_episode_steps = max_episode_steps
 
@@ -169,8 +163,7 @@ class DataModule(LightningDataModule):
                     )
 
     def setup(self, stage: str) -> None:
-        """
-        Set up datasets depending on the stage (fit or test).
+        """Set up datasets depending on the stage (fit or test).
 
         Args:
             stage (str): Stage of training ('fit', 'test', etc.).
@@ -194,8 +187,7 @@ class DataModule(LightningDataModule):
                 self.test_dataset = GymDataset(env=self.test_gyms, num_rollouts=self.num_rollouts_test)
 
     def train_dataloader(self) -> DataLoader[Any]:
-        """
-        Return the DataLoader for training.
+        """Return the DataLoader for training.
 
         Returns:
             DataLoader[Any]: Training DataLoader.
@@ -210,8 +202,7 @@ class DataModule(LightningDataModule):
         )
 
     def val_dataloader(self) -> DataLoader[Any]:
-        """
-        Return the DataLoader for validation.
+        """Return the DataLoader for validation.
 
         Returns:
             DataLoader[Any]: Validation DataLoader with collate function for Gym environments.
@@ -224,8 +215,7 @@ class DataModule(LightningDataModule):
         )
 
     def test_dataloader(self) -> DataLoader[Any]:
-        """
-        Return the DataLoader for testing.
+        """Return the DataLoader for testing.
 
         Returns:
             DataLoader[Any]: Test DataLoader with collate function for Gym environments.
@@ -238,8 +228,7 @@ class DataModule(LightningDataModule):
         )
 
     def predict_dataloader(self) -> DataLoader[Any]:
-        """
-        Predict DataLoader is not implemented.
+        """Predict DataLoader is not implemented.
 
         Raises:
             NotImplementedError
