@@ -3,12 +3,14 @@
 
 """Dummy policy config"""
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 import torch
 
 
 @dataclass(frozen=True)
 class DummyConfig:
+    """Dummy policy config."""
+
     action_shape: torch.Size | Iterable

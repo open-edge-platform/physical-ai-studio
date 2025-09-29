@@ -7,6 +7,9 @@ from action_trainer.policies.base.base_lightning_module import TrainerModule
 
 
 class ACTPolicy(TrainerModule):
+    """ACT policy wrapper."""
+
     def __init__(self) -> None:
+        """Initialize the ACT policy wrapper."""
         super().__init__()
         self.model = ACTModel()

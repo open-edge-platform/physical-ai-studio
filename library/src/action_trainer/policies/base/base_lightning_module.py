@@ -11,9 +11,10 @@ from torch import nn
 
 
 class TrainerModule(L.LightningModule, ABC):
-    def __init__(
-        self,
-    ) -> None:
+    """Base Lightning Module for Policies."""
+
+    def __init__(self) -> None:
+        """Initialize the Base Lightning Module for Policies."""
         super().__init__()
         self.save_hyperparameters()
 
@@ -21,6 +22,7 @@ class TrainerModule(L.LightningModule, ABC):
 
     def forward(self, batch: dict[str, torch.Tensor], *args, **kwargs) -> torch.Tensor:  # noqa: ANN002, ANN003
         """Perform forward pass of the policy.
+
         The input batched is preprocessed before being passed to the model.
 
         Args:

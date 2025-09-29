@@ -13,6 +13,8 @@ from action_trainer.policies.dummy.model import Dummy as DummyModel
 
 
 class Dummy(TrainerModule):
+    """Dummy policy wrapper."""
+
     def __init__(self, config: DummyConfig) -> None:
         """Initialize the Dummy policy wrapper.
 

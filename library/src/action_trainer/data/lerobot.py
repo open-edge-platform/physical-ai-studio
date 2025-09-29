@@ -229,6 +229,8 @@ class LeRobotDatasetWrapper(Dataset):
 
 
 class LeRobotDataModule(DataModule):
+    """LeRobot-specific Action DataModule."""
+
     def __init__(
         self,
         train_batch_size: int = 16,
