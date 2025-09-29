@@ -62,6 +62,9 @@ def _convert_lerobot_item_to_observation(lerobot_item: dict) -> Observation:
 
     Returns:
         Observation: The observation in our internal format.
+
+    Raises:
+        ValueError: If the item is missing a required key.
     """
     required_keys = [
         "episode_index",
@@ -72,14 +75,16 @@ def _convert_lerobot_item_to_observation(lerobot_item: dict) -> Observation:
     ]
     lerobot_item_keys = lerobot_item.keys()
     for key in required_keys:
-        assert key in lerobot_item_keys, f"Missing required key: {key}. Available keys: {lerobot_item_keys}"
+        if key not in lerobot_item_keys:
+            msg = f"Missing required key: {key}. Available keys: {lerobot_item_keys}"
+            raise ValueError(msg)
 
-    assert any(k.startswith("observation") for k in lerobot_item_keys), (
-        f"Sample must contain some form of observation. Sample keys {lerobot_item_keys}"
-    )
-    assert any(k.startswith("action") for k in lerobot_item_keys), (
-        f"Sample must contain an action. Sample keys {lerobot_item_keys}"
-    )
+    if not any(k.startswith("observation") for k in lerobot_item_keys):
+        msg = f"Sample must contain some form of observation. Sample keys {lerobot_item_keys}"
+        raise ValueError(msg)
+    if not any(k.startswith("action") for k in lerobot_item_keys):
+        msg = f"Sample must contain an action. Sample keys {lerobot_item_keys}"
+        raise ValueError(msg)
 
     used_keys: set[str] = set()
 
