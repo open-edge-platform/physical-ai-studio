@@ -1,7 +1,7 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Base class for gym environments"""
+"""Base class for gym environments."""
 
 from __future__ import annotations
 
@@ -88,7 +88,7 @@ class BaseGym:
         return self.env.close()
 
     def sample_action(self) -> Any:
-        """Samples a random action in the environment"""
+        """Samples a random action in the environment."""
         return self.env.action_space.sample()
 
     def get_max_episode_steps(self) -> int | None:

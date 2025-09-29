@@ -1,7 +1,7 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""PushT Gym Environment"""
+"""PushT Gym Environment."""
 
 import gym_pusht  # noqa: F401
 

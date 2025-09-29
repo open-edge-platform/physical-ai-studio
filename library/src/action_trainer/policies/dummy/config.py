@@ -1,7 +1,7 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Dummy policy config"""
+"""Dummy policy config."""
 
 from collections.abc import Iterable
 from dataclasses import dataclass

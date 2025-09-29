@@ -1,7 +1,7 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""LeRobotDataset standard"""
+"""LeRobotDataset standard."""
 
 from __future__ import annotations
 
@@ -198,23 +198,23 @@ class LeRobotDatasetWrapper(Dataset):
 
     @property
     def features(self) -> dict[str, dict[Any, Any]]:
-        """Raw dataset features"""
+        """Raw dataset features."""
         return self._lerobot_dataset.features
 
     @property
     def action_features(self) -> dict[str, dict[Any, Any]]:
-        """Action features from LeRobot dataset"""
+        """Action features from LeRobot dataset."""
         dataset_features = self._lerobot_dataset.features
         return {key: ft for key, ft in dataset_features.items() if key.startswith("action")}
 
     @property
     def fps(self) -> float:
-        """Frames per second of dataset"""
+        """Frames per second of dataset."""
         return self._lerobot_dataset.fps
 
     @property
     def tolerance_s(self) -> float:
-        """Tolerance to keep delta timestamps in sync with fps"""
+        """Tolerance to keep delta timestamps in sync with fps."""
         return self._lerobot_dataset.tolerance_s
 
     @property

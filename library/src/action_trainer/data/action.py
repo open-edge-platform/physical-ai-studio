@@ -1,7 +1,7 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Base Action Dataset"""
+"""Base Action Dataset."""
 
 from __future__ import annotations
 

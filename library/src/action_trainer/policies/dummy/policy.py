@@ -1,7 +1,7 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Dummy lightning module and policy for testing usage"""
+"""Dummy lightning module and policy for testing usage."""
 
 from collections.abc import Iterable
 

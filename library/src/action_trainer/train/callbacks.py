@@ -1,7 +1,7 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Callbacks for training"""
+"""Callbacks for training."""
 
 import lightning as L
 from lightning.pytorch.callbacks import Callback

@@ -1,13 +1,14 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+"""ACT Model."""
 
 import torch
 from torch import nn
 
 
 class ACTModel(nn.Module):
-    """ACT Model"""
+    """ACT Model."""
 
     def __init__(self) -> None:
         """Initialize the ACT Model."""
