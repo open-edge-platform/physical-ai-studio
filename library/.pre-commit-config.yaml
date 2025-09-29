@@ -7,7 +7,7 @@ default_language_version:
 
 repos:
   # ========================================================================== #
-  # UNIVERSAL HOOKS
+  # UNIVERSAL HOOKS                                                            #
   # ========================================================================== #
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -28,7 +28,7 @@ repos:
         files: ^library/.*\.py$
 
   # ========================================================================== #
-  # PYTHON LINTING & FORMATTING
+  # PYTHON LINTING & FORMATTING                                                #
   # ========================================================================== #
   - repo: https://github.com/charliermarsh/ruff-pre-commit
     rev: "v0.12.11"
@@ -42,7 +42,7 @@ repos:
         files: ^library/.*\.py$
 
   # ========================================================================== #
-  # PYTHON TYPE CHECKING
+  # PYTHON TYPE CHECKING                                                       #
   # ========================================================================== #
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: "v1.17.1"
@@ -53,7 +53,7 @@ repos:
         args: [--config-file=pyproject.toml, --ignore-missing-imports]
 
   # ========================================================================== #
-  # SECURITY LINTING (Configured for tests)
+  # SECURITY LINTING (Configured for tests)                                    #
   # ========================================================================== #
   - repo: https://github.com/PyCQA/bandit
     rev: "1.8.0"
@@ -64,7 +64,7 @@ repos:
         args: ["-c", "pyproject.toml", "-ll"]
 
   # ========================================================================== #
-  # DOCUMENTATION & FORMATTING
+  # DOCUMENTATION & FORMATTING                                                 #
   # ========================================================================== #
   - repo: https://github.com/rbubley/mirrors-prettier
     rev: v3.6.2
