@@ -110,7 +110,7 @@ class Dummy(nn.Module):
         """
         return None
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset internal buffers.
 
         Clears the temporal buffer (if using temporal ensemble) or the
