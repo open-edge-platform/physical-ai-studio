@@ -15,12 +15,12 @@ from gymnasium.wrappers import TimeLimit
 from lightning.pytorch import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
-from action_trainer.data import Observation
-from action_trainer.data.gym import GymDataset
-from action_trainer.gyms import BaseGym
+from getiaction.data import Observation
+from getiaction.data.gym import GymDataset
+from getiaction.gyms import BaseGym
 
 if TYPE_CHECKING:
-    from action_trainer.data import Dataset
+    from getiaction.data import Dataset
 
 
 def _collate_env(batch: list[Any]) -> dict[str, Any]:

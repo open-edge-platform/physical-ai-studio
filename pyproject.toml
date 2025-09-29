@@ -6,4 +6,4 @@
 members = ["library", "application/backend"]
 
 [tool.uv.sources]
-action_trainer = { workspace = true }
+getiaction = { workspace = true }

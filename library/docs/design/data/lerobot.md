@@ -32,7 +32,7 @@ classDiagram
 Example (these examples will download data onto your disk):
 
 ```python
-from action_trainer.data import LeRobotDatasetWrapper
+from getiaction.data import LeRobotDatasetWrapper
 
 pusht_dataset = LeRobotDatasetWrapper("lerobot/pusht")
 
@@ -43,7 +43,7 @@ or from `LeRobot` itself:
 
 ```python
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
-from action_trainer.data import LeRobotDatasetWrapper
+from getiaction.data import LeRobotDatasetWrapper
 pusht_lerobot_dataset = LeRobotDataset("lerobot/pusht")
 pusht_action_dataset = LeRobotDatasetWrapper.from_lerobot(pusht_lerobot_dataset)
 ```
@@ -72,7 +72,7 @@ Example (this will download data to disk if not cached already):
 
 ```python
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
-from action_trainer.data import LeRobotActionDataModule
+from getiaction.data import LeRobotActionDataModule
 
 repo_id = "lerobot/pusht"
 
