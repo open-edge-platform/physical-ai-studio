@@ -5,7 +5,7 @@ import { Outlet, redirect } from 'react-router';
 import { createBrowserRouter } from 'react-router-dom';
 import { path } from 'static-path';
 
-import { ErrorPage } from './components/error-page/error-page';
+import { ErrorMessage, ErrorPage } from './components/error-page/error-page';
 import { Camera, CameraOverview } from './routes/cameras/camera';
 import { Layout as CamerasLayout } from './routes/cameras/layout';
 import { CameraWebcam } from './routes/cameras/webcam';
@@ -35,6 +35,7 @@ export const paths = {
         new: projects.path('/new'),
     },
     project: {
+        index: project,
         datasets: {
             index: datasets,
             record: datasets.path('/:dataset_id/record'),
@@ -86,8 +87,23 @@ export const router = createBrowserRouter([
                 ],
             },
             {
+                path: paths.project.index.pattern,
                 element: <ProjectLayout />,
                 children: [
+                    {
+                        index: true,
+                        loader: ({ params }) => {
+                            if (params.project_id === undefined) {
+                                return redirect(paths.projects.index({}));
+                            }
+
+                            return redirect(
+                                paths.project.robotConfiguration.index({
+                                    project_id: params.project_id,
+                                })
+                            );
+                        },
+                    },
                     {
                         path: paths.project.datasets.index.pattern,
                         children: [
