@@ -55,7 +55,14 @@ def _collect_field(
 
 
 def _convert_lerobot_item_to_observation(lerobot_item: dict) -> Observation:
-    """Convert item from lerobot to our internal Observation format."""
+    """Convert item from lerobot to our internal Observation format.
+
+    Args:
+        lerobot_item (dict): The item from the lerobot dataset.
+
+    Returns:
+        Observation: The observation in our internal format.
+    """
     required_keys = [
         "episode_index",
         "frame_index",

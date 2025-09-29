@@ -80,7 +80,15 @@ class BaseGym:
         return self.env.step(action)
 
     def render(self, *args: Any, **kwargs: Any) -> Any:
-        """Renders the environment for visualization."""
+        """Renders the environment for visualization.
+
+        Args:
+            *args: Additional positional arguments.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            Any: The rendered environment.
+        """
         return self.env.render(*args, **kwargs)
 
     def close(self) -> None:
@@ -88,11 +96,19 @@ class BaseGym:
         return self.env.close()
 
     def sample_action(self) -> Any:
-        """Samples a random action in the environment."""
+        """Samples a random action in the environment.
+
+        Returns:
+            Any: A random action from the environment's action space.
+        """
         return self.env.action_space.sample()
 
     def get_max_episode_steps(self) -> int | None:
-        """Returns the maximum number of steps for the underlying environment."""
+        """Returns the maximum number of steps for the underlying environment.
+
+        Returns:
+            int | None: The maximum number of steps for the underlying environment.
+        """
         try:
             return self.env.get_wrapper_attr("max_episode_steps")
         except AttributeError:
