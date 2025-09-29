@@ -19,11 +19,10 @@ class Trainer:
         callbacks: list | bool | None = None,
         **trainer_kwargs,
     ):
-        """
-        Args:
-            num_sanity_val_steps (int): Number of validation sanity steps.
-            callbacks (list, optional): User callbacks. Defaults to None.
-            **trainer_kwargs: Other Lightning Trainer kwargs.
+        """Args:
+        num_sanity_val_steps (int): Number of validation sanity steps.
+        callbacks (list, optional): User callbacks. Defaults to None.
+        **trainer_kwargs: Other Lightning Trainer kwargs.
         """
         if callbacks is None:
             callbacks = []
@@ -37,20 +36,20 @@ class Trainer:
             **trainer_kwargs,
         )
 
-    def fit(self, model: TrainerModule, datamodule: DataModule, **kwargs):
+    def fit(self, model: TrainerModule, datamodule: DataModule, **kwargs) -> None:  # noqa: ANN003
         # if we don't have any validation datasets, limit batch size to zero
         if datamodule.eval_dataset is None:
             self.backend.limit_val_batches = 0
         return self.backend.fit(model=model, datamodule=datamodule, **kwargs)
 
-    def test(self, *args, **kwargs):
+    def test(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
         del args, kwargs
         raise NotImplementedError
 
-    def predict(self, *args, **kwargs):
+    def predict(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
         del args, kwargs
         raise NotImplementedError
 
-    def validate(self, *args, **kwargs):
+    def validate(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
         del args, kwargs
         raise NotImplementedError

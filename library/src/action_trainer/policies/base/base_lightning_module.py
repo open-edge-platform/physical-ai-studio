@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 
 import lightning as L
 import torch
-import torch.nn as nn
+from torch import nn
 
 
 class TrainerModule(L.LightningModule, ABC):
@@ -19,7 +19,7 @@ class TrainerModule(L.LightningModule, ABC):
 
         self.model: nn.Module
 
-    def forward(self, batch: dict[str, torch.Tensor], *args, **kwargs) -> torch.Tensor:
+    def forward(self, batch: dict[str, torch.Tensor], *args, **kwargs) -> torch.Tensor:  # noqa: ANN002, ANN003
         """Perform forward pass of the policy.
         The input batched is preprocessed before being passed to the model.
 
