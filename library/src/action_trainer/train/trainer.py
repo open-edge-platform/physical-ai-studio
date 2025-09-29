@@ -49,13 +49,19 @@ class Trainer:
         return self.backend.fit(model=model, datamodule=datamodule, **kwargs)
 
     @abstractmethod
+    def validate(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
+        """Validate the model."""
+        msg = "Validate method not implemented"
+        raise NotImplementedError(msg)
+
+    @abstractmethod
     def test(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
         """Test the model."""
+        msg = "Test method not implemented"
+        raise NotImplementedError(msg)
 
     @abstractmethod
     def predict(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
         """Predict the model."""
-
-    @abstractmethod
-    def validate(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
-        """Validate the model."""
+        msg = "Predict method not implemented"
+        raise NotImplementedError(msg)
