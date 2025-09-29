@@ -9,7 +9,7 @@ from torch import nn
 class ACTModel(nn.Module):
     """ACT Model"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the ACT Model."""
         super().__init__()
 

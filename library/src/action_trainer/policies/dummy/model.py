@@ -48,7 +48,7 @@ class Dummy(nn.Module):
         temporal_ensemble_coeff: float | None = None,
         n_obs_steps: int = 1,
         horizon: int | None = None,
-    ):
+    ) -> None:
         """Initialize the DummyModel.
 
         Args:

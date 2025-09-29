@@ -132,7 +132,7 @@ class LeRobotDatasetWrapper(Dataset):
         download_videos: bool = True,
         video_backend: str | None = None,
         batch_encoding_size: int = 1,
-    ):
+    ) -> None:
         """Initialize a LeRobotDatasetWrapper.
 
         This wrapper initializes an internal `LeRobotDataset` using the provided
@@ -172,10 +172,10 @@ class LeRobotDatasetWrapper(Dataset):
             batch_encoding_size=batch_encoding_size,
         )
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._lerobot_dataset)
 
-    def __getitem__(self, idx) -> Observation:
+    def __getitem__(self, idx: int) -> Observation:
         return _convert_lerobot_item_to_observation(self._lerobot_dataset[idx])
 
     @staticmethod
@@ -248,7 +248,7 @@ class LeRobotDataModule(DataModule):
         video_backend: str | None = None,
         batch_encoding_size: int = 1,
         **action_datamodule_kwargs,  # noqa: ANN003
-    ):
+    ) -> None:
         """Initialize a LeRobot-specific Action DataModule.
 
         This class wraps a `LeRobotDataset` (or `LeRobotDatasetWrapper`) and

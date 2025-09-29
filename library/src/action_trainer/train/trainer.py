@@ -18,7 +18,7 @@ class Trainer:
         num_sanity_val_steps: int = 0,
         callbacks: list | bool | None = None,
         **trainer_kwargs,  # noqa: ANN003
-    ):
+    ) -> None:
         """Args:
         num_sanity_val_steps (int): Number of validation sanity steps.
         callbacks (list, optional): User callbacks. Defaults to None.
