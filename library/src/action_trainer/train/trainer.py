@@ -1,9 +1,11 @@
-# Copyright (C) 2025-2026 Intel Corporation
+# Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Trainer with Lightning backend"""
+"""Trainer with Lightning backend."""
 
-import lightning as L
+from abc import abstractmethod
+
+import lightning as L  # noqa: N812
 
 from action_trainer.data import DataModule
 from action_trainer.policies.base import TrainerModule
@@ -15,11 +17,13 @@ class Trainer:
 
     def __init__(
         self,
+        *,
         num_sanity_val_steps: int = 0,
         callbacks: list | bool | None = None,
-        **trainer_kwargs,
-    ):
-        """
+        **trainer_kwargs,  # noqa: ANN003
+    ) -> None:
+        """Initialize the Trainer.
+
         Args:
             num_sanity_val_steps (int): Number of validation sanity steps.
             callbacks (list, optional): User callbacks. Defaults to None.
@@ -37,20 +41,27 @@ class Trainer:
             **trainer_kwargs,
         )
 
-    def fit(self, model: TrainerModule, datamodule: DataModule, **kwargs):
+    def fit(self, model: TrainerModule, datamodule: DataModule, **kwargs) -> None:  # noqa: ANN003
+        """Fit the model."""
         # if we don't have any validation datasets, limit batch size to zero
         if datamodule.eval_dataset is None:
             self.backend.limit_val_batches = 0
         return self.backend.fit(model=model, datamodule=datamodule, **kwargs)
 
-    def test(self, *args, **kwargs):
-        del args, kwargs
-        raise NotImplementedError
+    @abstractmethod
+    def validate(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
+        """Validate the model."""
+        msg = "Validate method not implemented"
+        raise NotImplementedError(msg)
 
-    def predict(self, *args, **kwargs):
-        del args, kwargs
-        raise NotImplementedError
+    @abstractmethod
+    def test(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
+        """Test the model."""
+        msg = "Test method not implemented"
+        raise NotImplementedError(msg)
 
-    def validate(self, *args, **kwargs):
-        del args, kwargs
-        raise NotImplementedError
+    @abstractmethod
+    def predict(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
+        """Predict the model."""
+        msg = "Predict method not implemented"
+        raise NotImplementedError(msg)

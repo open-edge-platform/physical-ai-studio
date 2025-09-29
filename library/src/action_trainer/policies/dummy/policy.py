@@ -1,9 +1,9 @@
-# Copyright (C) 2025-2026 Intel Corporation
+# Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Dummy lightning module and policy for testing usage"""
+"""Dummy lightning module and policy for testing usage."""
 
-from typing import Iterable
+from collections.abc import Iterable
 
 import torch
 
@@ -13,9 +13,10 @@ from action_trainer.policies.dummy.model import Dummy as DummyModel
 
 
 class Dummy(TrainerModule):
+    """Dummy policy wrapper."""
+
     def __init__(self, config: DummyConfig) -> None:
-        """
-        Initialize the Dummy policy wrapper.
+        """Initialize the Dummy policy wrapper.
 
         This class wraps a `DummyModel` and integrates it into a `TrainerModule`,
         validating the action shape and preparing the model for training.
@@ -23,10 +24,6 @@ class Dummy(TrainerModule):
         Args:
             config (DummyConfig): Configuration object containing the action shape
                 and other hyperparameters required for initializing the policy.
-
-        Raises:
-            ValueError: If the `action_shape` in the configuration is None.
-            TypeError: If the `action_shape` is not a valid type (e.g., string or non-iterable).
         """
         super().__init__()
         self.config = config
@@ -35,7 +32,8 @@ class Dummy(TrainerModule):
         # model
         self.model = DummyModel(self.action_shape)
 
-    def _validate_action_shape(self, shape: torch.Size | Iterable) -> torch.Size:
+    @staticmethod
+    def _validate_action_shape(shape: torch.Size | Iterable) -> torch.Size:
         """Validate and normalize the action shape.
 
         Args:
@@ -86,6 +84,7 @@ class Dummy(TrainerModule):
         Returns:
             Dict[str, torch.Tensor]: Dictionary containing the loss.
         """
+        del batch_idx  # Unused variable
         loss, loss_dict = self.forward(batch)  # noqa: RUF059
         self.log("train/loss_step", loss, on_step=True, on_epoch=False, prog_bar=True, logger=True)
         self.log(
@@ -107,14 +106,15 @@ class Dummy(TrainerModule):
         """
         return torch.optim.Adam(self.model.parameters(), lr=1e-4)
 
-    def evaluation_step(self, batch: dict[str, torch.Tensor], stage: str) -> None:
+    @staticmethod
+    def evaluation_step(batch: dict[str, torch.Tensor], stage: str) -> None:
         """Evaluation step (no-op by default).
 
         Args:
             batch (Dict[str, torch.Tensor]): Input batch.
             stage (str): Evaluation stage, e.g., "val" or "test".
         """
-        return
+        del batch, stage  # Unused variables
 
     def validation_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> None:
         """Validation step (calls evaluation_step).
@@ -123,6 +123,7 @@ class Dummy(TrainerModule):
             batch (Dict[str, torch.Tensor]): Input batch.
             batch_idx (int): Index of the batch.
         """
+        del batch_idx  # Unused variable
         return self.evaluation_step(batch=batch, stage="val")
 
     def test_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> None:
@@ -132,4 +133,5 @@ class Dummy(TrainerModule):
             batch (Dict[str, torch.Tensor]): Input batch.
             batch_idx (int): Index of the batch.
         """
+        del batch_idx  # Unused variable
         return self.evaluation_step(batch=batch, stage="test")

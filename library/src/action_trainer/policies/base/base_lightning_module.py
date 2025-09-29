@@ -1,26 +1,28 @@
-# Copyright (C) 2025-2026 Intel Corporation
+# Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Base Lightning Module for Policies"""
+"""Base Lightning Module for Policies."""
 
 from abc import ABC, abstractmethod
 
-import lightning as L
+import lightning as L  # noqa: N812
 import torch
-import torch.nn as nn
+from torch import nn
 
 
 class TrainerModule(L.LightningModule, ABC):
-    def __init__(
-        self,
-    ) -> None:
+    """Base Lightning Module for Policies."""
+
+    def __init__(self) -> None:
+        """Initialize the Base Lightning Module for Policies."""
         super().__init__()
         self.save_hyperparameters()
 
         self.model: nn.Module
 
-    def forward(self, batch: dict[str, torch.Tensor], *args, **kwargs) -> torch.Tensor:
+    def forward(self, batch: dict[str, torch.Tensor], *args, **kwargs) -> torch.Tensor:  # noqa: ANN002, ANN003
         """Perform forward pass of the policy.
+
         The input batched is preprocessed before being passed to the model.
 
         Args:
