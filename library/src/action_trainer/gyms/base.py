@@ -14,8 +14,7 @@ if TYPE_CHECKING:
 
 
 class BaseGym:
-    """Base class for Gym environments with configurable observation type,
-    number of rollouts, and maximum episode steps.
+    """Base class for Gym environments.
 
     This class wraps a Gym environment and provides standard methods
     like `reset`, `step`, `render`, and `close`. It also exposes
