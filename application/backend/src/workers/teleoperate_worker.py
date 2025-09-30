@@ -1,20 +1,22 @@
-from .base import BaseProcessWorker, BaseThreadWorker
-import time
-import numpy as np
-import cv2
 import base64
 import logging
-
+import time
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
-from schemas import TeleoperationConfig
-from lerobot.utils.robot_utils import busy_wait
+
+import cv2
+import numpy as np
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.datasets.utils import build_dataset_frame
+from lerobot.robots.utils import make_robot_from_config
+from lerobot.teleoperators.utils import make_teleoperator_from_config
+from lerobot.utils.robot_utils import busy_wait
+
+from schemas import TeleoperationConfig
 from utils.camera import build_camera_config
 from utils.robot import make_lerobot_robot_config_from_robot, make_lerobot_teleoperator_config_from_robot
-from lerobot.teleoperators.utils import make_teleoperator_from_config
-from lerobot.robots.utils import make_robot_from_config
-from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
+
+from .base import BaseProcessWorker
 
 logger = logging.getLogger(__name__)
 
@@ -39,19 +41,24 @@ class TeleoperateWorker(BaseProcessWorker):
             "start": Event(),
         }
 
-    def stop(self):
+    def stop(self) -> None:
+        """Stop teleoperation and stop loop."""
         self.events["stop"].set()
 
-    def start_recording(self):
+    def start_recording(self) -> None:
+        """Start recording observations to dataset buffer."""
         self.events["start"].set()
 
-    def save(self):
+    def save(self) -> None:
+        """Save current dataset recording buffer."""
         self.events["save"].set()
 
-    def reset(self):
+    def reset(self) -> None:
+        """Reset the dataset recording buffer."""
         self.events["reset"].set()
 
-    def setup(self):
+    def setup(self) -> None:
+        """Set up robots, cameras and dataset."""
         logger.info("connect to robot, cameras and setup dataset")
         cameras = {camera.name: build_camera_config(camera) for camera in self.config.cameras}
         follower_config = make_lerobot_robot_config_from_robot(self.config.follower, cameras)
@@ -72,11 +79,11 @@ class TeleoperateWorker(BaseProcessWorker):
         self.robot.connect()
         self.teleoperator.connect()
 
-        self.action_keys = [f"{key}.pos" for key in self.robot.bus.sync_read("Present_Position").keys()]
+        self.action_keys = [f"{key}.pos" for key in self.robot.bus.sync_read("Present_Position")]
         self.camera_keys = [camera.name for camera in self.config.cameras]
-        self.report_state()
+        self._report_state()
 
-    def report_state(self):
+    def _report_state(self):
         self.queue.put({
             "event": "state",
             "data": {
@@ -85,17 +92,20 @@ class TeleoperateWorker(BaseProcessWorker):
             }
         })
 
-    def report_observation(self, observation: dict, timestamp: float):
+    def _report_observation(self, observation: dict, timestamp: float):
+        """Report observation to queue."""
         self.queue.put({
             "event": "observations",
             "data": {
                 "actions": {key: observation.get(key, 0) for key in self.action_keys},
-                "cameras": {key: self._base_64_encode_observation(observation.get(key)) for key in self.camera_keys},
+                "cameras": {key: self._base_64_encode_observation(observation.get(key))
+                            for key in self.camera_keys if key in observation},
                 "timestamp": timestamp
             }
         })
 
-    def run_loop(self):
+    def run_loop(self) -> None:
+        """Teleoperation loop."""
         logger.info("run loop")
         self.events["reset"].clear()
         self.events["save"].clear()
@@ -112,7 +122,7 @@ class TeleoperateWorker(BaseProcessWorker):
                 busy_wait(0.3) #TODO check if neccesary
                 self.dataset.save_episode()
                 self.is_recording = False
-                self.report_state()
+                self._report_state()
 
             if self.events["reset"].is_set():
                 logger.info("reset")
@@ -120,21 +130,21 @@ class TeleoperateWorker(BaseProcessWorker):
                 busy_wait(0.3) #TODO check if neccesary
                 self.dataset.clear_episode_buffer()
                 self.is_recording = False
-                self.report_state()
+                self._report_state()
 
             if self.events["start"].is_set():
                 logger.info("start")
                 self.events["start"].clear()
                 self.is_recording = True
                 start_episode_t = time.perf_counter()
-                self.report_state()
+                self._report_state()
 
             action = self.teleoperator.get_action()
             sent_action = self.robot.send_action(action)
             observation = self.robot.get_observation()
 
             timestamp = time.perf_counter() - start_episode_t
-            self.report_observation(observation, timestamp)
+            self._report_observation(observation, timestamp)
             if self.is_recording:
                 observation_frame = build_dataset_frame(self.dataset.features, observation, prefix="observation")
                 action_frame = build_dataset_frame(self.dataset.features, sent_action, prefix="action")
@@ -146,11 +156,14 @@ class TeleoperateWorker(BaseProcessWorker):
 
             busy_wait(wait_time)
 
-    def teardown(self):
+    def teardown(self) -> None:
+        """Disconnect robots and close queue."""
         self.robot.disconnect()
         self.teleoperator.disconnect()
         self.queue.close()
 
-    def _base_64_encode_observation(self, observation: np.ndarray) -> str:
+    def _base_64_encode_observation(self, observation: np.ndarray | None) -> str:
+        if observation is None:
+            return ""
         _, imagebytes = cv2.imencode(".jpg", observation)
         return base64.b64encode(imagebytes).decode()

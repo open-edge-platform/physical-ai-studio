@@ -1,13 +1,12 @@
 import asyncio
 
-from lerobot.robots.so101_follower import SO101Follower, SO101FollowerConfig
-from lerobot.robots.config import RobotConfig as LeRobotConfig
 from lerobot.cameras import CameraConfig
-from lerobot.teleoperators import Teleoperator
+from lerobot.robots.config import RobotConfig as LeRobotConfig
+from lerobot.robots.so101_follower import SO101Follower, SO101FollowerConfig
 from serial.tools import list_ports
 from serial.tools.list_ports_common import ListPortInfo
 
-from schemas import RobotPortInfo, RobotConfig
+from schemas import RobotConfig, RobotPortInfo
 
 available_ports = list_ports.comports()
 
@@ -113,6 +112,7 @@ async def identify_robot_visually(robot: RobotPortInfo, joint: str | None = None
 
 
 def make_lerobot_robot_config_from_robot(config: RobotConfig, cameras: dict[str, CameraConfig]) -> LeRobotConfig:
+    """Build LeRobot Follower Config from our RobotConfig."""
     le_config = {
         "id": config.id,
         "port": config.port,
@@ -130,6 +130,7 @@ def make_lerobot_robot_config_from_robot(config: RobotConfig, cameras: dict[str,
     raise ValueError(config.type)
 
 def make_lerobot_teleoperator_config_from_robot(config: RobotConfig) -> LeRobotConfig:
+    """Build LeRobot Teleoperator Config from our RobotConfig."""
     le_config = {
         "id": config.id,
         "port": config.port,

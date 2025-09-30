@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from db import MigrationManager
 from settings import get_settings
 from webrtc.manager import WebRTCManager
+
 from .scheduler import Scheduler
 
 logger = logging.getLogger(__name__)

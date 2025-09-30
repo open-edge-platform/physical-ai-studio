@@ -1,9 +1,12 @@
 import logging
 import multiprocessing as mp
 import os
-import threading
+from typing import TYPE_CHECKING
 
 import psutil
+
+if TYPE_CHECKING:
+    import threading
 
 logger = logging.getLogger(__name__)
 

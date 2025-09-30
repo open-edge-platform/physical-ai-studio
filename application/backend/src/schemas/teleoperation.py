@@ -1,8 +1,8 @@
 from pydantic import BaseModel
 
 from .camera import CameraConfig
-from .robot import RobotConfig
 from .dataset import Dataset
+from .robot import RobotConfig
 
 
 class TeleoperationConfig(BaseModel):

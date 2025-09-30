@@ -1,26 +1,28 @@
-from typing import Annotated
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
-from pydantic import ValidationError
 import asyncio
-
 import multiprocessing as mp
-from schemas import TeleoperationConfig
-from core.scheduler import Scheduler
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+
 from api.dependencies import get_scheduler
+from core.scheduler import Scheduler
+from schemas import TeleoperationConfig
 from workers import TeleoperateWorker
+
 router = APIRouter(prefix="/api/record")
 
 
 @router.websocket("/teleoperate/ws")
-async def teleoperate_websocket(
+async def teleoperate_websocket(  # noqa: C901
         websocket: WebSocket,
         scheduler: Annotated[Scheduler, Depends(get_scheduler)],
 ) -> None:
-    """Robot control websocket"""
+    """Robot control websocket."""
+    print("wat")
     await websocket.accept()
     data = await websocket.receive_json("text")
     config = TeleoperationConfig.model_validate(data["data"])
-    queue = mp.Queue()
+    queue: mp.Queue = mp.Queue()
     process = TeleoperateWorker(
         stop_event=scheduler.mp_stop_event,
         config=config,
@@ -28,7 +30,6 @@ async def teleoperate_websocket(
     )
     process.start()
 
-    print("got a connection")
     async def handle_incoming():
         try:
             while True:

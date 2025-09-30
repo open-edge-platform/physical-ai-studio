@@ -1,12 +1,12 @@
 from functools import lru_cache
 from uuid import UUID
 
-from fastapi import Request, status, WebSocket
+from fastapi import Request, WebSocket, status
 from fastapi.exceptions import HTTPException
 
+from core.scheduler import Scheduler
 from services import DatasetService, ProjectService
 from webrtc.manager import WebRTCManager
-from core.scheduler import Scheduler
 
 
 def is_valid_uuid(identifier: str) -> bool:

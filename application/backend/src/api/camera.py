@@ -1,13 +1,12 @@
-from typing import Annotated
 import asyncio
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
 from api.dependencies import get_webrtc_manager
-from webrtc.manager import Answer, Offer, WebRTCManager
-from utils.camera import gen_camera_frames
-
 from schemas import CameraConfig
+from utils.camera import gen_camera_frames
+from webrtc.manager import Answer, Offer, WebRTCManager
 
 router = APIRouter(prefix="/api/cameras")
 
