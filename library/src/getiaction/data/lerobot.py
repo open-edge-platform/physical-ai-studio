@@ -233,7 +233,7 @@ class LeRobotDatasetWrapper(Dataset):
     @property
     def fps(self) -> int:
         """Frames per second of dataset."""
-        return int(self._lerobot_dataset.fps)
+        return self._lerobot_dataset.fps
 
     @property
     def tolerance_s(self) -> float:
