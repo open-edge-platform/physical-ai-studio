@@ -7,7 +7,7 @@ from schemas import Episode, LeRobotDatasetInfo
 from services import DatasetService
 from utils.dataset import get_dataset_episodes, get_local_repositories
 
-router = APIRouter(prefix="/api/dataset")
+router = APIRouter(prefix="/api/dataset", tags=["Dataset"])
 
 
 @router.get("/lerobot")

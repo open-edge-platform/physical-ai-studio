@@ -9,7 +9,7 @@ from utils.calibration import get_calibrations
 from utils.camera import find_all_opencv_cameras, gen_frames
 from utils.robot import find_robots, identify_robot_visually
 
-router = APIRouter(prefix="/api/hardware")
+router = APIRouter(prefix="/api/hardware", tags=["Hardware"])
 
 
 @router.get("/cameras")
