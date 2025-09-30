@@ -231,7 +231,7 @@ class LeRobotDatasetWrapper(Dataset):
         return {key: ft for key, ft in dataset_features.items() if key.startswith("action")}
 
     @property
-    def fps(self) -> float:
+    def fps(self) -> int:
         """Frames per second of dataset."""
         return self._lerobot_dataset.fps
 

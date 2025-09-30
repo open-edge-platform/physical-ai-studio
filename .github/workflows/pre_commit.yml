@@ -41,7 +41,7 @@ jobs:
       - name: Run pre-commit checks
         run: |
           cd library
-          uv run pre-commit run --files ./*
+          uv run pre-commit run --all-files
   unit-tests:
     runs-on: ubuntu-24.04
     permissions:
