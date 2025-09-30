@@ -82,5 +82,7 @@ async def get_tasks_for_dataset(
 ) -> dict[str, list[str]]:
     """Get all dataset tasks of a project."""
     project = project_service.get_project_by_id(project_id)
-    return {dataset.name: list(LeRobotDatasetMetadata(dataset.name, dataset.path).tasks.values())
-            for dataset in project.datasets}
+    return {
+        dataset.name: list(LeRobotDatasetMetadata(dataset.name, dataset.path).tasks.values())
+        for dataset in project.datasets
+    }

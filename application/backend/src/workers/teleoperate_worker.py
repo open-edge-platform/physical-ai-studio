@@ -20,6 +20,7 @@ from .base import BaseProcessWorker
 
 logger = logging.getLogger(__name__)
 
+
 class TeleoperateWorker(BaseProcessWorker):
     ROLE: str = "TeleoperateWorker"
 
@@ -67,9 +68,7 @@ class TeleoperateWorker(BaseProcessWorker):
         self.robot = make_robot_from_config(follower_config)
         self.teleoperator = make_teleoperator_from_config(leader_config)
         self.dataset = LeRobotDataset(
-            repo_id=self.config.dataset.name,
-            root=self.config.dataset.path,
-            batch_encoding_size=1
+            repo_id=self.config.dataset.name, root=self.config.dataset.path, batch_encoding_size=1
         )
 
         self.dataset.start_image_writer(
@@ -84,25 +83,24 @@ class TeleoperateWorker(BaseProcessWorker):
         self._report_state()
 
     def _report_state(self):
-        self.queue.put({
-            "event": "state",
-            "data": {
-                "initialized": True,
-                "is_recording": self.is_recording
-            }
-        })
+        self.queue.put({"event": "state", "data": {"initialized": True, "is_recording": self.is_recording}})
 
     def _report_observation(self, observation: dict, timestamp: float):
         """Report observation to queue."""
-        self.queue.put({
-            "event": "observations",
-            "data": {
-                "actions": {key: observation.get(key, 0) for key in self.action_keys},
-                "cameras": {key: self._base_64_encode_observation(observation.get(key))
-                            for key in self.camera_keys if key in observation},
-                "timestamp": timestamp
+        self.queue.put(
+            {
+                "event": "observations",
+                "data": {
+                    "actions": {key: observation.get(key, 0) for key in self.action_keys},
+                    "cameras": {
+                        key: self._base_64_encode_observation(observation.get(key))
+                        for key in self.camera_keys
+                        if key in observation
+                    },
+                    "timestamp": timestamp,
+                },
             }
-        })
+        )
 
     def run_loop(self) -> None:
         """Teleoperation loop."""
@@ -119,7 +117,7 @@ class TeleoperateWorker(BaseProcessWorker):
             if self.events["save"].is_set():
                 logger.info("save")
                 self.events["save"].clear()
-                busy_wait(0.3) #TODO check if neccesary
+                busy_wait(0.3)  # TODO check if neccesary
                 self.dataset.save_episode()
                 self.is_recording = False
                 self._report_state()
@@ -127,7 +125,7 @@ class TeleoperateWorker(BaseProcessWorker):
             if self.events["reset"].is_set():
                 logger.info("reset")
                 self.events["reset"].clear()
-                busy_wait(0.3) #TODO check if neccesary
+                busy_wait(0.3)  # TODO check if neccesary
                 self.dataset.clear_episode_buffer()
                 self.is_recording = False
                 self._report_state()

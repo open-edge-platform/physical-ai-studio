@@ -14,8 +14,8 @@ router = APIRouter(prefix="/api/record")
 
 @router.websocket("/teleoperate/ws")
 async def teleoperate_websocket(  # noqa: C901
-        websocket: WebSocket,
-        scheduler: Annotated[Scheduler, Depends(get_scheduler)],
+    websocket: WebSocket,
+    scheduler: Annotated[Scheduler, Depends(get_scheduler)],
 ) -> None:
     """Robot control websocket."""
     print("wat")

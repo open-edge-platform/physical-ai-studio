@@ -129,6 +129,7 @@ def make_lerobot_robot_config_from_robot(config: RobotConfig, cameras: dict[str,
         return SO101FollowerConfig(**le_config)
     raise ValueError(config.type)
 
+
 def make_lerobot_teleoperator_config_from_robot(config: RobotConfig) -> LeRobotConfig:
     """Build LeRobot Teleoperator Config from our RobotConfig."""
     le_config = {
