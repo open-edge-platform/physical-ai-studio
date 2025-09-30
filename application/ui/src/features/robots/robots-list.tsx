@@ -115,14 +115,11 @@ const RobotListItem = ({
 export const RobotsList = () => {
     const { project_id } = useProjectId();
     const { data: robots } = $api.useSuspenseQuery('get', '/api/hardware/robots');
-    const { data: project } = $api.useSuspenseQuery('get', '/api/projects/{id}', {
-        params: { path: { id: project_id } },
-    });
 
     return (
         <Flex direction='column' gap='size-100'>
-            {project.robots.map((robot) => {
-                const hardwareRobot = robots.find(({ serial_id }) => serial_id === robot.serial_id);
+            {(robots ?? []).map((robot) => {
+                const hardwareRobot = robot;
 
                 const to = paths.project.robotConfiguration.show({
                     project_id,
@@ -136,8 +133,9 @@ export const RobotsList = () => {
                                 <RobotListItem
                                     id={robot.serial_id}
                                     name={hardwareRobot?.device_name ?? ''}
-                                    type={robot.type}
                                     port={hardwareRobot?.port}
+                                    // TODO configure using some project endpoint
+                                    type={'Leader'}
                                     // Fake connected mode for now
                                     status={hardwareRobot?.port === '/dev/ttyACM1' ? 'connected' : 'disconnected'}
                                     isActive={isActive}
