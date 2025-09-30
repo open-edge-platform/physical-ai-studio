@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-from action_trainer.data import DataModule, Dataset, Observation
+from getiaction.data import DataModule, Dataset, Observation
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -231,7 +231,7 @@ class LeRobotDatasetWrapper(Dataset):
         return {key: ft for key, ft in dataset_features.items() if key.startswith("action")}
 
     @property
-    def fps(self) -> float:
+    def fps(self) -> int:
         """Frames per second of dataset."""
         return self._lerobot_dataset.fps
 

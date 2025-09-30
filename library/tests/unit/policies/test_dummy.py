@@ -2,8 +2,8 @@ import pytest
 import torch
 from torch import nn
 from collections import deque
-from action_trainer.policies import Dummy, DummyConfig
-from action_trainer.policies.dummy.model import Dummy as DummyModel
+from getiaction.policies import Dummy, DummyConfig
+from getiaction.policies.dummy.model import Dummy as DummyModel
 
 class TestDummyPolicy:
     """Tests for DummyPolicy and DummyModel."""

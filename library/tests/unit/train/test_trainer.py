@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock
-from action_trainer.train.trainer import Trainer
+from getiaction.train.trainer import Trainer
 
 class TestLightningActionTrainer:
     """Tests for LightningActionTrainer without testing the callback."""

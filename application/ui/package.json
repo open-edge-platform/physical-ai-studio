@@ -97,10 +97,5 @@
     },
     "workspaces": [
         "packages/*"
-    ],
-    "msw": {
-        "workerDirectory": [
-            "public"
-        ]
-    }
+    ]
 }

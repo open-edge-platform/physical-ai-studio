@@ -7,9 +7,9 @@ from collections.abc import Iterable
 
 import torch
 
-from action_trainer.policies.base import TrainerModule
-from action_trainer.policies.dummy.config import DummyConfig
-from action_trainer.policies.dummy.model import Dummy as DummyModel
+from getiaction.policies.base import TrainerModule
+from getiaction.policies.dummy.config import DummyConfig
+from getiaction.policies.dummy.model import Dummy as DummyModel
 
 
 class Dummy(TrainerModule):

@@ -68,8 +68,8 @@ classDiagram
 Example:
 
 ```python
-from action_trainer.data import LeRobotDataModule
-from action_trainer.policies import Dummy, DummyConfig
+from getiaction.data import LeRobotDataModule
+from getiaction.policies import Dummy, DummyConfig
 
 if __name__ == "__main__":
     l_dm = LeRobotDataModule(repo_id="lerobot/pusht")

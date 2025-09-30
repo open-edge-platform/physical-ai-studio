@@ -14,7 +14,7 @@ classDiagram
 Example:
 
 ```python
-from action_trainer.gyms import PushTGym
+from getiaction.gyms import PushTGym
 # init pusht gym
 pusht_gym = PushTGym(gym_id="gym_pusht/PushT-v0" obs_type="pixels_agent_pos")
 # reset to receive first observation

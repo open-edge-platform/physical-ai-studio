@@ -5,7 +5,7 @@
 
 import gym_pusht  # noqa: F401
 
-from action_trainer.gyms import BaseGym
+from getiaction.gyms import BaseGym
 
 
 class PushTGym(BaseGym):
