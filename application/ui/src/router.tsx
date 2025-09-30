@@ -5,7 +5,7 @@ import { Outlet, redirect } from 'react-router';
 import { createBrowserRouter } from 'react-router-dom';
 import { path } from 'static-path';
 
-import { ErrorPage } from './components/error-page/error-page';
+import { ErrorMessage, ErrorPage } from './components/error-page/error-page';
 import { Camera, CameraOverview } from './routes/cameras/camera';
 import { Layout as CamerasLayout } from './routes/cameras/layout';
 import { CameraWebcam } from './routes/cameras/webcam';
@@ -16,12 +16,13 @@ import { OpenApi } from './routes/openapi';
 import { Index as Projects } from './routes/projects/index';
 import { NewProjectPage } from './routes/projects/new';
 import { ProjectLayout } from './routes/projects/project.layout';
-import { Index as RobotConfiguration } from './routes/robot-configuration/index';
+import { Layout as RobotConfigurationLayout } from './routes/robots/layout';
 
 const root = path('/');
 const projects = root.path('/projects');
 const project = root.path('/projects/:project_id');
-const robotConfiguration = project.path('robots');
+const robots = project.path('robots');
+const robot = robots.path(':robot_id');
 const datasets = project.path('/datasets');
 const models = project.path('/models');
 const cameras = project.path('cameras');
@@ -34,6 +35,7 @@ export const paths = {
         new: projects.path('/new'),
     },
     project: {
+        index: project,
         datasets: {
             index: datasets,
             record: datasets.path('/:dataset_id/record'),
@@ -46,8 +48,14 @@ export const paths = {
             new: cameras.path('/new'),
             show: cameras.path(':camera_id'),
         },
-        robotConfiguration,
-        models,
+        robotConfiguration: {
+            index: robots,
+            new: robots.path('new'),
+            show: robot,
+        },
+        models: {
+            index: models,
+        },
     },
 };
 
@@ -81,8 +89,23 @@ export const router = createBrowserRouter([
                 ],
             },
             {
+                path: paths.project.index.pattern,
                 element: <ProjectLayout />,
                 children: [
+                    {
+                        index: true,
+                        loader: ({ params }) => {
+                            if (params.project_id === undefined) {
+                                return redirect(paths.projects.index({}));
+                            }
+
+                            return redirect(
+                                paths.project.robotConfiguration.index({
+                                    project_id: params.project_id,
+                                })
+                            );
+                        },
+                    },
                     {
                         path: paths.project.datasets.index.pattern,
                         children: [
@@ -101,12 +124,26 @@ export const router = createBrowserRouter([
                         ],
                     },
                     {
-                        path: paths.project.models.pattern,
+                        path: paths.project.models.index.pattern,
                         element: <Models />,
                     },
                     {
-                        path: paths.project.robotConfiguration.pattern,
-                        element: <RobotConfiguration />,
+                        path: paths.project.robotConfiguration.index.pattern,
+                        element: <RobotConfigurationLayout />,
+                        children: [
+                            {
+                                index: true,
+                                element: <ErrorMessage message={'Coming soon...'} />,
+                            },
+                            {
+                                path: paths.project.robotConfiguration.new.pattern,
+                                element: <ErrorMessage message={'Coming soon...'} />,
+                            },
+                            {
+                                path: paths.project.robotConfiguration.show.pattern,
+                                element: <ErrorMessage message={'Coming soon...'} />,
+                            },
+                        ],
                     },
                     {
                         path: paths.project.cameras.index.pattern,

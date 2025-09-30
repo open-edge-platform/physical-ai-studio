@@ -3,7 +3,7 @@
 
 default_language_version:
   node: 22.10.0
-  python: python3.10
+  # python version will be determined by the environment
 
 repos:
   # ========================================================================== #
