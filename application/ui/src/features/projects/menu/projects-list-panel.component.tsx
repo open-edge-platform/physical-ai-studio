@@ -9,7 +9,6 @@ import {
     Flex,
     Header,
     Heading,
-    Icon,
     Item,
     Link,
     Menu,
@@ -17,10 +16,11 @@ import {
     Text,
     View,
 } from '@geti/ui';
-import { AddCircle, ChevronRightSmallLight } from '@geti/ui/icons';
+import { ChevronRightSmallLight } from '@geti/ui/icons';
 
 import { $api } from '../../../api/client';
 import { paths } from '../../../router';
+import { NewProjectLink } from '../list/new-project-link.component';
 import { useProjectId } from './../use-project';
 
 import styles from './projects-list.module.scss';
@@ -145,19 +145,7 @@ export const ProjectsListPanel = () => {
                 </Content>
 
                 <ButtonGroup UNSAFE_className={styles.panelButtons}>
-                    <Link
-                        href={paths.projects.new({})}
-                        isQuiet
-                        width={'100%'}
-                        marginStart={'size-100'}
-                        marginEnd={'size-350'}
-                        UNSAFE_className={styles.addProjectButton}
-                    >
-                        <Icon>
-                            <AddCircle />
-                        </Icon>
-                        <Text marginX='size-50'>Add project</Text>
-                    </Link>
+                    <NewProjectLink className={styles.addProjectButton} />
                 </ButtonGroup>
             </Dialog>
         </DialogTrigger>
