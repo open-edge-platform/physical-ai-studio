@@ -57,7 +57,7 @@ export const Recording = ({ setup }: RecordingProps) => {
     //}, [setup, readyState, updateProject, init, state.initialized]);
 
 
-    const debug = true;
+    const debug = false;
     if (debug) {
       return (
         <Flex>

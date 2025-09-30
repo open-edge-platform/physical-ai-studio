@@ -37,6 +37,7 @@ export const useRecording = (setup: SchemaTeleoperationConfig) => {
         {
             shouldReconnect: () => true,
             onMessage: (event: WebSocketEventMap['message']) => onMessage(event),
+            onOpen: () => init.mutate(),
             onClose: () => setState(createRobotState()),
         }
     );
@@ -47,6 +48,7 @@ export const useRecording = (setup: SchemaTeleoperationConfig) => {
     useEffect(() => {
         if (lastJsonMessage) {
             const message = lastJsonMessage as RecordApiJsonResponse;
+          console.log(message);
             switch (message.event) {
                 case 'state':
                     setState(message.data as RobotState);

@@ -1,7 +1,7 @@
 from .base import BaseProcessWorker, BaseThreadWorker
 import time
 
-from multiprocessing import Event
+from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
 from schemas import TeleoperationConfig
 from lerobot.utils.robot_utils import busy_wait
@@ -16,10 +16,13 @@ class TeleoperateWorker(BaseProcessWorker):
     ROLE: str = "TeleoperateWorker"
 
     events: dict[str, EventClass]
+    queue: Queue
+    is_recording = False
 
-    def __init__(self, stop_event: EventClass, config: TeleoperationConfig):
-        super().__init__(stop_event=stop_event)
+    def __init__(self, stop_event: EventClass, queue: Queue, config: TeleoperationConfig):
+        super().__init__(stop_event=stop_event, queues_to_cancel=[queue])
         self.config = config
+        self.queue = queue
         self.events = {
             "stop": Event(),
             "reset": Event(),
@@ -57,6 +60,16 @@ class TeleoperateWorker(BaseProcessWorker):
             num_processes=0,
             num_threads=4 * len(self.robot.cameras),
         )
+        self.report_state()
+
+    def report_state(self):
+        self.queue.put({
+            "event": "state",
+            "data": {
+                "initialized": True,
+                "is_recording": self.is_recording
+            }
+        })
 
 
     def run_loop(self):
@@ -70,30 +83,33 @@ class TeleoperateWorker(BaseProcessWorker):
         self.teleoperator.connect()
 
         start_loop_t = time.perf_counter()
-        is_recording = False
+        self.is_recording = False
         while not self.should_stop() and not self.events["stop"].is_set():
             if self.events["save"].is_set():
                 print("save")
                 self.events["save"].clear()
-                busy_wait(1)
+                busy_wait(0.3) #TODO check if neccesary
                 self.dataset.save_episode()
-                is_recording = False
+                self.is_recording = False
+                self.report_state()
 
             if self.events["reset"].is_set():
                 print("reset")
                 self.events["reset"].clear()
-                busy_wait(1)
+                busy_wait(0.3) #TODO check if neccesary
                 self.dataset.clear_episode_buffer()
-                is_recording = False
+                self.is_recording = False
+                self.report_state()
 
             if self.events["start"].is_set():
                 print("start")
                 self.events["start"].clear()
-                is_recording = True
+                self.is_recording = True
+                self.report_state()
 
             action = self.teleoperator.get_action()
             sent_action = self.robot.send_action(action)
-            if is_recording:
+            if self.is_recording:
                 observation = self.robot.get_observation()
                 observation_frame = build_dataset_frame(self.dataset.features, observation, prefix="observation")
                 action_frame = build_dataset_frame(self.dataset.features, sent_action, prefix="action")
@@ -106,6 +122,6 @@ class TeleoperateWorker(BaseProcessWorker):
             busy_wait(wait_time)
 
     def teardown(self):
-        print("disconnecting robots in teardown")
         self.robot.disconnect()
         self.teleoperator.disconnect()
+        self.queue.close()
