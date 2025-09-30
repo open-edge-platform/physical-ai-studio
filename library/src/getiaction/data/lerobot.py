@@ -7,10 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from torch.utils.data import DataLoader
-
 from getiaction.data import DataModule, Dataset, Observation
-from getiaction.data.datamodules import _collate_observations
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -126,39 +123,26 @@ def _convert_lerobot_item_to_observation(lerobot_item: dict) -> Observation:
     )
 
 
-def _collate_lerobot_to_observations(batch: list[dict]) -> dict[str, Any]:
-    """Collate a batch of LeRobot dictionary items to training format.
+class _LeRobotDatasetAdapter(Dataset):
+    """An internal adapter that makes a `LeRobotDataset` compatible with the `getiaction.data.Dataset` interface.
 
-    This function converts LeRobot dictionary format to Observation format
-    and then collates them into the final training format.
+    This adapter class serves two primary purposes:
+    1.  **Protocol Compliance**: It wraps the `LeRobotDataset` to ensure it conforms to the
+        abstract methods and properties required by the `getiaction.data.Dataset` base class
+        (e.g., providing `.features`, `.fps`, etc.).
+    2.  **Interface Adaptation**: It transforms the dictionary-based output of `LeRobotDataset.__getitem__`
+        into the structured `Observation` dataclass format expected by the training pipeline.
 
-    Args:
-        batch (list[dict]): A list of LeRobot dictionary items.
-
-    Returns:
-        dict[str, Any]: Dictionary for use in the model.
-    """
-    # Convert each LeRobot dict item to Observation format
-    observations = [_convert_lerobot_item_to_observation(item) for item in batch]
-
-    # Use the existing collate function for Observations
-    return _collate_observations(observations)
-
-
-# NOTE: Eventually we will need properties from action and lerobot datasets
-class LeRobotDatasetWrapper(Dataset):
-    """A wrapper class that enables using a LeRobotDataset for action training.
-
-    This class uses the **composition** pattern by holding a `LeRobotDataset` instance
-    and delegating all data loading operations to it. This allows adding action-specific
-    logic without modifying the original `LeRobotDataset`.
+    Note:
+        This is an internal implementation detail and is not meant to be used directly by end-users.
+        The `LeRobotDataModule` handles the creation and management of this adapter automatically.
     """
 
     def __init__(
         self,
+        *,
         repo_id: str,
         root: str | Path | None = None,
-        *,
         episodes: list[int] | None = None,
         image_transforms: Callable | None = None,
         delta_timestamps: dict[list[float], str] | None = None,
@@ -169,9 +153,9 @@ class LeRobotDatasetWrapper(Dataset):
         video_backend: str | None = None,
         batch_encoding_size: int = 1,
     ) -> None:
-        """Initialize a LeRobotDatasetWrapper.
+        """Initialize a _LeRobotDatasetAdapter.
 
-        This wrapper initializes an internal `LeRobotDataset` using the provided
+        This adapter initializes an internal `LeRobotDataset` using the provided
         configuration and exposes the same dataset interface for action training.
 
         Args:
@@ -225,7 +209,7 @@ class LeRobotDatasetWrapper(Dataset):
         return _convert_lerobot_item_to_observation(self._lerobot_dataset[idx])
 
     @staticmethod
-    def from_lerobot(lerobot_dataset: LeRobotDataset) -> LeRobotDatasetWrapper:
+    def from_lerobot(lerobot_dataset: LeRobotDataset) -> _LeRobotDatasetAdapter:
         """Creates an instance of LeRobotActionDataset from an existing LeRobotDataset instance.
 
         This static method is useful when you already have a `LeRobotDataset` object
@@ -235,9 +219,9 @@ class LeRobotDatasetWrapper(Dataset):
             lerobot_dataset (LeRobotDataset): The existing LeRobotDataset instance to be wrapped.
 
         Returns:
-            LeRobotActionDataset: A new LeRobotActionDataset instance that uses the provided dataset.
+            _LeRobotDatasetAdapter: A new adapter instance that uses the provided dataset.
         """
-        instance = LeRobotDatasetWrapper.__new__(LeRobotDatasetWrapper)
+        instance = _LeRobotDatasetAdapter.__new__(_LeRobotDatasetAdapter)
         # Bypassing __init__ to set the internal dataset
         instance._lerobot_dataset = lerobot_dataset  # noqa: SLF001
         return instance
@@ -276,17 +260,46 @@ class LeRobotDatasetWrapper(Dataset):
 
 
 class LeRobotDataModule(DataModule):
-    """LeRobot-specific Action DataModule."""
+    """A PyTorch Lightning DataModule for the integration of LeRobot datasets.
+
+    This DataModule simplifies the process of using datasets from the Hugging Face Hub
+    that follow the LeRobot format. It automatically handles downloading, caching,
+    and preparing the dataset for use in a `getiaction` training pipeline.
+
+    The module wraps the original `LeRobotDataset` to make it compatible with the
+    expected `Observation` data format and `getiaction.data.Dataset` interface.
+
+    Examples:
+        >>> # 1. Instantiate from a Hugging Face repository ID
+        >>> datamodule_from_repo = LeRobotDataModule(
+        ...     repo_id="lerobot/aloha_sim_transfer_cube_human",
+        ...     train_batch_size=32
+        ... )
+        >>>
+        >>> # 2. Instantiate from an existing LeRobotDataset object
+        >>> from lerobot.datasets import LeRobotDataset
+        >>> raw_dataset = LeRobotDataset("lerobot/aloha_sim_transfer_cube_human")
+        >>> datamodule_from_instance = LeRobotDataModule(
+        ...     dataset=raw_dataset,
+        ...     train_batch_size=32
+        ... )
+        >>>
+        >>> # 3. Use with a PyTorch Lightning Trainer
+        >>> import lightning as L
+        >>> trainer = L.Trainer(max_epochs=10)
+        >>> # model = YourLightningModule(...)
+        >>> # trainer.fit(model, datamodule=datamodule_from_repo)
+
+    """
 
     def __init__(
         self,
-        train_batch_size: int = 16,
-        repo_id: str | None = None,
-        dataset: LeRobotDatasetWrapper | LeRobotDataset | None = None,
-        # LeRobot Dataset kwargs
         *,
+        repo_id: str | None = None,
+        dataset: LeRobotDataset | None = None,
         root: str | Path | None = None,
         episodes: list[int] | None = None,
+        train_batch_size: int = 16,
         image_transforms: Callable | None = None,
         delta_timestamps: dict[list[float], str] | None = None,
         tolerance_s: float = 1e-4,
@@ -295,19 +308,18 @@ class LeRobotDataModule(DataModule):
         download_videos: bool = True,
         video_backend: str | None = None,
         batch_encoding_size: int = 1,
-        use_wrapper: bool = True,  # New parameter to control wrapper usage
         **action_datamodule_kwargs,  # noqa: ANN003
     ) -> None:
         """Initialize a LeRobot-specific Action DataModule.
 
-        This class can work with either a `LeRobotDataset` directly (using a custom collate function)
-        or a `LeRobotDatasetWrapper` for backward compatibility.
+        This class seamlessly integrates a `LeRobotDataset` with the `getiaction`
+        training pipeline by automatically adapting it to the required format.
 
         Args:
             train_batch_size (int, optional): Batch size for the training DataLoader. Defaults to 16.
             repo_id (str | None, optional): Repository ID for the LeRobot dataset.
             Required if `dataset` is not provided.
-            dataset (LeRobotDatasetWrapper | LeRobotDataset | None, optional): Pre-initialized dataset instance.
+            dataset (LeRobotDataset | None, optional): Pre-initialized LeRobotDataset instance.
             Defaults to None.
             root (str | Path | None, optional): Local directory for caching dataset files. Defaults to None.
             episodes (list[int] | None, optional): Specific episode indices to include. Defaults to None.
@@ -320,94 +332,40 @@ class LeRobotDataModule(DataModule):
             download_videos (bool, optional): Whether to download associated videos. Defaults to True.
             video_backend (str | None, optional): Backend to use for video decoding. Defaults to None.
             batch_encoding_size (int, optional): Number of samples per encoded batch. Defaults to 1.
-            use_wrapper (bool, optional): If True, uses LeRobotDatasetWrapper. If False, uses original
-            LeRobotDataset with custom collate function. Defaults to True for backward compatibility.
-            **action_datamodule_kwargs: Additional keyword arguments passed to the base `ActionDataModule`.
+            **action_datamodule_kwargs: Additional keyword arguments passed to the base `DataModule`.
 
         Raises:
-            ValueError: If neither `repo_id` nor `dataset` is provided, or if the dataset type is invalid.
-            TypeError: If `dataset` is not of type `LeRobotDataset` or `LeRobotDatasetWrapper`.
+            ValueError: If neither `repo_id` nor `dataset` is provided.
+            TypeError: If `dataset` is not of type `LeRobotDataset`.
         """
-        # Store parameters for custom DataLoader creation
-        self._use_wrapper = use_wrapper
-        self._raw_lerobot_dataset = None
-
-        # if dataset is passed, it is preferred
-        if dataset:
-            if isinstance(dataset, LeRobotDatasetWrapper):
-                train_dataset = dataset
-                self._use_wrapper = True  # Force wrapper usage for wrapper instances
-            elif isinstance(dataset, LeRobotDataset):
-                if use_wrapper:
-                    train_dataset = LeRobotDatasetWrapper.from_lerobot(dataset)
-                else:
-                    # Store the raw dataset for custom collate function
-                    train_dataset = dataset
-                    self._raw_lerobot_dataset = dataset
-            else:
-                msg = f"Dataset must be LeRobotDataset or LeRobotDatasetWrapper, got {type(dataset)}"
+        if dataset is not None:
+            if not isinstance(dataset, LeRobotDataset):
+                msg = f"The provided 'dataset' must be an instance of LeRobotDataset, but got {type(dataset)}."
                 raise TypeError(msg)
-        elif repo_id:
-            if use_wrapper:
-                # Initialize the LeRobot dataset wrapper
-                train_dataset = LeRobotDatasetWrapper(
-                    repo_id=repo_id,
-                    root=root,
-                    episodes=episodes,
-                    image_transforms=image_transforms,
-                    delta_timestamps=delta_timestamps,
-                    tolerance_s=tolerance_s,
-                    revision=revision,
-                    force_cache_sync=force_cache_sync,
-                    download_videos=download_videos,
-                    video_backend=video_backend,
-                    batch_encoding_size=batch_encoding_size,
-                )
-            else:
-                # Initialize the raw LeRobot dataset
-                train_dataset = LeRobotDataset(
-                    repo_id=repo_id,
-                    root=root,
-                    episodes=episodes,
-                    image_transforms=image_transforms,
-                    delta_timestamps=delta_timestamps,
-                    tolerance_s=tolerance_s,
-                    revision=revision,
-                    force_cache_sync=force_cache_sync,
-                    download_videos=download_videos,
-                    video_backend=video_backend,
-                    batch_encoding_size=batch_encoding_size,
-                )
-                self._raw_lerobot_dataset = train_dataset
+            adapted_dataset = _LeRobotDatasetAdapter.from_lerobot(dataset)
+
+        elif repo_id is not None:
+            # Initialize the LeRobot dataset adapter directly
+            adapted_dataset = _LeRobotDatasetAdapter(
+                repo_id=repo_id,
+                root=root,
+                episodes=episodes,
+                image_transforms=image_transforms,
+                delta_timestamps=delta_timestamps,
+                tolerance_s=tolerance_s,
+                revision=revision,
+                force_cache_sync=force_cache_sync,
+                download_videos=download_videos,
+                video_backend=video_backend,
+                batch_encoding_size=batch_encoding_size,
+            )
         else:
-            msg = "Must provide either repo_id or a dataset"
+            msg = "Must provide either 'repo_id' or a 'dataset' instance."
             raise ValueError(msg)
 
-        # Pass initialized dataset into the parent class
+        # Pass the adapted dataset into the parent class
         super().__init__(
-            train_dataset=train_dataset,
+            train_dataset=adapted_dataset,
             train_batch_size=train_batch_size,
             **action_datamodule_kwargs,
         )
-
-    def train_dataloader(self) -> DataLoader:
-        """Return the DataLoader for training.
-
-        Uses custom collate function when working with raw LeRobotDataset,
-        otherwise uses the parent implementation.
-
-        Returns:
-            DataLoader: Training DataLoader.
-        """
-        if not self._use_wrapper and self._raw_lerobot_dataset is not None:
-            # Use custom collate function for raw LeRobotDataset
-            return DataLoader(
-                self.train_dataset,
-                num_workers=4,
-                batch_size=self.train_batch_size,
-                shuffle=True,
-                drop_last=True,
-                collate_fn=_collate_lerobot_to_observations,
-            )
-        # Use parent implementation for wrapped datasets
-        return super().train_dataloader()
