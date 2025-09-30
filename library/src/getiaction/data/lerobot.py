@@ -5,17 +5,21 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
-from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from torch.utils.data import DataLoader
 
 from getiaction.data import DataModule, Dataset, Observation
+from getiaction.data.datamodules import _collate_observations
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
     import torch
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+else:
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 
 def _collect_field(
@@ -109,10 +113,10 @@ def _convert_lerobot_item_to_observation(lerobot_item: dict) -> Observation:
     extra = {k: v for k, v in lerobot_item.items() if k not in reserved}
 
     return Observation(
-        images=images if images is not None else {},
-        state=state if state is not None else None,
-        action=action if action is not None else None,
-        task=task if task is not None else None,
+        images=cast("Any", images) if images is not None else {},
+        state=cast("Any", state) if state is not None else None,
+        action=cast("Any", action) if action is not None else None,
+        task=cast("Any", task) if task is not None else None,
         episode_index=lerobot_item["episode_index"],
         frame_index=lerobot_item["frame_index"],
         index=lerobot_item["index"],
@@ -120,6 +124,25 @@ def _convert_lerobot_item_to_observation(lerobot_item: dict) -> Observation:
         timestamp=lerobot_item["timestamp"],
         extra=extra,
     )
+
+
+def _collate_lerobot_to_observations(batch: list[dict]) -> dict[str, Any]:
+    """Collate a batch of LeRobot dictionary items to training format.
+
+    This function converts LeRobot dictionary format to Observation format
+    and then collates them into the final training format.
+
+    Args:
+        batch (list[dict]): A list of LeRobot dictionary items.
+
+    Returns:
+        dict[str, Any]: Dictionary for use in the model.
+    """
+    # Convert each LeRobot dict item to Observation format
+    observations = [_convert_lerobot_item_to_observation(item) for item in batch]
+
+    # Use the existing collate function for Observations
+    return _collate_observations(observations)
 
 
 # NOTE: Eventually we will need properties from action and lerobot datasets
@@ -243,7 +266,8 @@ class LeRobotDatasetWrapper(Dataset):
     @property
     def delta_indices(self) -> dict[str, list[int]]:
         """Expose delta_indices from the dataset."""
-        return self._lerobot_dataset.delta_indices
+        indices = self._lerobot_dataset.delta_indices
+        return indices if indices is not None else {}
 
     @delta_indices.setter
     def delta_indices(self, indices: dict[str, list[int]]) -> None:
@@ -271,13 +295,13 @@ class LeRobotDataModule(DataModule):
         download_videos: bool = True,
         video_backend: str | None = None,
         batch_encoding_size: int = 1,
+        use_wrapper: bool = True,  # New parameter to control wrapper usage
         **action_datamodule_kwargs,  # noqa: ANN003
     ) -> None:
         """Initialize a LeRobot-specific Action DataModule.
 
-        This class wraps a `LeRobotDataset` (or `LeRobotDatasetWrapper`) and
-        integrates it with the base `ActionDataModule` functionality, providing
-        training, evaluation, and test data loaders for imitation learning tasks.
+        This class can work with either a `LeRobotDataset` directly (using a custom collate function)
+        or a `LeRobotDatasetWrapper` for backward compatibility.
 
         Args:
             train_batch_size (int, optional): Batch size for the training DataLoader. Defaults to 16.
@@ -296,35 +320,65 @@ class LeRobotDataModule(DataModule):
             download_videos (bool, optional): Whether to download associated videos. Defaults to True.
             video_backend (str | None, optional): Backend to use for video decoding. Defaults to None.
             batch_encoding_size (int, optional): Number of samples per encoded batch. Defaults to 1.
+            use_wrapper (bool, optional): If True, uses LeRobotDatasetWrapper. If False, uses original
+            LeRobotDataset with custom collate function. Defaults to True for backward compatibility.
             **action_datamodule_kwargs: Additional keyword arguments passed to the base `ActionDataModule`.
 
         Raises:
             ValueError: If neither `repo_id` nor `dataset` is provided, or if the dataset type is invalid.
             TypeError: If `dataset` is not of type `LeRobotDataset` or `LeRobotDatasetWrapper`.
         """
-        # if dataset is passed, it is preffered
+        # Store parameters for custom DataLoader creation
+        self._use_wrapper = use_wrapper
+        self._raw_lerobot_dataset = None
+
+        # if dataset is passed, it is preferred
         if dataset:
             if isinstance(dataset, LeRobotDatasetWrapper):
                 train_dataset = dataset
+                self._use_wrapper = True  # Force wrapper usage for wrapper instances
             elif isinstance(dataset, LeRobotDataset):
-                train_dataset = LeRobotDatasetWrapper.from_lerobot(dataset)
+                if use_wrapper:
+                    train_dataset = LeRobotDatasetWrapper.from_lerobot(dataset)
+                else:
+                    # Store the raw dataset for custom collate function
+                    train_dataset = dataset
+                    self._raw_lerobot_dataset = dataset
             else:
-                raise TypeError
+                msg = f"Dataset must be LeRobotDataset or LeRobotDatasetWrapper, got {type(dataset)}"
+                raise TypeError(msg)
         elif repo_id:
-            # Initialize the LeRobot dataset
-            train_dataset = LeRobotDatasetWrapper(
-                repo_id=repo_id,
-                root=root,
-                episodes=episodes,
-                image_transforms=image_transforms,
-                delta_timestamps=delta_timestamps,
-                tolerance_s=tolerance_s,
-                revision=revision,
-                force_cache_sync=force_cache_sync,
-                download_videos=download_videos,
-                video_backend=video_backend,
-                batch_encoding_size=batch_encoding_size,
-            )
+            if use_wrapper:
+                # Initialize the LeRobot dataset wrapper
+                train_dataset = LeRobotDatasetWrapper(
+                    repo_id=repo_id,
+                    root=root,
+                    episodes=episodes,
+                    image_transforms=image_transforms,
+                    delta_timestamps=delta_timestamps,
+                    tolerance_s=tolerance_s,
+                    revision=revision,
+                    force_cache_sync=force_cache_sync,
+                    download_videos=download_videos,
+                    video_backend=video_backend,
+                    batch_encoding_size=batch_encoding_size,
+                )
+            else:
+                # Initialize the raw LeRobot dataset
+                train_dataset = LeRobotDataset(
+                    repo_id=repo_id,
+                    root=root,
+                    episodes=episodes,
+                    image_transforms=image_transforms,
+                    delta_timestamps=delta_timestamps,
+                    tolerance_s=tolerance_s,
+                    revision=revision,
+                    force_cache_sync=force_cache_sync,
+                    download_videos=download_videos,
+                    video_backend=video_backend,
+                    batch_encoding_size=batch_encoding_size,
+                )
+                self._raw_lerobot_dataset = train_dataset
         else:
             msg = "Must provide either repo_id or a dataset"
             raise ValueError(msg)
@@ -335,3 +389,25 @@ class LeRobotDataModule(DataModule):
             train_batch_size=train_batch_size,
             **action_datamodule_kwargs,
         )
+
+    def train_dataloader(self) -> DataLoader:
+        """Return the DataLoader for training.
+
+        Uses custom collate function when working with raw LeRobotDataset,
+        otherwise uses the parent implementation.
+
+        Returns:
+            DataLoader: Training DataLoader.
+        """
+        if not self._use_wrapper and self._raw_lerobot_dataset is not None:
+            # Use custom collate function for raw LeRobotDataset
+            return DataLoader(
+                self.train_dataset,
+                num_workers=4,
+                batch_size=self.train_batch_size,
+                shuffle=True,
+                drop_last=True,
+                collate_fn=_collate_lerobot_to_observations,
+            )
+        # Use parent implementation for wrapped datasets
+        return super().train_dataloader()
