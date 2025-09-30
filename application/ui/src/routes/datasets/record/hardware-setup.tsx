@@ -1,15 +1,15 @@
-import { Dispatch, SetStateAction, useState } from 'react';
+import { useState } from 'react';
 
 import {
     Button,
-    ComboBox,
-    Section,
     ButtonGroup,
+    ComboBox,
     Flex,
     Form,
     Heading,
     Item,
     Key,
+    Section,
     TabList,
     TabPanels,
     Tabs,
@@ -37,7 +37,6 @@ export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
         },
     });
 
-
     const isNewDataset = false; //TODO: Implement new dataset...
     const initialTask = isNewDataset ? '' : Object.values(projectTasks).flat()[0];
 
@@ -47,26 +46,27 @@ export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
         dataset: project.datasets.find((d) => d.id === dataset_id) ?? null,
         cameras: project.config?.cameras ?? [],
         follower: {
-            id: "",
-            robot_type: project.config?.robot_type ?? "",
-            serial_id: "",
-            port: "",
-            type: "follower",
+            id: '',
+            robot_type: project.config?.robot_type ?? '',
+            serial_id: '',
+            port: '',
+            type: 'follower',
         },
         leader: {
-            id: "",
-            robot_type: project.config?.robot_type ?? "",
-            serial_id: "",
-            port: "",
-            type: "leader",
+            id: '',
+            robot_type: project.config?.robot_type ?? '',
+            serial_id: '',
+            port: '',
+            type: 'leader',
         },
     });
 
-
-
     const { data: availableCameras, refetch: refreshCameras } = $api.useQuery('get', '/api/hardware/cameras');
-    const { data: foundRobots, refetch: refreshRobots  } = $api.useQuery('get', '/api/hardware/robots');
-    const { data: availableCalibrations, refetch: refreshCalibrations  } = $api.useQuery('get', '/api/hardware/calibrations');
+    const { data: foundRobots, refetch: refreshRobots } = $api.useQuery('get', '/api/hardware/robots');
+    const { data: availableCalibrations, refetch: refreshCalibrations } = $api.useQuery(
+        'get',
+        '/api/hardware/calibrations'
+    );
 
     const navigate = useNavigate();
 
@@ -83,18 +83,21 @@ export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
                 }
             }),
         });
-    }
+    };
 
-    const updateRobot = (type: "leader" | "follower", robot_config: SchemaRobotConfig) => {
+    const updateRobot = (type: 'leader' | 'follower', robot_config: SchemaRobotConfig) => {
         //Update robot, but importantly swap the serial ids if the id was already selected by other robot config
-        const other = type == "leader" ? "follower" : "leader";
+        const other = type == 'leader' ? 'follower' : 'leader';
 
-        setConfig((config) => ({
-            ...config,
-            [other]: {...config[other], serial_id: config[other].serial_id == robot_config.serial_id ? config[type].serial_id : config[other].serial_id},
+        setConfig((c) => ({
+            ...c,
+            [other]: {
+                ...c[other],
+                serial_id: c[other].serial_id == robot_config.serial_id ? c[type].serial_id : c[other].serial_id,
+            },
             [type]: robot_config,
         }));
-    }
+    };
 
     const [activeTab, setActiveTab] = useState<string>('cameras');
 
@@ -106,8 +109,6 @@ export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
         if (activeTab === 'cameras') {
             setActiveTab('robots');
         } else {
-            //lets start!
-            console.log("lets start")
             onDone(config);
         }
     };
@@ -130,7 +131,7 @@ export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
         refreshCameras();
         refreshRobots();
         refreshCalibrations();
-    }
+    };
 
     return (
         <Flex justifyContent={'center'} flex='1'>
@@ -153,7 +154,7 @@ export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
                             label='Task'
                             allowsCustomValue
                             inputValue={config.task}
-                            onInputChange={(task) => setConfig((c) => ({...c, task}))}
+                            onInputChange={(task) => setConfig((c) => ({ ...c, task }))}
                         >
                             {Object.keys(projectTasks).map((datasetName) => (
                                 <Section key={datasetName} title={datasetName}>
@@ -186,18 +187,18 @@ export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
                                 <Item key='robots'>
                                     <Flex gap='40px'>
                                         <RobotSetup
-                                            key={"leader"}
+                                            key={'leader'}
                                             config={config.leader}
                                             portInfos={foundRobots ?? []}
                                             calibrations={availableCalibrations ?? []}
-                                            setConfig={(config) => updateRobot('leader', config)}
+                                            setConfig={(c) => updateRobot('leader', c)}
                                         />
                                         <RobotSetup
-                                            key={"follower"}
+                                            key={'follower'}
                                             config={config.follower}
                                             portInfos={foundRobots ?? []}
                                             calibrations={availableCalibrations ?? []}
-                                            setConfig={(config) => updateRobot('follower', config)}
+                                            setConfig={(c) => updateRobot('follower', c)}
                                         />
                                     </Flex>
                                 </Item>

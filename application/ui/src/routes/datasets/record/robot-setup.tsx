@@ -1,7 +1,7 @@
-import { Flex, Key, Heading, Text, View, Picker, Item, Button } from '@geti/ui';
+import { Button, Flex, Heading, Item, Key, Picker, Text, View } from '@geti/ui';
 
-import { SchemaCalibrationConfig, SchemaRobotConfig, SchemaRobotPortInfo } from '../../../api/openapi-spec';
 import { $api } from '../../../api/client';
+import { SchemaCalibrationConfig, SchemaRobotConfig, SchemaRobotPortInfo } from '../../../api/openapi-spec';
 
 const ConnectionIcon = ({ radius, color }: { radius: number; color: string }) => {
     return (
@@ -19,15 +19,14 @@ interface RobotSetupProps {
 }
 
 const matchRobotType = (portInfo: SchemaRobotPortInfo, config: SchemaRobotConfig): boolean => {
-    if (config.robot_type === "")
-        return true;
-    if (config.robot_type === "so101_follower") {
-        if (portInfo.robot_type === "so-100") {
+    if (config.robot_type === '') return true;
+    if (config.robot_type === 'so101_follower') {
+        if (portInfo.robot_type === 'so-100') {
             return true;
         }
     }
     return false;
-}
+};
 
 export const RobotSetup = ({ config, portInfos, calibrations, setConfig }: RobotSetupProps) => {
     const portInfo = portInfos.find((m) => m.serial_id === config.serial_id);
@@ -35,24 +34,28 @@ export const RobotSetup = ({ config, portInfos, calibrations, setConfig }: Robot
 
     const identifyMutation = $api.useMutation('post', '/api/hardware/identify');
 
-    const serialIdOptions = portInfos.filter((portInfo) => matchRobotType(portInfo, config)).map((r) => ({ id: r.serial_id, name: r.serial_id }));
-    const calibrationOptions = calibrations.filter((c) => c.robot_type === config.type).map((r) => ({ id: r.id, name: r.id }));
+    const serialIdOptions = portInfos
+        .filter((info) => matchRobotType(info, config))
+        .map((r) => ({ id: r.serial_id, name: r.serial_id }));
+    const calibrationOptions = calibrations
+        .filter((c) => c.robot_type === config.type)
+        .map((r) => ({ id: r.id, name: r.id }));
 
     const selectRobot = (id: Key | null) => {
-        const port = portInfos.find((m) => m.serial_id === id?.toString())?.port ?? "";
-        setConfig({...config, serial_id: id?.toString() ?? "", port})
-    }
+        const port = portInfos.find((m) => m.serial_id === id?.toString())?.port ?? '';
+        setConfig({ ...config, serial_id: id?.toString() ?? '', port });
+    };
 
     const selectCalibration = (id: Key | null) => {
-        setConfig({...config, id: id?.toString() ?? ""})
-    }
+        setConfig({ ...config, id: id?.toString() ?? '' });
+    };
 
     const identify = () => {
-        const portInfo = portInfos.find((m) => m.serial_id === config.serial_id);
+        const body = portInfos.find((m) => m.serial_id === config.serial_id);
 
-        if (portInfo) {
+        if (body) {
             identifyMutation.mutate({
-                body: portInfo,
+                body,
             });
         }
     };
@@ -60,14 +63,12 @@ export const RobotSetup = ({ config, portInfos, calibrations, setConfig }: Robot
     return (
         <Flex flex='1'>
             <View backgroundColor={'gray-100'} flex='1' padding={'size-200'} marginTop={'size-100'}>
-                <Flex direction={'column'} justifyContent={'space-between'} gap="size-100">
+                <Flex direction={'column'} justifyContent={'space-between'} gap='size-100'>
                     <Flex justifyContent={'space-between'}>
                         <Heading>{config.type} robot</Heading>
                         <Flex justifyContent={'center'} alignItems={'center'}>
                             <ConnectionIcon radius={3} color={connected ? 'green' : 'red'} />
-                            <Text UNSAFE_style={{ marginLeft: '5px' }}>
-                                {connected ? 'connected' : 'disconnected'}
-                            </Text>
+                            <Text UNSAFE_style={{ marginLeft: '5px' }}>{connected ? 'connected' : 'disconnected'}</Text>
                         </Flex>
                     </Flex>
                     <Picker

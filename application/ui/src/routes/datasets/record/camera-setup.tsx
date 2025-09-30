@@ -1,15 +1,16 @@
-import { Flex, Heading, Item, Key, Picker, ProgressCircle } from '@geti/ui';
-
-import { SchemaCamera, SchemaCameraConfig } from '../../../api/openapi-spec';
 import { useState } from 'react';
+
+import { Flex, Heading, Item, Key, Picker, ProgressCircle } from '@geti/ui';
 import useWebSocket from 'react-use-websocket';
+
 import { API_BASE_URL } from '../../../api/client';
+import { SchemaCamera, SchemaCameraConfig } from '../../../api/openapi-spec';
 
 const CameraPreview = ({ camera }: { camera: SchemaCameraConfig }) => {
     const [image, setImage] = useState<string>();
     const { sendJsonMessage } = useWebSocket(`${API_BASE_URL}/api/cameras/offer/camera/ws`, {
         onOpen: () => {
-            if (camera.port_or_device_id !== ""){
+            if (camera.port_or_device_id !== '') {
                 sendJsonMessage(camera);
             }
         },
@@ -34,13 +35,11 @@ const CameraPreview = ({ camera }: { camera: SchemaCameraConfig }) => {
                 justifyContent={'center'}
                 alignItems={'center'}
             >
-                {camera.port_or_device_id !== "" && <ProgressCircle isIndeterminate />}
+                {camera.port_or_device_id !== '' && <ProgressCircle isIndeterminate />}
             </Flex>
         );
     }
 };
-
-
 
 interface CameraSetupProps {
     camera: SchemaCameraConfig;
@@ -49,7 +48,6 @@ interface CameraSetupProps {
 }
 export const CameraSetup = ({ camera, availableCameras, updateCamera }: CameraSetupProps) => {
     const camerasConnectedOfType = availableCameras.filter((m) => m.type === camera.type);
-    console.log(camera);
 
     const onSelection = (key: Key | null) => {
         if (key) {

@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 
 import { API_BASE_URL } from '../../../api/client';
-import useWebSocketWithResponse from '../../../components/websockets/use-websocket-with-response';
 import { SchemaTeleoperationConfig } from '../../../api/openapi-spec';
+import useWebSocketWithResponse from '../../../components/websockets/use-websocket-with-response';
 
 interface RobotState {
     initialized: boolean;
@@ -29,15 +29,15 @@ function createRobotState(data: unknown | null = null) {
 }
 
 export interface Observation {
-  timestamp: number
-  actions: { [key: string]: number }
-  cameras: { [key: string]: string }
+    timestamp: number;
+    actions: { [key: string]: number };
+    cameras: { [key: string]: string };
 }
 
 export const useRecording = (setup: SchemaTeleoperationConfig) => {
     const [state, setState] = useState<RobotState>(createRobotState());
     const { sendJsonMessage, lastJsonMessage, readyState, sendJsonMessageAndWait } = useWebSocketWithResponse(
-      `${API_BASE_URL}/api/record/teleoperate/ws`,
+        `${API_BASE_URL}/api/record/teleoperate/ws`,
         {
             shouldReconnect: () => true,
             onMessage: (event: WebSocketEventMap['message']) => onMessage(event),
@@ -73,7 +73,7 @@ export const useRecording = (setup: SchemaTeleoperationConfig) => {
         mutationFn: async () => {
             await sendJsonMessageAndWait(
                 { event: 'initialize', data: setup },
-                ({data}) => JSON.parse(data)['data']['initialized'] == true
+                ({ data }) => JSON.parse(data)['data']['initialized'] == true
             );
         },
     });
@@ -89,7 +89,7 @@ export const useRecording = (setup: SchemaTeleoperationConfig) => {
         mutationFn: async () => {
             await sendJsonMessageAndWait(
                 { event: 'save', data: {} },
-                ({data}) => JSON.parse(data)['data']['is_recording'] == false
+                ({ data }) => JSON.parse(data)['data']['is_recording'] == false
             );
             setNumberOfRecordings((n) => n + 1);
         },

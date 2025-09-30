@@ -8,7 +8,7 @@ export const Record = () => {
     const [config, setConfig] = useState<SchemaTeleoperationConfig>();
 
     if (config) {
-        return <Recording setup={config} />
+        return <Recording setup={config} />;
     } else {
         return <HardwareSetup onDone={setConfig} />;
     }
