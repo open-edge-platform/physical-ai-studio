@@ -1,5 +1,9 @@
 from .base import BaseProcessWorker, BaseThreadWorker
 import time
+import numpy as np
+import cv2
+import base64
+import logging
 
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
@@ -12,12 +16,17 @@ from lerobot.teleoperators.utils import make_teleoperator_from_config
 from lerobot.robots.utils import make_robot_from_config
 from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
 
+logger = logging.getLogger(__name__)
+
 class TeleoperateWorker(BaseProcessWorker):
     ROLE: str = "TeleoperateWorker"
 
     events: dict[str, EventClass]
     queue: Queue
     is_recording = False
+
+    action_keys: list[str] = []
+    camera_keys: list[str] = []
 
     def __init__(self, stop_event: EventClass, queue: Queue, config: TeleoperationConfig):
         super().__init__(stop_event=stop_event, queues_to_cancel=[queue])
@@ -43,7 +52,7 @@ class TeleoperateWorker(BaseProcessWorker):
         self.events["reset"].set()
 
     def setup(self):
-        print("connect to robot, cameras and setup dataset")
+        logger.info("connect to robot, cameras and setup dataset")
         cameras = {camera.name: build_camera_config(camera) for camera in self.config.cameras}
         follower_config = make_lerobot_robot_config_from_robot(self.config.follower, cameras)
         leader_config = make_lerobot_teleoperator_config_from_robot(self.config.leader)
@@ -60,6 +69,11 @@ class TeleoperateWorker(BaseProcessWorker):
             num_processes=0,
             num_threads=4 * len(self.robot.cameras),
         )
+        self.robot.connect()
+        self.teleoperator.connect()
+
+        self.action_keys = [f"{key}.pos" for key in self.robot.bus.sync_read("Present_Position").keys()]
+        self.camera_keys = [camera.name for camera in self.config.cameras]
         self.report_state()
 
     def report_state(self):
@@ -71,22 +85,29 @@ class TeleoperateWorker(BaseProcessWorker):
             }
         })
 
+    def report_observation(self, observation: dict, timestamp: float):
+        self.queue.put({
+            "event": "observations",
+            "data": {
+                "actions": {key: observation.get(key, 0) for key in self.action_keys},
+                "cameras": {key: self._base_64_encode_observation(observation.get(key)) for key in self.camera_keys},
+                "timestamp": timestamp
+            }
+        })
 
     def run_loop(self):
-        print("run loop")
+        logger.info("run loop")
         self.events["reset"].clear()
         self.events["save"].clear()
         self.events["stop"].clear()
         self.events["start"].clear()
 
-        self.robot.connect()
-        self.teleoperator.connect()
-
-        start_loop_t = time.perf_counter()
+        start_episode_t = time.perf_counter()
         self.is_recording = False
         while not self.should_stop() and not self.events["stop"].is_set():
+            start_loop_t = time.perf_counter()
             if self.events["save"].is_set():
-                print("save")
+                logger.info("save")
                 self.events["save"].clear()
                 busy_wait(0.3) #TODO check if neccesary
                 self.dataset.save_episode()
@@ -94,7 +115,7 @@ class TeleoperateWorker(BaseProcessWorker):
                 self.report_state()
 
             if self.events["reset"].is_set():
-                print("reset")
+                logger.info("reset")
                 self.events["reset"].clear()
                 busy_wait(0.3) #TODO check if neccesary
                 self.dataset.clear_episode_buffer()
@@ -102,15 +123,19 @@ class TeleoperateWorker(BaseProcessWorker):
                 self.report_state()
 
             if self.events["start"].is_set():
-                print("start")
+                logger.info("start")
                 self.events["start"].clear()
                 self.is_recording = True
+                start_episode_t = time.perf_counter()
                 self.report_state()
 
             action = self.teleoperator.get_action()
             sent_action = self.robot.send_action(action)
+            observation = self.robot.get_observation()
+
+            timestamp = time.perf_counter() - start_episode_t
+            self.report_observation(observation, timestamp)
             if self.is_recording:
-                observation = self.robot.get_observation()
                 observation_frame = build_dataset_frame(self.dataset.features, observation, prefix="observation")
                 action_frame = build_dataset_frame(self.dataset.features, sent_action, prefix="action")
                 frame = {**observation_frame, **action_frame}
@@ -125,3 +150,7 @@ class TeleoperateWorker(BaseProcessWorker):
         self.robot.disconnect()
         self.teleoperator.disconnect()
         self.queue.close()
+
+    def _base_64_encode_observation(self, observation: np.ndarray) -> str:
+        _, imagebytes = cv2.imencode(".jpg", observation)
+        return base64.b64encode(imagebytes).decode()

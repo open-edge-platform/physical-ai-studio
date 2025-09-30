@@ -28,7 +28,11 @@ function createRobotState(data: unknown | null = null) {
     };
 }
 
-export type CameraObservations = { [key: string]: string };
+export interface Observation {
+  timestamp: number
+  actions: { [key: string]: number }
+  cameras: { [key: string]: string }
+}
 
 export const useRecording = (setup: SchemaTeleoperationConfig) => {
     const [state, setState] = useState<RobotState>(createRobotState());
@@ -43,12 +47,11 @@ export const useRecording = (setup: SchemaTeleoperationConfig) => {
     );
 
     const [numberOfRecordings, setNumberOfRecordings] = useState<number>(0);
-    const cameraObservations = useRef<CameraObservations>({});
+    const observation = useRef<Observation | undefined>(undefined);
 
     useEffect(() => {
         if (lastJsonMessage) {
             const message = lastJsonMessage as RecordApiJsonResponse;
-          console.log(message);
             switch (message.event) {
                 case 'state':
                     setState(message.data as RobotState);
@@ -62,7 +65,7 @@ export const useRecording = (setup: SchemaTeleoperationConfig) => {
     const onMessage = ({ data }: WebSocketEventMap['message']) => {
         const message = JSON.parse(data) as RecordApiJsonResponse;
         if (message['event'] === 'observations') {
-            cameraObservations.current = message['data'] as CameraObservations;
+            observation.current = message['data'] as Observation;
         }
     };
 
@@ -113,7 +116,7 @@ export const useRecording = (setup: SchemaTeleoperationConfig) => {
         disconnect,
         saveEpisode,
         cancelEpisode,
-        cameraObservations,
+        observation,
         readyState,
         numberOfRecordings,
     };

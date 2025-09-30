@@ -22,7 +22,7 @@ export const Recording = ({ setup }: RecordingProps) => {
         startRecording,
         saveEpisode,
         cancelEpisode,
-        cameraObservations,
+        observation,
         state,
         numberOfRecordings,
         disconnect,
@@ -92,7 +92,7 @@ export const Recording = ({ setup }: RecordingProps) => {
 
                     <Flex direction={'column'} flex={0} gap='size-100' justifyContent={'start'}>
                         {setup.cameras.map((camera) => (
-                            <CameraView key={camera.id} camera={camera} cameraObservations={cameraObservations} />
+                            <CameraView key={camera.id} camera={camera} observation={observation} />
                         ))}
                     </Flex>
 

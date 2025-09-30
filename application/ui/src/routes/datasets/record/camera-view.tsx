@@ -3,7 +3,7 @@ import { RefObject, useEffect, useRef, useState } from 'react';
 import { View } from '@geti/ui';
 
 import { SchemaCameraConfig } from '../../../api/openapi-spec';
-import { CameraObservations } from './use-recording';
+import { Observation } from './use-recording';
 
 function useInterval(callback: () => void, delay: number) {
     const savedCallback = useRef<() => void>(callback);
@@ -25,15 +25,15 @@ function useInterval(callback: () => void, delay: number) {
     }, [delay]);
 }
 interface CameraViewProps {
-    cameraObservations: RefObject<CameraObservations>;
+    observation: RefObject<Observation | undefined>;
     camera: SchemaCameraConfig;
 }
-export const CameraView = ({ cameraObservations, camera }: CameraViewProps) => {
+export const CameraView = ({ observation, camera }: CameraViewProps) => {
     const [img, setImg] = useState<string>();
 
     useInterval(() => {
-        if (cameraObservations.current[camera.name]) {
-            setImg(cameraObservations.current[camera.name]);
+        if (observation.current?.cameras[camera.name]) {
+            setImg(observation.current.cameras[camera.name]);
         }
     }, 1000 / camera.fps);
 
