@@ -7,6 +7,7 @@ from api.camera import router as camera_router
 from api.dataset import router as dataset_router
 from api.hardware import router as hardware_router
 from api.project import router as project_router
+from api.record import router as record_router
 from core import lifespan
 from settings import get_settings
 
@@ -23,6 +24,7 @@ app.include_router(project_router)
 app.include_router(hardware_router)
 app.include_router(camera_router)
 app.include_router(dataset_router)
+app.include_router(record_router)
 
 
 if __name__ == "__main__":

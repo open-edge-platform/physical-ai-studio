@@ -39,7 +39,8 @@ export const RobotSetup = ({ config, portInfos, calibrations, setConfig }: Robot
     const calibrationOptions = calibrations.filter((c) => c.robot_type === config.type).map((r) => ({ id: r.id, name: r.id }));
 
     const selectRobot = (id: Key | null) => {
-        setConfig({...config, serial_id: id?.toString() ?? ""})
+        const port = portInfos.find((m) => m.serial_id === id?.toString())?.port ?? "";
+        setConfig({...config, serial_id: id?.toString() ?? "", port})
     }
 
     const selectCalibration = (id: Key | null) => {

@@ -16,7 +16,7 @@ import {
     TextField,
     View,
 } from '@geti/ui';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
 import { $api } from '../../../api/client';
 import { SchemaRobotConfig, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
@@ -26,31 +26,49 @@ import { CameraSetup } from './camera-setup';
 import { RobotSetup } from './robot-setup';
 
 interface HardwareSetupProps {
-    config: SchemaTeleoperationConfig;
-    setConfig: Dispatch<SetStateAction<SchemaTeleoperationConfig>>;
+    onDone: (config: SchemaTeleoperationConfig) => void;
 }
-export const HardwareSetup = ({ config, setConfig }: HardwareSetupProps) => {
+export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
+    const { dataset_id } = useParams<{ dataset_id: string }>();
     const project = useProject();
-    const datasetName = config.dataset_id && project.datasets.find((d) => d.id === config.dataset_id)?.name;
-
-    const { data: availableCameras, refetch: refreshCameras } = $api.useQuery('get', '/api/hardware/cameras');
-    const { data: foundRobots, refetch: refreshRobots  } = $api.useQuery('get', '/api/hardware/robots');
-    const { data: availableCalibrations, refetch: refreshCalibrations  } = $api.useQuery('get', '/api/hardware/calibrations');
-    const isNewDataset = datasetName === undefined;
-    const [dataset, setDataset] = useState<string>(datasetName ?? '');
-
     const { data: projectTasks } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/tasks', {
         params: {
             path: { project_id: project.id! },
         },
     });
 
+
+    const isNewDataset = false; //TODO: Implement new dataset...
     const initialTask = isNewDataset ? '' : Object.values(projectTasks).flat()[0];
-    const [task, setTask] = useState<string>(initialTask);
+
+    const [config, setConfig] = useState<SchemaTeleoperationConfig>({
+        task: initialTask,
+        fps: project.config!.fps,
+        dataset: project.datasets.find((d) => d.id === dataset_id) ?? null,
+        cameras: project.config?.cameras ?? [],
+        follower: {
+            id: "",
+            robot_type: project.config?.robot_type ?? "",
+            serial_id: "",
+            port: "",
+            type: "follower",
+        },
+        leader: {
+            id: "",
+            robot_type: project.config?.robot_type ?? "",
+            serial_id: "",
+            port: "",
+            type: "leader",
+        },
+    });
+
+
+
+    const { data: availableCameras, refetch: refreshCameras } = $api.useQuery('get', '/api/hardware/cameras');
+    const { data: foundRobots, refetch: refreshRobots  } = $api.useQuery('get', '/api/hardware/robots');
+    const { data: availableCalibrations, refetch: refreshCalibrations  } = $api.useQuery('get', '/api/hardware/calibrations');
 
     const navigate = useNavigate();
-
-    console.log(config);
 
     const updateCamera = (name: string, port_or_device_id: string, oldId: string) => {
         setConfig({
@@ -89,6 +107,8 @@ export const HardwareSetup = ({ config, setConfig }: HardwareSetupProps) => {
             setActiveTab('robots');
         } else {
             //lets start!
+            console.log("lets start")
+            onDone(config);
         }
     };
 
@@ -101,8 +121,8 @@ export const HardwareSetup = ({ config, setConfig }: HardwareSetupProps) => {
     };
 
     const isValid = () => {
-        const datasetNameValid = dataset !== '';
-        const taskValid = task !== '';
+        const datasetNameValid = config.dataset !== null;
+        const taskValid = config.task !== '';
         return datasetNameValid && taskValid;
     };
 
@@ -121,20 +141,19 @@ export const HardwareSetup = ({ config, setConfig }: HardwareSetupProps) => {
                 <View backgroundColor={'gray-200'} padding={'size-200'}>
                     <Form>
                         <TextField
-                            validationState={dataset === '' ? 'invalid' : 'valid'}
+                            validationState={config.dataset === null ? 'invalid' : 'valid'}
                             isRequired
                             label='Dataset Name'
-                            value={dataset}
+                            value={config.dataset?.name}
                             isDisabled={!isNewDataset}
-                            onChange={setDataset}
                         />
                         <ComboBox
-                            validationState={task === '' ? 'invalid' : 'valid'}
+                            validationState={config.task === '' ? 'invalid' : 'valid'}
                             isRequired
                             label='Task'
                             allowsCustomValue
-                            inputValue={task}
-                            onInputChange={setTask}
+                            inputValue={config.task}
+                            onInputChange={(task) => setConfig((c) => ({...c, task}))}
                         >
                             {Object.keys(projectTasks).map((datasetName) => (
                                 <Section key={datasetName} title={datasetName}>

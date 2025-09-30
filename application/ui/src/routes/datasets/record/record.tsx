@@ -1,33 +1,15 @@
 import { useState } from 'react';
 
-import { useParams } from 'react-router';
-
 import { SchemaTeleoperationConfig } from '../../../api/openapi-spec';
-import { useProject } from '../../../features/projects/use-project';
 import { HardwareSetup } from './hardware-setup';
+import { Recording } from './recording';
 
 export const Record = () => {
-    const { dataset_id } = useParams<{ dataset_id: string }>();
-    const project = useProject();
+    const [config, setConfig] = useState<SchemaTeleoperationConfig>();
 
-    const [teleoperationConfig, setTeleoperationConfig] = useState<SchemaTeleoperationConfig>({
-        dataset_id: dataset_id!,
-        cameras: project.config?.cameras ?? [],
-        follower: {
-            id: "",
-            robot_type: project.config?.robot_type ?? "",
-            serial_id: "",
-            port: "",
-            type: "follower",
-        },
-        leader: {
-            id: "",
-            robot_type: project.config?.robot_type ?? "",
-            serial_id: "",
-            port: "",
-            type: "leader",
-        },
-    });
-
-    return <HardwareSetup config={teleoperationConfig} setConfig={setTeleoperationConfig} />;
+    if (config) {
+        return <Recording setup={config} />
+    } else {
+        return <HardwareSetup onDone={setConfig} />;
+    }
 };

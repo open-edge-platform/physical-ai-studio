@@ -8,8 +8,19 @@ from fastapi import FastAPI
 from db import MigrationManager
 from settings import get_settings
 from webrtc.manager import WebRTCManager
+from .scheduler import Scheduler
+import sys
 
 logger = logging.getLogger(__name__)
+handler = logging.StreamHandler(sys.stdout)
+handler.setLevel(logging.DEBUG)
+
+# Add formatter
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+
+# Add handler to logger
+logger.addHandler(handler)
 
 
 @asynccontextmanager
@@ -21,6 +32,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     logger.info("Starting %s application...", settings.app_name)
     webrtc_manager = WebRTCManager()
     app.state.webrtc_manager = webrtc_manager
+
+    app_scheduler = Scheduler()
+    app.state.scheduler = app_scheduler
     logger.info("Application startup completed")
 
     migration_manager = MigrationManager(settings)
@@ -33,4 +47,5 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # Shutdown
     logger.info("Shutting down %s application...", settings.app_name)
     await webrtc_manager.cleanup()
+    app_scheduler.shutdown()
     logger.info("Application shutdown completed")

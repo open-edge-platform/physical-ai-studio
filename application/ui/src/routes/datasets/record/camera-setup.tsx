@@ -10,7 +10,6 @@ const CameraPreview = ({ camera }: { camera: SchemaCameraConfig }) => {
     const { sendJsonMessage } = useWebSocket(`${API_BASE_URL}/api/cameras/offer/camera/ws`, {
         onOpen: () => {
             if (camera.port_or_device_id !== ""){
-                console.log(camera);
                 sendJsonMessage(camera);
             }
         },

@@ -1,10 +1,13 @@
 import asyncio
 
 from lerobot.robots.so101_follower import SO101Follower, SO101FollowerConfig
+from lerobot.robots.config import RobotConfig as LeRobotConfig
+from lerobot.cameras import CameraConfig
+from lerobot.teleoperators import Teleoperator
 from serial.tools import list_ports
 from serial.tools.list_ports_common import ListPortInfo
 
-from schemas import RobotPortInfo
+from schemas import RobotPortInfo, RobotConfig
 
 available_ports = list_ports.comports()
 
@@ -107,3 +110,36 @@ async def identify_robot_visually(robot: RobotPortInfo, joint: str | None = None
     robot.bus.write(GOAL_POSITION_KEY, joint, current_position[joint], normalize=False)
     await asyncio.sleep(1)
     robot.bus.disconnect()
+
+
+def make_lerobot_robot_config_from_robot(config: RobotConfig, cameras: dict[str, CameraConfig]) -> LeRobotConfig:
+    le_config = {
+        "id": config.id,
+        "port": config.port,
+        "cameras": cameras,
+    }
+
+    if config.robot_type == "so100_follower":
+        from lerobot.robots.so100_follower import SO100FollowerConfig
+
+        return SO100FollowerConfig(**le_config)
+    if config.robot_type == "so101_follower":
+        from lerobot.robots.so101_follower import SO101FollowerConfig
+
+        return SO101FollowerConfig(**le_config)
+    raise ValueError(config.type)
+
+def make_lerobot_teleoperator_config_from_robot(config: RobotConfig) -> LeRobotConfig:
+    le_config = {
+        "id": config.id,
+        "port": config.port,
+    }
+    if config.robot_type == "so100_follower":
+        from lerobot.teleoperators.so100_leader import SO100LeaderConfig
+
+        return SO100LeaderConfig(**le_config)
+    if config.robot_type == "so101_follower":
+        from lerobot.teleoperators.so101_leader import SO101LeaderConfig
+
+        return SO101LeaderConfig(**le_config)
+    raise ValueError(config.type)
