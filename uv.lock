@@ -761,6 +761,7 @@ dependencies = [
     { name = "gymnasium" },
     { name = "lerobot" },
     { name = "lightning" },
+    { name = "lightning-utilities" },
     { name = "pillow" },
     { name = "pymunk" },
 ]
@@ -781,6 +782,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'tests'" },
     { name = "lerobot", specifier = ">=0.3.3" },
     { name = "lightning" },
+    { name = "lightning-utilities" },
     { name = "mypy", marker = "extra == 'tests'" },
     { name = "pillow" },
     { name = "pre-commit", marker = "extra == 'tests'" },
