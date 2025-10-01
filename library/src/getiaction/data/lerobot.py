@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
+from lightning_utilities import module_available
+
 from getiaction.data import DataModule, Dataset, Observation
 
 if TYPE_CHECKING:
@@ -14,9 +16,11 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     import torch
+
+if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 else:
-    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+    LeRobotDataset = None
 
 
 def _collect_field(
@@ -171,8 +175,15 @@ class _LeRobotDatasetAdapter(Dataset):
             download_videos (bool, optional): Whether to download associated videos. Defaults to True.
             video_backend (str | None, optional): Backend to use for video decoding. Defaults to None.
             batch_encoding_size (int, optional): Number of samples per encoded batch. Defaults to 1.
+
+        Raises:
+            ImportError: If `lerobot` is not installed.
         """
         super().__init__()
+
+        if LeRobotDataset is None:
+            msg = "LeRobotDataset is not available. Install lerobot with: uv pip install lerobot."
+            raise ImportError(msg)
 
         # All arguments are passed
         self._lerobot_dataset = LeRobotDataset(
@@ -275,7 +286,7 @@ class LeRobotDataModule(DataModule):
         ...     repo_id="lerobot/aloha_sim_transfer_cube_human",
         ...     train_batch_size=32
         ... )
-        >>>
+
         >>> # 2. Instantiate from an existing LeRobotDataset object
         >>> from lerobot.datasets import LeRobotDataset
         >>> raw_dataset = LeRobotDataset("lerobot/aloha_sim_transfer_cube_human")
@@ -283,13 +294,6 @@ class LeRobotDataModule(DataModule):
         ...     dataset=raw_dataset,
         ...     train_batch_size=32
         ... )
-        >>>
-        >>> # 3. Use with a PyTorch Lightning Trainer
-        >>> import lightning as L
-        >>> trainer = L.Trainer(max_epochs=10)
-        >>> # model = YourLightningModule(...)
-        >>> # trainer.fit(model, datamodule=datamodule_from_repo)
-
     """
 
     def __init__(
@@ -337,8 +341,16 @@ class LeRobotDataModule(DataModule):
         Raises:
             ValueError: If neither `repo_id` nor `dataset` is provided.
             TypeError: If `dataset` is not of type `LeRobotDataset`.
+            ImportError: If `lerobot` is not installed.
         """
+        if dataset is not None and repo_id is not None:
+            msg = "Cannot provide both 'repo_id' and 'dataset'. Please provide only one."
+            raise ValueError(msg)
+
         if dataset is not None:
+            if LeRobotDataset is None:
+                msg = "LeRobotDataset is not available. Install lerobot with: uv pip install lerobot."
+                raise ImportError(msg)
             if not isinstance(dataset, LeRobotDataset):
                 msg = f"The provided 'dataset' must be an instance of LeRobotDataset, but got {type(dataset)}."
                 raise TypeError(msg)
