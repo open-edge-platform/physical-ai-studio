@@ -13,10 +13,10 @@ from getiaction.data.lerobot import _LeRobotDatasetAdapter
 
 if TYPE_CHECKING:
     from getiaction.data import DataModule
-    from getiaction.policies.base.base_lightning_module import TrainerModule
+    from getiaction.policies.base.policy import Policy
 
 
-def reformat_dataset_to_match_policy(policy: TrainerModule, datamodule: DataModule) -> None:
+def reformat_dataset_to_match_policy(policy: Policy, datamodule: DataModule) -> None:
     """Reformat dataset to have correct deltas and parametrs depending on policy."""
     # if lerobot dataset, set delta timesteps correctly
     # https://github.com/huggingface/lerobot/blob/33cad37054c2b594ceba57463e8f11ee374fa93c/src/lerobot/datasets/factory.py#L37

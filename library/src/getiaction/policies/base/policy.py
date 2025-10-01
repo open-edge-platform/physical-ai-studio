@@ -10,7 +10,7 @@ import torch
 from torch import nn
 
 
-class TrainerModule(L.LightningModule, ABC):
+class Policy(L.LightningModule, ABC):
     """Base Lightning Module for Policies."""
 
     def __init__(self) -> None:
