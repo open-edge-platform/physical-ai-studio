@@ -5,10 +5,10 @@
 import torch
 
 from getiaction.policies.act.model import ACT as ACTModel
-from getiaction.policies.base.base_lightning_module import TrainerModule
+from getiaction.policies.base import Policy
 
 
-class ACT(TrainerModule):
+class ACT(Policy):
     def __init__(
         self,
         model: ACTModel,
