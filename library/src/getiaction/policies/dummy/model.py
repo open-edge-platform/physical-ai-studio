@@ -43,7 +43,7 @@ class Dummy(nn.Module):
 
     def __init__(
         self,
-        action_shape: torch.Size,
+        action_shape: torch.Size | None = None,
         n_action_steps: int = 1,
         temporal_ensemble_coeff: float | None = None,
         n_obs_steps: int = 1,
@@ -52,7 +52,8 @@ class Dummy(nn.Module):
         """Initialize the DummyModel.
 
         Args:
-            action_shape (torch.Size): The shape of a single action.
+            action_shape (torch.Size | None): The shape of a single action.
+                Defaults to `(4,)`.
             n_action_steps (int, optional): Number of action steps per chunk.
                 Defaults to 1.
             temporal_ensemble_coeff (float | None, optional): Coefficient for
@@ -64,7 +65,7 @@ class Dummy(nn.Module):
                 defaults to `n_action_steps`.
         """
         super().__init__()
-        self.action_shape = action_shape
+        self.action_shape = action_shape if action_shape is not None else torch.Size([4])
         self.n_action_steps = n_action_steps
         self.temporal_ensemble_coeff = temporal_ensemble_coeff
 
