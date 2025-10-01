@@ -2,11 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-import abc
 import math
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, field
-from enum import Enum
+from dataclasses import dataclass, field
 from itertools import chain
 
 import einops
@@ -18,11 +16,13 @@ from torch import Tensor, nn
 from torchvision.models._utils import IntermediateLayerGetter
 from torchvision.ops.misc import FrozenBatchNorm2d
 
-from getiaction.data.dataclasses import Feature, NormalizationParameters, FeatureType
-
-OBS_STATE = "state"
-OBS_IMAGES = "images"
-ACTION = "action"
+from getiaction.data.dataclasses import (
+    BatchObservationComponents,
+    Feature,
+    FeatureType,
+    NormalizationParameters,
+    NormalizationType,
+)
 
 
 class ACT(nn.Module):
@@ -31,49 +31,87 @@ class ACT(nn.Module):
         action_features: dict[str, Feature],
         observation_features: dict[str, Feature],
         backbone: str | None = "resnet18",
+        chunk_size: int = 100,
     ) -> None:
         super().__init__()
 
-        print(action_features)
-        print(observation_features)
+        state_observation_features = [v for v in observation_features.values() if v.ftype == FeatureType.STATE]
 
-        """
+        if len(state_observation_features) != 1:
+            msg = "ACT model supports exactly one state observation feature."
+            raise ValueError(msg)
+
         input_features = {
-            OBS_IMAGES: PolicyFeature(type=FeatureType.VISUAL, shape=(3, 224, 224)),
-            OBS_STATE: PolicyFeature(type=FeatureType.STATE, shape=robot_state_shape),
+            BatchObservationComponents.STATE: PolicyFeature(
+                type=FeatureType.STATE,
+                shape=state_observation_features[0].shape,
+            ),
         }
-        output_features = {ACTION: PolicyFeature(type=FeatureType.ACTION, shape=action_shape)}
-        self.config = _ACTConfig(input_features=input_features, output_features=output_features, chunk_size=chunk_size)
-        self.input_normalizer = NormalizeTransform({
-            OBS_STATE: normalization_map.state,
-            OBS_IMAGES: normalization_map.images,
-        })
-        self.output_denormalizer = NormalizeTransform({ACTION: normalization_map.action}, inverse=True)
-        self._model = _ACT(self.config)
-        """
+
+        visual_observation_features = [v for v in observation_features.values() if v.ftype == FeatureType.VISUAL]
+
+        if len(visual_observation_features) == 1:
+            input_features[BatchObservationComponents.IMAGES] = PolicyFeature(
+                type=FeatureType.VISUAL,
+                shape=visual_observation_features[0].shape,
+            )
+        elif len(visual_observation_features) > 1:
+            for vf in visual_observation_features:
+                input_features[vf.name] = PolicyFeature(type=FeatureType.VISUAL, shape=vf.shape)
+        else:
+            raise ValueError("ACT model requires at least one visual observation feature.")
+
+        if len(action_features) != 1:
+            msg = "ACT model supports exactly one action feature."
+            raise ValueError(msg)
+        action_feature = list(action_features.values())[0]
+
+        output_features = {
+            BatchObservationComponents.ACTION: PolicyFeature(type=FeatureType.ACTION, shape=action_feature.shape),
+        }
+
+        self._config = _ACTConfig(
+            input_features=input_features,
+            output_features=output_features,
+            chunk_size=chunk_size,
+            vision_backbone=backbone,
+        )
+
+        self.input_normalizer = FeatureNormalizeTransform(input_features, self._config.normalization_mapping)
+        self.output_denormalizer = FeatureNormalizeTransform(
+            action_features,
+            self._config.normalization_mapping,
+            inverse=True,
+        )
+        self._model = _ACT(self._config)
 
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         if self._model.training:
             batch = self.input_normalizer(batch)
-            if self.config.image_features:
-                batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-                batch[OBS_IMAGES] = [batch[key] for key in self.config.image_features]
+            if self._config.image_features:
+                if isinstance(batch[BatchObservationComponents.IMAGES], dict):
+                    batch_ = dict(batch)  # shallow copy so that adding a key doesn't modify the original
+                    batch_[BatchObservationComponents.IMAGES] = [
+                        batch[BatchObservationComponents.IMAGES][key] for key in self._config.image_features
+                    ]
+                    batch = batch_
 
             actions_hat, (mu_hat, log_sigma_x2_hat) = self._model(batch)
 
             l1_loss = (
-                F.l1_loss(batch[ACTION], actions_hat, reduction="none") * ~batch["extra"]["action_is_pad"].unsqueeze(-1)
+                F.l1_loss(batch[BatchObservationComponents.ACTION], actions_hat, reduction="none")
+                * ~batch[BatchObservationComponents.EXTRA]["action_is_pad"].unsqueeze(-1)
             ).mean()
 
             loss_dict = {"l1_loss": l1_loss.item()}
-            if self.config.use_vae:
+            if self._config.use_vae:
                 # Calculate Dₖₗ(latent_pdf || standard_normal). Note: After computing the KL-divergence for
                 # each dimension independently, we sum over the latent dimension to get the total
                 # KL-divergence per batch element, then take the mean over the batch.
                 # (See App. B of https://huggingface.co/papers/1312.6114 for more details).
                 mean_kld = (-0.5 * (1 + log_sigma_x2_hat - mu_hat.pow(2) - (log_sigma_x2_hat).exp())).sum(-1).mean()
                 loss_dict["kld_loss"] = mean_kld.item()
-                loss = l1_loss + mean_kld * self.config.kl_weight
+                loss = l1_loss + mean_kld * self._config.kl_weight
             else:
                 loss = l1_loss
 
@@ -86,12 +124,15 @@ class ACT(nn.Module):
         self.eval()
 
         batch = self.input_normalizer(batch)
-        if self.config.image_features:
+        if self._config.image_features:
             batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-            batch[OBS_IMAGES] = [batch[key] for key in self.config.image_features]
+            batch[BatchObservationComponents.IMAGES] = [batch[key] for key in self._config.image_features]
 
         actions = self._model(batch)[0]  # only select the actions, ignore the latent params
-        actions = self.output_denormalizer({ACTION: actions})[ACTION]
+        actions = self.output_denormalizer({BatchObservationComponents.ACTION: actions})[
+            BatchObservationComponents.ACTION
+        ]
+
         return actions
 
     @torch.no_grad()
@@ -116,7 +157,7 @@ class ACT(nn.Module):
         Returns:
             list[int]: A list of relative action indices.
         """
-        return list(range(self.config.chunk_size))
+        return list(range(self._config.chunk_size))
 
     @property
     def observation_delta_indices(self) -> None:
@@ -128,20 +169,26 @@ class ACT(nn.Module):
         return None
 
 
-class NormalizeTransform:
-    def __init__(self, normalization_parameters: dict, inverse: bool = False) -> None:
-        self._normalization_parameters = normalization_parameters
+class FeatureNormalizeTransform:
+    def __init__(
+        self,
+        features: dict[str, Feature],
+        norm_map: dict[FeatureType, NormalizationType],
+        inverse: bool = False,
+    ) -> None:
+        self._features = features
+        self._norm_map = norm_map
         self._inverse = inverse
 
     def _apply_normalization(self, tensor: torch.Tensor, params: NormalizationParameters) -> torch.Tensor:
-        if params.method == NormalizationMode.MIN_MAX:
+        if params.method == NormalizationType.MIN_MAX:
             if params.min is None or params.max is None:
                 raise ValueError("Min and max must be provided for min-max normalization.")
             if self._inverse:
                 tensor = tensor * (params.max - params.min) / 2 + (params.max + params.min) / 2
             else:
                 tensor = 2 * (tensor - params.min) / (params.max - params.min) - 1
-        elif params.method == NormalizationMode.MEAN_STD:
+        elif params.method == NormalizationType.MEAN_STD:
             if params.mean is None or params.std is None:
                 raise ValueError("Mean and std must be provided for mean-std normalization.")
             if self._inverse:
@@ -154,64 +201,19 @@ class NormalizeTransform:
         return tensor
 
     def __call__(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-        for k in self._normalization_parameters:
-            if k in batch:
-                params = self._normalization_parameters[k]
-                batch[k] = self._apply_normalization(batch[k], params)
+        for ft in self._features:
+            if ft in batch:
+                pass
+                # params = self._normalization_parameters[k]
+                # batch[k] = self._apply_normalization(batch[k], params)
 
         return batch
-
-
-class NormalizationMode(str, Enum):
-    MIN_MAX = "MIN_MAX"
-    MEAN_STD = "MEAN_STD"
-    IDENTITY = "IDENTITY"
-
-
-class OptimizerConfig(abc.ABC):
-    lr: float
-    weight_decay: float
-    grad_clip_norm: float
-
-    @property
-    def type(self) -> str:
-        return self.get_choice_name(self.__class__)
-
-    @classmethod
-    def default_choice_name(cls) -> str | None:
-        return "adam"
-
-    @abc.abstractmethod
-    def build(self) -> torch.optim.Optimizer | dict[str, torch.optim.Optimizer]:
-        """Build the optimizer. It can be a single optimizer or a dictionary of optimizers.
-        NOTE: Multiple optimizers are useful when you have different models to optimize.
-        For example, you can have one optimizer for the policy and another one for the value function
-        in reinforcement learning settings.
-
-        Returns:
-            The optimizer or a dictionary of optimizers.
-        """
-        raise NotImplementedError
-
-
-@dataclass
-class AdamWConfig(OptimizerConfig):
-    lr: float = 1e-3
-    betas: tuple[float, float] = (0.9, 0.999)
-    eps: float = 1e-8
-    weight_decay: float = 1e-2
-    grad_clip_norm: float = 10.0
-
-    def build(self, params: dict) -> torch.optim.Optimizer:
-        kwargs = asdict(self)
-        kwargs.pop("grad_clip_norm")
-        return torch.optim.AdamW(params, **kwargs)
 
 
 @dataclass
 class PolicyFeature:
     type: FeatureType
-    shape: tuple
+    shape: tuple[int, ...]
 
 
 @dataclass
@@ -285,7 +287,7 @@ class _ACTConfig:  # (PreTrainedConfig):
 
     # fror main config
     # n_obs_steps: int = 1
-    # normalization_mapping: dict[str, NormalizationMode] = field(default_factory=dict)
+    # normalization_mapping: dict[str, NormalizationType] = field(default_factory=dict)
 
     input_features: dict[str, PolicyFeature] = field(default_factory=dict)
     output_features: dict[str, PolicyFeature] = field(default_factory=dict)
@@ -300,11 +302,11 @@ class _ACTConfig:  # (PreTrainedConfig):
     chunk_size: int = 100
     n_action_steps: int = 100
 
-    normalization_mapping: dict[str, NormalizationMode] = field(
+    normalization_mapping: dict[str, NormalizationType] = field(
         default_factory=lambda: {
-            "VISUAL": NormalizationMode.MEAN_STD,
-            "STATE": NormalizationMode.MEAN_STD,
-            "ACTION": NormalizationMode.MEAN_STD,
+            "VISUAL": NormalizationType.MEAN_STD,
+            "STATE": NormalizationType.MEAN_STD,
+            "ACTION": NormalizationType.MEAN_STD,
         },
     )
 
@@ -337,11 +339,6 @@ class _ACTConfig:  # (PreTrainedConfig):
     dropout: float = 0.1
     kl_weight: float = 10.0
 
-    # Training preset
-    optimizer_lr: float = 1e-5
-    optimizer_weight_decay: float = 1e-4
-    optimizer_lr_backbone: float = 1e-5
-
     def __post_init__(self):
         super().__post_init__()
 
@@ -364,15 +361,9 @@ class _ACTConfig:  # (PreTrainedConfig):
             raise ValueError(
                 f"Multiple observation steps not handled yet. Got `nobs_steps={self.n_obs_steps}`",
             )
-
-    def get_optimizer_preset(self) -> AdamWConfig:
-        return AdamWConfig(
-            lr=self.optimizer_lr,
-            weight_decay=self.optimizer_weight_decay,
-        )
-
-    def get_scheduler_preset(self) -> None:
-        return None
+        self.pretrained_path = None
+        self.use_amp = False
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     def validate_features(self) -> None:
         if not self.image_features and not self.env_state_feature:
@@ -381,7 +372,7 @@ class _ACTConfig:  # (PreTrainedConfig):
     @property
     def robot_state_feature(self) -> PolicyFeature | None:
         for ft_name, ft in self.input_features.items():
-            if ft.type is FeatureType.STATE and ft_name == OBS_STATE:
+            if ft.type is FeatureType.STATE and ft_name == BatchObservationComponents.STATE:
                 return ft
         return None
 
@@ -396,28 +387,10 @@ class _ACTConfig:  # (PreTrainedConfig):
                 return ft
         return None
 
-    def __post_init__(self):
-        self.pretrained_path = None
-        self.use_amp = False
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        """
-        if not self.device or not is_torch_device_available(self.device):
-            auto_device = auto_select_torch_device()
-            logging.warning(f"Device '{self.device}' is not available. Switching to '{auto_device}'.")
-            self.device = auto_device.type
-
-        # Automatically deactivate AMP if necessary
-        if self.use_amp and not is_amp_available(self.device):
-            logging.warning(
-                f"Automatic Mixed Precision (amp) is not available on device '{self.device}'. Deactivating AMP."
-            )
-            self.use_amp = False
-        """
-
     @property
     def action_feature(self) -> PolicyFeature | None:
         for ft_name, ft in self.output_features.items():
-            if ft.type is FeatureType.ACTION and ft_name == ACTION:
+            if ft.type is FeatureType.ACTION and ft_name == BatchObservationComponents.ACTION:
                 return ft
         return None
 
@@ -932,12 +905,7 @@ def get_activation_fn(activation: str) -> Callable:
 
 
 if __name__ == "__main__":
-    normalization_config = NormalizationMap(
-        state=NormalizationParameters(method=NormalizationMode.MIN_MAX, min=0, max=1),
-        action=NormalizationParameters(method=NormalizationMode.MIN_MAX, min=0, max=1),
-        images=NormalizationParameters(method=NormalizationMode.MEAN_STD, mean=0, std=1),
-    )
-    model = ACT((10,), (10,), chunk_size=100, normalization_map=normalization_config)
+    model = ACT((10,), (10,), chunk_size=100)
 
     batch = {
         "observation.images": torch.randn(2, 3, 224, 224),

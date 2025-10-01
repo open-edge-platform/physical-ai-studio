@@ -16,8 +16,6 @@ class Policy(L.LightningModule, ABC):
     def __init__(self) -> None:
         """Initialize the Base Lightning Module for Policies."""
         super().__init__()
-        self.save_hyperparameters()
-
         self.model: nn.Module
 
     def forward(self, batch: dict[str, torch.Tensor], *args, **kwargs) -> torch.Tensor:  # noqa: ANN002, ANN003

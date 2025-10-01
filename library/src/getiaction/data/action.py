@@ -32,11 +32,6 @@ class Dataset(TorchDataset, ABC):
 
     @property
     @abstractmethod
-    def raw_features(self) -> dict:
-        """Raw dataset features."""
-
-    @property
-    @abstractmethod
     def observation_features(self) -> dict[str, Feature]:
         """Observation features from the dataset."""
 
