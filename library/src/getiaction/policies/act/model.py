@@ -30,7 +30,7 @@ class ACT(nn.Module):
         self,
         action_features: dict[str, Feature],
         observation_features: dict[str, Feature],
-        backbone: str | None = "resnet18",
+        backbone: str = "resnet18",
         chunk_size: int = 100,
     ) -> None:
         super().__init__()
@@ -42,22 +42,16 @@ class ACT(nn.Module):
             raise ValueError(msg)
 
         input_features = {
-            BatchObservationComponents.STATE: PolicyFeature(
-                type=FeatureType.STATE,
-                shape=state_observation_features[0].shape,
-            ),
+            BatchObservationComponents.STATE: state_observation_features[0]
         }
 
         visual_observation_features = [v for v in observation_features.values() if v.ftype == FeatureType.VISUAL]
 
         if len(visual_observation_features) == 1:
-            input_features[BatchObservationComponents.IMAGES] = PolicyFeature(
-                type=FeatureType.VISUAL,
-                shape=visual_observation_features[0].shape,
-            )
+            input_features[BatchObservationComponents.IMAGES] = visual_observation_features[0]
         elif len(visual_observation_features) > 1:
             for vf in visual_observation_features:
-                input_features[vf.name] = PolicyFeature(type=FeatureType.VISUAL, shape=vf.shape)
+                input_features[vf.name] = vf
         else:
             raise ValueError("ACT model requires at least one visual observation feature.")
 
@@ -67,7 +61,7 @@ class ACT(nn.Module):
         action_feature = list(action_features.values())[0]
 
         output_features = {
-            BatchObservationComponents.ACTION: PolicyFeature(type=FeatureType.ACTION, shape=action_feature.shape),
+            BatchObservationComponents.ACTION: action_feature,
         }
 
         self._config = _ACTConfig(
@@ -173,51 +167,133 @@ class ACT(nn.Module):
         return None
 
 
-class FeatureNormalizeTransform:
+class FeatureNormalizeTransform(nn.Module):
     def __init__(
         self,
-        features: dict[str, Feature],
+        features: list[Feature],
         norm_map: dict[FeatureType, NormalizationType],
         inverse: bool = False,
     ) -> None:
+        super().__init__()
         self._features = features
         self._norm_map = norm_map
         self._inverse = inverse
 
-    def _apply_normalization(self, tensor: torch.Tensor, params: NormalizationParameters) -> torch.Tensor:
-        if params.method == NormalizationType.MIN_MAX:
-            if params.min is None or params.max is None:
-                raise ValueError("Min and max must be provided for min-max normalization.")
-            if self._inverse:
-                tensor = tensor * (params.max - params.min) / 2 + (params.max + params.min) / 2
-            else:
-                tensor = 2 * (tensor - params.min) / (params.max - params.min) - 1
-        elif params.method == NormalizationType.MEAN_STD:
-            if params.mean is None or params.std is None:
-                raise ValueError("Mean and std must be provided for mean-std normalization.")
-            if self._inverse:
-                tensor = tensor * params.std + params.mean
-            else:
-                tensor = (tensor - params.mean) / params.std
-        else:
-            raise ValueError(f"Unknown normalization method: {params.method}")
+        buffers = self._create_stats_buffers(features, norm_map)
+        for key, buffer in buffers.items():
+            setattr(self, "buffer_" + key.replace(".", "_"), buffer)
 
-        return tensor
-
-    def __call__(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+    def forward(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         for ft in self._features:
-            if ft in batch:
-                pass
-                # params = self._normalization_parameters[k]
-                # batch[k] = self._apply_normalization(batch[k], params)
+            key = ft.name
+            if key in batch:
+                norm_mode = self._norm_map.get(ft.ftype, NormalizationType.IDENTITY)
+                if norm_mode is NormalizationType.IDENTITY:
+                    continue
+
+                buffer = getattr(self, "buffer_" + key.replace(".", "_"))
+
+                if norm_mode is NormalizationType.MEAN_STD:
+                    mean = buffer["mean"]
+                    std = buffer["std"]
+                    #assert not torch.isinf(mean).any(), _no_stats_error_str("mean")
+                    #assert not torch.isinf(std).any(), _no_stats_error_str("std")
+                    if self._inverse:
+                        batch[key] = batch[key] * std + mean
+                    else:
+                        batch[key] = (batch[key] - mean) / (std + 1e-8)
+
+                elif norm_mode is NormalizationType.MIN_MAX:
+                    min = buffer["min"]
+                    max = buffer["max"]
+                    #assert not torch.isinf(min).any(), _no_stats_error_str("min")
+                    #assert not torch.isinf(max).any(), _no_stats_error_str("max")
+                    if self._inverse:
+                        batch[key] = (batch[key] + 1) / 2
+                        batch[key] = batch[key] * (max - min) + min
+                    else:
+                        # normalize to [0,1]
+                        batch[key] = (batch[key] - min) / (max - min + 1e-8)
+                        # normalize to [-1, 1]
+                        batch[key] = batch[key] * 2 - 1
+                else:
+                    raise ValueError(norm_mode)
 
         return batch
 
+    @staticmethod
+    def _create_stats_buffers(
+        features: dict[str, Feature],
+        norm_map: dict[str, NormalizationType],
+    ) -> dict[str, dict[str, nn.ParameterDict]]:
+        """
+        Create buffers per modality (e.g. "observation.image", "action") containing their mean, std, min, max
+        statistics.
 
-@dataclass
-class PolicyFeature:
-    type: FeatureType
-    shape: tuple[int, ...]
+        Args: (see Normalize and Unnormalize)
+
+        Returns:
+            dict: A dictionary where keys are modalities and values are `nn.ParameterDict` containing
+                `nn.Parameters` set to `requires_grad=False`, suitable to not be updated during backpropagation.
+        """
+        stats_buffers = {}
+
+        for key, ft in features.items():
+            norm_mode = norm_map.get(ft.ftype, NormalizationType.IDENTITY)
+            if norm_mode is NormalizationType.IDENTITY:
+                continue
+
+            assert isinstance(norm_mode, NormalizationType)
+
+            shape = tuple(ft.shape)
+
+            if ft.ftype is FeatureType.VISUAL:
+                # sanity checks
+                assert len(shape) == 3, f"number of dimensions of {key} != 3 ({shape=}"
+                c, h, w = shape
+                assert c < h and c < w, f"{key} is not channel first ({shape=})"
+                # override image shape to be invariant to height and width
+                shape = (c, 1, 1)
+
+            # Note: we initialize mean, std, min, max to infinity. They should be overwritten
+            # downstream by `stats` or `policy.load_state_dict`, as expected. During forward,
+            # we assert they are not infinity anymore.
+
+            def get_torch_tensor(arr: np.ndarray | torch.Tensor) -> torch.Tensor:
+                if isinstance(arr, np.ndarray):
+                    return torch.from_numpy(arr).to(dtype=torch.float32)
+                elif isinstance(arr, torch.Tensor):
+                    return arr.clone().to(dtype=torch.float32)
+                else:
+                    type_ = type(arr)
+                    raise ValueError(f"np.ndarray or torch.Tensor expected, but type is '{type_}' instead.")
+
+            buffer = {}
+            if norm_mode is NormalizationType.MEAN_STD:
+                mean = torch.ones(shape, dtype=torch.float32) * torch.inf
+                std = torch.ones(shape, dtype=torch.float32) * torch.inf
+                buffer = nn.ParameterDict(
+                    {
+                        "mean": nn.Parameter(mean, requires_grad=False),
+                        "std": nn.Parameter(std, requires_grad=False),
+                    }
+                )
+                buffer["mean"].data = get_torch_tensor(ft.normalization_data.mean)
+                buffer["std"].data = get_torch_tensor(ft.normalization_data.std)
+            elif norm_mode is NormalizationType.MIN_MAX:
+                min = torch.ones(shape, dtype=torch.float32) * torch.inf
+                max = torch.ones(shape, dtype=torch.float32) * torch.inf
+                buffer = nn.ParameterDict(
+                    {
+                        "min": nn.Parameter(min, requires_grad=False),
+                        "max": nn.Parameter(max, requires_grad=False),
+                    }
+                )
+                buffer["min"].data = get_torch_tensor(ft.normalization_data.min)
+                buffer["max"].data = get_torch_tensor(ft.normalization_data.max)
+
+            stats_buffers[key] = buffer
+        return stats_buffers
 
 
 @dataclass
@@ -293,8 +369,8 @@ class _ACTConfig:  # (PreTrainedConfig):
     # n_obs_steps: int = 1
     # normalization_mapping: dict[str, NormalizationType] = field(default_factory=dict)
 
-    input_features: dict[str, PolicyFeature] = field(default_factory=dict)
-    output_features: dict[str, PolicyFeature] = field(default_factory=dict)
+    input_features: dict[str, Feature] = field(default_factory=dict)
+    output_features: dict[str, Feature] = field(default_factory=dict)
 
     device: str | None = None  # cuda | cpu | mp
     # `use_amp` determines whether to use Automatic Mixed Precision (AMP) for training and evaluation. With AMP,
@@ -372,27 +448,27 @@ class _ACTConfig:  # (PreTrainedConfig):
             raise ValueError("You must provide at least one image or the environment state among the inputs.")
 
     @property
-    def robot_state_feature(self) -> PolicyFeature | None:
+    def robot_state_feature(self) -> Feature | None:
         for ft_name, ft in self.input_features.items():
-            if ft.type is FeatureType.STATE and ft_name == BatchObservationComponents.STATE:
+            if ft.ftype is FeatureType.STATE and ft_name == BatchObservationComponents.STATE:
                 return ft
         return None
 
     @property
-    def image_features(self) -> dict[str, PolicyFeature]:
-        return {key: ft for key, ft in self.input_features.items() if ft.type is FeatureType.VISUAL}
+    def image_features(self) -> dict[str, Feature]:
+        return {key: ft for key, ft in self.input_features.items() if ft.ftype is FeatureType.VISUAL}
 
     @property
-    def env_state_feature(self) -> PolicyFeature | None:
+    def env_state_feature(self) -> Feature | None:
         for _, ft in self.input_features.items():
-            if ft.type is FeatureType.ENV:
+            if ft.ftype is FeatureType.ENV:
                 return ft
         return None
 
     @property
-    def action_feature(self) -> PolicyFeature | None:
+    def action_feature(self) -> Feature | None:
         for ft_name, ft in self.output_features.items():
-            if ft.type is FeatureType.ACTION and ft_name == BatchObservationComponents.ACTION:
+            if ft.ftype is FeatureType.ACTION and ft_name == BatchObservationComponents.ACTION:
                 return ft
         return None
 
