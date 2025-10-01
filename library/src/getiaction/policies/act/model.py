@@ -20,7 +20,6 @@ from getiaction.data.dataclasses import (
     BatchObservationComponents,
     Feature,
     FeatureType,
-    NormalizationParameters,
     NormalizationType,
 )
 
@@ -73,7 +72,7 @@ class ACT(nn.Module):
 
         self.input_normalizer = FeatureNormalizeTransform(input_features, self._config.normalization_mapping)
         self.output_denormalizer = FeatureNormalizeTransform(
-            action_features,
+            output_features,
             self._config.normalization_mapping,
             inverse=True,
         )
@@ -184,42 +183,57 @@ class FeatureNormalizeTransform(nn.Module):
             setattr(self, "buffer_" + key.replace(".", "_"), buffer)
 
     def forward(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-        for ft in self._features:
-            key = ft.name
-            if key in batch:
+        for raw_name, ft in self._features.items():
+            root_dict = {}
+            if raw_name in batch:
+                root_dict = batch
+            else:
+                for item in batch.values():
+                    if isinstance(item, dict) and ft.name in item:
+                        root_dict = item
+                        break
+            if root_dict:
+                key = raw_name
                 norm_mode = self._norm_map.get(ft.ftype, NormalizationType.IDENTITY)
                 if norm_mode is NormalizationType.IDENTITY:
                     continue
-
                 buffer = getattr(self, "buffer_" + key.replace(".", "_"))
-
-                if norm_mode is NormalizationType.MEAN_STD:
-                    mean = buffer["mean"]
-                    std = buffer["std"]
-                    #assert not torch.isinf(mean).any(), _no_stats_error_str("mean")
-                    #assert not torch.isinf(std).any(), _no_stats_error_str("std")
-                    if self._inverse:
-                        batch[key] = batch[key] * std + mean
-                    else:
-                        batch[key] = (batch[key] - mean) / (std + 1e-8)
-
-                elif norm_mode is NormalizationType.MIN_MAX:
-                    min = buffer["min"]
-                    max = buffer["max"]
-                    #assert not torch.isinf(min).any(), _no_stats_error_str("min")
-                    #assert not torch.isinf(max).any(), _no_stats_error_str("max")
-                    if self._inverse:
-                        batch[key] = (batch[key] + 1) / 2
-                        batch[key] = batch[key] * (max - min) + min
-                    else:
-                        # normalize to [0,1]
-                        batch[key] = (batch[key] - min) / (max - min + 1e-8)
-                        # normalize to [-1, 1]
-                        batch[key] = batch[key] * 2 - 1
-                else:
-                    raise ValueError(norm_mode)
+                self._apply_normalization(root_dict, key, norm_mode, buffer, self._inverse)
 
         return batch
+
+    @staticmethod
+    def _apply_normalization(batch, key, norm_mode, buffer, inverse):
+        def check_inf(t: torch.Tensor, name: str = "") -> None:
+            if torch.isinf(t).any():
+                raise ValueError(f"Normalization buffer '{name}' is infinity. You should either initialize "
+                                  "model with correct features stats, or use a pretrained model.")
+
+        if norm_mode is NormalizationType.MEAN_STD:
+            mean = buffer["mean"]
+            std = buffer["std"]
+            check_inf(mean, "mean")
+            check_inf(std, "std")
+            if inverse:
+                batch[key] = batch[key] * std + mean
+            else:
+                batch[key] = (batch[key] - mean) / (std + 1e-8)
+
+        elif norm_mode is NormalizationType.MIN_MAX:
+            min = buffer["min"]
+            max = buffer["max"]
+            check_inf(min, "min")
+            check_inf(max, "max")
+            if inverse:
+                batch[key] = (batch[key] + 1) / 2
+                batch[key] = batch[key] * (max - min) + min
+            else:
+                # normalize to [0,1]
+                batch[key] = (batch[key] - min) / (max - min + 1e-8)
+                # normalize to [-1, 1]
+                batch[key] = batch[key] * 2 - 1
+        else:
+            raise ValueError(norm_mode)
 
     @staticmethod
     def _create_stats_buffers(
@@ -297,7 +311,7 @@ class FeatureNormalizeTransform(nn.Module):
 
 
 @dataclass
-class _ACTConfig:  # (PreTrainedConfig):
+class _ACTConfig:
     """Configuration class for the Action Chunking Transformers policy.
 
     Defaults are configured for training on bimanual Aloha tasks like "insertion" or "transfer".
@@ -365,17 +379,8 @@ class _ACTConfig:  # (PreTrainedConfig):
             is enabled. Loss is then calculated as: `reconstruction_loss + kl_weight * kld_loss`.
     """
 
-    # fror main config
-    # n_obs_steps: int = 1
-    # normalization_mapping: dict[str, NormalizationType] = field(default_factory=dict)
-
     input_features: dict[str, Feature] = field(default_factory=dict)
     output_features: dict[str, Feature] = field(default_factory=dict)
-
-    device: str | None = None  # cuda | cpu | mp
-    # `use_amp` determines whether to use Automatic Mixed Precision (AMP) for training and evaluation. With AMP,
-    # automatic gradient scaling is used.
-    use_amp: bool = False
 
     # Input / output structure.
     n_obs_steps: int = 1
@@ -439,9 +444,6 @@ class _ACTConfig:  # (PreTrainedConfig):
             raise ValueError(
                 f"Multiple observation steps not handled yet. Got `nobs_steps={self.n_obs_steps}`",
             )
-        self.pretrained_path = None
-        self.use_amp = False
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     def validate_features(self) -> None:
         if not self.image_features and not self.env_state_feature:
