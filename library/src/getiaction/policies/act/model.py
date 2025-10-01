@@ -89,12 +89,16 @@ class ACT(nn.Module):
         if self._model.training:
             batch = self.input_normalizer(batch)
             if self._config.image_features:
+                batch_ = dict(batch)  # shallow copy so that adding a key doesn't modify the original
                 if isinstance(batch[BatchObservationComponents.IMAGES], dict):
-                    batch_ = dict(batch)  # shallow copy so that adding a key doesn't modify the original
                     batch_[BatchObservationComponents.IMAGES] = [
                         batch[BatchObservationComponents.IMAGES][key] for key in self._config.image_features
                     ]
                     batch = batch_
+                else:
+                    batch[BatchObservationComponents.IMAGES] = [
+                        batch[BatchObservationComponents.IMAGES],
+                    ]
 
             actions_hat, (mu_hat, log_sigma_x2_hat) = self._model(batch)
 
@@ -340,8 +344,6 @@ class _ACTConfig:  # (PreTrainedConfig):
     kl_weight: float = 10.0
 
     def __post_init__(self):
-        super().__post_init__()
-
         """Input validation (not exhaustive)."""
         if not self.vision_backbone.startswith("resnet"):
             raise ValueError(
