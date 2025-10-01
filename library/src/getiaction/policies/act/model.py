@@ -18,7 +18,7 @@ from torch import Tensor, nn
 from torchvision.models._utils import IntermediateLayerGetter
 from torchvision.ops.misc import FrozenBatchNorm2d
 
-from getiaction.data.dataclasses import NormalizationMap, NormalizationParameters
+from getiaction.data.dataclasses import Feature, NormalizationParameters, FeatureType
 
 OBS_STATE = "state"
 OBS_IMAGES = "images"
@@ -28,25 +28,29 @@ ACTION = "action"
 class ACT(nn.Module):
     def __init__(
         self,
-        action_shape: tuple[int, ...] | int,
-        robot_state_shape: tuple[int, ...] | int,
-        chunk_size: int = 100,
-        normalization_map: NormalizationMap | None = None,
+        action_features: dict[str, Feature],
+        observation_features: dict[str, Feature],
+        backbone: str | None = "resnet18",
     ) -> None:
         super().__init__()
 
+        print(action_features)
+        print(observation_features)
+
+        """
         input_features = {
             OBS_IMAGES: PolicyFeature(type=FeatureType.VISUAL, shape=(3, 224, 224)),
             OBS_STATE: PolicyFeature(type=FeatureType.STATE, shape=robot_state_shape),
         }
         output_features = {ACTION: PolicyFeature(type=FeatureType.ACTION, shape=action_shape)}
-        self.config = ACTConfig(input_features=input_features, output_features=output_features, chunk_size=chunk_size)
+        self.config = _ACTConfig(input_features=input_features, output_features=output_features, chunk_size=chunk_size)
         self.input_normalizer = NormalizeTransform({
             OBS_STATE: normalization_map.state,
             OBS_IMAGES: normalization_map.images,
         })
         self.output_denormalizer = NormalizeTransform({ACTION: normalization_map.action}, inverse=True)
         self._model = _ACT(self.config)
+        """
 
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         if self._model.training:
@@ -204,13 +208,6 @@ class AdamWConfig(OptimizerConfig):
         return torch.optim.AdamW(params, **kwargs)
 
 
-class FeatureType(str, Enum):
-    STATE = "STATE"
-    VISUAL = "VISUAL"
-    ENV = "ENV"
-    ACTION = "ACTION"
-
-
 @dataclass
 class PolicyFeature:
     type: FeatureType
@@ -218,7 +215,7 @@ class PolicyFeature:
 
 
 @dataclass
-class ACTConfig:  # (PreTrainedConfig):
+class _ACTConfig:  # (PreTrainedConfig):
     """Configuration class for the Action Chunking Transformers policy.
 
     Defaults are configured for training on bimanual Aloha tasks like "insertion" or "transfer".
@@ -460,7 +457,7 @@ class _ACT(nn.Module):
                                 └───────────────────────┘
     """
 
-    def __init__(self, config: ACTConfig):
+    def __init__(self, config: _ACTConfig):
         # BERT style VAE encoder with input tokens [cls, robot_state, *action_sequence].
         # The cls token forms parameters of the latent's distribution (like this [*means, *log_variances]).
         super().__init__()
@@ -696,7 +693,7 @@ class _ACT(nn.Module):
 class ACTEncoder(nn.Module):
     """Convenience module for running multiple encoder layers, maybe followed by normalization."""
 
-    def __init__(self, config: ACTConfig, is_vae_encoder: bool = False):
+    def __init__(self, config: _ACTConfig, is_vae_encoder: bool = False):
         super().__init__()
         self.is_vae_encoder = is_vae_encoder
         num_layers = config.n_vae_encoder_layers if self.is_vae_encoder else config.n_encoder_layers
@@ -716,7 +713,7 @@ class ACTEncoder(nn.Module):
 
 
 class ACTEncoderLayer(nn.Module):
-    def __init__(self, config: ACTConfig):
+    def __init__(self, config: _ACTConfig):
         super().__init__()
         self.self_attn = nn.MultiheadAttention(config.dim_model, config.n_heads, dropout=config.dropout)
 
@@ -755,7 +752,7 @@ class ACTEncoderLayer(nn.Module):
 
 
 class ACTDecoder(nn.Module):
-    def __init__(self, config: ACTConfig):
+    def __init__(self, config: _ACTConfig):
         """Convenience module for running multiple decoder layers followed by normalization."""
         super().__init__()
         self.layers = nn.ModuleList([ACTDecoderLayer(config) for _ in range(config.n_decoder_layers)])
@@ -781,7 +778,7 @@ class ACTDecoder(nn.Module):
 
 
 class ACTDecoderLayer(nn.Module):
-    def __init__(self, config: ACTConfig):
+    def __init__(self, config: _ACTConfig):
         super().__init__()
         self.self_attn = nn.MultiheadAttention(config.dim_model, config.n_heads, dropout=config.dropout)
         self.multihead_attn = nn.MultiheadAttention(config.dim_model, config.n_heads, dropout=config.dropout)

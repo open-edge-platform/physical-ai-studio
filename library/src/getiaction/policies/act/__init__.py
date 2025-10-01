@@ -1,8 +1,10 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""ACT Policy"""
+"""ACT Policy module."""
 
+from .config import ACTConfig
+from .model import ACT as ACTModel
 from .policy import ACT
 
-__all__ = ["ACT"]
+__all__ = ["ACT", "ACTConfig", "ACTModel"]

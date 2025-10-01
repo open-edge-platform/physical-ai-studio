@@ -11,12 +11,17 @@ from getiaction.policies.base.base_lightning_module import TrainerModule
 class ACT(TrainerModule):
     def __init__(
         self,
-        action_shape: tuple[int, ...] | int,
-        robot_state_shape: tuple[int, ...] | int,
-        normalization_map=None,
+        model: ACTModel,
+        optimizer: torch.optim.Optimizer | None = None,
     ) -> None:
         super().__init__()
-        self.model = ACTModel(action_shape, robot_state_shape, normalization_map=normalization_map)
+
+        self.model = model
+
+        if optimizer is not None:
+            self.optimizer = optimizer
+        else:
+            self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-4)
 
     def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """Select an action using the policy model.
@@ -58,7 +63,7 @@ class ACT(TrainerModule):
         Returns:
             torch.optim.Optimizer: Adam optimizer over the model parameters.
         """
-        return torch.optim.Adam(self.model.parameters(), lr=1e-4)
+        return self.optimizer
 
     def evaluation_step(self, batch: dict[str, torch.Tensor], stage: str) -> None:
         """Evaluation step (no-op by default).

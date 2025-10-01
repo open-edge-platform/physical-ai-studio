@@ -3,7 +3,7 @@
 
 """Action trainer policies."""
 
+from .act import ACT, ACTConfig, ACTModel
 from .dummy import Dummy, DummyConfig
-from .act import ACT
 
-__all__ = ["Dummy", "DummyConfig", "ACT"]
+__all__ = ["ACT", "ACTConfig", "ACTModel", "Dummy", "DummyConfig"]
