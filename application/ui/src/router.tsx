@@ -14,7 +14,6 @@ import { Record } from './routes/datasets/record/record';
 import { Index as Models } from './routes/models/index';
 import { OpenApi } from './routes/openapi';
 import { Index as Projects } from './routes/projects/index';
-import { NewProjectPage } from './routes/projects/new';
 import { ProjectLayout } from './routes/projects/project.layout';
 import { Layout as RobotConfigurationLayout } from './routes/robots/layout';
 
@@ -32,7 +31,6 @@ export const paths = {
     openapi: root.path('/openapi'),
     projects: {
         index: projects,
-        new: projects.path('/new'),
     },
     project: {
         index: project,
@@ -81,10 +79,6 @@ export const router = createBrowserRouter([
                     {
                         index: true,
                         element: <Projects />,
-                    },
-                    {
-                        path: paths.projects.new.pattern,
-                        element: <NewProjectPage />,
                     },
                 ],
             },
