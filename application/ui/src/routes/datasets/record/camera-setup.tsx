@@ -14,7 +14,7 @@ export const CameraSetup = ({ camera, availableCameras, updateCamera }: CameraSe
 
     const onSelection = (key: Key | null) => {
         if (key) {
-            const [driver, id] = String(key).split("%");
+            const [driver, id] = String(key).split('%');
             updateCamera(camera.name, String(id), camera.port_or_device_id ?? '', driver, camera.driver);
         }
     };
