@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from lerobot.datasets.utils import check_delta_timestamps, get_delta_indices
 
-from getiaction.data import LeRobotDatasetWrapper
+from getiaction.data.lerobot import _LeRobotDatasetAdapter
 
 if TYPE_CHECKING:
     from getiaction.data import DataModule
@@ -20,7 +20,7 @@ def reformat_dataset_to_match_policy(policy: TrainerModule, datamodule: DataModu
     """Reformat dataset to have correct deltas and parametrs depending on policy."""
     # if lerobot dataset, set delta timesteps correctly
     # https://github.com/huggingface/lerobot/blob/33cad37054c2b594ceba57463e8f11ee374fa93c/src/lerobot/datasets/factory.py#L37
-    if isinstance(datamodule.train_dataset, LeRobotDatasetWrapper):
+    if isinstance(datamodule.train_dataset, _LeRobotDatasetAdapter):
         delta_timestamps = {}
         lerobot_dataset = datamodule.train_dataset
         for key in lerobot_dataset.features:

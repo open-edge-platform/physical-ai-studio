@@ -37,6 +37,7 @@ classifiers = [
 dependencies = [
     "pillow",
     "lightning",
+    "lightning-utilities",
     "lerobot>=0.3.3",
     "gymnasium>=0.29.1",
     "gym-pusht>=0.1.5",

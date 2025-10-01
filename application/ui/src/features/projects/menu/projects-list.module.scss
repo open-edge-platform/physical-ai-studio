@@ -17,16 +17,20 @@
 
 .panelButtons {
     padding-block-start: 0;
+    padding-inline: var(--spectrum-global-dimension-size-200);
 }
 
 .addProjectButton {
+    width: 100%;
+
     color: var(--spectrum-global-color-gray-900) !important;
-    padding: var(--spectrum-global-dimension-size-400);
+    padding: var(--spectrum-global-dimension-size-200);
     background-color: rgba(0, 0, 0, 0) !important;
 
     display: flex;
     align-items: center;
-    gap: var(--spectrum-global-dimension-size-100);
+    justify-content: start;
+    gap: var(--spectrum-global-dimension-size-200);
 
     border: var(--spectrum-alias-border-size-thin) solid transparent !important;
     border-radius: var(--spectrum-alias-border-radius-small) !important;

@@ -72,7 +72,7 @@ export const HardwareSetup = ({ config, setConfig }: HardwareSetupProps) => {
         if (activeTab === 'robots') {
             setActiveTab('cameras');
         } else {
-            navigate(paths.project.datasets.index({ project_id: project.id! }));
+            navigate(paths.project.datasets.index({ project_id: project.id }));
         }
     };
 

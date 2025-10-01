@@ -6,7 +6,7 @@
 from .action import Dataset
 from .dataclasses import BatchObservationComponents, Feature, NormalizationParameters, NormalizationType, Observation
 from .datamodules import DataModule
-from .lerobot import LeRobotDataModule, LeRobotDatasetWrapper
+from .lerobot import LeRobotDataModule
 
 __all__ = [
     "BatchObservationComponents",
