@@ -31,7 +31,7 @@ def _collect_field(
     """Collect fields from `item` based on `base_key` and `prefix`.
 
     Returns:
-        - Either a single tensor, a dict, or None
+        - Either a single `torch.Tensor`, a `dict`, or `None`
         - The set of keys that were consumed
     """
     if prefix is None:
@@ -159,22 +159,31 @@ class _LeRobotDatasetAdapter(Dataset):
     ) -> None:
         """Initialize a _LeRobotDatasetAdapter.
 
-        This adapter initializes an internal `LeRobotDataset` using the provided
-        configuration and exposes the same dataset interface for action training.
+        This adapter initializes an internal `LeRobotDataset` using the provided configuration
+        and exposes the same dataset interface for action training.
 
         Args:
             repo_id (str): Repository ID of the LeRobot dataset.
-            root (str | Path | None, optional): Local root directory to cache dataset files. Defaults to None.
-            episodes (list[int] | None, optional): Specific episode indices to include. Defaults to None.
-            image_transforms (Callable | None, optional): Transformations to apply to images. Defaults to None.
+            root (str | Path | None, optional): Local root directory to cache dataset files.
+                Defaults to `None`.
+            episodes (list[int] | None, optional): Specific episode indices to include.
+                Defaults to `None`.
+            image_transforms (Callable | None, optional): Transformations to apply to images.
+                Defaults to `None`.
             delta_timestamps (dict[str, list[float]] | None, optional): Mapping of signal keys to timestamp offsets.
-            Defaults to None.
-            tolerance_s (float, optional): Tolerance in seconds when aligning timestamps. Defaults to 1e-4.
-            revision (str | None, optional): Dataset version or branch to use. Defaults to None.
-            force_cache_sync (bool, optional): If True, forces synchronization of the dataset cache. Defaults to False.
-            download_videos (bool, optional): Whether to download associated videos. Defaults to True.
-            video_backend (str | None, optional): Backend to use for video decoding. Defaults to None.
-            batch_encoding_size (int, optional): Number of samples per encoded batch. Defaults to 1.
+                Defaults to `None`.
+            tolerance_s (float, optional): Tolerance in seconds when aligning timestamps.
+                Defaults to `1e-4`.
+            revision (str | None, optional): Dataset version or branch to use.
+                Defaults to `None`.
+            force_cache_sync (bool, optional): If True, forces synchronization of the dataset cache.
+                Defaults to `False`.
+            download_videos (bool, optional): Whether to download associated videos.
+                Defaults to `True`.
+            video_backend (str | None, optional): Backend to use for video decoding.
+                Defaults to `None`.
+            batch_encoding_size (int, optional): Number of samples per encoded batch.
+                Defaults to `1`.
 
         Raises:
             ImportError: If `lerobot` is not installed.
@@ -316,26 +325,35 @@ class LeRobotDataModule(DataModule):
     ) -> None:
         """Initialize a LeRobot-specific Action DataModule.
 
-        This class seamlessly integrates a `LeRobotDataset` with the `getiaction`
-        training pipeline by automatically adapting it to the required format.
-
         Args:
-            train_batch_size (int, optional): Batch size for the training DataLoader. Defaults to 16.
             repo_id (str | None, optional): Repository ID for the LeRobot dataset.
-            Required if `dataset` is not provided.
+                Required if `dataset` is not provided.
+                Defaults to `None`.
             dataset (LeRobotDataset | None, optional): Pre-initialized LeRobotDataset instance.
-            Defaults to None.
-            root (str | Path | None, optional): Local directory for caching dataset files. Defaults to None.
-            episodes (list[int] | None, optional): Specific episode indices to include. Defaults to None.
-            image_transforms (Callable | None, optional): Transformations to apply to images. Defaults to None.
-            delta_timestamps (dict[str, list[float]] | None, optional): Mapping of signal keys to timestamp offsets.
-            Defaults to None.
-            tolerance_s (float, optional): Tolerance in seconds for aligning timestamps. Defaults to 1e-4.
-            revision (str | None, optional): Dataset version or branch to use. Defaults to None.
-            force_cache_sync (bool, optional): If True, forces synchronization of the dataset cache. Defaults to False.
-            download_videos (bool, optional): Whether to download associated videos. Defaults to True.
-            video_backend (str | None, optional): Backend to use for video decoding. Defaults to None.
-            batch_encoding_size (int, optional): Number of samples per encoded batch. Defaults to 1.
+                Defaults to `None`.
+            root (str | Path | None, optional): Local directory for caching dataset files.
+                Defaults to `None`.
+            episodes (list[int] | None, optional): Specific episode indices to include.
+                Defaults to `None`.
+            train_batch_size (int, optional): Batch size for the training DataLoader.
+                Defaults to `16`.
+            image_transforms (Callable | None, optional): Transformations to apply to images.
+                Defaults to `None`.
+            delta_timestamps (dict[str, list[float]] | None, optional): Mapping of signal keys
+                to timestamp offsets.
+                Defaults to `None`.
+            tolerance_s (float, optional): Tolerance in seconds for aligning timestamps.
+                Defaults to `1e-4`.
+            revision (str | None, optional): Dataset version or branch to use.
+                Defaults to `None`.
+            force_cache_sync (bool, optional): If True, forces synchronization of the dataset cache.
+                Defaults to `False`.
+            download_videos (bool, optional): Whether to download associated videos.
+                Defaults to `True`.
+            video_backend (str | None, optional): Backend to use for video decoding.
+                Defaults to `None`.
+            batch_encoding_size (int, optional): Number of samples per encoded batch.
+                Defaults to `1`.
             **action_datamodule_kwargs: Additional keyword arguments passed to the base `DataModule`.
 
         Raises:
