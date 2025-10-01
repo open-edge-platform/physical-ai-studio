@@ -4,8 +4,18 @@
 """Action trainer datamodules."""
 
 from .action import Dataset
-from .dataclasses import Observation
+from .dataclasses import BatchObservationComponents, Feature, NormalizationParameters, NormalizationType, Observation
 from .datamodules import DataModule
 from .lerobot import LeRobotDataModule, LeRobotDatasetWrapper
 
-__all__ = ["DataModule", "Dataset", "LeRobotDataModule", "LeRobotDatasetWrapper", "Observation"]
+__all__ = [
+    "BatchObservationComponents",
+    "DataModule",
+    "Dataset",
+    "Feature",
+    "LeRobotDataModule",
+    "LeRobotDatasetWrapper",
+    "NormalizationParameters",
+    "NormalizationType",
+    "Observation",
+]
