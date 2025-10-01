@@ -3,7 +3,8 @@
 
 """Test for lerobot dataset using a mock to avoid ffmpeg/network dependencies."""
 
-from getiaction.data import Dataset, LeRobotDatasetWrapper, Observation
+from getiaction.data import Dataset, Observation
+from getiaction.data.lerobot import _LeRobotDatasetAdapter
 import torch
 import pytest
 
@@ -107,7 +108,7 @@ class TestLeRobotActionDataset:
             "getiaction.data.lerobot.LeRobotDataset", dataset_cls
         )
 
-        dataset = LeRobotDatasetWrapper(repo_id="any/repo", episodes=[0])
+        dataset = _LeRobotDatasetAdapter(repo_id="any/repo", episodes=[0])
 
         assert isinstance(dataset, Dataset)
         assert isinstance(dataset._lerobot_dataset, dataset_cls)
@@ -115,13 +116,13 @@ class TestLeRobotActionDataset:
 
     def test_len_delegation(self, raw_lerobot_dataset):
         """Tests that __len__ correctly delegates to the mock dataset."""
-        action_dataset = LeRobotDatasetWrapper.from_lerobot(raw_lerobot_dataset)
+        action_dataset = _LeRobotDatasetAdapter.from_lerobot(raw_lerobot_dataset)
         assert len(action_dataset) == len(raw_lerobot_dataset)
         assert len(action_dataset) == 150
 
     def test_getitem_returns_observation(self, raw_lerobot_dataset):
         """Tests that __getitem__ returns a correctly formatted Observation object."""
-        action_dataset = LeRobotDatasetWrapper.from_lerobot(raw_lerobot_dataset)
+        action_dataset = _LeRobotDatasetAdapter.from_lerobot(raw_lerobot_dataset)
         observation = action_dataset[5]
 
         assert isinstance(observation, Observation), "Returned object must be Observation"
@@ -138,7 +139,7 @@ class TestLeRobotActionDataset:
 
     def test_from_lerobot_factory_method(self, raw_lerobot_dataset):
         """Tests the `from_lerobot` static method with a mock instance."""
-        action_dataset = LeRobotDatasetWrapper.from_lerobot(raw_lerobot_dataset)
+        action_dataset = _LeRobotDatasetAdapter.from_lerobot(raw_lerobot_dataset)
 
         assert action_dataset._lerobot_dataset is raw_lerobot_dataset
 

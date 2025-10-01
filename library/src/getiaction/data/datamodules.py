@@ -76,8 +76,16 @@ def _collate_observations(batch: list[Observation]) -> dict[str, Any]:
             for inner_key in first_non_none:
                 inner_values = [d.get(inner_key) for d in values if d is not None]
                 if inner_values:
-                    tensors_to_stack = [torch.from_numpy(v) if isinstance(v, np.ndarray) else v for v in inner_values]
-                    collated_inner_dict[inner_key] = torch.stack(tensors_to_stack, dim=0)
+                    first_inner_value = inner_values[0]
+                    # Only stack if the values are tensors or arrays
+                    if isinstance(first_inner_value, (torch.Tensor, np.ndarray)):
+                        tensors_to_stack = [
+                            torch.from_numpy(v) if isinstance(v, np.ndarray) else v for v in inner_values
+                        ]
+                        collated_inner_dict[inner_key] = torch.stack(tensors_to_stack, dim=0)
+                    else:
+                        # For non-tensor values (like strings), just keep them as a list
+                        collated_inner_dict[inner_key] = inner_values
             collated_data[key] = collated_inner_dict
 
         # Handle primitive types like booleans, integers, and floats
