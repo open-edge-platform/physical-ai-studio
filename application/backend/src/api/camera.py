@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from api.dependencies import get_webrtc_manager
 from webrtc.manager import Answer, Offer, WebRTCManager
 
-router = APIRouter(prefix="/api/cameras")
+router = APIRouter(prefix="/api/cameras", tags=["Cameras"])
 
 
 @router.post("/offer/camera")
