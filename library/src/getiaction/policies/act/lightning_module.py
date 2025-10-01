@@ -4,10 +4,10 @@
 """ACT policy implementation via Lightning module."""
 
 from getiaction.policies.act.torch_model import ACTModel
-from getiaction.policies.base.base_lightning_module import TrainerModule
+from getiaction.policies.base.policy import Policy
 
 
-class ACTPolicy(TrainerModule):
+class ACTPolicy(Policy):
     """ACT policy wrapper."""
 
     def __init__(self) -> None:

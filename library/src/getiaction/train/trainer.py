@@ -8,7 +8,7 @@ from abc import abstractmethod
 import lightning as L  # noqa: N812
 
 from getiaction.data import DataModule
-from getiaction.policies.base import TrainerModule
+from getiaction.policies.base import Policy
 from getiaction.train.callbacks import PolicyDatasetInteraction
 
 
@@ -41,7 +41,7 @@ class Trainer:
             **trainer_kwargs,
         )
 
-    def fit(self, model: TrainerModule, datamodule: DataModule, **kwargs) -> None:  # noqa: ANN003
+    def fit(self, model: Policy, datamodule: DataModule, **kwargs) -> None:  # noqa: ANN003
         """Fit the model."""
         # if we don't have any validation datasets, limit batch size to zero
         if datamodule.eval_dataset is None:
