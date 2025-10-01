@@ -41,7 +41,8 @@ dependencies = [
     "lerobot>=0.3.3",
     "gymnasium>=0.29.1",
     "gym-pusht>=0.1.5",
-    "pymunk>=6.6.0,<7.0.0"
+    "pymunk>=6.6.0,<7.0.0",
+    "jsonargparse[signatures]>=4.27.0",
 ]
 
 [project.optional-dependencies]
@@ -52,6 +53,9 @@ tests = [
     "pytest-mock",
     "mypy",
 ]
+
+[project.scripts]
+getiaction = "getiaction.cli.cli:cli"
 
 [project.urls]
 Homepage = "https://github.com/open-edge-platform/geti-action"
