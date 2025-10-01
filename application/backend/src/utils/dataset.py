@@ -92,7 +92,7 @@ def camera_config_from_dataset_features(
             driver="webcam",
             use_depth=False,
             port_or_device_id="",
-            id=uuid.uuid4()
+            id=uuid.uuid4(),
         )
         for name, feature in dataset.features.items()
         if feature["dtype"] == "video"

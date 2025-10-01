@@ -1,7 +1,7 @@
 import os
 import re
 from collections.abc import Generator
-from typing import Any, Literal
+from typing import Any
 
 import cv2
 from frame_source import FrameSourceFactory
@@ -60,9 +60,11 @@ def gen_frames(id: str, driver: str) -> Generator[bytes, None, None]:
     and yield them in the multipart format expected by browsers.
     """
 
-    _id = id
-    if _id.isdigit():
-        _id = int(_id)
+    _id: str | int
+    if id.isdigit():
+        _id = int(id)
+    else:
+        _id = str(id)
     cam = FrameSourceFactory.create(driver, _id)
     cam.connect()
 

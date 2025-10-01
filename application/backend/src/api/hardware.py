@@ -13,7 +13,7 @@ router = APIRouter(prefix="/api/hardware", tags=["Hardware"])
 @router.get("/cameras")
 async def get_cameras() -> list[Camera]:
     """Get all cameras"""
-    cameras = FrameSourceFactory.discover_devices(sources=['webcam', 'realsense', 'genicam', 'basler'])
+    cameras = FrameSourceFactory.discover_devices(sources=["webcam", "realsense", "genicam", "basler"])
     res = []
     sp = CameraProfile(width=0, height=0, fps=0)
 
