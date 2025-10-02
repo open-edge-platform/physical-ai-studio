@@ -42,8 +42,14 @@ class ACT(nn.Module):
             msg = "ACT model supports exactly one state observation feature."
             raise ValueError(msg)
 
+        if len(action_features) != 1:
+            msg = "ACT model supports exactly one action feature."
+            raise ValueError(msg)
+        action_feature = next(iter(action_features.values()))
+
         input_features = {
             BatchObservationComponents.STATE: state_observation_features[0],
+            BatchObservationComponents.ACTION: action_feature,
         }
 
         visual_observation_features = [v for v in observation_features.values() if v.ftype == FeatureType.VISUAL]
@@ -56,11 +62,6 @@ class ACT(nn.Module):
         else:
             msg = "ACT model requires at least one visual observation feature."
             raise ValueError(msg)
-
-        if len(action_features) != 1:
-            msg = "ACT model supports exactly one action feature."
-            raise ValueError(msg)
-        action_feature = next(iter(action_features.values()))
 
         output_features = {
             BatchObservationComponents.ACTION: action_feature,
@@ -95,7 +96,6 @@ class ACT(nn.Module):
                     batch[BatchObservationComponents.IMAGES] = [
                         batch[BatchObservationComponents.IMAGES],
                     ]
-
             actions_hat, (mu_hat, log_sigma_x2_hat) = self._model(batch)
 
             l1_loss = (
@@ -484,7 +484,7 @@ class _ACT(nn.Module):
             assert "action" in batch, "actions must be provided when using the variational objective in training mode."
 
         if "images" in batch:
-            batch_size = batch["images"][0].shape[0]
+            batch_size = batch[BatchObservationComponents.IMAGES][0].shape[0]
         else:
             batch_size = batch["environment_state"].shape[0]
 
@@ -497,9 +497,9 @@ class _ACT(nn.Module):
                 b=batch_size,
             )  # (B, 1, D)
             if self.config.robot_state_feature:
-                robot_state_embed = self.vae_encoder_robot_state_input_proj(batch["state"])
+                robot_state_embed = self.vae_encoder_robot_state_input_proj(batch[BatchObservationComponents.STATE])
                 robot_state_embed = robot_state_embed.unsqueeze(1)  # (B, 1, D)
-            action_embed = self.vae_encoder_action_input_proj(batch["action"])  # (B, S, D)
+            action_embed = self.vae_encoder_action_input_proj(batch[BatchObservationComponents.ACTION])  # (B, S, D)
 
             if self.config.robot_state_feature:
                 vae_encoder_input = [cls_embed, robot_state_embed, action_embed]  # (B, S+2, D)
@@ -517,10 +517,10 @@ class _ACT(nn.Module):
             cls_joint_is_pad = torch.full(
                 (batch_size, 2 if self.config.robot_state_feature else 1),
                 fill_value=False,
-                device=batch["state"].device,
+                device=batch[BatchObservationComponents.STATE].device,
             )
             key_padding_mask = torch.cat(
-                [cls_joint_is_pad, batch["extra"]["action_is_pad"]],
+                [cls_joint_is_pad, batch[BatchObservationComponents.EXTRA]["action_is_pad"]],
                 axis=1,
             )  # (bs, seq+1 or 2)
 
@@ -542,7 +542,7 @@ class _ACT(nn.Module):
             mu = log_sigma_x2 = None
             # (rcadene, alexander-soare): remove call to `.to` to speedup forward ; precompute and use buffer
             latent_sample = torch.zeros([batch_size, self.config.latent_dim], dtype=torch.float32).to(
-                batch["state"].device,
+                batch[BatchObservationComponents.STATE].device,
             )
 
         # Prepare transformer encoder inputs.
@@ -550,7 +550,7 @@ class _ACT(nn.Module):
         encoder_in_pos_embed = list(self.encoder_1d_feature_pos_embed.weight.unsqueeze(1))
         # Robot state token.
         if self.config.robot_state_feature:
-            encoder_in_tokens.append(self.encoder_robot_state_input_proj(batch["state"]))
+            encoder_in_tokens.append(self.encoder_robot_state_input_proj(batch[BatchObservationComponents.STATE]))
         # Environment state token.
         if self.config.env_state_feature:
             encoder_in_tokens.append(
@@ -561,7 +561,7 @@ class _ACT(nn.Module):
             # For a list of images, the H and W may vary but H*W is constant.
             # NOTE: If modifying this section, verify on MPS devices that
             # gradients remain stable (no explosions or NaNs).
-            for img in batch["images"]:
+            for img in batch[BatchObservationComponents.IMAGES]:
                 cam_features = self.backbone(img)["feature_map"]
                 cam_pos_embed = self.encoder_cam_feat_pos_embed(cam_features).to(dtype=cam_features.dtype)
                 cam_features = self.encoder_img_feat_input_proj(cam_features)
