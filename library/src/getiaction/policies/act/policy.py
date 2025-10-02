@@ -1,10 +1,11 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+"""Lightning module for ACT policy."""
 
 import torch
 
-from getiaction.policies.act.model import ACT as ACTModel
+from getiaction.policies.act.model import ACT as ACTModel  # noqa: N811
 from getiaction.policies.base import Policy
 
 
@@ -44,6 +45,7 @@ class ACT(Policy):
         Returns:
             Dict[str, torch.Tensor]: Dictionary containing the loss.
         """
+        del batch_idx
         loss, loss_dict = self.forward(batch)  # noqa: RUF059
         self.log("train/loss_step", loss, on_step=True, on_epoch=False, prog_bar=True, logger=True)
         self.log(
@@ -72,7 +74,7 @@ class ACT(Policy):
             batch (Dict[str, torch.Tensor]): Input batch.
             stage (str): Evaluation stage, e.g., "val" or "test".
         """
-        return
+        del batch, stage
 
     def validation_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> None:
         """Validation step (calls evaluation_step).
@@ -81,6 +83,7 @@ class ACT(Policy):
             batch (Dict[str, torch.Tensor]): Input batch.
             batch_idx (int): Index of the batch.
         """
+        del batch_idx
         return self.evaluation_step(batch=batch, stage="val")
 
     def test_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> None:
@@ -90,4 +93,5 @@ class ACT(Policy):
             batch (Dict[str, torch.Tensor]): Input batch.
             batch_idx (int): Index of the batch.
         """
+        del batch_idx
         return self.evaluation_step(batch=batch, stage="test")

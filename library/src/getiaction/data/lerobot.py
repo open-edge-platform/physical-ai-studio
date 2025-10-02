@@ -10,7 +10,8 @@ from typing import TYPE_CHECKING, Any, cast
 from lightning_utilities import module_available
 
 from getiaction.data import DataModule, Dataset, Feature, Observation
-from getiaction.data.dataclasses import FeatureType, NormalizationParameters
+from getiaction.data.dataclasses import NormalizationParameters
+from getiaction.data.enums import FeatureType
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -264,10 +265,11 @@ class _LeRobotDatasetAdapter(Dataset):
             if k in dataset_meta.features:
                 feature_type = FeatureType.STATE
                 feature_shape = dataset_meta.features[k]["shape"]
-                if dataset_meta.features[k]["dtype"] in ["image", "video"]:
+                if dataset_meta.features[k]["dtype"] in {"image", "video"}:
                     feature_type = FeatureType.VISUAL
-                    # Backward compatibility for "channel" which is an error introduced in LeRobotDataset v2.0 for ported datasets.
-                    if dataset_meta.features[k]["names"][2] in ["channel", "channels"]:  # (h, w, c) -> (c, h, w)
+                    # Backward compatibility for "channel" which is an error introduced in LeRobotDataset v2.0
+                    # for ported datasets.
+                    if dataset_meta.features[k]["names"][2] in {"channel", "channels"}:  # (h, w, c) -> (c, h, w)
                         feature_shape = (feature_shape[2], feature_shape[0], feature_shape[1])
                 elif k == "observation.environment_state":
                     feature_type = FeatureType.ENV

@@ -1,6 +1,7 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+"""ACT torch model."""
 
 import math
 from collections.abc import Callable
@@ -13,7 +14,7 @@ import torch
 import torch.nn.functional as F  # noqa: N812
 import torchvision
 from torch import Tensor, nn
-from torchvision.models._utils import IntermediateLayerGetter
+from torchvision.models._utils import IntermediateLayerGetter  # noqa: PLC2701
 from torchvision.ops.misc import FrozenBatchNorm2d
 
 from getiaction.data import (
@@ -22,6 +23,7 @@ from getiaction.data import (
     FeatureType,
     NormalizationType,
 )
+from getiaction.policies.utils.normalization import FeatureNormalizeTransform
 
 
 class ACT(nn.Module):
@@ -52,12 +54,13 @@ class ACT(nn.Module):
             for vf in visual_observation_features:
                 input_features[vf.name] = vf
         else:
-            raise ValueError("ACT model requires at least one visual observation feature.")
+            msg = "ACT model requires at least one visual observation feature."
+            raise ValueError(msg)
 
         if len(action_features) != 1:
             msg = "ACT model supports exactly one action feature."
             raise ValueError(msg)
-        action_feature = list(action_features.values())[0]
+        action_feature = next(iter(action_features.values()))
 
         output_features = {
             BatchObservationComponents.ACTION: action_feature,
@@ -126,11 +129,7 @@ class ACT(nn.Module):
             batch[BatchObservationComponents.IMAGES] = [batch[key] for key in self._config.image_features]
 
         actions = self._model(batch)[0]  # only select the actions, ignore the latent params
-        actions = self.output_denormalizer({BatchObservationComponents.ACTION: actions})[
-            BatchObservationComponents.ACTION
-        ]
-
-        return actions
+        return self.output_denormalizer({BatchObservationComponents.ACTION: actions})[BatchObservationComponents.ACTION]
 
     @torch.no_grad()
     def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
@@ -164,150 +163,6 @@ class ACT(nn.Module):
             list[int]: A list of relative observation indices.
         """
         return None
-
-
-class FeatureNormalizeTransform(nn.Module):
-    def __init__(
-        self,
-        features: list[Feature],
-        norm_map: dict[FeatureType, NormalizationType],
-        inverse: bool = False,
-    ) -> None:
-        super().__init__()
-        self._features = features
-        self._norm_map = norm_map
-        self._inverse = inverse
-
-        buffers = self._create_stats_buffers(features, norm_map)
-        for key, buffer in buffers.items():
-            setattr(self, "buffer_" + key.replace(".", "_"), buffer)
-
-    def forward(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-        for raw_name, ft in self._features.items():
-            root_dict = {}
-            if raw_name in batch:
-                root_dict = batch
-            else:
-                for item in batch.values():
-                    if isinstance(item, dict) and ft.name in item:
-                        root_dict = item
-                        break
-            if root_dict:
-                key = raw_name
-                norm_mode = self._norm_map.get(ft.ftype, NormalizationType.IDENTITY)
-                if norm_mode is NormalizationType.IDENTITY:
-                    continue
-                buffer = getattr(self, "buffer_" + key.replace(".", "_"))
-                self._apply_normalization(root_dict, key, norm_mode, buffer, self._inverse)
-
-        return batch
-
-    @staticmethod
-    def _apply_normalization(batch, key, norm_mode, buffer, inverse):
-        def check_inf(t: torch.Tensor, name: str = "") -> None:
-            if torch.isinf(t).any():
-                raise ValueError(
-                    f"Normalization buffer '{name}' is infinity. You should either initialize "
-                    "model with correct features stats, or use a pretrained model."
-                )
-
-        if norm_mode is NormalizationType.MEAN_STD:
-            mean = buffer["mean"]
-            std = buffer["std"]
-            check_inf(mean, "mean")
-            check_inf(std, "std")
-            if inverse:
-                batch[key] = batch[key] * std + mean
-            else:
-                batch[key] = (batch[key] - mean) / (std + 1e-8)
-
-        elif norm_mode is NormalizationType.MIN_MAX:
-            min = buffer["min"]
-            max = buffer["max"]
-            check_inf(min, "min")
-            check_inf(max, "max")
-            if inverse:
-                batch[key] = (batch[key] + 1) / 2
-                batch[key] = batch[key] * (max - min) + min
-            else:
-                # normalize to [0,1]
-                batch[key] = (batch[key] - min) / (max - min + 1e-8)
-                # normalize to [-1, 1]
-                batch[key] = batch[key] * 2 - 1
-        else:
-            raise ValueError(norm_mode)
-
-    @staticmethod
-    def _create_stats_buffers(
-        features: dict[str, Feature],
-        norm_map: dict[str, NormalizationType],
-    ) -> dict[str, dict[str, nn.ParameterDict]]:
-        """Create buffers per modality (e.g. "observation.image", "action") containing their mean, std, min, max
-        statistics.
-
-        Args: (see Normalize and Unnormalize)
-
-        Returns:
-            dict: A dictionary where keys are modalities and values are `nn.ParameterDict` containing
-                `nn.Parameters` set to `requires_grad=False`, suitable to not be updated during backpropagation.
-        """
-        stats_buffers = {}
-
-        for key, ft in features.items():
-            norm_mode = norm_map.get(ft.ftype, NormalizationType.IDENTITY)
-            if norm_mode is NormalizationType.IDENTITY:
-                continue
-
-            assert isinstance(norm_mode, NormalizationType)
-
-            shape = tuple(ft.shape)
-
-            if ft.ftype is FeatureType.VISUAL:
-                # sanity checks
-                assert len(shape) == 3, f"number of dimensions of {key} != 3 ({shape=}"
-                c, h, w = shape
-                assert c < h and c < w, f"{key} is not channel first ({shape=})"
-                # override image shape to be invariant to height and width
-                shape = (c, 1, 1)
-
-            # Note: we initialize mean, std, min, max to infinity. They should be overwritten
-            # downstream by `stats` or `policy.load_state_dict`, as expected. During forward,
-            # we assert they are not infinity anymore.
-
-            def get_torch_tensor(arr: np.ndarray | torch.Tensor) -> torch.Tensor:
-                if isinstance(arr, np.ndarray):
-                    return torch.from_numpy(arr).to(dtype=torch.float32)
-                if isinstance(arr, torch.Tensor):
-                    return arr.clone().to(dtype=torch.float32)
-                type_ = type(arr)
-                raise ValueError(f"np.ndarray or torch.Tensor expected, but type is '{type_}' instead.")
-
-            buffer = {}
-            if norm_mode is NormalizationType.MEAN_STD:
-                mean = torch.ones(shape, dtype=torch.float32) * torch.inf
-                std = torch.ones(shape, dtype=torch.float32) * torch.inf
-                buffer = nn.ParameterDict(
-                    {
-                        "mean": nn.Parameter(mean, requires_grad=False),
-                        "std": nn.Parameter(std, requires_grad=False),
-                    },
-                )
-                buffer["mean"].data = get_torch_tensor(ft.normalization_data.mean)
-                buffer["std"].data = get_torch_tensor(ft.normalization_data.std)
-            elif norm_mode is NormalizationType.MIN_MAX:
-                min = torch.ones(shape, dtype=torch.float32) * torch.inf
-                max = torch.ones(shape, dtype=torch.float32) * torch.inf
-                buffer = nn.ParameterDict(
-                    {
-                        "min": nn.Parameter(min, requires_grad=False),
-                        "max": nn.Parameter(max, requires_grad=False),
-                    },
-                )
-                buffer["min"].data = get_torch_tensor(ft.normalization_data.min)
-                buffer["max"].data = get_torch_tensor(ft.normalization_data.max)
-
-            stats_buffers[key] = buffer
-        return stats_buffers
 
 
 @dataclass
@@ -427,27 +282,31 @@ class _ACTConfig:
     def __post_init__(self):
         """Input validation (not exhaustive)."""
         if not self.vision_backbone.startswith("resnet"):
+            msg = f"`vision_backbone` must be one of the ResNet variants. Got {self.vision_backbone}."
             raise ValueError(
-                f"`vision_backbone` must be one of the ResNet variants. Got {self.vision_backbone}.",
+                msg,
             )
         if self.temporal_ensemble_coeff is not None and self.n_action_steps > 1:
-            raise NotImplementedError(
-                "`n_action_steps` must be 1 when using temporal ensembling. This is "
-                "because the policy needs to be queried every step to compute the ensembled action.",
-            )
+            msg = "`n_action_steps` must be 1 when using temporal ensembling. This is because the policy needs to be queried every step to compute the ensembled action."
+            raise NotImplementedError(msg)
         if self.n_action_steps > self.chunk_size:
+            msg = (
+                "The chunk size is the upper bound for the number of action steps per model invocation. Got "
+                f"{self.n_action_steps} for `n_action_steps` and {self.chunk_size} for `chunk_size`."
+            )
             raise ValueError(
-                f"The chunk size is the upper bound for the number of action steps per model invocation. Got "
-                f"{self.n_action_steps} for `n_action_steps` and {self.chunk_size} for `chunk_size`.",
+                msg,
             )
         if self.n_obs_steps != 1:
+            msg = f"Multiple observation steps not handled yet. Got `nobs_steps={self.n_obs_steps}`"
             raise ValueError(
-                f"Multiple observation steps not handled yet. Got `nobs_steps={self.n_obs_steps}`",
+                msg,
             )
 
     def validate_features(self) -> None:
         if not self.image_features and not self.env_state_feature:
-            raise ValueError("You must provide at least one image or the environment state among the inputs.")
+            msg = "You must provide at least one image or the environment state among the inputs."
+            raise ValueError(msg)
 
     @property
     def robot_state_feature(self) -> Feature | None:
@@ -462,7 +321,7 @@ class _ACTConfig:
 
     @property
     def env_state_feature(self) -> Feature | None:
-        for _, ft in self.input_features.items():
+        for ft in self.input_features.values():
             if ft.ftype is FeatureType.ENV:
                 return ft
         return None
@@ -510,7 +369,7 @@ class _ACT(nn.Module):
                                 └───────────────────────┘
     """
 
-    def __init__(self, config: _ACTConfig):
+    def __init__(self, config: _ACTConfig) -> None:
         # BERT style VAE encoder with input tokens [cls, robot_state, *action_sequence].
         # The cls token forms parameters of the latent's distribution (like this [*means, *log_variances]).
         super().__init__()
@@ -596,7 +455,7 @@ class _ACT(nn.Module):
 
         self._reset_parameters()
 
-    def _reset_parameters(self):
+    def _reset_parameters(self) -> None:
         """Xavier-uniform initialization of the transformer parameters as in the original code."""
         for p in chain(self.encoder.parameters(), self.decoder.parameters()):
             if p.dim() > 1:
@@ -657,7 +516,7 @@ class _ACT(nn.Module):
             # False means not a padding token.
             cls_joint_is_pad = torch.full(
                 (batch_size, 2 if self.config.robot_state_feature else 1),
-                False,
+                fill_value=False,
                 device=batch["state"].device,
             )
             key_padding_mask = torch.cat(
@@ -681,7 +540,7 @@ class _ACT(nn.Module):
         else:
             # When not using the VAE encoder, we set the latent to be all zeros.
             mu = log_sigma_x2 = None
-            # TODO(rcadene, alexander-soare): remove call to `.to` to speedup forward ; precompute and use buffer
+            # (rcadene, alexander-soare): remove call to `.to` to speedup forward ; precompute and use buffer
             latent_sample = torch.zeros([batch_size, self.config.latent_dim], dtype=torch.float32).to(
                 batch["state"].device,
             )
@@ -746,7 +605,7 @@ class _ACT(nn.Module):
 class ACTEncoder(nn.Module):
     """Convenience module for running multiple encoder layers, maybe followed by normalization."""
 
-    def __init__(self, config: _ACTConfig, is_vae_encoder: bool = False):
+    def __init__(self, config: _ACTConfig, is_vae_encoder: bool = False) -> None:
         super().__init__()
         self.is_vae_encoder = is_vae_encoder
         num_layers = config.n_vae_encoder_layers if self.is_vae_encoder else config.n_encoder_layers
@@ -761,12 +620,11 @@ class ACTEncoder(nn.Module):
     ) -> Tensor:
         for layer in self.layers:
             x = layer(x, pos_embed=pos_embed, key_padding_mask=key_padding_mask)
-        x = self.norm(x)
-        return x
+        return self.norm(x)
 
 
 class ACTEncoderLayer(nn.Module):
-    def __init__(self, config: _ACTConfig):
+    def __init__(self, config: _ACTConfig) -> None:
         super().__init__()
         self.self_attn = nn.MultiheadAttention(config.dim_model, config.n_heads, dropout=config.dropout)
 
@@ -783,7 +641,7 @@ class ACTEncoderLayer(nn.Module):
         self.activation = get_activation_fn(config.feedforward_activation)
         self.pre_norm = config.pre_norm
 
-    def forward(self, x, pos_embed: Tensor | None = None, key_padding_mask: Tensor | None = None) -> Tensor:
+    def forward(self, x: Tensor, pos_embed: Tensor | None = None, key_padding_mask: Tensor | None = None) -> Tensor:
         skip = x
         if self.pre_norm:
             x = self.norm1(x)
@@ -805,7 +663,7 @@ class ACTEncoderLayer(nn.Module):
 
 
 class ACTDecoder(nn.Module):
-    def __init__(self, config: _ACTConfig):
+    def __init__(self, config: _ACTConfig) -> None:
         """Convenience module for running multiple decoder layers followed by normalization."""
         super().__init__()
         self.layers = nn.ModuleList([ACTDecoderLayer(config) for _ in range(config.n_decoder_layers)])
@@ -831,7 +689,7 @@ class ACTDecoder(nn.Module):
 
 
 class ACTDecoderLayer(nn.Module):
-    def __init__(self, config: _ACTConfig):
+    def __init__(self, config: _ACTConfig) -> None:
         super().__init__()
         self.self_attn = nn.MultiheadAttention(config.dim_model, config.n_heads, dropout=config.dropout)
         self.multihead_attn = nn.MultiheadAttention(config.dim_model, config.n_heads, dropout=config.dropout)
@@ -851,7 +709,8 @@ class ACTDecoderLayer(nn.Module):
         self.activation = get_activation_fn(config.feedforward_activation)
         self.pre_norm = config.pre_norm
 
-    def maybe_add_pos_embed(self, tensor: Tensor, pos_embed: Tensor | None) -> Tensor:
+    @staticmethod
+    def maybe_add_pos_embed(tensor: Tensor, pos_embed: Tensor | None) -> Tensor:
         return tensor if pos_embed is None else tensor + pos_embed
 
     def forward(
@@ -911,7 +770,7 @@ def create_sinusoidal_pos_embedding(num_positions: int, dimension: int) -> Tenso
 
     """
 
-    def get_position_angle_vec(position):
+    def get_position_angle_vec(position: int) -> list[float]:
         return [position / np.power(10000, 2 * (hid_j // 2) / dimension) for hid_j in range(dimension)]
 
     sinusoid_table = np.array([get_position_angle_vec(pos_i) for pos_i in range(num_positions)])
@@ -927,7 +786,7 @@ class ACTSinusoidalPositionEmbedding2d(nn.Module):
     for the vertical direction, and 1/W for the horizontal direction.
     """
 
-    def __init__(self, dimension: int):
+    def __init__(self, dimension: int) -> None:
         """Args:
         dimension: The desired dimension of the embeddings.
         """
@@ -968,9 +827,7 @@ class ACTSinusoidalPositionEmbedding2d(nn.Module):
         # pos_embed_x and pos_embed_y are (1, H, W, C // 2).
         pos_embed_x = torch.stack((x_range[..., 0::2].sin(), x_range[..., 1::2].cos()), dim=-1).flatten(3)
         pos_embed_y = torch.stack((y_range[..., 0::2].sin(), y_range[..., 1::2].cos()), dim=-1).flatten(3)
-        pos_embed = torch.cat((pos_embed_y, pos_embed_x), dim=3).permute(0, 3, 1, 2)  # (1, C, H, W)
-
-        return pos_embed
+        return torch.cat((pos_embed_y, pos_embed_x), dim=3).permute(0, 3, 1, 2)  # (1, C, H, W)
 
 
 def get_activation_fn(activation: str) -> Callable:
@@ -981,21 +838,5 @@ def get_activation_fn(activation: str) -> Callable:
         return F.gelu
     if activation == "glu":
         return F.glu
-    raise RuntimeError(f"activation should be relu/gelu/glu, not {activation}.")
-
-
-if __name__ == "__main__":
-    model = ACT((10,), (10,), chunk_size=100)
-
-    batch = {
-        "observation.images": torch.randn(2, 3, 224, 224),
-        "action": torch.randn(2, 100, 10),
-        "observation.state": torch.randn(2, 10),
-        "action_is_pad": torch.zeros(2, 100, dtype=torch.bool),
-    }
-    model.eval()
-    action = model(batch)
-    print(action.shape)
-    model.train()
-    loss = model(batch)
-    print(loss)
+    msg = f"Unknown activation function: {activation}"
+    raise RuntimeError(msg)

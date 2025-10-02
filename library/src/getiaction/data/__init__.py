@@ -16,7 +16,6 @@ __all__ = [
     "Feature",
     "FeatureType",
     "LeRobotDataModule",
-    "LeRobotDatasetWrapper",
     "NormalizationParameters",
     "NormalizationType",
     "Observation",

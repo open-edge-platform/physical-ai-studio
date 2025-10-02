@@ -8,11 +8,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from .enums import FeatureType
-
 if TYPE_CHECKING:
     import numpy as np
     import torch
+
+    from .enums import FeatureType
 
 
 @dataclass(frozen=True)
