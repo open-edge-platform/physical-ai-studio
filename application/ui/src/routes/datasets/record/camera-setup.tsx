@@ -9,7 +9,6 @@ interface CameraSetupProps {
 }
 export const CameraSetup = ({ camera, availableCameras, updateCamera }: CameraSetupProps) => {
     const camerasConnectedOfType = availableCameras;
-    // const camerasConnectedOfType = availableCameras.filter((m) => m.driver === camera.driver);
     const makeKey = (cam: SchemaCamera) => `${cam.driver}%${cam.port_or_device_id}`;
 
     const onSelection = (key: Key | null) => {

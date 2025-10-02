@@ -41,21 +41,26 @@ def get_episode_actions(dataset: LeRobotDataset, episode: EpisodeInfo) -> torch.
     return torch.stack(actions)
 
 
+def list_directories(folder: Path) -> list[str]:
+    """Get list of directories from folder."""
+    res = []
+    for candidate in listdir(folder):
+        if os.path.isdir(folder / candidate):
+            res.append(candidate)
+    return res
+
+
 def get_local_repository_ids(home: str | Path | None = None) -> list[str]:
     """Get all local repository ids."""
     home = Path(home) if home is not None else HF_LEROBOT_HOME
 
     repo_ids: list[str] = []
-    for folder in listdir(home):
-        if not os.path.isdir(home / folder):
-            continue
-
+    for folder in list_directories(home):
         if folder == "calibration":
             continue
 
         owner = folder
-
-        for repo in listdir(home / folder):
+        for repo in list_directories(home / folder):
             if os.path.isdir(home / folder / repo):
                 repo_ids.append(f"{owner}/{repo}")
 
