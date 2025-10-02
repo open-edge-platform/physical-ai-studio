@@ -19,7 +19,6 @@ class Policy(L.LightningModule, ABC):
         self.save_hyperparameters()
 
         self.model: nn.Module
-        self.optimizer: torch.optim.Optimizer | None = None
 
     def forward(self, batch: dict[str, torch.Tensor], *args, **kwargs) -> torch.Tensor:  # noqa: ANN002, ANN003
         """Perform forward pass of the policy.
@@ -42,7 +41,7 @@ class Policy(L.LightningModule, ABC):
         """Select an action using the policy model.
 
         Args:
-            batch (dict[str, torch.Tensor]): Input batch of observations.
+            batch (Dict[str, torch.Tensor]): Input batch of observations.
 
         Returns:
             torch.Tensor: Selected actions.
