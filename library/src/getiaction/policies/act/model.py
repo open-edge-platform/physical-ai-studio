@@ -16,7 +16,7 @@ from torch import Tensor, nn
 from torchvision.models._utils import IntermediateLayerGetter
 from torchvision.ops.misc import FrozenBatchNorm2d
 
-from getiaction.data.dataclasses import (
+from getiaction.data import (
     BatchObservationComponents,
     Feature,
     FeatureType,
@@ -41,7 +41,7 @@ class ACT(nn.Module):
             raise ValueError(msg)
 
         input_features = {
-            BatchObservationComponents.STATE: state_observation_features[0]
+            BatchObservationComponents.STATE: state_observation_features[0],
         }
 
         visual_observation_features = [v for v in observation_features.values() if v.ftype == FeatureType.VISUAL]
@@ -206,8 +206,10 @@ class FeatureNormalizeTransform(nn.Module):
     def _apply_normalization(batch, key, norm_mode, buffer, inverse):
         def check_inf(t: torch.Tensor, name: str = "") -> None:
             if torch.isinf(t).any():
-                raise ValueError(f"Normalization buffer '{name}' is infinity. You should either initialize "
-                                  "model with correct features stats, or use a pretrained model.")
+                raise ValueError(
+                    f"Normalization buffer '{name}' is infinity. You should either initialize "
+                    "model with correct features stats, or use a pretrained model."
+                )
 
         if norm_mode is NormalizationType.MEAN_STD:
             mean = buffer["mean"]
@@ -240,8 +242,7 @@ class FeatureNormalizeTransform(nn.Module):
         features: dict[str, Feature],
         norm_map: dict[str, NormalizationType],
     ) -> dict[str, dict[str, nn.ParameterDict]]:
-        """
-        Create buffers per modality (e.g. "observation.image", "action") containing their mean, std, min, max
+        """Create buffers per modality (e.g. "observation.image", "action") containing their mean, std, min, max
         statistics.
 
         Args: (see Normalize and Unnormalize)
@@ -276,11 +277,10 @@ class FeatureNormalizeTransform(nn.Module):
             def get_torch_tensor(arr: np.ndarray | torch.Tensor) -> torch.Tensor:
                 if isinstance(arr, np.ndarray):
                     return torch.from_numpy(arr).to(dtype=torch.float32)
-                elif isinstance(arr, torch.Tensor):
+                if isinstance(arr, torch.Tensor):
                     return arr.clone().to(dtype=torch.float32)
-                else:
-                    type_ = type(arr)
-                    raise ValueError(f"np.ndarray or torch.Tensor expected, but type is '{type_}' instead.")
+                type_ = type(arr)
+                raise ValueError(f"np.ndarray or torch.Tensor expected, but type is '{type_}' instead.")
 
             buffer = {}
             if norm_mode is NormalizationType.MEAN_STD:
@@ -290,7 +290,7 @@ class FeatureNormalizeTransform(nn.Module):
                     {
                         "mean": nn.Parameter(mean, requires_grad=False),
                         "std": nn.Parameter(std, requires_grad=False),
-                    }
+                    },
                 )
                 buffer["mean"].data = get_torch_tensor(ft.normalization_data.mean)
                 buffer["std"].data = get_torch_tensor(ft.normalization_data.std)
@@ -301,7 +301,7 @@ class FeatureNormalizeTransform(nn.Module):
                     {
                         "min": nn.Parameter(min, requires_grad=False),
                         "max": nn.Parameter(max, requires_grad=False),
-                    }
+                    },
                 )
                 buffer["min"].data = get_torch_tensor(ft.normalization_data.min)
                 buffer["max"].data = get_torch_tensor(ft.normalization_data.max)

@@ -6,8 +6,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 from typing import TYPE_CHECKING, Any
+
+from .enums import FeatureType
 
 if TYPE_CHECKING:
     import numpy as np
@@ -36,32 +37,12 @@ class Observation:
     extra: dict[str, Any] | None = None
 
 
-class BatchObservationComponents(str, Enum):
-    STATE = "state"
-    ACTION = "action"
-    IMAGES = "images"
-    EXTRA = "extra"
-
-
 @dataclass(frozen=True)
 class Feature:
     normalization_data: NormalizationParameters | None = None
     ftype: FeatureType | None = None
     shape: tuple[int, ...] | None = None
     name: str | None = None
-
-
-class FeatureType(str, Enum):
-    VISUAL = "VISUAL"
-    ACTION = "ACTION"
-    STATE = "STATE"
-    ENV = "ENV"
-
-
-class NormalizationType(str, Enum):
-    MIN_MAX = "MIN_MAX"
-    MEAN_STD = "MEAN_STD"
-    IDENTITY = "IDENTITY"
 
 
 @dataclass(frozen=True)
