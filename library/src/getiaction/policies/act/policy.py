@@ -21,7 +21,7 @@ class ACT(Policy):
         if optimizer is not None:
             self.optimizer = optimizer
         else:
-            self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-4)
+            self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-5, weight_decay=1e-4)
 
     def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """Select an action using the policy model.
