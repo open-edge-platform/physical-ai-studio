@@ -75,7 +75,7 @@ const SelectedProjectButton = ({ name }: SelectedProjectProps) => {
         >
             <View margin={'size-50'}>{name}</View>
             <View margin='size-50'>
-                <PhotoPlaceholder name={name} email='' height={'size-400'} width={'size-400'} />
+                <PhotoPlaceholder name={name} indicator={name} height={'size-400'} width={'size-400'} />
             </View>
         </ActionButton>
     );
@@ -102,7 +102,7 @@ export const ProjectsListPanel = () => {
                     <Flex direction={'column'} justifyContent={'center'} width={'100%'} alignItems={'center'}>
                         <PhotoPlaceholder
                             name={selectedProjectName}
-                            email=''
+                            indicator={selectedProjectName}
                             height={'size-1000'}
                             width={'size-1000'}
                         />
