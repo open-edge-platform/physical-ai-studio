@@ -3,76 +3,75 @@
 
 """Dummy lightning module and policy for testing usage."""
 
-from collections.abc import Iterable
-
 import torch
+from torch import nn
 
 from getiaction.policies.base import Policy
-from getiaction.policies.dummy.config import DummyConfig
+from getiaction.policies.dummy.config import DummyConfig, OptimizerConfig
 from getiaction.policies.dummy.model import Dummy as DummyModel
 
 
 class Dummy(Policy):
     """Dummy policy wrapper."""
 
-    def __init__(self, config: DummyConfig) -> None:
+    def __init__(
+        self,
+        model: nn.Module,
+        optimizer: torch.optim.Optimizer | None = None,
+    ) -> None:
         """Initialize the Dummy policy wrapper.
 
-        This class wraps a `DummyModel` and integrates it into a `TrainerModule`,
-        validating the action shape and preparing the model for training.
+        This class wraps a model and integrates it into a Lightning module.
 
         Args:
-            config (DummyConfig): Configuration object containing the action shape
-                and other hyperparameters required for initializing the policy.
+            model (nn.Module): The model to use for the policy.
+            optimizer (torch.optim.Optimizer | None): Optimizer to use for the policy. If `None`,
+                a default `Adam` optimizer will be created with the model parameters and a learning rate of 1e-4.
+                Defaults to `None`.
         """
         super().__init__()
-        self.config = config
-        self.action_shape = self._validate_action_shape(self.config.action_shape)
-
-        # model
-        self.model = DummyModel(self.action_shape)
+        self.model = model
+        self.optimizer = optimizer
 
     @staticmethod
-    def _validate_action_shape(shape: torch.Size | Iterable) -> torch.Size:
-        """Validate and normalize the action shape.
+    def _create_optimizer(config: OptimizerConfig, model: nn.Module) -> torch.optim.Optimizer:
+        """Create an optimizer from configuration.
 
         Args:
-            shape (torch.Size | Iterable): The input shape to validate.
+            config (OptimizerConfig): Optimizer configuration.
+            model (nn.Module): Model to create optimizer for.
 
         Returns:
-            torch.Size: A validated torch.Size object.
+            torch.optim.Optimizer: Created optimizer.
 
         Raises:
-            ValueError: If `shape` is `None`.
-            TypeError: If `shape` is not a valid type (e.g., string).
+            ValueError: If optimizer type is not supported.
         """
-        if shape is None:
-            msg = "Action is missing a 'shape' key in its features dictionary."
-            raise ValueError(msg)
+        if config.optimizer_type.lower() == "adam":
+            return torch.optim.Adam(
+                model.parameters(),
+                lr=config.learning_rate,
+                weight_decay=config.weight_decay,
+                betas=config.betas,
+            )
+        if config.optimizer_type.lower() == "sgd":
+            return torch.optim.SGD(
+                model.parameters(),
+                lr=config.learning_rate,
+                weight_decay=config.weight_decay,
+            )
+        msg = f"Unsupported optimizer type: {config.optimizer_type}"
+        raise ValueError(msg)
 
-        if isinstance(shape, torch.Size):
-            return shape
-
-        if isinstance(shape, str):
-            msg = f"Shape for action '{shape}' must be a sequence of numbers, but received a string."
-            raise TypeError(msg)
-
-        if isinstance(shape, Iterable):
-            return torch.Size(shape)
-
-        msg = f"The 'action_shape' argument must be a torch.Size or Iterable, but received type {type(shape).__name__}."
-        raise TypeError(msg)
-
-    def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
-        """Select an action using the policy model.
-
-        Args:
-            batch (Dict[str, torch.Tensor]): Input batch of observations.
+    def configure_optimizers(self) -> torch.optim.Optimizer:
+        """Configure the optimizer for the policy.
 
         Returns:
-            torch.Tensor: Selected actions.
+            torch.optim.Optimizer: Adam optimizer over the model parameters.
         """
-        return self.model.select_action(batch)
+        if self.optimizer is not None:
+            return self.optimizer
+        return torch.optim.Adam(self.model.parameters(), lr=1e-4)
 
     def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> dict[str, torch.Tensor]:
         """Training step for the policy.
@@ -97,14 +96,6 @@ class Dummy(Policy):
             sync_dist=True,
         )
         return {"loss": loss}
-
-    def configure_optimizers(self) -> torch.optim.Optimizer:
-        """Configure the optimizer for the policy.
-
-        Returns:
-            torch.optim.Optimizer: Adam optimizer over the model parameters.
-        """
-        return torch.optim.Adam(self.model.parameters(), lr=1e-4)
 
     @staticmethod
     def evaluation_step(batch: dict[str, torch.Tensor], stage: str) -> None:
@@ -135,3 +126,14 @@ class Dummy(Policy):
         """
         del batch_idx  # Unused variable
         return self.evaluation_step(batch=batch, stage="test")
+
+    def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        """Select an action using the policy model.
+
+        Args:
+            batch (Dict[str, torch.Tensor]): Input batch of observations.
+
+        Returns:
+            torch.Tensor: Selected actions.
+        """
+        return self.model.select_action(batch)

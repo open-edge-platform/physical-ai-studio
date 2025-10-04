@@ -1,0 +1,55 @@
+# Example: Training config using Pydantic models with jsonargparse
+# This demonstrates Pydantic validation with jsonargparse CLI
+
+seed_everything: 42
+
+trainer:
+  max_epochs: 50
+  accelerator: auto
+  devices: 1
+  log_every_n_steps: 5
+  callbacks:
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        monitor: train/loss
+        mode: min
+        save_top_k: 3
+        filename: "dummy-pydantic-{epoch:02d}-{train/loss:.2f}"
+
+# Using Pydantic models - jsonargparse automatically validates!
+model:
+  class_path: getiaction.policies.dummy.policy.Dummy
+  init_args:
+    model:
+      class_path: getiaction.policies.dummy.model.Dummy
+      init_args:
+        action_shape: [7]  # Pydantic validates this is non-empty and positive
+        n_action_steps: 4  # Pydantic validates >= 1
+        temporal_ensemble_coeff: 0.1  # Pydantic validates 0.0 <= x <= 1.0
+        n_obs_steps: 2  # Pydantic validates >= 1
+        horizon: 8  # Pydantic validates >= 1
+
+    optimizer:
+      class_path: torch.optim.Adam
+      init_args:
+        lr: 0.001  # Pydantic validates > 0.0
+        weight_decay: 0.00001  # Pydantic validates >= 0.0
+        betas: [0.9, 0.999]
+
+data:
+  class_path: getiaction.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: "lerobot/pusht"
+    train_batch_size: 32
+
+# Note: Pydantic provides automatic validation:
+# - action_shape: must be non-empty list of positive integers
+# - n_action_steps: must be >= 1
+# - temporal_ensemble_coeff: must be between 0.0 and 1.0
+# - learning_rate: must be > 0.0
+# - optimizer_type: must be one of [adam, sgd, adamw]
+#
+# Try invalid values to see Pydantic validation in action!
+# For example, set action_shape: [] and you'll get a validation error
+
+

@@ -1,0 +1,136 @@
+# Complete Example: Pydantic Models with jsonargparse
+#
+# This demonstrates how Pydantic models work seamlessly with jsonargparse.
+# jsonargparse automatically:
+# 1. Parses YAML/JSON into Pydantic models
+# 2. Validates all fields using Pydantic validators
+# 3. Provides helpful error messages
+# 4. Generates JSON schemas
+
+seed_everything: 42
+
+trainer:
+  max_epochs: 100
+  accelerator: auto
+  devices: 1
+  log_every_n_steps: 10
+
+  callbacks:
+    - class_path: lightning.pytorch.callbacks.EarlyStopping
+      init_args:
+        patience: 10
+        monitor: train/loss
+        mode: min
+
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        monitor: train/loss
+        mode: min
+        save_top_k: 3
+        filename: "pydantic-{epoch:02d}-{train/loss:.2f}"
+
+# Policy with Pydantic validation
+model:
+  class_path: getiaction.policies.dummy.policy.Dummy
+  init_args:
+    # Model config - Pydantic validates all constraints
+    model:
+      class_path: getiaction.policies.dummy.model.Dummy
+      init_args:
+        # Pydantic validates:
+        # - action_shape is non-empty list of positive integers
+        action_shape: [7]
+
+        # Pydantic validates: n_action_steps >= 1
+        n_action_steps: 4
+
+        # Pydantic validates: 0.0 <= temporal_ensemble_coeff <= 1.0
+        temporal_ensemble_coeff: 0.1
+
+        # Pydantic validates: n_obs_steps >= 1
+        n_obs_steps: 2
+
+        # Pydantic validates: horizon >= 1 if provided
+        horizon: 8
+
+    # Optimizer config - Pydantic validates all constraints
+    optimizer:
+      class_path: torch.optim.Adam
+      init_args:
+        # Pydantic validates: lr > 0.0
+        lr: 0.001
+
+        # Pydantic validates: weight_decay >= 0.0
+        weight_decay: 0.00001
+
+        betas: [0.9, 0.999]
+
+# Data config
+data:
+  class_path: getiaction.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: "lerobot/pusht"
+    train_batch_size: 32
+
+# =============================================================================
+# Pydantic Validation Examples
+# =============================================================================
+#
+# Try these invalid configs to see Pydantic validation in action:
+#
+# INVALID: Empty action_shape
+# action_shape: []
+# Error: "action_shape cannot be empty"
+#
+# INVALID: Negative action dimension
+# action_shape: [7, -1]
+# Error: "action_shape dimensions must be positive"
+#
+# INVALID: n_action_steps < 1
+# n_action_steps: 0
+# Error: "n_action_steps must be >= 1"
+#
+# INVALID: temporal_ensemble_coeff out of range
+# temporal_ensemble_coeff: 1.5
+# Error: "temporal_ensemble_coeff must be between 0.0 and 1.0"
+#
+# INVALID: Negative learning rate
+# lr: -0.001
+# Error: "learning_rate must be > 0.0"
+#
+# INVALID: Wrong optimizer type
+# optimizer_type: "invalid"
+# Error: "optimizer_type must be one of {adam, sgd, adamw}"
+#
+# =============================================================================
+# Benefits of Pydantic with jsonargparse:
+# =============================================================================
+#
+# 1. Runtime Validation:
+#    - Catches errors before training starts
+#    - Clear, helpful error messages
+#    - Type checking at runtime
+#
+# 2. Documentation:
+#    - Field descriptions in code
+#    - Example values in schemas
+#    - Auto-generated JSON schemas
+#
+# 3. Default Values:
+#    - Use Field() for advanced defaults
+#    - Validation on defaults too
+#    - Optional fields with None
+#
+# 4. Complex Validation:
+#    - Custom validators with @field_validator
+#    - Cross-field validation
+#    - Business logic in config
+#
+# 5. IDE Support:
+#    - Autocomplete from Pydantic models
+#    - Type hints in IDEs
+#    - Better refactoring support
+#
+# =============================================================================
+
+
