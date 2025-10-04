@@ -1,0 +1,80 @@
+# ACT Policy Training Configuration
+# Train Action Chunking Transformer using LeRobot's implementation
+#
+# Usage:
+#   getiaction fit --config configs/lerobot_act.yaml
+#
+# Override parameters:
+#   getiaction fit --config configs/lerobot_act.yaml --model.init_args.dim_model 1024
+
+model:
+  class_path: getiaction.policies.lerobot.ACT
+  init_args:
+    # Core architecture
+    dim_model: 512
+    chunk_size: 100  # Number of actions to predict at once
+    n_action_steps: 100  # Number of action steps to execute
+
+    # Vision backbone
+    vision_backbone: "resnet18"  # Options: resnet18, resnet34, resnet50
+    pretrained_backbone_weights: "ResNet18_Weights.IMAGENET1K_V1"
+    optimizer_lr_backbone: 1.0e-5  # Separate learning rate for backbone
+
+    # VAE configuration
+    use_vae: true  # Use VAE for action distribution modeling
+    latent_dim: 32
+    kl_weight: 10.0  # Weight for KL divergence loss
+
+    # Transformer architecture
+    n_encoder_layers: 4
+    n_decoder_layers: 1
+    n_heads: 8
+    dim_feedforward: 3200
+    dropout: 0.1
+
+    # Optimization
+    learning_rate: 1.0e-5
+
+    # Temporal ensembling (optional, set to null to disable)
+    temporal_ensemble_coeff: null  # e.g., 0.01 for ensembling
+
+data:
+  class_path: getiaction.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: "lerobot/aloha_sim_transfer_cube_human"
+    batch_size: 8
+    num_workers: 4
+
+trainer:
+  max_epochs: 100
+  accelerator: gpu
+  devices: 1
+  precision: 32
+  log_every_n_steps: 10
+  check_val_every_n_epoch: 1
+
+  # Callbacks
+  callbacks:
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        monitor: val/loss
+        mode: min
+        save_top_k: 3
+        filename: "act-{epoch:02d}-{val/loss:.4f}"
+
+    - class_path: lightning.pytorch.callbacks.EarlyStopping
+      init_args:
+        monitor: val/loss
+        patience: 10
+        mode: min
+
+    - class_path: lightning.pytorch.callbacks.LearningRateMonitor
+      init_args:
+        logging_interval: step
+
+  # Logger
+  logger:
+    class_path: lightning.pytorch.loggers.TensorBoardLogger
+    init_args:
+      save_dir: logs/
+      name: lerobot_act

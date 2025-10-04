@@ -1,0 +1,27 @@
+# LeRobot Diffusion Policy Configuration
+# Using Universal Wrapper Approach
+#
+# This config demonstrates how to use the universal LeRobotPolicy wrapper
+# to instantiate a Diffusion Policy without an explicit wrapper.
+
+model:
+  class_path: getiaction.policies.lerobot.LeRobotPolicy
+  init_args:
+    policy_name: diffusion
+    # Diffusion-specific parameters
+    num_steps: 100
+    noise_scheduler: ddpm
+    down_dims: [512, 1024, 2048]
+    learning_rate: 1e-4
+
+data:
+  class_path: getiaction.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: lerobot/pusht
+    batch_size: 32
+    num_workers: 4
+
+trainer:
+  max_epochs: 100
+  precision: 16-mixed
+  log_every_n_steps: 10

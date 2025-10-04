@@ -1,0 +1,24 @@
+# LeRobot VQ-BeT Policy Configuration
+# Using Universal Wrapper Approach
+
+model:
+  class_path: getiaction.policies.lerobot.LeRobotPolicy
+  init_args:
+    policy_name: vqbet
+    # VQ-BeT specific parameters
+    num_clusters: 256
+    embedding_dim: 64
+    n_vqvae_training_steps: 10000
+    learning_rate: 1e-4
+
+data:
+  class_path: getiaction.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: lerobot/aloha_sim_insertion_human
+    batch_size: 32
+    num_workers: 4
+
+trainer:
+  max_epochs: 100
+  precision: 16-mixed
+  log_every_n_steps: 10

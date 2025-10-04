@@ -1,0 +1,23 @@
+# ACT Policy - Quick Start Configuration
+# Minimal configuration for getting started with ACT training
+#
+# Usage:
+#   getiaction fit --config configs/lerobot_act_simple.yaml
+
+model:
+  class_path: getiaction.policies.lerobot.ACT
+  init_args:
+    dim_model: 512
+    chunk_size: 100
+    learning_rate: 1.0e-5
+
+data:
+  class_path: getiaction.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: "lerobot/aloha_sim_transfer_cube_human"
+    batch_size: 8
+
+trainer:
+  max_epochs: 100
+  accelerator: gpu
+  devices: 1
