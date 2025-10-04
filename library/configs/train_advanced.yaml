@@ -7,7 +7,7 @@ trainer:
   max_epochs: 200
   accelerator: gpu
   devices: 1
-  precision: 16-mixed  # Mixed precision training
+  precision: 16-mixed # Mixed precision training
   log_every_n_steps: 10
   gradient_clip_val: 1.0
   accumulate_grad_batches: 2
@@ -80,7 +80,6 @@ data:
     download_videos: true
     video_backend: "pyav"
     force_cache_sync: false
-
 # Optimizer configuration (if using Lightning's optimizer config)
 # optimizer:
 #   class_path: torch.optim.AdamW
@@ -94,4 +93,3 @@ data:
 #   init_args:
 #     T_max: 200
 #     eta_min: 0.00001
-

@@ -126,6 +126,6 @@ class DummyConfigPydantic(BaseModel):
                     "weight_decay": 0.00001,
                     "betas": [0.9, 0.999],
                 },
-            }
-        }
+            },
+        },
     }

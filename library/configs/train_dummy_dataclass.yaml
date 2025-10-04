@@ -39,5 +39,3 @@ data:
   init_args:
     repo_id: "lerobot/pusht"
     train_batch_size: 32
-
-

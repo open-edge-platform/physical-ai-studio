@@ -12,35 +12,43 @@ python -m getiaction fit --config configs/train_dummy_class_path.yaml
 ## Available Configs
 
 ### `train_dummy_dataclass.yaml`
+
 Basic training config using dataclass pattern. Good starting point for simple experiments.
 
 **Features:**
+
 - Dataclass-based configuration
 - Basic callbacks (ModelCheckpoint)
 - Simple optimizer setup
 
 **Use when:**
+
 - Learning the system
 - Quick experiments
 - Type-safe configs preferred
 
 ### `train_dummy_class_path.yaml`
+
 Training config using jsonargparse `class_path` pattern. Recommended for most use cases.
 
 **Features:**
+
 - Dynamic class instantiation
 - More callbacks (EarlyStopping, ModelCheckpoint, LearningRateMonitor)
 - Flexible optimizer configuration
 
 **Use when:**
+
 - Need to swap components easily
 - Configuration-driven experiments
 - Maximum flexibility required
 
 ### `train_advanced.yaml`
+
 Advanced training config with all features enabled.
 
 **Features:**
+
 - Mixed precision training
 - Multiple loggers (TensorBoard, CSV)
 - Comprehensive callbacks
@@ -48,6 +56,7 @@ Advanced training config with all features enabled.
 - Learning rate scheduling
 
 **Use when:**
+
 - Production training
 - Long experiments
 - Need full monitoring
@@ -69,12 +78,14 @@ model:
 ```
 
 **Pros:**
+
 - ✅ Dynamic class loading
 - ✅ No code changes to swap components
 - ✅ Works with any class
 - ✅ Standard in Lightning ecosystem
 
 **Cons:**
+
 - ❌ No IDE autocomplete
 - ❌ Type errors caught at runtime
 
@@ -88,11 +99,13 @@ model_config:
 ```
 
 **Pros:**
+
 - ✅ Type-safe at definition time
 - ✅ IDE autocomplete
 - ✅ Clear structure
 
 **Cons:**
+
 - ❌ Less flexible
 - ❌ Requires code changes for new components
 
@@ -110,10 +123,11 @@ model:
   init_args:
     model:
       class_path: getiaction.policies.dummy.model.Dummy
-      init_args: ${model_params}  # Reference typed config
+      init_args: ${model_params} # Reference typed config
 ```
 
 **Pros:**
+
 - ✅ Type safety where needed
 - ✅ Flexibility where needed
 - ✅ Best of both worlds
@@ -144,7 +158,7 @@ data:
 model:
   init_args:
     optimizer:
-      class_path: torch.optim.SGD  # Or any PyTorch optimizer
+      class_path: torch.optim.SGD # Or any PyTorch optimizer
       init_args:
         lr: 0.01
         momentum: 0.9
@@ -228,6 +242,7 @@ python -m getiaction fit --config CONFIG --print_config
 ### Import Error
 
 Make sure all classes are importable:
+
 ```python
 python -c "from getiaction.policies.dummy.policy import Dummy"
 ```
@@ -240,5 +255,3 @@ jsonargparse validates types. Check your config matches class signatures.
 
 - Full documentation: `../library/docs/cli_usage.md`
 - Quick reference: `../README_CLI.md`
-
-

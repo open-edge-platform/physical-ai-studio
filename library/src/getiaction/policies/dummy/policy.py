@@ -7,8 +7,7 @@ import torch
 from torch import nn
 
 from getiaction.policies.base import Policy
-from getiaction.policies.dummy.config import DummyConfig, OptimizerConfig
-from getiaction.policies.dummy.model import Dummy as DummyModel
+from getiaction.policies.dummy.config import OptimizerConfig
 
 
 class Dummy(Policy):
