@@ -16,7 +16,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import torch
-from lightning.pytorch import LightningModule
 
 from getiaction.policies.base import Policy
 
@@ -404,11 +403,9 @@ class LeRobotPolicy(Policy):
             # Otherwise, wrap in a list
             if isinstance(param_groups, list) and param_groups and isinstance(param_groups[0], dict):
                 return torch.optim.Adam(param_groups, lr=self.learning_rate)
-            else:
-                return torch.optim.Adam(param_groups, lr=self.learning_rate)
-        else:
-            # Default: optimize all parameters
-            return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+            return torch.optim.Adam(param_groups, lr=self.learning_rate)
+        # Default: optimize all parameters
+        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
 
     @property
     def config(self) -> PreTrainedConfig:
