@@ -1,4 +1,4 @@
-# action_trainer 🤖
+# Geti Action
 
 PyTorch Lightning-based framework for training robotic action policies.
 
