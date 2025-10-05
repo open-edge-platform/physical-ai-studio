@@ -773,6 +773,7 @@ dependencies = [
     { name = "lightning" },
     { name = "lightning-utilities" },
     { name = "pillow" },
+    { name = "pydantic" },
     { name = "pymunk" },
 ]
 
@@ -797,6 +798,7 @@ requires-dist = [
     { name = "mypy", marker = "extra == 'tests'" },
     { name = "pillow" },
     { name = "pre-commit", marker = "extra == 'tests'" },
+    { name = "pydantic" },
     { name = "pymunk", specifier = ">=6.6.0,<7.0.0" },
     { name = "pytest", marker = "extra == 'tests'" },
     { name = "pytest-mock", marker = "extra == 'tests'" },
