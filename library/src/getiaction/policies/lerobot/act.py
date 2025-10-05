@@ -29,7 +29,27 @@ except ImportError:
 
 
 class ACT(Policy):
-    """Action Chunking Transformer from LeRobot."""
+    """Action Chunking Transformer from LeRobot with lazy initialization.
+
+    The LeRobot policy is created in setup() after the dataset is loaded.
+    This enables YAML configuration while maintaining compatibility with Python scripts.
+
+    Example YAML usage:
+        model:
+          class_path: getiaction.policies.lerobot.ACT
+          init_args:
+            dim_model: 512
+            chunk_size: 100
+        data:
+          class_path: getiaction.data.lerobot.LeRobotDataModule
+          init_args:
+            repo_id: lerobot/pusht
+
+    Example Python usage:
+        policy = ACT(dim_model=512, chunk_size=100)
+        datamodule = LeRobotDataModule(repo_id="lerobot/pusht")
+        trainer.fit(policy, datamodule)  # setup() called automatically
+    """
 
     def __init__(
         self,
@@ -50,42 +70,112 @@ class ACT(Policy):
         dim_feedforward: int = 3200,
         learning_rate: float = 1e-5,
         temporal_ensemble_coeff: float | None = None,
-        stats: dict[str, dict[str, torch.Tensor]] | None = None,
         **kwargs: Any,
     ) -> None:
-        """Initialize ACT policy wrapper."""
+        """Initialize ACT policy wrapper.
+
+        The LeRobot policy is created lazily in setup() after the dataset is loaded.
+        This is called automatically by Lightning before training begins.
+
+        Args:
+            dim_model: Transformer model dimension.
+            chunk_size: Number of action predictions per forward pass.
+            n_action_steps: Number of action steps to execute.
+            optimizer_lr_backbone: Learning rate for vision backbone.
+            vision_backbone: Vision encoder architecture (e.g., "resnet18").
+            pretrained_backbone_weights: Pretrained weights for vision backbone.
+            use_vae: Whether to use VAE for action encoding.
+            latent_dim: Dimension of VAE latent space.
+            dropout: Dropout probability.
+            kl_weight: Weight for KL divergence loss.
+            n_encoder_layers: Number of transformer encoder layers.
+            n_decoder_layers: Number of transformer decoder layers.
+            n_heads: Number of attention heads.
+            dim_feedforward: Dimension of feedforward network.
+            learning_rate: Learning rate for optimizer.
+            temporal_ensemble_coeff: Coefficient for temporal ensembling.
+            **kwargs: Additional arguments passed to ACTConfig.
+        """
         if not LEROBOT_AVAILABLE:
             msg = "ACT requires LeRobot framework.\n\nInstall with:\n    pip install lerobot\n"
             raise ImportError(msg)
 
         super().__init__()
 
-        lerobot_config = _LeRobotACTConfig(
-            dim_model=dim_model,
-            chunk_size=chunk_size,
-            n_action_steps=n_action_steps,
-            optimizer_lr_backbone=optimizer_lr_backbone,
-            vision_backbone=vision_backbone,
-            pretrained_backbone_weights=pretrained_backbone_weights,
-            use_vae=use_vae,
-            latent_dim=latent_dim,
-            dropout=dropout,
-            kl_weight=kl_weight,
-            n_encoder_layers=n_encoder_layers,
-            n_decoder_layers=n_decoder_layers,
-            n_heads=n_heads,
-            dim_feedforward=dim_feedforward,
-            temporal_ensemble_coeff=temporal_ensemble_coeff,
+        # Store configuration for use in setup()
+        self._config_kwargs = {
+            "dim_model": dim_model,
+            "chunk_size": chunk_size,
+            "n_action_steps": n_action_steps,
+            "optimizer_lr_backbone": optimizer_lr_backbone,
+            "vision_backbone": vision_backbone,
+            "pretrained_backbone_weights": pretrained_backbone_weights,
+            "use_vae": use_vae,
+            "latent_dim": latent_dim,
+            "dropout": dropout,
+            "kl_weight": kl_weight,
+            "n_encoder_layers": n_encoder_layers,
+            "n_decoder_layers": n_decoder_layers,
+            "n_heads": n_heads,
+            "dim_feedforward": dim_feedforward,
+            "temporal_ensemble_coeff": temporal_ensemble_coeff,
             **kwargs,
+        }
+
+        self.learning_rate = learning_rate
+        self._framework = "lerobot"
+
+        # Policy will be initialized in setup()
+        self.lerobot_policy: _LeRobotACTPolicy | None = None
+        self.model: nn.Module | None = None
+        self._framework_policy: _LeRobotACTPolicy | None = None
+
+        self.save_hyperparameters()
+
+    def setup(self, stage: str) -> None:
+        """Set up the policy from datamodule if not already initialized.
+
+        This method is called by Lightning before fit/validate/test/predict.
+        It extracts features from the datamodule's training dataset and
+        initializes the policy if it wasn't already created in __init__.
+
+        Args:
+            stage: The stage of training ('fit', 'validate', 'test', or 'predict')
+        """
+        if self.lerobot_policy is not None:
+            return  # Already initialized
+
+        # Extract features from datamodule
+        from lerobot.datasets.utils import dataset_to_policy_features
+
+        from getiaction.data.lerobot import _LeRobotDatasetAdapter
+
+        datamodule = self.trainer.datamodule
+        train_dataset = datamodule.train_dataset
+
+        # Get the underlying LeRobot dataset
+        if not isinstance(train_dataset, _LeRobotDatasetAdapter):
+            msg = (
+                f"Expected train_dataset to be _LeRobotDatasetAdapter, "
+                f"got {type(train_dataset)}. Use LeRobotDataModule for YAML configs."
+            )
+            raise TypeError(msg)
+
+        lerobot_dataset = train_dataset._lerobot_dataset  # noqa: SLF001
+        features = dataset_to_policy_features(lerobot_dataset.meta.features)
+        stats = lerobot_dataset.meta.stats
+
+        # Create LeRobot ACT configuration
+        lerobot_config = _LeRobotACTConfig(
+            input_features=features,
+            output_features=features,
+            **self._config_kwargs,
         )
 
+        # Initialize the policy
         self.lerobot_policy = _LeRobotACTPolicy(lerobot_config, dataset_stats=stats)
-        self.model: nn.Module = self.lerobot_policy.model
-        self.learning_rate = learning_rate
-        self.stats = stats
-        self._framework = "lerobot"
+        self.model = self.lerobot_policy.model
         self._framework_policy = self.lerobot_policy
-        self.save_hyperparameters()
 
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """Forward pass delegates to LeRobot."""

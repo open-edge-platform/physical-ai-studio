@@ -127,9 +127,31 @@ class LeRobotPolicy(Policy):
         config: PreTrainedConfig | None = None,
         dataset_stats: dict[str, dict[str, torch.Tensor]] | None = None,
         learning_rate: float = 1e-4,
-        **config_kwargs: Any,
+        config_kwargs: dict[str, Any] | None = None,
+        **extra_config_kwargs: Any,
     ) -> None:
-        """Initialize the universal LeRobot policy wrapper."""
+        """Initialize the universal LeRobot policy wrapper.
+
+        Supports both eager initialization (when input_features provided) and lazy
+        initialization (features extracted in setup() hook from DataModule).
+
+        Args:
+            policy_name: Name of the policy ('diffusion', 'act', 'vqbet', etc.)
+            input_features: Optional input feature definitions (lazy if None)
+            output_features: Optional output feature definitions (lazy if None)
+            config: Pre-built LeRobot config object (optional)
+            dataset_stats: Dataset statistics for normalization (optional)
+            learning_rate: Learning rate for optimizer
+            config_kwargs: Policy-specific parameters as a dict (for YAML configs).
+                          See LeRobot's policy config classes for available parameters.
+            **extra_config_kwargs: Policy-specific parameters as kwargs (for Python usage).
+                                  These are merged with config_kwargs.
+
+        Note:
+            When using Lightning CLI/YAML, use `config_kwargs` (nested dict) due to
+            CLI validation limitations. When using Python directly, you can use either
+            `config_kwargs={}` or pass parameters as **kwargs.
+        """
         if not LEROBOT_AVAILABLE:
             msg = (
                 "LeRobotPolicy requires LeRobot framework.\n\n"
@@ -157,8 +179,45 @@ class LeRobotPolicy(Policy):
         # Store metadata
         self.policy_name = policy_name
         self.learning_rate = learning_rate
-        self.stats = dataset_stats
 
+        # Merge config_kwargs (from YAML) with extra_config_kwargs (from Python **kwargs)
+        merged_config_kwargs = {**(config_kwargs or {}), **extra_config_kwargs}
+
+        # Store for lazy initialization
+        self._input_features = input_features
+        self._output_features = output_features
+        self._provided_config = config
+        self._dataset_stats = dataset_stats
+        self._config_kwargs = merged_config_kwargs
+
+        # Will be initialized in setup() if not provided
+        self.lerobot_policy: PreTrainedPolicy | None = None
+        self._config: PreTrainedConfig | None = None
+
+        # If features are provided, initialize immediately (backward compatibility)
+        if input_features is not None and output_features is not None:
+            self._initialize_policy(input_features, output_features, config, dataset_stats)
+        elif config is not None:
+            # Config provided directly - can initialize now
+            self._initialize_policy(None, None, config, dataset_stats)
+
+        self.save_hyperparameters()
+
+    def _initialize_policy(
+        self,
+        input_features: dict[str, PolicyFeature] | None,
+        output_features: dict[str, PolicyFeature] | None,
+        config: PreTrainedConfig | None,
+        dataset_stats: dict[str, dict[str, torch.Tensor]] | None,
+    ) -> None:
+        """Initialize the LeRobot policy instance.
+
+        Args:
+            input_features: Input feature definitions.
+            output_features: Output feature definitions.
+            config: Pre-built config object.
+            dataset_stats: Dataset statistics for normalization.
+        """
         # Build or use provided config
         if config is None:
             if input_features is None or output_features is None:
@@ -169,21 +228,21 @@ class LeRobotPolicy(Policy):
 
             # Remove dataset_stats from config_kwargs if present
             # (it should be passed to policy constructor, not config)
-            clean_config_kwargs = {k: v for k, v in config_kwargs.items() if k != "dataset_stats"}
+            clean_config_kwargs = {k: v for k, v in self._config_kwargs.items() if k != "dataset_stats"}
 
             # Create config dynamically using LeRobot's factory
             config = make_policy_config(
-                policy_name,
+                self.policy_name,
                 input_features=input_features,
                 output_features=output_features,
                 **clean_config_kwargs,
             )
 
         # Get the policy class dynamically
-        policy_cls = get_policy_class(policy_name)
+        policy_cls = get_policy_class(self.policy_name)
 
         # Instantiate the LeRobot policy
-        self.lerobot_policy: PreTrainedPolicy = policy_cls(config, dataset_stats=dataset_stats)
+        self.lerobot_policy = policy_cls(config, dataset_stats=dataset_stats)
 
         # Expose the underlying model for Lightning compatibility (if available)
         # Some policies (like Diffusion) don't have a .model attribute
@@ -195,7 +254,52 @@ class LeRobotPolicy(Policy):
         self._framework_policy = self.lerobot_policy
         self._config = config
 
-        self.save_hyperparameters()
+    def setup(self, stage: str) -> None:
+        """Lightning hook called before training/validation/test.
+
+        Extracts input/output features from the DataModule's dataset if not provided
+        during initialization. This enables YAML-based configuration without requiring
+        features to be specified in advance.
+
+        Args:
+            stage: Current stage ('fit', 'validate', 'test', or 'predict').
+        """
+        if self.lerobot_policy is not None:
+            # Already initialized
+            return
+
+        # Lazy initialization: extract features from DataModule
+        if not hasattr(self.trainer, "datamodule"):
+            msg = (
+                "Lazy initialization requires a DataModule with train_dataset. "
+                "Either provide input_features/output_features during __init__, "
+                "or ensure a DataModule is attached to the trainer."
+            )
+            raise RuntimeError(msg)
+
+        # Import here to avoid circular dependency
+        from lerobot.datasets.utils import dataset_to_policy_features
+
+        # Get the training dataset
+        train_dataset = self.trainer.datamodule.train_dataset
+
+        # Extract features from LeRobot dataset
+        if not hasattr(train_dataset, "_lerobot_dataset"):
+            msg = "DataModule's train_dataset must have '_lerobot_dataset' attribute. Are you using LeRobotDataModule?"
+            raise RuntimeError(msg)
+
+        lerobot_dataset = train_dataset._lerobot_dataset
+
+        # Convert LeRobot dataset features to policy features
+        features = dataset_to_policy_features(lerobot_dataset.meta.features)
+
+        # Get dataset statistics if not provided
+        stats = self._dataset_stats
+        if stats is None:
+            stats = lerobot_dataset.meta.stats
+
+        # Initialize policy now
+        self._initialize_policy(features, features, self._provided_config, stats)
 
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """Forward pass through the LeRobot policy.
@@ -206,6 +310,9 @@ class LeRobotPolicy(Policy):
         Returns:
             Policy output (format depends on policy type).
         """
+        if self.lerobot_policy is None:
+            msg = "Policy not initialized. Call setup() or provide input_features during __init__."
+            raise RuntimeError(msg)
         return self.lerobot_policy.forward(batch)
 
     def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:

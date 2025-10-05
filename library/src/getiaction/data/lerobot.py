@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from lightning_utilities import module_available
+from torch.utils.data import DataLoader
 
 from getiaction.data import DataModule, Dataset, Observation
 
@@ -149,7 +150,7 @@ class _LeRobotDatasetAdapter(Dataset):
         root: str | Path | None = None,
         episodes: list[int] | None = None,
         image_transforms: Callable | None = None,
-        delta_timestamps: dict[list[float], str] | None = None,
+        delta_timestamps: dict[str, list[float]] | None = None,
         tolerance_s: float = 1e-4,
         revision: str | None = None,
         force_cache_sync: bool = False,
@@ -314,7 +315,7 @@ class LeRobotDataModule(DataModule):
         episodes: list[int] | None = None,
         train_batch_size: int = 16,
         image_transforms: Callable | None = None,
-        delta_timestamps: dict[list[float], str] | None = None,
+        delta_timestamps: dict[str, list[float]] | None = None,
         tolerance_s: float = 1e-4,
         revision: str | None = None,
         force_cache_sync: bool = False,
@@ -398,4 +399,26 @@ class LeRobotDataModule(DataModule):
             train_dataset=adapted_dataset,
             train_batch_size=train_batch_size,
             **action_datamodule_kwargs,
+        )
+
+    def train_dataloader(self) -> DataLoader:
+        """Return the DataLoader for training using LeRobot's native format.
+
+        LeRobot policies expect the original LeRobot batch format,
+        so we use the underlying LeRobotDataset directly without
+        the Observation adapter.
+
+        Returns:
+            DataLoader: Training DataLoader with LeRobot batch format.
+        """
+        # Access the underlying LeRobot dataset (not the adapter)
+        lerobot_dataset = self.train_dataset._lerobot_dataset  # noqa: SLF001
+
+        return DataLoader(
+            lerobot_dataset,
+            num_workers=4,
+            batch_size=self.train_batch_size,
+            shuffle=True,
+            drop_last=True,
+            # Use default PyTorch collate to preserve LeRobot dict structure
         )
