@@ -5,18 +5,22 @@ model:
   class_path: getiaction.policies.lerobot.LeRobotPolicy
   init_args:
     policy_name: vqbet
-    # VQ-BeT specific parameters
-    num_clusters: 256
-    embedding_dim: 64
-    n_vqvae_training_steps: 10000
     learning_rate: 1e-4
+    # VQ-BeT specific parameters (from VQBeTConfig defaults)
+    config_kwargs:
+      n_vqvae_training_steps: 10000 # VQ-VAE pretraining steps. Default: 20000
+      vqvae_n_embed: 16 # Number of VQ codebook entries. Default: 16
+      vqvae_embedding_dim: 256 # VQ embedding dimension. Default: 256
+      n_action_pred_token: 3 # Action prediction tokens. Default: 3
+      action_chunk_size: 10 # Must match len(delta_timestamps). Default: 5
 
 data:
   class_path: getiaction.data.lerobot.LeRobotDataModule
   init_args:
     repo_id: lerobot/aloha_sim_insertion_human
-    batch_size: 32
-    num_workers: 4
+    train_batch_size: 32
+    delta_timestamps:
+      action: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9] # 10 steps
 
 trainer:
   max_epochs: 100
