@@ -11,48 +11,112 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import torch
+from lightning_utilities.core.imports import module_available
 
 from getiaction.policies.base import Policy
 
 if TYPE_CHECKING:
     from torch import nn
 
-try:
+if TYPE_CHECKING or module_available("lerobot"):
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+    from lerobot.datasets.utils import dataset_to_policy_features
     from lerobot.policies.diffusion.configuration_diffusion import DiffusionConfig as _LeRobotDiffusionConfig
     from lerobot.policies.diffusion.modeling_diffusion import DiffusionPolicy as _LeRobotDiffusionPolicy
 
-    LEROBOT_AVAILABLE = True
-except ImportError:
+    LEROBOT_AVAILABLE: bool = True
+else:
     LEROBOT_AVAILABLE = False
     _LeRobotDiffusionPolicy = None
     _LeRobotDiffusionConfig = None
+    LeRobotDataset = None
+    dataset_to_policy_features = None
+
+from getiaction.data.lerobot import _LeRobotDatasetAdapter
 
 
 class Diffusion(Policy):
     """Diffusion Policy from LeRobot with lazy initialization.
 
-    The LeRobot policy is created in setup() after the dataset is loaded.
-    This enables YAML configuration while maintaining compatibility with Python scripts.
+    This class wraps LeRobot's Diffusion Policy implementation, providing a
+    Lightning-compatible interface. The underlying LeRobot policy is created
+    lazily in setup() after the dataset is loaded, enabling both YAML-based
+    configuration and direct Python API usage.
 
-    Example YAML usage:
+    The Diffusion Policy uses denoising diffusion probabilistic models to
+    generate robot actions through iterative denoising of Gaussian noise.
+
+    Attributes:
+        lerobot_policy: The underlying LeRobot DiffusionPolicy instance.
+            Created during setup() and used for forward passes.
+
+    Example:
+        Basic usage with Python API:
+
+        >>> from getiaction.policies.lerobot import Diffusion
+        >>> from getiaction.data.lerobot import LeRobotDataModule
+        >>> import lightning as L
+
+        >>> # Create policy with default parameters
+        >>> policy = Diffusion(
+        ...     n_obs_steps=2,
+        ...     horizon=16,
+        ...     n_action_steps=8,
+        ... )
+
+        >>> # Create data module
+        >>> datamodule = LeRobotDataModule(
+        ...     repo_id="lerobot/pusht",
+        ...     batch_size=64,
+        ... )
+
+        >>> # Train with Lightning
+        >>> trainer = L.Trainer(max_epochs=100)
+        >>> trainer.fit(policy, datamodule)
+
+        Advanced configuration with custom architecture:
+
+        >>> policy = Diffusion(
+        ...     n_obs_steps=2,
+        ...     horizon=16,
+        ...     n_action_steps=8,
+        ...     down_dims=(256, 512, 1024),
+        ...     vision_backbone="resnet34",
+        ...     num_train_timesteps=100,
+        ...     learning_rate=1e-4,
+        ... )
+
+        Using YAML configuration:
+
+        ```yaml
         model:
           class_path: getiaction.policies.lerobot.Diffusion
           init_args:
             n_obs_steps: 2
             horizon: 16
             n_action_steps: 8
+            down_dims: [512, 1024, 2048]
+            vision_backbone: resnet18
+            learning_rate: 1e-4
         data:
           class_path: getiaction.data.lerobot.LeRobotDataModule
           init_args:
             repo_id: lerobot/pusht
+            batch_size: 64
+        ```
 
-    Example Python usage:
-        policy = Diffusion(n_obs_steps=2, horizon=16, n_action_steps=8)
-        datamodule = LeRobotDataModule(repo_id="lerobot/pusht")
-        trainer.fit(policy, datamodule)  # setup() called automatically
+        Then run from command line:
+
+        ```bash
+        getiaction fit --config config.yaml
+        ```
+
+    Note:
+        This class requires LeRobot to be installed. Install with:
+        ``pip install lerobot`` or ``pip install getiaction[lerobot]``
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         # Input/output structure
@@ -95,7 +159,7 @@ class Diffusion(Policy):
         # Scheduler
         scheduler_name: str = "cosine",
         scheduler_warmup_steps: int = 500,
-        **kwargs: Any,
+        **kwargs: Any,  # noqa: ANN401
     ) -> None:
         """Initialize Diffusion policy wrapper.
 
@@ -136,9 +200,12 @@ class Diffusion(Policy):
             scheduler_name: Name of learning rate scheduler.
             scheduler_warmup_steps: Number of warmup steps for scheduler.
             **kwargs: Additional arguments passed to DiffusionConfig.
+
+        Raises:
+            ImportError: If LeRobot is not installed.
         """
         if not LEROBOT_AVAILABLE:
-            msg = "Diffusion requires LeRobot framework.\n\nInstall with:\n    pip install lerobot\n"
+            msg = "Diffusion requires LeRobot framework.\n\nInstall with:\n    uv pip install lerobot\n"
             raise ImportError(msg)
 
         super().__init__()
@@ -184,11 +251,26 @@ class Diffusion(Policy):
         self._framework = "lerobot"
 
         # Policy will be initialized in setup()
-        self.lerobot_policy: _LeRobotDiffusionPolicy | None = None
+        self._lerobot_policy: _LeRobotDiffusionPolicy | None = None
         self.model: nn.Module | None = None
         self._framework_policy: _LeRobotDiffusionPolicy | None = None
 
         self.save_hyperparameters()
+
+    @property
+    def lerobot_policy(self) -> _LeRobotDiffusionPolicy:
+        """Get the initialized LeRobot policy.
+
+        Returns:
+            The initialized LeRobot Diffusion policy.
+
+        Raises:
+            RuntimeError: If the policy hasn't been initialized yet.
+        """
+        if self._lerobot_policy is None:
+            msg = "Policy not initialized. Call setup() first."
+            raise RuntimeError(msg)
+        return self._lerobot_policy
 
     def setup(self, stage: str) -> None:
         """Set up the policy from datamodule if not already initialized.
@@ -199,15 +281,14 @@ class Diffusion(Policy):
 
         Args:
             stage: The stage of training ('fit', 'validate', 'test', or 'predict')
+
+        Raises:
+            TypeError: If the train_dataset is not a LeRobot dataset.
         """
-        if self.lerobot_policy is not None:
+        del stage  # Unused argument
+
+        if self._lerobot_policy is not None:
             return  # Already initialized
-
-        # Extract features from datamodule
-        from lerobot.datasets.lerobot_dataset import LeRobotDataset
-        from lerobot.datasets.utils import dataset_to_policy_features
-
-        from getiaction.data.lerobot import _LeRobotDatasetAdapter
 
         datamodule = self.trainer.datamodule
         train_dataset = datamodule.train_dataset
@@ -215,7 +296,7 @@ class Diffusion(Policy):
         # Get the underlying LeRobot dataset - handle both adapter and raw dataset
         if isinstance(train_dataset, _LeRobotDatasetAdapter):
             lerobot_dataset = train_dataset._lerobot_dataset  # noqa: SLF001
-        elif isinstance(train_dataset, LeRobotDataset):
+        elif LeRobotDataset is not None and isinstance(train_dataset, LeRobotDataset):
             lerobot_dataset = train_dataset
         else:
             msg = (
@@ -224,44 +305,82 @@ class Diffusion(Policy):
             )
             raise TypeError(msg)
 
-        features = dataset_to_policy_features(lerobot_dataset.meta.features)
+        features = dataset_to_policy_features(lerobot_dataset.meta.features)  # type: ignore[misc]
         stats = lerobot_dataset.meta.stats
 
         # Create LeRobot Diffusion configuration
-        lerobot_config = _LeRobotDiffusionConfig(
+        lerobot_config = _LeRobotDiffusionConfig(  # type: ignore[misc]
             input_features=features,
             output_features=features,
             **self._config_kwargs,
         )
 
         # Initialize the policy
-        self.lerobot_policy = _LeRobotDiffusionPolicy(lerobot_config, dataset_stats=stats)
-        self.model = self.lerobot_policy.diffusion
-        self._framework_policy = self.lerobot_policy
+        self._lerobot_policy = _LeRobotDiffusionPolicy(lerobot_config, dataset_stats=stats)  # type: ignore[arg-type,misc]
+        self.model = self._lerobot_policy.diffusion
+        self._framework_policy = self._lerobot_policy
 
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
-        """Forward pass delegates to LeRobot."""
+        """Forward pass delegates to LeRobot.
+
+        Args:
+            batch: A batch of data containing observations and actions.
+
+        Returns:
+            The computed loss tensor.
+        """
         loss, _ = self.lerobot_policy.forward(batch)
         return loss
 
     def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
-        """Training step uses LeRobot's loss computation."""
+        """Training step uses LeRobot's loss computation.
+
+        Args:
+            batch: A batch of data containing observations and actions.
+            batch_idx: Index of the batch.
+
+        Returns:
+            The computed loss tensor.
+        """
+        del batch_idx  # Unused argument
+
         loss, _ = self.lerobot_policy.forward(batch)
         self.log("train/loss", loss, prog_bar=True)
         return loss
 
     def validation_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
-        """Validation step."""
+        """Validation step.
+
+        Args:
+            batch: A batch of data containing observations and actions.
+            batch_idx: Index of the batch.
+
+        Returns:
+            The computed loss tensor.
+        """
+        del batch_idx  # Unused argument
+
         loss, _ = self.lerobot_policy.forward(batch)
         self.log("val/loss", loss, prog_bar=True)
         return loss
 
     def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
-        """Select action (inference mode) through LeRobot."""
+        """Select action (inference mode) through LeRobot.
+
+        Args:
+            batch: A batch of data containing observations.
+
+        Returns:
+            The selected action tensor.
+        """
         return self.lerobot_policy.select_action(batch)
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
-        """Configure optimizer using LeRobot's parameters."""
+        """Configure optimizer using LeRobot's parameters.
+
+        Returns:
+            torch.optim.Optimizer: The configured optimizer instance.
+        """
         return torch.optim.Adam(self.lerobot_policy.get_optim_params(), lr=self.learning_rate)
 
     def reset(self) -> None:

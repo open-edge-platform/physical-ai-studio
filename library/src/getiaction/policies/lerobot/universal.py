@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
@@ -13,22 +12,27 @@ support, see the specific policy modules (e.g., ACT).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
+from lightning_utilities import module_available
 
 from getiaction.policies.base import Policy
 
 if TYPE_CHECKING:
     from lerobot.configs.policies import PreTrainedConfig
     from lerobot.configs.types import PolicyFeature
-
-try:
-    from lerobot.policies.factory import get_policy_class, make_policy_config
     from lerobot.policies.pretrained import PreTrainedPolicy
 
+if TYPE_CHECKING or module_available("lerobot"):
+    from lerobot.datasets.utils import dataset_to_policy_features
+    from lerobot.policies.factory import get_policy_class, make_policy_config
+
     LEROBOT_AVAILABLE = True
-except ImportError:
+else:
+    dataset_to_policy_features = None
+    get_policy_class = None
+    make_policy_config = None
     LEROBOT_AVAILABLE = False
 
 
@@ -63,7 +67,7 @@ class LeRobotPolicy(Policy):
         ...     noise_scheduler="ddpm",
         ...     stats=dataset.meta.stats,
         ... )
-        >>>
+
         >>> # Option 2: Pass pre-built config
         >>> from lerobot.policies import DiffusionConfig
         >>> config = DiffusionConfig(
@@ -76,7 +80,7 @@ class LeRobotPolicy(Policy):
         ...     config=config,
         ...     stats=dataset.meta.stats,
         ... )
-        >>>
+
         >>> # Option 3: Use with LightningCLI
         >>> # In config.yaml:
         >>> # model:
@@ -106,7 +110,7 @@ class LeRobotPolicy(Policy):
         and better IDE support, consider using specific wrappers (e.g., ACT).
     """
 
-    SUPPORTED_POLICIES = [
+    SUPPORTED_POLICIES: ClassVar[list[str]] = [
         "act",
         "diffusion",
         "vqbet",
@@ -127,7 +131,7 @@ class LeRobotPolicy(Policy):
         dataset_stats: dict[str, dict[str, torch.Tensor]] | None = None,
         learning_rate: float = 1e-4,
         config_kwargs: dict[str, Any] | None = None,
-        **extra_config_kwargs: Any,
+        **extra_config_kwargs: Any,  # noqa: ANN401
     ) -> None:
         """Initialize the universal LeRobot policy wrapper.
 
@@ -142,9 +146,13 @@ class LeRobotPolicy(Policy):
             dataset_stats: Dataset statistics for normalization (optional)
             learning_rate: Learning rate for optimizer
             config_kwargs: Policy-specific parameters as a dict (for YAML configs).
-                          See LeRobot's policy config classes for available parameters.
+                See LeRobot's policy config classes for available parameters.
             **extra_config_kwargs: Policy-specific parameters as kwargs (for Python usage).
-                                  These are merged with config_kwargs.
+                These are merged with config_kwargs.
+
+        Raises:
+            ImportError: If LeRobot is not installed.
+            ValueError: If policy_name is not supported.
 
         Note:
             When using Lightning CLI/YAML, use `config_kwargs` (nested dict) due to
@@ -190,7 +198,8 @@ class LeRobotPolicy(Policy):
         self._config_kwargs = merged_config_kwargs
 
         # Will be initialized in setup() if not provided
-        self.lerobot_policy: PreTrainedPolicy | None = None
+        # Using private attribute with property for type-safe access
+        self._lerobot_policy: PreTrainedPolicy | None = None
         self._config: PreTrainedConfig | None = None
 
         # If features are provided, initialize immediately (backward compatibility)
@@ -201,6 +210,21 @@ class LeRobotPolicy(Policy):
             self._initialize_policy(None, None, config, dataset_stats)
 
         self.save_hyperparameters()
+
+    @property
+    def lerobot_policy(self) -> PreTrainedPolicy:
+        """Get the initialized LeRobot policy.
+
+        Returns:
+            The initialized LeRobot policy.
+
+        Raises:
+            RuntimeError: If the policy hasn't been initialized yet.
+        """
+        if self._lerobot_policy is None:
+            msg = "Policy not initialized. Call setup() or provide input_features during __init__."
+            raise RuntimeError(msg)
+        return self._lerobot_policy
 
     def _initialize_policy(
         self,
@@ -216,6 +240,9 @@ class LeRobotPolicy(Policy):
             output_features: Output feature definitions.
             config: Pre-built config object.
             dataset_stats: Dataset statistics for normalization.
+
+        Raises:
+            ValueError: If neither config nor features are provided.
         """
         # Build or use provided config
         if config is None:
@@ -241,16 +268,16 @@ class LeRobotPolicy(Policy):
         policy_cls = get_policy_class(self.policy_name)
 
         # Instantiate the LeRobot policy
-        self.lerobot_policy = policy_cls(config, dataset_stats=dataset_stats)
+        self._lerobot_policy = policy_cls(config, dataset_stats=dataset_stats)
 
         # Expose the underlying model for Lightning compatibility (if available)
         # Some policies (like Diffusion) don't have a .model attribute
-        if hasattr(self.lerobot_policy, "model"):
-            self.model = self.lerobot_policy.model
+        if hasattr(self._lerobot_policy, "model"):
+            self.model = self._lerobot_policy.model
 
         # Expose framework info
         self._framework = "lerobot"
-        self._framework_policy = self.lerobot_policy
+        self._framework_policy = self._lerobot_policy
         self._config = config
 
     def setup(self, stage: str) -> None:
@@ -262,8 +289,13 @@ class LeRobotPolicy(Policy):
 
         Args:
             stage: Current stage ('fit', 'validate', 'test', or 'predict').
+
+        Raises:
+            RuntimeError: If DataModule or train_dataset is not available.
         """
-        if self.lerobot_policy is not None:
+        del stage  # Unused argument
+
+        if self._lerobot_policy is not None:
             # Already initialized
             return
 
@@ -276,8 +308,8 @@ class LeRobotPolicy(Policy):
             )
             raise RuntimeError(msg)
 
-        # Import here to avoid circular dependency
-        from lerobot.datasets.utils import dataset_to_policy_features
+        # NOTE: This part always assumes that we are using getiaction data format.
+        #   If using `lerobot` format, `train_dataset` would not have `_lerobot_dataset` attribute.
 
         # Get the training dataset
         train_dataset = self.trainer.datamodule.train_dataset
@@ -287,7 +319,7 @@ class LeRobotPolicy(Policy):
             msg = "DataModule's train_dataset must have '_lerobot_dataset' attribute. Are you using LeRobotDataModule?"
             raise RuntimeError(msg)
 
-        lerobot_dataset = train_dataset._lerobot_dataset
+        lerobot_dataset = train_dataset._lerobot_dataset  # noqa: SLF001
 
         # Convert LeRobot dataset features to policy features
         features = dataset_to_policy_features(lerobot_dataset.meta.features)
@@ -309,9 +341,6 @@ class LeRobotPolicy(Policy):
         Returns:
             Policy output (format depends on policy type).
         """
-        if self.lerobot_policy is None:
-            msg = "Policy not initialized. Call setup() or provide input_features during __init__."
-            raise RuntimeError(msg)
         return self.lerobot_policy.forward(batch)
 
     def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
@@ -324,10 +353,12 @@ class LeRobotPolicy(Policy):
         Returns:
             Scalar loss value.
         """
+        del batch_idx  # Unused argument
+
         output = self.lerobot_policy.forward(batch)
 
         # Handle different output formats from LeRobot policies
-        if isinstance(output, tuple) and len(output) == 2:
+        if isinstance(output, tuple) and len(output) == 2:  # noqa: PLR2004
             _, loss_dict = output
         elif isinstance(output, dict):
             loss_dict = output
@@ -356,10 +387,12 @@ class LeRobotPolicy(Policy):
         Returns:
             Scalar loss value.
         """
+        del batch_idx  # Unused argument
+
         output = self.lerobot_policy.forward(batch)
 
         # Handle different output formats
-        if isinstance(output, tuple) and len(output) == 2:
+        if isinstance(output, tuple) and len(output) == 2:  # noqa: PLR2004
             _, loss_dict = output
         elif isinstance(output, dict):
             loss_dict = output
@@ -417,7 +450,11 @@ class LeRobotPolicy(Policy):
         return self._config
 
     def __repr__(self) -> str:
-        """String representation."""
+        """String representation.
+
+        Returns:
+            String summarizing the policy instance.
+        """
         return (
             f"{self.__class__.__name__}(\n"
             f"  policy_name={self.policy_name!r},\n"

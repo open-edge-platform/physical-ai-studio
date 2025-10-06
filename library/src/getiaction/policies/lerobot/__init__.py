@@ -3,143 +3,185 @@
 
 """LeRobot policies integration.
 
-Provides two approaches for using LeRobot's state-of-the-art policies:
+This module provides integration with LeRobot's state-of-the-art robot learning policies,
+offering two flexible approaches for incorporating pre-trained models into your workflows.
 
-1. **Explicit Wrappers** (Recommended for most users):
-   - Full parameter definitions with IDE autocomplete
-   - Type-safe with compile-time checking
-   - Direct YAML configuration support
-   - Currently available: ACT
+Approaches:
+    1. **Explicit Wrappers** (Recommended for most users):
+        - Full parameter definitions with IDE autocomplete
+        - Type-safe with compile-time checking
+        - Direct YAML configuration support
+        - Currently available: ACT, Diffusion
 
-2. **Universal Wrapper** (Flexible for advanced users):
-   - Single wrapper for all LeRobot policies
-   - Runtime policy selection
-   - Minimal code overhead
-   - Supports: act, diffusion, vqbet, tdmpc, sac, pi0, pi05, pi0fast, smolvla
+    2. **Universal Wrapper** (Flexible for advanced users):
+        - Single wrapper for all LeRobot policies
+        - Runtime policy selection
+        - Minimal code overhead
+        - Supports: act, diffusion, vqbet, tdmpc, sac, pi0, pi05, pi0fast, smolvla
 
-Example - Explicit Wrapper:
-    >>> from getiaction.policies.lerobot import ACT
-    >>> policy = ACT(
-    ...     dim_model=512,
-    ...     chunk_size=100,
-    ...     stats=dataset.meta.stats,
-    ... )
+Note:
+    LeRobot must be installed to use these policies:
+        ``pip install lerobot``
 
-Example - Universal Wrapper:
-    >>> from getiaction.policies.lerobot import LeRobotPolicy
-    >>> policy = LeRobotPolicy(
-    ...     policy_name="diffusion",
-    ...     input_features=features,
-    ...     output_features=features,
-    ...     num_steps=100,
-    ...     stats=dataset.meta.stats,
-    ... )
+    Or install getiaction with LeRobot support:
+        ``pip install getiaction[lerobot]``
 
-Example - Convenience Aliases:
-    >>> from getiaction.policies.lerobot import Diffusion
-    >>> policy = Diffusion(
-    ...     input_features=features,
-    ...     output_features=features,
-    ...     num_steps=100,
-    ...     stats=dataset.meta.stats,
-    ... )
+    For more information, see: https://github.com/huggingface/lerobot
 
-Install LeRobot to use these policies:
-    pip install lerobot
+Examples:
+    Using the explicit ACT wrapper with full type safety and autocomplete:
 
-Or install getiaction with LeRobot support:
-    pip install getiaction[lerobot]
+        >>> from getiaction.policies.lerobot import ACT
 
-For more information, see: https://github.com/huggingface/lerobot
+        >>> # Create ACT policy with explicit parameters
+        >>> policy = ACT(
+        ...     dim_model=512,
+        ...     chunk_size=10,
+        ...     n_action_steps=10,
+        ...     learning_rate=1e-5,
+        ... )
+
+    Using the explicit Diffusion wrapper:
+
+        >>> from getiaction.policies.lerobot import Diffusion
+
+        >>> # Create Diffusion policy with explicit parameters
+        >>> policy = Diffusion(
+        ...     n_obs_steps=2,
+        ...     horizon=16,
+        ...     n_action_steps=8,
+        ...     learning_rate=1e-4,
+        ... )
+
+    Using the universal wrapper for runtime policy selection:
+
+        >>> from getiaction.policies.lerobot import LeRobotPolicy
+
+        >>> # Create any LeRobot policy dynamically by name
+        >>> policy = LeRobotPolicy(
+        ...     policy_name="vqbet",
+        ...     learning_rate=1e-4,
+        ... )
+
+    Using convenience aliases for cleaner code:
+
+        >>> from getiaction.policies.lerobot import VQBeT, TDMPC
+
+        >>> # Convenience aliases wrap LeRobotPolicy with specific policy names
+        >>> vqbet_policy = VQBeT(learning_rate=1e-4)
+        >>> tdmpc_policy = TDMPC(learning_rate=1e-4)
+
+    Checking availability before using LeRobot policies:
+
+        >>> from getiaction.policies import lerobot
+
+        >>> if lerobot.is_available():
+        ...     policies = lerobot.list_available_policies()
+        ...     print(f"Available policies: {policies}")
+        ...     policy = lerobot.ACT(dim_model=512, chunk_size=10)
+        ... else:
+        ...     print("LeRobot not installed. Install with: pip install lerobot")
 """
 
-from __future__ import annotations
+from lightning_utilities.core.imports import module_available
 
-try:
-    from lerobot.policies.act.modeling_act import ACTPolicy as _LeRobotACTPolicy
+from getiaction.policies.lerobot.act import ACT
+from getiaction.policies.lerobot.diffusion import Diffusion
+from getiaction.policies.lerobot.universal import LeRobotPolicy
 
-    LEROBOT_AVAILABLE = True
-except ImportError:
-    LEROBOT_AVAILABLE = False
-    _LeRobotACTPolicy = None
+LEROBOT_AVAILABLE = module_available("lerobot")
 
-if LEROBOT_AVAILABLE:
-    # Import actual implementations
-    # Explicit wrappers (full parameter definitions, IDE autocomplete)
-    from getiaction.policies.lerobot.act import ACT
-    from getiaction.policies.lerobot.diffusion import Diffusion as DiffusionExplicit
 
-    # Universal wrapper (flexible, all policies)
-    from getiaction.policies.lerobot.universal import LeRobotPolicy
+# Convenience wrapper classes for universal policies
+class VQBeT(LeRobotPolicy):
+    """VQ-BeT Policy via universal wrapper.
 
-    # Convenience aliases for universal wrapper
-    # Note: Diffusion uses explicit wrapper by default
-    Diffusion = DiffusionExplicit
+    This is a convenience class that wraps LeRobotPolicy with policy_name="vqbet".
+    """
 
-    def VQBeT(**kwargs):  # noqa: N802
-        """VQ-BeT Policy via universal wrapper."""
-        return LeRobotPolicy(policy_name="vqbet", **kwargs)
+    def __init__(self, **kwargs) -> None:  # noqa: ANN003
+        """Initialize VQ-BeT policy."""
+        super().__init__(policy_name="vqbet", **kwargs)
 
-    def TDMPC(**kwargs):  # noqa: N802
-        """TD-MPC Policy via universal wrapper."""
-        return LeRobotPolicy(policy_name="tdmpc", **kwargs)
 
-    def SAC(**kwargs):  # noqa: N802
-        """SAC Policy via universal wrapper."""
-        return LeRobotPolicy(policy_name="sac", **kwargs)
+class TDMPC(LeRobotPolicy):
+    """TD-MPC Policy via universal wrapper.
 
-    def PI0(**kwargs):  # noqa: N802
-        """PI0 Policy via universal wrapper."""
-        return LeRobotPolicy(policy_name="pi0", **kwargs)
+    This is a convenience class that wraps LeRobotPolicy with policy_name="tdmpc".
+    """
 
-    def PI05(**kwargs):  # noqa: N802
-        """PI0.5 Policy via universal wrapper."""
-        return LeRobotPolicy(policy_name="pi05", **kwargs)
+    def __init__(self, **kwargs) -> None:  # noqa: ANN003
+        """Initialize TD-MPC policy."""
+        super().__init__(policy_name="tdmpc", **kwargs)
 
-    def PI0Fast(**kwargs):  # noqa: N802
-        """PI0Fast Policy via universal wrapper."""
-        return LeRobotPolicy(policy_name="pi0fast", **kwargs)
 
-    def SmolVLA(**kwargs):  # noqa: N802
-        """SmolVLA Policy via universal wrapper."""
-        return LeRobotPolicy(policy_name="smolvla", **kwargs)
+class SAC(LeRobotPolicy):
+    """SAC Policy via universal wrapper.
 
-    __all__ = [
-        # Explicit wrappers
-        "ACT",
-        # Universal wrapper
-        "LeRobotPolicy",
-        # Convenience aliases
-        "Diffusion",
-        "VQBeT",
-        "TDMPC",
-        "SAC",
-        "PI0",
-        "PI05",
-        "PI0Fast",
-        "SmolVLA",
-    ]
-else:
-    # Provide helpful error messages when LeRobot is not installed
-    def _make_unavailable_class(name: str):
-        """Create a class that raises helpful error on instantiation."""
+    This is a convenience class that wraps LeRobotPolicy with policy_name="sac".
+    """
 
-        def __init__(self, *args, **kwargs):  # noqa: ARG001
-            msg = (
-                f"{name} requires LeRobot framework.\n\n"
-                f"Install with:\n"
-                f"    pip install lerobot\n\n"
-                f"Or install getiaction with LeRobot support:\n"
-                f"    pip install getiaction[lerobot]\n\n"
-                f"For more information, see: https://github.com/huggingface/lerobot"
-            )
-            raise ImportError(msg)
+    def __init__(self, **kwargs) -> None:  # noqa: ANN003
+        """Initialize SAC policy."""
+        super().__init__(policy_name="sac", **kwargs)
 
-        return type(name, (), {"__init__": __init__})
 
-    ACT = _make_unavailable_class("ACT")
+class PI0(LeRobotPolicy):
+    """PI0 Policy via universal wrapper.
 
-    __all__ = []
+    This is a convenience class that wraps LeRobotPolicy with policy_name="pi0".
+    """
+
+    def __init__(self, **kwargs) -> None:  # noqa: ANN003
+        """Initialize PI0 policy."""
+        super().__init__(policy_name="pi0", **kwargs)
+
+
+class PI05(LeRobotPolicy):
+    """PI0.5 Policy via universal wrapper.
+
+    This is a convenience class that wraps LeRobotPolicy with policy_name="pi05".
+    """
+
+    def __init__(self, **kwargs) -> None:  # noqa: ANN003
+        """Initialize PI0.5 policy."""
+        super().__init__(policy_name="pi05", **kwargs)
+
+
+class PI0Fast(LeRobotPolicy):
+    """PI0Fast Policy via universal wrapper.
+
+    This is a convenience class that wraps LeRobotPolicy with policy_name="pi0fast".
+    """
+
+    def __init__(self, **kwargs) -> None:  # noqa: ANN003
+        """Initialize PI0Fast policy."""
+        super().__init__(policy_name="pi0fast", **kwargs)
+
+
+class SmolVLA(LeRobotPolicy):
+    """SmolVLA Policy via universal wrapper.
+
+    This is a convenience class that wraps LeRobotPolicy with policy_name="smolvla".
+    """
+
+    def __init__(self, **kwargs) -> None:  # noqa: ANN003
+        """Initialize SmolVLA policy."""
+        super().__init__(policy_name="smolvla", **kwargs)
+
+
+__all__ = [
+    "ACT",
+    "PI0",
+    "PI05",
+    "SAC",
+    "TDMPC",
+    "Diffusion",
+    "LeRobotPolicy",
+    "PI0Fast",
+    "SmolVLA",
+    "VQBeT",
+]
 
 
 def is_available() -> bool:
@@ -174,8 +216,8 @@ def list_available_policies() -> list[str]:
         return [
             # Explicit wrappers
             "ACT",
+            "Diffusion",
             # Universal wrapper (all LeRobot policies)
-            "diffusion",
             "vqbet",
             "tdmpc",
             "sac",
