@@ -5,7 +5,7 @@ r"""Training CLI using LightningCLI with jsonargparse.
 
 This CLI automatically parses configurations from:
 - YAML/JSON files (--config)
-- CLI arguments (--model.init_args.*)
+- CLI arguments (--model.*)
 - Python dataclasses (via from_config methods)
 - Pydantic models (with automatic validation)
 
@@ -20,7 +20,7 @@ Examples:
     getiaction fit \
         --config configs/train.yaml \
         --trainer.max_epochs 200 \
-        --data.init_args.train_batch_size 64
+        --data.train_batch_size 64
 
     # Specify classes directly from CLI
     getiaction fit \

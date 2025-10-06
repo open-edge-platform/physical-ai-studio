@@ -130,7 +130,7 @@ getiaction fit --config configs/train.yaml
 getiaction fit \
     --config configs/train.yaml \
     --trainer.max_epochs 200 \
-    --data.init_args.train_batch_size 64
+    --data.train_batch_size 64
 ```
 
 ### Print Full Configuration
