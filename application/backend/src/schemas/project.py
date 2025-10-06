@@ -22,7 +22,7 @@ class ProjectConfig(BaseIDModel):
                     {
                         "port_or_device_id": "/dev/video0",
                         "name": "WebCam",
-                        "type": "OpenCV",
+                        "driver": "webcam",
                         "width": 640,
                         "height": 480,
                         "fps": 30,
@@ -58,7 +58,7 @@ class Project(BaseIDNameModel):
                         {
                             "port_or_device_id": "/dev/video0",
                             "name": "WebCam",
-                            "type": "OpenCV",
+                            "driver": "webcam",
                             "width": 640,
                             "height": 480,
                             "fps": 30,
