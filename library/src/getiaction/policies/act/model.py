@@ -27,6 +27,11 @@ from getiaction.policies.utils.normalization import FeatureNormalizeTransform
 
 
 class ACT(nn.Module):
+    """Action Chunking Transformer (ACT) model.
+
+    Supports training and inference modes.
+    """
+
     def __init__(
         self,
         action_features: dict[str, Feature],
@@ -34,6 +39,27 @@ class ACT(nn.Module):
         backbone: str = "resnet18",
         chunk_size: int = 100,
     ) -> None:
+        """Initialize the ACT model.
+
+        Args:
+            action_features (dict[str, Feature]): Dictionary containing action features.
+                Must contain exactly one action feature.
+            observation_features (dict[str, Feature]): Dictionary containing observation features.
+                Must contain exactly one state observation feature and at least one visual observation feature.
+            backbone (str, optional): Vision backbone architecture to use. Defaults to "resnet18".
+            chunk_size (int, optional): Number of actions to predict in a single forward pass. Defaults to 100.
+
+        Raises:
+            ValueError: If the number of state observation features is not exactly one.
+            ValueError: If the number of action features is not exactly one.
+            ValueError: If no visual observation features are provided.
+
+        Note:
+            The ACT model requires:
+            - Exactly one state observation feature (FeatureType.STATE)
+            - Exactly one action feature
+            - At least one visual observation feature (FeatureType.VISUAL)
+        """
         super().__init__()
 
         state_observation_features = [v for v in observation_features.values() if v.ftype == FeatureType.STATE]
@@ -83,6 +109,26 @@ class ACT(nn.Module):
         self._model = _ACT(self._config)
 
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        """Forward pass through the ACT model.
+
+        In training mode, computes loss components including L1 loss and optional KL divergence loss
+        for VAE regularization. In evaluation mode, predicts action chunks.
+
+        Args:
+            batch: Dictionary containing batch data with keys:
+                - BatchObservationComponents.ACTION: Ground truth actions
+                - BatchObservationComponents.IMAGES: Input images (dict or tensor)
+                - BatchObservationComponents.EXTRA: Extra data including action padding mask
+
+        Returns:
+            torch.Tensor: In training mode, returns tuple of (total_loss, loss_dict) where
+                loss_dict contains 'l1_loss' and optionally 'kld_loss' items.
+                In evaluation mode, returns predicted action tensor from predict_action_chunk().
+
+        Note:
+            - Input normalization is applied in training mode
+            - KL divergence loss is computed when config.use_vae is True
+        """
         if self._model.training:
             batch = self.input_normalizer(batch)
             if self._config.image_features:
@@ -120,7 +166,25 @@ class ACT(nn.Module):
 
     @torch.no_grad()
     def predict_action_chunk(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
-        """Predict a chunk of actions given environment observations."""
+        """Predicts a chunk of actions from a batch of observations.
+
+        This method processes a batch of input data through the model to generate
+        corresponding actions. It normalizes inputs, handles image features if configured,
+        runs the model inference, and denormalizes the output actions.
+
+        Args:
+            batch (dict[str, torch.Tensor]): A dictionary containing observation data
+                with string keys and tensor values. Expected to contain various
+                observation components that the model requires for prediction.
+
+        Returns:
+            torch.Tensor: A tensor containing the predicted actions.
+                The tensor shape and content depend on the model's action space configuration.
+
+        Note:
+            - The model is set to evaluation mode during prediction
+            - Input normalization is applied to the batch
+        """
         self.eval()
 
         batch = self.input_normalizer(batch)
@@ -130,10 +194,6 @@ class ACT(nn.Module):
 
         actions = self._model(batch)[0]  # only select the actions, ignore the latent params
         return self.output_denormalizer({BatchObservationComponents.ACTION: actions})[BatchObservationComponents.ACTION]
-
-    @torch.no_grad()
-    def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
-        pass
 
     @property
     def reward_delta_indices(self) -> None:
@@ -279,15 +339,30 @@ class _ACTConfig:
     dropout: float = 0.1
     kl_weight: float = 10.0
 
-    def __post_init__(self):
-        """Input validation (not exhaustive)."""
+    def __post_init__(self) -> None:
+        """Post-initialization validation for ACT model configuration.
+
+        Validates the configuration parameters after dataclass initialization to ensure:
+        - Vision backbone is a ResNet variant
+        - Temporal ensemble coefficient is only used with single action steps
+        - Number of action steps doesn't exceed chunk size
+        - Only single observation steps are supported
+
+        Raises:
+            ValueError: If vision_backbone is not a ResNet variant, if n_action_steps
+                exceeds chunk_size, or if n_obs_steps is not 1.
+            NotImplementedError: If temporal_ensemble_coeff is used with n_action_steps > 1.
+        """
         if not self.vision_backbone.startswith("resnet"):
             msg = f"`vision_backbone` must be one of the ResNet variants. Got {self.vision_backbone}."
             raise ValueError(
                 msg,
             )
         if self.temporal_ensemble_coeff is not None and self.n_action_steps > 1:
-            msg = "`n_action_steps` must be 1 when using temporal ensembling. This is because the policy needs to be queried every step to compute the ensembled action."
+            msg = (
+                "`n_action_steps` must be 1 when using temporal ensembling. "
+                "This is because the policy needs to be queried every step to compute the ensembled action."
+            )
             raise NotImplementedError(msg)
         if self.n_action_steps > self.chunk_size:
             msg = (
@@ -376,7 +451,7 @@ class _ACT(nn.Module):
         self.config = config
 
         if self.config.use_vae:
-            self.vae_encoder = ACTEncoder(config, is_vae_encoder=True)
+            self.vae_encoder = _ACTEncoder(config, is_vae_encoder=True)
             self.vae_encoder_cls_embed = nn.Embedding(1, config.dim_model)
             # Projection layer for joint-space configuration to hidden dimension.
             if self.config.robot_state_feature:
@@ -398,7 +473,7 @@ class _ACT(nn.Module):
                 num_input_token_encoder += 1
             self.register_buffer(
                 "vae_encoder_pos_enc",
-                create_sinusoidal_pos_embedding(num_input_token_encoder, config.dim_model).unsqueeze(0),
+                _create_sinusoidal_pos_embedding(num_input_token_encoder, config.dim_model).unsqueeze(0),
             )
 
         # Backbone for image feature extraction.
@@ -414,8 +489,8 @@ class _ACT(nn.Module):
             self.backbone = IntermediateLayerGetter(backbone_model, return_layers={"layer4": "feature_map"})
 
         # Transformer (acts as VAE decoder when training with the variational objective).
-        self.encoder = ACTEncoder(config)
-        self.decoder = ACTDecoder(config)
+        self.encoder = _ACTEncoder(config)
+        self.decoder = _ACTDecoder(config)
 
         # Transformer encoder input projections. The tokens will be structured like
         # [latent, (robot_state), (env_state), (image_feature_map_pixels)].
@@ -444,7 +519,7 @@ class _ACT(nn.Module):
             n_1d_tokens += 1
         self.encoder_1d_feature_pos_embed = nn.Embedding(n_1d_tokens, config.dim_model)
         if self.config.image_features:
-            self.encoder_cam_feat_pos_embed = ACTSinusoidalPositionEmbedding2d(config.dim_model // 2)
+            self.encoder_cam_feat_pos_embed = _ACTSinusoidalPositionEmbedding2d(config.dim_model // 2)
 
         # Transformer decoder.
         # Learnable positional embedding for the transformer's decoder (in the style of DETR object queries).
@@ -461,7 +536,7 @@ class _ACT(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, batch: dict[str, Tensor]) -> tuple[Tensor, tuple[Tensor, Tensor] | tuple[None, None]]:
+    def forward(self, batch: dict[str, Tensor]) -> tuple[Tensor, tuple[Tensor, Tensor] | tuple[None, None]]:  # noqa: PLR0914, PLR0915
         """A forward pass through the Action Chunking Transformer (with optional VAE encoder).
 
         `batch` should have the following structure:
@@ -479,9 +554,13 @@ class _ACT(nn.Module):
             (B, chunk_size, action_dim) batch of action sequences
             Tuple containing the latent PDF's parameters (mean, log(σ²)) both as (B, L) tensors where L is the
             latent dimension.
+
+        Raises:
+            RuntimeError: If action features are missing in input batch in VAE mode.
         """
-        if self.config.use_vae and self.training:
-            assert "action" in batch, "actions must be provided when using the variational objective in training mode."
+        if self.config.use_vae and self.training and "action" not in batch:
+            msg = "Actions must be provided when using the variational objective in training mode."
+            raise RuntimeError(msg)
 
         if "images" in batch:
             batch_size = batch[BatchObservationComponents.IMAGES][0].shape[0]
@@ -581,7 +660,7 @@ class _ACT(nn.Module):
 
         # Forward pass through the transformer modules.
         encoder_out = self.encoder(encoder_in_tokens, pos_embed=encoder_in_pos_embed)
-        # TODO(rcadene, alexander-soare): remove call to `device` ; precompute and use buffer
+
         decoder_in = torch.zeros(
             (self.config.chunk_size, batch_size, self.config.dim_model),
             dtype=encoder_in_pos_embed.dtype,
@@ -602,14 +681,14 @@ class _ACT(nn.Module):
         return actions, (mu, log_sigma_x2)
 
 
-class ACTEncoder(nn.Module):
+class _ACTEncoder(nn.Module):
     """Convenience module for running multiple encoder layers, maybe followed by normalization."""
 
-    def __init__(self, config: _ACTConfig, is_vae_encoder: bool = False) -> None:
+    def __init__(self, config: _ACTConfig, *, is_vae_encoder: bool = False) -> None:
         super().__init__()
         self.is_vae_encoder = is_vae_encoder
         num_layers = config.n_vae_encoder_layers if self.is_vae_encoder else config.n_encoder_layers
-        self.layers = nn.ModuleList([ACTEncoderLayer(config) for _ in range(num_layers)])
+        self.layers = nn.ModuleList([_ACTEncoderLayer(config) for _ in range(num_layers)])
         self.norm = nn.LayerNorm(config.dim_model) if config.pre_norm else nn.Identity()
 
     def forward(
@@ -623,7 +702,7 @@ class ACTEncoder(nn.Module):
         return self.norm(x)
 
 
-class ACTEncoderLayer(nn.Module):
+class _ACTEncoderLayer(nn.Module):
     def __init__(self, config: _ACTConfig) -> None:
         super().__init__()
         self.self_attn = nn.MultiheadAttention(config.dim_model, config.n_heads, dropout=config.dropout)
@@ -638,7 +717,7 @@ class ACTEncoderLayer(nn.Module):
         self.dropout1 = nn.Dropout(config.dropout)
         self.dropout2 = nn.Dropout(config.dropout)
 
-        self.activation = get_activation_fn(config.feedforward_activation)
+        self.activation = _get_activation_fn(config.feedforward_activation)
         self.pre_norm = config.pre_norm
 
     def forward(self, x: Tensor, pos_embed: Tensor | None = None, key_padding_mask: Tensor | None = None) -> Tensor:
@@ -662,11 +741,11 @@ class ACTEncoderLayer(nn.Module):
         return x
 
 
-class ACTDecoder(nn.Module):
+class _ACTDecoder(nn.Module):
     def __init__(self, config: _ACTConfig) -> None:
         """Convenience module for running multiple decoder layers followed by normalization."""
         super().__init__()
-        self.layers = nn.ModuleList([ACTDecoderLayer(config) for _ in range(config.n_decoder_layers)])
+        self.layers = nn.ModuleList([_ACTDecoderLayer(config) for _ in range(config.n_decoder_layers)])
         self.norm = nn.LayerNorm(config.dim_model)
 
     def forward(
@@ -688,7 +767,7 @@ class ACTDecoder(nn.Module):
         return x
 
 
-class ACTDecoderLayer(nn.Module):
+class _ACTDecoderLayer(nn.Module):
     def __init__(self, config: _ACTConfig) -> None:
         super().__init__()
         self.self_attn = nn.MultiheadAttention(config.dim_model, config.n_heads, dropout=config.dropout)
@@ -706,7 +785,7 @@ class ACTDecoderLayer(nn.Module):
         self.dropout2 = nn.Dropout(config.dropout)
         self.dropout3 = nn.Dropout(config.dropout)
 
-        self.activation = get_activation_fn(config.feedforward_activation)
+        self.activation = _get_activation_fn(config.feedforward_activation)
         self.pre_norm = config.pre_norm
 
     @staticmethod
@@ -720,7 +799,9 @@ class ACTDecoderLayer(nn.Module):
         decoder_pos_embed: Tensor | None = None,
         encoder_pos_embed: Tensor | None = None,
     ) -> Tensor:
-        """Args:
+        """Forward pass of the transformer decoder layer.
+
+        Args:
             x: (Decoder Sequence, Batch, Channel) tensor of input tokens.
             encoder_out: (Encoder Sequence, B, C) output features from the last layer of the encoder we are
                 cross-attending with.
@@ -761,12 +842,15 @@ class ACTDecoderLayer(nn.Module):
         return x
 
 
-def create_sinusoidal_pos_embedding(num_positions: int, dimension: int) -> Tensor:
+def _create_sinusoidal_pos_embedding(num_positions: int, dimension: int) -> torch.Tensor:
     """1D sinusoidal positional embeddings as in Attention is All You Need.
 
     Args:
         num_positions: Number of token positions required.
-    Returns: (num_positions, dimension) position embeddings (the first dimension is the batch dimension).
+        dimension: Dimensionality of the position embeddings.
+
+    Returns:
+        (num_positions, dimension) position embeddings (the first dimension is the batch dimension).
 
     """
 
@@ -779,7 +863,7 @@ def create_sinusoidal_pos_embedding(num_positions: int, dimension: int) -> Tenso
     return torch.from_numpy(sinusoid_table).float()
 
 
-class ACTSinusoidalPositionEmbedding2d(nn.Module):
+class _ACTSinusoidalPositionEmbedding2d(nn.Module):
     """2D sinusoidal positional embeddings similar to what's presented in Attention Is All You Need.
 
     The variation is that the position indices are normalized in [0, 2π] (not quite: the lower bound is 1/H
@@ -787,8 +871,10 @@ class ACTSinusoidalPositionEmbedding2d(nn.Module):
     """
 
     def __init__(self, dimension: int) -> None:
-        """Args:
-        dimension: The desired dimension of the embeddings.
+        """Initialize the positional encoding layer.
+
+        Args:
+            dimension (int): The desired dimension of the embeddings.
         """
         super().__init__()
         self.dimension = dimension
@@ -798,7 +884,9 @@ class ACTSinusoidalPositionEmbedding2d(nn.Module):
         self._temperature = 10000
 
     def forward(self, x: Tensor) -> Tensor:
-        """Args:
+        """Forward pass to generate 2D sinusoidal positional embeddings.
+
+        Args:
             x: A (B, C, H, W) batch of 2D feature map to generate the embeddings for.
 
         Returns:
@@ -830,8 +918,24 @@ class ACTSinusoidalPositionEmbedding2d(nn.Module):
         return torch.cat((pos_embed_y, pos_embed_x), dim=3).permute(0, 3, 1, 2)  # (1, C, H, W)
 
 
-def get_activation_fn(activation: str) -> Callable:
-    """Return an activation function given a string."""
+def _get_activation_fn(activation: str) -> Callable:
+    """Return an activation function given a string.
+
+    Args:
+        activation (str): Name of the activation function. Supported values are:
+            - "relu": Returns F.relu function
+            - "gelu": Returns F.gelu function
+            - "glu": Returns F.glu function
+    Returns:
+        Callable: The corresponding PyTorch activation function.
+
+    Raises:
+        RuntimeError: If the activation function name is not supported.
+
+    Example:
+        >>> activation_fn = _get_activation_fn("relu")
+        >>> output = activation_fn(input_tensor)
+    """
     if activation == "relu":
         return F.relu
     if activation == "gelu":
