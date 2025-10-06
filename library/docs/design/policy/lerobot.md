@@ -22,7 +22,7 @@ Both approaches provide:
 
 ### Lightning-First with Third-Party Framework Support
 
-```
+```text
 ┌─────────────────────────────────────────────────┐
 │         GetiAction (Lightning)                   │
 │  ┌───────────────────────────────────────┐      │
@@ -46,7 +46,7 @@ Both approaches provide:
 
 ### File Structure
 
-```
+```text
 library/src/getiaction/policies/lerobot/
 ├── __init__.py              # Conditional imports, availability checks
 ├── act.py                   # Explicit ACT wrapper (~250 lines)
@@ -130,7 +130,7 @@ TDMPC = lambda **kwargs: LeRobotPolicy(policy_name="tdmpc", **kwargs)
 
 ### Conditional Import System
 
-```python
+```pythonpython
 # __init__.py
 try:
     import lerobot
@@ -150,15 +150,15 @@ def is_available() -> bool:
 
 ### Test Results Summary
 
-| Test Type                   | Status         | Details                       |
-| --------------------------- | -------------- | ----------------------------- |
-| **ACT Output Equivalence**  | ✅ **PERFECT** | Mean diff: 0.0, Max diff: 0.0 |
-| **Diffusion Stochasticity** | ✅ **CORRECT** | Preserves stochastic sampling |
-| **Forward Pass**            | ✅ Pass        | Identical computation graph   |
-| **Training Step**           | ✅ Pass        | Loss computation matches      |
-| **Validation Step**         | ✅ Pass        | Metrics match LeRobot         |
-| **Optimizer Config**        | ✅ Pass        | AdamW with correct params     |
-| **E2E Workflow**            | ✅ Pass        | Full training pipeline works  |
+| Test Type                   | Status         | Details                      |
+| --------------------------- | -------------- | ---------------------------- |
+| **ACT Output Equivalence**  | ✅ **PERFECT** | Mean: 0.0, Max diff: 0.0     |
+| **Diffusion Stochasticity** | ✅ **CORRECT** | Preserves stochastic         |
+| **Forward Pass**            | ✅ Pass        | Identical computation graph  |
+| **Training Step**           | ✅ Pass        | Loss computation matches     |
+| **Validation Step**         | ✅ Pass        | Metrics match LeRobot        |
+| **Optimizer Config**        | ✅ Pass        | AdamW with correct params    |
+| **E2E Workflow**            | ✅ Pass        | Full training pipeline works |
 
 ### ACT Output Equivalence Test
 
@@ -190,7 +190,7 @@ torch.testing.assert_close(wrapped_output, native_output, rtol=1e-5, atol=1e-7)
 
 **Results**:
 
-```
+```text
 Wrapped output range: [267.367157, 292.634644]
 Native output range:  [267.367157, 292.634644]
 
@@ -200,15 +200,17 @@ Max absolute difference:  0.0000000000
 ✅ PASS: torch.testing.assert_close(rtol=1e-5, atol=1e-7)
 ```
 
-**Interpretation**: The wrapper is a **perfect delegate** - outputs are byte-for-byte identical.
+**Interpretation**: The wrapper is a **perfect delegate** - outputs
+are byte-for-byte identical.
 
 ### Diffusion Policy Behavior
 
-**Finding**: Diffusion policy outputs differ between runs due to stochastic sampling (expected behavior).
+**Finding**: Diffusion policy outputs differ between runs due to stochastic
+sampling (expected behavior).
 
 **Test Results**:
 
-```
+```text
 Mean absolute difference: 280.6375
 Max absolute difference:  484.7273
 
@@ -216,13 +218,14 @@ Different seeds → different outputs (expected)
 Same seed → different outputs (GPU non-determinism)
 ```
 
-**Conclusion**: The wrapper **correctly preserves** LeRobot's stochastic sampling behavior.
+**Conclusion**: The wrapper **correctly preserves** LeRobot's stochastic
+sampling behavior.
 
 ## Usage
 
 ### Approach 1: Explicit Wrapper (Recommended)
 
-#### LightningCLI
+#### CLI Interface
 
 ```bash
 # Train with config
@@ -235,7 +238,7 @@ getiaction fit \
   --trainer.max_epochs 200
 ```
 
-#### Python API
+#### Python Interface
 
 ```python
 from getiaction.policies.lerobot import ACT
@@ -333,7 +336,8 @@ policy = Diffusion(
 | `stats`           | dict | Dataset stats for normalization                 |
 | `**policy_kwargs` | dict | Policy-specific parameters                      |
 
-Refer to [LeRobot documentation](https://github.com/huggingface/lerobot) for policy-specific parameters.
+Refer to [LeRobot documentation](https://github.com/huggingface/lerobot)
+for policy-specific parameters.
 
 ## Data Integration
 
