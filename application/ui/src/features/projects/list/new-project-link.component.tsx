@@ -30,9 +30,14 @@ export const NewProjectLink = ({ className }: { className?: string }) => {
         e.preventDefault();
 
         const id = uuidv4();
-        saveMutation.mutateAsync({ body: { id, name, datasets: [] } }).then(() => {
-            navigate(paths.project.datasets.index({ project_id: id! }));
-        });
+        saveMutation.mutateAsync(
+            { body: { id, name, datasets: [] } },
+            {
+                onSuccess: () => {
+                    navigate(paths.project.datasets.index({ project_id: id }));
+                },
+            }
+        );
     };
 
     return (

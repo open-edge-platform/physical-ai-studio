@@ -6,7 +6,17 @@ import { NavLink, Outlet, useParams } from 'react-router-dom';
 import { $api } from '../../api/client';
 import { paths } from '../../router';
 
-const CameraListItem = ({ id, cameraId, name, type }: { id: string; cameraId: string; name: string; type: string }) => {
+const CameraListItem = ({
+    id,
+    cameraId,
+    name,
+    driver,
+}: {
+    id: string;
+    cameraId: string;
+    name: string;
+    driver: string;
+}) => {
     const { project_id = '' } = useParams<{ project_id: string }>();
 
     return (
@@ -30,7 +40,7 @@ const CameraListItem = ({ id, cameraId, name, type }: { id: string; cameraId: st
                             </Flex>
                             <Flex justifyContent={'space-between'} gap={'size-100'}>
                                 <span>{cameraId}</span>
-                                <span>{type}</span>
+                                <span>{driver}</span>
                             </Flex>
                         </Flex>
                     </View>
@@ -57,16 +67,16 @@ export const CamerasList = () => {
             </Flex>
 
             <Flex direction='column' gap='size-100'>
-                <CameraListItem id={'webcam'} name={'Webcam tests'} cameraId={''} type={''} />
-                <CameraListItem id={'overview'} name={'Overview tests'} cameraId={''} type={''} />
+                <CameraListItem id={'webcam'} name={'Webcam tests'} cameraId={''} driver={''} />
+                <CameraListItem id={'overview'} name={'Overview tests'} cameraId={''} driver={''} />
                 {cameras.map((camera, idx) => {
                     return (
                         <CameraListItem
-                            key={camera.id}
+                            key={camera.port_or_device_id}
                             id={`${idx}`}
                             name={camera.name}
-                            cameraId={camera.id}
-                            type={camera.type}
+                            cameraId={camera.port_or_device_id}
+                            driver={camera.driver}
                         />
                     );
                 })}
