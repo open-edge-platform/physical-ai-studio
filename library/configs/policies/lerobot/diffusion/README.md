@@ -1,6 +1,7 @@
 # Diffusion Policy Configuration Files
 
-This directory contains YAML configuration files for training Diffusion Policy models using the GetiAction framework.
+This directory contains YAML configuration files for training Diffusion
+Policy models using the GetiAction framework.
 
 ## Available Configurations
 
@@ -27,7 +28,9 @@ getiaction fit --config configs/policies/lerobot/diffusion/pusht_basic.yaml
 **Use case:** Full documentation of all available parameters
 **Dataset:** PushT
 
-This configuration demonstrates every configurable parameter with detailed comments. Use this as a reference when customizing your training setup.
+This configuration demonstrates every configurable parameter with
+detailed comments. Use this as a reference when customizing your
+training setup.
 
 ```bash
 getiaction fit --config configs/policies/lerobot/diffusion/pusht_advanced.yaml
@@ -84,7 +87,7 @@ Features:
 - 4 GPU configuration
 - Scaled learning rate
 - Synchronized batch normalization
-- Effective batch size: 512 (64 *4 GPUs* 2 accumulation)
+- Effective batch size: 512 (64 _4 GPUs_ 2 accumulation)
 
 ```bash
 getiaction fit --config configs/policies/lerobot/diffusion/pusht_multigpu.yaml
@@ -139,7 +142,7 @@ data:
     repo_id: "lerobot/pusht"
     train_batch_size: 64
     delta_timestamps:
-      action: [0.0, 0.1, ..., 1.5]  # Must match horizon length
+      action: [0.0, 0.1, ..., 1.5] # Must match horizon length
 
 trainer:
   max_epochs: 3000
@@ -201,12 +204,12 @@ getiaction fit --config configs/policies/lerobot/diffusion/pusht_basic.yaml \
 ```yaml
 model:
   init_args:
-    horizon: 16  # Must be 16
+    horizon: 16 # Must be 16
 
 data:
   init_args:
     delta_timestamps:
-      action: [0.0, 0.1, ..., 1.5]  # 16 timesteps
+      action: [0.0, 0.1, ..., 1.5] # 16 timesteps
 ```
 
 ### Adjust for Your Dataset
