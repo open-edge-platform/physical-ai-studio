@@ -23,7 +23,7 @@ data:
   init_args:
     repo_id: "lerobot/aloha_sim_transfer_cube_human"
     train_batch_size: 8
-    data_format: "lerobot"  # Output format: "lerobot" (flattened dict) or "getiaction" (Observation)
+    data_format: "lerobot" # Output format: "lerobot" (flattened dict) or "getiaction" (Observation)
     delta_timestamps:
       action: [
           0.0,
