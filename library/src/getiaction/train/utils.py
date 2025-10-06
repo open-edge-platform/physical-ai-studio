@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from lerobot.datasets.utils import check_delta_timestamps, get_delta_indices
 
-from getiaction.data.lerobot import _LeRobotDatasetAdapter
+from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 
 if TYPE_CHECKING:
     from getiaction.data import DataModule
