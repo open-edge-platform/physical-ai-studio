@@ -11,7 +11,7 @@ from lightning_utilities import module_available
 
 from getiaction.data import Dataset, Observation
 
-from .converters import _convert_lerobot_item_to_observation
+from .converters import _convert_lerobot_dict_to_observation
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -122,7 +122,7 @@ class _LeRobotDatasetAdapter(Dataset):
         Returns:
             Observation: The item from the dataset.
         """
-        return _convert_lerobot_item_to_observation(self._lerobot_dataset[idx])
+        return _convert_lerobot_dict_to_observation(self._lerobot_dataset[idx])
 
     @staticmethod
     def from_lerobot(lerobot_dataset: LeRobotDataset) -> _LeRobotDatasetAdapter:
