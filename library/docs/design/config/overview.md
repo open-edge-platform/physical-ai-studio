@@ -246,8 +246,8 @@ The configuration system integrates seamlessly with the CLI through jsonargparse
 getiaction fit --config train.yaml
 
 # Validates types from class signatures
-getiaction fit --model.init_args.hidden_size 256  # ✅
-getiaction fit --model.init_args.hidden_size abc  # ❌ Type error
+getiaction fit --model.hidden_size 256  # ✅
+getiaction fit --model.hidden_size abc  # ❌ Type error
 ```
 
 ## Best Practices

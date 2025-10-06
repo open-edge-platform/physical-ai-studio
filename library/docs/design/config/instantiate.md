@@ -274,8 +274,7 @@ When used with Lightning CLI, jsonargparse handles the instantiation:
 ```bash
 # jsonargparse uses this system internally
 getiaction fit \
-    --model.class_path getiaction.policies.dummy.policy.Dummy \
-    --model.init_args.model.class_path getiaction.policies.dummy.model.Dummy
+    --model getiaction.policies.dummy.policy.Dummy
 ```
 
 The CLI automatically calls the appropriate instantiation functions based

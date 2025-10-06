@@ -65,8 +65,8 @@ python -m getiaction fit --print_config
 python -m getiaction fit \
     --config configs/train_dummy_class_path.yaml \
     --trainer.max_epochs 200 \
-    --data.init_args.train_batch_size 64 \
-    --model.init_args.optimizer.init_args.lr 0.0001
+    --data.train_batch_size 64 \
+    --model.optimizer.init_args.lr 0.0001
 ```
 
 ### 4. Train without Config File
@@ -74,12 +74,12 @@ python -m getiaction fit \
 ```bash
 python -m getiaction fit \
     --model.class_path getiaction.policies.dummy.policy.Dummy \
-    --model.init_args.model.class_path getiaction.policies.dummy.model.Dummy \
-    --model.init_args.model.init_args.action_shape=[7] \
-    --model.init_args.optimizer.class_path torch.optim.Adam \
-    --model.init_args.optimizer.init_args.lr=0.001 \
+    --model.model.class_path getiaction.policies.dummy.model.Dummy \
+    --model.model.init_args.action_shape=[7] \
+    --model.optimizer.class_path torch.optim.Adam \
+    --model.optimizer.init_args.lr=0.001 \
     --data.class_path getiaction.data.lerobot.LeRobotDataModule \
-    --data.init_args.repo_id=lerobot/pusht \
+    --data.repo_id=lerobot/pusht \
     --trainer.max_epochs=100
 ```
 

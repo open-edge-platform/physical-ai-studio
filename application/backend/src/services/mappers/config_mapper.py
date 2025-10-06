@@ -15,6 +15,7 @@ class ProjectConfigMapper:
 
         return ProjectConfig.model_validate(
             {
+                "id": project_config_db.id,
                 "fps": project_config_db.fps,
                 "robot_type": project_config_db.robot_type,
                 "cameras": [CameraConfigMapper.to_schema(camera) for camera in project_config_db.cameras],

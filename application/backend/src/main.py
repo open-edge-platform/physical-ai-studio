@@ -1,3 +1,4 @@
+import logging
 import os
 
 import uvicorn
@@ -8,7 +9,10 @@ from api.dataset import router as dataset_router
 from api.hardware import router as hardware_router
 from api.project import router as project_router
 from core import lifespan
+from exception_handlers import register_application_exception_handlers
 from settings import get_settings
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 app = FastAPI(
@@ -24,6 +28,7 @@ app.include_router(hardware_router)
 app.include_router(camera_router)
 app.include_router(dataset_router)
 
+register_application_exception_handlers(app)
 
 if __name__ == "__main__":
     uvicorn_port = int(os.environ.get("HTTP_SERVER_PORT", "7860"))
