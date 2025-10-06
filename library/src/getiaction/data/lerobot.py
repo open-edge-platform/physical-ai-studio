@@ -395,15 +395,8 @@ class LeRobotDataModule(DataModule):
             msg = "Cannot provide both 'repo_id' and 'dataset'. Please provide only one."
             raise ValueError(msg)
 
-        # Convert string to enum if needed
-        if isinstance(data_format, str):
-            try:
-                data_format = DataFormat(data_format)
-            except ValueError as e:
-                msg = f"Invalid data_format '{data_format}'. Must be 'getiaction' or 'lerobot'."
-                raise ValueError(msg) from e
-
-        self.data_format = data_format
+        # Convert `data_format` to enum if it's a string
+        self.data_format = DataFormat(data_format)
 
         # Create the appropriate dataset based on format
         if dataset is not None:
