@@ -10,11 +10,32 @@ from getiaction.policies.base import Policy
 
 
 class ACT(Policy):
+    """Action Chunking with Transformers (ACT) policy implementation.
+
+    This class implements the ACT policy for imitation learning, which uses a transformer-based
+    architecture to predict sequences of actions given observations.
+    Policy contains contains model and other related modules and methods that are required
+    to start training in a Lightning Trainer.
+
+    Example:
+        >>> model = ACTModel(...)
+        >>> policy = ACT(model)
+        >>> actions = policy.select_action(batch)
+        >>> loss_dict = policy.training_step(batch, batch_idx=0)
+    """
+
     def __init__(
         self,
         model: ACTModel,
         optimizer: torch.optim.Optimizer | None = None,
     ) -> None:
+        """Initialize the ACT policy with a model and optional optimizer.
+
+        Args:
+            model (ACTModel): The ACT model to be used by this policy.
+            optimizer (torch.optim.Optimizer | None, optional): The optimizer for training.
+                If None, defaults to Adam optimizer with lr=1e-5 and weight_decay=1e-4.
+        """
         super().__init__()
 
         self.model = model
@@ -67,7 +88,7 @@ class ACT(Policy):
         """
         return self.optimizer
 
-    def evaluation_step(self, batch: dict[str, torch.Tensor], stage: str) -> None:
+    def evaluation_step(self, batch: dict[str, torch.Tensor], stage: str) -> None:  # noqa: PLR6301
         """Evaluation step (no-op by default).
 
         Args:
