@@ -6,6 +6,6 @@
 from .action import Dataset
 from .dataclasses import Observation
 from .datamodules import DataModule
-from .lerobot import LeRobotDataModule
+from .lerobot import FormatConverter, LeRobotDataModule
 
-__all__ = ["DataModule", "Dataset", "LeRobotDataModule", "Observation"]
+__all__ = ["DataModule", "Dataset", "FormatConverter", "LeRobotDataModule", "Observation"]

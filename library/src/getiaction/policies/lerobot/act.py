@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 from lightning_utilities.core.imports import module_available
 
-from getiaction.data.lerobot import _LeRobotDatasetAdapter
+from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 from getiaction.policies.base import Policy
 
 if TYPE_CHECKING:

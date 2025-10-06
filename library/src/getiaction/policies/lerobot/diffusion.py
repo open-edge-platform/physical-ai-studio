@@ -32,7 +32,7 @@ else:
     LeRobotDataset = None
     dataset_to_policy_features = None
 
-from getiaction.data.lerobot import _LeRobotDatasetAdapter
+from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 
 
 class Diffusion(Policy):

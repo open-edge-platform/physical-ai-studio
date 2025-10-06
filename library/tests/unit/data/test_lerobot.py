@@ -4,7 +4,7 @@
 """Test for lerobot dataset using a mock to avoid ffmpeg/network dependencies."""
 
 from getiaction.data import Dataset, Observation
-from getiaction.data.lerobot import _LeRobotDatasetAdapter
+from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 import torch
 import pytest
 
