@@ -32,49 +32,6 @@ else:
     LEROBOT_AVAILABLE = False
 
 
-def _convert_getiaction_batch_to_lerobot(batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-    """Convert GetiAction batch format to LeRobot format.
-
-    GetiAction collates Observations with flat keys:
-        - images: dict[str, Tensor]
-        - state: Tensor
-        - action: Tensor
-        - ...
-
-    LeRobot policies expect nested observation keys:
-        - observation.images.<camera_name>: Tensor
-        - observation.state: Tensor
-        - action: Tensor
-        - ...
-
-    Args:
-        batch: Batch in GetiAction format.
-
-    Returns:
-        Batch in LeRobot format.
-    """
-    lerobot_batch = {}
-
-    # Convert images dict to observation.images.<name> keys
-    if "images" in batch and isinstance(batch["images"], dict):
-        for image_key, image_tensor in batch["images"].items():
-            lerobot_batch[f"observation.images.{image_key}"] = image_tensor
-
-    # Convert state to observation.state
-    if "state" in batch:
-        lerobot_batch["observation.state"] = batch["state"]
-
-    # Copy action directly
-    if "action" in batch:
-        lerobot_batch["action"] = batch["action"]
-
-    # Copy all other keys (metadata, etc.) directly
-    excluded_keys = {"images", "state", "action"}
-    lerobot_batch.update({k: v for k, v in batch.items() if k not in excluded_keys})
-
-    return lerobot_batch
-
-
 class ACT(Policy):
     """Action Chunking Transformer from LeRobot with lazy initialization.
 
@@ -179,7 +136,6 @@ class ACT(Policy):
         self._lerobot_policy: _LeRobotACTPolicy | None = None
         self.model: nn.Module | None = None
         self._framework_policy: _LeRobotACTPolicy | None = None
-        self._needs_batch_conversion = True  # Default to True, updated in setup()
 
         self.save_hyperparameters()
 
@@ -219,11 +175,6 @@ class ACT(Policy):
         datamodule = self.trainer.datamodule
         train_dataset = datamodule.train_dataset
 
-        # Detect if we need batch conversion based on dataset type
-        # If using _LeRobotDatasetAdapter, we need conversion (getiaction format)
-        # If using raw LeRobotDataset, no conversion needed (lerobot format)
-        self._needs_batch_conversion = isinstance(train_dataset, _LeRobotDatasetAdapter)
-
         # Get the underlying LeRobot dataset
         if not isinstance(train_dataset, _LeRobotDatasetAdapter):
             msg = (
@@ -257,8 +208,6 @@ class ACT(Policy):
         Returns:
             The action predictions from the policy.
         """
-        if self._needs_batch_conversion:
-            batch = _convert_getiaction_batch_to_lerobot(batch)
         actions, _ = self.lerobot_policy.model(batch)
         return actions
 
@@ -274,8 +223,6 @@ class ACT(Policy):
         """
         del batch_idx  # Unused argument
 
-        if self._needs_batch_conversion:
-            batch = _convert_getiaction_batch_to_lerobot(batch)
         total_loss, loss_dict = self.lerobot_policy.forward(batch)
         for key, value in loss_dict.items():
             self.log(f"train/{key}", value, prog_bar=False)
@@ -298,8 +245,6 @@ class ACT(Policy):
         was_training = self.training
         if self.lerobot_policy.config.use_vae and not was_training:
             self.train()
-        if self._needs_batch_conversion:
-            batch = _convert_getiaction_batch_to_lerobot(batch)
         total_loss, loss_dict = self.lerobot_policy.forward(batch)
         if not was_training:
             self.eval()
@@ -317,8 +262,6 @@ class ACT(Policy):
         Returns:
             The selected action tensor.
         """
-        if self._needs_batch_conversion:
-            batch = _convert_getiaction_batch_to_lerobot(batch)
         return self.lerobot_policy.select_action(batch)
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
