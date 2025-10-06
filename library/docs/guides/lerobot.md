@@ -574,8 +574,10 @@ print(f"Loss: {output['loss']}")
 
 ## Next Steps
 
-- See [Design Documentation](../design/policy/lerobot.md) for architecture details
-- Check [Module README](../../../src/getiaction/policies/lerobot/README.md) for API reference
+- See [Design Documentation](../design/policy/lerobot.md) for
+  architecture details
+- Check [Module README](../../../src/getiaction/policies/lerobot/README.md)
+  for API reference
 - Browse example configs in `library/configs/lerobot_*.yaml`
 - Run tests to verify installation: `pytest tests/test_lerobot_*.py`
 
