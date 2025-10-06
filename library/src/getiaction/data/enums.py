@@ -3,24 +3,24 @@
 
 """Enum types."""
 
-from enum import Enum
+from enum import StrEnum
 
 
-class BatchObservationComponents(str, Enum):
+class BatchObservationComponents(StrEnum):
     STATE = "state"
     ACTION = "action"
     IMAGES = "images"
     EXTRA = "extra"
 
 
-class FeatureType(str, Enum):
+class FeatureType(StrEnum):
     VISUAL = "VISUAL"
     ACTION = "ACTION"
     STATE = "STATE"
     ENV = "ENV"
 
 
-class NormalizationType(str, Enum):
+class NormalizationType(StrEnum):
     MIN_MAX = "MIN_MAX"
     MEAN_STD = "MEAN_STD"
     IDENTITY = "IDENTITY"
