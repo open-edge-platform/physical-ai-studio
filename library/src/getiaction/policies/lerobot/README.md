@@ -41,7 +41,7 @@ trainer.fit(policy, datamodule)
 
 - **Design & Architecture**: [docs/design/policy/lerobot.md](../../../docs/design/policy/lerobot.md)
 - **Usage Guide**: [docs/guides/lerobot.md](../../../docs/guides/lerobot.md)
-- **LeRobot**: https://github.com/huggingface/lerobot
+- **LeRobot**: <https://github.com/huggingface/lerobot>
 
 ## Testing
 

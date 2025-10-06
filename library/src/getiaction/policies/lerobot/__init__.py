@@ -67,15 +67,14 @@ if LEROBOT_AVAILABLE:
     # Import actual implementations
     # Explicit wrappers (full parameter definitions, IDE autocomplete)
     from getiaction.policies.lerobot.act import ACT
+    from getiaction.policies.lerobot.diffusion import Diffusion as DiffusionExplicit
 
     # Universal wrapper (flexible, all policies)
     from getiaction.policies.lerobot.universal import LeRobotPolicy
 
     # Convenience aliases for universal wrapper
-    # These provide clean names while using the universal wrapper underneath
-    def Diffusion(**kwargs):  # noqa: N802
-        """Diffusion Policy via universal wrapper."""
-        return LeRobotPolicy(policy_name="diffusion", **kwargs)
+    # Note: Diffusion uses explicit wrapper by default
+    Diffusion = DiffusionExplicit
 
     def VQBeT(**kwargs):  # noqa: N802
         """VQ-BeT Policy via universal wrapper."""

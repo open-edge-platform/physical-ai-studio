@@ -150,15 +150,15 @@ def is_available() -> bool:
 
 ### Test Results Summary
 
-| Test Type | Status | Details |
-|-----------|--------|---------|
-| **ACT Output Equivalence** | ✅ **PERFECT** | Mean diff: 0.0, Max diff: 0.0 |
+| Test Type                   | Status         | Details                       |
+| --------------------------- | -------------- | ----------------------------- |
+| **ACT Output Equivalence**  | ✅ **PERFECT** | Mean diff: 0.0, Max diff: 0.0 |
 | **Diffusion Stochasticity** | ✅ **CORRECT** | Preserves stochastic sampling |
-| **Forward Pass** | ✅ Pass | Identical computation graph |
-| **Training Step** | ✅ Pass | Loss computation matches |
-| **Validation Step** | ✅ Pass | Metrics match LeRobot |
-| **Optimizer Config** | ✅ Pass | AdamW with correct params |
-| **E2E Workflow** | ✅ Pass | Full training pipeline works |
+| **Forward Pass**            | ✅ Pass        | Identical computation graph   |
+| **Training Step**           | ✅ Pass        | Loss computation matches      |
+| **Validation Step**         | ✅ Pass        | Metrics match LeRobot         |
+| **Optimizer Config**        | ✅ Pass        | AdamW with correct params     |
+| **E2E Workflow**            | ✅ Pass        | Full training pipeline works  |
 
 ### ACT Output Equivalence Test
 
@@ -304,34 +304,34 @@ policy = Diffusion(
 
 ### ACT Parameters
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `input_features` | dict | Required | Input feature config from dataset |
-| `output_features` | dict | Required | Output feature config |
-| `dim_model` | int | 512 | Transformer model dimension |
-| `chunk_size` | int | 100 | Action chunk size |
-| `n_action_steps` | int | 100 | Number of action steps to predict |
-| `n_encoder_layers` | int | 4 | Number of encoder layers |
-| `n_decoder_layers` | int | 1 | Number of decoder layers |
-| `n_heads` | int | 8 | Number of attention heads |
-| `dim_feedforward` | int | 3200 | Feedforward dimension |
-| `dropout` | float | 0.1 | Dropout rate |
-| `kl_weight` | float | 10.0 | KL divergence weight |
-| `vision_backbone` | str | "resnet18" | Vision encoder backbone |
-| `use_vae` | bool | True | Use VAE for action encoding |
-| `latent_dim` | int | 32 | VAE latent dimension |
-| `stats` | dict | None | Dataset normalization stats |
-| `learning_rate` | float | 1e-4 | Learning rate for optimizer |
+| Parameter          | Type  | Default    | Description                       |
+| ------------------ | ----- | ---------- | --------------------------------- |
+| `input_features`   | dict  | Required   | Input feature config from dataset |
+| `output_features`  | dict  | Required   | Output feature config             |
+| `dim_model`        | int   | 512        | Transformer model dimension       |
+| `chunk_size`       | int   | 100        | Action chunk size                 |
+| `n_action_steps`   | int   | 100        | Number of action steps to predict |
+| `n_encoder_layers` | int   | 4          | Number of encoder layers          |
+| `n_decoder_layers` | int   | 1          | Number of decoder layers          |
+| `n_heads`          | int   | 8          | Number of attention heads         |
+| `dim_feedforward`  | int   | 3200       | Feedforward dimension             |
+| `dropout`          | float | 0.1        | Dropout rate                      |
+| `kl_weight`        | float | 10.0       | KL divergence weight              |
+| `vision_backbone`  | str   | "resnet18" | Vision encoder backbone           |
+| `use_vae`          | bool  | True       | Use VAE for action encoding       |
+| `latent_dim`       | int   | 32         | VAE latent dimension              |
+| `stats`            | dict  | None       | Dataset normalization stats       |
+| `learning_rate`    | float | 1e-4       | Learning rate for optimizer       |
 
 ### Universal Wrapper Parameters
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `policy_name` | str | Policy type: act, diffusion, tdmpc, vqbet, etc. |
-| `input_features` | dict | Input feature config |
-| `output_features` | dict | Output feature config |
-| `stats` | dict | Dataset stats for normalization |
-| `**policy_kwargs` | dict | Policy-specific parameters |
+| Parameter         | Type | Description                                     |
+| ----------------- | ---- | ----------------------------------------------- |
+| `policy_name`     | str  | Policy type: act, diffusion, tdmpc, vqbet, etc. |
+| `input_features`  | dict | Input feature config                            |
+| `output_features` | dict | Output feature config                           |
+| `stats`           | dict | Dataset stats for normalization                 |
+| `**policy_kwargs` | dict | Policy-specific parameters                      |
 
 Refer to [LeRobot documentation](https://github.com/huggingface/lerobot) for policy-specific parameters.
 
@@ -468,17 +468,17 @@ cd library
 
 ## Supported Policies
 
-| Policy | Explicit Wrapper | Universal Wrapper | Tested |
-|--------|------------------|-------------------|--------|
-| **ACT** | ✅ `ACT()` | ✅ `policy_name="act"` | ✅ Verified |
-| **Diffusion** | ❌ | ✅ `Diffusion()` alias | ✅ Verified |
-| **VQBeT** | ❌ | ✅ `VQBeT()` alias | ⚠️ Not tested |
-| **TDMPC** | ❌ | ✅ `TDMPC()` alias | ⚠️ Not tested |
-| **SAC** | ❌ | ✅ `policy_name="sac"` | ⚠️ Not tested |
-| **PPO** | ❌ | ✅ `policy_name="ppo"` | ⚠️ Not tested |
-| **DDPG** | ❌ | ✅ `policy_name="ddpg"` | ⚠️ Not tested |
-| **DQN** | ❌ | ✅ `policy_name="dqn"` | ⚠️ Not tested |
-| **IBC** | ❌ | ✅ `policy_name="ibc"` | ⚠️ Not tested |
+| Policy        | Explicit Wrapper | Universal Wrapper       | Tested        |
+| ------------- | ---------------- | ----------------------- | ------------- |
+| **ACT**       | ✅ `ACT()`       | ✅ `policy_name="act"`  | ✅ Verified   |
+| **Diffusion** | ❌               | ✅ `Diffusion()` alias  | ✅ Verified   |
+| **VQBeT**     | ❌               | ✅ `VQBeT()` alias      | ⚠️ Not tested |
+| **TDMPC**     | ❌               | ✅ `TDMPC()` alias      | ⚠️ Not tested |
+| **SAC**       | ❌               | ✅ `policy_name="sac"`  | ⚠️ Not tested |
+| **PPO**       | ❌               | ✅ `policy_name="ppo"`  | ⚠️ Not tested |
+| **DDPG**      | ❌               | ✅ `policy_name="ddpg"` | ⚠️ Not tested |
+| **DQN**       | ❌               | ✅ `policy_name="dqn"`  | ⚠️ Not tested |
+| **IBC**       | ❌               | ✅ `policy_name="ibc"`  | ⚠️ Not tested |
 
 ## Future Work
 

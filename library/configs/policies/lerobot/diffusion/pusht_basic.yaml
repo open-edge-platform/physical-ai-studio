@@ -1,0 +1,54 @@
+# Diffusion Policy - Basic Configuration for PushT
+# Train Diffusion Policy on PushT task with standard settings
+#
+# Usage:
+#   getiaction fit --config configs/policies/lerobot/diffusion/pusht_basic.yaml
+#
+# Override parameters:
+#   getiaction fit --config configs/policies/lerobot/diffusion/pusht_basic.yaml --model.init_args.learning_rate 1e-3
+
+model:
+  class_path: getiaction.policies.lerobot.diffusion.Diffusion
+  init_args:
+    # Temporal parameters
+    n_obs_steps: 2 # Number of observation frames to stack
+    horizon: 16 # Prediction horizon, must match len(delta_timestamps["action"])
+    n_action_steps: 8 # Number of action steps to execute
+
+    # Vision backbone
+    vision_backbone: resnet18 # Options: resnet18, resnet34, resnet50
+    pretrained_backbone_weights: ResNet18_Weights.IMAGENET1K_V1
+    crop_shape: [84, 84] # Image crop size
+    crop_is_random: true # Random crop for augmentation
+
+    # U-Net architecture
+    down_dims: [256, 512, 1024] # Channel dimensions
+
+    # Diffusion process
+    noise_scheduler_type: DDPM # Options: DDPM, DDIM
+    num_train_timesteps: 100 # Diffusion steps during training
+    num_inference_steps: 10 # Steps during inference
+    beta_schedule: squaredcos_cap_v2 # Noise schedule
+    prediction_type: epsilon # What model predicts
+
+    # Optimization
+    learning_rate: 1.0e-4
+    optimizer_weight_decay: 1.0e-6
+
+data:
+  class_path: getiaction.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: lerobot/pusht
+    train_batch_size: 64
+    data_format: lerobot # Use LeRobot's native data format
+    delta_timestamps:
+      action: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5] # 16 steps
+
+trainer:
+  max_epochs: 3000
+  accelerator: gpu
+  devices: 1
+  precision: 32
+  log_every_n_steps: 100
+  check_val_every_n_epoch: 50
+  gradient_clip_val: 10.0
