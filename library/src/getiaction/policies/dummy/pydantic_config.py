@@ -49,7 +49,17 @@ class DummyModelConfigPydantic(BaseModel):
     @field_validator("action_shape")
     @classmethod
     def validate_action_shape(cls, v: list[int]) -> list[int]:
-        """Validate action shape is not empty."""
+        """Validate action shape is not empty.
+
+        Args:
+            v: Action shape list.
+
+        Returns:
+            Validated action shape.
+
+        Raises:
+            ValueError: If action shape is empty or has non-positive dimensions.
+        """
         if not v:
             msg = "action_shape cannot be empty"
             raise ValueError(msg)
@@ -59,7 +69,11 @@ class DummyModelConfigPydantic(BaseModel):
         return v
 
     def to_torch_size(self) -> torch.Size:
-        """Convert action_shape to torch.Size."""
+        """Convert action_shape to torch.Size.
+
+        Returns:
+            torch.Size representation of action_shape.
+        """
         return torch.Size(self.action_shape)
 
 
@@ -88,7 +102,17 @@ class OptimizerConfigPydantic(BaseModel):
     @field_validator("optimizer_type")
     @classmethod
     def validate_optimizer_type(cls, v: str) -> str:
-        """Validate optimizer type is supported."""
+        """Validate optimizer type is supported.
+
+        Args:
+            v: Optimizer type string.
+
+        Returns:
+            Lowercase optimizer type if valid.
+
+        Raises:
+            ValueError: If optimizer type is not supported.
+        """
         allowed = {"adam", "sgd", "adamw"}
         if v.lower() not in allowed:
             msg = f"optimizer_type must be one of {allowed}, got {v}"
