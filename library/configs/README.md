@@ -29,7 +29,8 @@ Basic training config using dataclass pattern. Good starting point for simple ex
 
 ### `train_dummy_class_path.yaml`
 
-Training config using jsonargparse `class_path` pattern. Recommended for most use cases.
+Training config using jsonargparse `class_path` pattern.
+Recommended for most use cases.
 
 **Features:**
 
