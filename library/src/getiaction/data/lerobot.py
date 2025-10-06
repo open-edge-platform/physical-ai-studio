@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from lightning_utilities import module_available
@@ -25,7 +25,7 @@ else:
     LeRobotDataset = None
 
 
-class DataFormat(str, Enum):
+class DataFormat(StrEnum):
     """Supported data formats for LeRobot datasets."""
 
     GETIACTION = "getiaction"
