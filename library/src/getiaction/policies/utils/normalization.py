@@ -3,7 +3,6 @@
 
 """Utils for dataset features normalization."""
 
-
 import numpy as np
 import torch
 from torch import nn
@@ -57,7 +56,7 @@ class FeatureNormalizeTransform(nn.Module):
             if torch.isinf(t).any():
                 raise ValueError(
                     f"Normalization buffer '{name}' is infinity. You should either initialize "
-                    "model with correct features stats, or use a pretrained model."
+                    "model with correct features stats, or use a pretrained model.",
                 )
 
         if norm_mode is NormalizationType.MEAN_STD:

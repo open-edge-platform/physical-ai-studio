@@ -5,7 +5,6 @@
 
 from .normalization import FeatureNormalizeTransform
 
-
 __all__ = [
     "FeatureNormalizeTransform",
 ]
