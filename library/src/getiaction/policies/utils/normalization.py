@@ -3,6 +3,7 @@
 
 """Utils for dataset features normalization."""
 
+from numbers import Integral
 from typing import cast
 
 import numpy as np
@@ -195,11 +196,13 @@ class FeatureNormalizeTransform(nn.Module):
             # downstream by `stats` or `policy.load_state_dict`, as expected. During forward,
             # we assert they are not infinity anymore.
 
-            def get_torch_tensor(arr: np.ndarray | torch.Tensor) -> torch.Tensor:
+            def get_torch_tensor(arr: np.ndarray | torch.Tensor | Integral) -> torch.Tensor:
                 if isinstance(arr, np.ndarray):
                     return torch.from_numpy(arr).to(dtype=torch.float32)
                 if isinstance(arr, torch.Tensor):
                     return arr.clone().to(dtype=torch.float32)
+                if isinstance(arr, Integral):
+                    return torch.tensor(arr, dtype=torch.float32)
                 type_ = type(arr)
                 msg = f"np.ndarray or torch.Tensor expected, but type is '{type_}' instead."
                 raise TypeError(msg)

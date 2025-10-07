@@ -91,7 +91,6 @@ class ACT(nn.Module):
 
         input_features: dict[str | BatchObservationComponents, Feature] = {
             BatchObservationComponents.STATE: state_observation_features[0],
-            BatchObservationComponents.ACTION: action_feature,
         }
 
         visual_observation_features = [v for v in observation_features.values() if v.ftype == FeatureType.VISUAL]
@@ -127,6 +126,23 @@ class ACT(nn.Module):
             inverse=True,
         )
         self._model = _ACT(self._config)
+
+    @classmethod
+    def from_config(cls, config: ACTConfig) -> "ACT":
+        """Create an ACT model from a configuration object.
+
+        Args:
+            config (ACTConfig): Configuration object containing model parameters.
+
+        Returns:
+            ACT: Initialized ACT model instance.
+        """
+        return cls(
+            action_features=config.output_features,
+            observation_features=config.input_features,
+            backbone=config.vision_backbone,
+            chunk_size=config.chunk_size,
+        )
 
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """Forward pass through the ACT model.

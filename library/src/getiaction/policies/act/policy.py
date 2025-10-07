@@ -87,7 +87,7 @@ class ACT(Policy):
         Returns:
             torch.Tensor: Selected actions.
         """
-        return self.model.select_action(batch)
+        return self.model.predict_action_chunk(batch)
 
     def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> dict[str, torch.Tensor]:
         """Training step for the policy.
