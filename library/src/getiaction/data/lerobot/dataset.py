@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from lightning_utilities import module_available
 
-from getiaction.data import Dataset, Observation
+from getiaction.data import Dataset, Feature, FeatureType, NormalizationParameters, Observation
 
 from .converters import FormatConverter
 
@@ -143,15 +143,67 @@ class _LeRobotDatasetAdapter(Dataset):
         return instance
 
     @property
-    def features(self) -> dict[str, dict[Any, Any]]:
+    def raw_features(self) -> dict[str, dict[Any, Any]]:
         """Raw dataset features."""
         return self._lerobot_dataset.features
 
     @property
-    def action_features(self) -> dict[str, dict[Any, Any]]:
+    def observation_features(self) -> dict[str, Feature]:
+        """Observation features from the dataset."""
+        dataset_features = self._lerobot_dataset.features
+        raw_obs_features = {key: ft for key, ft in dataset_features.items() if key.startswith("observation")}
+        dataset_meta = self._lerobot_dataset.meta
+
+        observation_features = {}
+        for k in raw_obs_features:
+            if k in dataset_meta.features:
+                feature_type = FeatureType.STATE
+                feature_shape = dataset_meta.features[k]["shape"]
+                if dataset_meta.features[k]["dtype"] in {"image", "video"}:
+                    feature_type = FeatureType.VISUAL
+                    # Backward compatibility for "channel" which is an error introduced in LeRobotDataset v2.0
+                    # for ported datasets.
+                    if dataset_meta.features[k]["names"][2] in {"channel", "channels"}:  # (h, w, c) -> (c, h, w)
+                        feature_shape = (feature_shape[2], feature_shape[0], feature_shape[1])
+                elif k == "observation.environment_state":
+                    feature_type = FeatureType.ENV
+
+                observation_features[k] = Feature(
+                    ftype=feature_type,
+                    normalization_data=NormalizationParameters(
+                        mean=dataset_meta.stats[k].get("mean", 0.0),
+                        std=dataset_meta.stats[k].get("std", 1.0),
+                        min=dataset_meta.stats[k].get("min", 0.0),
+                        max=dataset_meta.stats[k].get("max", 0.0),
+                    ),
+                    shape=feature_shape,
+                    name=k,
+                )
+        return observation_features
+
+    @property
+    def action_features(self) -> dict[str, Feature]:
         """Action features from LeRobot dataset."""
         dataset_features = self._lerobot_dataset.features
-        return {key: ft for key, ft in dataset_features.items() if key.startswith("action")}
+        raw_act_features = {key: ft for key, ft in dataset_features.items() if key.startswith("action")}
+        dataset_meta = self._lerobot_dataset.meta
+
+        action_features = {}
+        for k in raw_act_features:
+            if k in dataset_meta.features:
+                action_features[k] = Feature(
+                    ftype=FeatureType.ACTION,
+                    normalization_data=NormalizationParameters(
+                        mean=dataset_meta.stats[k].get("mean", 0.0),
+                        std=dataset_meta.stats[k].get("std", 1.0),
+                        min=dataset_meta.stats[k].get("min", 0.0),
+                        max=dataset_meta.stats[k].get("max", 0.0),
+                    ),
+                    shape=dataset_meta.features[k]["shape"],
+                    name=k,
+                )
+
+        return action_features
 
     @property
     def fps(self) -> int:
