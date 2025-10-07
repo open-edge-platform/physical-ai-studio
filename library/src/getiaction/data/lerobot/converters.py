@@ -57,11 +57,11 @@ def _collect_field(
     return collected, used_keys
 
 
-def _convert_lerobot_item_to_observation(lerobot_item: dict) -> Observation:
-    """Convert item from lerobot to our internal Observation format.
+def _convert_lerobot_dict_to_observation(lerobot_dict: dict) -> Observation:
+    """Convert dict from LeRobot format to our internal Observation format.
 
     Args:
-        lerobot_item (dict): The item from the lerobot dataset.
+        lerobot_dict: Dictionary in LeRobot format with flattened keys.
 
     Returns:
         Observation: The observation in our internal format.
@@ -76,7 +76,7 @@ def _convert_lerobot_item_to_observation(lerobot_item: dict) -> Observation:
         "task_index",
         "timestamp",
     ]
-    lerobot_item_keys = lerobot_item.keys()
+    lerobot_item_keys = lerobot_dict.keys()
     for key in required_keys:
         if key not in lerobot_item_keys:
             msg = f"Missing required key: {key}. Available keys: {lerobot_item_keys}"
@@ -92,51 +92,37 @@ def _convert_lerobot_item_to_observation(lerobot_item: dict) -> Observation:
     used_keys: set[str] = set()
 
     # Observation images
-    images, used = _collect_field(lerobot_item, "observation.image", "observation.images.")
+    images, used = _collect_field(lerobot_dict, "observation.image", "observation.images.")
     used_keys |= used
 
     # Observation states
-    state, used = _collect_field(lerobot_item, "observation.state", "observation.state.")
+    state, used = _collect_field(lerobot_dict, "observation.state", "observation.state.")
     used_keys |= used
 
     # Actions
-    action, used = _collect_field(lerobot_item, "action", "action.")
+    action, used = _collect_field(lerobot_dict, "action", "action.")
     used_keys |= used
 
     # Tasks
-    task, used = _collect_field(lerobot_item, "task", "task.")
+    task, used = _collect_field(lerobot_dict, "task", "task.")
     used_keys |= used
 
     # Extra keys
     reserved = set(required_keys) | used_keys
-    extra = {k: v for k, v in lerobot_item.items() if k not in reserved}
+    extra = {k: v for k, v in lerobot_dict.items() if k not in reserved}
 
     return Observation(
         images=cast("Any", images) if images is not None else {},
         state=cast("Any", state) if state is not None else None,
         action=cast("Any", action) if action is not None else None,
         task=cast("Any", task) if task is not None else None,
-        episode_index=lerobot_item["episode_index"],
-        frame_index=lerobot_item["frame_index"],
-        index=lerobot_item["index"],
-        task_index=lerobot_item["task_index"],
-        timestamp=lerobot_item["timestamp"],
+        episode_index=lerobot_dict["episode_index"],
+        frame_index=lerobot_dict["frame_index"],
+        index=lerobot_dict["index"],
+        task_index=lerobot_dict["task_index"],
+        timestamp=lerobot_dict["timestamp"],
         extra=extra,
     )
-
-
-def _convert_lerobot_dict_to_observation(lerobot_dict: dict) -> Observation:
-    """Convert dict from LeRobot format to our internal Observation format.
-
-    This is an alias for _convert_lerobot_item_to_observation for consistency in naming.
-
-    Args:
-        lerobot_dict: Dictionary in LeRobot format with flattened keys.
-
-    Returns:
-        Observation: The observation in our internal format.
-    """
-    return _convert_lerobot_item_to_observation(lerobot_dict)
 
 
 def _convert_observation_to_lerobot_dict(observation: Observation) -> dict[str, Any]:  # noqa: PLR0912
@@ -158,6 +144,7 @@ def _convert_observation_to_lerobot_dict(observation: Observation) -> dict[str, 
         ...     action=action_tensor,
         ...     ...
         ... )
+
         >>> lerobot_dict = _convert_observation_to_lerobot_dict(obs)
         >>> # lerobot_dict = {
         >>> #     "observation.images.top": top_tensor,
@@ -232,6 +219,7 @@ def _flatten_collated_dict_to_lerobot(collated_dict: dict[str, Any]) -> dict[str
         ...     "action": action_tensor,
         ...     ...
         ... }
+
         >>> lerobot = _flatten_collated_dict_to_lerobot(collated)
         >>> # lerobot = {
         >>> #     "observation.images.top": top_tensor,
@@ -304,10 +292,10 @@ class FormatConverter:
     Example:
         >>> # Convert to LeRobot format
         >>> lerobot_batch = FormatConverter.to_lerobot_dict(observation)
-        >>>
+
         >>> # Convert to Observation format
         >>> observation = FormatConverter.to_observation(lerobot_dict)
-        >>>
+
         >>> # Auto-detect and convert (no-op if already in target format)
         >>> lerobot_batch = FormatConverter.to_lerobot_dict(batch)  # Works with dict or Observation
     """
@@ -332,12 +320,12 @@ class FormatConverter:
             >>> obs = Observation(images={"top": top_img}, state=state, action=action)
             >>> lerobot_dict = FormatConverter.to_lerobot_dict(obs)
             >>> # lerobot_dict = {"observation.images.top": top_img, "observation.state": state, "action": action}
-            >>>
+
             >>> # From collated dict
             >>> collated = {"images": {"top": top_img}, "state": state, "action": action}
             >>> lerobot_dict = FormatConverter.to_lerobot_dict(collated)
             >>> # lerobot_dict = {"observation.images.top": top_img, "observation.state": state, "action": action}
-            >>>
+
             >>> # Already in correct format - returns unchanged
             >>> lerobot_dict = FormatConverter.to_lerobot_dict(lerobot_dict)
         """
@@ -378,7 +366,7 @@ class FormatConverter:
         Example:
             >>> # Already in correct format - returns unchanged
             >>> observation = FormatConverter.to_observation(observation)
-            >>>
+
             >>> # Converts from LeRobot dict
             >>> observation = FormatConverter.to_observation(lerobot_dict)
         """
