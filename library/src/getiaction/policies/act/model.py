@@ -1,6 +1,20 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+# Copyright 2024 Tony Z. Zhao and The HuggingFace Inc. team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """ACT torch model."""
 
 import math
@@ -73,7 +87,7 @@ class ACT(nn.Module):
             raise ValueError(msg)
         action_feature = next(iter(action_features.values()))
 
-        input_features = {
+        input_features: dict[str | BatchObservationComponents, Feature] = {
             BatchObservationComponents.STATE: state_observation_features[0],
             BatchObservationComponents.ACTION: action_feature,
         }
@@ -84,12 +98,13 @@ class ACT(nn.Module):
             input_features[BatchObservationComponents.IMAGES] = visual_observation_features[0]
         elif len(visual_observation_features) > 1:
             for vf in visual_observation_features:
-                input_features[vf.name] = vf
+                if vf.name is not None:
+                    input_features[vf.name] = vf
         else:
             msg = "ACT model requires at least one visual observation feature."
             raise ValueError(msg)
 
-        output_features = {
+        output_features: dict[str | BatchObservationComponents, Feature] = {
             BatchObservationComponents.ACTION: action_feature,
         }
 
@@ -100,7 +115,10 @@ class ACT(nn.Module):
             vision_backbone=backbone,
         )
 
-        self.input_normalizer = FeatureNormalizeTransform(input_features, self._config.normalization_mapping)
+        self.input_normalizer = FeatureNormalizeTransform(
+            features=input_features,
+            norm_map=self._config.normalization_mapping,
+        )
         self.output_denormalizer = FeatureNormalizeTransform(
             output_features,
             self._config.normalization_mapping,
@@ -294,19 +312,19 @@ class _ACTConfig:
             is enabled. Loss is then calculated as: `reconstruction_loss + kl_weight * kld_loss`.
     """
 
-    input_features: dict[str, Feature] = field(default_factory=dict)
-    output_features: dict[str, Feature] = field(default_factory=dict)
+    input_features: dict[str | BatchObservationComponents, Feature] = field(default_factory=dict)
+    output_features: dict[str | BatchObservationComponents, Feature] = field(default_factory=dict)
 
     # Input / output structure.
     n_obs_steps: int = 1
     chunk_size: int = 100
     n_action_steps: int = 100
 
-    normalization_mapping: dict[str, NormalizationType] = field(
+    normalization_mapping: dict[FeatureType, NormalizationType] = field(
         default_factory=lambda: {
-            "VISUAL": NormalizationType.MEAN_STD,
-            "STATE": NormalizationType.MEAN_STD,
-            "ACTION": NormalizationType.MEAN_STD,
+            FeatureType.VISUAL: NormalizationType.MEAN_STD,
+            FeatureType.STATE: NormalizationType.MEAN_STD,
+            FeatureType.ACTION: NormalizationType.MEAN_STD,
         },
     )
 
@@ -402,11 +420,12 @@ class _ACTConfig:
         return None
 
     @property
-    def action_feature(self) -> Feature | None:
+    def action_feature(self) -> Feature:
         for ft_name, ft in self.output_features.items():
             if ft.ftype is FeatureType.ACTION and ft_name == BatchObservationComponents.ACTION:
                 return ft
-        return None
+        msg = "No action feature found in output features."
+        raise ValueError(msg)
 
 
 class _ACT(nn.Module):
@@ -944,3 +963,6 @@ def _get_activation_fn(activation: str) -> Callable:
         return F.glu
     msg = f"Unknown activation function: {activation}"
     raise RuntimeError(msg)
+
+
+__all__ = ["ACT"]

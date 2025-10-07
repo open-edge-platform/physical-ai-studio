@@ -3,15 +3,13 @@
 
 """Utils for dataset features normalization."""
 
+from typing import cast
+
 import numpy as np
 import torch
 from torch import nn
 
-from getiaction.data import (
-    Feature,
-    FeatureType,
-    NormalizationType,
-)
+from getiaction.data import Feature, FeatureType, NormalizationParameters, NormalizationType
 
 
 class FeatureNormalizeTransform(nn.Module):
@@ -89,7 +87,7 @@ class FeatureNormalizeTransform(nn.Module):
                         break
             if root_dict:
                 key = raw_name
-                norm_mode = self._norm_map.get(ft.ftype, NormalizationType.IDENTITY)
+                norm_mode = self._norm_map.get(cast("FeatureType", ft.ftype), NormalizationType.IDENTITY)
                 if norm_mode is NormalizationType.IDENTITY:
                     continue
                 buffer = getattr(self, "buffer_" + key.replace(".", "_"))
@@ -168,7 +166,7 @@ class FeatureNormalizeTransform(nn.Module):
         stats_buffers = {}
 
         for key, ft in features.items():
-            norm_mode = norm_map.get(ft.ftype, NormalizationType.IDENTITY)
+            norm_mode = norm_map.get(cast("FeatureType", ft.ftype), NormalizationType.IDENTITY)
             if norm_mode is NormalizationType.IDENTITY:
                 continue
 
@@ -176,7 +174,7 @@ class FeatureNormalizeTransform(nn.Module):
                 msg = f"Invalid type of normalization mode object: {norm_mode}"
                 raise TypeError(msg)
 
-            shape = ft.shape
+            shape = ft.shape if ft.shape is not None else ()
 
             if ft.ftype is FeatureType.VISUAL:
                 # sanity checks
@@ -216,8 +214,10 @@ class FeatureNormalizeTransform(nn.Module):
                         "std": nn.Parameter(std, requires_grad=False),
                     },
                 )
-                buffer["mean"].data = get_torch_tensor(ft.normalization_data.mean)
-                buffer["std"].data = get_torch_tensor(ft.normalization_data.std)
+                buffer["mean"].data = get_torch_tensor(
+                    cast("NormalizationParameters", ft.normalization_data).mean,
+                )
+                buffer["std"].data = get_torch_tensor(cast("NormalizationParameters", ft.normalization_data).std)
             elif norm_mode is NormalizationType.MIN_MAX:
                 min_ = torch.ones(shape, dtype=torch.float32) * torch.inf
                 max_ = torch.ones(shape, dtype=torch.float32) * torch.inf
@@ -227,8 +227,8 @@ class FeatureNormalizeTransform(nn.Module):
                         "max": nn.Parameter(max_, requires_grad=False),
                     },
                 )
-                buffer["min"].data = get_torch_tensor(ft.normalization_data.min)
-                buffer["max"].data = get_torch_tensor(ft.normalization_data.max)
+                buffer["min"].data = get_torch_tensor(cast("NormalizationParameters", ft.normalization_data).min)
+                buffer["max"].data = get_torch_tensor(cast("NormalizationParameters", ft.normalization_data).max)
 
             stats_buffers[key] = buffer
         return stats_buffers
