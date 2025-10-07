@@ -4,7 +4,7 @@
 """Test for lerobot dataset using a mock to avoid ffmpeg/network dependencies."""
 
 from getiaction.data import Dataset, Observation
-from getiaction.data.lerobot import _LeRobotDatasetAdapter
+from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 import torch
 import pytest
 
@@ -105,7 +105,7 @@ class TestLeRobotActionDataset:
     def test_initialization(self, monkeypatch, dataset_cls):
         """Tests that LeRobotActionDataset initializes correctly by patching."""
         monkeypatch.setattr(
-            "getiaction.data.lerobot.LeRobotDataset", dataset_cls
+            "getiaction.data.lerobot.dataset.LeRobotDataset", dataset_cls
         )
 
         dataset = _LeRobotDatasetAdapter(repo_id="any/repo", episodes=[0])
