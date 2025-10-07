@@ -7,6 +7,8 @@ from enum import StrEnum
 
 
 class BatchObservationComponents(StrEnum):
+    """Enum for batch observation components."""
+
     STATE = "state"
     ACTION = "action"
     IMAGES = "images"
@@ -14,6 +16,8 @@ class BatchObservationComponents(StrEnum):
 
 
 class FeatureType(StrEnum):
+    """Enum for feature types."""
+
     VISUAL = "VISUAL"
     ACTION = "ACTION"
     STATE = "STATE"
@@ -21,6 +25,8 @@ class FeatureType(StrEnum):
 
 
 class NormalizationType(StrEnum):
+    """Enum for feature normalization methods."""
+
     MIN_MAX = "MIN_MAX"
     MEAN_STD = "MEAN_STD"
     IDENTITY = "IDENTITY"

@@ -39,6 +39,8 @@ class Observation:
 
 @dataclass(frozen=True)
 class Feature:
+    """A feature representation."""
+
     normalization_data: NormalizationParameters | None = None
     ftype: FeatureType | None = None
     shape: tuple[int, ...] | None = None
