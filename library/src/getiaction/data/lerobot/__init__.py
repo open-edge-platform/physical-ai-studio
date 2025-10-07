@@ -10,6 +10,7 @@ This package provides integration with HuggingFace LeRobot datasets, including:
 
 Example:
     >>> from getiaction.data.lerobot import LeRobotDataModule, FormatConverter
+
     >>> # Create datamodule
     >>> datamodule = LeRobotDataModule(
     ...     repo_id="lerobot/aloha_sim_transfer_cube_human",
