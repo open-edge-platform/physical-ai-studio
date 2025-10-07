@@ -1,9 +1,5 @@
 # LeRobot Policy Integration
 
-**Status**: ✅ Implemented and Validated
-**Version**: 2.0
-**LeRobot Version**: 0.3.3
-
 ## Overview
 
 GetiAction provides seamless integration with LeRobot policies through:
@@ -142,81 +138,6 @@ class LeRobotPolicy(LightningModule):
 VQBeT = lambda **kwargs: LeRobotPolicy(policy_name="vqbet", **kwargs)
 TDMPC = lambda **kwargs: LeRobotPolicy(policy_name="tdmpc", **kwargs)
 ```
-
-## Validation & Equivalence Testing
-
-### Test Results Summary
-
-| Test Type                   | Status         | Details                      |
-| --------------------------- | -------------- | ---------------------------- |
-| **ACT Output Equivalence**  | ✅ **PERFECT** | Mean: 0.0, Max diff: 0.0     |
-| **Diffusion Stochasticity** | ✅ **CORRECT** | Preserves stochastic         |
-| **Forward Pass**            | ✅ Pass        | Identical computation graph  |
-| **Training Step**           | ✅ Pass        | Loss computation matches     |
-| **Validation Step**         | ✅ Pass        | Metrics match LeRobot        |
-| **Optimizer Config**        | ✅ Pass        | AdamW with correct params    |
-| **E2E Workflow**            | ✅ Pass        | Full training pipeline works |
-
-### ACT Output Equivalence Test
-
-**Test Setup**:
-
-```python
-# Load dataset
-dataset = LeRobotDataset("lerobot/pusht")
-features = dataset_to_policy_features(dataset.meta.features)
-
-# Create wrapped policy
-wrapped = ACT(input_features=features, ...)
-
-# Create native policy
-native = ACTPolicy(config, dataset_stats=stats)
-
-# Copy weights to ensure identical initialization
-native.load_state_dict(wrapped.lerobot_policy.state_dict())
-
-# Compare outputs on same batch
-wrapped.eval()
-native.eval()
-with torch.no_grad():
-    wrapped_output = wrapped.select_action(batch)
-    native_output = native.select_action(batch)
-
-torch.testing.assert_close(wrapped_output, native_output, rtol=1e-5, atol=1e-7)
-```
-
-**Results**:
-
-```text
-Wrapped output range: [267.367157, 292.634644]
-Native output range:  [267.367157, 292.634644]
-
-Mean absolute difference: 0.0000000000
-Max absolute difference:  0.0000000000
-
-✅ PASS: torch.testing.assert_close(rtol=1e-5, atol=1e-7)
-```
-
-**Interpretation**: The wrapper is a **perfect delegate** - outputs
-are byte-for-byte identical.
-
-### Diffusion Policy Behavior
-
-**Finding**: Diffusion policy outputs differ between runs due to stochastic
-sampling (expected behavior).
-
-**Test Results**:
-
-```text
-Mean absolute difference: 280.6375
-Max absolute difference:  484.7273
-
-Different seeds → different outputs (expected)
-Same seed → different outputs (GPU non-determinism)
-```
-
-**Conclusion**: The wrapper **correctly preserves** LeRobot's stochastic
-sampling behavior.
 
 ## Usage
 
