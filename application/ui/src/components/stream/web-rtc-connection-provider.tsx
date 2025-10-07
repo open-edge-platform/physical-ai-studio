@@ -11,7 +11,7 @@ export type WebRTCConnectionState = null | {
 
 export const WebRTCConnectionContext = createContext<WebRTCConnectionState>(null);
 
-const useWebRTCConnectionState = (camera: string) => {
+const useWebRTCConnectionState = (driver: string, camera: string) => {
     const webRTCConnectionRef = useRef<WebRTCConnection | null>(null);
     const [status, setStatus] = useState<WebRTCConnectionStatus>('idle');
 
@@ -21,7 +21,7 @@ const useWebRTCConnectionState = (camera: string) => {
             return;
         }
 
-        const webRTCConnection = new WebRTCConnection(camera);
+        const webRTCConnection = new WebRTCConnection(driver, camera);
         webRTCConnectionRef.current = webRTCConnection;
 
         const unsubscribe = webRTCConnection.subscribe((event) => {
@@ -43,7 +43,7 @@ const useWebRTCConnectionState = (camera: string) => {
             webRTCConnection.stop(); // Ensure connection is closed on unmount
             webRTCConnectionRef.current = null;
         };
-    }, [camera]);
+    }, [camera, driver]);
 
     const start = useCallback(async () => {
         if (!webRTCConnectionRef.current) {
@@ -74,8 +74,16 @@ const useWebRTCConnectionState = (camera: string) => {
     };
 };
 
-export const WebRTCConnectionProvider = ({ children, camera }: { children: ReactNode; camera: string }) => {
-    const value = useWebRTCConnectionState(camera);
+export const WebRTCConnectionProvider = ({
+    children,
+    driver,
+    camera,
+}: {
+    children: ReactNode;
+    driver: string;
+    camera: string;
+}) => {
+    const value = useWebRTCConnectionState(driver, camera);
 
     return <WebRTCConnectionContext.Provider value={value}>{children}</WebRTCConnectionContext.Provider>;
 };
