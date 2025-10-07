@@ -116,11 +116,11 @@ class ACT(nn.Module):
             vision_backbone=backbone,
         )
 
-        self.input_normalizer = FeatureNormalizeTransform(
+        self._input_normalizer = FeatureNormalizeTransform(
             features=input_features,
             norm_map=self._config.normalization_mapping,
         )
-        self.output_denormalizer = FeatureNormalizeTransform(
+        self._output_denormalizer = FeatureNormalizeTransform(
             output_features,
             self._config.normalization_mapping,
             inverse=True,
@@ -149,7 +149,7 @@ class ACT(nn.Module):
             - KL divergence loss is computed when config.use_vae is True
         """
         if self._model.training:
-            batch = self.input_normalizer(batch)
+            batch = self._input_normalizer(batch)
             if self._config.image_features:
                 batch_ = dict(batch)  # shallow copy so that adding a key doesn't modify the original
                 if isinstance(batch[BatchObservationComponents.IMAGES], dict):
@@ -206,13 +206,15 @@ class ACT(nn.Module):
         """
         self.eval()
 
-        batch = self.input_normalizer(batch)
+        batch = self._input_normalizer(batch)
         if self._config.image_features:
             batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
             batch[BatchObservationComponents.IMAGES] = [batch[key] for key in self._config.image_features]
 
         actions = self._model(batch)[0]  # only select the actions, ignore the latent params
-        return self.output_denormalizer({BatchObservationComponents.ACTION: actions})[BatchObservationComponents.ACTION]
+        return self._output_denormalizer({BatchObservationComponents.ACTION: actions})[
+            BatchObservationComponents.ACTION
+        ]
 
     @property
     def reward_delta_indices(self) -> None:

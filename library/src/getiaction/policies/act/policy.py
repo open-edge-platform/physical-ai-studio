@@ -5,6 +5,7 @@
 
 import torch
 
+from getiaction.data import Dataset
 from getiaction.policies.act.model import ACT as ACTModel  # noqa: N811
 from getiaction.policies.base import Policy
 
@@ -26,7 +27,7 @@ class ACT(Policy):
 
     def __init__(
         self,
-        model: ACTModel,
+        model: ACTModel | None = None,
         optimizer: torch.optim.Optimizer | None = None,
     ) -> None:
         """Initialize the ACT policy with a model and optional optimizer.
@@ -44,6 +45,38 @@ class ACT(Policy):
             self.optimizer = optimizer
         else:
             self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-5, weight_decay=1e-4)
+
+    def setup(self, stage: str) -> None:
+        """Set up the policy from datamodule if not already initialized.
+
+        This method is called by Lightning before fit/validate/test/predict.
+        It extracts features from the datamodule's training dataset and
+        initializes the policy if it wasn't already created in __init__.
+
+        Args:
+            stage: The stage of training ('fit', 'validate', 'test', or 'predict')
+
+        Raises:
+            TypeError: If the train_dataset is not a getiaction.data.Dataset.
+        """
+        del stage  # Unused argument
+
+        if self.model is not None:
+            return  # Already initialized
+
+        datamodule = self.trainer.datamodule
+        train_dataset = datamodule.train_dataset
+
+        # Get the underlying LeRobot dataset - handle both data formats
+        if not isinstance(train_dataset, Dataset):
+            msg = f"Expected train_dataset to be getiaction.data.Dataset, got {type(train_dataset)}."
+            raise TypeError(msg)
+
+        # Initialize the policy
+        self.model = ACTModel(
+            action_features=train_dataset.action_features,
+            observation_features=train_dataset.observation_features,
+        )
 
     def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """Select an action using the policy model.
