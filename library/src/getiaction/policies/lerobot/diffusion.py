@@ -329,6 +329,9 @@ class Diffusion(Policy):
         Returns:
             The computed loss tensor.
         """
+        # Convert to LeRobot format if needed (handles Observation or collated dict)
+        batch = FormatConverter.to_lerobot_dict(batch)
+
         loss, _ = self.lerobot_policy.forward(batch)
         return loss
 

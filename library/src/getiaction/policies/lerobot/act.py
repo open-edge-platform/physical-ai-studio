@@ -207,14 +207,17 @@ class ACT(Policy):
         self._framework_policy = self._lerobot_policy
 
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
-        """Forward pass delegates to LeRobot.
+        """Forward pass for ACT policy.
 
         Args:
-            batch: A batch of data containing observations.
+            batch: A batch of data containing observations and actions.
 
         Returns:
             The action predictions from the policy.
         """
+        # Convert to LeRobot format if needed (handles Observation or collated dict)
+        batch = FormatConverter.to_lerobot_dict(batch)
+
         actions, _ = self.lerobot_policy.model(batch)
         return actions
 

@@ -347,6 +347,9 @@ class LeRobotPolicy(Policy):
         Returns:
             Policy output (format depends on policy type).
         """
+        # Convert to LeRobot format if needed (handles Observation or collated dict)
+        batch = FormatConverter.to_lerobot_dict(batch)
+
         return self.lerobot_policy.forward(batch)
 
     def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
