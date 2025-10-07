@@ -24,7 +24,7 @@ Both approaches provide:
 
 ```text
 ┌───────────────────────────────────────────────┐
-│            GetiAction (Lightning)            │
+│            GetiAction (Lightning)             │
 │   ┌───────────────────────────────────────┐   │
 │   │  GetiAction Policy (LightningModule)  │   │
 │   │  ┌─────────────────────────────────┐  │   │
