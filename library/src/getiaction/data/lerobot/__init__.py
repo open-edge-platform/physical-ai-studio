@@ -17,7 +17,7 @@ Example:
     ...     data_format="lerobot"
     ... )
 
-    >>> # Convert between formats
+    >>> # Convert between observation dict formats
     >>> lerobot_dict = FormatConverter.to_lerobot_dict(observation)
     >>> observation = FormatConverter.to_observation(lerobot_dict)
 """
