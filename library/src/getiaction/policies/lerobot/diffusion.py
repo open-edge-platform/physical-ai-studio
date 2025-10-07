@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Any
 import torch
 from lightning_utilities.core.imports import module_available
 
+from getiaction.data.lerobot import FormatConverter
+from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 from getiaction.policies.base import Policy
 
 if TYPE_CHECKING:
@@ -31,8 +33,6 @@ else:
     _LeRobotDiffusionConfig = None
     LeRobotDataset = None
     dataset_to_policy_features = None
-
-from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 
 
 class Diffusion(Policy):
@@ -344,6 +344,9 @@ class Diffusion(Policy):
         """
         del batch_idx  # Unused argument
 
+        # Convert to LeRobot format if needed (handles Observation or collated dict)
+        batch = FormatConverter.to_lerobot_dict(batch)
+
         loss, _ = self.lerobot_policy.forward(batch)
         self.log("train/loss", loss, prog_bar=True)
         return loss
@@ -359,6 +362,9 @@ class Diffusion(Policy):
             The computed loss tensor.
         """
         del batch_idx  # Unused argument
+
+        # Convert to LeRobot format if needed (handles Observation or collated dict)
+        batch = FormatConverter.to_lerobot_dict(batch)
 
         loss, _ = self.lerobot_policy.forward(batch)
         self.log("val/loss", loss, prog_bar=True)

@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, Any, ClassVar
 import torch
 from lightning_utilities import module_available
 
+from getiaction.data.lerobot import FormatConverter
+from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 from getiaction.policies.base import Policy
 
 if TYPE_CHECKING:
@@ -308,18 +310,22 @@ class LeRobotPolicy(Policy):
             )
             raise RuntimeError(msg)
 
-        # NOTE: This part always assumes that we are using getiaction data format.
-        #   If using `lerobot` format, `train_dataset` would not have `_lerobot_dataset` attribute.
-
-        # Get the training dataset
+        # Get the training dataset - handle both data formats
         train_dataset = self.trainer.datamodule.train_dataset
 
-        # Extract features from LeRobot dataset
-        if not hasattr(train_dataset, "_lerobot_dataset"):
-            msg = "DataModule's train_dataset must have '_lerobot_dataset' attribute. Are you using LeRobotDataModule?"
+        # Extract LeRobot dataset based on type
+        if isinstance(train_dataset, _LeRobotDatasetAdapter):
+            # Wrapped in adapter for getiaction format conversion
+            lerobot_dataset = train_dataset._lerobot_dataset  # noqa: SLF001
+        elif hasattr(train_dataset, "meta") and hasattr(train_dataset.meta, "features"):
+            # Assume it's a raw LeRobotDataset (data_format="lerobot")
+            lerobot_dataset = train_dataset
+        else:
+            msg = (
+                f"Expected train_dataset to be _LeRobotDatasetAdapter or LeRobotDataset, "
+                f"got {type(train_dataset)}. Use LeRobotDataModule with appropriate data_format."
+            )
             raise RuntimeError(msg)
-
-        lerobot_dataset = train_dataset._lerobot_dataset  # noqa: SLF001
 
         # Convert LeRobot dataset features to policy features
         features = dataset_to_policy_features(lerobot_dataset.meta.features)
@@ -355,6 +361,9 @@ class LeRobotPolicy(Policy):
         """
         del batch_idx  # Unused argument
 
+        # Convert to LeRobot format if needed (handles Observation or collated dict)
+        batch = FormatConverter.to_lerobot_dict(batch)
+
         output = self.lerobot_policy.forward(batch)
 
         # Handle different output formats from LeRobot policies
@@ -388,6 +397,9 @@ class LeRobotPolicy(Policy):
             Scalar loss value.
         """
         del batch_idx  # Unused argument
+
+        # Convert to LeRobot format if needed (handles Observation or collated dict)
+        batch = FormatConverter.to_lerobot_dict(batch)
 
         output = self.lerobot_policy.forward(batch)
 

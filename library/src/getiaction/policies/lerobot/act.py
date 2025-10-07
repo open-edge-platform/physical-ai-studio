@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 from lightning_utilities.core.imports import module_available
 
+from getiaction.data.lerobot import FormatConverter
 from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 from getiaction.policies.base import Policy
 
@@ -20,12 +21,14 @@ if TYPE_CHECKING:
     from torch import nn
 
 if TYPE_CHECKING or module_available("lerobot"):
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
     from lerobot.datasets.utils import dataset_to_policy_features
     from lerobot.policies.act.configuration_act import ACTConfig as _LeRobotACTConfig
     from lerobot.policies.act.modeling_act import ACTPolicy as _LeRobotACTPolicy
 
     LEROBOT_AVAILABLE = True
 else:
+    LeRobotDataset = None
     dataset_to_policy_features = None
     _LeRobotACTConfig = None
     _LeRobotACTPolicy = None
@@ -175,15 +178,19 @@ class ACT(Policy):
         datamodule = self.trainer.datamodule
         train_dataset = datamodule.train_dataset
 
-        # Get the underlying LeRobot dataset
-        if not isinstance(train_dataset, _LeRobotDatasetAdapter):
+        # Get the underlying LeRobot dataset - handle both data formats
+        if isinstance(train_dataset, _LeRobotDatasetAdapter):
+            # Wrapped in adapter for getiaction format conversion
+            lerobot_dataset = train_dataset._lerobot_dataset  # noqa: SLF001
+        elif LeRobotDataset is not None and isinstance(train_dataset, LeRobotDataset):
+            # Dataset is raw LeRobotDataset (data_format="lerobot")
+            lerobot_dataset = train_dataset
+        else:
             msg = (
-                f"Expected train_dataset to be _LeRobotDatasetAdapter, "
-                f"got {type(train_dataset)}. Use LeRobotDataModule for YAML configs."
+                f"Expected train_dataset to be _LeRobotDatasetAdapter or LeRobotDataset, "
+                f"got {type(train_dataset)}. Use LeRobotDataModule with appropriate data_format."
             )
             raise TypeError(msg)
-
-        lerobot_dataset = train_dataset._lerobot_dataset  # noqa: SLF001
         features = dataset_to_policy_features(lerobot_dataset.meta.features)
         stats = lerobot_dataset.meta.stats
 
@@ -223,6 +230,9 @@ class ACT(Policy):
         """
         del batch_idx  # Unused argument
 
+        # Convert to LeRobot format if needed (handles Observation or collated dict)
+        batch = FormatConverter.to_lerobot_dict(batch)
+
         total_loss, loss_dict = self.lerobot_policy.forward(batch)
         for key, value in loss_dict.items():
             self.log(f"train/{key}", value, prog_bar=False)
@@ -240,6 +250,9 @@ class ACT(Policy):
             The total loss for the batch.
         """
         del batch_idx  # Unused argument
+
+        # Convert to LeRobot format if needed (handles Observation or collated dict)
+        batch = FormatConverter.to_lerobot_dict(batch)
 
         # Workaround for LeRobot bug: VAE fails in eval mode
         was_training = self.training
