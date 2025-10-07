@@ -24,9 +24,9 @@ Both approaches provide:
 
 ```text
 ┌─────────────────────────────────────────────────┐
-│         GetiAction (Lightning)                   │
+│         GetiAction (Lightning)                  │
 │  ┌───────────────────────────────────────┐      │
-│  │  GetiAction Policy (LightningModule)   │      │
+│  │  GetiAction Policy (LightningModule)  │      │
 │  │  ┌─────────────────────────────────┐  │      │
 │  │  │   LeRobot Native Policy         │  │      │
 │  │  │   (Thin Delegation)             │  │      │
