@@ -5,7 +5,7 @@
 #   getiaction fit --config configs/lerobot_act.yaml
 #
 # Override parameters:
-#   getiaction fit --config configs/lerobot_act.yaml --model.init_args.dim_model 1024
+#   getiaction fit --config configs/lerobot_act.yaml --model.dim_model 1024
 
 model:
   class_path: getiaction.policies.lerobot.ACT
