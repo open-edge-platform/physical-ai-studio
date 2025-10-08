@@ -31,13 +31,6 @@ class ACTConfig:
         - "action" is required as an output key.
 
     Args:
-        n_obs_steps: Number of environment steps worth of observations to pass to the policy (takes the
-            current step and additional steps going back).
-        chunk_size: The size of the action prediction "chunks" in units of environment steps.
-        n_action_steps: The number of action steps to run in the environment for one invocation of the policy.
-            This should be no greater than the chunk size. For example, if the chunk size size 100, you may
-            set this to 50. This would mean that the model predicts 100 steps worth of actions, runs 50 in the
-            environment, and throws the other 50 out.
         input_features: A dictionary defining the shapes of the input data for the policy. The key represents
             the input data name, and the value is a list indicating the dimensions of the corresponding data.
             For example, "observation.image" refers to an input from a camera with dimensions [3, 96, 96],
@@ -47,6 +40,13 @@ class ACTConfig:
             the output data name, and the value is a list indicating the dimensions of the corresponding data.
             For example, "action" refers to an output shape of [14], indicating 14-dimensional actions.
             Importantly, `output_shapes` doesn't include batch dimension or temporal dimension.
+        n_obs_steps: Number of environment steps worth of observations to pass to the policy (takes the
+            current step and additional steps going back).
+        chunk_size: The size of the action prediction "chunks" in units of environment steps.
+        n_action_steps: The number of action steps to run in the environment for one invocation of the policy.
+            This should be no greater than the chunk size. For example, if the chunk size size 100, you may
+            set this to 50. This would mean that the model predicts 100 steps worth of actions, runs 50 in the
+            environment, and throws the other 50 out.
         vision_backbone: Name of the torchvision resnet backbone to use for encoding images.
         pretrained_backbone_weights: Pretrained weights from torchvision to initialize the backbone.
             `None` means no pretrained weights.

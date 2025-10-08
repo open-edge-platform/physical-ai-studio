@@ -32,12 +32,7 @@ from torch import Tensor, nn
 from torchvision.models._utils import IntermediateLayerGetter  # noqa: PLC2701
 from torchvision.ops.misc import FrozenBatchNorm2d
 
-from getiaction.data import (
-    BatchObservationComponents,
-    Feature,
-    FeatureType,
-    NormalizationType
-)
+from getiaction.data import BatchObservationComponents, Feature, FeatureType, NormalizationType
 from getiaction.policies.utils.normalization import FeatureNormalizeTransform
 
 from .config import ACTConfig
@@ -49,12 +44,29 @@ class ACT(nn.Module):
     Supports training and inference modes.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         action_features: dict[str, Feature],
         observation_features: dict[str, Feature],
-        backbone: str = "resnet18",
+        *,
         chunk_size: int = 100,
+        n_action_steps: int = 100,
+        vision_backbone: str = "resnet18",
+        pretrained_backbone_weights: str | None = "ResNet18_Weights.IMAGENET1K_V1",
+        replace_final_stride_with_dilation: int = False,
+        pre_norm: bool = False,
+        dim_model: int = 512,
+        n_heads: int = 8,
+        dim_feedforward: int = 3200,
+        feedforward_activation: str = "relu",
+        n_encoder_layers: int = 4,
+        n_decoder_layers: int = 1,
+        use_vae: bool = True,
+        latent_dim: int = 32,
+        n_vae_encoder_layers: int = 4,
+        temporal_ensemble_coeff: float | None = None,
+        dropout: float = 0.1,
+        kl_weight: float = 10.0,
     ) -> None:
         """Initialize the ACT model.
 
@@ -63,8 +75,27 @@ class ACT(nn.Module):
                 Must contain exactly one action feature.
             observation_features (dict[str, Feature]): Dictionary containing observation features.
                 Must contain exactly one state observation feature and at least one visual observation feature.
-            backbone (str, optional): Vision backbone architecture to use. Defaults to "resnet18".
             chunk_size (int, optional): Number of actions to predict in a single forward pass. Defaults to 100.
+            n_action_steps (int, optional): Number of action steps in the sequence. Defaults to 100.
+            vision_backbone (str, optional): Vision backbone architecture to use. Defaults to "resnet18".
+            pretrained_backbone_weights (str | None, optional): Pretrained weights for the backbone.
+                Defaults to "ResNet18_Weights.IMAGENET1K_V1".
+            replace_final_stride_with_dilation (int, optional): Whether to replace final stride with dilation.
+                Defaults to False.
+            pre_norm (bool, optional): Whether to use pre-normalization in transformer layers. Defaults to False.
+            dim_model (int, optional): Model dimension for transformer. Defaults to 512.
+            n_heads (int, optional): Number of attention heads in transformer. Defaults to 8.
+            dim_feedforward (int, optional): Dimension of feedforward network in transformer. Defaults to 3200.
+            feedforward_activation (str, optional): Activation function for feedforward network. Defaults to "relu".
+            n_encoder_layers (int, optional): Number of encoder layers in transformer. Defaults to 4.
+            n_decoder_layers (int, optional): Number of decoder layers in transformer. Defaults to 1.
+            use_vae (bool, optional): Whether to use Variational Autoencoder. Defaults to True.
+            latent_dim (int, optional): Dimension of VAE latent space. Defaults to 32.
+            n_vae_encoder_layers (int, optional): Number of VAE encoder layers. Defaults to 4.
+            temporal_ensemble_coeff (float | None, optional): Coefficient for temporal ensemble.
+                Defaults to None.
+            dropout (float, optional): Dropout rate. Defaults to 0.1.
+            kl_weight (float, optional): Weight for KL divergence loss in VAE. Defaults to 10.0.
 
         Raises:
             ValueError: If the number of state observation features is not exactly one.
@@ -114,7 +145,23 @@ class ACT(nn.Module):
             input_features=input_features,
             output_features=output_features,
             chunk_size=chunk_size,
-            vision_backbone=backbone,
+            n_action_steps=n_action_steps,
+            vision_backbone=vision_backbone,
+            pretrained_backbone_weights=pretrained_backbone_weights,
+            replace_final_stride_with_dilation=replace_final_stride_with_dilation,
+            pre_norm=pre_norm,
+            dim_model=dim_model,
+            n_heads=n_heads,
+            dim_feedforward=dim_feedforward,
+            feedforward_activation=feedforward_activation,
+            n_encoder_layers=n_encoder_layers,
+            n_decoder_layers=n_decoder_layers,
+            use_vae=use_vae,
+            latent_dim=latent_dim,
+            n_vae_encoder_layers=n_vae_encoder_layers,
+            temporal_ensemble_coeff=temporal_ensemble_coeff,
+            dropout=dropout,
+            kl_weight=kl_weight,
         )
 
         self._input_normalizer = FeatureNormalizeTransform(
@@ -141,8 +188,24 @@ class ACT(nn.Module):
         return cls(
             action_features=config.output_features,
             observation_features=config.input_features,
-            backbone=config.vision_backbone,
             chunk_size=config.chunk_size,
+            n_action_steps=config.n_action_steps,
+            vision_backbone=config.vision_backbone,
+            pretrained_backbone_weights=config.pretrained_backbone_weights,
+            replace_final_stride_with_dilation=config.replace_final_stride_with_dilation,
+            pre_norm=config.pre_norm,
+            dim_model=config.dim_model,
+            n_heads=config.n_heads,
+            dim_feedforward=config.dim_feedforward,
+            feedforward_activation=config.feedforward_activation,
+            n_encoder_layers=config.n_encoder_layers,
+            n_decoder_layers=config.n_decoder_layers,
+            use_vae=config.use_vae,
+            latent_dim=config.latent_dim,
+            n_vae_encoder_layers=config.n_vae_encoder_layers,
+            temporal_ensemble_coeff=config.temporal_ensemble_coeff,
+            dropout=config.dropout,
+            kl_weight=config.kl_weight,
         )
 
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
