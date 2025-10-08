@@ -82,7 +82,7 @@ class ACT(Policy):
         """Select an action using the policy model.
 
         Args:
-            batch (Dict[str, torch.Tensor]): Input batch of observations.
+            batch (dict[str, torch.Tensor]): Input batch of observations.
 
         Returns:
             torch.Tensor: Selected actions.
@@ -93,7 +93,7 @@ class ACT(Policy):
         """Training step for the policy.
 
         Args:
-            batch (Dict[str, torch.Tensor]): The training batch.
+            batch (dict[str, torch.Tensor]): The training batch.
             batch_idx (int): Index of the current batch.
 
         Returns:
