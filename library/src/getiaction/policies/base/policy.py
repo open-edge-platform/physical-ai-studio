@@ -39,7 +39,7 @@ class Policy(L.LightningModule, ABC):
         """Select an action using the policy model.
 
         Args:
-            batch (Dict[str, torch.Tensor]): Input batch of observations.
+            batch (dict[str, torch.Tensor]): Input batch of observations.
 
         Returns:
             torch.Tensor: Selected actions.

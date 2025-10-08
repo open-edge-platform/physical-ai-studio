@@ -125,7 +125,7 @@ class ACT(Policy):
         """Evaluation step (no-op by default).
 
         Args:
-            batch (Dict[str, torch.Tensor]): Input batch.
+            batch (dict[str, torch.Tensor]): Input batch.
             stage (str): Evaluation stage, e.g., "val" or "test".
         """
         del batch, stage
@@ -134,7 +134,7 @@ class ACT(Policy):
         """Validation step (calls evaluation_step).
 
         Args:
-            batch (Dict[str, torch.Tensor]): Input batch.
+            batch (dict[str, torch.Tensor]): Input batch.
             batch_idx (int): Index of the batch.
         """
         del batch_idx
@@ -144,7 +144,7 @@ class ACT(Policy):
         """Test step (calls evaluation_step).
 
         Args:
-            batch (Dict[str, torch.Tensor]): Input batch.
+            batch (dict[str, torch.Tensor]): Input batch.
             batch_idx (int): Index of the batch.
         """
         del batch_idx
