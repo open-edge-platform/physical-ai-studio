@@ -19,7 +19,7 @@
 
 import math
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import chain
 from typing import cast
 
@@ -36,6 +36,7 @@ from getiaction.data import (
     BatchObservationComponents,
     Feature,
     FeatureType,
+    NormalizationType
 )
 from getiaction.policies.utils.normalization import FeatureNormalizeTransform
 
@@ -265,6 +266,14 @@ class ACT(nn.Module):
 
 @dataclass(frozen=True)
 class _ACTConfig(ACTConfig):
+    normalization_mapping: dict[FeatureType, NormalizationType] = field(
+        default_factory=lambda: {
+            FeatureType.VISUAL: NormalizationType.MEAN_STD,
+            FeatureType.STATE: NormalizationType.MEAN_STD,
+            FeatureType.ACTION: NormalizationType.MEAN_STD,
+        },
+    )
+
     def __post_init__(self) -> None:
         """Post-initialization validation for ACT model configuration.
 

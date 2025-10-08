@@ -8,8 +8,6 @@ from dataclasses import dataclass, field
 from getiaction.data import (
     BatchObservationComponents,
     Feature,
-    FeatureType,
-    NormalizationType,
 )
 
 
@@ -40,21 +38,15 @@ class ACTConfig:
             This should be no greater than the chunk size. For example, if the chunk size size 100, you may
             set this to 50. This would mean that the model predicts 100 steps worth of actions, runs 50 in the
             environment, and throws the other 50 out.
-        input_shapes: A dictionary defining the shapes of the input data for the policy. The key represents
+        input_features: A dictionary defining the shapes of the input data for the policy. The key represents
             the input data name, and the value is a list indicating the dimensions of the corresponding data.
             For example, "observation.image" refers to an input from a camera with dimensions [3, 96, 96],
             indicating it has three color channels and 96x96 resolution. Importantly, `input_shapes` doesn't
             include batch dimension or temporal dimension.
-        output_shapes: A dictionary defining the shapes of the output data for the policy. The key represents
+        output_features: A dictionary defining the shapes of the output data for the policy. The key represents
             the output data name, and the value is a list indicating the dimensions of the corresponding data.
             For example, "action" refers to an output shape of [14], indicating 14-dimensional actions.
             Importantly, `output_shapes` doesn't include batch dimension or temporal dimension.
-        input_normalization_modes: A dictionary with key representing the modality (e.g. "observation.state"),
-            and the value specifies the normalization mode to apply. The two available modes are "mean_std"
-            which subtracts the mean and divides by the standard deviation and "min_max" which rescale in a
-            [-1, 1] range.
-        output_normalization_modes: Similar dictionary as `normalize_input_modes`, but to unnormalize to the
-            original scale. Note that this is also used for normalizing the training targets.
         vision_backbone: Name of the torchvision resnet backbone to use for encoding images.
         pretrained_backbone_weights: Pretrained weights from torchvision to initialize the backbone.
             `None` means no pretrained weights.
@@ -89,14 +81,6 @@ class ACTConfig:
     n_obs_steps: int = 1
     chunk_size: int = 100
     n_action_steps: int = 100
-
-    normalization_mapping: dict[FeatureType, NormalizationType] = field(
-        default_factory=lambda: {
-            FeatureType.VISUAL: NormalizationType.MEAN_STD,
-            FeatureType.STATE: NormalizationType.MEAN_STD,
-            FeatureType.ACTION: NormalizationType.MEAN_STD,
-        },
-    )
 
     # Architecture.
     # Vision backbone.
