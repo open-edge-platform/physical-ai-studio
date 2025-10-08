@@ -20,6 +20,7 @@ from lightning_utilities import module_available
 from getiaction.data.lerobot import FormatConverter
 from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 from getiaction.policies.base import Policy
+from getiaction.policies.lerobot.mixin import LeRobotFromConfig
 
 if TYPE_CHECKING:
     from lerobot.configs.policies import PreTrainedConfig
@@ -38,7 +39,7 @@ else:
     LEROBOT_AVAILABLE = False
 
 
-class LeRobotPolicy(Policy):
+class LeRobotPolicy(Policy, LeRobotFromConfig):
     """Universal wrapper for any LeRobot policy.
 
     This wrapper provides a generic interface to instantiate and use any LeRobot
