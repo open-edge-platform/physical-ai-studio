@@ -48,6 +48,7 @@ Both approaches provide:
 library/src/getiaction/
 └── policies/lerobot/
     ├── __init__.py              # Conditional imports, availability checks
+    ├── mixin.py                 # LeRobotFromConfig mixin (configuration methods)
     ├── act.py                   # Explicit ACT wrapper
     ├── diffusion.py             # Explicit diffusion wrapper
     ├── universal.py             # Universal wrapper
@@ -59,7 +60,37 @@ library/src/getiaction/
 
 ### Implementation Components
 
-#### 1. Explicit Wrapper (ACT)
+#### 1. LeRobotFromConfig Mixin
+
+All LeRobot policies inherit from the `LeRobotFromConfig` mixin, which provides:
+
+```python
+class ACT(Policy, LeRobotFromConfig):
+    """ACT with full configuration flexibility."""
+    pass
+
+class Diffusion(Policy, LeRobotFromConfig):
+    """Diffusion with full configuration flexibility."""
+    pass
+```
+
+**Provided Methods**:
+
+- `from_config(config)` - Auto-detect and load any config format
+- `from_dict(config_dict)` - Load from dictionary
+- `from_yaml(yaml_path)` - Load from YAML file
+- `from_pydantic(model)` - Load from Pydantic model
+- `from_dataclass(config)` - Load from dataclass
+- `from_lerobot_config(config)` - Load from LeRobot's native config
+
+**Key Features**:
+
+- Type-safe configuration
+- Automatic format detection
+- LeRobot config compatibility
+- Extensible for new formats
+
+#### 2. Explicit Wrapper (ACT)
 
 ```python
 class ACT(LightningModule):
@@ -140,6 +171,106 @@ TDMPC = lambda **kwargs: LeRobotPolicy(policy_name="tdmpc", **kwargs)
 ```
 
 ## Usage
+
+### Configuration Methods
+
+All LeRobot policies support multiple configuration
+approaches through the `LeRobotFromConfig` mixin:
+
+#### 1. Direct Instantiation (Recommended for Python)
+
+```python
+from getiaction.policies.lerobot import ACT
+
+# Full IDE support with autocomplete
+policy = ACT(
+    dim_model=512,
+    chunk_size=100,
+    n_action_steps=100,
+    use_vae=True,
+    learning_rate=1e-5,
+)
+```
+
+#### 2. From Dictionary
+
+```python
+config_dict = {
+    "dim_model": 512,
+    "chunk_size": 100,
+    "n_action_steps": 100,
+    "use_vae": True,
+    "learning_rate": 1e-5,
+}
+policy = ACT.from_dict(config_dict)
+```
+
+#### 3. From YAML File
+
+```python
+# configs/act_config.yaml
+# dim_model: 512
+# chunk_size: 100
+# ...
+
+policy = ACT.from_config("configs/act_config.yaml")
+```
+
+#### 4. From LeRobot Config (Advanced)
+
+```python
+from lerobot.policies.act.configuration_act import ACTConfig as LeRobotACTConfig
+
+# Create LeRobot's native config
+lerobot_config = LeRobotACTConfig(
+    dim_model=512,
+    chunk_size=100,
+    use_vae=True,
+)
+
+# Use it directly with our wrapper
+policy = ACT.from_lerobot_config(lerobot_config, learning_rate=1e-5)
+# or auto-detect:
+policy = ACT.from_config(lerobot_config, learning_rate=1e-5)
+```
+
+#### 5. From Pydantic Model
+
+```python
+from pydantic import BaseModel
+
+class ACTConfigModel(BaseModel):
+    dim_model: int = 512
+    chunk_size: int = 100
+    learning_rate: float = 1e-5
+
+config_model = ACTConfigModel()
+policy = ACT.from_pydantic(config_model)
+```
+
+#### 6. Universal Wrapper with Config
+
+```python
+from getiaction.policies.lerobot import LeRobotPolicy
+
+# Method 1: With config_kwargs
+policy = LeRobotPolicy(
+    policy_name="diffusion",
+    config_kwargs={
+        "horizon": 16,
+        "n_action_steps": 8,
+    },
+    learning_rate=1e-4,
+)
+
+# Method 2: Direct kwargs (Python usage)
+policy = LeRobotPolicy(
+    policy_name="diffusion",
+    horizon=16,  # Passed as kwargs
+    n_action_steps=8,
+    learning_rate=1e-4,
+)
+```
 
 ### Approach 1: Explicit Wrapper (Recommended)
 
@@ -225,6 +356,66 @@ policy = Diffusion(
 
 ## Best Practices
 
+### Configuration Flexibility
+
+GetiAction policies support **all LeRobot parameters** through two mechanisms:
+
+#### 1. Explicit Parameters
+
+All commonly used parameters are explicitly defined in the `__init__` signature:
+
+```python
+policy = ACT(
+    dim_model=512,           # Explicit parameter
+    chunk_size=100,          # Explicit parameter
+    n_encoder_layers=4,      # Explicit parameter
+)
+```
+
+**Benefits**:
+
+- Full IDE autocomplete
+- Type hints and validation
+- Easy to discover parameters
+
+#### 2. Additional Parameters via kwargs
+
+Any LeRobot parameter not explicitly listed can be passed via `**kwargs`:
+
+```python
+policy = ACT(
+    dim_model=512,
+    chunk_size=100,
+    # These are not in the explicit parameter list but work via kwargs:
+    feedforward_activation="gelu",
+    pre_norm=True,
+    attention_dropout=0.2,
+)
+```
+
+**Benefits**:
+
+- Access to ALL LeRobot parameters
+- No need to update wrapper for new LeRobot features
+- Forward compatibility
+
+#### 3. Mixing Configuration Methods
+
+You can combine different approaches:
+
+```python
+# Start with YAML
+policy = ACT.from_config("base_config.yaml")
+
+# Or start with LeRobot config and override
+from lerobot.policies.act.configuration_act import ACTConfig
+lerobot_config = ACTConfig.from_pretrained("lerobot/act_default")
+policy = ACT.from_lerobot_config(
+    lerobot_config,
+    learning_rate=1e-4,  # Override/add parameters
+)
+```
+
 ### When to Use Explicit Wrappers
 
 ✅ **Use explicit wrappers when**:
@@ -293,4 +484,3 @@ For detailed information about data formats and conversion, see the dedicated
 - [LeRobot Data Module Documentation](../data/lerobot.md) - For data format details
 - Module: `library/src/getiaction/policies/lerobot/`
 - Data Module: `library/src/getiaction/data/lerobot/`
-- Tests: `library/tests/test_lerobot_*.py`
