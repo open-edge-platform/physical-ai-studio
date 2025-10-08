@@ -160,23 +160,20 @@ getiaction fit \
 
 ```python
 from getiaction.policies.lerobot import ACT
-from lerobot.datasets.lerobot_dataset import LeRobotDataset
-
-# Load dataset
-dataset = LeRobotDataset("lerobot/pusht")
-features = dataset_to_policy_features(dataset.meta.features)
-
 # Create policy (full IDE support!)
 policy = ACT(
-    input_features=features,
-    output_features=features,
     dim_model=512,              # ← Autocomplete works!
     chunk_size=100,
     n_action_steps=100,
-    stats=dataset.meta.stats,
 )
 
-# Train
+# Train with datamodule
+from getiaction.data.lerobot import LeRobotDataModule
+datamodule = LeRobotDataModule(
+    repo_id="lerobot/pusht",
+    train_batch_size=8,
+)
+
 trainer = L.Trainer(max_epochs=100)
 trainer.fit(policy, datamodule)
 ```
@@ -207,18 +204,22 @@ from getiaction.policies.lerobot import LeRobotPolicy, Diffusion
 # Method 1: Explicit policy_name
 policy = LeRobotPolicy(
     policy_name="diffusion",
-    input_features=features,
-    output_features=features,
-    down_dims=[512, 1024, 2048],
-    stats=stats,
+    config_kwargs={
+        "horizon": 16,
+        "n_action_steps": 8,
+        "down_dims": [512, 1024, 2048],
+    },
+    learning_rate=1e-4,
 )
 
 # Method 2: Convenience alias (same as above)
 policy = Diffusion(
-    input_features=features,
-    output_features=features,
-    down_dims=[512, 1024, 2048],
-    stats=stats,
+    config_kwargs={
+        "horizon": 16,
+        "n_action_steps": 8,
+        "down_dims": [512, 1024, 2048],
+    },
+    learning_rate=1e-4,
 )
 ```
 
