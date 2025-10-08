@@ -208,7 +208,7 @@ class ACT(nn.Module):
             kl_weight=config.kl_weight,
         )
 
-    def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+    def forward(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]] | torch.Tensor:
         """Forward pass through the ACT model.
 
         In training mode, computes loss components including L1 loss and optional KL divergence loss
@@ -221,8 +221,8 @@ class ACT(nn.Module):
                 - BatchObservationComponents.EXTRA: Extra data including action padding mask
 
         Returns:
-            torch.Tensor: In training mode, returns tuple of (total_loss, loss_dict) where
-                loss_dict contains 'l1_loss' and optionally 'kld_loss' items.
+            tuple[torch.Tensor, dict[str, float]] | torch.Tensor: In training mode, returns tuple
+                of (total_loss, loss_dict) where loss_dict contains 'l1_loss' and optionally 'kld_loss' items.
                 In evaluation mode, returns predicted action tensor from predict_action_chunk().
 
         Note:
