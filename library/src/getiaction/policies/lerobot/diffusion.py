@@ -16,6 +16,7 @@ from lightning_utilities.core.imports import module_available
 from getiaction.data.lerobot import FormatConverter
 from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 from getiaction.policies.base import Policy
+from getiaction.policies.lerobot.mixin import LeRobotFromConfig
 
 if TYPE_CHECKING:
     from torch import nn
@@ -35,7 +36,7 @@ else:
     dataset_to_policy_features = None
 
 
-class Diffusion(Policy):
+class Diffusion(Policy, LeRobotFromConfig):
     """Diffusion Policy from LeRobot with lazy initialization.
 
     This class wraps LeRobot's Diffusion Policy implementation, providing a
