@@ -205,13 +205,13 @@ class FeatureNormalizeTransform(nn.Module):
             # downstream by `stats` or `policy.load_state_dict`, as expected. During forward,
             # we assert they are not infinity anymore.
 
-            def get_torch_tensor(arr: np.ndarray | torch.Tensor | Integral) -> torch.Tensor:
+            def get_torch_tensor(arr: np.ndarray | torch.Tensor | Integral, shape: tuple[int, ...]) -> torch.Tensor:
                 if isinstance(arr, np.ndarray):
-                    return torch.from_numpy(arr).to(dtype=torch.float32)
+                    return torch.from_numpy(arr).to(dtype=torch.float32).view(shape)
                 if isinstance(arr, torch.Tensor):
-                    return arr.clone().to(dtype=torch.float32)
+                    return arr.clone().to(dtype=torch.float32).view(shape)
                 if isinstance(arr, Integral):
-                    return torch.tensor(arr, dtype=torch.float32)
+                    return torch.tensor(arr, dtype=torch.float32).view(shape)
                 type_ = type(arr)
                 msg = f"np.ndarray or torch.Tensor expected, but type is '{type_}' instead."
                 raise TypeError(msg)
@@ -228,8 +228,9 @@ class FeatureNormalizeTransform(nn.Module):
                 )
                 buffer["mean"].data = get_torch_tensor(
                     cast("NormalizationParameters", ft.normalization_data).mean,
+                    shape,
                 )
-                buffer["std"].data = get_torch_tensor(cast("NormalizationParameters", ft.normalization_data).std)
+                buffer["std"].data = get_torch_tensor(cast("NormalizationParameters", ft.normalization_data).std, shape)
             elif norm_mode is NormalizationType.MIN_MAX:
                 min_ = torch.ones(shape, dtype=torch.float32) * torch.inf
                 max_ = torch.ones(shape, dtype=torch.float32) * torch.inf
@@ -239,8 +240,8 @@ class FeatureNormalizeTransform(nn.Module):
                         "max": nn.Parameter(max_, requires_grad=False),
                     },
                 )
-                buffer["min"].data = get_torch_tensor(cast("NormalizationParameters", ft.normalization_data).min)
-                buffer["max"].data = get_torch_tensor(cast("NormalizationParameters", ft.normalization_data).max)
+                buffer["min"].data = get_torch_tensor(cast("NormalizationParameters", ft.normalization_data).min, shape)
+                buffer["max"].data = get_torch_tensor(cast("NormalizationParameters", ft.normalization_data).max, shape)
 
             stats_buffers[key] = buffer
         return stats_buffers
