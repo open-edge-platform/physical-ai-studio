@@ -4,6 +4,7 @@
 import copy
 import pytest
 import torch
+import numpy as np
 
 from getiaction.data import Feature, FeatureType, Observation
 from getiaction.policies.utils.normalization import NormalizationParameters
@@ -16,9 +17,9 @@ class TestACTolicy:
 
     @pytest.fixture
     def policy(self):
-        config = ACTConfig({"observation.image": Feature(normalization_data=NormalizationParameters(mean=0, std=1), shape=(3, 64, 64), ftype=FeatureType.VISUAL),
-                            "state": Feature(normalization_data=NormalizationParameters(mean=0, std=1), shape=(3,), ftype=FeatureType.STATE)},
-                           {"action": Feature(normalization_data=NormalizationParameters(mean=0, std=1), shape=(3,), ftype=FeatureType.ACTION)},
+        config = ACTConfig({"observation.image": Feature(normalization_data=NormalizationParameters(mean=np.array([0]*3), std=np.array([1]*3)), shape=(3, 64, 64), ftype=FeatureType.VISUAL),
+                            "state": Feature(normalization_data=NormalizationParameters(mean=np.array([0]*3), std=np.array([1]*3)), shape=(3,), ftype=FeatureType.STATE)},
+                           {"action": Feature(normalization_data=NormalizationParameters(mean=np.array([0]*3), std=np.array([1]*3)), shape=(3,), ftype=FeatureType.ACTION)},
                             chunk_size=100)
         model = ACTModel.from_config(config)
         return ACT(model)
@@ -42,7 +43,7 @@ class TestACTolicy:
         policy.model.eval()
         actions = policy.select_action(batch)
         assert isinstance(actions, torch.Tensor)
-        assert actions.shape == batch[BatchObservationComponents.ACTION].shape
+        assert actions.shape == batch[Observation.ComponentKeys.ACTION].shape
 
     def test_forward_training_and_eval(self, policy, batch):
         """Forward pass works in training and eval modes."""
@@ -57,4 +58,4 @@ class TestACTolicy:
         policy.model.eval()
         actions = policy.model(batch)
         assert isinstance(actions, torch.Tensor)
-        assert actions.shape == batch[BatchObservationComponents.ACTION].shape
+        assert actions.shape == batch[Observation.ComponentKeys.ACTION].shape
