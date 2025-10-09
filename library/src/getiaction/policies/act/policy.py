@@ -119,7 +119,7 @@ class ACT(Policy):
         Returns:
             torch.optim.Optimizer: Adam optimizer over the model parameters.
         """
-        if self.optimizer is None:
+        if self.optimizer is not None:
             return self.optimizer
         return torch.optim.Adam(self.model.parameters(), lr=1e-5, weight_decay=1e-4)
 
