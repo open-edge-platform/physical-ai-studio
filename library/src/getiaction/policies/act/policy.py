@@ -3,6 +3,7 @@
 
 """Lightning module for ACT policy."""
 
+from getiaction.train.utils import reformat_dataset_to_match_policy
 import torch
 
 from getiaction.data import Dataset
@@ -73,6 +74,9 @@ class ACT(Policy):
             action_features=train_dataset.action_features,
             observation_features=train_dataset.observation_features,
         )
+
+        # Workaround to run via lightning CLI
+        reformat_dataset_to_match_policy(self, datamodule)
 
     def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """Select an action using the policy model.

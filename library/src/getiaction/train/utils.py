@@ -30,7 +30,6 @@ def reformat_dataset_to_match_policy(policy: Policy, datamodule: DataModule) -> 
                 delta_timestamps[key] = [i / lerobot_dataset.fps for i in policy.model.action_delta_indices]
             if key.startswith("observation.") and policy.model.observation_delta_indices is not None:
                 delta_timestamps[key] = [i / lerobot_dataset.fps for i in policy.model.observation_delta_indices]
-
         # in place change the lerobot dataset
         if delta_timestamps:
             check_delta_timestamps(delta_timestamps, lerobot_dataset.fps, lerobot_dataset.tolerance_s)
