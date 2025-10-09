@@ -5,10 +5,7 @@
 
 from dataclasses import dataclass, field
 
-from getiaction.data import (
-    BatchObservationComponents,
-    Feature,
-)
+from getiaction.data import BatchObservationComponents, Feature
 
 
 @dataclass(frozen=True)

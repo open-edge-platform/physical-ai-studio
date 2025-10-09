@@ -3,12 +3,12 @@
 
 """Lightning module for ACT policy."""
 
-from getiaction.train.utils import reformat_dataset_to_match_policy
 import torch
 
 from getiaction.data import Dataset
 from getiaction.policies.act.model import ACT as ACTModel  # noqa: N811
 from getiaction.policies.base import Policy
+from getiaction.train.utils import reformat_dataset_to_match_policy
 
 
 class ACT(Policy):
@@ -121,8 +121,7 @@ class ACT(Policy):
         """
         if self.optimizer is None:
             return self.optimizer
-        else:
-            return torch.optim.Adam(self.model.parameters(), lr=1e-5, weight_decay=1e-4)
+        return torch.optim.Adam(self.model.parameters(), lr=1e-5, weight_decay=1e-4)
 
     def evaluation_step(self, batch: dict[str, torch.Tensor], stage: str) -> None:  # noqa: PLR6301
         """Evaluation step (no-op by default).
