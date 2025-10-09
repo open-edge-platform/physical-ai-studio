@@ -5,7 +5,7 @@ import copy
 import pytest
 import torch
 
-from getiaction.data import Feature, FeatureType, BatchObservationComponents
+from getiaction.data import Feature, FeatureType, Observation
 from getiaction.policies.utils.normalization import NormalizationParameters
 from getiaction.policies import ACT, ACTConfig
 from getiaction.policies.act.model import ACT as ACTModel
@@ -26,10 +26,10 @@ class TestACTolicy:
     @pytest.fixture
     def batch(self):
         bs = 2
-        return {BatchObservationComponents.IMAGES: torch.randn(bs, 3, 64, 64),
-                BatchObservationComponents.STATE: torch.randn(bs, 3),
-                BatchObservationComponents.ACTION: torch.randn(bs, 100, 3), # 'bs' samples, 3 features, 100 action steps
-                BatchObservationComponents.EXTRA: {"action_is_pad": torch.zeros(bs, 100, dtype=torch.bool)}}
+        return {Observation.ComponentKeys.IMAGES: torch.randn(bs, 3, 64, 64),
+                Observation.ComponentKeys.STATE: torch.randn(bs, 3),
+                Observation.ComponentKeys.ACTION: torch.randn(bs, 100, 3), # 'bs' samples, 3 features, 100 action steps
+                Observation.ComponentKeys.EXTRA: {"action_is_pad": torch.zeros(bs, 100, dtype=torch.bool)}}
 
     def test_initialization(self, policy):
         """Check model and action shape."""

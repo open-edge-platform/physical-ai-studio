@@ -3,6 +3,7 @@
 
 """Utils for dataset features normalization."""
 
+from enum import StrEnum
 from numbers import Integral
 from typing import cast
 
@@ -10,7 +11,15 @@ import numpy as np
 import torch
 from torch import nn
 
-from getiaction.data import Feature, FeatureType, NormalizationParameters, NormalizationType
+from getiaction.data import Feature, FeatureType, NormalizationParameters
+
+
+class NormalizationType(StrEnum):
+    """Enum for feature normalization methods."""
+
+    MIN_MAX = "MIN_MAX"
+    MEAN_STD = "MEAN_STD"
+    IDENTITY = "IDENTITY"
 
 
 class FeatureNormalizeTransform(nn.Module):

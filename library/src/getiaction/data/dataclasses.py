@@ -6,13 +6,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import numpy as np
     import torch
-
-    from .enums import FeatureType
 
 
 @dataclass(frozen=True)
@@ -35,6 +34,32 @@ class Observation:
     timestamp: torch.Tensor | np.ndarray | None = None
     info: dict[str, Any] | None = None
     extra: dict[str, Any] | None = None
+
+    class ComponentKeys(StrEnum):
+        """Enum for batch observation components."""
+
+        STATE = "state"
+        ACTION = "action"
+        IMAGES = "images"
+
+        NEXT_REWARD = "next_reward"
+        NEXT_SUCCESS = "next_success"
+        EPISODE_INDEX = "episode_index"
+        FRAME_INDEX = "frame_index"
+        INDEX = "index"
+        TASK_INDEX = "task_index"
+        TIMESTAMP = "timestamp"
+        INFO = "info"
+        EXTRA = "extra"
+
+
+class FeatureType(StrEnum):
+    """Enum for feature types."""
+
+    VISUAL = "VISUAL"
+    ACTION = "ACTION"
+    STATE = "STATE"
+    ENV = "ENV"
 
 
 @dataclass(frozen=True)

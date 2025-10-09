@@ -21,8 +21,8 @@ from torch import Tensor, nn
 from torchvision.models._utils import IntermediateLayerGetter  # noqa: PLC2701
 from torchvision.ops.misc import FrozenBatchNorm2d
 
-from getiaction.data import BatchObservationComponents, Feature, FeatureType, NormalizationType
-from getiaction.policies.utils.normalization import FeatureNormalizeTransform
+from getiaction.data import Feature, FeatureType, Observation
+from getiaction.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
 
 from .config import ACTConfig
 
@@ -110,14 +110,14 @@ class ACT(nn.Module):
             raise ValueError(msg)
         action_feature = next(iter(action_features.values()))
 
-        input_features: dict[str | BatchObservationComponents, Feature] = {
-            BatchObservationComponents.STATE: state_observation_features[0],
+        input_features: dict[str | Observation.ComponentKeys, Feature] = {
+            Observation.ComponentKeys.STATE: state_observation_features[0],
         }
 
         visual_observation_features = [v for v in observation_features.values() if v.ftype == FeatureType.VISUAL]
 
         if len(visual_observation_features) == 1:
-            input_features[BatchObservationComponents.IMAGES] = visual_observation_features[0]
+            input_features[Observation.ComponentKeys.IMAGES] = visual_observation_features[0]
         elif len(visual_observation_features) > 1:
             for vf in visual_observation_features:
                 if vf.name is not None:
@@ -126,8 +126,8 @@ class ACT(nn.Module):
             msg = "ACT model requires at least one visual observation feature."
             raise ValueError(msg)
 
-        output_features: dict[str | BatchObservationComponents, Feature] = {
-            BatchObservationComponents.ACTION: action_feature,
+        output_features: dict[str | Observation.ComponentKeys, Feature] = {
+            Observation.ComponentKeys.ACTION: action_feature,
         }
 
         self._config = _ACTConfig(
@@ -205,9 +205,9 @@ class ACT(nn.Module):
 
         Args:
             batch: Dictionary containing batch data with keys:
-                - BatchObservationComponents.ACTION: Ground truth actions
-                - BatchObservationComponents.IMAGES: Input images (dict or tensor)
-                - BatchObservationComponents.EXTRA: Extra data including action padding mask
+                - Observation.ComponentKeys.ACTION: Ground truth actions
+                - Observation.ComponentKeys.IMAGES: Input images (dict or tensor)
+                - Observation.ComponentKeys.EXTRA: Extra data including action padding mask
 
         Returns:
             tuple[torch.Tensor, dict[str, float]] | torch.Tensor: In training mode, returns tuple
@@ -222,20 +222,20 @@ class ACT(nn.Module):
             batch = self._input_normalizer(batch)
             if self._config.image_features:
                 batch_ = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-                if isinstance(batch[BatchObservationComponents.IMAGES], dict):
-                    batch_[BatchObservationComponents.IMAGES] = [
-                        batch[BatchObservationComponents.IMAGES][key] for key in self._config.image_features
+                if isinstance(batch[Observation.ComponentKeys.IMAGES], dict):
+                    batch_[Observation.ComponentKeys.IMAGES] = [
+                        batch[Observation.ComponentKeys.IMAGES][key] for key in self._config.image_features
                     ]
                     batch = batch_
                 else:
-                    batch[BatchObservationComponents.IMAGES] = [
-                        batch[BatchObservationComponents.IMAGES],
+                    batch[Observation.ComponentKeys.IMAGES] = [
+                        batch[Observation.ComponentKeys.IMAGES],
                     ]
             actions_hat, (mu_hat, log_sigma_x2_hat) = self._model(batch)
 
             l1_loss = (
-                F.l1_loss(batch[BatchObservationComponents.ACTION], actions_hat, reduction="none")
-                * ~batch[BatchObservationComponents.EXTRA]["action_is_pad"].unsqueeze(-1)
+                F.l1_loss(batch[Observation.ComponentKeys.ACTION], actions_hat, reduction="none")
+                * ~batch[Observation.ComponentKeys.EXTRA]["action_is_pad"].unsqueeze(-1)
             ).mean()
 
             loss_dict = {"l1_loss": l1_loss.item()}
@@ -279,12 +279,10 @@ class ACT(nn.Module):
         batch = self._input_normalizer(batch)
         if self._config.image_features:
             batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-            batch[BatchObservationComponents.IMAGES] = [batch[key] for key in self._config.image_features]
+            batch[Observation.ComponentKeys.IMAGES] = [batch[key] for key in self._config.image_features]
 
         actions = self._model(batch)[0]  # only select the actions, ignore the latent params
-        return self._output_denormalizer({BatchObservationComponents.ACTION: actions})[
-            BatchObservationComponents.ACTION
-        ]
+        return self._output_denormalizer({Observation.ComponentKeys.ACTION: actions})[Observation.ComponentKeys.ACTION]
 
     @property
     def reward_delta_indices(self) -> None:
@@ -373,7 +371,7 @@ class _ACTConfig(ACTConfig):
     @property
     def robot_state_feature(self) -> Feature | None:
         for ft_name, ft in self.input_features.items():
-            if ft.ftype is FeatureType.STATE and ft_name == BatchObservationComponents.STATE:
+            if ft.ftype is FeatureType.STATE and ft_name == Observation.ComponentKeys.STATE:
                 return ft
         return None
 
@@ -391,7 +389,7 @@ class _ACTConfig(ACTConfig):
     @property
     def action_feature(self) -> Feature:
         for ft_name, ft in self.output_features.items():
-            if ft.ftype is FeatureType.ACTION and ft_name == BatchObservationComponents.ACTION:
+            if ft.ftype is FeatureType.ACTION and ft_name == Observation.ComponentKeys.ACTION:
                 return ft
         msg = "No action feature found in output features."
         raise ValueError(msg)
@@ -551,7 +549,7 @@ class _ACT(nn.Module):
             raise RuntimeError(msg)
 
         if "images" in batch:
-            batch_size = batch[BatchObservationComponents.IMAGES][0].shape[0]
+            batch_size = batch[Observation.ComponentKeys.IMAGES][0].shape[0]
         else:
             batch_size = batch["environment_state"].shape[0]
 
@@ -564,9 +562,9 @@ class _ACT(nn.Module):
                 b=batch_size,
             )  # (B, 1, D)
             if self.config.robot_state_feature:
-                robot_state_embed = self.vae_encoder_robot_state_input_proj(batch[BatchObservationComponents.STATE])
+                robot_state_embed = self.vae_encoder_robot_state_input_proj(batch[Observation.ComponentKeys.STATE])
                 robot_state_embed = robot_state_embed.unsqueeze(1)  # (B, 1, D)
-            action_embed = self.vae_encoder_action_input_proj(batch[BatchObservationComponents.ACTION])  # (B, S, D)
+            action_embed = self.vae_encoder_action_input_proj(batch[Observation.ComponentKeys.ACTION])  # (B, S, D)
 
             if self.config.robot_state_feature:
                 vae_encoder_input = [cls_embed, robot_state_embed, action_embed]  # (B, S+2, D)
@@ -584,10 +582,10 @@ class _ACT(nn.Module):
             cls_joint_is_pad = torch.full(
                 (batch_size, 2 if self.config.robot_state_feature else 1),
                 fill_value=False,
-                device=batch[BatchObservationComponents.STATE].device,
+                device=batch[Observation.ComponentKeys.STATE].device,
             )
             key_padding_mask = torch.cat(
-                [cls_joint_is_pad, batch[BatchObservationComponents.EXTRA]["action_is_pad"]],
+                [cls_joint_is_pad, batch[Observation.ComponentKeys.EXTRA]["action_is_pad"]],
                 axis=1,
             )  # (bs, seq+1 or 2)
 
@@ -609,7 +607,7 @@ class _ACT(nn.Module):
             mu = log_sigma_x2 = None
             # (rcadene, alexander-soare): remove call to `.to` to speedup forward ; precompute and use buffer
             latent_sample = torch.zeros([batch_size, self.config.latent_dim], dtype=torch.float32).to(
-                batch[BatchObservationComponents.STATE].device,
+                batch[Observation.ComponentKeys.STATE].device,
             )
 
         # Prepare transformer encoder inputs.
@@ -617,7 +615,7 @@ class _ACT(nn.Module):
         encoder_in_pos_embed = list(self.encoder_1d_feature_pos_embed.weight.unsqueeze(1))
         # Robot state token.
         if self.config.robot_state_feature:
-            encoder_in_tokens.append(self.encoder_robot_state_input_proj(batch[BatchObservationComponents.STATE]))
+            encoder_in_tokens.append(self.encoder_robot_state_input_proj(batch[Observation.ComponentKeys.STATE]))
         # Environment state token.
         if self.config.env_state_feature:
             encoder_in_tokens.append(
@@ -628,7 +626,7 @@ class _ACT(nn.Module):
             # For a list of images, the H and W may vary but H*W is constant.
             # NOTE: If modifying this section, verify on MPS devices that
             # gradients remain stable (no explosions or NaNs).
-            for img in batch[BatchObservationComponents.IMAGES]:
+            for img in batch[Observation.ComponentKeys.IMAGES]:
                 cam_features = self.backbone(img)["feature_map"]
                 cam_pos_embed = self.encoder_cam_feat_pos_embed(cam_features).to(dtype=cam_features.dtype)
                 cam_features = self.encoder_img_feat_input_proj(cam_features)
