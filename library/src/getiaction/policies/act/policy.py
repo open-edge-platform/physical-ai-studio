@@ -40,11 +40,7 @@ class ACT(Policy):
         super().__init__()
 
         self.model = model
-
-        if optimizer is not None:
-            self.optimizer = optimizer
-        else:
-            self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-5, weight_decay=1e-4)
+        self.optimizer = optimizer
 
     def setup(self, stage: str) -> None:
         """Set up the policy from datamodule if not already initialized.
@@ -119,7 +115,10 @@ class ACT(Policy):
         Returns:
             torch.optim.Optimizer: Adam optimizer over the model parameters.
         """
-        return self.optimizer
+        if self.optimizer is None:
+            return self.optimizer
+        else:
+            return torch.optim.Adam(self.model.parameters(), lr=1e-5, weight_decay=1e-4)
 
     def evaluation_step(self, batch: dict[str, torch.Tensor], stage: str) -> None:  # noqa: PLR6301
         """Evaluation step (no-op by default).
