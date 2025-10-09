@@ -4,10 +4,11 @@ import time
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
 
+import shutil
 import cv2
 import numpy as np
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
-from lerobot.datasets.utils import build_dataset_frame
+from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
 from lerobot.robots.utils import make_robot_from_config
 from lerobot.teleoperators.utils import make_teleoperator_from_config
 from lerobot.utils.robot_utils import busy_wait
@@ -15,6 +16,7 @@ from lerobot.utils.robot_utils import busy_wait
 from schemas import TeleoperationConfig
 from utils.camera import build_camera_config
 from utils.robot import make_lerobot_robot_config_from_robot, make_lerobot_teleoperator_config_from_robot
+from utils.dataset import check_repository_exists
 
 from .base import BaseProcessWorker
 
@@ -67,9 +69,25 @@ class TeleoperateWorker(BaseProcessWorker):
 
         self.robot = make_robot_from_config(follower_config)
         self.teleoperator = make_teleoperator_from_config(leader_config)
-        self.dataset = LeRobotDataset(
-            repo_id=self.config.dataset.name, root=self.config.dataset.path, batch_encoding_size=1
-        )
+
+        if check_repository_exists(self.config.dataset.path):
+            self.dataset = LeRobotDataset(
+                repo_id=self.config.dataset.name, root=self.config.dataset.path, batch_encoding_size=1
+            )
+        else:
+            action_features = hw_to_dataset_features(self.robot.action_features, "action")
+            obs_features = hw_to_dataset_features(self.robot.observation_features, "observation")
+            dataset_features = {**action_features, **obs_features}
+
+            self.dataset = LeRobotDataset.create(
+                repo_id=self.config.dataset.name,
+                root=self.config.dataset.path,
+                fps=self.config.fps,
+                features=dataset_features,
+                robot_type=self.robot.name,
+                use_videos=True,
+                image_writer_threads=4,
+            )
 
         self.dataset.start_image_writer(
             num_processes=0,
@@ -156,6 +174,12 @@ class TeleoperateWorker(BaseProcessWorker):
 
     def teardown(self) -> None:
         """Disconnect robots and close queue."""
+
+        # Ensure the dataset is removed if there are episodes
+        # This is because lerobot dataset needs episodes otherwise it will be in an invalid state
+        if self.dataset.num_episodes == 0:
+            shutil.rmtree(self.dataset.root)
+
         self.robot.disconnect()
         self.teleoperator.disconnect()
         self.queue.close()

@@ -108,3 +108,7 @@ def build_dataset_from_lerobot_dataset(dataset: LeRobotDatasetInfo) -> Dataset:
         name=dataset.repo_id,
         path=dataset.root,
     )
+
+def check_repository_exists(path: Path) -> bool:
+    """Check if repository path contains info and therefor exists."""
+    return (path / Path("meta/info.json")).is_file()

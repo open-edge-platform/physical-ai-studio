@@ -21,4 +21,5 @@ class DatasetMapper:
             id=str(dataset.id),
             name=dataset.name,
             path=dataset.path,
+            project_id=dataset.project_id,
         )

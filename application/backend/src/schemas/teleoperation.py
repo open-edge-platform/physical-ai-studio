@@ -7,7 +7,7 @@ from .robot import RobotConfig
 
 class TeleoperationConfig(BaseModel):
     task: str
-    dataset: Dataset | None
+    dataset: Dataset
     fps: int
     cameras: list[CameraConfig]
     follower: RobotConfig

@@ -16,6 +16,7 @@ export const Recording = ({ setup }: RecordingProps) => {
     const { startRecording, saveEpisode, cancelEpisode, observation, state, numberOfRecordings } = useRecording(setup);
     const client = useQueryClient();
     const navigate = useNavigate();
+    console.log(setup);
 
     const onDone = () => {
         client.invalidateQueries({ queryKey: ['get', '/api/projects/{project_id}/datasets/{repo}/{id}'] });
@@ -66,7 +67,7 @@ export const Recording = ({ setup }: RecordingProps) => {
         );
     } else {
         return (
-            <Flex width='100%' alignItems={'center'} justifyContent={'center'}>
+            <Flex width='100%' height={'100%'} alignItems={'center'} justifyContent={'center'}>
                 <Heading>Initializing</Heading>
                 <ProgressCircle isIndeterminate />
             </Flex>

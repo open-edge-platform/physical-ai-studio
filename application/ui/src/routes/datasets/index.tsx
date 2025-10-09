@@ -22,7 +22,7 @@ export const Index = () => {
                 setDataset(undefined);
             } else {
                 //Disable for now since not implemented
-                //navigate(paths.project.datasets.record_new({ project_id: project.id! }));
+                navigate(paths.project.datasets.record_new({ project_id: project.id! }));
             }
         } else {
             setDataset(datasets.find((d) => d.id === key.toString()));
