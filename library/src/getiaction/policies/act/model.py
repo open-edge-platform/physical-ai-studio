@@ -112,6 +112,7 @@ class ACT(nn.Module):
 
         input_features: dict[str | Observation.ComponentKeys, Feature] = {
             Observation.ComponentKeys.STATE: state_observation_features[0],
+            Observation.ComponentKeys.ACTION: action_feature,
         }
 
         visual_observation_features = [v for v in observation_features.values() if v.ftype == FeatureType.VISUAL]
