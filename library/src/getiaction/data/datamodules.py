@@ -17,7 +17,7 @@ from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
 from getiaction.data import Observation
 from getiaction.data.gym import GymDataset
-from getiaction.gyms import BaseGym
+from getiaction.gyms import Gym
 
 if TYPE_CHECKING:
     from getiaction.data import Dataset
@@ -110,9 +110,9 @@ class DataModule(LightningDataModule):
         self,
         train_dataset: Dataset,
         train_batch_size: int = 16,
-        eval_gyms: BaseGym | list[BaseGym] | None = None,
+        eval_gyms: Gym | list[Gym] | None = None,
         num_rollouts_eval: int = 10,
-        test_gyms: BaseGym | list[BaseGym] | None = None,
+        test_gyms: Gym | list[Gym] | None = None,
         num_rollouts_test: int = 10,
         max_episode_steps: int | None = 300,
     ) -> None:
@@ -121,9 +121,9 @@ class DataModule(LightningDataModule):
         Args:
             train_dataset (ActionDataset): Dataset for training.
             train_batch_size (int): Batch size for training DataLoader.
-            eval_gyms (BaseGym, list[BaseGym], None]): Evaluation environments.
+            eval_gyms (Gym, list[Gym], None]): Evaluation environments.
             num_rollouts_eval (int): Number of rollouts to run for evaluation environments.
-            test_gyms (BaseGym, list[BaseGym], None]): Test environments.
+            test_gyms (Gym, list[Gym], None]): Test environments.
             num_rollouts_test (int): Number of rollouts to run for test environments.
             max_episode_steps (int, None): Maximum steps allowed per episode. If None, no time limit.
         """
@@ -134,17 +134,17 @@ class DataModule(LightningDataModule):
         self.train_batch_size: int = train_batch_size
 
         # gym environments
-        self.eval_gyms: BaseGym | list[BaseGym] | None = eval_gyms
+        self.eval_gyms: Gym | list[Gym] | None = eval_gyms
         self.eval_dataset: Dataset[Any] | None = None
         self.num_rollouts_eval: int = num_rollouts_eval
-        self.test_gyms: BaseGym | list[BaseGym] | None = test_gyms
+        self.test_gyms: Gym | list[Gym] | None = test_gyms
         self.test_dataset: Dataset[Any] | None = None
         self.num_rollouts_test: int = num_rollouts_test
         self.max_episode_steps = max_episode_steps
 
         # setup time limit if max_episode steps
         if (self.max_episode_steps is not None) and self.eval_gyms is not None:
-            if isinstance(self.eval_gyms, BaseGym):
+            if isinstance(self.eval_gyms, Gym):
                 self.eval_gyms.env = TimeLimit(
                     env=self.eval_gyms.env,
                     max_episode_steps=self.max_episode_steps,
@@ -156,7 +156,7 @@ class DataModule(LightningDataModule):
                         max_episode_steps=self.max_episode_steps,
                     )
         if (self.max_episode_steps is not None) and self.test_gyms is not None:
-            if isinstance(self.test_gyms, BaseGym):
+            if isinstance(self.test_gyms, Gym):
                 self.test_gyms.env = TimeLimit(
                     env=self.test_gyms.env,
                     max_episode_steps=self.max_episode_steps,
