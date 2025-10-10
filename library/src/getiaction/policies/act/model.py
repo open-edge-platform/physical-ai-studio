@@ -438,7 +438,16 @@ class _ACT(nn.Module):
         self.config = config
 
         if self.config.use_vae:
-            self.vae_encoder = _ACTEncoder(config, is_vae_encoder=True)
+            self.vae_encoder = _ACTEncoder(
+                dim_model=config.dim_model,
+                n_heads=config.n_heads,
+                dim_feedforward=config.dim_feedforward,
+                dropout=config.dropout,
+                feedforward_activation=config.feedforward_activation,
+                n_vae_encoder_layers=config.n_vae_encoder_layers,
+                n_encoder_layers=config.n_encoder_layers,
+                is_vae_encoder=True,
+            )
             self.vae_encoder_cls_embed = nn.Embedding(1, config.dim_model)
             # Projection layer for joint-space configuration to hidden dimension.
             if self.config.robot_state_feature:
@@ -476,8 +485,25 @@ class _ACT(nn.Module):
             self.backbone = IntermediateLayerGetter(backbone_model, return_layers={"layer4": "feature_map"})
 
         # Transformer (acts as VAE decoder when training with the variational objective).
-        self.encoder = _ACTEncoder(config)
-        self.decoder = _ACTDecoder(config)
+        self.encoder = _ACTEncoder(
+            dim_model=config.dim_model,
+            n_heads=config.n_heads,
+            dim_feedforward=config.dim_feedforward,
+            dropout=config.dropout,
+            feedforward_activation=config.feedforward_activation,
+            n_vae_encoder_layers=config.n_vae_encoder_layers,
+            n_encoder_layers=config.n_encoder_layers,
+            is_vae_encoder=False,
+        )
+        self.decoder = _ACTDecoder(
+            dim_model=config.dim_model,
+            n_heads=config.n_heads,
+            dim_feedforward=config.dim_feedforward,
+            dropout=config.dropout,
+            feedforward_activation=config.feedforward_activation,
+            n_decoder_layers=config.n_decoder_layers,
+            pre_norm=config.pre_norm,
+        )
 
         # Transformer encoder input projections. The tokens will be structured like
         # [latent, (robot_state), (env_state), (image_feature_map_pixels)].
@@ -671,12 +697,27 @@ class _ACT(nn.Module):
 class _ACTEncoder(nn.Module):
     """Convenience module for running multiple encoder layers, maybe followed by normalization."""
 
-    def __init__(self, config: _ACTConfig, *, is_vae_encoder: bool = False) -> None:
+    def __init__(
+        self,
+        n_vae_encoder_layers: int,
+        n_encoder_layers: int,
+        dim_model: int,
+        n_heads: int,
+        dim_feedforward: int,
+        dropout: float,
+        feedforward_activation: str,
+        *,
+        pre_norm: bool = False,
+        is_vae_encoder: bool = False,
+    ) -> None:
         super().__init__()
         self.is_vae_encoder = is_vae_encoder
-        num_layers = config.n_vae_encoder_layers if self.is_vae_encoder else config.n_encoder_layers
-        self.layers = nn.ModuleList([_ACTEncoderLayer(config) for _ in range(num_layers)])
-        self.norm = nn.LayerNorm(config.dim_model) if config.pre_norm else nn.Identity()
+        num_layers = n_vae_encoder_layers if self.is_vae_encoder else n_encoder_layers
+        self.layers = nn.ModuleList([
+            _ACTEncoderLayer(dim_model, n_heads, dim_feedforward, dropout, feedforward_activation, pre_norm=pre_norm)
+            for _ in range(num_layers)
+        ])
+        self.norm = nn.LayerNorm(dim_model) if pre_norm else nn.Identity()
 
     def forward(
         self,
@@ -690,22 +731,31 @@ class _ACTEncoder(nn.Module):
 
 
 class _ACTEncoderLayer(nn.Module):
-    def __init__(self, config: _ACTConfig) -> None:
+    def __init__(
+        self,
+        dim_model: int,
+        n_heads: int,
+        dim_feedforward: int,
+        dropout: float,
+        feedforward_activation: str,
+        *,
+        pre_norm: bool = False,
+    ) -> None:
         super().__init__()
-        self.self_attn = nn.MultiheadAttention(config.dim_model, config.n_heads, dropout=config.dropout)
+        self.self_attn = nn.MultiheadAttention(dim_model, n_heads, dropout=dropout)
 
         # Feed forward layers.
-        self.linear1 = nn.Linear(config.dim_model, config.dim_feedforward)
-        self.dropout = nn.Dropout(config.dropout)
-        self.linear2 = nn.Linear(config.dim_feedforward, config.dim_model)
+        self.linear1 = nn.Linear(dim_model, dim_feedforward)
+        self.dropout = nn.Dropout(dropout)
+        self.linear2 = nn.Linear(dim_feedforward, dim_model)
 
-        self.norm1 = nn.LayerNorm(config.dim_model)
-        self.norm2 = nn.LayerNorm(config.dim_model)
-        self.dropout1 = nn.Dropout(config.dropout)
-        self.dropout2 = nn.Dropout(config.dropout)
+        self.norm1 = nn.LayerNorm(dim_model)
+        self.norm2 = nn.LayerNorm(dim_model)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
 
-        self.activation = _get_activation_fn(config.feedforward_activation)
-        self.pre_norm = config.pre_norm
+        self.activation = _get_activation_fn(feedforward_activation)
+        self.pre_norm = pre_norm
 
     def forward(self, x: Tensor, pos_embed: Tensor | None = None, key_padding_mask: Tensor | None = None) -> Tensor:
         skip = x
@@ -729,11 +779,24 @@ class _ACTEncoderLayer(nn.Module):
 
 
 class _ACTDecoder(nn.Module):
-    def __init__(self, config: _ACTConfig) -> None:
+    def __init__(
+        self,
+        n_decoder_layers: int,
+        dim_model: int,
+        dim_feedforward: int,
+        n_heads: int,
+        dropout: float,
+        feedforward_activation: str,
+        *,
+        pre_norm: bool,
+    ) -> None:
         """Convenience module for running multiple decoder layers followed by normalization."""
         super().__init__()
-        self.layers = nn.ModuleList([_ACTDecoderLayer(config) for _ in range(config.n_decoder_layers)])
-        self.norm = nn.LayerNorm(config.dim_model)
+        self.layers = nn.ModuleList([
+            _ACTDecoderLayer(n_heads, dim_model, dim_feedforward, dropout, feedforward_activation, pre_norm=pre_norm)
+            for _ in range(n_decoder_layers)
+        ])
+        self.norm = nn.LayerNorm(dim_model)
 
     def forward(
         self,
@@ -755,25 +818,34 @@ class _ACTDecoder(nn.Module):
 
 
 class _ACTDecoderLayer(nn.Module):
-    def __init__(self, config: _ACTConfig) -> None:
+    def __init__(
+        self,
+        n_heads: int,
+        dim_model: int,
+        dim_feedforward: int,
+        dropout: float,
+        feedforward_activation: str,
+        *,
+        pre_norm: bool,
+    ) -> None:
         super().__init__()
-        self.self_attn = nn.MultiheadAttention(config.dim_model, config.n_heads, dropout=config.dropout)
-        self.multihead_attn = nn.MultiheadAttention(config.dim_model, config.n_heads, dropout=config.dropout)
+        self.self_attn = nn.MultiheadAttention(dim_model, n_heads, dropout=dropout)
+        self.multihead_attn = nn.MultiheadAttention(dim_model, n_heads, dropout=dropout)
 
         # Feed forward layers.
-        self.linear1 = nn.Linear(config.dim_model, config.dim_feedforward)
-        self.dropout = nn.Dropout(config.dropout)
-        self.linear2 = nn.Linear(config.dim_feedforward, config.dim_model)
+        self.linear1 = nn.Linear(dim_model, dim_feedforward)
+        self.dropout = nn.Dropout(dropout)
+        self.linear2 = nn.Linear(dim_feedforward, dim_model)
 
-        self.norm1 = nn.LayerNorm(config.dim_model)
-        self.norm2 = nn.LayerNorm(config.dim_model)
-        self.norm3 = nn.LayerNorm(config.dim_model)
-        self.dropout1 = nn.Dropout(config.dropout)
-        self.dropout2 = nn.Dropout(config.dropout)
-        self.dropout3 = nn.Dropout(config.dropout)
+        self.norm1 = nn.LayerNorm(dim_model)
+        self.norm2 = nn.LayerNorm(dim_model)
+        self.norm3 = nn.LayerNorm(dim_model)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
+        self.dropout3 = nn.Dropout(dropout)
 
-        self.activation = _get_activation_fn(config.feedforward_activation)
-        self.pre_norm = config.pre_norm
+        self.activation = _get_activation_fn(feedforward_activation)
+        self.pre_norm = pre_norm
 
     @staticmethod
     def maybe_add_pos_embed(tensor: Tensor, pos_embed: Tensor | None) -> Tensor:
