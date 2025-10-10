@@ -9,13 +9,15 @@ from typing import TYPE_CHECKING, Any
 
 from lightning_utilities import module_available
 
-from getiaction.data import Dataset, Observation
+from getiaction.data import Dataset
 
 from .converters import FormatConverter
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
+
+    from getiaction.data import Observation
 
 if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.lerobot_dataset import LeRobotDataset

@@ -15,8 +15,8 @@ from gymnasium.wrappers import TimeLimit
 from lightning.pytorch import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
-from getiaction.data import Observation
 from getiaction.data.gym import GymDataset
+from getiaction.data.observation import Observation
 from getiaction.gyms import BaseGym
 
 if TYPE_CHECKING:
@@ -36,17 +36,17 @@ def _collate_env(batch: list[Any]) -> dict[str, Any]:
     return {"env": batch[0]}
 
 
-def _collate_observations(batch: list[Observation]) -> dict[str, Any]:
-    """Collate a batch of Observations to a dict for training format.
+def _collate_observations(batch: list[Observation]) -> Observation:
+    """Collate a batch of Observations into a single batched Observation.
 
     Args:
-        batch (list[Any]): A list containing Observations.
+        batch (list[Observation]): A list containing Observations.
 
     Returns:
-        dict[str, Any]: Dictionary for use in the model.
+        Observation: A single Observation with batched tensors.
     """
     if not batch:
-        return {}
+        return Observation()
 
     collated_data: dict[str, Any] = {}
 
@@ -96,7 +96,7 @@ def _collate_observations(batch: list[Observation]) -> dict[str, Any]:
         else:
             collated_data[key] = values
 
-    return collated_data
+    return Observation(**collated_data)
 
 
 class DataModule(LightningDataModule):
