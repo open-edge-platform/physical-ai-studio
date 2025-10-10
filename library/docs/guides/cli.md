@@ -75,7 +75,7 @@ python -m getiaction fit \
 python -m getiaction fit \
     --model.class_path getiaction.policies.dummy.policy.Dummy \
     --model.model.class_path getiaction.policies.dummy.model.Dummy \
-    --model.model.init_args.action_shape=[7] \
+    --model.model.action_shape=[7] \
     --model.optimizer.class_path torch.optim.Adam \
     --model.optimizer.init_args.lr=0.001 \
     --data.class_path getiaction.data.lerobot.LeRobotDataModule \

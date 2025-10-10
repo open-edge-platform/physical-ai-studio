@@ -28,6 +28,7 @@ Start here if you want to **use GetiAction** to train policies:
 
 - **[User Guides](guides/)** - Practical how-to documentation
   - [CLI Guide](guides/cli.md) - Using the command-line interface
+  - [LeRobot Guide](guides/lerobot.md) - Using LeRobot policies
 
 ### 👨‍💻 For Developers
 
@@ -38,6 +39,7 @@ Start here if you want to **contribute to GetiAction** or understand the impleme
   - [CLI Design](design/cli/) - CLI implementation
   - [Config Design](design/config/) - Configuration system
   - [Policy Design](design/policy/) - Policy architecture
+    - [LeRobot Integration](design/policy/lerobot.md) - LeRobot policy wrappers
   - [Data Design](design/data/) - Data module architecture
 
 ## Getting Started
