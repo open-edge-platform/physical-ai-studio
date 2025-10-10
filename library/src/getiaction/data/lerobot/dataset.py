@@ -9,7 +9,8 @@ from typing import TYPE_CHECKING, Any
 
 from lightning_utilities import module_available
 
-from getiaction.data import Dataset, Feature, FeatureType, NormalizationParameters, Observation
+from getiaction.data.dataset import Dataset
+from getiaction.data.observation import Feature, FeatureType, NormalizationParameters, Observation
 
 from .converters import FormatConverter
 
