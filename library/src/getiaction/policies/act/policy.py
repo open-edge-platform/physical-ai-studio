@@ -75,7 +75,7 @@ class ACT(Policy):
             observation_features=train_dataset.observation_features,
         )
 
-        # Workaround to run via lightning CLI
+        # TO-DO(Vlad):  remove that workaround after CLI is able to run getiaction trainer
         reformat_dataset_to_match_policy(self, datamodule)
 
     def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
