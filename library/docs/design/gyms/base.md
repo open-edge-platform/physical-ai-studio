@@ -1,12 +1,12 @@
-# BaseGym
+# Gym
 
-The `BaseGym` serves as an interface to the gymnasium framework.
+The `Gym` serves as an interface to the gymnasium framework.
 
 At a later date we plan to convert output `ObsType` to our internal representation.
 
 ```mermaid
 classDiagram
-    class BaseGym {
+    class Gym {
         + str _gym_id
         + gym_env env
         + Space observation_space
@@ -32,5 +32,5 @@ classDiagram
         + close()
     }
 
-    BaseGym --> gymnasium.Env : wraps
+    Gym --> gymnasium.Env : wraps
 ```

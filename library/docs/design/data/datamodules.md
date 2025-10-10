@@ -14,10 +14,10 @@ classDiagram
     class DataModule {
         - Dataset train_dataset
         - int train_batch_size
-        - BaseGym|list~BaseGym~|None eval_gyms
+        - Gym|list~Gym~|None eval_gyms
         - Dataset eval_dataset
         - int num_rollouts_eval
-        - BaseGym|list~BaseGym~|None test_gyms
+        - Gym|list~Gym~|None test_gyms
         - Dataset test_dataset
         - int num_rollouts_test
         - int|None max_episode_steps
@@ -30,7 +30,7 @@ classDiagram
 
     class Dataset
     class DataLoader
-    class BaseGym
+    class Gym
     class GymDataset
     class ConcatDataset
     class TimeLimit
@@ -38,7 +38,7 @@ classDiagram
     LightningDataModule <|-- DataModule
     DataModule --> Dataset
     DataModule --> DataLoader
-    DataModule --> BaseGym
+    DataModule --> Gym
     DataModule --> GymDataset
     DataModule --> ConcatDataset
     DataModule --> TimeLimit
