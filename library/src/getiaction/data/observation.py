@@ -34,13 +34,13 @@ class Observation:
         ...     action=torch.tensor([1.0, 2.0]),
         ...     images={"top": torch.rand(3, 224, 224)}
         ... )
-        >>>
+
         >>> # Batch of observations (from collate_fn)
         >>> batch = Observation(
         ...     action=torch.tensor([[1.0, 2.0], [3.0, 4.0]]),  # [B, action_dim]
         ...     images={"top": torch.rand(8, 3, 224, 224)}  # [B, C, H, W]
         ... )
-        >>>
+
         >>> # Convert for use with LeRobot policies
         >>> from getiaction.data.lerobot import FormatConverter
         >>> lerobot_dict = FormatConverter.to_lerobot_dict(batch)
