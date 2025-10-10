@@ -7,6 +7,7 @@ from collections.abc import Iterable
 
 import torch
 
+from getiaction.data import Observation
 from getiaction.policies.base import Policy
 from getiaction.policies.dummy.config import DummyConfig
 from getiaction.policies.dummy.model import Dummy as DummyModel
@@ -63,22 +64,24 @@ class Dummy(Policy):
         msg = f"The 'action_shape' argument must be a torch.Size or Iterable, but received type {type(shape).__name__}."
         raise TypeError(msg)
 
-    def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+    def select_action(self, batch: Observation) -> torch.Tensor:
         """Select an action using the policy model.
 
         Args:
-            batch (dict[str, torch.Tensor]): Input batch of observations.
+            batch (Observation): Input batch of observations.
 
         Returns:
             torch.Tensor: Selected actions.
         """
-        return self.model.select_action(batch)
+        # Convert Observation to dict for dummy model
+        batch_dict = batch.to_dict()
+        return self.model.select_action(batch_dict)  # type: ignore[attr-defined]
 
-    def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> dict[str, torch.Tensor]:
+    def training_step(self, batch: Observation, batch_idx: int) -> dict[str, torch.Tensor]:
         """Training step for the policy.
 
         Args:
-            batch (dict[str, torch.Tensor]): The training batch.
+            batch (Observation): The training batch.
             batch_idx (int): Index of the current batch.
 
         Returns:
@@ -107,30 +110,30 @@ class Dummy(Policy):
         return torch.optim.Adam(self.model.parameters(), lr=1e-4)
 
     @staticmethod
-    def evaluation_step(batch: dict[str, torch.Tensor], stage: str) -> None:
+    def evaluation_step(batch: Observation, stage: str) -> None:
         """Evaluation step (no-op by default).
 
         Args:
-            batch (dict[str, torch.Tensor]): Input batch.
+            batch (Observation): Input batch.
             stage (str): Evaluation stage, e.g., "val" or "test".
         """
         del batch, stage  # Unused variables
 
-    def validation_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> None:
+    def validation_step(self, batch: Observation, batch_idx: int) -> None:
         """Validation step (calls evaluation_step).
 
         Args:
-            batch (dict[str, torch.Tensor]): Input batch.
+            batch (Observation): Input batch.
             batch_idx (int): Index of the batch.
         """
         del batch_idx  # Unused variable
         return self.evaluation_step(batch=batch, stage="val")
 
-    def test_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> None:
+    def test_step(self, batch: Observation, batch_idx: int) -> None:
         """Test step (calls evaluation_step).
 
         Args:
-            batch (dict[str, torch.Tensor]): Input batch.
+            batch (Observation): Input batch.
             batch_idx (int): Index of the batch.
         """
         del batch_idx  # Unused variable

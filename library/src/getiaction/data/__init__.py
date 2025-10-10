@@ -3,10 +3,10 @@
 
 """Action trainer datamodules."""
 
-from .action import Dataset
-from .dataclasses import Feature, FeatureType, NormalizationParameters, Observation
 from .datamodules import DataModule
+from .dataset import Dataset
 from .lerobot import LeRobotDataModule
+from .observation import Feature, FeatureType, NormalizationParameters, Observation
 
 __all__ = [
     "DataModule",

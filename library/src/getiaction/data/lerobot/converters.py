@@ -8,7 +8,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, cast
 
-from getiaction.data import Observation
+from getiaction.data.observation import Observation
 
 if TYPE_CHECKING:
     import torch
