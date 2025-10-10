@@ -15,8 +15,8 @@ from gymnasium.wrappers import TimeLimit
 from lightning.pytorch import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
-from getiaction.data import Observation
 from getiaction.data.gym import GymDataset
+from getiaction.data.observation import Observation
 from getiaction.gyms import BaseGym
 
 if TYPE_CHECKING:
