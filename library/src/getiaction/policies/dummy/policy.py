@@ -67,7 +67,7 @@ class Dummy(Policy):
         """Select an action using the policy model.
 
         Args:
-            batch (Dict[str, torch.Tensor]): Input batch of observations.
+            batch (dict[str, torch.Tensor]): Input batch of observations.
 
         Returns:
             torch.Tensor: Selected actions.
@@ -78,7 +78,7 @@ class Dummy(Policy):
         """Training step for the policy.
 
         Args:
-            batch (Dict[str, torch.Tensor]): The training batch.
+            batch (dict[str, torch.Tensor]): The training batch.
             batch_idx (int): Index of the current batch.
 
         Returns:
@@ -111,7 +111,7 @@ class Dummy(Policy):
         """Evaluation step (no-op by default).
 
         Args:
-            batch (Dict[str, torch.Tensor]): Input batch.
+            batch (dict[str, torch.Tensor]): Input batch.
             stage (str): Evaluation stage, e.g., "val" or "test".
         """
         del batch, stage  # Unused variables
@@ -120,7 +120,7 @@ class Dummy(Policy):
         """Validation step (calls evaluation_step).
 
         Args:
-            batch (Dict[str, torch.Tensor]): Input batch.
+            batch (dict[str, torch.Tensor]): Input batch.
             batch_idx (int): Index of the batch.
         """
         del batch_idx  # Unused variable
@@ -130,7 +130,7 @@ class Dummy(Policy):
         """Test step (calls evaluation_step).
 
         Args:
-            batch (Dict[str, torch.Tensor]): Input batch.
+            batch (dict[str, torch.Tensor]): Input batch.
             batch_idx (int): Index of the batch.
         """
         del batch_idx  # Unused variable

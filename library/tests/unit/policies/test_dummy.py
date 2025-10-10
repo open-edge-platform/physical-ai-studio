@@ -1,7 +1,8 @@
+# Copyright (C) 2025 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 import pytest
 import torch
-from torch import nn
-from collections import deque
 from getiaction.policies import Dummy, DummyConfig
 from getiaction.policies.dummy.model import Dummy as DummyModel
 
