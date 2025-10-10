@@ -3,12 +3,6 @@
 
 """Unit Tests - Policy Data Normalization"""
 
-
-# Copyright (C) 2025 Intel Corporation
-# SPDX-License-Identifier: Apache-2.0
-
-"""Unit Tests - Policy Data Normalization"""
-
 import numpy as np
 import pytest
 import torch
