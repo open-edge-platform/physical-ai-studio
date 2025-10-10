@@ -97,3 +97,22 @@ class Observation:
         field_names = {f.name for f in fields(cls)}
         filtered_data = {k: v for k, v in data.items() if k in field_names}
         return cls(**filtered_data)
+
+    @classmethod
+    def keys(cls) -> list[str]:
+        """Return list of all possible observation field names.
+
+        Returns:
+            list[str]: List of all field names defined in the dataclass.
+
+        Examples:
+            >>> # Get all possible field names
+            >>> Observation.keys()
+            ['action', 'task', 'state', 'images', 'next_reward', ...]
+
+            >>> # Works on instance too
+            >>> obs = Observation(action=torch.tensor([1.0]))
+            >>> obs.keys()
+            ['action', 'task', 'state', 'images', 'next_reward', ...]
+        """
+        return [f.name for f in fields(cls)]
