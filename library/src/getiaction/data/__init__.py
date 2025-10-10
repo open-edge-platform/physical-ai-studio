@@ -3,9 +3,9 @@
 
 """Action trainer datamodules."""
 
-from .action import Dataset
-from .dataclasses import Observation
 from .datamodules import DataModule
+from .dataset import Dataset
 from .lerobot import LeRobotDataModule
+from .observation import Observation
 
 __all__ = ["DataModule", "Dataset", "LeRobotDataModule", "Observation"]
