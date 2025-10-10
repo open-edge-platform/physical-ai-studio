@@ -27,6 +27,8 @@ if TYPE_CHECKING:
     from lerobot.configs.types import PolicyFeature
     from lerobot.policies.pretrained import PreTrainedPolicy
 
+    from getiaction.data import Observation
+
 if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.utils import dataset_to_policy_features
     from lerobot.policies.factory import get_policy_class, make_policy_config
@@ -339,7 +341,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         # Initialize policy now
         self._initialize_policy(features, features, self._provided_config, stats)
 
-    def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+    def forward(self, batch: Observation) -> torch.Tensor:
         """Forward pass through the LeRobot policy.
 
         Args:
@@ -349,11 +351,11 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             Policy output (format depends on policy type).
         """
         # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch = FormatConverter.to_lerobot_dict(batch)
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
 
-        return self.lerobot_policy.forward(batch)
+        return self.lerobot_policy.forward(batch_dict)
 
-    def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+    def training_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
         """Training step for Lightning.
 
         Args:
@@ -366,9 +368,9 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         del batch_idx  # Unused argument
 
         # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch = FormatConverter.to_lerobot_dict(batch)
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
 
-        output = self.lerobot_policy.forward(batch)
+        output = self.lerobot_policy.forward(batch_dict)
 
         # Handle different output formats from LeRobot policies
         if isinstance(output, tuple) and len(output) == 2:  # noqa: PLR2004
@@ -390,7 +392,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         self.log("train/loss", loss, prog_bar=True)
         return loss
 
-    def validation_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+    def validation_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
         """Validation step for Lightning.
 
         Args:
@@ -403,9 +405,9 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         del batch_idx  # Unused argument
 
         # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch = FormatConverter.to_lerobot_dict(batch)
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
 
-        output = self.lerobot_policy.forward(batch)
+        output = self.lerobot_policy.forward(batch_dict)
 
         # Handle different output formats
         if isinstance(output, tuple) and len(output) == 2:  # noqa: PLR2004
@@ -426,7 +428,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         self.log("val/loss", loss, prog_bar=True)
         return loss
 
-    def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+    def select_action(self, batch: Observation) -> torch.Tensor:
         """Select action (inference mode) through LeRobot.
 
         Args:
@@ -435,7 +437,8 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         Returns:
             Predicted actions.
         """
-        return self.lerobot_policy.select_action(batch)
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
+        return self.lerobot_policy.select_action(batch_dict)
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
         """Configure optimizer for Lightning.

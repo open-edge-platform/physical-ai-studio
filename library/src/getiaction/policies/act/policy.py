@@ -5,7 +5,7 @@
 
 import torch
 
-from getiaction.data import Dataset
+from getiaction.data import Dataset, Observation
 from getiaction.policies.act.model import ACT as ACTModel  # noqa: N811
 from getiaction.policies.base import Policy
 from getiaction.train.utils import reformat_dataset_to_match_policy
@@ -78,22 +78,22 @@ class ACT(Policy):
         # TO-DO(Vlad):  remove that workaround after CLI is able to run getiaction trainer
         reformat_dataset_to_match_policy(self, datamodule)
 
-    def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+    def select_action(self, batch: Observation) -> torch.Tensor:
         """Select an action using the policy model.
 
         Args:
-            batch (dict[str, torch.Tensor]): Input batch of observations.
+            batch (Observation): Input batch of observations.
 
         Returns:
             torch.Tensor: Selected actions.
         """
-        return self.model.predict_action_chunk(batch)
+        return self.model.predict_action_chunk(batch.to_dict())
 
-    def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> dict[str, torch.Tensor]:
+    def training_step(self, batch: Observation, batch_idx: int) -> dict[str, torch.Tensor]:
         """Training step for the policy.
 
         Args:
-            batch (dict[str, torch.Tensor]): The training batch.
+            batch (Observation): The training batch.
             batch_idx (int): Index of the current batch.
 
         Returns:
@@ -123,30 +123,30 @@ class ACT(Policy):
             return self.optimizer
         return torch.optim.Adam(self.model.parameters(), lr=1e-5, weight_decay=1e-4)
 
-    def evaluation_step(self, batch: dict[str, torch.Tensor], stage: str) -> None:  # noqa: PLR6301
+    def evaluation_step(self, batch: Observation, stage: str) -> None:  # noqa: PLR6301
         """Evaluation step (no-op by default).
 
         Args:
-            batch (dict[str, torch.Tensor]): Input batch.
+            batch (Observation): Input batch.
             stage (str): Evaluation stage, e.g., "val" or "test".
         """
         del batch, stage
 
-    def validation_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> None:
+    def validation_step(self, batch: Observation, batch_idx: int) -> None:
         """Validation step (calls evaluation_step).
 
         Args:
-            batch (dict[str, torch.Tensor]): Input batch.
+            batch (Observation): Input batch.
             batch_idx (int): Index of the batch.
         """
         del batch_idx
         return self.evaluation_step(batch=batch, stage="val")
 
-    def test_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> None:
+    def test_step(self, batch: Observation, batch_idx: int) -> None:
         """Test step (calls evaluation_step).
 
         Args:
-            batch (dict[str, torch.Tensor]): Input batch.
+            batch (Observation): Input batch.
             batch_idx (int): Index of the batch.
         """
         del batch_idx

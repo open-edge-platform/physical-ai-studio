@@ -21,6 +21,8 @@ from getiaction.policies.lerobot.mixin import LeRobotFromConfig
 if TYPE_CHECKING:
     from torch import nn
 
+    from getiaction.data import Observation
+
 if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     from lerobot.datasets.utils import dataset_to_policy_features
@@ -312,7 +314,7 @@ class ACT(Policy, LeRobotFromConfig):
         self.model = self._lerobot_policy.model  # type: ignore[assignment]
         self._framework_policy = self._lerobot_policy
 
-    def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+    def forward(self, batch: Observation) -> torch.Tensor:
         """Forward pass for ACT policy.
 
         Args:
@@ -322,12 +324,12 @@ class ACT(Policy, LeRobotFromConfig):
             The action predictions from the policy.
         """
         # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch = FormatConverter.to_lerobot_dict(batch)
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
 
-        actions, _ = self.lerobot_policy.model(batch)
+        actions, _ = self.lerobot_policy.model(batch_dict)
         return actions
 
-    def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+    def training_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
         """Training step uses LeRobot's loss computation.
 
         Args:
@@ -340,15 +342,15 @@ class ACT(Policy, LeRobotFromConfig):
         del batch_idx  # Unused argument
 
         # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch = FormatConverter.to_lerobot_dict(batch)
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
 
-        total_loss, loss_dict = self.lerobot_policy.forward(batch)
+        total_loss, loss_dict = self.lerobot_policy.forward(batch_dict)
         for key, value in loss_dict.items():
             self.log(f"train/{key}", value, prog_bar=False)
         self.log("train/loss", total_loss, prog_bar=True)
         return total_loss
 
-    def validation_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+    def validation_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
         """Validation step of the policy.
 
         Args:
@@ -361,13 +363,13 @@ class ACT(Policy, LeRobotFromConfig):
         del batch_idx  # Unused argument
 
         # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch = FormatConverter.to_lerobot_dict(batch)
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
 
         # Workaround for LeRobot bug: VAE fails in eval mode
         was_training = self.training
         if self.lerobot_policy.config.use_vae and not was_training:
             self.train()
-        total_loss, loss_dict = self.lerobot_policy.forward(batch)
+        total_loss, loss_dict = self.lerobot_policy.forward(batch_dict)
         if not was_training:
             self.eval()
         for key, value in loss_dict.items():
@@ -375,7 +377,7 @@ class ACT(Policy, LeRobotFromConfig):
         self.log("val/loss", total_loss, prog_bar=True)
         return total_loss
 
-    def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+    def select_action(self, batch: Observation) -> torch.Tensor:
         """Select action (inference mode) through LeRobot.
 
         Args:
@@ -384,7 +386,8 @@ class ACT(Policy, LeRobotFromConfig):
         Returns:
             The selected action tensor.
         """
-        return self.lerobot_policy.select_action(batch)
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
+        return self.lerobot_policy.select_action(batch_dict)
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
         """Configure optimizer using LeRobot's custom parameter groups.
