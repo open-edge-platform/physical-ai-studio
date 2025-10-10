@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from gymnasium.core import ActType, ObsType
 
 
-class BaseGym:
+class Gym:
     """Base class for Gym environments.
 
     This class wraps a Gym environment and provides standard methods

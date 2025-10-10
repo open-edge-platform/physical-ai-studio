@@ -1,6 +1,6 @@
 # PushTGym
 
-A child class of the `BaseGym`. We init with default parameters for `PushT`.
+A child class of the `Gym`. We init with default parameters for `PushT`.
 
 ```mermaid
 classDiagram
@@ -8,7 +8,7 @@ classDiagram
         + __init__(gym_id: str, obs_type: str)
     }
 
-    PushTGym --|> BaseGym : inherits
+    PushTGym --|> Gym : inherits
 ```
 
 Example:
