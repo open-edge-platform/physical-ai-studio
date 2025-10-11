@@ -9,8 +9,6 @@ import lightning as L  # noqa: N812
 import torch
 from torch import nn
 
-from getiaction.data import Observation
-
 
 class Policy(L.LightningModule, ABC):
     """Base Lightning Module for Policies."""
@@ -20,14 +18,13 @@ class Policy(L.LightningModule, ABC):
         super().__init__()
         self.model: nn.Module
 
-    def forward(self, batch: Observation, *args, **kwargs) -> torch.Tensor:  # noqa: ANN002, ANN003
+    def forward(self, batch: dict[str, torch.Tensor], *args, **kwargs) -> torch.Tensor:  # noqa: ANN002, ANN003
         """Perform forward pass of the policy.
 
-        The input batch is an Observation dataclass that can be converted to
-        the format expected by the model using `.to_dict()` or `.to_lerobot_dict()`.
+        The input batched is preprocessed before being passed to the model.
 
         Args:
-            batch (Observation): Input batch of observations
+            batch (dict[str, torch.Tensor]): Input batch
             *args: Additional positional arguments (unused)
             **kwargs: Additional keyword arguments (unused)
 
@@ -38,11 +35,11 @@ class Policy(L.LightningModule, ABC):
         return self.model(batch)
 
     @abstractmethod
-    def select_action(self, batch: Observation) -> torch.Tensor:
+    def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """Select an action using the policy model.
 
         Args:
-            batch (Observation): Input batch of observations.
+            batch (dict[str, torch.Tensor]): Input batch of observations.
 
         Returns:
             torch.Tensor: Selected actions.

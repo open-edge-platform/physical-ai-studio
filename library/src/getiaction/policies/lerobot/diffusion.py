@@ -21,8 +21,6 @@ from getiaction.policies.lerobot.mixin import LeRobotFromConfig
 if TYPE_CHECKING:
     from torch import nn
 
-    from getiaction.data import Observation
-
 if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     from lerobot.datasets.utils import dataset_to_policy_features
@@ -323,7 +321,7 @@ class Diffusion(Policy, LeRobotFromConfig):
         self.model = self._lerobot_policy.diffusion
         self._framework_policy = self._lerobot_policy
 
-    def forward(self, batch: Observation) -> torch.Tensor:
+    def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """Forward pass delegates to LeRobot.
 
         Args:
@@ -333,12 +331,12 @@ class Diffusion(Policy, LeRobotFromConfig):
             The computed loss tensor.
         """
         # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch_dict = FormatConverter.to_lerobot_dict(batch)
+        batch = FormatConverter.to_lerobot_dict(batch)
 
-        loss, _ = self.lerobot_policy.forward(batch_dict)
+        loss, _ = self.lerobot_policy.forward(batch)
         return loss
 
-    def training_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
+    def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
         """Training step uses LeRobot's loss computation.
 
         Args:
@@ -351,13 +349,13 @@ class Diffusion(Policy, LeRobotFromConfig):
         del batch_idx  # Unused argument
 
         # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch_dict = FormatConverter.to_lerobot_dict(batch)
+        batch = FormatConverter.to_lerobot_dict(batch)
 
-        loss, _ = self.lerobot_policy.forward(batch_dict)
+        loss, _ = self.lerobot_policy.forward(batch)
         self.log("train/loss", loss, prog_bar=True)
         return loss
 
-    def validation_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
+    def validation_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
         """Validation step.
 
         Args:
@@ -370,13 +368,13 @@ class Diffusion(Policy, LeRobotFromConfig):
         del batch_idx  # Unused argument
 
         # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch_dict = FormatConverter.to_lerobot_dict(batch)
+        batch = FormatConverter.to_lerobot_dict(batch)
 
-        loss, _ = self.lerobot_policy.forward(batch_dict)
+        loss, _ = self.lerobot_policy.forward(batch)
         self.log("val/loss", loss, prog_bar=True)
         return loss
 
-    def select_action(self, batch: Observation) -> torch.Tensor:
+    def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """Select action (inference mode) through LeRobot.
 
         Args:
@@ -385,8 +383,7 @@ class Diffusion(Policy, LeRobotFromConfig):
         Returns:
             The selected action tensor.
         """
-        batch_dict = FormatConverter.to_lerobot_dict(batch)
-        return self.lerobot_policy.select_action(batch_dict)
+        return self.lerobot_policy.select_action(batch)
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
         """Configure optimizer using LeRobot's parameters.

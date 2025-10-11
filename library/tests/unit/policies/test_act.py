@@ -27,12 +27,10 @@ class TestACTolicy:
     @pytest.fixture
     def batch(self):
         bs = 2
-        return Observation(
-            images=torch.randn(bs, 3, 64, 64),
-            state=torch.randn(bs, 3),
-            action=torch.randn(bs, 100, 3),  # 'bs' samples, 3 features, 100 action steps
-            extra={"action_is_pad": torch.zeros(bs, 100, dtype=torch.bool)}
-        )
+        return {Observation.ComponentKeys.IMAGES: torch.randn(bs, 3, 64, 64),
+                Observation.ComponentKeys.STATE: torch.randn(bs, 3),
+                Observation.ComponentKeys.ACTION: torch.randn(bs, 100, 3), # 'bs' samples, 3 features, 100 action steps
+                Observation.ComponentKeys.EXTRA: {"action_is_pad": torch.zeros(bs, 100, dtype=torch.bool)}}
 
     def test_initialization(self, policy):
         """Check model and action shape."""
@@ -45,19 +43,19 @@ class TestACTolicy:
         policy.model.eval()
         actions = policy.select_action(batch)
         assert isinstance(actions, torch.Tensor)
-        assert actions.shape == batch.action.shape
+        assert actions.shape == batch[Observation.ComponentKeys.ACTION].shape
 
     def test_forward_training_and_eval(self, policy, batch):
         """Forward pass works in training and eval modes."""
         # Training
         policy.model.train()
-        loss, loss_dict = policy.model(copy.deepcopy(batch).to_dict())
+        loss, loss_dict = policy.model(copy.deepcopy(batch))
         assert isinstance(loss, torch.Tensor)
         assert loss >= 0
         assert loss_dict["kld_loss"] >= 0
 
         # Evaluation
         policy.model.eval()
-        actions = policy.model(batch.to_dict())
+        actions = policy.model(batch)
         assert isinstance(actions, torch.Tensor)
-        assert actions.shape == batch.action.shape
+        assert actions.shape == batch[Observation.ComponentKeys.ACTION].shape
