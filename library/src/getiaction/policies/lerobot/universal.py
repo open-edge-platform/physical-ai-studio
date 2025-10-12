@@ -354,19 +354,85 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
 
         return self.lerobot_policy.forward(batch)
 
+    def _process_loss_output(
+        self,
+        output: torch.Tensor | tuple[torch.Tensor, dict | None] | dict,
+        log_prefix: str,
+    ) -> torch.Tensor:
+        """Process and log loss output from LeRobot policy.
+
+        Handles the different output formats from LeRobot policies and logs losses appropriately.
+
+        Args:
+            output: Policy output, can be one of:
+                1. Tuple[Tensor, dict]: Standard format used by most policies (ACT, VQ-BeT, TDMPC, etc.)
+                   Returns (loss, loss_dict) where loss_dict contains individual loss components.
+                   Example: ACT returns (loss, {"l1_loss": ..., "kld_loss": ...})
+
+                2. Tuple[Tensor, None]: Used by policies without detailed loss breakdown (Diffusion).
+                   Returns (loss, None) where None indicates no additional loss components.
+
+                3. dict: Some policies may return only a dictionary of losses.
+                   The dictionary contains loss components that need to be summed.
+
+                4. Tensor: Direct loss tensor (legacy/simple policies).
+                   Returns just the scalar loss tensor.
+
+            log_prefix: Prefix for logging (e.g., "train" or "val")
+
+        Returns:
+            Total loss tensor
+
+        Raises:
+            ValueError: If loss dictionary is empty
+
+        Note:
+            See module docstring for detailed documentation of each output format.
+        """
+        if isinstance(output, tuple) and len(output) == 2:  # noqa: PLR2004
+            loss, loss_dict = output
+            if loss_dict is None:
+                # Case 2: Diffusion-style output with no loss breakdown
+                self.log(f"{log_prefix}/loss", loss, prog_bar=True)
+                return loss
+            # Case 1: Standard output with loss dict - continue processing below
+        elif isinstance(output, dict):
+            # Case 3: Dictionary of losses
+            loss_dict = output
+        else:
+            # Case 4: Direct loss tensor
+            return output
+
+        # Sum all loss components from loss_dict
+        if isinstance(loss_dict, dict):
+            if not loss_dict:
+                msg = "Loss dictionary is empty - policy returned no loss components"
+                raise ValueError(msg)
+            # Use torch.stack + sum to maintain tensor type (avoids int return from sum())
+            loss = torch.stack(list(loss_dict.values())).sum()
+            # Log individual loss components
+            for key, val in loss_dict.items():
+                self.log(f"{log_prefix}/{key}", val, prog_bar=True)
+        else:
+            loss = loss_dict
+
+        self.log(f"{log_prefix}/loss", loss, prog_bar=True)
+        return loss
+
     def training_step(self, batch: dict[str, torch.Tensor] | Observation, batch_idx: int) -> torch.Tensor:
         """Training step for Lightning.
 
         Args:
-            batch: Training batch (Observation or dict).
-            batch_idx: Batch index.
+            batch: Batch of data (Observation or dict)
+            batch_idx: Index of the batch
 
         Returns:
-            Scalar loss value.
-        """
-        del batch_idx  # Unused argument
+            Loss tensor
 
-        # Move Observation to device if needed
+        """
+        del batch_idx  # Unused argument from Lightning API
+
+        # Move batch to device if it's an Observation
         if isinstance(batch, Observation):
             batch = batch.to(self.device)
 
@@ -375,25 +441,8 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
 
         output = self.lerobot_policy.forward(batch)
 
-        # Handle different output formats from LeRobot policies
-        if isinstance(output, tuple) and len(output) == 2:  # noqa: PLR2004
-            _, loss_dict = output
-        elif isinstance(output, dict):
-            loss_dict = output
-        else:
-            # Some policies might return just a loss tensor
-            return output
-
-        # Sum all loss components
-        loss = sum(loss_dict.values()) if isinstance(loss_dict, dict) else loss_dict
-
-        # Log individual loss components
-        if isinstance(loss_dict, dict):
-            for key, val in loss_dict.items():
-                self.log(f"train/{key}", val, prog_bar=True)
-
-        self.log("train/loss", loss, prog_bar=True)
-        return loss
+        # Process and log the loss output
+        return self._process_loss_output(output, log_prefix="train")
 
     def validation_step(self, batch: dict[str, torch.Tensor] | Observation, batch_idx: int) -> torch.Tensor | None:
         """Validation step for Lightning.
@@ -425,24 +474,8 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
 
         output = self.lerobot_policy.forward(batch)
 
-        # Handle different output formats
-        if isinstance(output, tuple) and len(output) == 2:  # noqa: PLR2004
-            _, loss_dict = output
-        elif isinstance(output, dict):
-            loss_dict = output
-        else:
-            return output
-
-        # Sum all loss components
-        loss = sum(loss_dict.values()) if isinstance(loss_dict, dict) else loss_dict
-
-        # Log individual loss components
-        if isinstance(loss_dict, dict):
-            for key, val in loss_dict.items():
-                self.log(f"val/{key}", val, prog_bar=True)
-
-        self.log("val/loss", loss, prog_bar=True)
-        return loss
+        # Process and log the loss output
+        return self._process_loss_output(output, log_prefix="val")
 
     def reset(self) -> None:
         """Reset the policy state for a new episode.
