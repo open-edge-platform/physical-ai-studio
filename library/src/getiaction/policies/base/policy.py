@@ -26,7 +26,7 @@ class Policy(L.LightningModule, ABC):
         self,
         batch: Observation,
         device: torch.device,
-        dataloader_idx: int,  # noqa: ARG002
+        dataloader_idx: int,
     ) -> Observation:
         """Transfer batch to device.
 
@@ -42,6 +42,7 @@ class Policy(L.LightningModule, ABC):
         Returns:
             Observation: Batch moved to the target device
         """
+        del dataloader_idx  # Unused, but required by Lightning API
         return batch.to(device)
 
     def forward(self, batch: Observation, *args, **kwargs) -> torch.Tensor:  # noqa: ANN002, ANN003
