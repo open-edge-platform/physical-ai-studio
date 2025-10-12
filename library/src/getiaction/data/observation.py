@@ -189,7 +189,6 @@ class Observation:
             return value
 
         # Create new instance with all fields moved to device
-        # Use to_dict() and from_dict() to maintain type safety
         current_dict = self.to_dict()
         new_dict = {k: _move_to_device(v) for k, v in current_dict.items()}
         return Observation.from_dict(new_dict)
