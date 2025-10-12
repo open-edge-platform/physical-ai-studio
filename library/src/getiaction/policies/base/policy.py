@@ -4,6 +4,7 @@
 """Base Lightning Module for Policies."""
 
 from abc import ABC, abstractmethod
+from typing import Any
 
 import lightning as L  # noqa: N812
 import torch
@@ -49,3 +50,49 @@ class Policy(L.LightningModule, ABC):
         Returns:
             torch.Tensor: Selected actions.
         """
+
+    @abstractmethod
+    def reset(self) -> None:
+        """Reset the policy state.
+
+        This method should be called when the environment is reset. It clears
+        internal state such as action queues, observation histories, and any
+        other stateful components used by the policy.
+
+        For example:
+        - Action chunking policies clear their action queue
+        - Diffusion policies reset observation/action deques
+        - Recurrent policies reset hidden states
+
+        This is critical for proper evaluation in gym environments, where
+        each episode must start with a clean slate.
+        """
+
+    def validation_step(self, batch: dict[str, Any], batch_idx: int) -> torch.Tensor | None:
+        """Validation step for the policy.
+
+        This handles two types of validation:
+        1. Dataset validation: batch contains observations and actions
+        2. Gym validation: batch contains a gym environment under 'env' key
+
+        For gym validation, the evaluation is handled by GymEvaluation
+        which calls the rollout() function. This method just needs to return
+        None to signal that the callback should handle it.
+
+        Args:
+            batch: Either an Observation batch or dict with 'env' key
+            batch_idx: Index of the batch
+
+        Returns:
+            Loss tensor for dataset validation, None for gym validation
+        """
+        del batch_idx  # Unused argument
+
+        # Check if this is a gym validation batch
+        if isinstance(batch, dict) and "env" in batch:
+            # Gym validation is handled by GymEvaluation
+            return None
+
+        # Standard dataset validation - subclasses can override for custom logic
+        msg = "validation_step must be implemented for dataset validation"
+        raise NotImplementedError(msg)

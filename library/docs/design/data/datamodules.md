@@ -14,9 +14,9 @@ classDiagram
     class DataModule {
         - Dataset train_dataset
         - int train_batch_size
-        - Gym|list~Gym~|None eval_gyms
-        - Dataset eval_dataset
-        - int num_rollouts_eval
+        - Gym|list~Gym~|None val_gyms
+        - Dataset _val_dataset
+        - int num_rollouts_val
         - Gym|list~Gym~|None test_gyms
         - Dataset test_dataset
         - int num_rollouts_test

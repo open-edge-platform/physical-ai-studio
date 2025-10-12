@@ -16,6 +16,7 @@ from lightning.pytorch import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
 from getiaction.data.gym import GymDataset
+from getiaction.data.observation import Observation
 from getiaction.gyms import Gym
 
 if TYPE_CHECKING:
@@ -35,17 +36,24 @@ def _collate_env(batch: list[Any]) -> dict[str, Any]:
     return {"env": batch[0]}
 
 
-def _collate_observations(batch: list[Observation]) -> Observation:
-    """Collate a batch of Observations into a single batched Observation.
+def _collate_observations(batch: list[Observation]) -> dict[str, Any]:
+    """Collate a batch of Observations into a single batched dict.
 
     Args:
         batch (list[Observation]): A list containing Observations.
 
     Returns:
-        Observation: A single Observation with batched tensors.
+        dict: A dictionary with batched tensors (not an Observation to avoid frozen dataclass issues).
     """
     if not batch:
-        return Observation()
+        return {}
+
+    # Handle case where batch items might be dicts instead of Observation objects
+    # This can happen with multiprocessing workers
+    if isinstance(batch[0], dict):
+        from getiaction.data.lerobot import FormatConverter  # Lazy import to avoid circular dependency
+
+        batch = [FormatConverter.to_observation(item) for item in batch]
 
     collated_data: dict[str, Any] = {}
 
@@ -95,7 +103,7 @@ def _collate_observations(batch: list[Observation]) -> Observation:
         else:
             collated_data[key] = values
 
-    return Observation(**collated_data)
+    return collated_data
 
 
 class DataModule(LightningDataModule):
@@ -109,8 +117,8 @@ class DataModule(LightningDataModule):
         self,
         train_dataset: Dataset,
         train_batch_size: int = 16,
-        eval_gyms: Gym | list[Gym] | None = None,
-        num_rollouts_eval: int = 10,
+        val_gyms: Gym | list[Gym] | None = None,
+        num_rollouts_val: int = 10,
         test_gyms: Gym | list[Gym] | None = None,
         num_rollouts_test: int = 10,
         max_episode_steps: int | None = 300,
@@ -120,8 +128,8 @@ class DataModule(LightningDataModule):
         Args:
             train_dataset (ActionDataset): Dataset for training.
             train_batch_size (int): Batch size for training DataLoader.
-            eval_gyms (Gym, list[Gym], None]): Evaluation environments.
-            num_rollouts_eval (int): Number of rollouts to run for evaluation environments.
+            val_gyms (Gym, list[Gym], None]): Validation environments.
+            num_rollouts_val (int): Number of rollouts to run for validation environments.
             test_gyms (Gym, list[Gym], None]): Test environments.
             num_rollouts_test (int): Number of rollouts to run for test environments.
             max_episode_steps (int, None): Maximum steps allowed per episode. If None, no time limit.
@@ -133,25 +141,25 @@ class DataModule(LightningDataModule):
         self.train_batch_size: int = train_batch_size
 
         # gym environments
-        self.eval_gyms: Gym | list[Gym] | None = eval_gyms
-        self.eval_dataset: Dataset[Any] | None = None
-        self.num_rollouts_eval: int = num_rollouts_eval
+        self.val_gyms: Gym | list[Gym] | None = val_gyms
+        self._val_dataset: Dataset[Any] | None = None  # Internal: wrapped gym dataset
+        self.num_rollouts_val: int = num_rollouts_val
         self.test_gyms: Gym | list[Gym] | None = test_gyms
-        self.test_dataset: Dataset[Any] | None = None
+        self._test_dataset: Dataset[Any] | None = None  # Internal: wrapped gym dataset
         self.num_rollouts_test: int = num_rollouts_test
         self.max_episode_steps = max_episode_steps
 
         # setup time limit if max_episode steps
-        if (self.max_episode_steps is not None) and self.eval_gyms is not None:
-            if isinstance(self.eval_gyms, Gym):
-                self.eval_gyms.env = TimeLimit(
-                    env=self.eval_gyms.env,
+        if (self.max_episode_steps is not None) and self.val_gyms is not None:
+            if isinstance(self.val_gyms, Gym):
+                self.val_gyms.env = TimeLimit(
+                    env=self.val_gyms.env,
                     max_episode_steps=self.max_episode_steps,
                 )
-            elif isinstance(self.eval_gyms, list):
-                for eval_gym in self.eval_gyms:
-                    eval_gym.env = TimeLimit(
-                        env=eval_gym.env,
+            elif isinstance(self.val_gyms, list):
+                for val_gym in self.val_gyms:
+                    val_gym.env = TimeLimit(
+                        env=val_gym.env,
                         max_episode_steps=self.max_episode_steps,
                     )
         if (self.max_episode_steps is not None) and self.test_gyms is not None:
@@ -173,25 +181,25 @@ class DataModule(LightningDataModule):
         Args:
             stage (str): Stage of training ('fit', 'test', etc.).
         """
-        if stage == "fit" and self.eval_gyms:
-            if isinstance(self.eval_gyms, list):
+        if stage == "fit" and self.val_gyms:
+            if isinstance(self.val_gyms, list):
                 # TODO(alfie-roddan-intel): https://github.com/open-edge-platform/geti-action/issues/33  # noqa: FIX002
                 # ensure metrics are seperable between two different gyms
-                self.eval_dataset = ConcatDataset([
-                    GymDataset(env=gym, num_rollouts=self.num_rollouts_eval) for gym in self.eval_gyms
+                self._val_dataset = ConcatDataset([
+                    GymDataset(env=gym, num_rollouts=self.num_rollouts_val) for gym in self.val_gyms
                 ])
             else:
-                self.eval_dataset = GymDataset(env=self.eval_gyms, num_rollouts=self.num_rollouts_eval)
+                self._val_dataset = GymDataset(env=self.val_gyms, num_rollouts=self.num_rollouts_val)
 
         if stage == "test" and self.test_gyms:
             if isinstance(self.test_gyms, list):
                 # TODO(alfie-roddan-intel): https://github.com/open-edge-platform/geti-action/issues/33  # noqa: FIX002
                 # ensure metrics are seperable between two different gyms
-                self.test_dataset = ConcatDataset([
+                self._test_dataset = ConcatDataset([
                     GymDataset(env=gym, num_rollouts=self.num_rollouts_test) for gym in self.test_gyms
                 ])
             else:
-                self.test_dataset = GymDataset(env=self.test_gyms, num_rollouts=self.num_rollouts_test)
+                self._test_dataset = GymDataset(env=self.test_gyms, num_rollouts=self.num_rollouts_test)
 
     def train_dataloader(self) -> DataLoader[Any]:
         """Return the DataLoader for training.
@@ -215,7 +223,7 @@ class DataModule(LightningDataModule):
             DataLoader[Any]: Validation DataLoader with collate function for Gym environments.
         """
         return DataLoader(
-            self.eval_dataset,
+            self._val_dataset,
             batch_size=1,
             collate_fn=_collate_env,  # type: ignore[arg-type]
             shuffle=False,
@@ -228,7 +236,7 @@ class DataModule(LightningDataModule):
             DataLoader[Any]: Test DataLoader with collate function for Gym environments.
         """
         return DataLoader(
-            self.test_dataset,
+            self._test_dataset,
             batch_size=1,
             collate_fn=_collate_env,  # type: ignore[arg-type]
             shuffle=False,

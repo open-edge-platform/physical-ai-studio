@@ -85,5 +85,5 @@ class TestActionDataModule:
         )
         assert dm.train_dataset is mock_train_dataset
         assert dm.train_batch_size == 32
-        assert dm.eval_dataset is None
+        assert dm._val_dataset is None
         assert dm.test_dataset is None

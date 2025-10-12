@@ -27,6 +27,8 @@ if TYPE_CHECKING:
     from lerobot.configs.types import PolicyFeature
     from lerobot.policies.pretrained import PreTrainedPolicy
 
+    from getiaction.data.observation import Observation
+
 if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.utils import dataset_to_policy_features
     from lerobot.policies.factory import get_policy_class, make_policy_config
@@ -368,6 +370,12 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         # Convert to LeRobot format if needed (handles Observation or collated dict)
         batch = FormatConverter.to_lerobot_dict(batch)
 
+        # Debug: print what keys we have
+        if not any(key.startswith("observation.") for key in batch):
+            import sys
+
+            print(f"WARNING: Batch keys after conversion: {list(batch.keys())}", file=sys.stderr)
+
         output = self.lerobot_policy.forward(batch)
 
         # Handle different output formats from LeRobot policies
@@ -390,17 +398,26 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         self.log("train/loss", loss, prog_bar=True)
         return loss
 
-    def validation_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+    def validation_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor | None:
         """Validation step for Lightning.
 
+        This handles two types of validation:
+        1. Dataset validation: batch contains observations and actions
+        2. Gym validation: batch contains a gym environment under 'env' key
+
         Args:
-            batch: Validation batch.
+            batch: Validation batch or dict with 'env' key for gym validation.
             batch_idx: Batch index.
 
         Returns:
-            Scalar loss value.
+            Scalar loss value for dataset validation, None for gym validation.
         """
         del batch_idx  # Unused argument
+
+        # Check if this is a gym validation batch
+        if isinstance(batch, dict) and "env" in batch:
+            # Gym validation is handled by GymEvaluation
+            return None
 
         # Convert to LeRobot format if needed (handles Observation or collated dict)
         batch = FormatConverter.to_lerobot_dict(batch)
@@ -426,15 +443,35 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         self.log("val/loss", loss, prog_bar=True)
         return loss
 
-    def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+    def reset(self) -> None:
+        """Reset the policy state for a new episode.
+
+        Forwards the reset call to the underlying LeRobot policy,
+        which clears action queues, observation histories, and any
+        other stateful components.
+        """
+        self.lerobot_policy.reset()
+
+    def select_action(self, batch: dict[str, torch.Tensor] | Observation) -> torch.Tensor:
         """Select action (inference mode) through LeRobot.
 
         Args:
-            batch: Input batch with observations.
+            batch: Input batch with observations. Can be:
+                - Observation object from gym
+                - dict in LeRobot format
+                - raw gym observation dict (will be converted)
 
         Returns:
             Predicted actions.
         """
+        # Convert to LeRobot format if needed
+        # This handles: Observation objects, collated dicts, and raw gym dicts
+        batch = FormatConverter.to_lerobot_dict(batch)
+
+        # Move tensors to the same device as the policy
+        device = next(self.parameters()).device
+        batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+
         return self.lerobot_policy.select_action(batch)
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
