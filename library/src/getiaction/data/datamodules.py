@@ -36,24 +36,17 @@ def _collate_env(batch: list[Any]) -> dict[str, Any]:
     return {"env": batch[0]}
 
 
-def _collate_observations(batch: list[Observation]) -> dict[str, Any]:
-    """Collate a batch of Observations into a single batched dict.
+def _collate_observations(batch: list[Observation]) -> Observation:
+    """Collate a batch of Observations into a single batched Observation.
 
     Args:
         batch (list[Observation]): A list containing Observations.
 
     Returns:
-        dict: A dictionary with batched tensors (not an Observation to avoid frozen dataclass issues).
+        Observation: A single Observation with batched tensors.
     """
     if not batch:
-        return {}
-
-    # Handle case where batch items might be dicts instead of Observation objects
-    # This can happen with multiprocessing workers
-    if isinstance(batch[0], dict):
-        from getiaction.data.lerobot import FormatConverter  # Lazy import to avoid circular dependency
-
-        batch = [FormatConverter.to_observation(item) for item in batch]
+        return Observation()
 
     collated_data: dict[str, Any] = {}
 
@@ -103,7 +96,7 @@ def _collate_observations(batch: list[Observation]) -> dict[str, Any]:
         else:
             collated_data[key] = values
 
-    return collated_data
+    return Observation(**collated_data)
 
 
 class DataModule(LightningDataModule):

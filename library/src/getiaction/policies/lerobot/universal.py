@@ -19,6 +19,7 @@ from lightning_utilities import module_available
 
 from getiaction.data.lerobot import FormatConverter
 from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
+from getiaction.data.observation import Observation
 from getiaction.policies.base import Policy
 from getiaction.policies.lerobot.mixin import LeRobotFromConfig
 
@@ -26,8 +27,6 @@ if TYPE_CHECKING:
     from lerobot.configs.policies import PreTrainedConfig
     from lerobot.configs.types import PolicyFeature
     from lerobot.policies.pretrained import PreTrainedPolicy
-
-    from getiaction.data.observation import Observation
 
 if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.utils import dataset_to_policy_features
@@ -355,11 +354,11 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
 
         return self.lerobot_policy.forward(batch)
 
-    def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+    def training_step(self, batch: dict[str, torch.Tensor] | Observation, batch_idx: int) -> torch.Tensor:
         """Training step for Lightning.
 
         Args:
-            batch: Training batch.
+            batch: Training batch (Observation or dict).
             batch_idx: Batch index.
 
         Returns:
@@ -367,14 +366,12 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         """
         del batch_idx  # Unused argument
 
+        # Move Observation to device if needed
+        if isinstance(batch, Observation):
+            batch = batch.to(self.device)
+
         # Convert to LeRobot format if needed (handles Observation or collated dict)
         batch = FormatConverter.to_lerobot_dict(batch)
-
-        # Debug: print what keys we have
-        if not any(key.startswith("observation.") for key in batch):
-            import sys
-
-            print(f"WARNING: Batch keys after conversion: {list(batch.keys())}", file=sys.stderr)
 
         output = self.lerobot_policy.forward(batch)
 
@@ -398,7 +395,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         self.log("train/loss", loss, prog_bar=True)
         return loss
 
-    def validation_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor | None:
+    def validation_step(self, batch: dict[str, torch.Tensor] | Observation, batch_idx: int) -> torch.Tensor | None:
         """Validation step for Lightning.
 
         This handles two types of validation:
@@ -418,6 +415,10 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         if isinstance(batch, dict) and "env" in batch:
             # Gym validation is handled by GymEvaluation
             return None
+
+        # Move Observation to device if needed
+        if isinstance(batch, Observation):
+            batch = batch.to(self.device)
 
         # Convert to LeRobot format if needed (handles Observation or collated dict)
         batch = FormatConverter.to_lerobot_dict(batch)
@@ -464,11 +465,15 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         Returns:
             Predicted actions.
         """
+        # Move Observation to device if needed
+        if isinstance(batch, Observation):
+            batch = batch.to(self.device)
+
         # Convert to LeRobot format if needed
         # This handles: Observation objects, collated dicts, and raw gym dicts
         batch = FormatConverter.to_lerobot_dict(batch)
 
-        # Move tensors to the same device as the policy
+        # Move tensors to the same device as the policy (for raw gym dicts)
         device = next(self.parameters()).device
         batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
 
