@@ -8,9 +8,10 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, fields
 from typing import TYPE_CHECKING, Any
 
+import torch
+
 if TYPE_CHECKING:
     import numpy as np
-    import torch
 
 
 @dataclass(frozen=True)
@@ -116,3 +117,79 @@ class Observation:
             ['action', 'task', 'state', 'images', 'next_reward', ...]
         """
         return [f.name for f in fields(cls)]
+
+    def values(self) -> list[Any]:
+        """Return list of all field values (including None).
+
+        Returns:
+            list[Any]: List of all field values in the same order as keys().
+
+        Examples:
+            >>> obs = Observation(action=torch.tensor([1.0]), state=torch.tensor([2.0]))
+            >>> values = obs.values()
+            >>> # [tensor([1.0]), None, tensor([2.0]), None, ...]
+        """
+        return [getattr(self, f.name) for f in fields(self)]
+
+    def items(self) -> list[tuple[str, Any]]:
+        """Return list of (field_name, value) tuples.
+
+        Returns:
+            list[tuple[str, Any]]: List of (key, value) pairs.
+
+        Examples:
+            >>> obs = Observation(action=torch.tensor([1.0]), state=torch.tensor([2.0]))
+            >>> for key, value in obs.items():
+            ...     if value is not None:
+            ...         print(f"{key}: {value}")
+            action: tensor([1.0])
+            state: tensor([2.0])
+        """
+        return [(f.name, getattr(self, f.name)) for f in fields(self)]
+
+    def to(self, device: str | torch.device) -> Observation:
+        """Move all tensors in the observation to the specified device.
+
+        This method creates a new Observation instance with all tensor fields moved
+        to the specified device. Works with both single tensors and nested dictionaries
+        of tensors. Non-tensor fields are copied as-is.
+
+        Args:
+            device: Target device (e.g., "cpu", "cuda", "cuda:0", torch.device("cuda"))
+
+        Returns:
+            Observation: New Observation instance with tensors on the target device.
+
+        Examples:
+            >>> obs = Observation(
+            ...     action=torch.tensor([1.0, 2.0]),
+            ...     images={"top": torch.rand(3, 224, 224)}
+            ... )
+            >>> obs_cuda = obs.to("cuda")  # Move to GPU
+            >>> obs_cpu = obs_cuda.to("cpu")  # Move back to CPU
+
+            >>> # Works with batched observations too
+            >>> batch = Observation(action=torch.randn(8, 2))
+            >>> batch_gpu = batch.to("cuda")
+        """
+
+        def _move_to_device(
+            value: torch.Tensor | np.ndarray | dict | bool | None,  # noqa: FBT001
+        ) -> torch.Tensor | np.ndarray | dict | bool | None:
+            """Recursively move tensors to device.
+
+            Returns:
+                The value moved to device if it's a tensor, otherwise unchanged.
+            """
+            if isinstance(value, torch.Tensor):
+                return value.to(device)
+            if isinstance(value, dict):
+                return {k: _move_to_device(v) for k, v in value.items()}
+            # For non-tensor types (None, bool, numpy arrays, etc.), return as-is
+            return value
+
+        # Create new instance with all fields moved to device
+        # Use to_dict() and from_dict() to maintain type safety
+        current_dict = self.to_dict()
+        new_dict = {k: _move_to_device(v) for k, v in current_dict.items()}
+        return Observation.from_dict(new_dict)
