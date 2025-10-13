@@ -55,7 +55,7 @@ class TestDummyLeRobotDatasetFixture:
 
         assert isinstance(sample, dict)
         assert "observation.state" in sample
-        assert "observation.image" in sample
+        assert "observation.images.top" in sample
         assert "action" in sample
         assert "episode_index" in sample
 
@@ -65,7 +65,7 @@ class TestDummyLeRobotDatasetFixture:
         features = dataset.features
 
         assert "observation.state" in features
-        assert "observation.image" in features
+        assert "observation.images.top" in features
         assert "action" in features
 
     def test_dummy_lerobot_dataset_metadata(self, dummy_lerobot_dataset):
@@ -73,9 +73,9 @@ class TestDummyLeRobotDatasetFixture:
         dataset = dummy_lerobot_dataset(num_samples=10)
         meta = dataset.meta
 
-        assert "robot_type" in meta
-        assert "fps" in meta
-        assert meta["robot_type"] == "dummy_robot"
+        assert hasattr(meta, "robot_type")
+        assert hasattr(meta, "fps")
+        assert meta.robot_type == "dummy_robot"
 
 
 class TestDummyDataModuleFixture:
