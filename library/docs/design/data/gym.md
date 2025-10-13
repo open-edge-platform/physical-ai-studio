@@ -7,15 +7,15 @@ We calculate the length of an evaluation dataset based on the number of rollouts
 ```mermaid
 classDiagram
     class Dataset
-    class BaseGym
+    class Gym
 
     class GymDataset{
-        +BaseGym env
+        +Gym env
         +int num_rollouts
-        +__init__(env: BaseGym, num_rollouts: int)
+        +__init__(env: Gym, num_rollouts: int)
         +__len__() int
-        +__getitem__(index: int) BaseGym
+        +__getitem__(index: int) Gym
     }
     GymDataset --|> Dataset
-    GymDataset --> BaseGym : uses
+    GymDataset --> Gym : uses
 ```

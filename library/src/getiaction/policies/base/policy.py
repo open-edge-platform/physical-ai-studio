@@ -18,8 +18,6 @@ class Policy(L.LightningModule, ABC):
     def __init__(self) -> None:
         """Initialize the Base Lightning Module for Policies."""
         super().__init__()
-        self.save_hyperparameters()
-
         self.model: nn.Module
 
     def transfer_batch_to_device(

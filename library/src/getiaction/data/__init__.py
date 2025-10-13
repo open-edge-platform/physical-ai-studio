@@ -6,6 +6,14 @@
 from .datamodules import DataModule
 from .dataset import Dataset
 from .lerobot import LeRobotDataModule
-from .observation import Observation
+from .observation import Feature, FeatureType, NormalizationParameters, Observation
 
-__all__ = ["DataModule", "Dataset", "LeRobotDataModule", "Observation"]
+__all__ = [
+    "DataModule",
+    "Dataset",
+    "Feature",
+    "FeatureType",
+    "LeRobotDataModule",
+    "NormalizationParameters",
+    "Observation",
+]

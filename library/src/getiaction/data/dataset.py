@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from torch.utils.data import Dataset as TorchDataset
 
 if TYPE_CHECKING:
-    from getiaction.data import Observation
+    from getiaction.data import Feature, Observation
 
 
 class Dataset(TorchDataset, ABC):
@@ -27,12 +27,17 @@ class Dataset(TorchDataset, ABC):
 
     @property
     @abstractmethod
-    def features(self) -> dict:
+    def raw_features(self) -> dict:
         """Raw dataset features."""
 
     @property
     @abstractmethod
-    def action_features(self) -> dict:
+    def observation_features(self) -> dict[str, Feature]:
+        """Observation features from the dataset."""
+
+    @property
+    @abstractmethod
+    def action_features(self) -> dict[str, Feature]:
         """Action features from the dataset."""
 
     @property
