@@ -123,13 +123,13 @@ class Dummy(Policy):
 
     def validation_step(
         self,
-        batch: dict[str, Any] | GymObservation | Observation,
+        batch: dict[str, Any] | GymObservation,
         batch_idx: int,
     ) -> torch.Tensor | dict[str, float]:
         """Validation step (calls evaluation_step).
 
         Args:
-            batch: Input batch (Observation for dataset validation, GymObservation for gym evaluation).
+            batch: Input batch (dict for dataset validation, GymObservation for gym evaluation).
             batch_idx: Index of the batch.
 
         Returns:
@@ -139,21 +139,18 @@ class Dummy(Policy):
         if isinstance(batch, GymObservation):
             return super().validation_step(batch, batch_idx)
 
-        # Handle dataset validation
-        del batch_idx  # Unused variable
-        if isinstance(batch, Observation):
-            self.evaluation_step(batch=batch, stage="val")
+        # No dataset validation logic for dummy policy
         return {}
 
     def test_step(
         self,
-        batch: dict[str, Any] | GymObservation | Observation,
+        batch: dict[str, Any] | GymObservation,
         batch_idx: int,
     ) -> torch.Tensor | dict[str, float]:
         """Test step (calls evaluation_step).
 
         Args:
-            batch: Input batch (Observation for dataset testing, GymObservation for gym evaluation).
+            batch: Input batch (dict for dataset testing, GymObservation for gym evaluation).
             batch_idx: Index of the batch.
 
         Returns:
@@ -163,8 +160,5 @@ class Dummy(Policy):
         if isinstance(batch, GymObservation):
             return super().test_step(batch, batch_idx)
 
-        # Handle dataset testing
-        del batch_idx  # Unused variable
-        if isinstance(batch, Observation):
-            self.evaluation_step(batch=batch, stage="test")
+        # No dataset testing logic for dummy policy
         return {}

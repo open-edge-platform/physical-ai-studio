@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, fields
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -65,6 +66,23 @@ class Observation:
     timestamp: torch.Tensor | np.ndarray | None = None
     info: dict[str, Any] | None = None
     extra: dict[str, Any] | None = None
+
+    class ComponentKeys(StrEnum):
+        """Enum for batch observation components."""
+
+        STATE = "state"
+        ACTION = "action"
+        IMAGES = "images"
+
+        NEXT_REWARD = "next_reward"
+        NEXT_SUCCESS = "next_success"
+        EPISODE_INDEX = "episode_index"
+        FRAME_INDEX = "frame_index"
+        INDEX = "index"
+        TASK_INDEX = "task_index"
+        TIMESTAMP = "timestamp"
+        INFO = "info"
+        EXTRA = "extra"
 
     def to_dict(self) -> dict[str, Any]:
         """Convert Observation to a nested dictionary format.
@@ -245,3 +263,32 @@ class GymObservation:
         if self.max_steps is not None:
             parts.append(f"max_steps={self.max_steps}")
         return f"GymObservation({', '.join(parts)})"
+
+
+class FeatureType(StrEnum):
+    """Enum for feature types."""
+
+    VISUAL = "VISUAL"
+    ACTION = "ACTION"
+    STATE = "STATE"
+    ENV = "ENV"
+
+
+@dataclass(frozen=True)
+class Feature:
+    """A feature representation."""
+
+    normalization_data: NormalizationParameters | None = None
+    ftype: FeatureType | None = None
+    shape: tuple[int, ...] | None = None
+    name: str | None = None
+
+
+@dataclass(frozen=True)
+class NormalizationParameters:
+    """Parameters for normalizing a tensor."""
+
+    mean: torch.Tensor | np.ndarray | None = None
+    std: torch.Tensor | np.ndarray | None = None
+    min: torch.Tensor | np.ndarray | None = None
+    max: torch.Tensor | np.ndarray | None = None

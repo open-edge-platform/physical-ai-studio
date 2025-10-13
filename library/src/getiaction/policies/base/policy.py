@@ -21,8 +21,6 @@ class Policy(L.LightningModule, ABC):
     def __init__(self) -> None:
         """Initialize the Base Lightning Module for Policies."""
         super().__init__()
-        self.save_hyperparameters()
-
         self.model: nn.Module
 
     def transfer_batch_to_device(
@@ -144,7 +142,7 @@ class Policy(L.LightningModule, ABC):
         For dataset validation, subclasses must override this method.
 
         Args:
-            batch: GymObservation containing the environment to evaluate, or dict for dataset validation
+            batch: GymObservation for gym-based validation, or dict for dataset validation
             batch_idx: Index of the batch (used as seed for reproducibility)
 
         Returns:
@@ -173,7 +171,7 @@ class Policy(L.LightningModule, ABC):
         For dataset testing, subclasses must override this method.
 
         Args:
-            batch: GymObservation containing the environment to evaluate, or dict for dataset testing
+            batch: GymObservation for gym-based testing, or dict for dataset testing
             batch_idx: Index of the batch (used as seed for reproducibility)
 
         Returns:

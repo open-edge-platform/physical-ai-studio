@@ -25,7 +25,7 @@ class FakeActionDataset(Dataset):
         )
 
     @property
-    def features(self) -> dict:
+    def raw_features(self) -> dict:
         """
         Raw dataset features.
         """
@@ -66,6 +66,12 @@ class FakeActionDataset(Dataset):
         """
         pass
 
+    @property
+    def observation_features(self) -> dict:
+        """
+        Observation features from the dataset.
+        """
+        return {}
 
 
 # TODO: Add tests for gym envs concat

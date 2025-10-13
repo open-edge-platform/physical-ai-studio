@@ -332,12 +332,12 @@ class ACT(Policy, LeRobotFromConfig):
             The action predictions from the policy.
         """
         # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch = FormatConverter.to_lerobot_dict(batch)
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
 
-        actions, _ = self.lerobot_policy.model(batch)
+        actions, _ = self.lerobot_policy.model(batch_dict)
         return actions
 
-    def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+    def training_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
         """Training step uses LeRobot's loss computation.
 
         Args:
@@ -350,9 +350,9 @@ class ACT(Policy, LeRobotFromConfig):
         del batch_idx  # Unused argument
 
         # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch = FormatConverter.to_lerobot_dict(batch)
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
 
-        total_loss, loss_dict = self.lerobot_policy.forward(batch)
+        total_loss, loss_dict = self.lerobot_policy.forward(batch_dict)
         for key, value in loss_dict.items():
             self.log(f"train/{key}", value, prog_bar=False)
         self.log("train/loss", total_loss, prog_bar=True)
@@ -377,13 +377,13 @@ class ACT(Policy, LeRobotFromConfig):
             return super().validation_step(batch, batch_idx)
 
         # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch = FormatConverter.to_lerobot_dict(batch)
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
 
         # Workaround for LeRobot bug: VAE fails in eval mode
         was_training = self.training
         if self.lerobot_policy.config.use_vae and not was_training:
             self.train()
-        total_loss, loss_dict = self.lerobot_policy.forward(batch)
+        total_loss, loss_dict = self.lerobot_policy.forward(batch_dict)
         if not was_training:
             self.eval()
         for key, value in loss_dict.items():
@@ -400,9 +400,8 @@ class ACT(Policy, LeRobotFromConfig):
         Returns:
             The selected action tensor.
         """
-        # Convert to LeRobot format if needed
-        batch = FormatConverter.to_lerobot_dict(batch)
-        return self.lerobot_policy.select_action(batch)
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
+        return self.lerobot_policy.select_action(batch_dict)
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
         """Configure optimizer using LeRobot's custom parameter groups.

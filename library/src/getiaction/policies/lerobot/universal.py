@@ -17,9 +17,10 @@ from typing import TYPE_CHECKING, Any, ClassVar
 import torch
 from lightning_utilities import module_available
 
+from getiaction.data import Observation
 from getiaction.data.lerobot import FormatConverter
 from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
-from getiaction.data.observation import GymObservation, Observation
+from getiaction.data.observation import GymObservation
 from getiaction.policies.base import Policy
 from getiaction.policies.lerobot.mixin import LeRobotFromConfig
 
@@ -357,9 +358,9 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             Policy output (format depends on policy type).
         """
         # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch = FormatConverter.to_lerobot_dict(batch)
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
 
-        return self.lerobot_policy.forward(batch)
+        return self.lerobot_policy.forward(batch_dict)
 
     def _process_loss_output(
         self,
@@ -444,9 +445,9 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             batch = batch.to(self.device)
 
         # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch = FormatConverter.to_lerobot_dict(batch)
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
 
-        output = self.lerobot_policy.forward(batch)
+        output = self.lerobot_policy.forward(batch_dict)
 
         # Process and log the loss output
         return self._process_loss_output(output, log_prefix="train")
@@ -474,9 +475,9 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             return super().validation_step(batch, batch_idx)
 
         # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch = FormatConverter.to_lerobot_dict(batch)
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
 
-        output = self.lerobot_policy.forward(batch)
+        output = self.lerobot_policy.forward(batch_dict)
 
         # Process and log the loss output
         return self._process_loss_output(output, log_prefix="val")
@@ -490,7 +491,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         """
         self.lerobot_policy.reset()
 
-    def select_action(self, batch: dict[str, torch.Tensor] | Observation) -> torch.Tensor:
+    def select_action(self, batch: Observation) -> torch.Tensor:
         """Select action (inference mode) through LeRobot.
 
         Args:
@@ -502,19 +503,8 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         Returns:
             Predicted actions.
         """
-        # Move Observation to device if needed
-        if isinstance(batch, Observation):
-            batch = batch.to(self.device)
-
-        # Convert to LeRobot format if needed
-        # This handles: Observation objects, collated dicts, and raw gym dicts
-        batch = FormatConverter.to_lerobot_dict(batch)
-
-        # Move tensors to the same device as the policy (for raw gym dicts)
-        device = next(self.parameters()).device
-        batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
-
-        return self.lerobot_policy.select_action(batch)
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
+        return self.lerobot_policy.select_action(batch_dict)
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
         """Configure optimizer for Lightning.

@@ -341,12 +341,12 @@ class Diffusion(Policy, LeRobotFromConfig):
             The computed loss tensor.
         """
         # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch = FormatConverter.to_lerobot_dict(batch)
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
 
-        loss, _ = self.lerobot_policy.forward(batch)
+        loss, _ = self.lerobot_policy.forward(batch_dict)
         return loss
 
-    def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+    def training_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
         """Training step uses LeRobot's loss computation.
 
         Args:
@@ -359,9 +359,9 @@ class Diffusion(Policy, LeRobotFromConfig):
         del batch_idx  # Unused argument
 
         # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch = FormatConverter.to_lerobot_dict(batch)
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
 
-        loss, _ = self.lerobot_policy.forward(batch)
+        loss, _ = self.lerobot_policy.forward(batch_dict)
         self.log("train/loss", loss, prog_bar=True)
         return loss
 
@@ -384,9 +384,9 @@ class Diffusion(Policy, LeRobotFromConfig):
             return super().validation_step(batch, batch_idx)
 
         # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch = FormatConverter.to_lerobot_dict(batch)
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
 
-        loss, _ = self.lerobot_policy.forward(batch)
+        loss, _ = self.lerobot_policy.forward(batch_dict)
         self.log("val/loss", loss, prog_bar=True)
         return loss
 
@@ -399,9 +399,8 @@ class Diffusion(Policy, LeRobotFromConfig):
         Returns:
             The selected action tensor.
         """
-        # Convert to LeRobot format if needed
-        batch = FormatConverter.to_lerobot_dict(batch)
-        return self.lerobot_policy.select_action(batch)
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
+        return self.lerobot_policy.select_action(batch_dict)
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
         """Configure optimizer using LeRobot's parameters.
