@@ -71,8 +71,6 @@ export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
         },
     });
 
-    console.log(config.dataset);
-
     const { data: availableCameras, refetch: refreshCameras } = $api.useQuery('get', '/api/hardware/cameras');
     const { data: foundRobots, refetch: refreshRobots } = $api.useQuery('get', '/api/hardware/robots');
     const { data: availableCalibrations, refetch: refreshCalibrations } = $api.useQuery(
@@ -111,7 +109,6 @@ export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
         }));
     };
 
-    console.log(config);
     const updateDataset = (name: string) =>{
         setConfig((c) => ({
             ...c,
@@ -183,7 +180,7 @@ export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
                             {Object.keys(projectTasks).map((datasetName) => (
                                 <Section key={datasetName} title={datasetName}>
                                     {projectTasks[datasetName].map((task) => (
-                                        <Item key={task}>{task}</Item>
+                                        <Item key={`${datasetName}-${task}`}>{task}</Item>
                                     ))}
                                 </Section>
                             ))}
