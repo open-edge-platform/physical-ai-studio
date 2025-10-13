@@ -11,29 +11,29 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
-from gymnasium.wrappers import TimeLimit
+from gymnasium.wrappers.time_limit import TimeLimit
 from lightning.pytorch import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
 from getiaction.data.gym import GymDataset
-from getiaction.data.observation import Observation
+from getiaction.data.observation import GymObservation, Observation
 from getiaction.gyms import Gym
 
 if TYPE_CHECKING:
     from getiaction.data import Dataset
 
 
-def _collate_env(batch: list[Any]) -> dict[str, Any]:
-    """Collate a batch of environments for a DataLoader.
+def _collate_gym_observation(batch: list[Any]) -> GymObservation:
+    """Collate a batch of environments into a GymObservation.
 
     Args:
-        batch (list[Any]): A list containing a single environment.
+        batch (list[Any]): A list containing a single Gym environment.
 
     Returns:
-        dict[str, Any]: Dictionary with the environment under the key 'env'.
+        GymObservation: Wrapper containing the gym environment.
     """
-    # batch is a list with one item: [env], return a dict as expected by test_step
-    return {"env": batch[0]}
+    # batch is a list with one item: [env], wrap in GymObservation
+    return GymObservation(env=batch[0])
 
 
 def _collate_observations(batch: list[Observation]) -> Observation:
@@ -218,7 +218,7 @@ class DataModule(LightningDataModule):
         return DataLoader(
             self._val_dataset,
             batch_size=1,
-            collate_fn=_collate_env,  # type: ignore[arg-type]
+            collate_fn=_collate_gym_observation,  # type: ignore[arg-type]
             shuffle=False,
         )
 
@@ -231,7 +231,7 @@ class DataModule(LightningDataModule):
         return DataLoader(
             self._test_dataset,
             batch_size=1,
-            collate_fn=_collate_env,  # type: ignore[arg-type]
+            collate_fn=_collate_gym_observation,  # type: ignore[arg-type]
             shuffle=False,
         )
 
