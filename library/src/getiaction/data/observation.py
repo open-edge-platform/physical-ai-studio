@@ -27,6 +27,11 @@ class Observation:
     - `to_dict()`: Convert to nested dictionary
     - `from_dict()`: Create Observation from dictionary
 
+    Supports dict-like interface for iteration and access:
+    - `keys()`: Get all field names
+    - `values()`: Get all field values
+    - `items()`: Get (field_name, value) tuples
+
     For framework-specific conversions (e.g., LeRobot format), use the appropriate
     converter from `getiaction.data.lerobot.converters`.
 
@@ -207,8 +212,7 @@ class Observation:
             return value
 
         # Create new instance with all fields moved to device
-        current_dict = self.to_dict()
-        new_dict = {k: _move_to_device(v) for k, v in current_dict.items()}
+        new_dict = {k: _move_to_device(v) for k, v in self.items()}
         return Observation.from_dict(new_dict)
 
 
