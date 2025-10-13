@@ -27,8 +27,10 @@ class TestLightningActionTrainer:
         trainer_wrapper.backend.fit.assert_called_once_with(model=dummy_model, datamodule=datamodule)
 
     def test_predict_validate_test_raise(self, dummy_model, dummy_datamodule):
-        """predict, validate, and test methods raise NotImplementedError."""
+        """test and predict methods raise NotImplementedError."""
         trainer_wrapper = Trainer()
-        for fn in (trainer_wrapper.predict, trainer_wrapper.validate, trainer_wrapper.test):
+
+        # Test predict and test - these are abstract methods that raise NotImplementedError
+        for fn in (trainer_wrapper.predict, trainer_wrapper.test):
             with pytest.raises(NotImplementedError):
                 fn()

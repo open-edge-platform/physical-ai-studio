@@ -533,3 +533,44 @@ class TestObservationDeviceTransfer:
         assert obs.action.device == original_device
         # New instance created
         assert obs is not obs_moved
+
+
+class TestGymObservation:
+    """Tests for GymObservation dataclass."""
+
+    def test_gym_observation_creation(self):
+        """Test that GymObservation is properly structured for validation."""
+        from getiaction.data.observation import GymObservation
+        from getiaction.gyms import PushTGym
+
+        gym = PushTGym()
+        gym_obs = GymObservation(env=gym, episode_id=0)
+
+        assert gym_obs.env is gym
+        assert gym_obs.episode_id == 0
+        assert gym_obs.seed is None
+        assert gym_obs.max_steps is None
+
+    def test_gym_observation_with_seed(self):
+        """Test GymObservation with custom seed."""
+        from getiaction.data.observation import GymObservation
+        from getiaction.gyms import PushTGym
+
+        gym = PushTGym()
+        gym_obs = GymObservation(env=gym, episode_id=1, seed=42)
+
+        assert gym_obs.env is gym
+        assert gym_obs.episode_id == 1
+        assert gym_obs.seed == 42
+
+    def test_gym_observation_with_max_steps(self):
+        """Test GymObservation with custom max_steps."""
+        from getiaction.data.observation import GymObservation
+        from getiaction.gyms import PushTGym
+
+        gym = PushTGym()
+        gym_obs = GymObservation(env=gym, episode_id=2, max_steps=100)
+
+        assert gym_obs.env is gym
+        assert gym_obs.episode_id == 2
+        assert gym_obs.max_steps == 100
