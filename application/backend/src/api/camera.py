@@ -8,7 +8,7 @@ from schemas import CameraConfig
 from utils.camera import gen_camera_frames
 from webrtc.manager import Answer, Offer, WebRTCManager
 
-router = APIRouter(prefix="/api/cameras")
+router = APIRouter(prefix="/api/cameras", tags=["Cameras"])
 
 
 @router.post("/offer/camera")

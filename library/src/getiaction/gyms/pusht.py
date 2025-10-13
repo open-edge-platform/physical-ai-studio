@@ -5,10 +5,10 @@
 
 import gym_pusht  # noqa: F401
 
-from getiaction.gyms import BaseGym
+from getiaction.gyms import Gym
 
 
-class PushTGym(BaseGym):
+class PushTGym(Gym):
     """A PushT Gymnasium environment wrapper for the PushT task."""
 
     def __init__(

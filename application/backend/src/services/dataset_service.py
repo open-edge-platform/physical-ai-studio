@@ -18,6 +18,9 @@ class DatasetService:
     def create_dataset(self, dataset: Dataset) -> Dataset:
         return self._persistence.create(dataset)
 
+    def list_datasets(self) -> list[Dataset]:
+        return self._persistence.list_all()
+
     def get_dataset_by_id(self, dataset_id: UUID) -> Dataset:
         dataset = self._persistence.get_by_id(dataset_id)
         if not dataset:

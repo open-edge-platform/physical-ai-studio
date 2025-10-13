@@ -20,7 +20,7 @@ import {
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { $api } from '../../../api/client';
-import { SchemaRobotConfig, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
+import { SchemaRobotConfig, SchemaTeleoperationConfig, SchemaCameraConfig } from '../../../api/openapi-spec';
 import { useProject } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
 import { CameraSetup } from './camera-setup';
@@ -40,6 +40,8 @@ export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
         },
     });
 
+    console.log(project.config)
+
     const {geti_action_dataset_path} = useSettings();
 
     const isNewDataset = !dataset_id 
@@ -47,7 +49,7 @@ export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
 
     const [config, setConfig] = useState<SchemaTeleoperationConfig>({
         task: initialTask,
-        fps: project.config!.fps,
+        fps: project.config?.fps ?? 30,
         dataset: project.datasets.find((d) => d.id === dataset_id) ?? {
             project_id: project.id!,
             name: '',
@@ -80,14 +82,14 @@ export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
 
     const navigate = useNavigate();
 
-    const updateCamera = (name: string, port_or_device_id: string, oldId: string) => {
+    const updateCamera = (name: string, id: string, oldId: string, driver: string, oldDriver: string) => {
         setConfig({
             ...config,
             cameras: config.cameras.map((c) => {
                 if (c.name === name) {
-                    return { ...c, port_or_device_id };
-                } else if (c.port_or_device_id === port_or_device_id) {
-                    return { ...c, port_or_device_id: oldId };
+                    return { ...c, port_or_device_id: id, driver };
+                } else if (c.port_or_device_id === id && c.driver === driver) {
+                    return { ...c, port_or_device_id: oldId, driver: oldDriver };
                 } else {
                     return c;
                 }
@@ -136,7 +138,7 @@ export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
         if (activeTab === 'robots') {
             setActiveTab('cameras');
         } else {
-            navigate(paths.project.datasets.index({ project_id: project.id! }));
+            navigate(paths.project.datasets.index({ project_id: project.id }));
         }
     };
 

@@ -15,9 +15,9 @@ from gymnasium.wrappers import TimeLimit
 from lightning.pytorch import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
-from getiaction.data import Observation
 from getiaction.data.gym import GymDataset
-from getiaction.gyms import BaseGym
+from getiaction.data.observation import Observation
+from getiaction.gyms import Gym
 
 if TYPE_CHECKING:
     from getiaction.data import Dataset
@@ -36,17 +36,17 @@ def _collate_env(batch: list[Any]) -> dict[str, Any]:
     return {"env": batch[0]}
 
 
-def _collate_observations(batch: list[Observation]) -> dict[str, Any]:
-    """Collate a batch of Observations to a dict for training format.
+def _collate_observations(batch: list[Observation]) -> Observation:
+    """Collate a batch of Observations into a single batched Observation.
 
     Args:
-        batch (list[Any]): A list containing Observations.
+        batch (list[Observation]): A list containing Observations.
 
     Returns:
-        dict[str, Any]: Dictionary for use in the model.
+        Observation: A single Observation with batched tensors.
     """
     if not batch:
-        return {}
+        return Observation()
 
     collated_data: dict[str, Any] = {}
 
@@ -76,8 +76,16 @@ def _collate_observations(batch: list[Observation]) -> dict[str, Any]:
             for inner_key in first_non_none:
                 inner_values = [d.get(inner_key) for d in values if d is not None]
                 if inner_values:
-                    tensors_to_stack = [torch.from_numpy(v) if isinstance(v, np.ndarray) else v for v in inner_values]
-                    collated_inner_dict[inner_key] = torch.stack(tensors_to_stack, dim=0)
+                    first_inner_value = inner_values[0]
+                    # Only stack if the values are tensors or arrays
+                    if isinstance(first_inner_value, (torch.Tensor, np.ndarray)):
+                        tensors_to_stack = [
+                            torch.from_numpy(v) if isinstance(v, np.ndarray) else v for v in inner_values
+                        ]
+                        collated_inner_dict[inner_key] = torch.stack(tensors_to_stack, dim=0)
+                    else:
+                        # For non-tensor values (like strings), just keep them as a list
+                        collated_inner_dict[inner_key] = inner_values
             collated_data[key] = collated_inner_dict
 
         # Handle primitive types like booleans, integers, and floats
@@ -88,7 +96,7 @@ def _collate_observations(batch: list[Observation]) -> dict[str, Any]:
         else:
             collated_data[key] = values
 
-    return collated_data
+    return Observation(**collated_data)
 
 
 class DataModule(LightningDataModule):
@@ -102,9 +110,9 @@ class DataModule(LightningDataModule):
         self,
         train_dataset: Dataset,
         train_batch_size: int = 16,
-        eval_gyms: BaseGym | list[BaseGym] | None = None,
+        eval_gyms: Gym | list[Gym] | None = None,
         num_rollouts_eval: int = 10,
-        test_gyms: BaseGym | list[BaseGym] | None = None,
+        test_gyms: Gym | list[Gym] | None = None,
         num_rollouts_test: int = 10,
         max_episode_steps: int | None = 300,
     ) -> None:
@@ -113,9 +121,9 @@ class DataModule(LightningDataModule):
         Args:
             train_dataset (ActionDataset): Dataset for training.
             train_batch_size (int): Batch size for training DataLoader.
-            eval_gyms (BaseGym, list[BaseGym], None]): Evaluation environments.
+            eval_gyms (Gym, list[Gym], None]): Evaluation environments.
             num_rollouts_eval (int): Number of rollouts to run for evaluation environments.
-            test_gyms (BaseGym, list[BaseGym], None]): Test environments.
+            test_gyms (Gym, list[Gym], None]): Test environments.
             num_rollouts_test (int): Number of rollouts to run for test environments.
             max_episode_steps (int, None): Maximum steps allowed per episode. If None, no time limit.
         """
@@ -126,17 +134,17 @@ class DataModule(LightningDataModule):
         self.train_batch_size: int = train_batch_size
 
         # gym environments
-        self.eval_gyms: BaseGym | list[BaseGym] | None = eval_gyms
+        self.eval_gyms: Gym | list[Gym] | None = eval_gyms
         self.eval_dataset: Dataset[Any] | None = None
         self.num_rollouts_eval: int = num_rollouts_eval
-        self.test_gyms: BaseGym | list[BaseGym] | None = test_gyms
+        self.test_gyms: Gym | list[Gym] | None = test_gyms
         self.test_dataset: Dataset[Any] | None = None
         self.num_rollouts_test: int = num_rollouts_test
         self.max_episode_steps = max_episode_steps
 
         # setup time limit if max_episode steps
         if (self.max_episode_steps is not None) and self.eval_gyms is not None:
-            if isinstance(self.eval_gyms, BaseGym):
+            if isinstance(self.eval_gyms, Gym):
                 self.eval_gyms.env = TimeLimit(
                     env=self.eval_gyms.env,
                     max_episode_steps=self.max_episode_steps,
@@ -148,7 +156,7 @@ class DataModule(LightningDataModule):
                         max_episode_steps=self.max_episode_steps,
                     )
         if (self.max_episode_steps is not None) and self.test_gyms is not None:
-            if isinstance(self.test_gyms, BaseGym):
+            if isinstance(self.test_gyms, Gym):
                 self.test_gyms.env = TimeLimit(
                     env=self.test_gyms.env,
                     max_episode_steps=self.max_episode_steps,

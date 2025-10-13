@@ -1,5 +1,6 @@
 from abc import ABC
-from uuid import UUID, uuid4
+from typing import Annotated
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -7,13 +8,13 @@ from pydantic import BaseModel, Field
 class BaseIDModel(ABC, BaseModel):
     """Base model with an id field."""
 
-    id: UUID = Field(default_factory=uuid4)
+    id: Annotated[UUID, Field(description="Unique identifier")]
 
 
 class BaseIDNameModel(ABC, BaseModel):
     """Base model with id and name fields."""
 
-    id: UUID = Field(default_factory=uuid4)
+    id: Annotated[UUID, Field(description="Unique identifier")]
     name: str = "Default Name"
 
 

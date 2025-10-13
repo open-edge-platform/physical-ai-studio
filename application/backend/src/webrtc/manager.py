@@ -29,7 +29,7 @@ class WebRTCManager:
         Ensures the device is only opened once.
         """
         if device not in self._players:
-            self._players[device] = MediaPlayer(device, format="v4l2", options={"video_size": "640x480"})
+            self._players[device] = MediaPlayer(device, options={"video_size": "640x480"})
             # Initialize the set of connections for this device
             self._device_connections[device] = set()
         return self._players[device]

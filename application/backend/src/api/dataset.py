@@ -5,9 +5,10 @@ from fastapi import APIRouter, Depends
 from api.dependencies import get_dataset_service
 from schemas import Episode, LeRobotDatasetInfo
 from services import DatasetService
-from utils.dataset import get_dataset_episodes, get_local_repositories
+from utils.dataset import get_dataset_episodes, get_local_repositories, get_geti_action_datasets
+from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
 
-router = APIRouter(prefix="/api/dataset")
+router = APIRouter(prefix="/api/dataset", tags=["Dataset"])
 
 
 @router.get("/lerobot")
@@ -24,6 +25,26 @@ async def list_le_robot_datasets() -> list[LeRobotDatasetInfo]:
             robot_type=dataset.robot_type,
         )
         for dataset in get_local_repositories()
+    ]
+
+@router.get("/orphans")
+async def list_orphan_datasets(
+    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
+) -> list[LeRobotDatasetInfo]:
+    """Get all local lerobot datasets from huggingface cache."""
+    datasets = [dataset.path for dataset in dataset_service.list_datasets()]
+    
+    return [
+        LeRobotDatasetInfo(
+            root=str(dataset.root),
+            repo_id=dataset.repo_id,
+            total_episodes=dataset.total_episodes,
+            total_frames=dataset.total_frames,
+            fps=dataset.fps,
+            features=list(dataset.features),
+            robot_type=dataset.robot_type,
+        )
+        for dataset in [LeRobotDatasetMetadata(repo, root=root) for repo, root in get_geti_action_datasets() if root not in datasets]
     ]
 
 

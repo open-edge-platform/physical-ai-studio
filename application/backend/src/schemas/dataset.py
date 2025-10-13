@@ -1,4 +1,7 @@
-from pydantic import BaseModel
+from typing import Annotated
+from uuid import UUID
+
+from pydantic import BaseModel, Field
 
 from .base import BaseIDModel
 
@@ -31,7 +34,7 @@ class LeRobotDatasetInfo(BaseModel):
 class Dataset(BaseIDModel):
     name: str = "Default Name"
     path: str
-    project_id: str
+    project_id: Annotated[UUID, Field(description="Unique identifier")]
 
     model_config = {
         "json_schema_extra": {

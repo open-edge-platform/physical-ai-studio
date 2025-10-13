@@ -44,24 +44,26 @@ const CameraPreview = ({ camera }: { camera: SchemaCameraConfig }) => {
 interface CameraSetupProps {
     camera: SchemaCameraConfig;
     availableCameras: SchemaCamera[];
-    updateCamera: (name: string, id: string, oldId: string) => void;
+    updateCamera: (name: string, id: string, oldId: string, driver: string, oldDriver: string) => void;
 }
 export const CameraSetup = ({ camera, availableCameras, updateCamera }: CameraSetupProps) => {
-    const camerasConnectedOfType = availableCameras.filter((m) => m.type === camera.type);
+    const camerasConnectedOfType = availableCameras.filter((m) => m.driver === camera.driver);
+    const makeKey = (cam: SchemaCamera) => `${cam.driver}%${cam.port_or_device_id}`;
 
     const onSelection = (key: Key | null) => {
         if (key) {
-            updateCamera(camera.name, String(key), camera.id ?? '');
+            const [driver, id] = String(key).split('%');
+            updateCamera(camera.name, String(id), camera.port_or_device_id ?? '', driver, camera.driver);
         }
     };
 
     return (
         <Flex direction={'column'} flex={1}>
             <Heading>{camera.name}</Heading>
-            <CameraPreview key={camera.port_or_device_id} camera={camera} />
-            <Picker selectedKey={camera.port_or_device_id} onSelectionChange={onSelection}>
+            {/*<CameraPreview key={camera.port_or_device_id} camera={camera} />*/}
+            <Picker selectedKey={`${camera.driver}%${camera.port_or_device_id}`} onSelectionChange={onSelection}>
                 {camerasConnectedOfType.map((cam) => (
-                    <Item key={cam.id}>{cam.name}</Item>
+                    <Item key={makeKey(cam)}>{cam.name}</Item>
                 ))}
             </Picker>
         </Flex>

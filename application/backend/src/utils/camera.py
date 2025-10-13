@@ -4,7 +4,7 @@ import os
 import re
 import time
 from collections.abc import Generator
-from typing import Any, Literal
+from typing import Any
 
 import cv2
 from fastapi import WebSocket
@@ -13,6 +13,7 @@ from lerobot.cameras import CameraConfig as LeRobotCameraConfig
 from lerobot.cameras.opencv import OpenCVCamera, OpenCVCameraConfig
 from lerobot.cameras.realsense import RealSenseCamera, RealSenseCameraConfig
 from lerobot.errors import DeviceNotConnectedError
+from frame_source import FrameSourceFactory
 from lerobot.find_cameras import find_all_opencv_cameras as le_robot_find_all_opencv_cameras
 
 from schemas import CameraConfig
@@ -64,16 +65,22 @@ def find_all_opencv_cameras() -> list[dict[str, Any]]:
     return [add_device_name_to_opencv_camera(camera) for camera in cameras]
 
 
-def gen_frames(id: str, type: Literal["RealSense", "OpenCV"]) -> Generator[bytes, None, None]:
+def gen_frames(id: str, driver: str) -> Generator[bytes, None, None]:
     """
     Continuously capture frames, encode them as JPEG,
     and yield them in the multipart format expected by browsers.
     """
 
-    if type == "OpenCV":
-        camera = cv2.VideoCapture(id)
+    _id: str | int
+    if id.isdigit():
+        _id = int(id)
+    else:
+        _id = str(id)
+    cam = FrameSourceFactory.create(driver, _id)
+    cam.connect()
+
     while True:
-        success, frame = camera.read()
+        success, frame = cam.read()
         if not success:
             break
 
@@ -113,7 +120,7 @@ async def gen_camera_frames(websocket: WebSocket, stop_event: asyncio.Event, con
 
 def build_camera_config(camera_config: CameraConfig) -> LeRobotCameraConfig:
     """Build either realsense or opencv camera config from CameraConfig BaseModel"""
-    if camera_config.type == "RealSense":
+    if camera_config.driver == "realsense":
         return RealSenseCameraConfig(
             serial_number_or_name=camera_config.port_or_device_id,
             fps=camera_config.fps,
@@ -121,14 +128,14 @@ def build_camera_config(camera_config: CameraConfig) -> LeRobotCameraConfig:
             height=camera_config.height,
             use_depth=camera_config.use_depth,
         )
-    if camera_config.type == "OpenCV":
+    if camera_config.driver == "webcam":
         return OpenCVCameraConfig(
             index_or_path=camera_config.port_or_device_id,
             width=camera_config.width,
             height=camera_config.height,
             fps=camera_config.fps,
         )
-    raise ValueError(f"Unknown CameraConfig type: {camera_config.type}")
+    raise ValueError(f"Unknown CameraConfig driver: {camera_config.driver}")
 
 
 def initialize_camera(cfg: LeRobotCameraConfig) -> Camera:

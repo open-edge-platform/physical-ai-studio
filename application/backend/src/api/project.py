@@ -11,7 +11,7 @@ from services import ProjectService
 from services.base import ResourceInUseError, ResourceNotFoundError
 from utils.dataset import build_dataset_from_lerobot_dataset, build_project_config_from_dataset
 
-router = APIRouter(prefix="/api/projects")
+router = APIRouter(prefix="/api/projects", tags=["Projects"])
 
 
 @router.get("")
@@ -40,9 +40,13 @@ async def import_dataset(
     """Set the project from a dataset, only available when config is None."""
     project = project_service.get_project_by_id(project_id)
     update = {}
-    if project.config is None:
-        update["config"] = build_project_config_from_dataset(lerobot_dataset)
-    update["datasets"] = [build_dataset_from_lerobot_dataset(lerobot_dataset)]
+    if project.config is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Import disabled when project already has config.")
+    if project.datasets:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Import disabled when project already has a dataset.")
+
+    update["config"] = build_project_config_from_dataset(lerobot_dataset)
+    update["datasets"] = [build_dataset_from_lerobot_dataset(lerobot_dataset, project_id)]
     return project_service.update_project(project, update)
 
 

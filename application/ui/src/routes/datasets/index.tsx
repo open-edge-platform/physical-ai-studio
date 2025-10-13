@@ -21,8 +21,7 @@ export const Index = () => {
             if (datasets.length === 0) {
                 setDataset(undefined);
             } else {
-                //Disable for now since not implemented
-                navigate(paths.project.datasets.record_new({ project_id: project.id! }));
+                navigate(paths.project.datasets.record_new({ project_id: project.id }));
             }
         } else {
             setDataset(datasets.find((d) => d.id === key.toString()));
@@ -46,8 +45,8 @@ export const Index = () => {
                             <View padding={'size-30'}>
                                 <Link
                                     href={paths.project.datasets.record({
-                                        project_id: project.id!,
-                                        dataset_id: dataset.id!,
+                                        project_id: project.id,
+                                        dataset_id: dataset.id,
                                     })}
                                 >
                                     <Button>Start recording</Button>

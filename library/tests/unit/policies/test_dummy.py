@@ -1,7 +1,11 @@
+# Copyright (C) 2025 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 import pytest
 import torch
 from torch import nn
 from collections import deque
+from getiaction.data import Observation
 from getiaction.policies import Dummy, DummyConfig
 from getiaction.policies.dummy.model import Dummy as DummyModel
 
@@ -15,6 +19,10 @@ class TestDummyPolicy:
 
     @pytest.fixture
     def batch(self):
+        return Observation(state=torch.randn(5, 4))  # 5 samples, 4 features
+
+    @pytest.fixture
+    def batch_dict(self):
         return {"obs": torch.randn(5, 4)}  # 5 samples, 4 features
 
     def test_initialization(self, policy):
@@ -28,19 +36,27 @@ class TestDummyPolicy:
         assert isinstance(actions, torch.Tensor)
         assert actions.shape[1:] == policy.model.action_shape
 
-    def test_forward_training_and_eval(self, policy, batch):
+    def test_forward_training_and_eval(self, policy, batch_dict):
         """Forward pass works in training and eval modes."""
         # Training
         policy.model.train()
-        loss, loss_dict = policy.model(batch)
+        loss, loss_dict = policy.model(batch_dict)
         assert isinstance(loss, torch.Tensor)
         assert loss_dict["loss_mse"].item() >= 0
 
         # Evaluation
         policy.model.eval()
-        actions = policy.model(batch)
+        actions = policy.model(batch_dict)
         assert isinstance(actions, torch.Tensor)
-        assert actions.shape[0] == batch["obs"].shape[0]
+        assert actions.shape[0] == batch_dict["obs"].shape[0]
+
+    def test_training_step(self, policy):
+        policy.model.train()
+        batch = Observation(state=torch.randn(5, 4))
+        loss = policy.training_step(batch, 0)
+
+        assert "loss" in loss
+        assert loss["loss"] >= 0
 
     def test_action_queue_and_reset(self):
         """Action queue fills and resets correctly."""

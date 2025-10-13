@@ -7,12 +7,13 @@ from collections.abc import Iterable
 
 import torch
 
-from getiaction.policies.base import TrainerModule
+from getiaction.data import Observation
+from getiaction.policies.base import Policy
 from getiaction.policies.dummy.config import DummyConfig
 from getiaction.policies.dummy.model import Dummy as DummyModel
 
 
-class Dummy(TrainerModule):
+class Dummy(Policy):
     """Dummy policy wrapper."""
 
     def __init__(self, config: DummyConfig) -> None:
@@ -63,29 +64,31 @@ class Dummy(TrainerModule):
         msg = f"The 'action_shape' argument must be a torch.Size or Iterable, but received type {type(shape).__name__}."
         raise TypeError(msg)
 
-    def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+    def select_action(self, batch: Observation) -> torch.Tensor:
         """Select an action using the policy model.
 
         Args:
-            batch (Dict[str, torch.Tensor]): Input batch of observations.
+            batch (Observation): Input batch of observations.
 
         Returns:
             torch.Tensor: Selected actions.
         """
-        return self.model.select_action(batch)
+        # Convert Observation to dict for dummy model
+        batch_dict = batch.to_dict()
+        return self.model.select_action(batch_dict)  # type: ignore[attr-defined]
 
-    def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> dict[str, torch.Tensor]:
+    def training_step(self, batch: Observation, batch_idx: int) -> dict[str, torch.Tensor]:
         """Training step for the policy.
 
         Args:
-            batch (Dict[str, torch.Tensor]): The training batch.
+            batch (Observation): The training batch.
             batch_idx (int): Index of the current batch.
 
         Returns:
             Dict[str, torch.Tensor]: Dictionary containing the loss.
         """
         del batch_idx  # Unused variable
-        loss, loss_dict = self.forward(batch)  # noqa: RUF059
+        loss, _ = self.model.forward(batch.to_dict())
         self.log("train/loss_step", loss, on_step=True, on_epoch=False, prog_bar=True, logger=True)
         self.log(
             "train/loss",
@@ -107,30 +110,30 @@ class Dummy(TrainerModule):
         return torch.optim.Adam(self.model.parameters(), lr=1e-4)
 
     @staticmethod
-    def evaluation_step(batch: dict[str, torch.Tensor], stage: str) -> None:
+    def evaluation_step(batch: Observation, stage: str) -> None:
         """Evaluation step (no-op by default).
 
         Args:
-            batch (Dict[str, torch.Tensor]): Input batch.
+            batch (Observation): Input batch.
             stage (str): Evaluation stage, e.g., "val" or "test".
         """
         del batch, stage  # Unused variables
 
-    def validation_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> None:
+    def validation_step(self, batch: Observation, batch_idx: int) -> None:
         """Validation step (calls evaluation_step).
 
         Args:
-            batch (Dict[str, torch.Tensor]): Input batch.
+            batch (Observation): Input batch.
             batch_idx (int): Index of the batch.
         """
         del batch_idx  # Unused variable
         return self.evaluation_step(batch=batch, stage="val")
 
-    def test_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> None:
+    def test_step(self, batch: Observation, batch_idx: int) -> None:
         """Test step (calls evaluation_step).
 
         Args:
-            batch (Dict[str, torch.Tensor]): Input batch.
+            batch (Observation): Input batch.
             batch_idx (int): Index of the batch.
         """
         del batch_idx  # Unused variable
