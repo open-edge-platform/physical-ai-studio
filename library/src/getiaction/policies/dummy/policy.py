@@ -4,7 +4,9 @@
 """Dummy lightning module and policy for testing usage."""
 
 from collections.abc import Iterable
+from typing import Any
 
+import numpy as np
 import torch
 
 from getiaction.data import Observation
@@ -65,18 +67,25 @@ class Dummy(Policy):
         msg = f"The 'action_shape' argument must be a torch.Size or Iterable, but received type {type(shape).__name__}."
         raise TypeError(msg)
 
-    def select_action(self, batch: Observation) -> torch.Tensor:
+    def select_action(self, batch: Observation | dict[str, Any]) -> torch.Tensor:
         """Select an action using the policy model.
 
         Args:
-            batch (Observation): Input batch of observations.
+            batch: Input batch - can be Observation (training) or dict (rollout).
 
         Returns:
             torch.Tensor: Selected actions.
         """
-        # Convert Observation to dict for dummy model
-        batch_dict = batch.to_dict()
-        return self.model.select_action(batch_dict)  # type: ignore[attr-defined]
+        # Convert numpy to tensors and add batch dim if needed
+        batch_dict = {
+            k: torch.from_numpy(v).unsqueeze(0).float() if isinstance(v, np.ndarray) else v for k, v in batch.items()
+        }
+
+        # Get action from model
+        action = self.model.select_action(batch_dict)  # type: ignore[attr-defined]
+
+        # Remove batch dim if present (rollout expects unbatched)
+        return action.squeeze(0) if action.ndim > 1 and action.shape[0] == 1 else action
 
     def training_step(self, batch: Observation, batch_idx: int) -> dict[str, torch.Tensor]:
         """Training step for the policy.
@@ -149,3 +158,9 @@ class Dummy(Policy):
             Metrics dict from gym rollout.
         """
         return self.evaluate_gym(batch, batch_idx, stage="test")
+
+    def reset(self) -> None:
+        """Reset the policy state.
+
+        Dummy policy has no state to reset, so this is a no-op.
+        """
