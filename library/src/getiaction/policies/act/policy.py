@@ -3,8 +3,6 @@
 
 """Lightning module for ACT policy."""
 
-from typing import Any
-
 import torch
 
 from getiaction.data import Dataset, Observation
@@ -135,52 +133,32 @@ class ACT(Policy):
         """
         del batch, stage
 
-    def validation_step(
-        self,
-        batch: dict[str, Any] | GymObservation,
-        batch_idx: int,
-    ) -> torch.Tensor | dict[str, float]:
+    def validation_step(self, batch: GymObservation, batch_idx: int) -> dict[str, float]:
         """Validation step.
 
-        This policy only supports gym-based validation. For dataset validation,
-        the policy would need explicit loss computation logic (see LeRobotPolicy
-        for an example).
+        Runs gym-based validation via rollout evaluation. The DataModule's val_dataloader
+        only returns GymObservation batches.
 
         Args:
-            batch: GymObservation for gym-based validation, or dict for dataset validation.
+            batch: GymObservation containing the environment to evaluate.
             batch_idx: Index of the batch.
 
         Returns:
-            Metrics dict from gym rollout if batch is GymObservation, empty dict otherwise.
+            Metrics dict from gym rollout.
         """
-        # Only handle gym evaluation - delegate to parent class
-        if isinstance(batch, GymObservation):
-            return super().validation_step(batch, batch_idx)
+        return self.evaluate_gym(batch, batch_idx, stage="val")
 
-        # No dataset validation logic for this policy
-        return {}
-
-    def test_step(
-        self,
-        batch: dict[str, Any] | GymObservation,
-        batch_idx: int,
-    ) -> torch.Tensor | dict[str, float]:
+    def test_step(self, batch: GymObservation, batch_idx: int) -> dict[str, float]:
         """Test step.
 
-        This policy only supports gym-based testing. For dataset testing,
-        the policy would need explicit loss computation logic (see LeRobotPolicy
-        for an example).
+        Runs gym-based testing via rollout evaluation. The DataModule's test_dataloader
+        only returns GymObservation batches.
 
         Args:
-            batch: GymObservation for gym-based testing, or dict for dataset testing.
+            batch: GymObservation containing the environment to evaluate.
             batch_idx: Index of the batch.
 
         Returns:
-            Metrics dict from gym rollout if batch is GymObservation, empty dict otherwise.
+            Metrics dict from gym rollout.
         """
-        # Only handle gym evaluation - delegate to parent class
-        if isinstance(batch, GymObservation):
-            return super().test_step(batch, batch_idx)
-
-        # No dataset testing logic for this policy
-        return {}
+        return self.evaluate_gym(batch, batch_idx, stage="test")

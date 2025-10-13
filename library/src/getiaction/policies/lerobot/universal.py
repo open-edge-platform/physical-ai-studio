@@ -20,7 +20,6 @@ from lightning_utilities import module_available
 from getiaction.data import Observation
 from getiaction.data.lerobot import FormatConverter
 from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
-from getiaction.data.observation import GymObservation
 from getiaction.policies.base import Policy
 from getiaction.policies.lerobot.mixin import LeRobotFromConfig
 
@@ -28,6 +27,8 @@ if TYPE_CHECKING:
     from lerobot.configs.policies import PreTrainedConfig
     from lerobot.configs.types import PolicyFeature
     from lerobot.policies.pretrained import PreTrainedPolicy
+
+    from getiaction.data.observation import GymObservation
 
 if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.utils import dataset_to_policy_features
@@ -427,6 +428,25 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         self.log(f"{log_prefix}/loss", loss, prog_bar=True)
         return loss
 
+    def configure_optimizers(self) -> torch.optim.Optimizer:
+        """Configure optimizer for Lightning.
+
+        Uses LeRobot's parameter grouping if available (e.g., for backbone learning rates).
+
+        Returns:
+            Configured optimizer.
+        """
+        # Check if the policy has custom parameter grouping
+        if hasattr(self.lerobot_policy, "get_optim_params"):
+            param_groups = self.lerobot_policy.get_optim_params()
+            # If get_optim_params returns a list of dicts, use it directly
+            # Otherwise, wrap in a list
+            if isinstance(param_groups, list) and param_groups and isinstance(param_groups[0], dict):
+                return torch.optim.Adam(param_groups, lr=self.learning_rate)
+            return torch.optim.Adam(param_groups, lr=self.learning_rate)
+        # Default: optimize all parameters
+        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+
     def training_step(self, batch: dict[str, torch.Tensor] | Observation, batch_idx: int) -> torch.Tensor:
         """Training step for Lightning.
 
@@ -452,44 +472,35 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         # Process and log the loss output
         return self._process_loss_output(output, log_prefix="train")
 
-    def validation_step(
-        self,
-        batch: dict[str, Any] | GymObservation,
-        batch_idx: int,
-    ) -> torch.Tensor | dict[str, float]:
+    def validation_step(self, batch: GymObservation, batch_idx: int) -> dict[str, float]:
         """Validation step for Lightning.
 
-        This handles two types of validation:
-        1. Dataset validation: batch contains observations and actions
-        2. Gym validation: batch is a GymObservation with environment (delegated to base class)
+        Runs gym-based validation by executing rollouts in the environment.
+        The DataModule's val_dataloader only returns GymObservation batches.
 
         Args:
-            batch: Validation batch or GymObservation for gym validation.
+            batch: GymObservation containing the environment to evaluate.
             batch_idx: Batch index.
 
         Returns:
-            Scalar loss value for dataset validation, metrics dict for gym validation.
+            Metrics dict from gym rollout evaluation.
         """
-        # Check if this is a gym validation batch - delegate to base class
-        if isinstance(batch, GymObservation):
-            return super().validation_step(batch, batch_idx)
+        return self.evaluate_gym(batch, batch_idx, stage="val")
 
-        # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch_dict = FormatConverter.to_lerobot_dict(batch)
+    def test_step(self, batch: GymObservation, batch_idx: int) -> dict[str, float]:
+        """Test step for Lightning.
 
-        output = self.lerobot_policy.forward(batch_dict)
+        Runs gym-based testing by executing rollouts in the environment.
+        The DataModule's test_dataloader only returns GymObservation batches.
 
-        # Process and log the loss output
-        return self._process_loss_output(output, log_prefix="val")
+        Args:
+            batch: GymObservation containing the environment to evaluate.
+            batch_idx: Batch index.
 
-    def reset(self) -> None:
-        """Reset the policy state for a new episode.
-
-        Forwards the reset call to the underlying LeRobot policy,
-        which clears action queues, observation histories, and any
-        other stateful components.
+        Returns:
+            Metrics dict from gym rollout evaluation.
         """
-        self.lerobot_policy.reset()
+        return self.evaluate_gym(batch, batch_idx, stage="test")
 
     def select_action(self, batch: Observation) -> torch.Tensor:
         """Select action (inference mode) through LeRobot.
@@ -506,24 +517,14 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         batch_dict = FormatConverter.to_lerobot_dict(batch)
         return self.lerobot_policy.select_action(batch_dict)
 
-    def configure_optimizers(self) -> torch.optim.Optimizer:
-        """Configure optimizer for Lightning.
+    def reset(self) -> None:
+        """Reset the policy state for a new episode.
 
-        Uses LeRobot's parameter grouping if available (e.g., for backbone learning rates).
-
-        Returns:
-            Configured optimizer.
+        Forwards the reset call to the underlying LeRobot policy,
+        which clears action queues, observation histories, and any
+        other stateful components.
         """
-        # Check if the policy has custom parameter grouping
-        if hasattr(self.lerobot_policy, "get_optim_params"):
-            param_groups = self.lerobot_policy.get_optim_params()
-            # If get_optim_params returns a list of dicts, use it directly
-            # Otherwise, wrap in a list
-            if isinstance(param_groups, list) and param_groups and isinstance(param_groups[0], dict):
-                return torch.optim.Adam(param_groups, lr=self.learning_rate)
-            return torch.optim.Adam(param_groups, lr=self.learning_rate)
-        # Default: optimize all parameters
-        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        self.lerobot_policy.reset()
 
     @property
     def config(self) -> PreTrainedConfig:

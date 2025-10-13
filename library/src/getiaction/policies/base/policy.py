@@ -4,7 +4,6 @@
 """Base Lightning Module for Policies."""
 
 from abc import ABC, abstractmethod
-from typing import Any
 
 import lightning as L  # noqa: N812
 import torch
@@ -66,7 +65,7 @@ class Policy(L.LightningModule, ABC):
             torch.Tensor: Model predictions
         """
         del args, kwargs
-        return self.model(batch)
+        return self.model(batch.to_dict())
 
     @abstractmethod
     def select_action(self, batch: Observation) -> torch.Tensor:
@@ -130,60 +129,34 @@ class Policy(L.LightningModule, ABC):
         self.log_dict(metrics, prog_bar=True, on_step=False, on_epoch=True, batch_size=1)
         return metrics
 
-    def validation_step(
-        self,
-        batch: dict[str, Any] | GymObservation,
-        batch_idx: int,
-    ) -> torch.Tensor | dict[str, float]:
+    def validation_step(self, batch: GymObservation, batch_idx: int) -> dict[str, float]:
         """Validation step for the policy.
 
-        This handles gym-based validation by running rollouts directly in the policy.
-        No external callback needed - the policy manages its own evaluation.
-        For dataset validation, subclasses must override this method.
+        Runs gym-based validation by executing rollouts in the environment.
+        The DataModule's val_dataloader returns GymObservation batches containing
+        the gym environment to evaluate.
 
         Args:
-            batch: GymObservation for gym-based validation, or dict for dataset validation
+            batch: GymObservation containing the environment to evaluate
             batch_idx: Index of the batch (used as seed for reproducibility)
 
         Returns:
-            Dictionary of metrics for gym evaluation. Subclasses should return loss tensor for dataset validation.
-
-        Raises:
-            NotImplementedError: If called with dataset batch (subclasses must override)
+            Dictionary of metrics from the gym rollout evaluation
         """
-        # Check if this is a gym validation batch
-        if isinstance(batch, GymObservation):
-            return self.evaluate_gym(batch, batch_idx, stage="val")
+        return self.evaluate_gym(batch, batch_idx, stage="val")
 
-        # Standard dataset validation - subclasses can override for custom logic
-        msg = "validation_step must be implemented for dataset validation"
-        raise NotImplementedError(msg)
-
-    def test_step(
-        self,
-        batch: dict[str, Any] | GymObservation,
-        batch_idx: int,
-    ) -> torch.Tensor | dict[str, float]:
+    def test_step(self, batch: GymObservation, batch_idx: int) -> dict[str, float]:
         """Test step for the policy.
 
-        This handles gym-based testing by running rollouts directly in the policy.
-        Similar to validation_step but with 'test' prefix for metrics.
-        For dataset testing, subclasses must override this method.
+        Runs gym-based testing by executing rollouts in the environment.
+        The DataModule's test_dataloader returns GymObservation batches containing
+        the gym environment to evaluate.
 
         Args:
-            batch: GymObservation for gym-based testing, or dict for dataset testing
+            batch: GymObservation containing the environment to evaluate
             batch_idx: Index of the batch (used as seed for reproducibility)
 
         Returns:
-            Dictionary of metrics for gym evaluation. Subclasses may return loss tensor for dataset testing if needed.
-
-        Raises:
-            NotImplementedError: If called with dataset batch (subclasses must override)
+            Dictionary of metrics from the gym rollout evaluation
         """
-        # Check if this is a gym test batch
-        if isinstance(batch, GymObservation):
-            return self.evaluate_gym(batch, batch_idx, stage="test")
-
-        # Standard dataset test - subclasses can override for custom logic
-        msg = "test_step must be implemented for dataset testing"
-        raise NotImplementedError(msg)
+        return self.evaluate_gym(batch, batch_idx, stage="test")

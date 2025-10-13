@@ -4,7 +4,6 @@
 """Dummy lightning module and policy for testing usage."""
 
 from collections.abc import Iterable
-from typing import Any
 
 import torch
 
@@ -121,44 +120,32 @@ class Dummy(Policy):
         """
         del batch, stage  # Unused variables
 
-    def validation_step(
-        self,
-        batch: dict[str, Any] | GymObservation,
-        batch_idx: int,
-    ) -> torch.Tensor | dict[str, float]:
-        """Validation step (calls evaluation_step).
+    def validation_step(self, batch: GymObservation, batch_idx: int) -> dict[str, float]:
+        """Validation step.
+
+        Runs gym-based validation via rollout evaluation. The DataModule's val_dataloader
+        only returns GymObservation batches.
 
         Args:
-            batch: Input batch (dict for dataset validation, GymObservation for gym evaluation).
+            batch: GymObservation containing the environment to evaluate.
             batch_idx: Index of the batch.
 
         Returns:
-            Empty dict (dummy policy doesn't return meaningful metrics).
+            Metrics dict from gym rollout.
         """
-        # Handle gym evaluation
-        if isinstance(batch, GymObservation):
-            return super().validation_step(batch, batch_idx)
+        return self.evaluate_gym(batch, batch_idx, stage="val")
 
-        # No dataset validation logic for dummy policy
-        return {}
+    def test_step(self, batch: GymObservation, batch_idx: int) -> dict[str, float]:
+        """Test step.
 
-    def test_step(
-        self,
-        batch: dict[str, Any] | GymObservation,
-        batch_idx: int,
-    ) -> torch.Tensor | dict[str, float]:
-        """Test step (calls evaluation_step).
+        Runs gym-based testing via rollout evaluation. The DataModule's test_dataloader
+        only returns GymObservation batches.
 
         Args:
-            batch: Input batch (dict for dataset testing, GymObservation for gym evaluation).
+            batch: GymObservation containing the environment to evaluate.
             batch_idx: Index of the batch.
 
         Returns:
-            Empty dict (dummy policy doesn't return meaningful metrics).
+            Metrics dict from gym rollout.
         """
-        # Handle gym evaluation
-        if isinstance(batch, GymObservation):
-            return super().test_step(batch, batch_idx)
-
-        # No dataset testing logic for dummy policy
-        return {}
+        return self.evaluate_gym(batch, batch_idx, stage="test")
