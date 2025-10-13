@@ -50,6 +50,14 @@ class TestDummyPolicy:
         assert isinstance(actions, torch.Tensor)
         assert actions.shape[0] == batch_dict["obs"].shape[0]
 
+    def test_training_step(self, policy):
+        policy.model.train()
+        batch = Observation(state=torch.randn(5, 4))
+        loss = policy.training_step(batch, 0)
+
+        assert "loss" in loss
+        assert loss["loss"] >= 0
+
     def test_action_queue_and_reset(self):
         """Action queue fills and resets correctly."""
         model = DummyModel(action_shape=torch.Size([2]), n_action_steps=3)
