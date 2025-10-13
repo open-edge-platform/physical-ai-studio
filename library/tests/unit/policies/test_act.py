@@ -61,3 +61,10 @@ class TestACTolicy:
         actions = policy.model(batch.to_dict())
         assert isinstance(actions, torch.Tensor)
         assert actions.shape == batch.action.shape
+
+    def test_training_step(self, policy, batch):
+        policy.model.train()
+        loss = policy.training_step(batch, 0)
+
+        assert "loss" in loss
+        assert loss["loss"] >= 0
