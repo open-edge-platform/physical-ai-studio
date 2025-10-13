@@ -4,10 +4,12 @@
 """Dummy lightning module and policy for testing usage."""
 
 from collections.abc import Iterable
+from typing import Any
 
 import torch
 
 from getiaction.data import Observation
+from getiaction.data.observation import GymObservation
 from getiaction.policies.base import Policy
 from getiaction.policies.dummy.config import DummyConfig
 from getiaction.policies.dummy.model import Dummy as DummyModel
@@ -119,22 +121,50 @@ class Dummy(Policy):
         """
         del batch, stage  # Unused variables
 
-    def validation_step(self, batch: Observation, batch_idx: int) -> None:
+    def validation_step(
+        self,
+        batch: dict[str, Any] | GymObservation | Observation,
+        batch_idx: int,
+    ) -> torch.Tensor | dict[str, float]:
         """Validation step (calls evaluation_step).
 
         Args:
-            batch (Observation): Input batch.
-            batch_idx (int): Index of the batch.
-        """
-        del batch_idx  # Unused variable
-        return self.evaluation_step(batch=batch, stage="val")
+            batch: Input batch (Observation for dataset validation, GymObservation for gym evaluation).
+            batch_idx: Index of the batch.
 
-    def test_step(self, batch: Observation, batch_idx: int) -> None:
+        Returns:
+            Empty dict (dummy policy doesn't return meaningful metrics).
+        """
+        # Handle gym evaluation
+        if isinstance(batch, GymObservation):
+            return super().validation_step(batch, batch_idx)
+
+        # Handle dataset validation
+        del batch_idx  # Unused variable
+        if isinstance(batch, Observation):
+            self.evaluation_step(batch=batch, stage="val")
+        return {}
+
+    def test_step(
+        self,
+        batch: dict[str, Any] | GymObservation | Observation,
+        batch_idx: int,
+    ) -> torch.Tensor | dict[str, float]:
         """Test step (calls evaluation_step).
 
         Args:
-            batch (Observation): Input batch.
-            batch_idx (int): Index of the batch.
+            batch: Input batch (Observation for dataset testing, GymObservation for gym evaluation).
+            batch_idx: Index of the batch.
+
+        Returns:
+            Empty dict (dummy policy doesn't return meaningful metrics).
         """
+        # Handle gym evaluation
+        if isinstance(batch, GymObservation):
+            return super().test_step(batch, batch_idx)
+
+        # Handle dataset testing
         del batch_idx  # Unused variable
-        return self.evaluation_step(batch=batch, stage="test")
+        if isinstance(batch, Observation):
+            self.evaluation_step(batch=batch, stage="test")
+        return {}

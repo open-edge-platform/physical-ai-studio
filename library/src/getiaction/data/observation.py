@@ -13,6 +13,8 @@ import torch
 if TYPE_CHECKING:
     import numpy as np
 
+    from getiaction.gyms import Gym
+
 
 @dataclass(frozen=True)
 class Observation:
@@ -192,3 +194,54 @@ class Observation:
         current_dict = self.to_dict()
         new_dict = {k: _move_to_device(v) for k, v in current_dict.items()}
         return Observation.from_dict(new_dict)
+
+
+@dataclass
+class GymObservation:
+    """Observation-like wrapper for gym environments during validation.
+
+    This class wraps a gym environment for use in the validation/test loop. Unlike
+    regular Observations which contain data samples, this contains a reference
+    to the environment itself.
+
+    The presence of a GymObservation signals to the policy's validation_step/test_step
+    that gym evaluation should be performed by running rollouts in the environment.
+
+    This design makes the validation flow explicit and type-safe:
+    - Observation: dataset validation (contains data with actions)
+    - GymObservation: gym evaluation (contains environment reference for rollouts)
+
+    Attributes:
+        env: The gym environment to evaluate
+        episode_id: Episode number (typically batch_idx, used as default seed)
+        seed: Optional seed override for this episode
+        max_steps: Optional step limit override for this episode
+
+    Examples:
+        >>> from getiaction.gyms import PushTGym
+        >>> gym = PushTGym()
+        >>> gym_obs = GymObservation(env=gym, episode_id=0)
+        >>> # Used in policy's validation_step:
+        >>> if isinstance(batch, GymObservation):
+        >>>     # Policy runs rollout and returns metrics
+        >>>     return rollout(policy=self, env=batch.env, ...)
+    """
+
+    env: Gym
+    episode_id: int = 0
+    seed: int | None = None
+    max_steps: int | None = None
+
+    def __repr__(self) -> str:
+        """String representation showing environment ID and episode.
+
+        Returns:
+            String representation of the GymObservation.
+        """
+        env_name = getattr(self.env, "_gym_id", "unknown")
+        parts = [f"env={env_name}", f"episode_id={self.episode_id}"]
+        if self.seed is not None:
+            parts.append(f"seed={self.seed}")
+        if self.max_steps is not None:
+            parts.append(f"max_steps={self.max_steps}")
+        return f"GymObservation({', '.join(parts)})"

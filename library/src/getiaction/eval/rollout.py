@@ -7,10 +7,17 @@ This module provides functions for evaluating policies in gym environments,
 collecting metrics, and generating evaluation reports. The evaluation approach
 is inspired by LeRobot's evaluation framework but adapted for getiaction's
 architecture using Observation dataclass and Lightning integration.
+
+TODO: Refactor this module to further improve code organization:
+  - Consider splitting helper functions into a separate utils module
+  - Extract episode data collection into a dedicated class
+  - Add more comprehensive type hints for observation formats
+  - Improve error handling for edge cases (empty episodes, invalid observations)
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -22,6 +29,89 @@ if TYPE_CHECKING:
 
     from getiaction.gyms import Gym
     from getiaction.policies.base import Policy
+
+
+@dataclass
+class _EpisodeData:
+    """Container for storing episode data during rollout."""
+
+    observations: list[dict[str, Any]] = field(default_factory=list)
+    actions: list[Tensor] = field(default_factory=list)
+    rewards: list[Tensor] = field(default_factory=list)
+    successes: list[Tensor] = field(default_factory=list)
+    dones: list[Tensor] = field(default_factory=list)
+
+
+def _convert_observation_to_dict(observation: Any) -> dict[str, Any]:  # noqa: ANN401
+    """Convert observation to dictionary format for storage.
+
+    Args:
+        observation: The observation to convert (can be object with __dict__, dict, or other).
+
+    Returns:
+        Dictionary representation of the observation.
+    """
+    if hasattr(observation, "__dict__"):
+        return {k: v for k, v in observation.__dict__.items() if v is not None}
+    if isinstance(observation, dict):
+        return observation
+    return {"observation": observation}
+
+
+def _prepare_action_for_env(action: Tensor | np.ndarray) -> np.ndarray:
+    """Convert action to numpy array suitable for environment step.
+
+    Args:
+        action: Action tensor or array from policy.
+
+    Returns:
+        1D numpy array ready for environment.
+    """
+    action_numpy = action.detach().cpu().numpy() if isinstance(action, Tensor) else np.asarray(action)
+    # Ensure action is 1D for single environment
+    return action_numpy.squeeze(0) if action_numpy.ndim > 1 else action_numpy
+
+
+def _stack_observations(all_observations: list[dict[str, Any]]) -> dict[str, Tensor]:
+    """Stack observation dictionaries into tensors.
+
+    Args:
+        all_observations: List of observation dictionaries.
+
+    Returns:
+        Dictionary mapping keys to stacked tensors.
+    """
+    stacked_obs: dict[str, Tensor] = {}
+    if not all_observations:
+        return stacked_obs
+
+    keys = all_observations[0].keys()
+    for key in keys:
+        values = [obs.get(key) for obs in all_observations if obs.get(key) is not None]
+        if values and isinstance(values[0], (Tensor, np.ndarray)):
+            tensors = [torch.from_numpy(v) if isinstance(v, np.ndarray) else v for v in values if v is not None]
+            if tensors:
+                stacked_obs[key] = torch.stack(tensors, dim=0)  # type: ignore[arg-type]
+    return stacked_obs
+
+
+def _get_max_steps(env: Gym, max_steps: int | None) -> int:
+    """Determine maximum steps from environment or argument.
+
+    Args:
+        env: The gym environment.
+        max_steps: User-provided max steps (or None).
+
+    Returns:
+        Maximum number of steps for the rollout.
+    """
+    if max_steps is not None:
+        return max_steps
+    if hasattr(env, "get_max_episode_steps"):
+        env_max = env.get_max_episode_steps()
+        if env_max is not None:
+            return env_max
+    return 1000  # Default fallback
 
 
 def rollout(
@@ -75,61 +165,34 @@ def rollout(
         The policy's `reset()` method is called before starting the rollout to
         clear any internal state (action queues, observation history, etc.).
     """
-    # Determine max steps from environment or argument
-    if max_steps is None:
-        # Use Gym's get_max_episode_steps() method if available
-        max_steps = env.get_max_episode_steps() if hasattr(env, "get_max_episode_steps") else None
-        # Fallback to default if still None
-        if max_steps is None:
-            max_steps = 1000
+    # Determine max steps and reset policy/environment
+    max_steps = _get_max_steps(env, max_steps)
 
-    # Reset policy state (clears action queues, observation histories, etc.)
     if hasattr(policy, "reset") and callable(policy.reset):
         policy.reset()
 
-    # Reset environment - returns (observation, info) tuple
-    observation, info = env.reset(seed=seed)
+    observation, _info = env.reset(seed=seed)
 
     if render_callback is not None:
         render_callback(env)
 
     # Storage for episode data
-    all_observations = []
-    all_actions = []
-    all_rewards = []
-    all_successes = []
-    all_dones = []
-
+    episode_data = _EpisodeData()
     step = 0
     done = False
 
     while not done and step < max_steps:
         # Store initial observation if requested
         if return_observations:
-            # Convert observation to dict format for storage
-            if hasattr(observation, "__dict__"):
-                obs_dict = {k: v for k, v in observation.__dict__.items() if v is not None}
-            elif isinstance(observation, dict):
-                obs_dict = observation
-            else:
-                obs_dict = {"observation": observation}
-            all_observations.append(obs_dict)
+            episode_data.observations.append(_convert_observation_to_dict(observation))
 
         # Get action from policy
-        # Policy.select_action expects the observation in the format it was trained on
         with torch.inference_mode():
             policy.eval()
             action = policy.select_action(observation)
 
         # Convert action to numpy for environment
-        if isinstance(action, Tensor):
-            action_numpy = action.detach().cpu().numpy()
-        else:
-            action_numpy = np.asarray(action)
-
-        # Ensure action is 1D for single environment
-        if action_numpy.ndim > 1:
-            action_numpy = action_numpy.squeeze(0)
+        action_numpy = _prepare_action_for_env(action)
 
         # Step environment
         observation, reward, terminated, truncated, info = env.step(action_numpy)
@@ -137,54 +200,37 @@ def rollout(
         if render_callback is not None:
             render_callback(env)
 
-        # Check for success (usually in info dict at termination)
+        # Check for success and update done flag
         is_success = info.get("is_success", False) if (terminated or truncated) else False
-
-        # Update done flag
         done = terminated or truncated
 
         # Store step data
-        all_actions.append(torch.from_numpy(action_numpy))
-        all_rewards.append(torch.tensor(reward, dtype=torch.float32))
-        all_successes.append(torch.tensor(is_success, dtype=torch.bool))
-        all_dones.append(torch.tensor(done, dtype=torch.bool))
+        episode_data.actions.append(torch.from_numpy(action_numpy))
+        episode_data.rewards.append(torch.tensor(reward, dtype=torch.float32))
+        episode_data.successes.append(torch.tensor(is_success, dtype=torch.bool))
+        episode_data.dones.append(torch.tensor(done, dtype=torch.bool))
 
         step += 1
 
     # Store final observation if requested
     if return_observations:
-        if hasattr(observation, "__dict__"):
-            obs_dict = {k: v for k, v in observation.__dict__.items() if v is not None}
-        elif isinstance(observation, dict):
-            obs_dict = observation
-        else:
-            obs_dict = {"observation": observation}
-        all_observations.append(obs_dict)
+        episode_data.observations.append(_convert_observation_to_dict(observation))
 
-    # Stack tensors along sequence dimension
+    # Build result dictionary
     ret = {
-        "action": torch.stack(all_actions, dim=0),
-        "reward": torch.stack(all_rewards, dim=0),
-        "success": torch.stack(all_successes, dim=0),
-        "done": torch.stack(all_dones, dim=0),
+        "action": torch.stack(episode_data.actions, dim=0),
+        "reward": torch.stack(episode_data.rewards, dim=0),
+        "success": torch.stack(episode_data.successes, dim=0),
+        "done": torch.stack(episode_data.dones, dim=0),
         "episode_length": step,
-        "sum_reward": torch.stack(all_rewards).sum().item(),
-        "max_reward": torch.stack(all_rewards).max().item() if all_rewards else 0.0,
-        "is_success": any(s.item() for s in all_successes),
+        "sum_reward": torch.stack(episode_data.rewards).sum().item(),
+        "max_reward": torch.stack(episode_data.rewards).max().item() if episode_data.rewards else 0.0,
+        "is_success": any(s.item() for s in episode_data.successes),
     }
 
-    # Add observations if requested
+    # Add stacked observations if requested
     if return_observations:
-        # Stack observations by key
-        stacked_obs = {}
-        if all_observations:
-            keys = all_observations[0].keys()
-            for key in keys:
-                values = [obs.get(key) for obs in all_observations if obs.get(key) is not None]
-                if values and isinstance(values[0], (Tensor, np.ndarray)):
-                    tensors = [torch.from_numpy(v) if isinstance(v, np.ndarray) else v for v in values]
-                    stacked_obs[key] = torch.stack(tensors, dim=0)
-        ret["observation"] = stacked_obs
+        ret["observation"] = _stack_observations(episode_data.observations)
 
     return ret
 
@@ -231,7 +277,7 @@ def evaluate_policy(
     """
     # Collect metrics
     per_episode = []
-    episode_data_list = [] if return_episode_data else None
+    episode_data_list: list[dict[str, Any]] | None = [] if return_episode_data else None
 
     for episode_idx in range(n_episodes):
         # Set seed if provided
@@ -257,7 +303,7 @@ def evaluate_policy(
         })
 
         # Store full episode data if requested
-        if return_episode_data:
+        if return_episode_data and episode_data_list is not None:
             episode_data_list.append(rollout_result)
 
     # Compute aggregate metrics
@@ -279,7 +325,7 @@ def evaluate_policy(
         "aggregated": aggregated,
     }
 
-    if return_episode_data:
+    if return_episode_data and episode_data_list is not None:
         result["episodes"] = episode_data_list
 
     return result

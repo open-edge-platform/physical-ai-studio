@@ -15,11 +15,14 @@ from lightning_utilities.core.imports import module_available
 
 from getiaction.data.lerobot import FormatConverter
 from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
+from getiaction.data.observation import GymObservation
 from getiaction.policies.base import Policy
 from getiaction.policies.lerobot.mixin import LeRobotFromConfig
 
 if TYPE_CHECKING:
     from torch import nn
+
+    from getiaction.data import Observation
 
 if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -312,11 +315,18 @@ class ACT(Policy, LeRobotFromConfig):
         self.model = self._lerobot_policy.model  # type: ignore[assignment]
         self._framework_policy = self._lerobot_policy
 
-    def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+    def forward(
+        self,
+        batch: dict[str, torch.Tensor] | Observation,
+        *args: Any,  # noqa: ARG002, ANN401
+        **kwargs: Any,  # noqa: ARG002, ANN401
+    ) -> torch.Tensor:
         """Forward pass for ACT policy.
 
         Args:
-            batch: A batch of data containing observations and actions.
+            batch: A batch of data containing observations and actions (dict or Observation).
+            *args: Additional positional arguments (unused).
+            **kwargs: Additional keyword arguments (unused).
 
         Returns:
             The action predictions from the policy.
@@ -348,17 +358,23 @@ class ACT(Policy, LeRobotFromConfig):
         self.log("train/loss", total_loss, prog_bar=True)
         return total_loss
 
-    def validation_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+    def validation_step(
+        self,
+        batch: dict[str, torch.Tensor] | GymObservation,
+        batch_idx: int,
+    ) -> torch.Tensor | dict[str, float]:
         """Validation step of the policy.
 
         Args:
-            batch: A batch of data containing observations and actions.
+            batch: A batch of data containing observations and actions, or GymObservation for gym validation.
             batch_idx: Index of the batch.
 
         Returns:
-            The total loss for the batch.
+            The total loss for dataset validation, or metrics dict for gym validation.
         """
-        del batch_idx  # Unused argument
+        # Check if this is gym validation - delegate to base class
+        if isinstance(batch, GymObservation):
+            return super().validation_step(batch, batch_idx)
 
         # Convert to LeRobot format if needed (handles Observation or collated dict)
         batch = FormatConverter.to_lerobot_dict(batch)
@@ -375,15 +391,17 @@ class ACT(Policy, LeRobotFromConfig):
         self.log("val/loss", total_loss, prog_bar=True)
         return total_loss
 
-    def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+    def select_action(self, batch: dict[str, torch.Tensor] | Observation) -> torch.Tensor:
         """Select action (inference mode) through LeRobot.
 
         Args:
-            batch: A batch of data containing observations.
+            batch: A batch of data containing observations (dict or Observation).
 
         Returns:
             The selected action tensor.
         """
+        # Convert to LeRobot format if needed
+        batch = FormatConverter.to_lerobot_dict(batch)
         return self.lerobot_policy.select_action(batch)
 
     def configure_optimizers(self) -> torch.optim.Optimizer:

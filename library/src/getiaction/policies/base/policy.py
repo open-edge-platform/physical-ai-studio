@@ -11,6 +11,8 @@ import torch
 from torch import nn
 
 from getiaction.data import Observation
+from getiaction.data.observation import GymObservation
+from getiaction.eval import rollout
 
 
 class Policy(L.LightningModule, ABC):
@@ -96,31 +98,94 @@ class Policy(L.LightningModule, ABC):
         each episode must start with a clean slate.
         """
 
-    def validation_step(self, batch: dict[str, Any], batch_idx: int) -> torch.Tensor | None:
-        """Validation step for the policy.
+    def evaluate_gym(self, batch: GymObservation, batch_idx: int, stage: str) -> dict[str, float]:
+        """Evaluate policy on gym environment and log metrics.
 
-        This handles two types of validation:
-        1. Dataset validation: batch contains observations and actions
-        2. Gym validation: batch contains a gym environment under 'env' key
-
-        For gym validation, the evaluation is handled by GymEvaluation
-        which calls the rollout() function. This method just needs to return
-        None to signal that the callback should handle it.
+        This is a helper method used by both validation_step and test_step to avoid
+        code duplication. It runs a rollout in the gym environment and logs metrics.
 
         Args:
-            batch: Either an Observation batch or dict with 'env' key
-            batch_idx: Index of the batch
+            batch: GymObservation containing the environment to evaluate
+            batch_idx: Index of the batch (used as seed for reproducibility)
+            stage: Either "val" or "test" for metric prefix
 
         Returns:
-            Loss tensor for dataset validation, None for gym validation
+            Dictionary of metrics (though metrics are also logged via self.log_dict)
         """
-        del batch_idx  # Unused argument
+        # Run rollout
+        result = rollout(
+            env=batch.env,
+            policy=self,
+            seed=batch.seed if batch.seed is not None else batch_idx,
+            max_steps=batch.max_steps,
+            return_observations=False,
+        )
 
+        # Log metrics with appropriate prefix
+        metrics = {
+            f"{stage}/gym/episode_length": result["episode_length"],
+            f"{stage}/gym/sum_reward": result["sum_reward"],
+            f"{stage}/gym/max_reward": result["max_reward"],
+            f"{stage}/gym/success": float(result["is_success"]),
+        }
+
+        self.log_dict(metrics, prog_bar=True, on_step=False, on_epoch=True, batch_size=1)
+        return metrics
+
+    def validation_step(
+        self,
+        batch: dict[str, Any] | GymObservation,
+        batch_idx: int,
+    ) -> torch.Tensor | dict[str, float]:
+        """Validation step for the policy.
+
+        This handles gym-based validation by running rollouts directly in the policy.
+        No external callback needed - the policy manages its own evaluation.
+        For dataset validation, subclasses must override this method.
+
+        Args:
+            batch: GymObservation containing the environment to evaluate, or dict for dataset validation
+            batch_idx: Index of the batch (used as seed for reproducibility)
+
+        Returns:
+            Dictionary of metrics for gym evaluation. Subclasses should return loss tensor for dataset validation.
+
+        Raises:
+            NotImplementedError: If called with dataset batch (subclasses must override)
+        """
         # Check if this is a gym validation batch
-        if isinstance(batch, dict) and "env" in batch:
-            # Gym validation is handled by GymEvaluation
-            return None
+        if isinstance(batch, GymObservation):
+            return self.evaluate_gym(batch, batch_idx, stage="val")
 
         # Standard dataset validation - subclasses can override for custom logic
         msg = "validation_step must be implemented for dataset validation"
+        raise NotImplementedError(msg)
+
+    def test_step(
+        self,
+        batch: dict[str, Any] | GymObservation,
+        batch_idx: int,
+    ) -> torch.Tensor | dict[str, float]:
+        """Test step for the policy.
+
+        This handles gym-based testing by running rollouts directly in the policy.
+        Similar to validation_step but with 'test' prefix for metrics.
+        For dataset testing, subclasses must override this method.
+
+        Args:
+            batch: GymObservation containing the environment to evaluate, or dict for dataset testing
+            batch_idx: Index of the batch (used as seed for reproducibility)
+
+        Returns:
+            Dictionary of metrics for gym evaluation. Subclasses may return loss tensor for dataset testing if needed.
+
+        Raises:
+            NotImplementedError: If called with dataset batch (subclasses must override)
+        """
+        # Check if this is a gym test batch
+        if isinstance(batch, GymObservation):
+            return self.evaluate_gym(batch, batch_idx, stage="test")
+
+        # Standard dataset test - subclasses can override for custom logic
+        msg = "test_step must be implemented for dataset testing"
         raise NotImplementedError(msg)

@@ -19,7 +19,7 @@ from lightning_utilities import module_available
 
 from getiaction.data.lerobot import FormatConverter
 from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
-from getiaction.data.observation import Observation
+from getiaction.data.observation import GymObservation, Observation
 from getiaction.policies.base import Policy
 from getiaction.policies.lerobot.mixin import LeRobotFromConfig
 
@@ -340,11 +340,18 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         # Initialize policy now
         self._initialize_policy(features, features, self._provided_config, stats)
 
-    def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+    def forward(
+        self,
+        batch: dict[str, torch.Tensor] | Observation,
+        *args: Any,  # noqa: ARG002, ANN401
+        **kwargs: Any,  # noqa: ARG002, ANN401
+    ) -> torch.Tensor:
         """Forward pass through the LeRobot policy.
 
         Args:
-            batch: Input batch containing observations and actions.
+            batch: Input batch containing observations and actions (dict or Observation).
+            *args: Additional positional arguments (unused).
+            **kwargs: Additional keyword arguments (unused).
 
         Returns:
             Policy output (format depends on policy type).
@@ -444,30 +451,27 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         # Process and log the loss output
         return self._process_loss_output(output, log_prefix="train")
 
-    def validation_step(self, batch: dict[str, torch.Tensor] | Observation, batch_idx: int) -> torch.Tensor | None:
+    def validation_step(
+        self,
+        batch: dict[str, Any] | GymObservation,
+        batch_idx: int,
+    ) -> torch.Tensor | dict[str, float]:
         """Validation step for Lightning.
 
         This handles two types of validation:
         1. Dataset validation: batch contains observations and actions
-        2. Gym validation: batch contains a gym environment under 'env' key
+        2. Gym validation: batch is a GymObservation with environment (delegated to base class)
 
         Args:
-            batch: Validation batch or dict with 'env' key for gym validation.
+            batch: Validation batch or GymObservation for gym validation.
             batch_idx: Batch index.
 
         Returns:
-            Scalar loss value for dataset validation, None for gym validation.
+            Scalar loss value for dataset validation, metrics dict for gym validation.
         """
-        del batch_idx  # Unused argument
-
-        # Check if this is a gym validation batch
-        if isinstance(batch, dict) and "env" in batch:
-            # Gym validation is handled by GymEvaluation
-            return None
-
-        # Move Observation to device if needed
-        if isinstance(batch, Observation):
-            batch = batch.to(self.device)
+        # Check if this is a gym validation batch - delegate to base class
+        if isinstance(batch, GymObservation):
+            return super().validation_step(batch, batch_idx)
 
         # Convert to LeRobot format if needed (handles Observation or collated dict)
         batch = FormatConverter.to_lerobot_dict(batch)
