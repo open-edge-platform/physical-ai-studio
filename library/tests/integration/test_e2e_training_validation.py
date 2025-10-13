@@ -61,12 +61,11 @@ class TestFirstPartyPolicyE2E:
         # Check for gym validation metrics
         assert any(key.startswith("val/") for key in trainer.logged_metrics)
 
-    @pytest.mark.skipif(
-        not torch.cuda.is_available(),
-        reason="ACT policy requires GPU for reasonable performance",
-    )
     def test_act_policy_training_and_validation(self, dummy_dataset, pusht_gym):
-        """Test ACT policy with training + gym validation."""
+        """Test ACT policy with training + gym validation.
+
+        Note: With fast_dev_run=True, only 1 batch is processed, so no GPU required.
+        """
         pytest.skip("ACT policy needs reset() method implementation")
         from getiaction.policies.act import ACT
 
@@ -115,12 +114,11 @@ class TestLeRobotPolicyE2E:
             data_format="lerobot",  # LeRobot format
         )
 
-    @pytest.mark.skipif(
-        not torch.cuda.is_available(),
-        reason="LeRobot policies require GPU",
-    )
     def test_lerobot_diffusion_training_and_validation(self, lerobot_dataset, pusht_gym):
-        """Test LeRobot Diffusion policy with training + gym validation."""
+        """Test LeRobot Diffusion policy with training + gym validation.
+
+        Note: With fast_dev_run=True, only 1 batch is processed, so no GPU required.
+        """
         pytest.importorskip("lerobot")
         from getiaction.policies.lerobot import DiffusionPolicy
 
@@ -151,12 +149,11 @@ class TestLeRobotPolicyE2E:
         assert any(key.startswith("val/") for key in trainer.logged_metrics)
         assert any(key.startswith("train/") for key in trainer.logged_metrics)
 
-    @pytest.mark.skipif(
-        not torch.cuda.is_available(),
-        reason="LeRobot policies require GPU",
-    )
     def test_lerobot_act_training_and_validation(self, lerobot_dataset, pusht_gym):
-        """Test LeRobot ACT policy with training + gym validation."""
+        """Test LeRobot ACT policy with training + gym validation.
+
+        Note: With fast_dev_run=True, only 1 batch is processed, so no GPU required.
+        """
         pytest.importorskip("lerobot")
         from getiaction.policies.lerobot import ACTPolicy
 
@@ -187,12 +184,11 @@ class TestLeRobotPolicyE2E:
         assert trainer.logged_metrics is not None
         assert any(key.startswith("val/") for key in trainer.logged_metrics)
 
-    @pytest.mark.skipif(
-        not torch.cuda.is_available(),
-        reason="LeRobot policies require GPU",
-    )
     def test_lerobot_universal_training_and_validation(self, lerobot_dataset, pusht_gym):
-        """Test LeRobot Universal wrapper with training + gym validation."""
+        """Test LeRobot Universal wrapper with training + gym validation.
+
+        Note: With fast_dev_run=True, only 1 batch is processed, so no GPU required.
+        """
         pytest.importorskip("lerobot")
         from getiaction.policies.lerobot import LeRobotPolicy
 
