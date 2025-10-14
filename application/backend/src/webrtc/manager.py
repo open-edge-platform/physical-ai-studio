@@ -1,6 +1,13 @@
+import queue
+from typing import TYPE_CHECKING
+
 from aiortc import RTCPeerConnection, RTCSessionDescription
-from aiortc.contrib.media import MediaPlayer
 from pydantic import BaseModel
+
+from webrtc.framesource_track import FrameSourceVideoStreamTrack
+
+if TYPE_CHECKING:
+    import numpy as np
 
 
 class Offer(BaseModel):
@@ -16,25 +23,30 @@ class Answer(BaseModel):
 
 class WebRTCManager:
     def __init__(self):
-        # active peer connections
         self._pcs: dict[str, RTCPeerConnection] = {}
-        # one MediaPlayer per device (/dev/video2, /dev/video4, etc.)
-        self._players: dict[str, MediaPlayer] = {}
-        # track which webrtc connections are using which devices
+        self._frame_queues: dict[str, queue.Queue] = {}
+        self._tracks: dict[str, FrameSourceVideoStreamTrack] = {}
         self._device_connections: dict[str, set[str]] = {}
 
-    def get_player(self, device: str) -> MediaPlayer:
-        """
-        Create or reuse a MediaPlayer for the given device.
-        Ensures the device is only opened once.
-        """
-        if device not in self._players:
-            self._players[device] = MediaPlayer(device, options={"video_size": "640x480"})
-            # Initialize the set of connections for this device
-            self._device_connections[device] = set()
-        return self._players[device]
+    @staticmethod
+    def identifier_for_driver_device(driver: str, device: str) -> str:
+        return driver + "@" + device
 
-    async def handle_offer(self, sdp: str, type: str, webrtc_id: str, device: str) -> Answer:
+    def get_track(self, driver: str, device: str) -> FrameSourceVideoStreamTrack:
+        """
+        Create or reuse a FrameSourceVideoStreamTrack for the given device.
+        Each device corresponds to a queue feeding numpy frames.
+        """
+        identifier = self.identifier_for_driver_device(driver, device)
+        if identifier not in self._tracks:
+            # Create a new queue for incoming frames
+            q: queue.Queue[np.ndarray] = queue.Queue(maxsize=10)
+            self._frame_queues[identifier] = q
+            self._tracks[identifier] = FrameSourceVideoStreamTrack(driver=driver, device=device)
+            self._device_connections[identifier] = set()
+        return self._tracks[identifier]
+
+    async def handle_offer(self, sdp: str, type: str, webrtc_id: str, driver: str, device: str) -> Answer:
         pc = RTCPeerConnection()
         self._pcs[webrtc_id] = pc
 
@@ -44,19 +56,13 @@ class WebRTCManager:
             if pc.connectionState in ("failed", "closed", "disconnected"):
                 await self.cleanup_peer(webrtc_id)
 
-        # apply the remote description from the browser
         await pc.setRemoteDescription(RTCSessionDescription(sdp=sdp, type=type))
+        track = self.get_track(driver, device)
 
-        # add shared video track
-        player = self.get_player(device)
+        identifier = self.identifier_for_driver_device(driver, device)
+        self._device_connections[identifier].add(webrtc_id)
+        pc.addTrack(track)
 
-        # Record which device this connection is using
-        self._device_connections[device].add(webrtc_id)
-
-        if player.video:
-            pc.addTrack(player.video)
-
-        # send answer back to browser
         answer = await pc.createAnswer()
         await pc.setLocalDescription(answer)
         return Answer(sdp=pc.localDescription.sdp, type=pc.localDescription.type)
@@ -64,38 +70,30 @@ class WebRTCManager:
     async def cleanup_peer(self, webrtc_id: str) -> None:
         """
         Clean up a single peer connection.
-        If it's the last connection using a device, also clean up the device.
+        If it's the last connection using a device, also clean up that device's track and queue.
         """
         pc = self._pcs.pop(webrtc_id, None)
         if pc:
             await pc.close()
 
-            # Check if this connection was associated with any device
-            for device, connections in self._device_connections.items():
+            for device, connections in list(self._device_connections.items()):
                 if webrtc_id in connections:
                     connections.remove(webrtc_id)
-
-                    # If this was the last connection using this device, clean up the player
                     if not connections:
-                        player = self._players.pop(device, None)
-                        if player and player.video:
-                            player.video.stop()
-                        print(f"🎥 Closed video player for device {device} - no more active connections")
+                        # Last connection using this device
+                        self._tracks.pop(device, None)
+                        self._frame_queues.pop(device, None)
+                        print(f"🎥 Closed track for device {device} - no more active connections")
 
     async def cleanup(self) -> None:
         """
-        Clean up everything: all peer connections and all MediaPlayers.
+        Clean up everything: all peer connections and all FrameSourceVideoStreamTracks.
         Call this on server shutdown.
         """
-        # close all peer connections
         for pc in list(self._pcs.values()):
             await pc.close()
         self._pcs.clear()
 
-        # close MediaPlayers (release /dev/videoX)
-        for player in self._players.values():
-            if player.video:
-                player.video.stop()
-
-        self._players.clear()
+        self._tracks.clear()
+        self._frame_queues.clear()
         self._device_connections.clear()
