@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from torch import nn
 
     from getiaction.data import Observation
-    from getiaction.data.observation import GymObservation
+    from getiaction.gyms import Gym
 
 if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -365,14 +365,14 @@ class ACT(Policy, LeRobotFromConfig):
         self.log("train/loss", total_loss, prog_bar=True)
         return total_loss
 
-    def validation_step(self, batch: GymObservation, batch_idx: int) -> dict[str, float]:
+    def validation_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
         """Validation step of the policy.
 
         Runs gym-based validation by executing rollouts in the environment.
-        The DataModule's val_dataloader only returns GymObservation batches.
+        The DataModule's val_dataloader returns Gym environment instances directly.
 
         Args:
-            batch: GymObservation containing the environment to evaluate.
+            batch: Gym environment to evaluate.
             batch_idx: Index of the batch.
 
         Returns:
@@ -380,14 +380,14 @@ class ACT(Policy, LeRobotFromConfig):
         """
         return self.evaluate_gym(batch, batch_idx, stage="val")
 
-    def test_step(self, batch: GymObservation, batch_idx: int) -> dict[str, float]:
+    def test_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
         """Test step of the policy.
 
         Runs gym-based testing by executing rollouts in the environment.
-        The DataModule's test_dataloader only returns GymObservation batches.
+        The DataModule's test_dataloader returns Gym environment instances directly.
 
         Args:
-            batch: GymObservation containing the environment to evaluate.
+            batch: Gym environment to evaluate.
             batch_idx: Index of the batch.
 
         Returns:

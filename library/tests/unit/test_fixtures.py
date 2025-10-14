@@ -102,14 +102,14 @@ class TestDummyDataModuleFixture:
         assert isinstance(batch, Observation)
 
     def test_dummy_datamodule_val_loader(self, dummy_datamodule):
-        """Test that val loader returns GymObservation."""
-        from getiaction.data.observation import GymObservation
+        """Test that val loader returns Gym directly."""
+        from getiaction.gyms import Gym
 
         dummy_datamodule.setup(stage="fit")
         val_loader = dummy_datamodule.val_dataloader()
 
         batch = next(iter(val_loader))
-        assert isinstance(batch, GymObservation)
+        assert isinstance(batch, Gym)
 
 
 class TestDummyLeRobotDataModuleFixture:

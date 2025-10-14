@@ -16,35 +16,53 @@ def dummy_dataset():
     Returns a dataset that mimics the structure of a real dataset
     without requiring any external data files.
     """
+    from getiaction.data import Dataset
     from getiaction.data.observation import Feature, FeatureType, NormalizationParameters, Observation
 
-    class DummyDataset:
+    class DummyDataset(Dataset):
         """Simple in-memory dataset for testing.
 
         This dataset properly implements the getiaction.data.Dataset interface
         including all required properties (raw_features, fps, tolerance_s, delta_indices).
         """
 
-        def __init__(self, num_samples: int = 10):
+        def __init__(self, num_samples: int = 10, state_dim: int = 4, action_dim: int = 2):
             self.num_samples = num_samples
+            self.state_dim = state_dim
+            self.action_dim = action_dim
             self._delta_indices: dict[str, list[int]] = {}
 
         def __len__(self):
             return self.num_samples
 
         def __getitem__(self, idx):
+            # Check if action chunks are requested via delta_indices
+            num_action_steps = len(self._delta_indices.get("action", [0]))
+
+            # Return action chunks if delta_indices specifies multiple steps
+            action_shape = (num_action_steps, self.action_dim) if num_action_steps > 1 else (self.action_dim,)
+
+            # Create extra dict with action_is_pad if using action chunks
+            extra = None
+            if num_action_steps > 1:
+                # For dummy dataset, no padding - all actions are valid (False = not padded)
+                extra = {
+                    "action_is_pad": torch.full((num_action_steps,), fill_value=False, dtype=torch.bool)
+                }
+
             return Observation(
-                action=torch.randn(2),
-                state=torch.randn(4),
-                images={"camera": torch.randn(3, 96, 96)},
+                action=torch.randn(*action_shape),
+                state=torch.randn(self.state_dim),
+                images=torch.randn(3, 96, 96),  # Direct tensor for single camera
+                extra=extra,
             )
 
         @property
         def raw_features(self) -> dict:
             """Return raw dataset features (mimics HuggingFace format)."""
             return {
-                "action": {"shape": (2,), "dtype": "float32"},
-                "observation.state": {"shape": (4,), "dtype": "float32"},
+                "action": {"shape": (self.action_dim,), "dtype": "float32"},
+                "observation.state": {"shape": (self.state_dim,), "dtype": "float32"},
                 "observation.images.camera": {
                     "shape": (96, 96, 3),  # HF format is (H, W, C)
                     "dtype": "video",
@@ -58,13 +76,13 @@ def dummy_dataset():
             return {
                 "action": Feature(
                     ftype=FeatureType.ACTION,
-                    shape=(2,),
+                    shape=(self.action_dim,),
                     name="action",
                     normalization_data=NormalizationParameters(
-                        mean=torch.zeros(2),
-                        std=torch.ones(2),
-                        min=torch.full((2,), -1.0),
-                        max=torch.full((2,), 1.0),
+                        mean=torch.zeros(self.action_dim),
+                        std=torch.ones(self.action_dim),
+                        min=torch.full((self.action_dim,), -1.0),
+                        max=torch.full((self.action_dim,), 1.0),
                     ),
                 ),
             }
@@ -75,13 +93,13 @@ def dummy_dataset():
             return {
                 "state": Feature(
                     ftype=FeatureType.STATE,
-                    shape=(4,),
+                    shape=(self.state_dim,),
                     name="state",
                     normalization_data=NormalizationParameters(
-                        mean=torch.zeros(4),
-                        std=torch.ones(4),
-                        min=torch.full((4,), -1.0),
-                        max=torch.full((4,), 1.0),
+                        mean=torch.zeros(self.state_dim),
+                        std=torch.ones(self.state_dim),
+                        min=torch.full((self.state_dim,), -1.0),
+                        max=torch.full((self.state_dim,), 1.0),
                     ),
                 ),
                 "camera": Feature(

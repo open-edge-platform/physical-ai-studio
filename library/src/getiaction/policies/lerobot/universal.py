@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from lerobot.configs.types import PolicyFeature
     from lerobot.policies.pretrained import PreTrainedPolicy
 
-    from getiaction.data.observation import GymObservation
+    from getiaction.gyms import Gym
 
 if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.utils import dataset_to_policy_features
@@ -471,14 +471,14 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         # Process and log the loss output
         return self._process_loss_output(output, log_prefix="train")
 
-    def validation_step(self, batch: GymObservation, batch_idx: int) -> dict[str, float]:
+    def validation_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
         """Validation step for Lightning.
 
         Runs gym-based validation by executing rollouts in the environment.
-        The DataModule's val_dataloader only returns GymObservation batches.
+        The DataModule's val_dataloader returns Gym environment instances directly.
 
         Args:
-            batch: GymObservation containing the environment to evaluate.
+            batch: Gym environment to evaluate.
             batch_idx: Batch index.
 
         Returns:
@@ -486,14 +486,14 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         """
         return self.evaluate_gym(batch, batch_idx, stage="val")
 
-    def test_step(self, batch: GymObservation, batch_idx: int) -> dict[str, float]:
+    def test_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
         """Test step for Lightning.
 
         Runs gym-based testing by executing rollouts in the environment.
-        The DataModule's test_dataloader only returns GymObservation batches.
+        The DataModule's test_dataloader returns Gym environment instances directly.
 
         Args:
-            batch: GymObservation containing the environment to evaluate.
+            batch: Gym environment to evaluate.
             batch_idx: Batch index.
 
         Returns:

@@ -535,42 +535,42 @@ class TestObservationDeviceTransfer:
         assert obs is not obs_moved
 
 
-class TestGymObservation:
-    """Tests for GymObservation dataclass."""
+class TestGymInValidation:
+    """Tests for Gym usage in validation (no wrapper needed)."""
 
-    def test_gym_observation_creation(self):
-        """Test that GymObservation is properly structured for validation."""
-        from getiaction.data.observation import GymObservation
+    def test_gym_direct_usage(self):
+        """Test that Gym can be used directly in validation."""
+        from getiaction.gyms import Gym, PushTGym
+
+        gym = PushTGym()
+
+        assert isinstance(gym, Gym)
+        assert hasattr(gym, "reset")
+        assert hasattr(gym, "step")
+
+    def test_gym_reset_returns_observation(self):
+        """Test that Gym.reset() returns observation dict."""
         from getiaction.gyms import PushTGym
 
         gym = PushTGym()
-        gym_obs = GymObservation(env=gym, episode_id=0)
+        observation, info = gym.reset(seed=42)
 
-        assert gym_obs.env is gym
-        assert gym_obs.episode_id == 0
-        assert gym_obs.seed is None
-        assert gym_obs.max_steps is None
+        assert isinstance(observation, dict)
+        assert "pixels" in observation or "state" in observation
 
-    def test_gym_observation_with_seed(self):
-        """Test GymObservation with custom seed."""
-        from getiaction.data.observation import GymObservation
+    def test_gym_step_returns_observation(self):
+        """Test that Gym.step() returns observation dict."""
+        import numpy as np
+
         from getiaction.gyms import PushTGym
 
         gym = PushTGym()
-        gym_obs = GymObservation(env=gym, episode_id=1, seed=42)
+        gym.reset(seed=42)
 
-        assert gym_obs.env is gym
-        assert gym_obs.episode_id == 1
-        assert gym_obs.seed == 42
+        action_shape = gym.action_space.shape
+        assert action_shape is not None
+        action = np.zeros(action_shape)
+        observation, reward, terminated, truncated, info = gym.step(action)
 
-    def test_gym_observation_with_max_steps(self):
-        """Test GymObservation with custom max_steps."""
-        from getiaction.data.observation import GymObservation
-        from getiaction.gyms import PushTGym
-
-        gym = PushTGym()
-        gym_obs = GymObservation(env=gym, episode_id=2, max_steps=100)
-
-        assert gym_obs.env is gym
-        assert gym_obs.episode_id == 2
-        assert gym_obs.max_steps == 100
+        assert isinstance(observation, dict)
+        assert isinstance(reward, (int, float, np.number))

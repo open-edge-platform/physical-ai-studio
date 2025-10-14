@@ -9,23 +9,22 @@ from __future__ import annotations
 class TestDataModuleValidation:
     """Tests for DataModule validation functionality."""
 
-    def test_collate_gym_observation(self):
-        """Test that gym collate function creates GymObservation."""
-        from getiaction.data.datamodules import _collate_gym_observation
-        from getiaction.data.observation import GymObservation
-        from getiaction.gyms import PushTGym
+    def test_collate_gym(self):
+        """Test that gym collate function returns Gym directly."""
+        from getiaction.data.datamodules import _collate_gym
+        from getiaction.gyms import Gym, PushTGym
 
         gym = PushTGym()
         batch = [gym]  # Simulates batch from DataLoader
 
-        result = _collate_gym_observation(batch)
+        result = _collate_gym(batch)
 
-        assert isinstance(result, GymObservation)
-        assert result.env is gym
+        assert isinstance(result, Gym)
+        assert result is gym
 
     def test_val_dataloader_structure(self, dummy_datamodule):
         """Test that DataModule.val_dataloader returns correct structure."""
-        from getiaction.data.observation import GymObservation
+        from getiaction.gyms import Gym
 
         dummy_datamodule.setup(stage="fit")
         val_loader = dummy_datamodule.val_dataloader()
@@ -36,9 +35,8 @@ class TestDataModuleValidation:
         # Get one batch
         batch = next(iter(val_loader))
 
-        # Should be a GymObservation
-        assert isinstance(batch, GymObservation)
-        assert batch.env is not None
+        # Should be a Gym instance
+        assert isinstance(batch, Gym)
 
     def test_val_dataloader_with_multiple_gyms(self, dummy_dataset):
         """Test that val_dataloader works with list of gyms."""

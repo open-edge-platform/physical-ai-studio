@@ -10,8 +10,8 @@ import torch
 from torch import nn
 
 from getiaction.data import Observation
-from getiaction.data.observation import GymObservation
 from getiaction.eval import rollout
+from getiaction.gyms import Gym
 
 
 class Policy(L.LightningModule, ABC):
@@ -95,14 +95,14 @@ class Policy(L.LightningModule, ABC):
         each episode must start with a clean slate.
         """
 
-    def evaluate_gym(self, batch: GymObservation, batch_idx: int, stage: str) -> dict[str, float]:
+    def evaluate_gym(self, batch: Gym, batch_idx: int, stage: str) -> dict[str, float]:
         """Evaluate policy on gym environment and log metrics.
 
         This is a helper method used by both validation_step and test_step to avoid
         code duplication. It runs a rollout in the gym environment and logs metrics.
 
         Args:
-            batch: GymObservation containing the environment to evaluate
+            batch: Gym environment to evaluate
             batch_idx: Index of the batch (used as seed for reproducibility)
             stage: Either "val" or "test" for metric prefix
 
@@ -111,10 +111,10 @@ class Policy(L.LightningModule, ABC):
         """
         # Run rollout
         result = rollout(
-            env=batch.env,
+            env=batch,
             policy=self,
-            seed=batch.seed if batch.seed is not None else batch_idx,
-            max_steps=batch.max_steps,
+            seed=batch_idx,  # Use batch_idx as seed for reproducibility
+            max_steps=None,
             return_observations=False,
         )
 
@@ -129,15 +129,14 @@ class Policy(L.LightningModule, ABC):
         self.log_dict(metrics, prog_bar=True, on_step=False, on_epoch=True, batch_size=1)
         return metrics
 
-    def validation_step(self, batch: GymObservation, batch_idx: int) -> dict[str, float]:
+    def validation_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
         """Validation step for the policy.
 
         Runs gym-based validation by executing rollouts in the environment.
-        The DataModule's val_dataloader returns GymObservation batches containing
-        the gym environment to evaluate.
+        The DataModule's val_dataloader returns Gym environment instances directly.
 
         Args:
-            batch: GymObservation containing the environment to evaluate
+            batch: Gym environment to evaluate
             batch_idx: Index of the batch (used as seed for reproducibility)
 
         Returns:
@@ -145,15 +144,14 @@ class Policy(L.LightningModule, ABC):
         """
         return self.evaluate_gym(batch, batch_idx, stage="val")
 
-    def test_step(self, batch: GymObservation, batch_idx: int) -> dict[str, float]:
+    def test_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
         """Test step for the policy.
 
         Runs gym-based testing by executing rollouts in the environment.
-        The DataModule's test_dataloader returns GymObservation batches containing
-        the gym environment to evaluate.
+        The DataModule's test_dataloader returns Gym environment instances directly.
 
         Args:
-            batch: GymObservation containing the environment to evaluate
+            batch: Gym environment to evaluate
             batch_idx: Index of the batch (used as seed for reproducibility)
 
         Returns:

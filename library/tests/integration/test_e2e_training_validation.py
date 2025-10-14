@@ -75,22 +75,31 @@ class TestFirstPartyPolicyE2E:
         """Test ACT policy with training + gym validation.
 
         Note: With fast_dev_run=True, only 1 batch is processed, so no GPU required.
-        The DummyDataset fixture now properly implements the full Dataset interface
-        including fps, tolerance_s, delta_indices, etc.
+        ACT uses action chunking (chunk_size=100 by default), so we configure
+        delta_indices to provide action sequences.
+
+        The dummy dataset is configured to match PushT gym dimensions:
+        - state: 2D (agent x,y position)
+        - action: 2D (agent velocity)
         """
         from getiaction.policies.act import ACT
 
+        # Create dataset and configure action chunking for ACT
+        dataset = dummy_dataset(num_samples=8, state_dim=2, action_dim=2)
+        chunk_size = 100  # ACT default chunk_size
+        dataset.delta_indices = {"action": list(range(chunk_size))}
+
         # Create datamodule
         datamodule = DataModule(
-            train_dataset=dummy_dataset(num_samples=8),
+            train_dataset=dataset,
             train_batch_size=4,
             val_gyms=pusht_gym,
             num_rollouts_val=2,
             max_episode_steps=10,
         )
 
-        # Create ACT policy with minimal config
-        policy = ACT()  # TODO: Update when ACT API is finalized
+        # Create ACT policy
+        policy = ACT()
 
         # Train for just 1 step with validation
         trainer = Trainer(

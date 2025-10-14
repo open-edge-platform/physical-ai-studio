@@ -6,7 +6,7 @@
 import torch
 
 from getiaction.data import Dataset, Observation
-from getiaction.data.observation import GymObservation
+from getiaction.gyms import Gym
 from getiaction.policies.act.model import ACT as ACTModel  # noqa: N811
 from getiaction.policies.base import Policy
 from getiaction.train.utils import reformat_dataset_to_match_policy
@@ -133,14 +133,14 @@ class ACT(Policy):
         """
         del batch, stage
 
-    def validation_step(self, batch: GymObservation, batch_idx: int) -> dict[str, float]:
+    def validation_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
         """Validation step.
 
         Runs gym-based validation via rollout evaluation. The DataModule's val_dataloader
-        only returns GymObservation batches.
+        returns Gym environment instances directly.
 
         Args:
-            batch: GymObservation containing the environment to evaluate.
+            batch: Gym environment to evaluate.
             batch_idx: Index of the batch.
 
         Returns:
@@ -148,14 +148,14 @@ class ACT(Policy):
         """
         return self.evaluate_gym(batch, batch_idx, stage="val")
 
-    def test_step(self, batch: GymObservation, batch_idx: int) -> dict[str, float]:
+    def test_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
         """Test step.
 
         Runs gym-based testing via rollout evaluation. The DataModule's test_dataloader
-        only returns GymObservation batches.
+        returns Gym environment instances directly.
 
         Args:
-            batch: GymObservation containing the environment to evaluate.
+            batch: Gym environment to evaluate.
             batch_idx: Index of the batch.
 
         Returns:

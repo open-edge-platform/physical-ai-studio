@@ -16,24 +16,24 @@ from lightning.pytorch import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
 from getiaction.data.gym import GymDataset
-from getiaction.data.observation import GymObservation, Observation
+from getiaction.data.observation import Observation
 from getiaction.gyms import Gym
 
 if TYPE_CHECKING:
     from getiaction.data import Dataset
 
 
-def _collate_gym_observation(batch: list[Any]) -> GymObservation:
-    """Collate a batch of environments into a GymObservation.
+def _collate_gym(batch: list[Any]) -> Gym:
+    """Collate a batch of environments into a single Gym environment.
 
     Args:
-        batch (list[Any]): A list containing a single Gym environment.
+        batch: A list containing a single Gym environment.
 
     Returns:
-        GymObservation: Wrapper containing the gym environment.
+        Gym: The gym environment (unwrapped from batch list).
     """
-    # batch is a list with one item: [env], wrap in GymObservation
-    return GymObservation(env=batch[0])
+    # batch is a list with one item: [env], return it directly
+    return batch[0]
 
 
 def _collate_observations(batch: list[Observation]) -> Observation:
@@ -218,7 +218,7 @@ class DataModule(LightningDataModule):
         return DataLoader(
             self._val_dataset,
             batch_size=1,
-            collate_fn=_collate_gym_observation,  # type: ignore[arg-type]
+            collate_fn=_collate_gym,  # type: ignore[arg-type]
             shuffle=False,
         )
 
@@ -231,7 +231,7 @@ class DataModule(LightningDataModule):
         return DataLoader(
             self._test_dataset,
             batch_size=1,
-            collate_fn=_collate_gym_observation,  # type: ignore[arg-type]
+            collate_fn=_collate_gym,  # type: ignore[arg-type]
             shuffle=False,
         )
 
