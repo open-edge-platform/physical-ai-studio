@@ -19,10 +19,15 @@ def dummy_dataset():
     from getiaction.data.observation import Feature, FeatureType, NormalizationParameters, Observation
 
     class DummyDataset:
-        """Simple in-memory dataset for testing."""
+        """Simple in-memory dataset for testing.
+
+        This dataset properly implements the getiaction.data.Dataset interface
+        including all required properties (raw_features, fps, tolerance_s, delta_indices).
+        """
 
         def __init__(self, num_samples: int = 10):
             self.num_samples = num_samples
+            self._delta_indices: dict[str, list[int]] = {}
 
         def __len__(self):
             return self.num_samples
@@ -33,6 +38,19 @@ def dummy_dataset():
                 state=torch.randn(4),
                 images={"camera": torch.randn(3, 96, 96)},
             )
+
+        @property
+        def raw_features(self) -> dict:
+            """Return raw dataset features (mimics HuggingFace format)."""
+            return {
+                "action": {"shape": (2,), "dtype": "float32"},
+                "observation.state": {"shape": (4,), "dtype": "float32"},
+                "observation.images.camera": {
+                    "shape": (96, 96, 3),  # HF format is (H, W, C)
+                    "dtype": "video",
+                    "names": ["height", "width", "channels"],
+                },
+            }
 
         @property
         def action_features(self) -> dict[str, Feature]:
@@ -78,6 +96,26 @@ def dummy_dataset():
                     ),
                 ),
             }
+
+        @property
+        def fps(self) -> int:
+            """Frames per second of the dataset."""
+            return 10
+
+        @property
+        def tolerance_s(self) -> float:
+            """Tolerance to keep delta timestamps in sync with fps."""
+            return 1e-4
+
+        @property
+        def delta_indices(self) -> dict[str, list[int]]:
+            """Expose delta_indices from the dataset."""
+            return self._delta_indices
+
+        @delta_indices.setter
+        def delta_indices(self, indices: dict[str, list[int]]) -> None:
+            """Allow setting delta_indices on the dataset."""
+            self._delta_indices = indices
 
     return DummyDataset
 
