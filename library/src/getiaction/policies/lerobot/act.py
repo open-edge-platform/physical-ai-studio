@@ -395,11 +395,14 @@ class ACT(Policy, LeRobotFromConfig):
         """
         return self.evaluate_gym(batch, batch_idx, stage="test")
 
-    def select_action(self, batch: dict[str, torch.Tensor] | Observation) -> torch.Tensor:
+    def select_action(self, batch: Observation) -> torch.Tensor:
         """Select action (inference mode) through LeRobot.
 
+        Converts the Observation to LeRobot dict format and passes it to the
+        underlying LeRobot policy for action prediction.
+
         Args:
-            batch: A batch of data containing observations (dict or Observation).
+            batch: Observation from gym environment (converted from raw gym obs by rollout()).
 
         Returns:
             The selected action tensor.

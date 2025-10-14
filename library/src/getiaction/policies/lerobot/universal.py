@@ -341,12 +341,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         # Initialize policy now
         self._initialize_policy(features, features, self._provided_config, stats)
 
-    def forward(
-        self,
-        batch: dict[str, torch.Tensor] | Observation,
-        *args: Any,  # noqa: ARG002, ANN401
-        **kwargs: Any,  # noqa: ARG002, ANN401
-    ) -> torch.Tensor:
+    def forward(self, batch: dict[str, torch.Tensor] | Observation) -> torch.Tensor:
         """Forward pass through the LeRobot policy.
 
         Args:
@@ -504,11 +499,11 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
     def select_action(self, batch: Observation) -> torch.Tensor:
         """Select action (inference mode) through LeRobot.
 
+        Converts the Observation to LeRobot dict format and passes it to the
+        underlying LeRobot policy for action prediction.
+
         Args:
-            batch: Input batch with observations. Can be:
-                - Observation object from gym
-                - dict in LeRobot format
-                - raw gym observation dict (will be converted)
+            batch: Observation from gym environment (converted from raw gym obs by rollout()).
 
         Returns:
             Predicted actions.
