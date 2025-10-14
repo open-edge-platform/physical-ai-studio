@@ -162,3 +162,12 @@ class ACT(Policy):
             Metrics dict from gym rollout.
         """
         return self.evaluate_gym(batch, batch_idx, stage="test")
+
+    def reset(self) -> None:
+        """Reset the policy state for a new episode.
+
+        Clears internal state like action queues or observation history.
+        For ACT, this delegates to the model's reset method.
+        """
+        if hasattr(self.model, "reset") and callable(self.model.reset):
+            self.model.reset()
