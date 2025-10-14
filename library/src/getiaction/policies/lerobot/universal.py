@@ -204,8 +204,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         self._config_kwargs = merged_config_kwargs
 
         # Will be initialized in setup() if not provided
-        # Using private attribute with property for type-safe access
-        self._lerobot_policy: PreTrainedPolicy | None = None
+        self._lerobot_policy: PreTrainedPolicy
         self._config: PreTrainedConfig | None = None
 
         # If features are provided, initialize immediately (backward compatibility)
@@ -227,7 +226,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         Raises:
             RuntimeError: If the policy hasn't been initialized yet.
         """
-        if self._lerobot_policy is None:
+        if not hasattr(self, "_lerobot_policy") or self._lerobot_policy is None:
             msg = "Policy not initialized. Call setup() or provide input_features during __init__."
             raise RuntimeError(msg)
         return self._lerobot_policy
@@ -274,7 +273,8 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         policy_cls = get_policy_class(self.policy_name)
 
         # Instantiate the LeRobot policy
-        self._lerobot_policy = policy_cls(config, dataset_stats=dataset_stats)
+        policy = policy_cls(config, dataset_stats=dataset_stats)
+        self.add_module("_lerobot_policy", policy)
 
         # Expose the underlying model for Lightning compatibility (if available)
         # Some policies (like Diffusion) don't have a .model attribute
@@ -283,7 +283,6 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
 
         # Expose framework info
         self._framework = "lerobot"
-        self._framework_policy = self._lerobot_policy
         self._config = config
 
     def setup(self, stage: str) -> None:
@@ -301,7 +300,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         """
         del stage  # Unused argument
 
-        if self._lerobot_policy is not None:
+        if hasattr(self, "_lerobot_policy") and self._lerobot_policy is not None:
             # Already initialized
             return
 
@@ -515,6 +514,17 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             Predicted actions.
         """
         batch_dict = FormatConverter.to_lerobot_dict(batch)
+
+        # TODO (samet-akcay): Manual device handling required for gym rollouts.  # noqa: FIX002
+        # https://github.com/open-edge-platform/geti-action/issues/57
+        #
+        # During gym rollouts, observations come directly from env.step() as CPU numpy arrays,
+        # bypassing Lightning's transfer_batch_to_device hook. This device transfer ensures
+        # compatibility with GPU training. Future improvement: move this to base Policy class
+        # or rollout function for cleaner separation of concerns.
+        device = next(self.lerobot_policy.parameters()).device
+        batch_dict = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch_dict.items()}
+
         return self.lerobot_policy.select_action(batch_dict)
 
     def reset(self) -> None:
