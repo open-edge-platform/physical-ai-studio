@@ -156,7 +156,10 @@ class TestObservationFromGymClassMethod:
         assert callable(Observation.from_gym)
 
     def test_class_method_produces_same_result_as_function(self):
-        """Test that class method produces identical result to standalone function."""
+        """Test that class method produces identical result to standalone function.
+
+        Note: With default single camera, images is a direct tensor (not dict).
+        """
         gym_obs = {
             "pixels": np.random.rand(100, 100, 3).astype(np.float32),
             "agent_pos": np.array([0.5, 0.3]),
@@ -165,17 +168,24 @@ class TestObservationFromGymClassMethod:
         obs1 = gym_observation_to_observation(gym_obs)
         obs2 = Observation.from_gym(gym_obs)
 
-        assert torch.equal(obs1.images["top"], obs2.images["top"])
+        # Single camera: images is a direct tensor
+        assert isinstance(obs1.images, torch.Tensor)
+        assert isinstance(obs2.images, torch.Tensor)
+        assert torch.equal(obs1.images, obs2.images)
         assert torch.equal(obs1.state, obs2.state)
 
     def test_class_method_with_custom_camera_keys(self):
-        """Test class method with custom camera keys."""
+        """Test class method with custom camera keys.
+
+        Note: Single camera still returns direct tensor, not dict.
+        """
         gym_obs = {"pixels": np.random.rand(50, 50, 3).astype(np.float32)}
 
         obs = Observation.from_gym(gym_obs, camera_keys=["camera1"])
 
-        assert "camera1" in obs.images
-        assert "top" not in obs.images
+        # Single camera: images is a direct tensor
+        assert isinstance(obs.images, torch.Tensor)
+        assert obs.images.shape == (1, 3, 50, 50)
 
     def test_class_method_integration_with_observation_api(self):
         """Test that from_gym integrates well with other Observation methods."""
@@ -199,30 +209,42 @@ class TestObservationFromGymClassMethod:
         # Test to(device)
         if torch.cuda.is_available():
             obs_cuda = obs.to("cuda")
-            assert obs_cuda.images["top"].device.type == "cuda"
+            # Single camera: images is a direct tensor
+            assert obs_cuda.images.device.type == "cuda"
 
 
 class TestGymConversionEdgeCases:
     """Tests for edge cases and error handling."""
 
     def test_grayscale_image(self):
-        """Test conversion of grayscale (single channel) images."""
+        """Test conversion of grayscale (single channel) images.
+
+        Note: Single camera returns direct tensor, not dict.
+        """
         gym_obs = {"pixels": np.random.rand(100, 100, 1).astype(np.float32)}
 
         obs = gym_observation_to_observation(gym_obs)
 
-        assert obs.images["top"].shape == (1, 1, 100, 100)
+        # Single camera: images is a direct tensor
+        assert obs.images.shape == (1, 1, 100, 100)
 
     def test_rgba_image(self):
-        """Test conversion of RGBA (4 channel) images."""
+        """Test conversion of RGBA (4 channel) images.
+
+        Note: Single camera returns direct tensor, not dict.
+        """
         gym_obs = {"pixels": np.random.rand(100, 100, 4).astype(np.float32)}
 
         obs = gym_observation_to_observation(gym_obs)
 
-        assert obs.images["top"].shape == (1, 4, 100, 100)
+        # Single camera: images is a direct tensor
+        assert obs.images.shape == (1, 4, 100, 100)
 
     def test_already_torch_tensor(self):
-        """Test handling when input is already a torch tensor."""
+        """Test handling when input is already a torch tensor.
+
+        Note: Single camera returns direct tensor, not dict.
+        """
         gym_obs = {
             "pixels": torch.rand(100, 100, 3),
             "agent_pos": torch.tensor([0.5, 0.3]),
@@ -230,11 +252,16 @@ class TestGymConversionEdgeCases:
 
         obs = gym_observation_to_observation(gym_obs)
 
-        assert obs.images["top"].shape == (1, 3, 100, 100)
+        # Single camera: images is a direct tensor
+        assert obs.images.shape == (1, 3, 100, 100)
+        assert isinstance(obs.state, torch.Tensor)
         assert obs.state.shape == (1, 2)
 
     def test_preserves_data_values(self):
-        """Test that data values are preserved during conversion."""
+        """Test that data values are preserved during conversion.
+
+        Note: Single camera returns direct tensor, not dict.
+        """
         pixels = np.array([[[1.0, 2.0, 3.0]]], dtype=np.float32)  # 1x1x3
         state = np.array([0.7, 0.8], dtype=np.float32)
 
@@ -242,29 +269,41 @@ class TestGymConversionEdgeCases:
         obs = gym_observation_to_observation(gym_obs)
 
         # Check state values
+        assert isinstance(obs.state, torch.Tensor)
         assert obs.state[0, 0].item() == pytest.approx(0.7)
         assert obs.state[0, 1].item() == pytest.approx(0.8)
 
         # Check pixel values (after HWC->CHW conversion)
-        assert obs.images["top"][0, 0, 0, 0].item() == pytest.approx(1.0)
-        assert obs.images["top"][0, 1, 0, 0].item() == pytest.approx(2.0)
-        assert obs.images["top"][0, 2, 0, 0].item() == pytest.approx(3.0)
+        # Single camera: images is a direct tensor
+        assert obs.images[0, 0, 0, 0].item() == pytest.approx(1.0)
+        assert obs.images[0, 1, 0, 0].item() == pytest.approx(2.0)
+        assert obs.images[0, 2, 0, 0].item() == pytest.approx(3.0)
 
     def test_multiple_camera_keys(self):
-        """Test with multiple camera keys (only first is used)."""
+        """Test with multiple camera keys.
+
+        When len(camera_keys) > 1, returns dict with first key.
+        Only returns direct tensor when len(camera_keys) == 1.
+        """
         gym_obs = {"pixels": np.random.rand(50, 50, 3).astype(np.float32)}
 
-        # Only first camera key should be used for single pixel observation
+        # Multiple camera keys specified: returns dict with first key
         obs = gym_observation_to_observation(gym_obs, camera_keys=["cam1", "cam2", "cam3"])
 
+        # Multiple camera keys: images is a dict with first key
+        assert isinstance(obs.images, dict)
         assert "cam1" in obs.images
-        assert "cam2" not in obs.images
-        assert "cam3" not in obs.images
+        assert obs.images["cam1"].shape == (1, 3, 50, 50)
 
     def test_none_camera_keys_uses_default(self):
-        """Test that None camera_keys uses 'top' as default."""
+        """Test that None camera_keys uses 'top' as default.
+
+        Note: Single camera returns direct tensor, not dict.
+        """
         gym_obs = {"pixels": np.random.rand(50, 50, 3).astype(np.float32)}
 
         obs = gym_observation_to_observation(gym_obs, camera_keys=None)
 
-        assert "top" in obs.images
+        # Single camera: images is a direct tensor
+        assert isinstance(obs.images, torch.Tensor)
+        assert obs.images.shape == (1, 3, 50, 50)
