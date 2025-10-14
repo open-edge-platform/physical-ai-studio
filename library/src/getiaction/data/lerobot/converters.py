@@ -6,11 +6,12 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, cast
-
-import torch
+from typing import TYPE_CHECKING, Any, cast
 
 from getiaction.data.observation import Observation
+
+if TYPE_CHECKING:
+    import torch
 
 
 class DataFormat(StrEnum):
@@ -306,12 +307,13 @@ class FormatConverter:
         This method handles conversion from either:
         1. getiaction Observation objects -> LeRobot dict (with flattened keys like "observation.images.top")
         2. Collated dicts from datamodule -> LeRobot dict (flatten nested structure)
-        3. Raw gym observations (with "pixels" key) -> LeRobot dict
-        4. Already-formatted LeRobot dicts -> pass through unchanged
+        3. Already-formatted LeRobot dicts -> pass through unchanged
+
+        Note: Raw gym observations are no longer handled here. They should be converted
+        to Observation format using `Observation.from_gym()` before being passed to this method.
 
         Args:
-            batch: Either an Observation object, a collated dict, raw gym observation,
-                or a dictionary in LeRobot format.
+            batch: Either an Observation object, a collated dict, or a dictionary in LeRobot format.
 
         Returns:
             Dictionary in LeRobot format with flattened keys like "observation.images.top".
@@ -327,11 +329,6 @@ class FormatConverter:
             >>> lerobot_dict = FormatConverter.to_lerobot_dict(collated)
             >>> # lerobot_dict = {"observation.images.top": top_img, "observation.state": state, "action": action}
 
-            >>> # From raw gym observation
-            >>> gym_obs = {"pixels": image_tensor, "agent_pos": state_tensor}
-            >>> lerobot_dict = FormatConverter.to_lerobot_dict(gym_obs)
-            >>> # lerobot_dict = {"observation.image": image_tensor, "observation.state": state_tensor}
-
             >>> # Already in correct format - returns unchanged
             >>> lerobot_dict = FormatConverter.to_lerobot_dict(lerobot_dict)
         """
@@ -344,39 +341,6 @@ class FormatConverter:
             if any(key.startswith("observation.") for key in batch):
                 # Already in LeRobot format
                 return batch
-
-            # Check if it's a raw gym observation (has "pixels" or similar gym keys)
-            if "pixels" in batch:
-                # Convert raw gym observation -> LeRobot dict
-                result = {}
-                # Handle image (convert numpy arrays to torch tensors)
-                if "pixels" in batch:
-                    pixels = batch["pixels"]
-                    if not isinstance(pixels, torch.Tensor):
-                        pixels = torch.from_numpy(pixels)
-                    # Convert to float32 if needed (gym often returns float64)
-                    if pixels.dtype != torch.float32:
-                        pixels = pixels.float()
-                    # Gym returns (H, W, C), need (C, H, W) for LeRobot
-                    if pixels.ndim == 3:  # noqa: PLR2004 - number of dims for image tensor
-                        # Check if it's (H, W, C) format
-                        if pixels.shape[-1] in {1, 3, 4}:  # Last dimension is channels
-                            pixels = pixels.permute(2, 0, 1)  # (H, W, C) -> (C, H, W)
-                        pixels = pixels.unsqueeze(0)  # Add batch dimension
-                    result["observation.image"] = pixels
-                # Handle state (agent_pos or similar)
-                if "agent_pos" in batch:
-                    state = batch["agent_pos"]
-                    if not isinstance(state, torch.Tensor):
-                        state = torch.from_numpy(state)
-                    # Convert to float32 if needed (gym often returns float64)
-                    if state.dtype != torch.float32:
-                        state = state.float()
-                    # Add batch dimension if missing
-                    if state.ndim == 1:
-                        state = state.unsqueeze(0)
-                    result["observation.state"] = state
-                return result
 
             # Check if it's a collated dict (has nested structure like {"images": {...}})
             if "images" in batch or "state" in batch:
