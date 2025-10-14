@@ -414,17 +414,11 @@ class Diffusion(Policy, LeRobotFromConfig):
         Returns:
             The selected action tensor.
         """
-        batch_dict = FormatConverter.to_lerobot_dict(batch)
+        # Move batch to device (observations from gym are on CPU)
+        batch = batch.to(self.device)
 
-        # TODO (samet-akcay): Manual device handling required for gym rollouts.  # noqa: FIX002
-        # https://github.com/open-edge-platform/geti-action/issues/57
-        #
-        # During gym rollouts, observations come directly from env.step() as CPU numpy arrays,
-        # bypassing Lightning's transfer_batch_to_device hook. This device transfer ensures
-        # compatibility with GPU training. Future improvement: move this to base Policy class
-        # or rollout function for cleaner separation of concerns.
-        device = next(self.lerobot_policy.parameters()).device
-        batch_dict = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch_dict.items()}
+        # Convert to LeRobot format
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
 
         return self.lerobot_policy.select_action(batch_dict)
 

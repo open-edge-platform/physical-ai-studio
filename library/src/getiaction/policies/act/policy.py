@@ -88,6 +88,8 @@ class ACT(Policy):
         Returns:
             torch.Tensor: Selected actions.
         """
+        # Move batch to device (observations from gym are on CPU)
+        batch = batch.to(self.device)
         return self.model.predict_action_chunk(batch.to_dict())
 
     def training_step(self, batch: Observation, batch_idx: int) -> dict[str, torch.Tensor]:
