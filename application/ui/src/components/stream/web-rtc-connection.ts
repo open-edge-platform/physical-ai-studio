@@ -1,4 +1,5 @@
 import { fetchClient } from '../../api/client';
+import { SchemaCamera } from '../../api/openapi-spec';
 
 export type WebRTCConnectionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
 
@@ -34,8 +35,7 @@ export class WebRTCConnection {
     private timeoutId?: ReturnType<typeof setTimeout>;
 
     constructor(
-        private driver: string,
-        private camera: string
+        private camera: SchemaCamera
     ) {
         this.webrtcId = Math.random().toString(36).substring(7);
     }
@@ -134,7 +134,12 @@ export class WebRTCConnection {
                 webrtc_id: this.webrtcId,
             },
             //params: { query: { camera: '/dev/video2' } },
-            params: { query: { driver: this.driver, camera: this.camera } },
+            params: { query: { 
+                camera: this.camera.port_or_device_id,
+                driver: this.camera.driver,
+                ...this.camera.default_stream_profile,
+                } 
+            },
         });
 
         return data as SessionData;

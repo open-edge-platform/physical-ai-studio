@@ -1,6 +1,7 @@
 import { createContext, ReactNode, RefObject, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
 import { WebRTCConnection, WebRTCConnectionStatus } from './web-rtc-connection';
+import { SchemaCamera } from '../../api/openapi-spec';
 
 export type WebRTCConnectionState = null | {
     status: WebRTCConnectionStatus;
@@ -11,7 +12,7 @@ export type WebRTCConnectionState = null | {
 
 export const WebRTCConnectionContext = createContext<WebRTCConnectionState>(null);
 
-const useWebRTCConnectionState = (driver: string, camera: string) => {
+const useWebRTCConnectionState = (camera: SchemaCamera) => {
     const webRTCConnectionRef = useRef<WebRTCConnection | null>(null);
     const [status, setStatus] = useState<WebRTCConnectionStatus>('idle');
 
@@ -21,7 +22,7 @@ const useWebRTCConnectionState = (driver: string, camera: string) => {
             return;
         }
 
-        const webRTCConnection = new WebRTCConnection(driver, camera);
+        const webRTCConnection = new WebRTCConnection(camera);
         webRTCConnectionRef.current = webRTCConnection;
 
         const unsubscribe = webRTCConnection.subscribe((event) => {
@@ -43,7 +44,7 @@ const useWebRTCConnectionState = (driver: string, camera: string) => {
             webRTCConnection.stop(); // Ensure connection is closed on unmount
             webRTCConnectionRef.current = null;
         };
-    }, [camera, driver]);
+    }, [camera]);
 
     const start = useCallback(async () => {
         if (!webRTCConnectionRef.current) {
@@ -76,14 +77,12 @@ const useWebRTCConnectionState = (driver: string, camera: string) => {
 
 export const WebRTCConnectionProvider = ({
     children,
-    driver,
     camera,
 }: {
     children: ReactNode;
-    driver: string;
-    camera: string;
+    camera: SchemaCamera;
 }) => {
-    const value = useWebRTCConnectionState(driver, camera);
+    const value = useWebRTCConnectionState(camera);
 
     return <WebRTCConnectionContext.Provider value={value}>{children}</WebRTCConnectionContext.Provider>;
 };

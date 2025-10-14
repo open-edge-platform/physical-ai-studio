@@ -72,8 +72,8 @@ export const Camera = () => {
                 width='100%'
             >
                 {camera && (
-                    <WebRTCConnectionProvider driver={camera?.driver} camera={camera?.port_or_device_id}>
-                        <CameraView label={camera?.port_or_device_id} />
+                    <WebRTCConnectionProvider camera={camera}>
+                        <CameraView label={camera.port_or_device_id} />
                     </WebRTCConnectionProvider>
                 )}
             </Grid>

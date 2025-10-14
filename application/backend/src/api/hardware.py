@@ -15,12 +15,11 @@ async def get_cameras() -> list[Camera]:
     """Get all cameras"""
     cameras = FrameSourceFactory.discover_devices(sources=["webcam", "realsense", "genicam", "basler"])
     res = []
-    sp = CameraProfile(width=0, height=0, fps=0)
+    sp = CameraProfile(width=640, height=480, fps=30) #TODO: Implement proper default camera profile retrieval
 
     for driver, cams in cameras.items():
         for cam in cams:
-            id = cam["serial_number"] if driver == "realsense" else cam["id"]
-            res.append(Camera(name=cam["name"], port_or_device_id=id, driver=driver, default_stream_profile=sp))
+            res.append(Camera(name=cam["name"], port_or_device_id=cam["id"], driver=driver, default_stream_profile=sp))
 
     return res
 
