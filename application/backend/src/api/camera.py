@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
 from api.dependencies import get_webrtc_manager
-from schemas import CameraConfig
+from schemas import Camera
 from utils.camera import gen_camera_frames
 from webrtc.manager import Answer, Offer, WebRTCManager
 
@@ -28,7 +28,7 @@ async def camera_feed_websocket(websocket: WebSocket) -> None:
     try:
         data = await websocket.receive_json("text")
         print(data)
-        config = CameraConfig(**data)
+        config = Camera(**data)
         await gen_camera_frames(websocket, stop_event, config)
     except WebSocketDisconnect:
         stop_event.set()

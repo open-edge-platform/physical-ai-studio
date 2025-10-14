@@ -8,7 +8,7 @@ from typing import Any
 
 import cv2
 from fastapi import WebSocket
-from lerobot.cameras import Camera
+from lerobot.cameras import Camera as LeRobotCamera
 from lerobot.cameras import CameraConfig as LeRobotCameraConfig
 from lerobot.cameras.opencv import OpenCVCamera, OpenCVCameraConfig
 from lerobot.cameras.realsense import RealSenseCamera, RealSenseCameraConfig
@@ -16,7 +16,7 @@ from lerobot.errors import DeviceNotConnectedError
 from frame_source import FrameSourceFactory
 from lerobot.find_cameras import find_all_opencv_cameras as le_robot_find_all_opencv_cameras
 
-from schemas import CameraConfig
+from schemas import CameraConfig, Camera
 
 VIDEO4LINUX_PATH = "/sys/class/video4linux"
 
@@ -93,13 +93,12 @@ def gen_frames(id: str, driver: str) -> Generator[bytes, None, None]:
         yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpg_bytes + b"\r\n")
 
 
-async def gen_camera_frames(websocket: WebSocket, stop_event: asyncio.Event, config: CameraConfig) -> None:
+async def gen_camera_frames(websocket: WebSocket, stop_event: asyncio.Event, config: Camera) -> None:
     """
     Continuously capture frames, encode them as JPEG,
     and pass that as string to the websocket
     """
-    camera_config = build_camera_config(config)
-    camera = initialize_camera(camera_config)
+    camera = FrameSourceFactory.create(config.driver, config.port_or_device_id)
     attempts = 0
     while not camera.is_connected and attempts < 3:
         try:
@@ -111,11 +110,13 @@ async def gen_camera_frames(websocket: WebSocket, stop_event: asyncio.Event, con
 
     while not stop_event.is_set():
         start_loop_t = time.perf_counter()
-        _, buffer = cv2.imencode(".jpg", camera.read())
-        data = base64.b64encode(buffer).decode()
-        await asyncio.create_task(websocket.send_text(data))
+        succes, frame = camera.read()
+        if succes:
+            _, buffer = cv2.imencode(".jpg", frame)
+            data = base64.b64encode(buffer).decode()
+            await asyncio.create_task(websocket.send_text(data))
         dt_s = time.perf_counter() - start_loop_t
-        await asyncio.sleep(1 / camera.fps - dt_s)
+        await asyncio.sleep(1 / config.default_stream_profile.fps - dt_s)
 
 
 def build_camera_config(camera_config: CameraConfig) -> LeRobotCameraConfig:
@@ -138,7 +139,7 @@ def build_camera_config(camera_config: CameraConfig) -> LeRobotCameraConfig:
     raise ValueError(f"Unknown CameraConfig driver: {camera_config.driver}")
 
 
-def initialize_camera(cfg: LeRobotCameraConfig) -> Camera:
+def initialize_camera(cfg: LeRobotCameraConfig) -> LeRobotCamera:
     """Initialize a LeRobot Camera object from LeRobot CameraConfig"""
     if cfg.type == "opencv":
         return OpenCVCamera(cfg)

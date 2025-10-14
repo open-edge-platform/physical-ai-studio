@@ -11,7 +11,17 @@ const CameraPreview = ({ camera }: { camera: SchemaCameraConfig }) => {
     const { sendJsonMessage } = useWebSocket(`${API_BASE_URL}/api/cameras/offer/camera/ws`, {
         onOpen: () => {
             if (camera.port_or_device_id !== '') {
-                sendJsonMessage(camera);
+                const cameraConfig: SchemaCamera = {
+                    driver: camera.driver,
+                    name: camera.name,
+                    port_or_device_id: camera.port_or_device_id,
+                    default_stream_profile: {
+                        fps: camera.fps,
+                        height: camera.height,
+                        width: camera.width,
+                    },
+                }
+                sendJsonMessage(cameraConfig);
             }
         },
         onMessage: (message) => {
@@ -57,10 +67,11 @@ export const CameraSetup = ({ camera, availableCameras, updateCamera }: CameraSe
         }
     };
 
+    console.log(camera)
     return (
         <Flex direction={'column'} flex={1}>
             <Heading>{camera.name}</Heading>
-            {/*<CameraPreview key={camera.port_or_device_id} camera={camera} />*/}
+            <CameraPreview key={camera.port_or_device_id} camera={camera} />
             <Picker selectedKey={`${camera.driver}%${camera.port_or_device_id}`} onSelectionChange={onSelection}>
                 {camerasConnectedOfType.map((cam) => (
                     <Item key={makeKey(cam)}>{cam.name}</Item>
