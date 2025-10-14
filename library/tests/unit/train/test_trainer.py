@@ -8,16 +8,16 @@ class TestLightningActionTrainer:
     @pytest.fixture
     def dummy_datamodule(self):
         dm = MagicMock()
-        dm._val_dataset = MagicMock()
+        dm.val_dataset = MagicMock()
         return dm
 
     @pytest.fixture
     def dummy_model(self):
         return MagicMock()
 
-    def test_fit_limits_val_batches_when_no__val_dataset(self, dummy_model):
-        """If datamodule has no _val_dataset, limit_val_batches is set to 0."""
-        datamodule = MagicMock(_val_dataset=None)
+    def test_fit_limits_val_batches_when_no_val_dataset(self, dummy_model):
+        """If datamodule has no val_dataset, limit_val_batches is set to 0."""
+        datamodule = MagicMock(val_dataset=None)
         trainer_wrapper = Trainer()
         trainer_wrapper.backend.fit = MagicMock()
 

@@ -135,10 +135,10 @@ class DataModule(LightningDataModule):
 
         # gym environments
         self.val_gyms: Gym | list[Gym] | None = val_gyms
-        self._val_dataset: Dataset[Any] | None = None  # Internal: wrapped gym dataset
+        self.val_dataset: Dataset | None = None
         self.num_rollouts_val: int = num_rollouts_val
         self.test_gyms: Gym | list[Gym] | None = test_gyms
-        self._test_dataset: Dataset[Any] | None = None  # Internal: wrapped gym dataset
+        self.test_dataset: Dataset | None = None
         self.num_rollouts_test: int = num_rollouts_test
         self.max_episode_steps = max_episode_steps
 
@@ -178,21 +178,21 @@ class DataModule(LightningDataModule):
             if isinstance(self.val_gyms, list):
                 # TODO(alfie-roddan-intel): https://github.com/open-edge-platform/geti-action/issues/33  # noqa: FIX002
                 # ensure metrics are seperable between two different gyms
-                self._val_dataset = ConcatDataset([
+                self.val_dataset = ConcatDataset([
                     GymDataset(env=gym, num_rollouts=self.num_rollouts_val) for gym in self.val_gyms
                 ])
             else:
-                self._val_dataset = GymDataset(env=self.val_gyms, num_rollouts=self.num_rollouts_val)
+                self.val_dataset = GymDataset(env=self.val_gyms, num_rollouts=self.num_rollouts_val)
 
         if stage == "test" and self.test_gyms:
             if isinstance(self.test_gyms, list):
                 # TODO(alfie-roddan-intel): https://github.com/open-edge-platform/geti-action/issues/33  # noqa: FIX002
                 # ensure metrics are seperable between two different gyms
-                self._test_dataset = ConcatDataset([
+                self.test_dataset = ConcatDataset([
                     GymDataset(env=gym, num_rollouts=self.num_rollouts_test) for gym in self.test_gyms
                 ])
             else:
-                self._test_dataset = GymDataset(env=self.test_gyms, num_rollouts=self.num_rollouts_test)
+                self.test_dataset = GymDataset(env=self.test_gyms, num_rollouts=self.num_rollouts_test)
 
     def train_dataloader(self) -> DataLoader[Any]:
         """Return the DataLoader for training.
@@ -216,7 +216,7 @@ class DataModule(LightningDataModule):
             DataLoader[Any]: Validation DataLoader with collate function for Gym environments.
         """
         return DataLoader(
-            self._val_dataset,
+            self.val_dataset,
             batch_size=1,
             collate_fn=_collate_gym,  # type: ignore[arg-type]
             shuffle=False,
@@ -229,7 +229,7 @@ class DataModule(LightningDataModule):
             DataLoader[Any]: Test DataLoader with collate function for Gym environments.
         """
         return DataLoader(
-            self._test_dataset,
+            self.test_dataset,
             batch_size=1,
             collate_fn=_collate_gym,  # type: ignore[arg-type]
             shuffle=False,

@@ -44,7 +44,7 @@ class Trainer:
     def fit(self, model: Policy, datamodule: DataModule, **kwargs) -> None:  # noqa: ANN003
         """Fit the model."""
         # if we don't have any validation datasets, limit batch size to zero
-        if datamodule._val_dataset is None:
+        if datamodule.val_dataset is None:
             self.backend.limit_val_batches = 0
         return self.backend.fit(model=model, datamodule=datamodule, **kwargs)
 
@@ -57,14 +57,14 @@ class Trainer:
 
         Args:
             model: The policy to validate.
-            datamodule: The datamodule with _val_dataset or val_gyms.
+            datamodule: The datamodule with val_dataset or val_gyms.
             **kwargs: Additional arguments passed to Lightning Trainer.validate().
 
         Returns:
             Validation results from Lightning.
         """
         # if we don't have any validation datasets, limit batch size to zero
-        if datamodule._val_dataset is None:
+        if datamodule.val_dataset is None:
             self.backend.limit_val_batches = 0
         return self.backend.validate(model=model, datamodule=datamodule, **kwargs)
 
