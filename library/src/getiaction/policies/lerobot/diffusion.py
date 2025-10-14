@@ -255,9 +255,8 @@ class Diffusion(Policy, LeRobotFromConfig):
         self._framework = "lerobot"
 
         # Policy will be initialized in setup()
-        self._lerobot_policy: _LeRobotDiffusionPolicy | None = None
+        self._lerobot_policy: _LeRobotDiffusionPolicy
         self.model: nn.Module | None = None
-        self._framework_policy: _LeRobotDiffusionPolicy | None = None
 
         self.save_hyperparameters()
 
@@ -271,7 +270,7 @@ class Diffusion(Policy, LeRobotFromConfig):
         Raises:
             RuntimeError: If the policy hasn't been initialized yet.
         """
-        if self._lerobot_policy is None:
+        if not hasattr(self, "_lerobot_policy") or self._lerobot_policy is None:
             msg = "Policy not initialized. Call setup() first."
             raise RuntimeError(msg)
         return self._lerobot_policy
@@ -291,7 +290,7 @@ class Diffusion(Policy, LeRobotFromConfig):
         """
         del stage  # Unused argument
 
-        if self._lerobot_policy is not None:
+        if hasattr(self, "_lerobot_policy") and self._lerobot_policy is not None:
             return  # Already initialized
 
         datamodule = self.trainer.datamodule
@@ -320,9 +319,9 @@ class Diffusion(Policy, LeRobotFromConfig):
         )
 
         # Initialize the policy
-        self._lerobot_policy = _LeRobotDiffusionPolicy(lerobot_config, dataset_stats=stats)  # type: ignore[arg-type,misc]
+        policy = _LeRobotDiffusionPolicy(lerobot_config, dataset_stats=stats)  # type: ignore[arg-type,misc]
+        self.add_module("_lerobot_policy", policy)
         self.model = self._lerobot_policy.diffusion
-        self._framework_policy = self._lerobot_policy
 
     def forward(
         self,
@@ -413,6 +412,17 @@ class Diffusion(Policy, LeRobotFromConfig):
             The selected action tensor.
         """
         batch_dict = FormatConverter.to_lerobot_dict(batch)
+
+        # TODO (samet-akcay): Manual device handling required for gym rollouts.  # noqa: FIX002
+        # https://github.com/open-edge-platform/geti-action/issues/57
+        #
+        # During gym rollouts, observations come directly from env.step() as CPU numpy arrays,
+        # bypassing Lightning's transfer_batch_to_device hook. This device transfer ensures
+        # compatibility with GPU training. Future improvement: move this to base Policy class
+        # or rollout function for cleaner separation of concerns.
+        device = next(self.lerobot_policy.parameters()).device
+        batch_dict = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch_dict.items()}
+
         return self.lerobot_policy.select_action(batch_dict)
 
     def reset(self) -> None:
