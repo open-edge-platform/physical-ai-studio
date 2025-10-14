@@ -34,9 +34,7 @@ export class WebRTCConnection {
     private listeners: Array<Listener> = [];
     private timeoutId?: ReturnType<typeof setTimeout>;
 
-    constructor(
-        private camera: SchemaCamera
-    ) {
+    constructor(private camera: SchemaCamera) {
         this.webrtcId = Math.random().toString(36).substring(7);
     }
 
@@ -134,11 +132,12 @@ export class WebRTCConnection {
                 webrtc_id: this.webrtcId,
             },
             //params: { query: { camera: '/dev/video2' } },
-            params: { query: { 
-                camera: this.camera.port_or_device_id,
-                driver: this.camera.driver,
-                ...this.camera.default_stream_profile,
-                } 
+            params: {
+                query: {
+                    camera: this.camera.port_or_device_id,
+                    driver: this.camera.driver,
+                    ...this.camera.default_stream_profile,
+                },
             },
         });
 

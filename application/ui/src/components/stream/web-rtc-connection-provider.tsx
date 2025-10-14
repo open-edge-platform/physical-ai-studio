@@ -1,7 +1,7 @@
 import { createContext, ReactNode, RefObject, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
-import { WebRTCConnection, WebRTCConnectionStatus } from './web-rtc-connection';
 import { SchemaCamera } from '../../api/openapi-spec';
+import { WebRTCConnection, WebRTCConnectionStatus } from './web-rtc-connection';
 
 export type WebRTCConnectionState = null | {
     status: WebRTCConnectionStatus;
@@ -75,13 +75,7 @@ const useWebRTCConnectionState = (camera: SchemaCamera) => {
     };
 };
 
-export const WebRTCConnectionProvider = ({
-    children,
-    camera,
-}: {
-    children: ReactNode;
-    camera: SchemaCamera;
-}) => {
+export const WebRTCConnectionProvider = ({ children, camera }: { children: ReactNode; camera: SchemaCamera }) => {
     const value = useWebRTCConnectionState(camera);
 
     return <WebRTCConnectionContext.Provider value={value}>{children}</WebRTCConnectionContext.Provider>;

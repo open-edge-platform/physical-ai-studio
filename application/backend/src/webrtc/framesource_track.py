@@ -5,6 +5,7 @@ import numpy as np
 from aiortc import VideoStreamTrack
 from av import VideoFrame
 from frame_source import FrameSourceFactory
+
 from schemas import Camera, CameraProfile
 
 logger = logging.getLogger(__name__)
@@ -23,7 +24,7 @@ class FrameSourceVideoStreamTrack(VideoStreamTrack):
             camera.port_or_device_id,
             width=stream_profile.width,
             height=stream_profile.height,
-            fps=stream_profile.fps
+            fps=stream_profile.fps,
         )
         self.cam.connect()
         self._running = True
