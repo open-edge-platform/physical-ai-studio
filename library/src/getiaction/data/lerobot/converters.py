@@ -309,9 +309,6 @@ class FormatConverter:
         2. Collated dicts from datamodule -> LeRobot dict (flatten nested structure)
         3. Already-formatted LeRobot dicts -> pass through unchanged
 
-        Note: Raw gym observations are no longer handled here. They should be converted
-        to Observation format using `Observation.from_gym()` before being passed to this method.
-
         Args:
             batch: Either an Observation object, a collated dict, or a dictionary in LeRobot format.
 
