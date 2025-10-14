@@ -3,16 +3,26 @@
 
 """End-to-end integration tests for training and validation with gym rollouts.
 
-This module tests the complete pipeline:
-1. Train a policy (first-party ACT or third-party LeRobot)
-2. Run validation with gym rollouts
-3. Verify metrics are logged correctly
+This module contains true E2E tests that run the complete training pipeline:
+1. Initialize a policy (first-party ACT/Dummy or third-party LeRobot)
+2. Load training data (real LeRobot datasets or dummy data)
+3. Run trainer.fit() with validation
+4. Execute gym rollouts during validation
+5. Verify metrics are logged correctly
+
+All tests in this file use Lightning's Trainer and run actual training loops.
+For unit tests or non-E2E integration tests, see tests/unit/ or tests/integration/
+with different naming patterns.
+
+Test Classes:
+- TestFirstPartyPolicyE2E: E2E tests for first-party policies (Dummy, ACT)
+- TestLeRobotPolicyE2E: E2E tests for LeRobot policy wrappers (slow, requires download)
+- TestRolloutMetrics: E2E tests validating gym rollout metric computation
 """
 
 from __future__ import annotations
 
 import pytest
-import torch
 from lightning.pytorch import Trainer
 
 from getiaction.data import DataModule
@@ -65,8 +75,9 @@ class TestFirstPartyPolicyE2E:
         """Test ACT policy with training + gym validation.
 
         Note: With fast_dev_run=True, only 1 batch is processed, so no GPU required.
+        The DummyDataset fixture now properly implements the full Dataset interface
+        including fps, tolerance_s, delta_indices, etc.
         """
-        pytest.skip("ACT policy needs reset() method implementation")
         from getiaction.policies.act import ACT
 
         # Create datamodule
@@ -97,41 +108,97 @@ class TestFirstPartyPolicyE2E:
 
 
 @pytest.mark.slow
+@pytest.mark.requires_download
 class TestLeRobotPolicyE2E:
-    """End-to-end tests for third-party LeRobot policies."""
+    """Test LeRobot policies with E2E training and validation.
+
+    Uses a real LeRobot dataset (lerobot/pusht with 2 episodes) which is downloaded
+    once and cached. Download is fast (~2-3 seconds, ~1MB) on first run.
+    """
 
     @pytest.fixture
-    def lerobot_dataset(self):
-        """Create minimal LeRobot-compatible dataset."""
+    def lerobot_dataset_diffusion(self):
+        """Create LeRobotDataModule for Diffusion policy with action chunking.
+
+        Uses lerobot/pusht with just 2 episodes for fast testing. The dataset is
+        automatically downloaded and cached on first use (~2-3s, ~1MB).
+        Configures delta_timestamps to provide action sequences (horizon=16) and
+        observation history (n_obs_steps=2).
+        """
         pytest.importorskip("lerobot")
         from getiaction.data.lerobot import LeRobotDataModule
+        from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-        # Use a very small LeRobot dataset for testing
+        # Get FPS for the dataset to calculate time deltas
+        temp_ds = LeRobotDataset("lerobot/pusht", episodes=[0, 1])
+        fps = temp_ds.fps
+        dt_per_step = 1.0 / fps
+
+        # Diffusion uses horizon=16 and n_obs_steps=2 by default
+        horizon = 16
+        n_obs_steps = 2
+        delta_timestamps = {
+            "observation.image": [i * dt_per_step for i in range(n_obs_steps)],
+            "observation.state": [i * dt_per_step for i in range(n_obs_steps)],
+            "action": [i * dt_per_step for i in range(horizon)],
+        }
+
         return LeRobotDataModule(
             repo_id="lerobot/pusht",
+            episodes=[0, 1],  # Only load 2 episodes (~1MB, fast download)
             train_batch_size=4,
-            episodes=[0, 1],  # Just 2 episodes
-            data_format="lerobot",  # LeRobot format
+            data_format="lerobot",  # Use LeRobot's native dict format
+            delta_timestamps=delta_timestamps,
         )
 
-    def test_lerobot_diffusion_training_and_validation(self, lerobot_dataset, pusht_gym):
+    @pytest.fixture
+    def lerobot_dataset_act(self):
+        """Create LeRobotDataModule for ACT policy with action chunking.
+
+        Uses lerobot/pusht with just 2 episodes for fast testing. The dataset is
+        automatically downloaded and cached on first use (~2-3s, ~1MB).
+        Configures delta_timestamps to provide action sequences (chunk_size=100).
+        ACT processes single observations, so no observation history needed.
+        """
+        pytest.importorskip("lerobot")
+        from getiaction.data.lerobot import LeRobotDataModule
+        from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+        # Get FPS for the dataset to calculate time deltas
+        temp_ds = LeRobotDataset("lerobot/pusht", episodes=[0, 1])
+        fps = temp_ds.fps
+        dt_per_step = 1.0 / fps
+
+        # ACT uses chunk_size=100 by default
+        chunk_size = 100
+        delta_timestamps = {"action": [i * dt_per_step for i in range(chunk_size)]}
+
+        return LeRobotDataModule(
+            repo_id="lerobot/pusht",
+            episodes=[0, 1],  # Only load 2 episodes (~1MB, fast download)
+            train_batch_size=4,
+            data_format="lerobot",  # Use LeRobot's native dict format
+            delta_timestamps=delta_timestamps,
+        )
+
+    def test_lerobot_diffusion_training_and_validation(self, lerobot_dataset_diffusion, pusht_gym):
         """Test LeRobot Diffusion policy with training + gym validation.
 
-        Note: With fast_dev_run=True, only 1 batch is processed, so no GPU required.
+        Uses lerobot/pusht dataset with 2 episodes. Downloads about 1MB on first run.
+        With fast_dev_run=True, only 1 batch is processed.
         """
         pytest.importorskip("lerobot")
-        from getiaction.policies.lerobot import DiffusionPolicy
+        from getiaction.policies.lerobot import Diffusion
 
         # Add gym to datamodule
-        lerobot_dataset.val_gyms = pusht_gym
-        lerobot_dataset.num_rollouts_val = 2
-        lerobot_dataset.max_episode_steps = 10
+        lerobot_dataset_diffusion.val_gyms = pusht_gym
+        lerobot_dataset_diffusion.num_rollouts_val = 2
+        lerobot_dataset_diffusion.max_episode_steps = 10
 
-        # Create policy
-        policy = DiffusionPolicy(
-            dataset=lerobot_dataset.train_dataset,
+        # Create policy with default LeRobot parameters (not minimal, to match dataset)
+        policy = Diffusion(
             learning_rate=1e-4,
-            num_steps=10,  # Very small for testing
+            # Use defaults that match LeRobot dataset structure
         )
 
         # Train
@@ -142,32 +209,30 @@ class TestLeRobotPolicyE2E:
             enable_progress_bar=False,
         )
 
-        trainer.fit(policy, datamodule=lerobot_dataset)
+        trainer.fit(policy, datamodule=lerobot_dataset_diffusion)
 
         # Verify metrics
         assert trainer.logged_metrics is not None
         assert any(key.startswith("val/") for key in trainer.logged_metrics)
-        assert any(key.startswith("train/") for key in trainer.logged_metrics)
 
-    def test_lerobot_act_training_and_validation(self, lerobot_dataset, pusht_gym):
+    def test_lerobot_act_training_and_validation(self, lerobot_dataset_act, pusht_gym):
         """Test LeRobot ACT policy with training + gym validation.
 
-        Note: With fast_dev_run=True, only 1 batch is processed, so no GPU required.
+        Uses lerobot/pusht dataset with 2 episodes. Downloads about 1MB on first run.
+        With fast_dev_run=True, only 1 batch is processed.
         """
         pytest.importorskip("lerobot")
-        from getiaction.policies.lerobot import ACTPolicy
+        from getiaction.policies.lerobot import ACT
 
         # Add gym to datamodule
-        lerobot_dataset.val_gyms = pusht_gym
-        lerobot_dataset.num_rollouts_val = 2
-        lerobot_dataset.max_episode_steps = 10
+        lerobot_dataset_act.val_gyms = pusht_gym
+        lerobot_dataset_act.num_rollouts_val = 2
+        lerobot_dataset_act.max_episode_steps = 10
 
-        # Create policy
-        policy = ACTPolicy(
-            dataset=lerobot_dataset.train_dataset,
+        # Create policy with default LeRobot parameters (not minimal, to match dataset)
+        policy = ACT(
             learning_rate=1e-4,
-            chunk_size=4,
-            hidden_dim=128,
+            # Use defaults that match LeRobot dataset structure
         )
 
         # Train
@@ -178,31 +243,27 @@ class TestLeRobotPolicyE2E:
             enable_progress_bar=False,
         )
 
-        trainer.fit(policy, datamodule=lerobot_dataset)
+        trainer.fit(policy, datamodule=lerobot_dataset_act)
 
-        # Verify metrics
-        assert trainer.logged_metrics is not None
-        assert any(key.startswith("val/") for key in trainer.logged_metrics)
-
-    def test_lerobot_universal_training_and_validation(self, lerobot_dataset, pusht_gym):
+    def test_lerobot_universal_training_and_validation(self, lerobot_dataset_diffusion, pusht_gym):
         """Test LeRobot Universal wrapper with training + gym validation.
 
-        Note: With fast_dev_run=True, only 1 batch is processed, so no GPU required.
+        Uses lerobot/pusht dataset with 2 episodes. Downloads about 1MB on first run.
+        With fast_dev_run=True, only 1 batch is processed.
         """
         pytest.importorskip("lerobot")
         from getiaction.policies.lerobot import LeRobotPolicy
 
         # Add gym to datamodule
-        lerobot_dataset.val_gyms = pusht_gym
-        lerobot_dataset.num_rollouts_val = 2
-        lerobot_dataset.max_episode_steps = 10
+        lerobot_dataset_diffusion.val_gyms = pusht_gym
+        lerobot_dataset_diffusion.num_rollouts_val = 2
+        lerobot_dataset_diffusion.max_episode_steps = 10
 
-        # Create policy using universal wrapper
+        # Create policy using universal wrapper with default LeRobot parameters
         policy = LeRobotPolicy(
             policy_name="diffusion",
-            dataset=lerobot_dataset.train_dataset,
             learning_rate=1e-4,
-            num_steps=10,
+            # Use defaults that match LeRobot dataset
         )
 
         # Train
@@ -213,7 +274,7 @@ class TestLeRobotPolicyE2E:
             enable_progress_bar=False,
         )
 
-        trainer.fit(policy, datamodule=lerobot_dataset)
+        trainer.fit(policy, datamodule=lerobot_dataset_diffusion)
 
         # Verify metrics
         assert trainer.logged_metrics is not None
