@@ -4,6 +4,7 @@
 """Base Lightning Module for Policies."""
 
 from abc import ABC, abstractmethod
+from typing import Any
 
 import lightning as L  # noqa: N812
 import torch
@@ -68,11 +69,13 @@ class Policy(L.LightningModule, ABC):
         return self.model(batch.to_dict())
 
     @abstractmethod
-    def select_action(self, batch: Observation) -> torch.Tensor:
+    def select_action(self, batch: Observation | dict[str, Any]) -> torch.Tensor:
         """Select an action using the policy model.
 
         Args:
-            batch (Observation): Input batch of observations.
+            batch: Input batch of observations. Can be either:
+                - Observation: Structured observation dataclass
+                - dict[str, Any]: Raw gym observation dict (will be converted to Observation)
 
         Returns:
             torch.Tensor: Selected actions.

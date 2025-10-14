@@ -496,18 +496,24 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         """
         return self.evaluate_gym(batch, batch_idx, stage="test")
 
-    def select_action(self, batch: Observation) -> torch.Tensor:
+    def select_action(self, batch: Observation | dict[str, Any]) -> torch.Tensor:
         """Select action (inference mode) through LeRobot.
 
         Converts the Observation to LeRobot dict format and passes it to the
         underlying LeRobot policy for action prediction.
 
         Args:
-            batch: Observation from gym environment (converted from raw gym obs by rollout()).
+            batch: Input batch of observations. Can be either:
+                - Observation: Structured observation dataclass
+                - dict[str, Any]: Raw gym observation dict (will be converted to Observation)
 
         Returns:
             Predicted actions.
         """
+        # Convert raw gym dict to Observation if needed
+        if isinstance(batch, dict):
+            batch = Observation.from_gym(batch)
+
         # Move batch to device (observations from gym are on CPU)
         batch = batch.to(self.device)
 

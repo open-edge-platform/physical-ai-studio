@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 from lightning_utilities.core.imports import module_available
 
+from getiaction.data import Observation
 from getiaction.data.lerobot import FormatConverter
 from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 from getiaction.policies.base import Policy
@@ -21,7 +22,6 @@ from getiaction.policies.lerobot.mixin import LeRobotFromConfig
 if TYPE_CHECKING:
     from torch import nn
 
-    from getiaction.data import Observation
     from getiaction.gyms import Gym
 
 if TYPE_CHECKING or module_available("lerobot"):
@@ -402,18 +402,24 @@ class Diffusion(Policy, LeRobotFromConfig):
         """
         return self.evaluate_gym(batch, batch_idx, stage="test")
 
-    def select_action(self, batch: Observation) -> torch.Tensor:
+    def select_action(self, batch: Observation | dict[str, Any]) -> torch.Tensor:
         """Select action (inference mode) through LeRobot.
 
         Converts the Observation to LeRobot dict format and passes it to the
         underlying LeRobot policy for action prediction.
 
         Args:
-            batch: Observation from gym environment (converted from raw gym obs by rollout()).
+            batch: Input batch of observations. Can be either:
+                - Observation: Structured observation dataclass
+                - dict[str, Any]: Raw gym observation dict (will be converted to Observation)
 
         Returns:
             The selected action tensor.
         """
+        # Convert raw gym dict to Observation if needed
+        if isinstance(batch, dict):
+            batch = Observation.from_gym(batch)
+
         # Move batch to device (observations from gym are on CPU)
         batch = batch.to(self.device)
 
