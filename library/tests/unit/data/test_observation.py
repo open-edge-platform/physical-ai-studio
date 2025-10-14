@@ -448,3 +448,88 @@ class TestObservationWithOptionalFields:
         assert obs.next_success is True
         assert obs.info["key"] == "value"
         assert obs.extra["custom"] == 123
+
+
+class TestObservationDeviceTransfer:
+    """Test Observation.to() method for device transfer."""
+
+    def test_to_device_single_tensor(self):
+        """Test moving observation with single tensor to device."""
+        obs = Observation(action=torch.tensor([1.0, 2.0]))
+        obs_moved = obs.to("cpu")
+
+        assert obs_moved.action.device.type == "cpu"
+        # Original unchanged (immutable)
+        assert obs is not obs_moved
+
+    def test_to_device_multiple_tensors(self):
+        """Test moving observation with multiple tensors."""
+        obs = Observation(
+            action=torch.tensor([1.0, 2.0]),
+            state=torch.tensor([0.5, 0.6]),
+        )
+        obs_moved = obs.to("cpu")
+
+        assert obs_moved.action.device.type == "cpu"
+        assert obs_moved.state.device.type == "cpu"
+
+    def test_to_device_nested_dict(self):
+        """Test moving observation with nested dict (multi-camera)."""
+        obs = Observation(
+            action=torch.tensor([1.0]),
+            images={"top": torch.rand(3, 64, 64), "wrist": torch.rand(3, 32, 32)},
+        )
+        obs_moved = obs.to("cpu")
+
+        assert obs_moved.images["top"].device.type == "cpu"
+        assert obs_moved.images["wrist"].device.type == "cpu"
+
+    def test_to_device_preserves_none(self):
+        """Test that None fields remain None after device transfer."""
+        obs = Observation(action=torch.tensor([1.0]), state=None, images=None)
+        obs_moved = obs.to("cpu")
+
+        assert obs_moved.action.device.type == "cpu"
+        assert obs_moved.state is None
+        assert obs_moved.images is None
+
+    def test_to_device_preserves_shapes(self):
+        """Test that tensor shapes are preserved during device transfer."""
+        action_shape = (8, 2)
+        state_shape = (8, 10)
+        images_shape = (8, 3, 224, 224)
+
+        obs = Observation(
+            action=torch.randn(action_shape),
+            state=torch.randn(state_shape),
+            images={"top": torch.rand(images_shape)},
+        )
+        obs_moved = obs.to("cpu")
+
+        assert obs_moved.action.shape == action_shape
+        assert obs_moved.state.shape == state_shape
+        assert obs_moved.images["top"].shape == images_shape
+
+    def test_to_device_preserves_non_tensor_fields(self):
+        """Test that non-tensor fields are preserved."""
+        obs = Observation(
+            action=torch.tensor([1.0]),
+            next_success=True,
+            info={"key": "value"},
+        )
+        obs_moved = obs.to("cpu")
+
+        assert obs_moved.next_success is True
+        assert obs_moved.info["key"] == "value"
+
+    def test_to_device_immutability(self):
+        """Test that original observation is not modified."""
+        obs = Observation(action=torch.tensor([1.0, 2.0]))
+        original_device = obs.action.device
+
+        obs_moved = obs.to("cpu")
+
+        # Original unchanged
+        assert obs.action.device == original_device
+        # New instance created
+        assert obs is not obs_moved

@@ -20,6 +20,34 @@ class Policy(L.LightningModule, ABC):
         super().__init__()
         self.model: nn.Module
 
+    def transfer_batch_to_device(
+        self,
+        batch: Observation,
+        device: torch.device,
+        dataloader_idx: int,
+    ) -> Observation:
+        """Transfer batch to device.
+
+        PyTorch Lightning hook to move custom batch types to the correct device.
+        This is called automatically by Lightning before the batch is passed to
+        training_step, validation_step, etc.
+
+        For Observation objects, uses the custom .to(device) method.
+        For other types, delegates to the parent class implementation.
+
+        Args:
+            batch: The batch to move to device
+            device: Target device
+            dataloader_idx: Index of the dataloader (unused, required by Lightning API)
+
+        Returns:
+            Batch moved to the target device
+        """
+        if isinstance(batch, Observation):
+            return batch.to(device)
+
+        return super().transfer_batch_to_device(batch, device, dataloader_idx)
+
     def forward(self, batch: Observation, *args, **kwargs) -> torch.Tensor:  # noqa: ANN002, ANN003
         """Perform forward pass of the policy.
 

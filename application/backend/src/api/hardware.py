@@ -20,10 +20,7 @@ async def get_cameras() -> list[Camera]:
 
     for driver, cams in cameras.items():
         for cam in cams:
-            if driver == "realsense":
-                id = cam["serial_number"]
-            else:
-                id = cam["id"]
+            id = cam["serial_number"] if driver == "realsense" else cam["id"]
             res.append(Camera(name=cam["name"], port_or_device_id=id, driver=driver, default_stream_profile=sp))
     return res
 
