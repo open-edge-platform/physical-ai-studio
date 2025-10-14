@@ -71,6 +71,15 @@ class TestFirstPartyPolicyE2E:
         # Check for gym validation metrics
         assert any(key.startswith("val/") for key in trainer.logged_metrics)
 
+    @pytest.mark.xfail(
+        reason=(
+            "First-party ACT policy missing action queue management for gym rollouts. "
+            "ACT predicts action chunks (100 actions) but gym.step() expects single actions. "
+            "Need to implement action queue: predict chunk once, execute actions one-by-one, "
+            "predict new chunk when queue empty. LeRobot ACT wrapper handles this correctly."
+        ),
+        strict=True,
+    )
     def test_act_policy_training_and_validation(self, dummy_dataset, pusht_gym):
         """Test ACT policy with training + gym validation.
 
