@@ -19,11 +19,11 @@ dependencies = [
   "sqlalchemy>=2.0.43",
   "alembic>=1.16.5",
   "click>=8.3.0",
-  "FrameSource"
+  "FrameSource>=0.2.2"
 ]
 
 [tool.uv.sources]
-FrameSource = { git = "https://github.com/ArendJanKramer/FrameSource.git", rev = "main" }
+FrameSource = { git = "https://github.com/ArendJanKramer/FrameSource.git", rev = "410e014126bf955bd9280f05c27140befa11e951" }
 
 [dependency-groups]
 dev = [
