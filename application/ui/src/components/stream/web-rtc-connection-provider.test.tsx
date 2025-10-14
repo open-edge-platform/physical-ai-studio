@@ -65,7 +65,7 @@ describe('WebRTCConnectionProvider', () => {
 
     it('provides initial status as idle', () => {
         const { getByLabelText } = render(
-            <WebRTCConnectionProvider camera='camera'>
+            <WebRTCConnectionProvider driver='driver' camera='camera'>
                 <App />
             </WebRTCConnectionProvider>
         );
@@ -75,7 +75,7 @@ describe('WebRTCConnectionProvider', () => {
 
     it('updates status to connected after start', () => {
         const { getByLabelText } = render(
-            <WebRTCConnectionProvider camera='camera'>
+            <WebRTCConnectionProvider driver='driver' camera='camera'>
                 <App />
             </WebRTCConnectionProvider>
         );
@@ -87,7 +87,7 @@ describe('WebRTCConnectionProvider', () => {
 
     it('updates status to idle after stop', () => {
         const { getByLabelText } = render(
-            <WebRTCConnectionProvider camera='camera'>
+            <WebRTCConnectionProvider driver='driver' camera='camera'>
                 <App />
             </WebRTCConnectionProvider>
         );
@@ -105,7 +105,7 @@ describe('WebRTCConnectionProvider', () => {
         const stopSpy = vi.spyOn(MockWebRTCConnection.prototype, 'stop');
 
         const { unmount } = render(
-            <WebRTCConnectionProvider camera='camera'>
+            <WebRTCConnectionProvider driver='driver' camera='camera'>
                 <App />
             </WebRTCConnectionProvider>
         );
@@ -117,7 +117,7 @@ describe('WebRTCConnectionProvider', () => {
 
     it('handles status sequence: start -> stop -> start', () => {
         const { getByLabelText } = render(
-            <WebRTCConnectionProvider camera='camera'>
+            <WebRTCConnectionProvider driver='driver' camera='camera'>
                 <App />
             </WebRTCConnectionProvider>
         );
