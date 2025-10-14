@@ -130,8 +130,9 @@ def build_camera_config(camera_config: CameraConfig) -> LeRobotCameraConfig:
             use_depth=camera_config.use_depth,
         )
     if camera_config.driver == "webcam":
+        path = camera_config.port_or_device_id.split(':')[-1]
         return OpenCVCameraConfig(
-            index_or_path=camera_config.port_or_device_id,
+            index_or_path=path,
             width=camera_config.width,
             height=camera_config.height,
             fps=camera_config.fps,

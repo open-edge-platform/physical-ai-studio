@@ -14,6 +14,8 @@ from schemas import CameraConfig, Dataset, Episode, EpisodeInfo, LeRobotDatasetI
 
 def get_dataset_episodes(repo_id: str, root: str | None) -> list[Episode]:
     """Load dataset from LeRobot cache and get info"""
+    if not check_repository_exists(root):
+        return []
     dataset = LeRobotDataset(repo_id, root)
     metadata = dataset.meta
     episodes = metadata.episodes

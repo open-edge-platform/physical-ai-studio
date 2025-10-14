@@ -93,15 +93,22 @@ class TeleoperateWorker(BaseProcessWorker):
             num_processes=0,
             num_threads=4 * len(self.robot.cameras),
         )
+        logger.info("before robot connection")
         self.robot.connect()
+        logger.info("between robot and teleoperator connection")
         self.teleoperator.connect()
+        logger.info("after robot connection")
 
         self.action_keys = [f"{key}.pos" for key in self.robot.bus.sync_read("Present_Position")]
         self.camera_keys = [camera.name for camera in self.config.cameras]
+
+        logger.info("teleoperation all setup, reporting state")
         self._report_state()
 
     def _report_state(self):
-        self.queue.put({"event": "state", "data": {"initialized": True, "is_recording": self.is_recording}})
+        state = {"event": "state", "data": {"initialized": True, "is_recording": self.is_recording}}
+        logger.info(f"teleoperation state: {state}")
+        self.queue.put(state)
 
     def _report_observation(self, observation: dict, timestamp: float):
         """Report observation to queue."""
