@@ -21,13 +21,14 @@ from torch import Tensor, nn
 from torchvision.models._utils import IntermediateLayerGetter  # noqa: PLC2701
 from torchvision.ops.misc import FrozenBatchNorm2d
 
+from getiaction.config.mixin import FromConfig
 from getiaction.data import Feature, FeatureType, Observation
 from getiaction.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
 
 from .config import ACTConfig
 
 
-class ACT(nn.Module):
+class ACT(nn.Module, FromConfig):
     """Action Chunking Transformer (ACT) model.
 
     Supports training and inference modes.
@@ -35,8 +36,8 @@ class ACT(nn.Module):
 
     def __init__(  # noqa: PLR0913
         self,
-        action_features: dict[str, Feature],
-        observation_features: dict[str, Feature],
+        input_features: dict[str, Feature],
+        output_features: dict[str, Feature],
         *,
         chunk_size: int = 100,
         n_action_steps: int = 100,
@@ -56,14 +57,15 @@ class ACT(nn.Module):
         temporal_ensemble_coeff: float | None = None,
         dropout: float = 0.1,
         kl_weight: float = 10.0,
+        n_obs_steps: int = 1,
     ) -> None:
         """Initialize the ACT model.
 
         Args:
-            action_features (dict[str, Feature]): Dictionary containing action features.
-                Must contain exactly one action feature.
-            observation_features (dict[str, Feature]): Dictionary containing observation features.
+            input_features (dict[str, Feature]): Dictionary containing input observation features.
                 Must contain exactly one state observation feature and at least one visual observation feature.
+            output_features (dict[str, Feature]): Dictionary containing output action features.
+                Must contain exactly one action feature.
             chunk_size (int, optional): Number of actions to predict in a single forward pass. Defaults to 100.
             n_action_steps (int, optional): Number of action steps in the sequence. Defaults to 100.
             vision_backbone (str, optional): Vision backbone architecture to use. Defaults to "resnet18".
@@ -85,6 +87,7 @@ class ACT(nn.Module):
                 Defaults to None.
             dropout (float, optional): Dropout rate. Defaults to 0.1.
             kl_weight (float, optional): Weight for KL divergence loss in VAE. Defaults to 10.0.
+            n_obs_steps (int, optional): Number of observation steps. Defaults to 1.
 
         Raises:
             ValueError: If the number of state observation features is not exactly one.
@@ -99,41 +102,40 @@ class ACT(nn.Module):
         """
         super().__init__()
 
-        state_observation_features = [v for v in observation_features.values() if v.ftype == FeatureType.STATE]
+        state_observation_features = [v for v in input_features.values() if v.ftype == FeatureType.STATE]
 
         if len(state_observation_features) != 1:
             msg = "ACT model supports exactly one state observation feature."
             raise ValueError(msg)
 
-        if len(action_features) != 1:
-            msg = "ACT model supports exactly one action feature."
+        if len(output_features) != 1:
+            msg = "ACT model supports exactly one output action feature."
             raise ValueError(msg)
-        action_feature = next(iter(action_features.values()))
 
-        input_features: dict[str | Observation.ComponentKeys, Feature] = {
+        input_features_filtered: dict[str | Observation.ComponentKeys, Feature] = {
             Observation.ComponentKeys.STATE: state_observation_features[0],
-            Observation.ComponentKeys.ACTION: action_feature,
         }
 
-        visual_observation_features = [v for v in observation_features.values() if v.ftype == FeatureType.VISUAL]
+        visual_observation_features = [v for v in input_features.values() if v.ftype == FeatureType.VISUAL]
 
         if len(visual_observation_features) == 1:
-            input_features[Observation.ComponentKeys.IMAGES] = visual_observation_features[0]
+            input_features_filtered[Observation.ComponentKeys.IMAGES] = next(iter(visual_observation_features))
         elif len(visual_observation_features) > 1:
             for vf in visual_observation_features:
                 if vf.name is not None:
-                    input_features[vf.name] = vf
+                    input_features_filtered[vf.name] = vf
         else:
             msg = "ACT model requires at least one visual observation feature."
             raise ValueError(msg)
 
-        output_features: dict[str | Observation.ComponentKeys, Feature] = {
+        action_feature = next(iter(output_features.values()))
+        output_features_filtered: dict[str | Observation.ComponentKeys, Feature] = {
             Observation.ComponentKeys.ACTION: action_feature,
         }
 
         self._config = _ACTConfig(
-            input_features=input_features,
-            output_features=output_features,
+            input_features=input_features_filtered,
+            output_features=output_features_filtered,
             chunk_size=chunk_size,
             n_action_steps=n_action_steps,
             vision_backbone=vision_backbone,
@@ -152,51 +154,22 @@ class ACT(nn.Module):
             temporal_ensemble_coeff=temporal_ensemble_coeff,
             dropout=dropout,
             kl_weight=kl_weight,
+            n_obs_steps=n_obs_steps,
         )
 
+        # on training, action feature is also an input -> it should be normalized
+        input_features_filtered[Observation.ComponentKeys.ACTION] = action_feature
+
         self._input_normalizer = FeatureNormalizeTransform(
-            features=input_features,
+            features=input_features_filtered,
             norm_map=self._config.normalization_mapping,
         )
         self._output_denormalizer = FeatureNormalizeTransform(
-            output_features,
+            output_features_filtered,
             self._config.normalization_mapping,
             inverse=True,
         )
         self._model = _ACT(self._config)
-
-    @classmethod
-    def from_config(cls, config: ACTConfig) -> "ACT":
-        """Create an ACT model from a configuration object.
-
-        Args:
-            config (ACTConfig): Configuration object containing model parameters.
-
-        Returns:
-            ACT: Initialized ACT model instance.
-        """
-        return cls(
-            action_features=config.output_features,
-            observation_features=config.input_features,
-            chunk_size=config.chunk_size,
-            n_action_steps=config.n_action_steps,
-            vision_backbone=config.vision_backbone,
-            pretrained_backbone_weights=config.pretrained_backbone_weights,
-            replace_final_stride_with_dilation=config.replace_final_stride_with_dilation,
-            pre_norm=config.pre_norm,
-            dim_model=config.dim_model,
-            n_heads=config.n_heads,
-            dim_feedforward=config.dim_feedforward,
-            feedforward_activation=config.feedforward_activation,
-            n_encoder_layers=config.n_encoder_layers,
-            n_decoder_layers=config.n_decoder_layers,
-            use_vae=config.use_vae,
-            latent_dim=config.latent_dim,
-            n_vae_encoder_layers=config.n_vae_encoder_layers,
-            temporal_ensemble_coeff=config.temporal_ensemble_coeff,
-            dropout=config.dropout,
-            kl_weight=config.kl_weight,
-        )
 
     def forward(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]] | torch.Tensor:
         """Forward pass through the ACT model.

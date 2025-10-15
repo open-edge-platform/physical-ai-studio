@@ -207,6 +207,7 @@ class FromConfig:
         config: object,
         *,
         key: str | None = None,
+        shallow: bool = True,
     ) -> Self:
         """Load configuration from a dataclass and instantiate the class.
 
@@ -216,6 +217,7 @@ class FromConfig:
         Args:
             config: Dataclass instance.
             key: Optional key to extract a sub-configuration from the dataclass.
+            shallow: If True, converts dataclass to dict non-recursively.
 
         Returns:
             An instance of the class.
@@ -249,7 +251,11 @@ class FromConfig:
             raise TypeError(msg)
 
         # Convert to dict and use from_dict logic
-        config_dict = dataclasses.asdict(config)  # type: ignore[arg-type]
+        if shallow:
+            config_dict = {field.name: getattr(config, field.name) for field in dataclasses.fields(config)}
+        else:
+            config_dict = dataclasses.asdict(config)  # type: ignore[arg-type]
+
         return cls.from_dict(config_dict, key=key)
 
     @classmethod

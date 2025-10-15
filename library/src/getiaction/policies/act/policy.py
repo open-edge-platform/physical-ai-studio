@@ -71,8 +71,8 @@ class ACT(Policy):
 
         # Initialize the policy
         self.model = ACTModel(
-            action_features=train_dataset.action_features,
-            observation_features=train_dataset.observation_features,
+            input_features=train_dataset.observation_features,
+            output_features=train_dataset.action_features,
         )
 
         # TO-DO(Vlad):  remove that workaround after CLI is able to run getiaction trainer
