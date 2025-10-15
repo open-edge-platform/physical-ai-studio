@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { Flex, Item, ListView, Selection, View, Text } from '@geti/ui';
+import { Flex, Item, ListView, Selection, View, Text, Divider } from '@geti/ui';
 
 import { $api } from '../../api/client';
 import { EpisodeViewer } from './episode-viewer';
@@ -30,7 +30,11 @@ export const DatasetViewer = ({ id: dataset_id }: DatasetViewerProps) => {
         )
     }
     return (
-        <Flex direction={'row'} height="100%" flex>
+        <Flex direction={'row'} height="100%" flex gap={'size-100'}>
+            <View flex={1}>
+                <EpisodeViewer episode={episodes[currentEpisode]} dataset_id={dataset_id} />
+            </View>
+            <Divider orientation='vertical' size='S'/>
             <Flex
                 flex
                 direction="column"
@@ -48,10 +52,6 @@ export const DatasetViewer = ({ id: dataset_id }: DatasetViewerProps) => {
                     {(item) => <Item>{item.name}</Item>}
                 </ListView>
             </Flex>
-
-            <View flex={1}>
-                <EpisodeViewer episode={episodes[currentEpisode]} dataset_id={dataset_id} />
-            </View>
         </Flex>
     );
 };

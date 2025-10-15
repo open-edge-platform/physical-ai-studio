@@ -1,9 +1,12 @@
-import { Flex, Text } from '@geti/ui';
+import { Flex, View, Text, Well, Disclosure, DisclosurePanel, DisclosureTitle } from '@geti/ui';
 
 import { SchemaEpisode } from '../../api/openapi-spec';
 import EpisodeChart from '../../components/episode-chart/episode-chart';
 import { useProject } from '../../features/projects/use-project';
 import { useParams } from 'react-router';
+
+import classes from './episode-viewer.module.scss'
+import { useState } from 'react';
 
 interface EpisodeViewerProps {
     episode: SchemaEpisode;
@@ -22,8 +25,13 @@ const VideoView = ({ cameraName, dataset_id, episodeIndex, aspectRatio }: VideoV
     const url = `/api/dataset/${dataset_id}/${episodeIndex}/${cameraName}.mp4`;
 
     return (
-        <Flex flex UNSAFE_style={{ position: 'relative' }}>
-            <video autoPlay src={url} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />
+        <Flex UNSAFE_style={{aspectRatio}}>
+            <Well flex UNSAFE_style={{position: 'relative'}}>
+                <View height={'100%'} position={'relative'}>
+                    <video autoPlay src={url} className={classes.cameraVideo} />
+                </View>
+                <div className={classes.cameraTag}> {cameraName} </div>
+            </Well>
         </Flex>
     )
 };
@@ -31,10 +39,11 @@ const VideoView = ({ cameraName, dataset_id, episodeIndex, aspectRatio }: VideoV
 
 export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
     const project = useProject();
+    const [showTimeline, setShowTimeline] = useState<boolean>(false);
     return (
-        <Flex direction={'column'} height={'100%'}>
-            <Flex direction={'row'} flex>
-                <Flex direction={'column'} justifyContent={'space-evenly'} flex gap={'size-30'}>
+        <Flex direction={'column'} height={'100%'} position={'relative'}>
+            <Flex direction={'row'} flex gap={'size-100'}>
+                <Flex direction={'column'} alignContent={'start'} flex gap={'size-30'}>
                     {project.config!.cameras.map((camera) => (
                         <VideoView
                             key={camera.name}
@@ -45,11 +54,19 @@ export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
                         />
                     ))}
                 </Flex>
-                <Text flex>Simulator go here</Text>
+                <Flex flex={3} alignItems={'center'} justifyContent={'center'}>
+                    <Text>Simulator go here</Text>
+                </Flex>
             </Flex>
-            <Flex>
-                <EpisodeChart actions={episode.actions} joints={joints} fps={episode.fps} />
-            </Flex>
+            <div className={classes.timeline}>
+                <Disclosure isQuiet>
+                    <DisclosureTitle>Timeline</DisclosureTitle>
+                    <DisclosurePanel>
+                        <EpisodeChart actions={episode.actions} joints={joints} fps={episode.fps} />
+                    </DisclosurePanel>
+                </Disclosure>
+                Play pause and stuff
+            </div>
         </Flex>
     );
 };

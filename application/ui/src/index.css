@@ -53,8 +53,8 @@ html {
 }
 
 body {
-    background-color: var(--spectrum-global-color-gray-75, #2e2f32);
-    background-image: url('./assets/background.png');
+    background-color: var(--spectrum-global-color-gray-50, rgb(36, 37, 40));
+    /*background-image: url('./assets/background.png');*/
     background-blend-mode: luminosity;
     background-position: center;
     background-repeat: no-repeat;

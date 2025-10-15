@@ -1,0 +1,34 @@
+.cameraTag {
+    background-color: var(--spectrum-global-color-gray-200);
+    color: rgb(227, 227, 229);
+    top: var(--spectrum-global-dimension-size-100);
+    right: var(--spectrum-global-dimension-size-100);
+    position: absolute;
+    padding: 0 var(--spectrum-global-dimension-size-100);
+    font-size: var(--spectrum-global-dimension-font-size-100);
+    font-weight: 400;
+    border-radius: var(--spectrum-global-dimension-size-50);
+    text-transform: capitalize;
+}
+
+.cameraVideo {
+    object-fit: cover;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.timeline {
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    border: 1px solid var(--spectrum-global-color-gray-200);
+    background-color: var(--spectrum-global-color-gray-100);
+    border-radius: var(--spectrum-global-dimension-size-50);
+}
+
+.timeline h3 button {
+    font-size: var(--spectrum-global-dimension-font-size-100);
+}
