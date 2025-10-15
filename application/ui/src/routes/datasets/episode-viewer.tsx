@@ -8,6 +8,7 @@ import classes from './episode-viewer.module.scss'
 import { useEffect, useRef, useState } from 'react';
 import { usePlayer } from './use-player';
 import { TimelineControls } from './timeline-controls';
+import RobotRenderer from '../../components/robot-renderer/robot-renderer';
 
 const joints = ['shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex', 'wrist_roll', 'gripper'];
 
@@ -66,7 +67,7 @@ export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
                     ))}
                 </Flex>
                 <Flex flex={3} alignItems={'center'} justifyContent={'center'}>
-                    <Text>Simulator go here</Text>
+                    <RobotRenderer episode={episode} robot_urdf_path='/SO101/so101_new_calib.urdf' time={player.time}/>
                 </Flex>
             </Flex>
             <div className={classes.timeline}>
