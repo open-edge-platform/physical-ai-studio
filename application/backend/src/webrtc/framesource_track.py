@@ -10,6 +10,8 @@ from schemas import Camera, CameraProfile
 
 logger = logging.getLogger(__name__)
 
+class EmptyFrameError(Exception):
+    pass
 
 class FrameSourceVideoStreamTrack(VideoStreamTrack):
     """Video stream track that captures frames directly from FrameSource."""
@@ -28,6 +30,8 @@ class FrameSourceVideoStreamTrack(VideoStreamTrack):
         )
         self.cam.connect()
         self._running = True
+        self._last_frame : VideoFrame | None = None
+        self._error_counter = 0
 
     async def recv(self) -> VideoFrame:
         pts, time_base = await self.next_timestamp()
@@ -36,8 +40,17 @@ class FrameSourceVideoStreamTrack(VideoStreamTrack):
         try:
             frame_data = await asyncio.to_thread(self._read_frame)
             frame = VideoFrame.from_ndarray(frame_data, format="bgr24")
+            self._last_frame = frame
+            self._error_counter = 0
             frame.pts = pts
             frame.time_base = time_base
+        except EmptyFrameError:
+            self._error_counter += 1
+            if self._error_counter > 100:
+                raise RuntimeError("Failed to receive frames for too long")
+            if self._last_frame is not None:
+                return self._last_frame
+            raise RuntimeError("No received frame available")
         except Exception as e:
             logger.error(f"Error capturing from {self.device} at driver {self.driver}: {e}")
             # fallback gray frame
@@ -50,7 +63,7 @@ class FrameSourceVideoStreamTrack(VideoStreamTrack):
     def _read_frame(self) -> np.ndarray:
         ret, frame = self.cam.read()
         if not ret:
-            raise RuntimeError("Failed to read from device")
+            raise EmptyFrameError("Got empty frame from camera")
         return frame
 
     def stop(self) -> None:
