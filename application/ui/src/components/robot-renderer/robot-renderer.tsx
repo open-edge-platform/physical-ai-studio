@@ -45,7 +45,7 @@ interface RobotRenderer {
 export default function RobotRenderer({ robot_urdf_path, time, episode }: RobotRenderer) {
     return (
         <Canvas>
-            <PerspectiveCamera makeDefault position={[10, 10, 10]} zoom={10} translateY={100} />
+            <PerspectiveCamera makeDefault position={[10, 10, 10]} zoom={10}/>
             <OrbitControls />
             <directionalLight castShadow={true} position={[5, 30, 5]} />
             <ambientLight intensity={Math.PI / 10} />

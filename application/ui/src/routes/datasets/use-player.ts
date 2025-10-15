@@ -8,6 +8,7 @@ export interface Player {
     play: () => void;
     pause: () => void;
     rewind: () => void;
+    seek: (time: number) => void;
 }
 
 export const usePlayer = (episode: SchemaEpisode): Player => {
@@ -30,6 +31,10 @@ export const usePlayer = (episode: SchemaEpisode): Player => {
     const rewind = () => {
         setTime(0);
     }
+    const seek = (newTime: number) => {
+        setTime(newTime);
+    }
+
     useEffect(() => {
         setTime(0);
         setIsPlaying(true);
@@ -58,6 +63,7 @@ export const usePlayer = (episode: SchemaEpisode): Player => {
         play,
         pause,
         rewind,
+        seek,
     }
 }
 

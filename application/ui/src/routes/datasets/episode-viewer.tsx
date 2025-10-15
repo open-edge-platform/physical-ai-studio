@@ -74,7 +74,7 @@ export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
                 <Disclosure isQuiet>
                     <DisclosureTitle>Timeline</DisclosureTitle>
                     <DisclosurePanel>
-                        <EpisodeChart actions={episode.actions} joints={joints} fps={episode.fps} />
+                        <EpisodeChart actions={episode.actions} joints={joints} fps={episode.fps} time={player.time} seek={player.seek}/>
                     </DisclosurePanel>
                 </Disclosure>
 
