@@ -4,9 +4,7 @@
 """Dummy lightning module and policy for testing usage."""
 
 from collections.abc import Iterable
-from typing import Any
 
-import numpy as np
 import torch
 
 from getiaction.data import Observation
@@ -67,22 +65,17 @@ class Dummy(Policy):
         msg = f"The 'action_shape' argument must be a torch.Size or Iterable, but received type {type(shape).__name__}."
         raise TypeError(msg)
 
-    def select_action(self, batch: Observation | dict[str, Any]) -> torch.Tensor:
+    def select_action(self, batch: Observation) -> torch.Tensor:
         """Select an action using the policy model.
 
         Args:
-            batch: Input batch - can be Observation (training) or dict (rollout).
+            batch: Input batch of observations.
 
         Returns:
             torch.Tensor: Selected actions.
         """
-        # Convert numpy to tensors and add batch dim if needed
-        batch_dict = {
-            k: torch.from_numpy(v).unsqueeze(0).float() if isinstance(v, np.ndarray) else v for k, v in batch.items()
-        }
-
         # Get action from model
-        action = self.model.select_action(batch_dict)  # type: ignore[attr-defined]
+        action = self.model.select_action(batch.to_dict())  # type: ignore[attr-defined]
 
         # Remove batch dim if present (rollout expects unbatched)
         return action.squeeze(0) if action.ndim > 1 and action.shape[0] == 1 else action

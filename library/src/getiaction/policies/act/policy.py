@@ -3,8 +3,6 @@
 
 """Lightning module for ACT policy."""
 
-from typing import Any
-
 import torch
 
 from getiaction.data import Dataset, Observation
@@ -81,21 +79,15 @@ class ACT(Policy):
         # TO-DO(Vlad):  remove that workaround after CLI is able to run getiaction trainer
         reformat_dataset_to_match_policy(self, datamodule)
 
-    def select_action(self, batch: Observation | dict[str, Any]) -> torch.Tensor:
+    def select_action(self, batch: Observation) -> torch.Tensor:
         """Select an action using the policy model.
 
         Args:
-            batch: Input batch of observations. Can be either:
-                - Observation: Structured observation dataclass
-                - dict[str, Any]: Raw gym observation dict (will be converted to Observation)
+            batch: Input batch of observations.
 
         Returns:
             torch.Tensor: Selected actions.
         """
-        # Convert raw gym dict to Observation if needed
-        if isinstance(batch, dict):
-            batch = Observation.from_gym(batch)
-
         # Move batch to device (observations from gym are on CPU)
         batch = batch.to(self.device)
         return self.model.predict_action_chunk(batch.to_dict())
