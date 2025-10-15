@@ -1,10 +1,10 @@
 import base64
 import logging
+import shutil
 import time
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
 
-import shutil
 import cv2
 import numpy as np
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -15,8 +15,8 @@ from lerobot.utils.robot_utils import busy_wait
 
 from schemas import TeleoperationConfig
 from utils.camera import build_camera_config
-from utils.robot import make_lerobot_robot_config_from_robot, make_lerobot_teleoperator_config_from_robot
 from utils.dataset import check_repository_exists
+from utils.robot import make_lerobot_robot_config_from_robot, make_lerobot_teleoperator_config_from_robot
 
 from .base import BaseProcessWorker
 

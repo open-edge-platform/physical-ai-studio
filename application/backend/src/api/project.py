@@ -41,9 +41,13 @@ async def import_dataset(
     project = project_service.get_project_by_id(project_id)
     update = {}
     if project.config is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Import disabled when project already has config.")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Import disabled when project already has config."
+        )
     if project.datasets:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Import disabled when project already has a dataset.")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Import disabled when project already has a dataset."
+        )
 
     update["config"] = build_project_config_from_dataset(lerobot_dataset)
     update["datasets"] = [build_dataset_from_lerobot_dataset(lerobot_dataset, project_id)]
@@ -88,5 +92,6 @@ async def get_tasks_for_dataset(
     project = project_service.get_project_by_id(project_id)
     return {
         dataset.name: list(LeRobotDatasetMetadata(dataset.name, dataset.path).tasks.values())
-        for dataset in project.datasets if check_repository_exists(dataset.path)
+        for dataset in project.datasets
+        if check_repository_exists(dataset.path)
     }

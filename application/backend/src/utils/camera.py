@@ -8,15 +8,15 @@ from typing import Any
 
 import cv2
 from fastapi import WebSocket
+from frame_source import FrameSourceFactory
 from lerobot.cameras import Camera as LeRobotCamera
 from lerobot.cameras import CameraConfig as LeRobotCameraConfig
 from lerobot.cameras.opencv import OpenCVCamera, OpenCVCameraConfig
 from lerobot.cameras.realsense import RealSenseCamera, RealSenseCameraConfig
 from lerobot.errors import DeviceNotConnectedError
-from frame_source import FrameSourceFactory
 from lerobot.find_cameras import find_all_opencv_cameras as le_robot_find_all_opencv_cameras
 
-from schemas import CameraConfig, Camera
+from schemas import Camera, CameraConfig
 
 VIDEO4LINUX_PATH = "/sys/class/video4linux"
 
@@ -130,7 +130,7 @@ def build_camera_config(camera_config: CameraConfig) -> LeRobotCameraConfig:
             use_depth=camera_config.use_depth,
         )
     if camera_config.driver == "webcam":
-        path = camera_config.port_or_device_id.split(':')[-1]
+        path = camera_config.port_or_device_id.split(":")[-1]
         return OpenCVCameraConfig(
             index_or_path=path,
             width=camera_config.width,

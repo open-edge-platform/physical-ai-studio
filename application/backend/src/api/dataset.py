@@ -1,13 +1,14 @@
-from typing import Annotated
 import os
+from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse
+from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
+
 from api.dependencies import get_dataset_service
 from schemas import Episode, LeRobotDatasetInfo
 from services import DatasetService
-from utils.dataset import get_dataset_episodes, get_local_repositories, get_geti_action_datasets
-from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
+from utils.dataset import get_dataset_episodes, get_geti_action_datasets, get_local_repositories
 
 router = APIRouter(prefix="/api/dataset", tags=["Dataset"])
 
@@ -28,13 +29,14 @@ async def list_le_robot_datasets() -> list[LeRobotDatasetInfo]:
         for dataset in get_local_repositories()
     ]
 
+
 @router.get("/orphans")
 async def list_orphan_datasets(
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
 ) -> list[LeRobotDatasetInfo]:
     """Get all local lerobot datasets from huggingface cache."""
     datasets = [dataset.path for dataset in dataset_service.list_datasets()]
-    
+
     return [
         LeRobotDatasetInfo(
             root=str(dataset.root),
@@ -45,7 +47,9 @@ async def list_orphan_datasets(
             features=list(dataset.features),
             robot_type=dataset.robot_type,
         )
-        for dataset in [LeRobotDatasetMetadata(repo, root=root) for repo, root in get_geti_action_datasets() if root not in datasets]
+        for dataset in [
+            LeRobotDatasetMetadata(repo, root=root) for repo, root in get_geti_action_datasets() if root not in datasets
+        ]
     ]
 
 
@@ -58,13 +62,14 @@ async def get_episodes_of_dataset(
     dataset = dataset_service.get_dataset_by_id(dataset_id)
     return get_dataset_episodes(dataset.name, dataset.path)
 
+
 @router.get("/{dataset_id}/{episode}/{camera}.mp4")
 async def dataset_video_endpoint(
     dataset_id: str,
-    episode: int, 
+    episode: int,
     camera: str,
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
-    ) -> FileResponse:
+) -> FileResponse:
     """Get path to video of episode"""
     dataset = dataset_service.get_dataset_by_id(dataset_id)
     metadata = LeRobotDatasetMetadata(dataset.name, dataset.path, None, force_cache_sync=False)
