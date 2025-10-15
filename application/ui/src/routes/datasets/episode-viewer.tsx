@@ -66,7 +66,7 @@ export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
                         />
                     ))}
                 </Flex>
-                <Flex flex={3} alignItems={'center'} justifyContent={'center'}>
+                <Flex flex={3} minWidth={0}>
                     <RobotRenderer episode={episode} robot_urdf_path='/SO101/so101_new_calib.urdf' time={player.time}/>
                 </Flex>
             </Flex>
