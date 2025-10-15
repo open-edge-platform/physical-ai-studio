@@ -1,7 +1,7 @@
+import { $api } from "../../api/client"
+import { SchemaUserSettings } from "../../api/openapi-spec"
 
-export const useSettings = () => {
-    const geti_action_dataset_path = "/home/ronald/.cache/geti_action/datasets"
-    return {
-        geti_action_dataset_path,
-    }
+export const useSettings = (): SchemaUserSettings => {
+    const {data: userSettings } = $api.useSuspenseQuery('get','/api/settings')
+    return userSettings;
 }
