@@ -4,9 +4,9 @@ import { clsx } from 'clsx';
 import { $api } from '../../../api/client';
 import { SchemaLeRobotDatasetInfo } from '../../../api/openapi-spec';
 import { useProjectId } from '../../../features/projects/use-project';
+import { paths } from '../../../router';
 
 import classes from './import.module.scss';
-import { paths } from '../../../router';
 
 interface ImportableDatasetProps {
     dataset: SchemaLeRobotDatasetInfo;
@@ -57,7 +57,7 @@ export const ImportDataset = () => {
     return (
         <View>
             <Heading>Import dataset</Heading>
-            <Button href={paths.project.datasets.record_new({project_id})} >Setup</Button>
+            <Button href={paths.project.datasets.record_new({ project_id })}>Setup</Button>
             {[...lerobotDatasets, ...orphanDatasets].map((dataset) => (
                 <ImportableDataset dataset={dataset} key={dataset.repo_id} />
             ))}

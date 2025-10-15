@@ -53,7 +53,7 @@ export const Index = () => {
                         </View>
                     )}
                 </Flex>
-                <TabPanels UNSAFE_style={{border: 'none'}} marginTop={'size-200'}>
+                <TabPanels UNSAFE_style={{ border: 'none' }} marginTop={'size-200'}>
                     <Item key={'#new-dataset'}>
                         <ImportDataset />
                     </Item>

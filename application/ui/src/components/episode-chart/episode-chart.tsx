@@ -1,5 +1,15 @@
 import { useState } from 'react';
-import { CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+
+import {
+    CartesianGrid,
+    Legend,
+    Line,
+    LineChart,
+    ReferenceLine,
+    ResponsiveContainer,
+    XAxis,
+    YAxis,
+} from 'recharts';
 import { CategoricalChartState } from 'recharts/types/chart/types';
 
 function buildChartData(actions: number[][], joints: string[], fps: number) {
@@ -33,48 +43,51 @@ export default function EpisodeChart({ actions, joints, fps, time, seek }: Episo
     const [hoverPosition, setHoverPosition] = useState<number | undefined>(undefined);
     const [mouseDown, setMouseDown] = useState<boolean>(false);
     const chartData = buildChartData(actions, joints, fps);
-    const ticks = [...Array(Math.floor(actions.length / fps * 2)).keys()].map((m) => m / 2)
+    const ticks = [...Array(Math.floor((actions.length / fps) * 2)).keys()].map((m) => m / 2);
 
     const handleMouseMove = (nextState: CategoricalChartState) => {
         if (nextState.activeLabel === undefined) {
             setHoverPosition(undefined);
         } else {
-            const newTime = parseFloat(nextState.activeLabel ?? "0")
+            const newTime = parseFloat(nextState.activeLabel ?? '0');
             if (mouseDown) {
                 seek(newTime);
             }
             setHoverPosition(newTime);
         }
-    }
+    };
 
     const handleMouseUp = (nextState: CategoricalChartState) => {
         if (nextState.activeLabel !== undefined) {
-            const newTime = parseFloat(nextState.activeLabel ?? "0")
+            const newTime = parseFloat(nextState.activeLabel ?? '0');
             seek(newTime);
         }
-        setMouseDown(false)
-    }
+        setMouseDown(false);
+    };
 
     return (
-        <ResponsiveContainer width='100%' height={300} style={{userSelect: 'none'}}>
+        <ResponsiveContainer width='100%' height={300} style={{ userSelect: 'none' }}>
             <LineChart
                 data={chartData}
                 margin={{ top: 20, right: 20, left: 20, bottom: 20 }}
                 onMouseUp={handleMouseUp}
                 onMouseDown={() => setMouseDown(true)}
-                onMouseMove={handleMouseMove}>
-                <CartesianGrid opacity={0.2}/>
-                <XAxis 
-                   dataKey='index'
-                   label={{ value: 'Time (s)', position: 'insideBottomRight', offset: -10 }}
+                onMouseMove={handleMouseMove}
+            >
+                <CartesianGrid opacity={0.2} />
+                <XAxis
+                    dataKey='index'
+                    label={{ value: 'Time (s)', position: 'insideBottomRight', offset: -10 }}
                     ticks={ticks}
-                    type = 'number'
-                   />
+                    type='number'
+                />
                 <YAxis label={{ value: 'Value (deg)', angle: -90, position: 'insideLeft' }} />
 
                 <Legend verticalAlign='bottom' height={36} />
-                {hoverPosition !== undefined && <ReferenceLine x={hoverPosition} stroke="#5ac3f8" label="" strokeWidth={2}/> }
-                <ReferenceLine x={time} stroke="#ffffff" label="" strokeWidth={2}/>
+                {hoverPosition !== undefined && (
+                    <ReferenceLine x={hoverPosition} stroke='#5ac3f8' label='' strokeWidth={2} />
+                )}
+                <ReferenceLine x={time} stroke='#ffffff' label='' strokeWidth={2} />
 
                 {joints.map((joint, i) => (
                     <Line

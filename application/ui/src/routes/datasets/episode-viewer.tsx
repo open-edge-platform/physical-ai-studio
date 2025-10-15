@@ -1,14 +1,15 @@
-import { Flex, View, Text, Well, Disclosure, DisclosurePanel, DisclosureTitle, ActionButton } from '@geti/ui';
+import { useEffect, useRef, useState } from 'react';
+
+import { ActionButton, Disclosure, DisclosurePanel, DisclosureTitle, Flex, Text, View, Well } from '@geti/ui';
 
 import { SchemaEpisode } from '../../api/openapi-spec';
 import EpisodeChart from '../../components/episode-chart/episode-chart';
-import { useProject } from '../../features/projects/use-project';
-
-import classes from './episode-viewer.module.scss'
-import { useEffect, useRef, useState } from 'react';
-import { usePlayer } from './use-player';
-import { TimelineControls } from './timeline-controls';
 import RobotRenderer from '../../components/robot-renderer/robot-renderer';
+import { useProject } from '../../features/projects/use-project';
+import { TimelineControls } from './timeline-controls';
+import { usePlayer } from './use-player';
+
+import classes from './episode-viewer.module.scss';
 
 const joints = ['shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex', 'wrist_roll', 'gripper'];
 
@@ -28,7 +29,7 @@ const VideoView = ({ cameraName, dataset_id, episodeIndex, aspectRatio, time }: 
         if (videoRef.current) {
             videoRef.current.currentTime = time;
         }
-    }, [time])
+    }, [time]);
 
     return (
         <Flex UNSAFE_style={{ aspectRatio }}>
@@ -39,12 +40,12 @@ const VideoView = ({ cameraName, dataset_id, episodeIndex, aspectRatio, time }: 
                 <div className={classes.cameraTag}> {cameraName} </div>
             </Well>
         </Flex>
-    )
+    );
 };
 
 interface EpisodeViewerProps {
     episode: SchemaEpisode;
-    dataset_id: string
+    dataset_id: string;
 }
 
 export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
@@ -67,14 +68,20 @@ export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
                     ))}
                 </Flex>
                 <Flex flex={3} minWidth={0}>
-                    <RobotRenderer episode={episode} robot_urdf_path='/SO101/so101_new_calib.urdf' time={player.time}/>
+                    <RobotRenderer episode={episode} robot_urdf_path='/SO101/so101_new_calib.urdf' time={player.time} />
                 </Flex>
             </Flex>
             <div className={classes.timeline}>
                 <Disclosure isQuiet>
                     <DisclosureTitle>Timeline</DisclosureTitle>
                     <DisclosurePanel>
-                        <EpisodeChart actions={episode.actions} joints={joints} fps={episode.fps} time={player.time} seek={player.seek}/>
+                        <EpisodeChart
+                            actions={episode.actions}
+                            joints={joints}
+                            fps={episode.fps}
+                            time={player.time}
+                            seek={player.seek}
+                        />
                     </DisclosurePanel>
                 </Disclosure>
 

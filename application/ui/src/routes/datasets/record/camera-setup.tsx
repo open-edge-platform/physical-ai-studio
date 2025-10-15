@@ -20,7 +20,7 @@ const CameraPreview = ({ camera }: { camera: SchemaCameraConfig }) => {
                         height: camera.height,
                         width: camera.width,
                     },
-                }
+                };
                 sendJsonMessage(cameraConfig);
             }
         },
@@ -67,7 +67,7 @@ export const CameraSetup = ({ camera, availableCameras, updateCamera }: CameraSe
         }
     };
 
-    console.log(camera)
+    console.log(camera);
     return (
         <Flex direction={'column'} flex={1}>
             <Heading>{camera.name}</Heading>

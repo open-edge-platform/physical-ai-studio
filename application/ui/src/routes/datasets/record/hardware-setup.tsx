@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { v4 as uuidv4 } from 'uuid'
 
 import {
     Button,
@@ -18,14 +17,15 @@ import {
     View,
 } from '@geti/ui';
 import { useNavigate, useParams } from 'react-router-dom';
+import { v4 as uuidv4 } from 'uuid';
 
 import { $api } from '../../../api/client';
-import { SchemaRobotConfig, SchemaTeleoperationConfig, SchemaCameraConfig } from '../../../api/openapi-spec';
+import { SchemaCameraConfig, SchemaRobotConfig, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
+import { useSettings } from '../../../components/settings/use-settings';
 import { useProject } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
 import { CameraSetup } from './camera-setup';
 import { RobotSetup } from './robot-setup';
-import { useSettings } from '../../../components/settings/use-settings';
 
 interface HardwareSetupProps {
     onDone: (config: SchemaTeleoperationConfig) => void;
@@ -40,11 +40,11 @@ export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
         },
     });
 
-    console.log(project.config)
+    console.log(project.config);
 
-    const {geti_action_dataset_path} = useSettings();
+    const { geti_action_dataset_path } = useSettings();
 
-    const isNewDataset = !dataset_id 
+    const isNewDataset = !dataset_id;
     const initialTask = Object.values(projectTasks).flat()[0];
 
     const [config, setConfig] = useState<SchemaTeleoperationConfig>({
@@ -54,7 +54,7 @@ export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
             project_id: project.id!,
             name: '',
             path: '',
-            id: uuidv4()
+            id: uuidv4(),
         },
         cameras: project.config?.cameras ?? [],
         follower: {
@@ -111,16 +111,16 @@ export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
         }));
     };
 
-    const updateDataset = (name: string) =>{
+    const updateDataset = (name: string) => {
         setConfig((c) => ({
             ...c,
             dataset: {
                 ...c.dataset,
                 name,
                 path: `${geti_action_dataset_path}/${name}`,
-            }
-        }))
-    }
+            },
+        }));
+    };
 
     const onTabSwitch = (key: Key) => {
         setActiveTab(key.toString());
@@ -166,7 +166,7 @@ export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
                             validationState={config.dataset.name == '' ? 'invalid' : 'valid'}
                             isRequired
                             label='Name'
-                            width={"100%"}
+                            width={'100%'}
                             value={config.dataset.name}
                             isDisabled={!isNewDataset}
                             onChange={updateDataset}

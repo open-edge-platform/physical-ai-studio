@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { SchemaEpisode } from "../../api/openapi-spec";
+import { useEffect, useState } from 'react';
+
+import { SchemaEpisode } from '../../api/openapi-spec';
 
 export interface Player {
     time: number;
@@ -22,23 +23,23 @@ export const usePlayer = (episode: SchemaEpisode): Player => {
             setTime(0);
         }
         setIsPlaying(true);
-    }
+    };
 
     const pause = () => {
         setIsPlaying(false);
-    }
+    };
 
     const rewind = () => {
         setTime(0);
-    }
+    };
     const seek = (newTime: number) => {
         setTime(newTime);
-    }
+    };
 
     useEffect(() => {
         setTime(0);
         setIsPlaying(true);
-    }, [episode])
+    }, [episode]);
 
     useEffect(() => {
         if (isPlaying) {
@@ -64,6 +65,5 @@ export const usePlayer = (episode: SchemaEpisode): Player => {
         pause,
         rewind,
         seek,
-    }
-}
-
+    };
+};

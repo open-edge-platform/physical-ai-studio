@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { Flex, Item, ListView, Selection, View, Text, Divider } from '@geti/ui';
+import { Divider, Flex, Item, ListView, Selection, Text, View } from '@geti/ui';
 
 import { $api } from '../../api/client';
 import { EpisodeViewer } from './episode-viewer';
@@ -21,31 +21,26 @@ export const DatasetViewer = ({ id: dataset_id }: DatasetViewerProps) => {
     const [currentEpisode] = episodeIndexKey as Set<number>;
     const items = episodes.map((_, index) => ({ id: index, name: `Episode ${index + 1}` }));
 
-
     if (currentEpisode === undefined) {
         return (
             <View>
                 <Text>No episodes yet... record one</Text>
             </View>
-        )
+        );
     }
     return (
-        <Flex direction={'row'} height="100%" flex gap={'size-100'}>
+        <Flex direction={'row'} height='100%' flex gap={'size-100'}>
             <View flex={1}>
                 <EpisodeViewer episode={episodes[currentEpisode]} dataset_id={dataset_id} />
             </View>
-            <Divider orientation='vertical' size='S'/>
-            <Flex
-                flex
-                direction="column"
-                maxWidth="size-2000"
-            >
+            <Divider orientation='vertical' size='S' />
+            <Flex flex direction='column' maxWidth='size-2000'>
                 <ListView
                     disallowEmptySelection
                     selectedKeys={episodeIndexKey}
-                    selectionMode="single"
+                    selectionMode='single'
                     items={items}
-                    selectionStyle="highlight"
+                    selectionStyle='highlight'
                     onSelectionChange={setEpisodeIndexKey}
                     flex={'1 0 0'}
                 >

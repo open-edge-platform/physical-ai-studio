@@ -1,32 +1,37 @@
-import { Play, Close as Stop, StepBackward } from '@geti/ui/icons';
-import { Player } from "./use-player"
-import { Flex, Text, ActionButton } from "@geti/ui"
+import { ActionButton, Flex, Text } from '@geti/ui';
+import { Play, StepBackward, Close as Stop } from '@geti/ui/icons';
+
+import { Player } from './use-player';
 
 const toMMSS = (timeInSeconds: number): string => {
-    const minutes = Math.floor(timeInSeconds / 60)
-    const seconds = Math.floor(timeInSeconds % 60)
-    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-}
+    const minutes = Math.floor(timeInSeconds / 60);
+    const seconds = Math.floor(timeInSeconds % 60);
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+};
 
 interface TimelineControlsProps {
-    player: Player
+    player: Player;
 }
-export const TimelineControls = ({player: {isPlaying, rewind, pause, play, duration, time}}: TimelineControlsProps) => {
+export const TimelineControls = ({
+    player: { isPlaying, rewind, pause, play, duration, time },
+}: TimelineControlsProps) => {
     return (
         <Flex direction={'row'}>
             <ActionButton aria-label='Rewind' isQuiet onPress={rewind}>
                 <StepBackward fill='white' />
             </ActionButton>
-            {isPlaying
-                ? <ActionButton aria-label='Pause' isQuiet onPress={pause}>
+            {isPlaying ? (
+                <ActionButton aria-label='Pause' isQuiet onPress={pause}>
                     <Stop fill='white' />
                 </ActionButton>
-                : <ActionButton aria-label='Play' isQuiet onPress={play}>
+            ) : (
+                <ActionButton aria-label='Play' isQuiet onPress={play}>
                     <Play fill='white' />
                 </ActionButton>
-            }
-            <Text alignSelf={'center'}>{toMMSS(time)}/{toMMSS(duration)}</Text>
+            )}
+            <Text alignSelf={'center'}>
+                {toMMSS(time)}/{toMMSS(duration)}
+            </Text>
         </Flex>
-    )
-}
-
+    );
+};
