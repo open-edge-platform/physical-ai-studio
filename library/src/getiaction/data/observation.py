@@ -15,103 +15,6 @@ if TYPE_CHECKING:
     import numpy as np
 
 
-def gym_observation_to_observation(
-    gym_obs: dict[str, Any],
-    camera_keys: list[str] | None = None,
-) -> Observation:
-    """Convert raw gym environment observation to Observation dataclass.
-
-    Handles the conversion from gym's raw observation format (numpy arrays, HWC images)
-    to our standardized Observation format (torch tensors, CHW images, batched).
-
-    This is used during rollouts to normalize gym environment outputs before passing
-    them to policy.select_action().
-
-    Args:
-        gym_obs: Raw observation dict from env.step() or env.reset().
-            Common keys: "pixels" (image), "agent_pos" (state), etc.
-        camera_keys: List of camera names to use for image mapping.
-            If None, uses ["top"] as default for single camera.
-
-    Returns:
-        Observation with normalized format:
-        - Images: CHW format, torch.float32, with batch dimension
-          - Single camera: direct tensor (compatible with LeRobot's "observation.image")
-          - Multiple cameras: dict of tensors (creates "observation.images.{camera}")
-        - State: torch.float32 with batch dimension
-        - All on CPU (device transfer happens in select_action)
-
-    Examples:
-        >>> # Single camera - creates direct tensor
-        >>> gym_obs = {
-        ...     "pixels": np.array([[[0.5, 0.3, 0.8]]]),  # HWC numpy
-        ...     "agent_pos": np.array([0.5, 0.3])         # 1D numpy
-        ... }
-        >>> obs = gym_observation_to_observation(gym_obs)
-        >>> # obs.images = tensor([1, 3, 1, 1])  # Direct tensor (not dict)
-        >>> # obs.state = tensor([1, 2])  # Batched
-
-        >>> # Multiple cameras - creates dict
-        >>> obs = gym_observation_to_observation(gym_obs, camera_keys=["top", "wrist"])
-        >>> # obs.images = {"top": tensor([1, 3, 1, 1]), "wrist": ...}
-
-        >>> # Also works via class method
-        >>> obs = Observation.from_gym(gym_obs)
-    """
-    if camera_keys is None:
-        camera_keys = ["top"]
-
-    images: dict[str, torch.Tensor | np.ndarray] | torch.Tensor | None = None
-    state: torch.Tensor | None = None
-
-    # Handle image observations
-    if "pixels" in gym_obs:
-        pixels = gym_obs["pixels"]
-
-        # Convert to torch tensor
-        if not isinstance(pixels, torch.Tensor):
-            pixels = torch.from_numpy(pixels)
-
-        # Ensure float32 (gym often returns float64 or uint8)
-        if pixels.dtype not in {torch.float32, torch.float16}:
-            pixels = pixels.float()
-
-        # Convert HWC → CHW if needed
-        if pixels.ndim == 3 and pixels.shape[-1] in {1, 3, 4}:  # noqa: PLR2004
-            pixels = pixels.permute(2, 0, 1)  # (H, W, C) → (C, H, W)
-
-        # Add batch dimension
-        if pixels.ndim == 3:  # noqa: PLR2004
-            pixels = pixels.unsqueeze(0)  # (C, H, W) → (1, C, H, W)
-
-        # For single camera: direct tensor for compatibility with existing models
-        # For multiple cameras: dict with camera names
-        images = pixels if len(camera_keys) == 1 else {camera_keys[0]: pixels}
-
-    # Handle state observations
-    state_keys = ["agent_pos", "state"]  # Common gym state keys
-    for key in state_keys:
-        if key in gym_obs:
-            state_data = gym_obs[key]
-
-            # Convert to torch tensor
-            if not isinstance(state_data, torch.Tensor):
-                state_data = torch.from_numpy(state_data)
-
-            # Ensure float32
-            if state_data.dtype != torch.float32:
-                state_data = state_data.float()
-
-            # Add batch dimension
-            if state_data.ndim == 1:
-                state_data = state_data.unsqueeze(0)  # (D,) → (1, D)
-
-            state = state_data
-            break
-
-    return Observation(images=images, state=state)
-
-
 @dataclass(frozen=True)
 class Observation:
     """A single observation or batch of observations from an imitation learning dataset.
@@ -311,32 +214,6 @@ class Observation:
         # Create new instance with all fields moved to device
         new_dict = {k: _move_to_device(v) for k, v in self.items()}
         return Observation.from_dict(new_dict)
-
-    @classmethod
-    def from_gym(
-        cls,
-        gym_obs: dict[str, Any],
-        camera_keys: list[str] | None = None,
-    ) -> Observation:
-        """Convert raw gym environment observation to Observation.
-
-        Convenience class method that delegates to gym_observation_to_observation().
-        Provides discoverable API following the existing from_dict() pattern.
-
-        Args:
-            gym_obs: Raw observation dict from env.step() or env.reset()
-            camera_keys: List of camera names for image mapping
-
-        Returns:
-            Observation instance with normalized format
-
-        Examples:
-            >>> gym_obs = {"pixels": np.array([[[0.5]]]), "agent_pos": np.array([0.5, 0.3])}
-            >>> obs = Observation.from_gym(gym_obs)
-            >>> # obs.images = {"top": tensor([1, 1, 1, 1])}  # Batched, CHW
-            >>> # obs.state = tensor([1, 2])  # Batched
-        """
-        return gym_observation_to_observation(gym_obs, camera_keys)
 
 
 class FeatureType(StrEnum):

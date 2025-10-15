@@ -24,8 +24,6 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from getiaction.data import Observation
-
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -173,7 +171,7 @@ def rollout(
     if hasattr(policy, "reset") and callable(policy.reset):
         policy.reset()
 
-    gym_observation, _info = env.reset(seed=seed)
+    raw_observation, _info = env.reset(seed=seed)
 
     if render_callback is not None:
         render_callback(env)
@@ -186,10 +184,10 @@ def rollout(
     while not done and step < max_steps:
         # Store raw gym observation if requested
         if return_observations:
-            episode_data.observations.append(_convert_observation_to_dict(gym_observation))
+            episode_data.observations.append(_convert_observation_to_dict(raw_observation))
 
         # Convert raw gym observation to Observation dataclass
-        observation = Observation.from_gym(gym_observation)
+        observation = env.to_observation(raw_observation)
 
         # Get action from policy (receives Observation dataclass)
         with torch.inference_mode():
@@ -200,7 +198,7 @@ def rollout(
         action_numpy = _prepare_action_for_env(action)
 
         # Step environment
-        gym_observation, reward, terminated, truncated, info = env.step(action_numpy)
+        raw_observation, reward, terminated, truncated, info = env.step(action_numpy)
 
         if render_callback is not None:
             render_callback(env)
@@ -217,9 +215,9 @@ def rollout(
 
         step += 1
 
-    # Store final gym observation if requested
+    # Store final raw observation if requested
     if return_observations:
-        episode_data.observations.append(_convert_observation_to_dict(gym_observation))
+        episode_data.observations.append(_convert_observation_to_dict(raw_observation))
 
     # Build result dictionary
     ret = {
