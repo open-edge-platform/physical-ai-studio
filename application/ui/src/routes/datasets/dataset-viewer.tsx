@@ -50,7 +50,7 @@ export const DatasetViewer = ({ id: dataset_id }: DatasetViewerProps) => {
             </Flex>
 
             <View flex={1}>
-                <EpisodeViewer episode={episodes[currentEpisode]} />
+                <EpisodeViewer episode={episodes[currentEpisode]} dataset_id={dataset_id} />
             </View>
         </Flex>
     );

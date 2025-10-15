@@ -1,7 +1,8 @@
 from typing import Annotated
+import os
 
 from fastapi import APIRouter, Depends
-
+from fastapi.responses import FileResponse
 from api.dependencies import get_dataset_service
 from schemas import Episode, LeRobotDatasetInfo
 from services import DatasetService
@@ -56,3 +57,17 @@ async def get_episodes_of_dataset(
     """Get dataset episodes of dataset by id."""
     dataset = dataset_service.get_dataset_by_id(dataset_id)
     return get_dataset_episodes(dataset.name, dataset.path)
+
+@router.get("/{dataset_id}/{episode}/{camera}.mp4")
+async def dataset_video_endpoint(
+    dataset_id: str,
+    episode: int, 
+    camera: str,
+    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
+    ) -> FileResponse:
+    """Get path to video of episode"""
+    dataset = dataset_service.get_dataset_by_id(dataset_id)
+    metadata = LeRobotDatasetMetadata(dataset.name, dataset.path, None, force_cache_sync=False)
+    full_camera_name = f"observation.images.{camera}"
+    video_path = os.path.join(metadata.root, metadata.get_video_file_path(episode, full_camera_name))
+    return FileResponse(video_path)
