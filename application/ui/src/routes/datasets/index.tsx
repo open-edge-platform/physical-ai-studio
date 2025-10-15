@@ -29,49 +29,45 @@ export const Index = () => {
     };
 
     return (
-        <View padding='size-200' flex='1'>
-            <Flex height='100%'>
-                <Tabs onSelectionChange={onSelectionChange} flex='1'>
-                    <Flex alignItems={'end'}>
-                        <TabList flex={1}>
-                            {[
-                                ...datasets.map((data) => <Item key={data.id}>{data.name}</Item>),
-                                <Item key='#new-dataset'>
-                                    <Add fill='white' height='10px' /> New dataset
-                                </Item>,
-                            ]}
-                        </TabList>
-                        {dataset !== undefined && (
-                            <View padding={'size-30'}>
-                                <Link
-                                    href={paths.project.datasets.record({
-                                        project_id: project.id,
-                                        dataset_id: dataset.id,
-                                    })}
-                                >
-                                    <Button>Start recording</Button>
-                                </Link>
-                            </View>
-                        )}
-                    </Flex>
-                    <TabPanels>
-                        <Item key={'#new-dataset'}>
-                            <ImportDataset />
-                        </Item>
-                        <Item key={dataset?.id}>
-                            <Flex height='100%'>
-                                <Well flex={1}>
-                                    {dataset === undefined ? (
-                                        <Text>No datasets yet...</Text>
-                                    ) : (
-                                        <DatasetViewer id={dataset.id!} />
-                                    )}
-                                </Well>
-                            </Flex>
-                        </Item>
-                    </TabPanels>
-                </Tabs>
-            </Flex>
-        </View>
+        <Flex height='100%'>
+            <Tabs onSelectionChange={onSelectionChange} flex='1' margin={'size-200'}>
+                <Flex alignItems={'end'}>
+                    <TabList flex={1}>
+                        {[
+                            ...datasets.map((data) => <Item key={data.id}>{data.name}</Item>),
+                            <Item key='#new-dataset'>
+                                <Add fill='white' height='10px' /> New dataset
+                            </Item>,
+                        ]}
+                    </TabList>
+                    {dataset !== undefined && (
+                        <View padding={'size-30'}>
+                            <Link
+                                href={paths.project.datasets.record({
+                                    project_id: project.id,
+                                    dataset_id: dataset.id,
+                                })}
+                            >
+                                <Button>Start recording</Button>
+                            </Link>
+                        </View>
+                    )}
+                </Flex>
+                <TabPanels UNSAFE_style={{border: 'none'}} marginTop={'size-200'}>
+                    <Item key={'#new-dataset'}>
+                        <ImportDataset />
+                    </Item>
+                    <Item key={dataset?.id}>
+                        <Flex height='100%' flex>
+                            {dataset === undefined ? (
+                                <Text>No datasets yet...</Text>
+                            ) : (
+                                <DatasetViewer id={dataset.id!} />
+                            )}
+                        </Flex>
+                    </Item>
+                </TabPanels>
+            </Tabs>
+        </Flex>
     );
 };

@@ -21,35 +21,37 @@ export const DatasetViewer = ({ id: dataset_id }: DatasetViewerProps) => {
     const [currentEpisode] = episodeIndexKey as Set<number>;
     const items = episodes.map((_, index) => ({ id: index, name: `Episode ${index + 1}` }));
 
+
+    if (currentEpisode === undefined) {
+        return (
+            <View>
+                <Text>No episodes yet... record one</Text>
+            </View>
+        )
+    }
     return (
-        <Flex direction={'row'}>
-            {currentEpisode !== undefined 
-            ? (
-                <>
-                <View maxWidth={'size-2000'} flex={1}>
-                    <ListView
-                        selectedKeys={episodeIndexKey}
-                        selectionMode={'single'}
-                        items={items}
-                        selectionStyle='highlight'
-                        onSelectionChange={setEpisodeIndexKey}
-                    >
-                        {(item) => <Item>{item.name}</Item>}
-                    </ListView>
-                </View>
+        <Flex direction={'row'} height="100%" flex>
+            <Flex
+                flex
+                direction="column"
+                maxWidth="size-2000"
+            >
+                <ListView
+                    disallowEmptySelection
+                    selectedKeys={episodeIndexKey}
+                    selectionMode="single"
+                    items={items}
+                    selectionStyle="highlight"
+                    onSelectionChange={setEpisodeIndexKey}
+                    flex={'1 0 0'}
+                >
+                    {(item) => <Item>{item.name}</Item>}
+                </ListView>
+            </Flex>
 
-                <View flex={1}>
-                    <EpisodeViewer episode={episodes[currentEpisode]} />
-                </View>
-                </>
-            ) 
-            : (
-
-                <View>
-                    <Text>No episodes yet... record one</Text>
-                </View>
-            )
-            }
+            <View flex={1}>
+                <EpisodeViewer episode={episodes[currentEpisode]} />
+            </View>
         </Flex>
     );
 };
