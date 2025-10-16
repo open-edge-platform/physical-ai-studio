@@ -12,6 +12,8 @@ import gymnasium as gym
 if TYPE_CHECKING:
     from gymnasium.core import ActType, ObsType
 
+    from getiaction.data import Observation
+
 
 class Gym:
     """Base class for Gym environments.
@@ -19,6 +21,9 @@ class Gym:
     This class wraps a Gym environment and provides standard methods
     like `reset`, `step`, `render`, and `close`. It also exposes
     properties for `num_rollouts` and `max_episode_steps`.
+
+    Each environment must implement the `to_observation` method to convert
+    its raw observation format to our standardized Observation dataclass.
     """
 
     def __init__(
@@ -113,3 +118,28 @@ class Gym:
             return self.env.get_wrapper_attr("max_episode_steps")
         except AttributeError:
             return None
+
+    def to_observation(
+        self,
+        raw_obs: dict[str, Any],
+        camera_keys: list[str] | None = None,
+    ) -> Observation:
+        """Convert raw gym observation to Observation dataclass.
+
+        Each gym environment must implement this method to handle its specific
+        observation format and convert it to our standardized Observation dataclass.
+
+        Args:
+            raw_obs: Raw observation dictionary from gym environment.
+            camera_keys: Optional list of camera names for multi-camera setups.
+                Can be None for environments that don't use multiple cameras.
+
+        Raises:
+            NotImplementedError: If not implemented by subclass.
+
+        Note:
+            This method should be overridden by subclasses. See concrete implementations such as
+            :class:`~getiaction.gyms.PushTGym` for specific examples and usage patterns.
+        """
+        msg = f"Subclass {self.__class__.__name__} must implement to_observation method"
+        raise NotImplementedError(msg)

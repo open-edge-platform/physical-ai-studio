@@ -1,6 +1,7 @@
 import { fireEvent, render } from '@testing-library/react';
 import { vi } from 'vitest';
 
+import { SchemaCamera } from '../../api/openapi-spec';
 import { Listener, WebRTCConnection, WebRTCConnectionStatus } from './web-rtc-connection';
 import { useWebRTCConnection, WebRTCConnectionProvider } from './web-rtc-connection-provider';
 
@@ -59,13 +60,24 @@ describe('WebRTCConnectionProvider', () => {
         );
     };
 
+    const cameraConfig: SchemaCamera = {
+        name: 'camera',
+        driver: 'driver',
+        port_or_device_id: 'camera',
+        default_stream_profile: {
+            width: 640,
+            height: 480,
+            fps: 30,
+        },
+    };
+
     afterEach(() => {
         vi.clearAllMocks();
     });
 
     it('provides initial status as idle', () => {
         const { getByLabelText } = render(
-            <WebRTCConnectionProvider driver='driver' camera='camera'>
+            <WebRTCConnectionProvider camera={cameraConfig}>
                 <App />
             </WebRTCConnectionProvider>
         );
@@ -75,7 +87,7 @@ describe('WebRTCConnectionProvider', () => {
 
     it('updates status to connected after start', () => {
         const { getByLabelText } = render(
-            <WebRTCConnectionProvider driver='driver' camera='camera'>
+            <WebRTCConnectionProvider camera={cameraConfig}>
                 <App />
             </WebRTCConnectionProvider>
         );
@@ -87,7 +99,7 @@ describe('WebRTCConnectionProvider', () => {
 
     it('updates status to idle after stop', () => {
         const { getByLabelText } = render(
-            <WebRTCConnectionProvider driver='driver' camera='camera'>
+            <WebRTCConnectionProvider camera={cameraConfig}>
                 <App />
             </WebRTCConnectionProvider>
         );
@@ -105,7 +117,7 @@ describe('WebRTCConnectionProvider', () => {
         const stopSpy = vi.spyOn(MockWebRTCConnection.prototype, 'stop');
 
         const { unmount } = render(
-            <WebRTCConnectionProvider driver='driver' camera='camera'>
+            <WebRTCConnectionProvider camera={cameraConfig}>
                 <App />
             </WebRTCConnectionProvider>
         );
@@ -117,7 +129,7 @@ describe('WebRTCConnectionProvider', () => {
 
     it('handles status sequence: start -> stop -> start', () => {
         const { getByLabelText } = render(
-            <WebRTCConnectionProvider driver='driver' camera='camera'>
+            <WebRTCConnectionProvider camera={cameraConfig}>
                 <App />
             </WebRTCConnectionProvider>
         );

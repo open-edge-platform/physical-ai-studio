@@ -10,6 +10,8 @@ import torch
 from torch import nn
 
 from getiaction.data import Observation
+from getiaction.eval import rollout
+from getiaction.gyms import Gym
 
 
 class Policy(L.LightningModule, ABC):
@@ -63,15 +65,96 @@ class Policy(L.LightningModule, ABC):
             torch.Tensor: Model predictions
         """
         del args, kwargs
-        return self.model(batch)
+        return self.model(batch.to_dict())
 
     @abstractmethod
     def select_action(self, batch: Observation) -> torch.Tensor:
         """Select an action using the policy model.
 
         Args:
-            batch (Observation): Input batch of observations.
+            batch: Input batch of observations.
 
         Returns:
             torch.Tensor: Selected actions.
         """
+
+    @abstractmethod
+    def reset(self) -> None:
+        """Reset the policy state.
+
+        This method should be called when the environment is reset. It clears
+        internal state such as action queues, observation histories, and any
+        other stateful components used by the policy.
+
+        For example:
+        - Action chunking policies clear their action queue
+        - Diffusion policies reset observation/action deques
+        - Recurrent policies reset hidden states
+
+        This is critical for proper evaluation in gym environments, where
+        each episode must start with a clean slate.
+        """
+
+    def evaluate_gym(self, batch: Gym, batch_idx: int, stage: str) -> dict[str, float]:
+        """Evaluate policy on gym environment and log metrics.
+
+        This is a helper method used by both validation_step and test_step to avoid
+        code duplication. It runs a rollout in the gym environment and logs metrics.
+
+        Args:
+            batch: Gym environment to evaluate
+            batch_idx: Index of the batch (used as seed for reproducibility)
+            stage: Either "val" or "test" for metric prefix
+
+        Returns:
+            Dictionary of metrics (though metrics are also logged via self.log_dict)
+        """
+        # Run rollout
+        result = rollout(
+            env=batch,
+            policy=self,
+            seed=batch_idx,  # Use batch_idx as seed for reproducibility
+            max_steps=None,
+            return_observations=False,
+        )
+
+        # Log metrics with appropriate prefix
+        metrics = {
+            f"{stage}/gym/episode_length": result["episode_length"],
+            f"{stage}/gym/sum_reward": result["sum_reward"],
+            f"{stage}/gym/max_reward": result["max_reward"],
+            f"{stage}/gym/success": float(result["is_success"]),
+        }
+
+        self.log_dict(metrics, prog_bar=True, on_step=False, on_epoch=True, batch_size=1)
+        return metrics
+
+    def validation_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
+        """Validation step for the policy.
+
+        Runs gym-based validation by executing rollouts in the environment.
+        The DataModule's val_dataloader returns Gym environment instances directly.
+
+        Args:
+            batch: Gym environment to evaluate
+            batch_idx: Index of the batch (used as seed for reproducibility)
+
+        Returns:
+            Dictionary of metrics from the gym rollout evaluation
+        """
+        return self.evaluate_gym(batch, batch_idx, stage="val")
+
+    def test_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
+        """Test step for the policy.
+
+        Runs gym-based testing by executing rollouts in the environment.
+        The DataModule's test_dataloader returns Gym environment instances directly.
+
+        Args:
+            batch: Gym environment to evaluate
+            batch_idx: Index of the batch (used as seed for reproducibility)
+
+        Returns:
+            Dictionary of metrics from the gym rollout evaluation
+        """
+        return self.evaluate_gym(batch, batch_idx, stage="test")

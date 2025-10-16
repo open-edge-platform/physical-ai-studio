@@ -8,6 +8,7 @@ from collections.abc import Iterable
 import torch
 
 from getiaction.data import Observation
+from getiaction.gyms import Gym
 from getiaction.policies.base import Policy
 from getiaction.policies.dummy.config import DummyConfig
 from getiaction.policies.dummy.model import Dummy as DummyModel
@@ -68,14 +69,16 @@ class Dummy(Policy):
         """Select an action using the policy model.
 
         Args:
-            batch (Observation): Input batch of observations.
+            batch: Input batch of observations.
 
         Returns:
             torch.Tensor: Selected actions.
         """
-        # Convert Observation to dict for dummy model
-        batch_dict = batch.to_dict()
-        return self.model.select_action(batch_dict)  # type: ignore[attr-defined]
+        # Get action from model
+        action = self.model.select_action(batch.to_dict())  # type: ignore[attr-defined]
+
+        # Remove batch dim if present (rollout expects unbatched)
+        return action.squeeze(0) if action.ndim > 1 and action.shape[0] == 1 else action
 
     def training_step(self, batch: Observation, batch_idx: int) -> dict[str, torch.Tensor]:
         """Training step for the policy.
@@ -119,22 +122,38 @@ class Dummy(Policy):
         """
         del batch, stage  # Unused variables
 
-    def validation_step(self, batch: Observation, batch_idx: int) -> None:
-        """Validation step (calls evaluation_step).
+    def validation_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
+        """Validation step.
+
+        Runs gym-based validation via rollout evaluation. The DataModule's val_dataloader
+        returns Gym environment instances directly.
 
         Args:
-            batch (Observation): Input batch.
-            batch_idx (int): Index of the batch.
-        """
-        del batch_idx  # Unused variable
-        return self.evaluation_step(batch=batch, stage="val")
+            batch: Gym environment to evaluate.
+            batch_idx: Index of the batch.
 
-    def test_step(self, batch: Observation, batch_idx: int) -> None:
-        """Test step (calls evaluation_step).
+        Returns:
+            Metrics dict from gym rollout.
+        """
+        return self.evaluate_gym(batch, batch_idx, stage="val")
+
+    def test_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
+        """Test step.
+
+        Runs gym-based testing via rollout evaluation. The DataModule's test_dataloader
+        returns Gym environment instances directly.
 
         Args:
-            batch (Observation): Input batch.
-            batch_idx (int): Index of the batch.
+            batch: Gym environment to evaluate.
+            batch_idx: Index of the batch.
+
+        Returns:
+            Metrics dict from gym rollout.
         """
-        del batch_idx  # Unused variable
-        return self.evaluation_step(batch=batch, stage="test")
+        return self.evaluate_gym(batch, batch_idx, stage="test")
+
+    def reset(self) -> None:
+        """Reset the policy state.
+
+        Dummy policy has no state to reset, so this is a no-op.
+        """

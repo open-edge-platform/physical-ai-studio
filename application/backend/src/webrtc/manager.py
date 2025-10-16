@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 from aiortc import RTCPeerConnection, RTCSessionDescription
 from pydantic import BaseModel
 
+from schemas import Camera, CameraProfile
 from webrtc.framesource_track import FrameSourceVideoStreamTrack
 
 if TYPE_CHECKING:
@@ -32,21 +33,21 @@ class WebRTCManager:
     def identifier_for_driver_device(driver: str, device: str) -> str:
         return driver + "@" + device
 
-    def get_track(self, driver: str, device: str) -> FrameSourceVideoStreamTrack:
+    def get_track(self, camera: Camera, profile: CameraProfile) -> FrameSourceVideoStreamTrack:
         """
         Create or reuse a FrameSourceVideoStreamTrack for the given device.
         Each device corresponds to a queue feeding numpy frames.
         """
-        identifier = self.identifier_for_driver_device(driver, device)
+        identifier = self.identifier_for_driver_device(camera.driver, camera.port_or_device_id)
         if identifier not in self._tracks:
             # Create a new queue for incoming frames
             q: queue.Queue[np.ndarray] = queue.Queue(maxsize=10)
             self._frame_queues[identifier] = q
-            self._tracks[identifier] = FrameSourceVideoStreamTrack(driver=driver, device=device)
+            self._tracks[identifier] = FrameSourceVideoStreamTrack(camera=camera, stream_profile=profile)
             self._device_connections[identifier] = set()
         return self._tracks[identifier]
 
-    async def handle_offer(self, sdp: str, type: str, webrtc_id: str, driver: str, device: str) -> Answer:
+    async def handle_offer(self, sdp: str, type: str, webrtc_id: str, camera: Camera, profile: CameraProfile) -> Answer:
         pc = RTCPeerConnection()
         self._pcs[webrtc_id] = pc
 
@@ -57,9 +58,9 @@ class WebRTCManager:
                 await self.cleanup_peer(webrtc_id)
 
         await pc.setRemoteDescription(RTCSessionDescription(sdp=sdp, type=type))
-        track = self.get_track(driver, device)
+        track = self.get_track(camera, profile)
 
-        identifier = self.identifier_for_driver_device(driver, device)
+        identifier = self.identifier_for_driver_device(camera.driver, camera.port_or_device_id)
         self._device_connections[identifier].add(webrtc_id)
         pc.addTrack(track)
 

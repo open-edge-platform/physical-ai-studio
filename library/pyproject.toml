@@ -156,6 +156,10 @@ exclude_dirs = ["tests"]
 addopts = ["--strict-markers", "--strict-config", "--showlocals", "-ra"]
 testpaths = "tests"
 pythonpath = "src"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "requires_download: marks tests that require downloading external datasets",
+]
 
 
 # ============================================================================ #
