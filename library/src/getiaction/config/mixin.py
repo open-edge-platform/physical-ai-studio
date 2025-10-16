@@ -165,6 +165,7 @@ class FromConfig:
         config: BaseModel,
         *,
         key: str | None = None,
+        recursive: bool = False,
     ) -> Self:
         """Load configuration from a Pydantic model and instantiate the class.
 
@@ -174,6 +175,9 @@ class FromConfig:
         Args:
             config: Pydantic model instance.
             key: Optional key to extract a sub-configuration from the model.
+            recursive: If False (default), preserves nested Pydantic models as instances.
+                If True, recursively converts nested Pydantic models to dicts.
+                This mirrors the behavior of from_dataclass.
 
         Returns:
             An instance of the class.
@@ -196,9 +200,26 @@ class FromConfig:
 
             model = MyModel.from_pydantic(ModelConfig())
             ```
+
+            3. With recursive control for nested models (mirrors from_dataclass)
+            ```python
+            # recursive=False: Preserves nested Pydantic models as instances (default)
+            # Use when constructor expects Pydantic model instances
+            model = MyModel.from_pydantic(config, recursive=False)
+
+            # recursive=True: Converts all nested Pydantic models to dicts
+            # Use when constructor expects plain dictionaries
+            model = MyModel.from_pydantic(config, recursive=True)
+            ```
         """
-        # Convert to dict and use from_dict logic
-        config_dict = config.model_dump()
+        # Mirror the dataclass behavior: recursive controls nested object conversion
+        if recursive:
+            # Convert nested Pydantic models to dicts (like dataclasses.asdict)
+            config_dict = config.model_dump()
+        else:
+            # Preserve nested Pydantic models as instances (like manual field access)
+            config_dict = {field_name: getattr(config, field_name) for field_name in config.__class__.model_fields}
+
         return cls.from_dict(config_dict, key=key)
 
     @classmethod
@@ -207,7 +228,7 @@ class FromConfig:
         config: object,
         *,
         key: str | None = None,
-        shallow: bool = True,
+        recursive: bool = False,
     ) -> Self:
         """Load configuration from a dataclass and instantiate the class.
 
@@ -217,7 +238,11 @@ class FromConfig:
         Args:
             config: Dataclass instance.
             key: Optional key to extract a sub-configuration from the dataclass.
-            shallow: If True, converts dataclass to dict non-recursively.
+            recursive: If True, recursively converts all nested dataclasses to dictionaries.
+                If False, converts dataclass to dict non-recursively (preserves nested
+                dataclass objects). Use recursive=False when your constructor expects
+                dataclass objects (e.g., Feature, NormalizationParameters), and
+                recursive=True when your constructor expects plain dictionaries.
 
         Returns:
             An instance of the class.
@@ -245,16 +270,38 @@ class FromConfig:
 
             model = MyModel.from_dataclass(ModelConfig())
             ```
+
+            3. With recursive conversion control
+            ```python
+            # recursive=False: Preserves nested dataclass objects (default)
+            # Use when constructor expects dataclass instances
+            model = MyModel.from_dataclass(config, recursive=False)
+
+            # recursive=True: Converts all nested dataclasses to dicts
+            # Use when constructor expects plain dictionaries
+            model = MyModel.from_dataclass(config, recursive=True)
+
+            @dataclass
+            class FeatureConfig:
+                size: int = 128
+
+            @dataclass
+            class ModelConfig:
+                feature: FeatureConfig = field(default_factory=FeatureConfig)
+
+            # With recursive=False: feature remains as FeatureConfig instance
+            # With recursive=True: feature becomes {"size": 128} dict
+            ```
         """
         if not dataclasses.is_dataclass(config):
             msg = f"Expected dataclass instance, got {type(config)}"
             raise TypeError(msg)
 
         # Convert to dict and use from_dict logic
-        if shallow:
-            config_dict = {field.name: getattr(config, field.name) for field in dataclasses.fields(config)}
-        else:
+        if recursive:
             config_dict = dataclasses.asdict(config)  # type: ignore[arg-type]
+        else:
+            config_dict = {field.name: getattr(config, field.name) for field in dataclasses.fields(config)}
 
         return cls.from_dict(config_dict, key=key)
 
@@ -264,6 +311,7 @@ class FromConfig:
         config: dict[str, Any] | BaseModel | object | str | Path,
         *,
         key: str | None = None,
+        recursive: bool = False,
     ) -> Self:
         """Generic method to instantiate from any configuration format.
 
@@ -273,6 +321,10 @@ class FromConfig:
         Args:
             config: Configuration in any supported format.
             key: Optional key to extract a sub-configuration.
+            recursive: For dataclass and Pydantic configs, controls whether to convert
+                nested objects to dicts (True) or preserve them (False, default).
+                Ignored for dict and YAML configs.
+                Ignored for other config types.
 
         Returns:
             An instance of the class.
@@ -286,16 +338,16 @@ class FromConfig:
             model = MyModel.from_config("config.yaml")
             model = MyModel.from_config(config_dict)
             model = MyModel.from_config(pydantic_config)
-            model = MyModel.from_config(dataclass_config)
+            model = MyModel.from_config(dataclass_config, recursive=True)
             ```
         """
         # Route to appropriate type-specific method
         if isinstance(config, (str, Path)):
             return cls.from_yaml(config, key=key)
         if isinstance(config, BaseModel):
-            return cls.from_pydantic(config, key=key)
+            return cls.from_pydantic(config, key=key, recursive=recursive)
         if dataclasses.is_dataclass(config) and not isinstance(config, type):
-            return cls.from_dataclass(config, key=key)
+            return cls.from_dataclass(config, key=key, recursive=recursive)
         if isinstance(config, dict):
             return cls.from_dict(config, key=key)
 
