@@ -90,7 +90,10 @@ class ACT(Policy):
         """
         # Move batch to device (observations from gym are on CPU)
         batch = batch.to(self.device)
-        return self.model.predict_action_chunk(batch.to_dict())
+        chunk = self.model.predict_action_chunk(batch.to_dict())
+
+        # select only first action from the predicted chunk to unify output with other policies
+        return chunk[:, 1, :]
 
     def training_step(self, batch: Observation, batch_idx: int) -> dict[str, torch.Tensor]:
         """Training step for the policy.
