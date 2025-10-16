@@ -11,7 +11,7 @@ model:
 data:
   class_path: getiaction.data.lerobot.LeRobotDataModule
   init_args:
-    repo_id: "lerobot/pusht_old"
+    repo_id: "lerobot/pusht"
     train_batch_size: 64
     data_format: "getiaction"
     val_gyms:
