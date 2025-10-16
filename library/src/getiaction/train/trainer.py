@@ -44,15 +44,29 @@ class Trainer:
     def fit(self, model: Policy, datamodule: DataModule, **kwargs) -> None:  # noqa: ANN003
         """Fit the model."""
         # if we don't have any validation datasets, limit batch size to zero
-        if datamodule.eval_dataset is None:
+        if datamodule.val_dataset is None:
             self.backend.limit_val_batches = 0
         return self.backend.fit(model=model, datamodule=datamodule, **kwargs)
 
-    @abstractmethod
-    def validate(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
-        """Validate the model."""
-        msg = "Validate method not implemented"
-        raise NotImplementedError(msg)
+    def validate(self, model: Policy, datamodule: DataModule, **kwargs):  # noqa: ANN003, ANN201
+        """Run validation on a model.
+
+        This runs the validation loop without training, useful for evaluating
+        trained models or checkpoints. If the datamodule includes val_gyms,
+        the GymEvaluation will perform gym rollouts.
+
+        Args:
+            model: The policy to validate.
+            datamodule: The datamodule with val_dataset or val_gyms.
+            **kwargs: Additional arguments passed to Lightning Trainer.validate().
+
+        Returns:
+            Validation results from Lightning.
+        """
+        # if we don't have any validation datasets, limit batch size to zero
+        if datamodule.val_dataset is None:
+            self.backend.limit_val_batches = 0
+        return self.backend.validate(model=model, datamodule=datamodule, **kwargs)
 
     @abstractmethod
     def test(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003

@@ -124,6 +124,10 @@ class FeatureNormalizeTransform(nn.Module):
                     msg,
                 )
 
+        # Skip normalization if the value is None (e.g., during gym rollouts where action is not available)
+        if batch[key] is None:
+            return
+
         if norm_mode is NormalizationType.MEAN_STD:
             mean = buffer["mean"]
             std = buffer["std"]

@@ -6,6 +6,7 @@
 import torch
 
 from getiaction.data import Dataset, Observation
+from getiaction.gyms import Gym
 from getiaction.policies.act.model import ACT as ACTModel  # noqa: N811
 from getiaction.policies.base import Policy
 from getiaction.train.utils import reformat_dataset_to_match_policy
@@ -82,11 +83,13 @@ class ACT(Policy):
         """Select an action using the policy model.
 
         Args:
-            batch (Observation): Input batch of observations.
+            batch: Input batch of observations.
 
         Returns:
             torch.Tensor: Selected actions.
         """
+        # Move batch to device (observations from gym are on CPU)
+        batch = batch.to(self.device)
         return self.model.predict_action_chunk(batch.to_dict())
 
     def training_step(self, batch: Observation, batch_idx: int) -> dict[str, torch.Tensor]:
@@ -132,22 +135,41 @@ class ACT(Policy):
         """
         del batch, stage
 
-    def validation_step(self, batch: Observation, batch_idx: int) -> None:
-        """Validation step (calls evaluation_step).
+    def validation_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
+        """Validation step.
+
+        Runs gym-based validation via rollout evaluation. The DataModule's val_dataloader
+        returns Gym environment instances directly.
 
         Args:
-            batch (Observation): Input batch.
-            batch_idx (int): Index of the batch.
-        """
-        del batch_idx
-        return self.evaluation_step(batch=batch, stage="val")
+            batch: Gym environment to evaluate.
+            batch_idx: Index of the batch.
 
-    def test_step(self, batch: Observation, batch_idx: int) -> None:
-        """Test step (calls evaluation_step).
+        Returns:
+            Metrics dict from gym rollout.
+        """
+        return self.evaluate_gym(batch, batch_idx, stage="val")
+
+    def test_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
+        """Test step.
+
+        Runs gym-based testing via rollout evaluation. The DataModule's test_dataloader
+        returns Gym environment instances directly.
 
         Args:
-            batch (Observation): Input batch.
-            batch_idx (int): Index of the batch.
+            batch: Gym environment to evaluate.
+            batch_idx: Index of the batch.
+
+        Returns:
+            Metrics dict from gym rollout.
         """
-        del batch_idx
-        return self.evaluation_step(batch=batch, stage="test")
+        return self.evaluate_gym(batch, batch_idx, stage="test")
+
+    def reset(self) -> None:
+        """Reset the policy state for a new episode.
+
+        Clears internal state like action queues or observation history.
+        For ACT, this delegates to the model's reset method.
+        """
+        if hasattr(self.model, "reset") and callable(self.model.reset):
+            self.model.reset()

@@ -76,3 +76,80 @@ class TestDummyPolicy:
         optimizer = policy.configure_optimizers()
         assert isinstance(optimizer, torch.optim.Adam)
         assert list(optimizer.param_groups[0]["params"]) == [policy.model.dummy_param]
+
+
+class TestDummyPolicyValidation:
+    """Tests for DummyPolicy validation and testing."""
+
+    def test_evaluate_gym_method_exists(self):
+        """Test that Policy.evaluate_gym method exists and is callable."""
+        from getiaction.policies.dummy import Dummy, DummyConfig
+
+        config = DummyConfig(action_shape=(2,))
+        policy = Dummy(config=config)
+
+        assert hasattr(policy, "evaluate_gym")
+        assert callable(policy.evaluate_gym)
+
+    def test_validation_step_accepts_gym(self):
+        """Test that validation_step accepts Gym environment directly."""
+        from getiaction.gyms import PushTGym
+        from getiaction.policies.dummy import Dummy, DummyConfig
+
+        config = DummyConfig(action_shape=(2,))
+        policy = Dummy(config=config)
+        gym = PushTGym()
+
+        # This should not raise TypeError
+        result = policy.validation_step(gym, batch_idx=0)
+
+        # Should return a dict of metrics
+        assert isinstance(result, dict)
+        assert all(isinstance(v, (int, float, torch.Tensor)) for v in result.values())
+
+    def test_test_step_accepts_gym(self):
+        """Test that test_step accepts Gym environment directly."""
+        from getiaction.gyms import PushTGym
+        from getiaction.policies.dummy import Dummy, DummyConfig
+
+        config = DummyConfig(action_shape=(2,))
+        policy = Dummy(config=config)
+        gym = PushTGym()
+
+        # This should not raise TypeError
+        result = policy.test_step(gym, batch_idx=0)
+
+        # Should return a dict of metrics
+        assert isinstance(result, dict)
+        assert all(isinstance(v, (int, float, torch.Tensor)) for v in result.values())
+
+    def test_validation_metrics_have_correct_keys(self):
+        """Test that validation returns expected metric keys."""
+        from getiaction.gyms import PushTGym
+        from getiaction.policies.dummy import Dummy, DummyConfig
+
+        config = DummyConfig(action_shape=(2,))
+        policy = Dummy(config=config)
+        gym = PushTGym()
+
+        metrics = policy.validation_step(gym, batch_idx=0)
+
+        # Check for expected keys
+        expected_keys = ["val/gym/episode_length", "val/gym/sum_reward", "val/gym/success"]
+
+        for key in expected_keys:
+            assert key in metrics, f"Missing expected metric: {key}"
+
+    def test_test_metrics_use_test_prefix(self):
+        """Test that test_step returns metrics with 'test/' prefix."""
+        from getiaction.gyms import PushTGym
+        from getiaction.policies.dummy import Dummy, DummyConfig
+
+        config = DummyConfig(action_shape=(2,))
+        policy = Dummy(config=config)
+        gym = PushTGym()
+
+        metrics = policy.test_step(gym, batch_idx=0)
+
+        # All keys should start with 'test/'
+        assert all(key.startswith("test/") for key in metrics.keys())
