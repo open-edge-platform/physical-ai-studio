@@ -30,6 +30,8 @@
         "@adobe/react-spectrum": "^3.41.0",
         "@geti/config": "*",
         "@geti/ui": "*",
+        "@react-three/drei": "^10.7.5",
+        "@react-three/fiber": "^9.3.0",
         "@scalar/api-reference-react": "^0.7.48",
         "@tanstack/react-query": "^5.80.10",
         "clsx": "^2.1.1",
