@@ -1,14 +1,14 @@
 import { Grid, View } from '@geti/ui';
 
-import { ActionProvider } from '../../features/robots/action-context';
 import { Cameras } from '../../features/robots/controller/cameras';
 import { JointControls } from '../../features/robots/controller/joint-controls';
 import { RobotViewer } from '../../features/robots/controller/robot-viewer';
+import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 
 export const Controller = () => {
     // NOTE: this route should be disabled if the robot hasn't been configured yet
     return (
-        <ActionProvider>
+        <RobotModelsProvider>
             <Grid
                 gap='size-200'
                 UNSAFE_style={{ padding: 'var(--spectrum-global-dimension-size-100)' }}
@@ -23,6 +23,6 @@ export const Controller = () => {
                 </View>
                 <JointControls />
             </Grid>
-        </ActionProvider>
+        </RobotModelsProvider>
     );
 };

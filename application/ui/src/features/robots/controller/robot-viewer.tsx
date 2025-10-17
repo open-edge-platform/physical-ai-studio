@@ -6,7 +6,7 @@ import { Canvas } from '@react-three/fiber';
 import { URDFRobot } from 'urdf-loader';
 
 import { useContainerSize } from '../../../components/zoom/use-container-size';
-import { useAction, useLoadModelMutation } from './../action-context';
+import { useLoadModelMutation, useRobotModels } from './../robot-models-context';
 
 // This is a wrapper component for the loaded URDF model
 const ActualURDFModel = ({ model }: { model: URDFRobot }) => {
@@ -23,7 +23,7 @@ const ActualURDFModel = ({ model }: { model: URDFRobot }) => {
 
 const useLoadSO101 = () => {
     const loadModelMutation = useLoadModelMutation();
-    const { models } = useAction();
+    const { models } = useRobotModels();
 
     const PATH = '/SO101/so101_new_calib.urdf';
 
@@ -51,7 +51,7 @@ export const RobotViewer = () => {
     useLoadSO101();
     const ref = useRef<HTMLDivElement>(null);
     const size = useContainerSize(ref);
-    const { models } = useAction();
+    const { models } = useRobotModels();
     const model = models.at(0);
 
     return (

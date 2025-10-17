@@ -1,20 +1,8 @@
 import { Button, ButtonGroup, Flex, Item, TabList, TabPanels, Tabs } from '@geti/ui';
 import { Outlet, useLocation, useParams } from 'react-router-dom';
 
-import { $api } from '../../api/client';
 import { paths } from '../../router';
 import { getPathSegment } from '../../utils';
-
-const useRobot = () => {
-    const params = useParams<{ project_id: string; robot_id: string }>() as {
-        project_id: string;
-        robot_id: string;
-    };
-
-    const robots = $api.useSuspenseQuery('get', '/api/hardware/robots');
-
-    return robots.data.find((robot) => robot.serial_id === params.robot_id);
-};
 
 export const Robot = () => {
     const { pathname } = useLocation();
@@ -22,9 +10,6 @@ export const Robot = () => {
         project_id: string;
         robot_id: string;
     };
-    const robot = useRobot();
-    const identifyRobotMutation = $api.useMutation('put', '/api/hardware/identify');
-    const moveJointMutation = $api.useMutation('put', '/api/hardware/robots/{robot_id}/joints/{joint}');
 
     return (
         <Tabs aria-label='Robot configuration navigation' selectedKey={getPathSegment(pathname, 5)} height='100%'>
@@ -63,57 +48,8 @@ export const Robot = () => {
                     }}
                 >
                     <ButtonGroup>
-                        <Button
-                            isHidden
-                            variant='secondary'
-                            onPress={() => {
-                                if (robot === undefined) {
-                                    return;
-                                }
-
-                                moveJointMutation.mutate({
-                                    params: {
-                                        path: {
-                                            joint: 'gripper',
-                                        },
-                                        query: {
-                                            joint_value: 2800,
-                                        },
-                                    },
-                                    body: {
-                                        device_name: robot.device_name,
-                                        port: robot.port,
-                                        serial_id: robot.serial_id,
-                                    },
-                                });
-                            }}
-                            isPending={moveJointMutation.isPending}
-                        >
-                            Test
-                        </Button>
-                        <Button
-                            variant='secondary'
-                            onPress={() => {
-                                if (robot === undefined) {
-                                    return;
-                                }
-
-                                identifyRobotMutation.mutate({
-                                    body: {
-                                        device_name: robot.device_name,
-                                        port: robot.port,
-                                        serial_id: robot.serial_id,
-                                    },
-                                });
-                            }}
-                            isPending={identifyRobotMutation.isPending}
-                        >
-                            Identify
-                        </Button>
+                        <Button variant='secondary'>Identify</Button>
                         <Button variant='secondary'>Connect</Button>
-                        <Button variant='secondary' isHidden>
-                            Edit
-                        </Button>
                     </ButtonGroup>
                 </div>
             </Flex>
