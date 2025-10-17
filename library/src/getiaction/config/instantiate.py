@@ -66,6 +66,7 @@ def instantiate_obj_from_dict(config: dict[str, "Any"], *, key: str | None = Non
 
     class_path = config["class_path"]
     init_args = config.get("init_args", {})
+    #print(init_args)
 
     # Recursively instantiate nested configs
     if isinstance(init_args, dict):
@@ -73,6 +74,11 @@ def instantiate_obj_from_dict(config: dict[str, "Any"], *, key: str | None = Non
         for arg_key, value in init_args.items():
             if isinstance(value, dict) and "class_path" in value:
                 instantiated_args[arg_key] = instantiate_obj(value)
+            elif isinstance(value, dict):
+                instantiated_args[arg_key] = {
+                    k: instantiate_obj(v) if isinstance(v, dict) and "class_path" in v else v
+                    for k, v in value.items()
+                }
             elif isinstance(value, list):
                 instantiated_args[arg_key] = [
                     instantiate_obj(item) if isinstance(item, dict) and "class_path" in item else item for item in value

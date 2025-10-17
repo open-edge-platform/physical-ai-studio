@@ -102,6 +102,9 @@ class ACT(nn.Module, FromConfig):
         """
         super().__init__()
 
+        print(input_features)
+        print(output_features)
+
         state_observation_features = [v for v in input_features.values() if v.ftype == FeatureType.STATE]
 
         if len(state_observation_features) != 1:
@@ -345,25 +348,25 @@ class _ACTConfig(ACTConfig):
     @property
     def robot_state_feature(self) -> Feature | None:
         for ft_name, ft in self.input_features.items():
-            if ft.ftype is FeatureType.STATE and ft_name == Observation.ComponentKeys.STATE:
+            if ft.ftype == FeatureType.STATE and ft_name == Observation.ComponentKeys.STATE:
                 return ft
         return None
 
     @property
     def image_features(self) -> dict[str, Feature]:
-        return {key: ft for key, ft in self.input_features.items() if ft.ftype is FeatureType.VISUAL}
+        return {key: ft for key, ft in self.input_features.items() if ft.ftype == FeatureType.VISUAL}
 
     @property
     def env_state_feature(self) -> Feature | None:
         for ft in self.input_features.values():
-            if ft.ftype is FeatureType.ENV:
+            if ft.ftype == FeatureType.ENV:
                 return ft
         return None
 
     @property
     def action_feature(self) -> Feature:
         for ft_name, ft in self.output_features.items():
-            if ft.ftype is FeatureType.ACTION and ft_name == Observation.ComponentKeys.ACTION:
+            if ft.ftype == FeatureType.ACTION and ft_name == Observation.ComponentKeys.ACTION:
                 return ft
         msg = "No action feature found in output features."
         raise ValueError(msg)

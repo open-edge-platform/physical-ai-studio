@@ -190,7 +190,7 @@ class FeatureNormalizeTransform(nn.Module):
 
             shape = ft.shape if ft.shape is not None else ()
 
-            if ft.ftype is FeatureType.VISUAL:
+            if ft.ftype == FeatureType.VISUAL:
                 # sanity checks
                 visual_feature_len = 3
                 if len(shape) != visual_feature_len:
@@ -216,6 +216,8 @@ class FeatureNormalizeTransform(nn.Module):
                     return arr.clone().to(dtype=torch.float32).view(shape)
                 if isinstance(arr, Integral):
                     return torch.tensor(arr, dtype=torch.float32).view(shape)
+                if isinstance(arr, list):
+                    return torch.torch.ones(shape, dtype=torch.float32) * torch.inf
                 type_ = type(arr)
                 msg = f"np.ndarray or torch.Tensor expected, but type is '{type_}' instead."
                 raise TypeError(msg)
