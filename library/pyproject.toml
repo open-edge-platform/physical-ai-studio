@@ -42,8 +42,9 @@ dependencies = [
     "gymnasium>=0.29.1",
     "gym-pusht>=0.1.5",
     "pymunk>=6.6.0,<7.0.0",
-    "jsonargparse[signatures]>=4.27.0", # This could be extra
-    "pydantic", # This could be extra
+    "jsonargparse[signatures]>=4.27.0", # This could be extra
+    "pydantic", # This could be extra
+    "imageio>=2.34.0", # For VideoLogger callback. Could be extra
 ]
 
 [project.optional-dependencies]
