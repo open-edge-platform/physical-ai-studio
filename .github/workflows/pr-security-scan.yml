@@ -1,0 +1,92 @@
+
+# Pull Request Security scan workflow for the Geti project
+
+# This workflow is triggered on pull requests to main and release branches.
+# It performs focused security scanning on changed files using multiple tools to identify
+# vulnerabilities, configuration issues, and code quality problems in the modified code.
+# The workflow provides fast feedback during the review process with stricter validation.
+
+# Key Features:
+# - Scans only changed files for faster execution
+# - Uses MEDIUM severity levels for balanced security coverage
+# - Fails on findings to ensure security standards before merging
+
+# Process Stages:
+# 1. Scan GitHub Actions workflows for security issues (Zizmor)
+# 2. Analyze Python code security in changed files (Bandit)
+# 3. Run semantic security analysis on modifications (Semgrep)
+
+# Security Tools:
+# - Zizmor: GitHub Actions workflow security scanner
+# - Bandit: Python security linter
+# - Semgrep: Static analysis tool for finding bugs and security issues
+
+name: "Security Scan on PR"
+
+on:
+  pull_request:
+    branches:
+      - main
+      - releases/**
+
+permissions: {} # No permissions by default
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.after }}
+  cancel-in-progress: true
+
+jobs:
+  zizmor-scan-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: true # needed for tj-actions/changed-files step in zizmor action, to gather changed files, once repository geti-prompt becomes public this argument should be set to false
+      - name: Run Zizmor scan
+        uses: open-edge-platform/geti-ci/actions/zizmor@60c5b06ac4b2c056f3567e84aa7fa06930cdc4e4
+        with:
+          scan-scope: "changed"
+          severity-level: "MEDIUM"
+          confidence-level: "MEDIUM"
+          fail-on-findings: true # reports only
+          output-format: "plain" # Use plain text output format to omit uploading code scanning results to Security tab
+
+  bandit-scan-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: true # needed for tj-actions/changed-files step in bandit action, to gather changed files, once repository geti-prompt becomes public this argument should be set to false
+      - name: Run Bandit scan
+        uses: open-edge-platform/geti-ci/actions/bandit@60c5b06ac4b2c056f3567e84aa7fa06930cdc4e4
+        with:
+          scan-scope: "changed"
+          severity-level: "MEDIUM"
+          confidence-level: "MEDIUM"
+          config_file: ".github/bandit_config.yml"
+          fail-on-findings: true # reports only
+          output-format: "txt" # Use plain text output format to omit uploading code scanning results to Security tab
+
+  semgrep-scan-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: true # needed for tj-actions/changed-files step in semgrep action, to gather changed files, once repository geti-prompt becomes public this argument should be set to false
+      - name: Run Semgrep scan
+        uses: open-edge-platform/geti-ci/actions/semgrep@60c5b06ac4b2c056f3567e84aa7fa06930cdc4e4
+        with:
+          scan-scope: "changed"
+          severity: "MEDIUM"
+          fail-on-findings: true # reports only
+          config: "p/ci p/default p/cwe-top-25 p/trailofbits p/owasp-top-ten"
+          output-format: "text" # Use plain text output format to omit uploading code scanning results to Security tab
