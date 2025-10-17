@@ -1,3 +1,5 @@
+/* eslint-disable react/no-unknown-property */
+
 import { Suspense, useEffect, useRef } from 'react';
 
 import { Grid, OrbitControls, PerspectiveCamera } from '@react-three/drei';
@@ -42,7 +44,7 @@ const useLoadSO101 = () => {
 
         ref.current = true;
         loadModelMutation.mutate(PATH);
-    }, [models]);
+    }, [models, loadModelMutation]);
 };
 
 export const RobotViewer = () => {
