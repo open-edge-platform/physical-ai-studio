@@ -5,7 +5,7 @@ import { Outlet, redirect } from 'react-router';
 import { createBrowserRouter } from 'react-router-dom';
 import { path } from 'static-path';
 
-import { ErrorMessage, ErrorPage } from './components/error-page/error-page';
+import { ErrorPage } from './components/error-page/error-page';
 import { Camera, CameraOverview } from './routes/cameras/camera';
 import { Layout as CamerasLayout } from './routes/cameras/layout';
 import { CameraWebcam } from './routes/cameras/webcam';
@@ -76,9 +76,7 @@ export const router = createBrowserRouter([
         children: [
             {
                 index: true,
-                loader: ({ context }) => {
-                    console.log(context);
-
+                loader: () => {
                     return redirect(paths.projects.index({}));
                 },
             },
@@ -149,17 +147,12 @@ export const router = createBrowserRouter([
                                     {
                                         index: true,
                                         loader: ({ params }) => {
-                                            // Redirect to sub page
-                                            const pathParams = {
-                                                projectId: params.project_id ?? '',
-                                                robotId: params.robot_id ?? '',
-
-                                                project_id: params.project_id ?? '',
-                                                robot_id: params.robot_id ?? '',
-                                            };
-
-                                            console.log('redirect');
-                                            return redirect(paths.project.robotConfiguration.controller(pathParams));
+                                            return redirect(
+                                                paths.project.robotConfiguration.controller({
+                                                    project_id: params.project_id ?? '',
+                                                    robot_id: params.robot_id ?? '',
+                                                })
+                                            );
                                         },
                                     },
                                     {
@@ -177,15 +170,6 @@ export const router = createBrowserRouter([
                                 ],
                             },
                         ],
-
-                        //                      path: paths.project.robotConfiguration.index.pattern,
-                        //                      element: <RobotConfigurationLayout />,
-                        //                      children: [
-                        //                          {
-                        //                              path: paths.project.robotConfiguration.pattern,
-                        //                              element: <RobotConfiguration />,
-                        //                          },
-                        //                      ],
                     },
                     {
                         path: paths.project.cameras.index.pattern,

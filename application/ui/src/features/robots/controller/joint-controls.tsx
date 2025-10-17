@@ -1,21 +1,7 @@
 import { useState } from 'react';
 
-import { ActionButton, Button, Flex, Grid, Heading, minmax, repeat, Slider, ToggleButtons, View } from '@geti/ui';
+import { ActionButton, Flex, Grid, Heading, minmax, repeat, Slider, View } from '@geti/ui';
 import { ChevronDownSmallLight } from '@geti/ui/icons';
-import { useParams } from 'react-router';
-
-import { $api } from '../../../api/client';
-
-const useRobot = () => {
-    const params = useParams<{ project_id: string; robot_id: string }>() as {
-        project_id: string;
-        robot_id: string;
-    };
-
-    const robots = $api.useSuspenseQuery('get', '/api/hardware/robots');
-
-    return robots.data.find((robot) => robot.serial_id === params.robot_id);
-};
 
 const Joint = ({
     name,
@@ -32,13 +18,6 @@ const Joint = ({
     decreaseKey: string;
     increaseKey: string;
 }) => {
-    const robot = useRobot();
-    const params = useParams<{ project_id: string; robot_id: string }>() as {
-        project_id: string;
-        robot_id: string;
-    };
-    const moveJointMutation = $api.useMutation('put', '/api/hardware/robots/{robot_id}/joints/{joint}');
-
     return (
         <li>
             <View
@@ -72,35 +51,6 @@ const Joint = ({
                             defaultValue={value}
                             minValue={minValue}
                             maxValue={maxValue}
-                            onChangeEnd={(x) => {
-                                console.log('noew', {
-                                    name,
-                                    value,
-                                    x,
-                                    minValue,
-                                    maxValue,
-                                });
-
-                                if (robot === undefined) {
-                                    return;
-                                }
-
-                                moveJointMutation.mutate({
-                                    params: {
-                                        path: {
-                                            joint: name,
-                                        },
-                                        query: {
-                                            joint_value: x,
-                                        },
-                                    },
-                                    body: {
-                                        device_name: robot.device_name,
-                                        port: robot.port,
-                                        serial_id: robot.serial_id,
-                                    },
-                                });
-                            }}
                             flexGrow={1}
                         />
                         <View
@@ -246,7 +196,7 @@ export const JointControls = () => {
         >
             <Flex direction='column' gap='size-50'>
                 <div>
-                    <ActionButton onPress={() => setCollapsed((collapsed) => !collapsed)}>
+                    <ActionButton onPress={() => setCollapsed((c) => !c)}>
                         <Heading level={4} marginX='size-100'>
                             <Flex alignItems='center' gap='size-100'>
                                 <ChevronDownSmallLight

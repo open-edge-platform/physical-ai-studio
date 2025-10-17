@@ -37,7 +37,7 @@ export const useLoadModelMutation = () => {
         mutationFn: async (path: string) => {
             const loader = new URDFLoader();
             return new Promise<URDFRobot>((resolve, reject) => {
-                loader.load(path, resolve, console.log, reject);
+                loader.load(path, resolve, console.info, reject);
             });
         },
         onSuccess: async (model) => {

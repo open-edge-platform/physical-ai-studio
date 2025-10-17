@@ -14,6 +14,7 @@ const Camera = ({ name }: { name: string }) => {
             areas={['camera']}
         >
             <img
+                alt='Robot camera'
                 src={RobotPicture}
                 style={{
                     gridArea: 'camera',

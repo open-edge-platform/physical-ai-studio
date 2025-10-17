@@ -2,7 +2,6 @@ import { Suspense, useEffect, useRef } from 'react';
 
 import { Grid, OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import { Canvas } from '@react-three/fiber';
-//import { useControls } from 'leva';
 import { URDFRobot } from 'urdf-loader';
 
 import { useContainerSize } from '../../../components/zoom/use-container-size';
