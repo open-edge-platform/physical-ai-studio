@@ -3,6 +3,7 @@
 
 """Action trainer."""
 
+from .callbacks import VideoLogger
 from .trainer import Trainer
 
-__all__ = ["Trainer"]
+__all__ = ["Trainer", "VideoLogger"]
