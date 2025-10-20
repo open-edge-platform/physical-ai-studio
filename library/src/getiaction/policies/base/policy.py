@@ -4,6 +4,7 @@
 """Base Lightning Module for Policies."""
 
 from abc import ABC, abstractmethod
+from typing import Any
 
 import lightning as L  # noqa: N812
 import torch
@@ -50,22 +51,35 @@ class Policy(L.LightningModule, ABC):
 
         return super().transfer_batch_to_device(batch, device, dataloader_idx)
 
-    def forward(self, batch: Observation, *args, **kwargs) -> torch.Tensor:  # noqa: ANN002, ANN003
+    @abstractmethod
+    def forward(self, batch: Observation) -> Any:  # noqa: ANN401
         """Perform forward pass of the policy.
+
+        The behavior of this method depends on the model's training mode:
+        - In training mode: Should return loss information for backpropagation
+          (typically a loss tensor or tuple of (loss, loss_dict))
+        - In evaluation mode: Should return action predictions for environment interaction
+          (typically via calling self.select_action(batch))
 
         The input batch is an Observation dataclass that can be converted to
         the format expected by the model using `.to_dict()` or `.to_lerobot_dict()`.
 
         Args:
             batch (Observation): Input batch of observations
-            *args: Additional positional arguments (unused)
-            **kwargs: Additional keyword arguments (unused)
 
         Returns:
-            torch.Tensor: Model predictions
+            The return type depends on the training mode and specific policy implementation:
+            - Training mode: Loss information (torch.Tensor or tuple[torch.Tensor, dict])
+            - Evaluation mode: Action predictions (torch.Tensor)
+
+        Example implementation:
+            ```python
+            def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict]:
+                if self.training:
+                    return self.model(batch)
+                return self.select_action(batch)
+            ```
         """
-        del args, kwargs
-        return self.model(batch.to_dict())
 
     @abstractmethod
     def select_action(self, batch: Observation) -> torch.Tensor:

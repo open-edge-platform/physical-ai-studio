@@ -314,27 +314,29 @@ class ACT(Policy, LeRobotFromConfig):
         self.add_module("_lerobot_policy", policy)
         self.model = self._lerobot_policy.model
 
-    def forward(
-        self,
-        batch: dict[str, torch.Tensor] | Observation,
-        *args: Any,  # noqa: ARG002, ANN401
-        **kwargs: Any,  # noqa: ARG002, ANN401
-    ) -> torch.Tensor:
-        """Forward pass for ACT policy.
+    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
+        """Forward pass for LeRobot ACT policy.
+
+        The return value depends on the model's training mode:
+        - In training mode: Returns (loss, loss_dict) from LeRobot's forward method
+        - In evaluation mode: Returns action predictions via select_action method
 
         Args:
-            batch: A batch of data containing observations and actions (dict or Observation).
-            *args: Additional positional arguments (unused).
-            **kwargs: Additional keyword arguments (unused).
+            batch (Observation): Input batch of observations
 
         Returns:
-            The action predictions from the policy.
+            torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]: In training mode,
+                returns tuple of (loss, loss_dict). In eval mode, returns selected actions tensor.
         """
-        # Convert to LeRobot format if needed (handles Observation or collated dict)
+        # Convert to LeRobot format for internal processing
         batch_dict = FormatConverter.to_lerobot_dict(batch)
 
-        actions, _ = self.lerobot_policy.model(batch_dict)
-        return actions
+        if self.training:
+            # During training, return loss information for backpropagation
+            return self.lerobot_policy.forward(batch_dict)
+
+        # During evaluation, return action predictions
+        return self.select_action(batch)
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
         """Configure optimizer using LeRobot's custom parameter groups.

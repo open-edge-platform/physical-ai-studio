@@ -341,21 +341,33 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         # Initialize policy now
         self._initialize_policy(features, features, self._provided_config, stats)
 
-    def forward(self, batch: dict[str, torch.Tensor] | Observation) -> torch.Tensor:
+    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """Forward pass through the LeRobot policy.
 
+        The return value depends on the model's training mode:
+        - In training mode: Returns loss information from LeRobot's forward method
+        - In evaluation mode: Returns action predictions via select_action method
+
         Args:
-            batch: Input batch containing observations and actions (dict or Observation).
-            *args: Additional positional arguments (unused).
-            **kwargs: Additional keyword arguments (unused).
+            batch (Observation): Input batch of observations
 
         Returns:
-            Policy output (format depends on policy type).
+            torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]: In training mode,
+                returns loss information. In eval mode, returns selected actions tensor.
         """
         # Convert to LeRobot format if needed (handles Observation or collated dict)
         batch_dict = FormatConverter.to_lerobot_dict(batch)
 
-        return self.lerobot_policy.forward(batch_dict)
+        if self.training:
+            # During training, return loss information for backpropagation
+            result = self.lerobot_policy.forward(batch_dict)
+            if isinstance(result, tuple):
+                loss, loss_dict = result
+                return loss, loss_dict or {}
+            return result
+
+        # During evaluation, return action predictions
+        return self.select_action(batch)
 
     def _process_loss_output(
         self,

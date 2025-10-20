@@ -80,6 +80,27 @@ class Dummy(Policy):
         # Remove batch dim if present (rollout expects unbatched)
         return action.squeeze(0) if action.ndim > 1 and action.shape[0] == 1 else action
 
+    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
+        """Perform forward pass of the Dummy policy.
+
+        The return value depends on the model's training mode:
+        - In training mode: Returns (loss, loss_dict) from the model's forward method
+        - In evaluation mode: Returns action predictions via select_action method
+
+        Args:
+            batch (Observation): Input batch of observations
+
+        Returns:
+            torch.Tensor | tuple[torch.Tensor, dict[str, float]]: In training mode, returns
+                tuple of (loss, loss_dict). In eval mode, returns selected actions tensor.
+        """
+        if self.training:
+            # During training, return loss information for backpropagation
+            return self.model(batch.to_dict())
+
+        # During evaluation, return action predictions
+        return self.select_action(batch)
+
     def training_step(self, batch: Observation, batch_idx: int) -> dict[str, torch.Tensor]:
         """Training step for the policy.
 

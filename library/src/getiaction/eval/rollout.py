@@ -192,7 +192,7 @@ def rollout(
         # Get action from policy (receives Observation dataclass)
         with torch.inference_mode():
             policy.eval()
-            action = policy.select_action(observation)
+            action = policy(observation)
 
         # Convert action to numpy for environment
         action_numpy = _prepare_action_for_env(action)
