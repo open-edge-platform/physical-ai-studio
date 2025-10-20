@@ -360,7 +360,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
 
         if self.training:
             # During training, return loss information for backpropagation
-            result = self.lerobot_policy.forward(batch_dict)
+            result = self.lerobot_policy(batch_dict)
             if isinstance(result, tuple):
                 loss, loss_dict = result
                 return loss, loss_dict or {}
@@ -473,7 +473,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         # Convert to LeRobot format if needed (handles Observation or collated dict)
         batch_dict = FormatConverter.to_lerobot_dict(batch)
 
-        output = self.lerobot_policy.forward(batch_dict)
+        output = self.lerobot_policy(batch_dict)
 
         # Process and log the loss output
         return self._process_loss_output(output, log_prefix="train")

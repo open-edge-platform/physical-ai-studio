@@ -342,7 +342,7 @@ class Diffusion(Policy, LeRobotFromConfig):
 
         if self.training:
             # During training, return loss information for backpropagation
-            loss, loss_dict = self.lerobot_policy.forward(batch_dict)
+            loss, loss_dict = self.lerobot_policy(batch_dict)
             return loss, loss_dict or {}
 
         # During evaluation, return action predictions
@@ -371,7 +371,7 @@ class Diffusion(Policy, LeRobotFromConfig):
         # Convert to LeRobot format if needed (handles Observation or collated dict)
         batch_dict = FormatConverter.to_lerobot_dict(batch)
 
-        loss, _ = self.lerobot_policy.forward(batch_dict)
+        loss, _ = self.lerobot_policy(batch_dict)
         self.log("train/loss", loss, prog_bar=True)
         return loss
 

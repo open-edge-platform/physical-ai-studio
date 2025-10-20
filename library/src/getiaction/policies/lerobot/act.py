@@ -333,7 +333,7 @@ class ACT(Policy, LeRobotFromConfig):
 
         if self.training:
             # During training, return loss information for backpropagation
-            return self.lerobot_policy.forward(batch_dict)
+            return self.lerobot_policy(batch_dict)
 
         # During evaluation, return action predictions
         return self.select_action(batch)
@@ -361,7 +361,7 @@ class ACT(Policy, LeRobotFromConfig):
         # Convert to LeRobot format if needed (handles Observation or collated dict)
         batch_dict = FormatConverter.to_lerobot_dict(batch)
 
-        total_loss, loss_dict = self.lerobot_policy.forward(batch_dict)
+        total_loss, loss_dict = self.lerobot_policy(batch_dict)
         for key, value in loss_dict.items():
             self.log(f"train/{key}", value, prog_bar=False)
         self.log("train/loss", total_loss, prog_bar=True)

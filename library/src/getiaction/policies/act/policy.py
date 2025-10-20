@@ -127,7 +127,7 @@ class ACT(Policy):
             Dict[str, torch.Tensor]: Dictionary containing the loss.
         """
         del batch_idx
-        loss, loss_dict = self.model.forward(batch.to_dict())  # noqa: RUF059
+        loss, loss_dict = self.model(batch.to_dict())  # noqa: RUF059
         self.log("train/loss_step", loss, on_step=True, on_epoch=False, prog_bar=True, logger=True)
         self.log(
             "train/loss",

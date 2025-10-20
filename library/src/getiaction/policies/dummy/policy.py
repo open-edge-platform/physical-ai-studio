@@ -111,8 +111,8 @@ class Dummy(Policy):
         Returns:
             Dict[str, torch.Tensor]: Dictionary containing the loss.
         """
-        del batch_idx  # Unused variable
-        loss, _ = self.model.forward(batch.to_dict())
+        del batch_idx
+        loss, _ = self.model(batch.to_dict())
         self.log("train/loss_step", loss, on_step=True, on_epoch=False, prog_bar=True, logger=True)
         self.log(
             "train/loss",
