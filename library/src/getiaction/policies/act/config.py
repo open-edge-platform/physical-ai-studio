@@ -107,33 +107,3 @@ class ACTConfig:
     # Training and loss computation.
     dropout: float = 0.1
     kl_weight: float = 10.0
-
-
-def serialize_model_config(config: Any) -> dict:
-
-    config_dict = {
-        "class_path": f"{config.__class__.__module__}.{config.__class__.__qualname__}",
-        "init_args": {field.name: getattr(config, field.name) for field in dataclasses.fields(config)}
-    }
-
-    for k, v in config_dict["init_args"].items():
-        if is_dataclass(v):
-            config_dict["init_args"][k] = serialize_model_config(v)
-        elif isinstance(v, dict):
-            for dk, dv in v.items():
-                if is_dataclass(dv):
-                    v[dk] = serialize_model_config(dv)
-        elif isinstance(v, StrEnum):
-            config_dict["init_args"][k] = str(v)
-        elif isinstance(v, np.ndarray):
-            config_dict["init_args"][k] = v.tolist()
-            #config_dict["init_args"][k] = {
-            #    "class_path": "numpy.ndarray",
-            #    "init_args": {
-            #        "array": v.tolist()
-            #    }
-            #}
-        elif isinstance(v, tuple):
-            config_dict["init_args"][k] = list(v)
-
-    return config_dict

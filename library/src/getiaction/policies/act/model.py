@@ -6,6 +6,7 @@
 
 """ACT torch model."""
 
+import dataclasses
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -23,12 +24,13 @@ from torchvision.ops.misc import FrozenBatchNorm2d
 
 from getiaction.config.mixin import FromConfig
 from getiaction.data import Feature, FeatureType, Observation
+from getiaction.export.mixin_torch import SnapshotIO
 from getiaction.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
 
 from .config import ACTConfig
 
 
-class ACT(nn.Module, FromConfig):
+class ACT(nn.Module, FromConfig, SnapshotIO):
     """Action Chunking Transformer (ACT) model.
 
     Supports training and inference modes.
@@ -102,9 +104,6 @@ class ACT(nn.Module, FromConfig):
         """
         super().__init__()
 
-        print(input_features)
-        print(output_features)
-
         state_observation_features = [v for v in input_features.values() if v.ftype == FeatureType.STATE]
 
         if len(state_observation_features) != 1:
@@ -173,6 +172,19 @@ class ACT(nn.Module, FromConfig):
             inverse=True,
         )
         self._model = _ACT(self._config)
+
+    @property
+    def config(self) -> ACTConfig:
+        """Get the ACT model configuration.
+
+        Returns:
+            ACTConfig: The configuration of the ACT model.
+        """
+        config_dict = {field.name: getattr(self._config, field.name) for field in dataclasses.fields(self._config)}
+        target_fields = dataclasses.fields(ACTConfig)
+        filtered_config_dict = {k: v for k, v in config_dict.items() if k in {f.name for f in target_fields}}
+
+        return ACTConfig(**filtered_config_dict)
 
     def forward(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]] | torch.Tensor:
         """Forward pass through the ACT model.
