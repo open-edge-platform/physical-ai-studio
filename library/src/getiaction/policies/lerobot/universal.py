@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 import torch
 from lightning_utilities import module_available
 
+from getiaction.data import Observation
 from getiaction.data.lerobot import FormatConverter
 from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 from getiaction.policies.base import Policy
@@ -27,7 +28,7 @@ if TYPE_CHECKING:
     from lerobot.configs.types import PolicyFeature
     from lerobot.policies.pretrained import PreTrainedPolicy
 
-    from getiaction.data import Observation
+    from getiaction.gyms import Gym
 
 if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.utils import dataset_to_policy_features
@@ -203,8 +204,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         self._config_kwargs = merged_config_kwargs
 
         # Will be initialized in setup() if not provided
-        # Using private attribute with property for type-safe access
-        self._lerobot_policy: PreTrainedPolicy | None = None
+        self._lerobot_policy: PreTrainedPolicy
         self._config: PreTrainedConfig | None = None
 
         # If features are provided, initialize immediately (backward compatibility)
@@ -226,7 +226,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         Raises:
             RuntimeError: If the policy hasn't been initialized yet.
         """
-        if self._lerobot_policy is None:
+        if not hasattr(self, "_lerobot_policy") or self._lerobot_policy is None:
             msg = "Policy not initialized. Call setup() or provide input_features during __init__."
             raise RuntimeError(msg)
         return self._lerobot_policy
@@ -273,7 +273,8 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         policy_cls = get_policy_class(self.policy_name)
 
         # Instantiate the LeRobot policy
-        self._lerobot_policy = policy_cls(config, dataset_stats=dataset_stats)
+        policy = policy_cls(config, dataset_stats=dataset_stats)
+        self.add_module("_lerobot_policy", policy)
 
         # Expose the underlying model for Lightning compatibility (if available)
         # Some policies (like Diffusion) don't have a .model attribute
@@ -282,7 +283,6 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
 
         # Expose framework info
         self._framework = "lerobot"
-        self._framework_policy = self._lerobot_policy
         self._config = config
 
     def setup(self, stage: str) -> None:
@@ -300,7 +300,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         """
         del stage  # Unused argument
 
-        if self._lerobot_policy is not None:
+        if hasattr(self, "_lerobot_policy") and self._lerobot_policy is not None:
             # Already initialized
             return
 
@@ -341,104 +341,98 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         # Initialize policy now
         self._initialize_policy(features, features, self._provided_config, stats)
 
-    def forward(self, batch: Observation) -> torch.Tensor:
+    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """Forward pass through the LeRobot policy.
 
+        The return value depends on the model's training mode:
+        - In training mode: Returns loss information from LeRobot's forward method
+        - In evaluation mode: Returns action predictions via select_action method
+
         Args:
-            batch: Input batch containing observations and actions.
+            batch (Observation): Input batch of observations
 
         Returns:
-            Policy output (format depends on policy type).
+            torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]: In training mode,
+                returns loss information. In eval mode, returns selected actions tensor.
         """
         # Convert to LeRobot format if needed (handles Observation or collated dict)
         batch_dict = FormatConverter.to_lerobot_dict(batch)
 
-        return self.lerobot_policy.forward(batch_dict)
+        if self.training:
+            # During training, return loss information for backpropagation
+            result = self.lerobot_policy(batch_dict)
+            if isinstance(result, tuple):
+                loss, loss_dict = result
+                return loss, loss_dict or {}
+            return result
 
-    def training_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
-        """Training step for Lightning.
+        # During evaluation, return action predictions
+        return self.select_action(batch)
+
+    def _process_loss_output(
+        self,
+        output: torch.Tensor | tuple[torch.Tensor, dict | None] | dict,
+        log_prefix: str,
+    ) -> torch.Tensor:
+        """Process and log loss output from LeRobot policy.
+
+        Handles the different output formats from LeRobot policies and logs losses appropriately.
 
         Args:
-            batch: Training batch.
-            batch_idx: Batch index.
+            output: Policy output, can be one of:
+                1. Tuple[Tensor, dict]: Standard format used by most policies (ACT, VQ-BeT, TDMPC, etc.)
+                   Returns (loss, loss_dict) where loss_dict contains individual loss components.
+                   Example: ACT returns (loss, {"l1_loss": ..., "kld_loss": ...})
+
+                2. Tuple[Tensor, None]: Used by policies without detailed loss breakdown (Diffusion).
+                   Returns (loss, None) where None indicates no additional loss components.
+
+                3. dict: Some policies may return only a dictionary of losses.
+                   The dictionary contains loss components that need to be summed.
+
+                4. Tensor: Direct loss tensor (legacy/simple policies).
+                   Returns just the scalar loss tensor.
+
+            log_prefix: Prefix for logging (e.g., "train" or "val")
 
         Returns:
-            Scalar loss value.
+            Total loss tensor
+
+        Raises:
+            ValueError: If loss dictionary is empty
+
+        Note:
+            See module docstring for detailed documentation of each output format.
         """
-        del batch_idx  # Unused argument
-
-        # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch_dict = FormatConverter.to_lerobot_dict(batch)
-
-        output = self.lerobot_policy.forward(batch_dict)
-
-        # Handle different output formats from LeRobot policies
         if isinstance(output, tuple) and len(output) == 2:  # noqa: PLR2004
-            _, loss_dict = output
+            loss, loss_dict = output
+            if loss_dict is None:
+                # Case 2: Diffusion-style output with no loss breakdown
+                self.log(f"{log_prefix}/loss", loss, prog_bar=True)
+                return loss
+            # Case 1: Standard output with loss dict - continue processing below
         elif isinstance(output, dict):
+            # Case 3: Dictionary of losses
             loss_dict = output
         else:
-            # Some policies might return just a loss tensor
+            # Case 4: Direct loss tensor
             return output
 
-        # Sum all loss components
-        loss = sum(loss_dict.values()) if isinstance(loss_dict, dict) else loss_dict
-
-        # Log individual loss components
+        # Sum all loss components from loss_dict
         if isinstance(loss_dict, dict):
+            if not loss_dict:
+                msg = "Loss dictionary is empty - policy returned no loss components"
+                raise ValueError(msg)
+            # Use torch.stack + sum to maintain tensor type (avoids int return from sum())
+            loss = torch.stack(list(loss_dict.values())).sum()
+            # Log individual loss components
             for key, val in loss_dict.items():
-                self.log(f"train/{key}", val, prog_bar=True)
-
-        self.log("train/loss", loss, prog_bar=True)
-        return loss
-
-    def validation_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
-        """Validation step for Lightning.
-
-        Args:
-            batch: Validation batch.
-            batch_idx: Batch index.
-
-        Returns:
-            Scalar loss value.
-        """
-        del batch_idx  # Unused argument
-
-        # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch_dict = FormatConverter.to_lerobot_dict(batch)
-
-        output = self.lerobot_policy.forward(batch_dict)
-
-        # Handle different output formats
-        if isinstance(output, tuple) and len(output) == 2:  # noqa: PLR2004
-            _, loss_dict = output
-        elif isinstance(output, dict):
-            loss_dict = output
+                self.log(f"{log_prefix}/{key}", val, prog_bar=True)
         else:
-            return output
+            loss = loss_dict
 
-        # Sum all loss components
-        loss = sum(loss_dict.values()) if isinstance(loss_dict, dict) else loss_dict
-
-        # Log individual loss components
-        if isinstance(loss_dict, dict):
-            for key, val in loss_dict.items():
-                self.log(f"val/{key}", val, prog_bar=True)
-
-        self.log("val/loss", loss, prog_bar=True)
+        self.log(f"{log_prefix}/loss", loss, prog_bar=True)
         return loss
-
-    def select_action(self, batch: Observation) -> torch.Tensor:
-        """Select action (inference mode) through LeRobot.
-
-        Args:
-            batch: Input batch with observations.
-
-        Returns:
-            Predicted actions.
-        """
-        batch_dict = FormatConverter.to_lerobot_dict(batch)
-        return self.lerobot_policy.select_action(batch_dict)
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
         """Configure optimizer for Lightning.
@@ -458,6 +452,90 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             return torch.optim.Adam(param_groups, lr=self.learning_rate)
         # Default: optimize all parameters
         return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+
+    def training_step(self, batch: dict[str, torch.Tensor] | Observation, batch_idx: int) -> torch.Tensor:
+        """Training step for Lightning.
+
+        Args:
+            batch: Batch of data (Observation or dict)
+            batch_idx: Index of the batch
+
+        Returns:
+            Loss tensor
+
+        """
+        del batch_idx  # Unused argument from Lightning API
+
+        # Move batch to device if it's an Observation
+        if isinstance(batch, Observation):
+            batch = batch.to(self.device)
+
+        # Convert to LeRobot format if needed (handles Observation or collated dict)
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
+
+        output = self.lerobot_policy(batch_dict)
+
+        # Process and log the loss output
+        return self._process_loss_output(output, log_prefix="train")
+
+    def validation_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
+        """Validation step for Lightning.
+
+        Runs gym-based validation by executing rollouts in the environment.
+        The DataModule's val_dataloader returns Gym environment instances directly.
+
+        Args:
+            batch: Gym environment to evaluate.
+            batch_idx: Batch index.
+
+        Returns:
+            Metrics dict from gym rollout evaluation.
+        """
+        return self.evaluate_gym(batch, batch_idx, stage="val")
+
+    def test_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
+        """Test step for Lightning.
+
+        Runs gym-based testing by executing rollouts in the environment.
+        The DataModule's test_dataloader returns Gym environment instances directly.
+
+        Args:
+            batch: Gym environment to evaluate.
+            batch_idx: Batch index.
+
+        Returns:
+            Metrics dict from gym rollout evaluation.
+        """
+        return self.evaluate_gym(batch, batch_idx, stage="test")
+
+    def select_action(self, batch: Observation) -> torch.Tensor:
+        """Select action (inference mode) through LeRobot.
+
+        Converts the Observation to LeRobot dict format and passes it to the
+        underlying LeRobot policy for action prediction.
+
+        Args:
+            batch: Input batch of observations.
+
+        Returns:
+            Predicted actions.
+        """
+        # Move batch to device (observations from gym are on CPU)
+        batch = batch.to(self.device)
+
+        # Convert to LeRobot format
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
+
+        return self.lerobot_policy.select_action(batch_dict)
+
+    def reset(self) -> None:
+        """Reset the policy state for a new episode.
+
+        Forwards the reset call to the underlying LeRobot policy,
+        which clears action queues, observation histories, and any
+        other stateful components.
+        """
+        self.lerobot_policy.reset()
 
     @property
     def config(self) -> PreTrainedConfig:

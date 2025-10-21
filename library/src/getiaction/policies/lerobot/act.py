@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from torch import nn
 
     from getiaction.data import Observation
+    from getiaction.gyms import Gym
 
 if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -237,9 +238,8 @@ class ACT(Policy, LeRobotFromConfig):
         self._framework = "lerobot"
 
         # Policy will be initialized in setup()
-        self._lerobot_policy: _LeRobotACTPolicy | None = None
+        self._lerobot_policy: _LeRobotACTPolicy
         self.model: nn.Module | None = None
-        self._framework_policy: _LeRobotACTPolicy | None = None
 
         self.save_hyperparameters()
 
@@ -253,7 +253,7 @@ class ACT(Policy, LeRobotFromConfig):
         Raises:
             RuntimeError: If the policy hasn't been initialized yet.
         """
-        if self._lerobot_policy is None:
+        if not hasattr(self, "_lerobot_policy") or self._lerobot_policy is None:
             msg = "Policy not initialized. Call setup() first."
             raise RuntimeError(msg)
         return self._lerobot_policy
@@ -273,7 +273,7 @@ class ACT(Policy, LeRobotFromConfig):
         """
         del stage  # Unused argument
 
-        if self._lerobot_policy is not None:
+        if hasattr(self, "_lerobot_policy") and self._lerobot_policy is not None:
             return  # Already initialized
 
         datamodule = self.trainer.datamodule  # type: ignore[attr-defined]
@@ -310,24 +310,41 @@ class ACT(Policy, LeRobotFromConfig):
             )
 
         # Initialize the policy
-        self._lerobot_policy = _LeRobotACTPolicy(lerobot_config, dataset_stats=stats)  # type: ignore[arg-type,misc]
-        self.model = self._lerobot_policy.model  # type: ignore[assignment]
-        self._framework_policy = self._lerobot_policy
+        policy = _LeRobotACTPolicy(lerobot_config, dataset_stats=stats)  # type: ignore[arg-type,misc]
+        self.add_module("_lerobot_policy", policy)
+        self.model = self._lerobot_policy.model
 
-    def forward(self, batch: Observation) -> torch.Tensor:
-        """Forward pass for ACT policy.
+    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
+        """Forward pass for LeRobot ACT policy.
+
+        The return value depends on the model's training mode:
+        - In training mode: Returns (loss, loss_dict) from LeRobot's forward method
+        - In evaluation mode: Returns action predictions via select_action method
 
         Args:
-            batch: A batch of data containing observations and actions.
+            batch (Observation): Input batch of observations
 
         Returns:
-            The action predictions from the policy.
+            torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]: In training mode,
+                returns tuple of (loss, loss_dict). In eval mode, returns selected actions tensor.
         """
-        # Convert to LeRobot format if needed (handles Observation or collated dict)
+        # Convert to LeRobot format for internal processing
         batch_dict = FormatConverter.to_lerobot_dict(batch)
 
-        actions, _ = self.lerobot_policy.model(batch_dict)
-        return actions
+        if self.training:
+            # During training, return loss information for backpropagation
+            return self.lerobot_policy(batch_dict)
+
+        # During evaluation, return action predictions
+        return self.select_action(batch)
+
+    def configure_optimizers(self) -> torch.optim.Optimizer:
+        """Configure optimizer using LeRobot's custom parameter groups.
+
+        Returns:
+            torch.optim.Optimizer: The configured optimizer instance.
+        """
+        return torch.optim.AdamW(self.lerobot_policy.get_optim_params(), lr=self.learning_rate)
 
     def training_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
         """Training step uses LeRobot's loss computation.
@@ -344,58 +361,61 @@ class ACT(Policy, LeRobotFromConfig):
         # Convert to LeRobot format if needed (handles Observation or collated dict)
         batch_dict = FormatConverter.to_lerobot_dict(batch)
 
-        total_loss, loss_dict = self.lerobot_policy.forward(batch_dict)
+        total_loss, loss_dict = self.lerobot_policy(batch_dict)
         for key, value in loss_dict.items():
             self.log(f"train/{key}", value, prog_bar=False)
         self.log("train/loss", total_loss, prog_bar=True)
         return total_loss
 
-    def validation_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
+    def validation_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
         """Validation step of the policy.
 
+        Runs gym-based validation by executing rollouts in the environment.
+        The DataModule's val_dataloader returns Gym environment instances directly.
+
         Args:
-            batch: A batch of data containing observations and actions.
+            batch: Gym environment to evaluate.
             batch_idx: Index of the batch.
 
         Returns:
-            The total loss for the batch.
+            Metrics dict from gym rollout evaluation.
         """
-        del batch_idx  # Unused argument
+        return self.evaluate_gym(batch, batch_idx, stage="val")
 
-        # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch_dict = FormatConverter.to_lerobot_dict(batch)
+    def test_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
+        """Test step of the policy.
 
-        # Workaround for LeRobot bug: VAE fails in eval mode
-        was_training = self.training
-        if self.lerobot_policy.config.use_vae and not was_training:
-            self.train()
-        total_loss, loss_dict = self.lerobot_policy.forward(batch_dict)
-        if not was_training:
-            self.eval()
-        for key, value in loss_dict.items():
-            self.log(f"val/{key}", value, prog_bar=False)
-        self.log("val/loss", total_loss, prog_bar=True)
-        return total_loss
+        Runs gym-based testing by executing rollouts in the environment.
+        The DataModule's test_dataloader returns Gym environment instances directly.
+
+        Args:
+            batch: Gym environment to evaluate.
+            batch_idx: Index of the batch.
+
+        Returns:
+            Metrics dict from gym rollout evaluation.
+        """
+        return self.evaluate_gym(batch, batch_idx, stage="test")
 
     def select_action(self, batch: Observation) -> torch.Tensor:
         """Select action (inference mode) through LeRobot.
 
+        Converts the Observation to LeRobot dict format and passes it to the
+        underlying LeRobot policy for action prediction.
+
         Args:
-            batch: A batch of data containing observations.
+            batch: Input batch of observations.
 
         Returns:
             The selected action tensor.
         """
+        # Move batch to device (observations from gym are on CPU)
+        batch = batch.to(self.device)
+
+        # Convert to LeRobot format
         batch_dict = FormatConverter.to_lerobot_dict(batch)
+
         return self.lerobot_policy.select_action(batch_dict)
-
-    def configure_optimizers(self) -> torch.optim.Optimizer:
-        """Configure optimizer using LeRobot's custom parameter groups.
-
-        Returns:
-            torch.optim.Optimizer: The configured optimizer instance.
-        """
-        return torch.optim.AdamW(self.lerobot_policy.get_optim_params(), lr=self.learning_rate)
 
     def reset(self) -> None:
         """Reset the policy state."""

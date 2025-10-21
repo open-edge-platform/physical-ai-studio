@@ -5,7 +5,7 @@ import { Outlet, redirect } from 'react-router';
 import { createBrowserRouter } from 'react-router-dom';
 import { path } from 'static-path';
 
-import { ErrorMessage, ErrorPage } from './components/error-page/error-page';
+import { ErrorPage } from './components/error-page/error-page';
 import { Camera, CameraOverview } from './routes/cameras/camera';
 import { Layout as CamerasLayout } from './routes/cameras/layout';
 import { CameraWebcam } from './routes/cameras/webcam';
@@ -15,7 +15,11 @@ import { Index as Models } from './routes/models/index';
 import { OpenApi } from './routes/openapi';
 import { Index as Projects } from './routes/projects/index';
 import { ProjectLayout } from './routes/projects/project.layout';
+import { Calibration } from './routes/robots/calibration';
+import { Controller } from './routes/robots/controller';
 import { Layout as RobotConfigurationLayout } from './routes/robots/layout';
+import { Robot } from './routes/robots/robot';
+import { SetupMotors } from './routes/robots/setup-motors';
 
 const root = path('/');
 const projects = root.path('/projects');
@@ -50,6 +54,9 @@ export const paths = {
             index: robots,
             new: robots.path('new'),
             show: robot,
+            controller: robot.path('/controller'),
+            calibration: robot.path('/calibration'),
+            setupMotors: robot.path('/setup-motors'),
         },
         models: {
             index: models,
@@ -127,15 +134,40 @@ export const router = createBrowserRouter([
                         children: [
                             {
                                 index: true,
-                                element: <ErrorMessage message={'Coming soon...'} />,
+                                element: <div>Illustration to persuade user to select robot</div>,
                             },
                             {
                                 path: paths.project.robotConfiguration.new.pattern,
-                                element: <ErrorMessage message={'Coming soon...'} />,
+                                element: <div>New</div>,
                             },
                             {
                                 path: paths.project.robotConfiguration.show.pattern,
-                                element: <ErrorMessage message={'Coming soon...'} />,
+                                element: <Robot />,
+                                children: [
+                                    {
+                                        index: true,
+                                        loader: ({ params }) => {
+                                            return redirect(
+                                                paths.project.robotConfiguration.controller({
+                                                    project_id: params.project_id ?? '',
+                                                    robot_id: params.robot_id ?? '',
+                                                })
+                                            );
+                                        },
+                                    },
+                                    {
+                                        path: paths.project.robotConfiguration.controller.pattern,
+                                        element: <Controller />,
+                                    },
+                                    {
+                                        path: paths.project.robotConfiguration.calibration.pattern,
+                                        element: <Calibration />,
+                                    },
+                                    {
+                                        path: paths.project.robotConfiguration.setupMotors.pattern,
+                                        element: <SetupMotors />,
+                                    },
+                                ],
                             },
                         ],
                     },

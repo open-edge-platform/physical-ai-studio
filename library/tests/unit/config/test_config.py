@@ -4,6 +4,7 @@
 """Unit tests for config module functionality."""
 
 import dataclasses
+from dataclasses import dataclass, field
 import os
 import tempfile
 from pathlib import Path
@@ -502,19 +503,8 @@ sub_model:
         base_config = {"hidden_size": 128, "num_layers": 3, "activation": "gelu"}
 
         # Convert to different formats
-        class ConfigModel(BaseModel):
-            hidden_size: int
-            num_layers: int
-            activation: str = "relu"
-
-        @dataclasses.dataclass
-        class ConfigDataclass:
-            hidden_size: int
-            num_layers: int
-            activation: str = "relu"
-
-        pydantic_config = ConfigModel(**base_config)
-        dataclass_config = ConfigDataclass(**base_config)
+        pydantic_config = ConfigTestModelConfig(**base_config)
+        dataclass_config = ConfigTestModelDataclass(**base_config)
 
         # Test all formats produce the same result
         model1 = ConfigTestModel.from_dict(base_config)
@@ -523,3 +513,118 @@ sub_model:
 
         assert model1.hidden_size == model2.hidden_size == model3.hidden_size
         assert model1.activation == model2.activation == model3.activation
+
+
+class TestRecursiveParameterBehavior:
+    """Test recursive parameter behavior for nested structures."""
+
+    def test_dataclass_recursive_behavior(self):
+        """Test that from_dataclass handles recursive parameter correctly."""
+
+        @dataclass
+        class NestedDataclass:
+            size: int = 64
+            layers: int = 3
+
+        @dataclass
+        class ParentDataclass:
+            hidden_size: int = 128
+            nested: NestedDataclass = field(default_factory=NestedDataclass)
+            activation: str = "gelu"
+
+        class ModelWithNestedSupport(FromConfig):
+            def __init__(self, hidden_size: int, nested=None, activation: str = "relu"):
+                self.hidden_size = hidden_size
+                self.nested = nested
+                self.activation = activation
+
+        parent_config = ParentDataclass(hidden_size=256)
+
+        # Test recursive=False (default): preserves nested dataclass
+        model_non_recursive = ModelWithNestedSupport.from_dataclass(parent_config, recursive=False)
+        assert model_non_recursive.hidden_size == 256
+        assert isinstance(model_non_recursive.nested, NestedDataclass)
+        assert model_non_recursive.nested.size == 64
+        assert model_non_recursive.activation == "gelu"
+
+        # Test recursive=True: converts nested dataclass to dict
+        model_recursive = ModelWithNestedSupport.from_dataclass(parent_config, recursive=True)
+        assert model_recursive.hidden_size == 256
+        assert isinstance(model_recursive.nested, dict)
+        assert model_recursive.nested == {"size": 64, "layers": 3}
+        assert model_recursive.activation == "gelu"
+
+    def test_pydantic_recursive_behavior(self):
+        """Test that from_pydantic handles recursive parameter correctly."""
+
+        class NestedPydantic(BaseModel):
+            size: int = 64
+            layers: int = 3
+
+        class ParentPydantic(BaseModel):
+            hidden_size: int = 128
+            nested: NestedPydantic = NestedPydantic()
+            activation: str = "gelu"
+
+        class ModelWithNestedSupport(FromConfig):
+            def __init__(self, hidden_size: int, nested=None, activation: str = "relu"):
+                self.hidden_size = hidden_size
+                self.nested = nested
+                self.activation = activation
+
+        parent_config = ParentPydantic(hidden_size=512)
+
+        # Test recursive=False (default): preserves nested Pydantic model
+        model_non_recursive = ModelWithNestedSupport.from_pydantic(parent_config, recursive=False)
+        assert model_non_recursive.hidden_size == 512
+        assert isinstance(model_non_recursive.nested, NestedPydantic)
+        assert model_non_recursive.nested.size == 64
+        assert model_non_recursive.activation == "gelu"
+
+        # Test recursive=True: converts nested Pydantic model to dict
+        model_recursive = ModelWithNestedSupport.from_pydantic(parent_config, recursive=True)
+        assert model_recursive.hidden_size == 512
+        assert isinstance(model_recursive.nested, dict)
+        assert model_recursive.nested == {"size": 64, "layers": 3}
+        assert model_recursive.activation == "gelu"
+
+    def test_from_config_recursive_routing(self):
+        """Test that from_config properly routes recursive parameter."""
+
+        @dataclass
+        class NestedDataclass:
+            size: int = 64
+
+        @dataclass
+        class ParentDataclass:
+            hidden_size: int = 256
+            nested: NestedDataclass = field(default_factory=NestedDataclass)
+
+        class NestedPydantic(BaseModel):
+            size: int = 64
+
+        class ParentPydantic(BaseModel):
+            hidden_size: int = 512
+            nested: NestedPydantic = NestedPydantic()
+
+        class ModelWithNestedSupport(FromConfig):
+            def __init__(self, hidden_size: int, nested=None):
+                self.hidden_size = hidden_size
+                self.nested = nested
+
+        dataclass_config = ParentDataclass()
+        pydantic_config = ParentPydantic()
+
+        # Test dataclass routing with recursive
+        model1 = ModelWithNestedSupport.from_config(dataclass_config, recursive=True)
+        assert isinstance(model1.nested, dict)
+
+        model2 = ModelWithNestedSupport.from_config(dataclass_config, recursive=False)
+        assert isinstance(model2.nested, NestedDataclass)
+
+        # Test Pydantic routing with recursive
+        model3 = ModelWithNestedSupport.from_config(pydantic_config, recursive=True)
+        assert isinstance(model3.nested, dict)
+
+        model4 = ModelWithNestedSupport.from_config(pydantic_config, recursive=False)
+        assert isinstance(model4.nested, NestedPydantic)

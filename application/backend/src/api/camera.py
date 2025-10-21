@@ -1,11 +1,9 @@
-import asyncio
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends
 
 from api.dependencies import get_webrtc_manager
-from schemas import Camera
-from utils.camera import gen_camera_frames
+from schemas import Camera, CameraProfile
 from webrtc.manager import Answer, Offer, WebRTCManager
 
 router = APIRouter(prefix="/api/cameras", tags=["Cameras"])
@@ -13,23 +11,25 @@ router = APIRouter(prefix="/api/cameras", tags=["Cameras"])
 
 @router.post("/offer/camera")
 async def offer_camera(
-    offer: Offer, driver: str, camera: str, webrtc_manager: Annotated[WebRTCManager, Depends(get_webrtc_manager)]
+    offer: Offer,
+    driver: str,
+    camera: str,
+    width: int,
+    height: int,
+    fps: int,
+    webrtc_manager: Annotated[WebRTCManager, Depends(get_webrtc_manager)],
 ) -> Answer:
     """Create a WebRTC offer"""
-    return await webrtc_manager.handle_offer(offer.sdp, offer.type, offer.webrtc_id, driver, camera)
-
-
-@router.websocket("/offer/camera/ws")
-async def camera_feed_websocket(websocket: WebSocket) -> None:
-    """Camera feed. Awaits json package with CameraConfig."""
-    await websocket.accept()
-    stop_event = asyncio.Event()
-    print("Connected...")
-    try:
-        data = await websocket.receive_json("text")
-        print(data)
-        config = Camera(**data)
-        await gen_camera_frames(websocket, stop_event, config)
-    except WebSocketDisconnect:
-        stop_event.set()
-        print("Disconnected")
+    config = Camera(
+        name=camera,
+        port_or_device_id=camera,
+        driver=driver,
+        default_stream_profile=CameraProfile(
+            width=width,
+            height=height,
+            fps=fps,
+        ),
+    )
+    return await webrtc_manager.handle_offer(
+        offer.sdp, offer.type, offer.webrtc_id, config, config.default_stream_profile
+    )

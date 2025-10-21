@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
-from gymnasium.wrappers import TimeLimit
+from gymnasium.wrappers.time_limit import TimeLimit
 from lightning.pytorch import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
@@ -23,17 +23,17 @@ if TYPE_CHECKING:
     from getiaction.data import Dataset
 
 
-def _collate_env(batch: list[Any]) -> dict[str, Any]:
-    """Collate a batch of environments for a DataLoader.
+def _collate_gym(batch: list[Any]) -> Gym:
+    """Collate a batch of environments into a single Gym environment.
 
     Args:
-        batch (list[Any]): A list containing a single environment.
+        batch: A list containing a single Gym environment.
 
     Returns:
-        dict[str, Any]: Dictionary with the environment under the key 'env'.
+        Gym: The gym environment (unwrapped from batch list).
     """
-    # batch is a list with one item: [env], return a dict as expected by test_step
-    return {"env": batch[0]}
+    # batch is a list with one item: [env], return it directly
+    return batch[0]
 
 
 def _collate_observations(batch: list[Observation]) -> Observation:
@@ -110,8 +110,8 @@ class DataModule(LightningDataModule):
         self,
         train_dataset: Dataset,
         train_batch_size: int = 16,
-        eval_gyms: Gym | list[Gym] | None = None,
-        num_rollouts_eval: int = 10,
+        val_gyms: Gym | list[Gym] | None = None,
+        num_rollouts_val: int = 10,
         test_gyms: Gym | list[Gym] | None = None,
         num_rollouts_test: int = 10,
         max_episode_steps: int | None = 300,
@@ -121,8 +121,8 @@ class DataModule(LightningDataModule):
         Args:
             train_dataset (ActionDataset): Dataset for training.
             train_batch_size (int): Batch size for training DataLoader.
-            eval_gyms (Gym, list[Gym], None]): Evaluation environments.
-            num_rollouts_eval (int): Number of rollouts to run for evaluation environments.
+            val_gyms (Gym, list[Gym], None]): Validation environments.
+            num_rollouts_val (int): Number of rollouts to run for validation environments.
             test_gyms (Gym, list[Gym], None]): Test environments.
             num_rollouts_test (int): Number of rollouts to run for test environments.
             max_episode_steps (int, None): Maximum steps allowed per episode. If None, no time limit.
@@ -134,25 +134,25 @@ class DataModule(LightningDataModule):
         self.train_batch_size: int = train_batch_size
 
         # gym environments
-        self.eval_gyms: Gym | list[Gym] | None = eval_gyms
-        self.eval_dataset: Dataset[Any] | None = None
-        self.num_rollouts_eval: int = num_rollouts_eval
+        self.val_gyms: Gym | list[Gym] | None = val_gyms
+        self.val_dataset: Dataset | None = None
+        self.num_rollouts_val: int = num_rollouts_val
         self.test_gyms: Gym | list[Gym] | None = test_gyms
-        self.test_dataset: Dataset[Any] | None = None
+        self.test_dataset: Dataset | None = None
         self.num_rollouts_test: int = num_rollouts_test
         self.max_episode_steps = max_episode_steps
 
         # setup time limit if max_episode steps
-        if (self.max_episode_steps is not None) and self.eval_gyms is not None:
-            if isinstance(self.eval_gyms, Gym):
-                self.eval_gyms.env = TimeLimit(
-                    env=self.eval_gyms.env,
+        if (self.max_episode_steps is not None) and self.val_gyms is not None:
+            if isinstance(self.val_gyms, Gym):
+                self.val_gyms.env = TimeLimit(
+                    env=self.val_gyms.env,
                     max_episode_steps=self.max_episode_steps,
                 )
-            elif isinstance(self.eval_gyms, list):
-                for eval_gym in self.eval_gyms:
-                    eval_gym.env = TimeLimit(
-                        env=eval_gym.env,
+            elif isinstance(self.val_gyms, list):
+                for val_gym in self.val_gyms:
+                    val_gym.env = TimeLimit(
+                        env=val_gym.env,
                         max_episode_steps=self.max_episode_steps,
                     )
         if (self.max_episode_steps is not None) and self.test_gyms is not None:
@@ -174,15 +174,15 @@ class DataModule(LightningDataModule):
         Args:
             stage (str): Stage of training ('fit', 'test', etc.).
         """
-        if stage == "fit" and self.eval_gyms:
-            if isinstance(self.eval_gyms, list):
+        if stage == "fit" and self.val_gyms:
+            if isinstance(self.val_gyms, list):
                 # TODO(alfie-roddan-intel): https://github.com/open-edge-platform/geti-action/issues/33  # noqa: FIX002
                 # ensure metrics are seperable between two different gyms
-                self.eval_dataset = ConcatDataset([
-                    GymDataset(env=gym, num_rollouts=self.num_rollouts_eval) for gym in self.eval_gyms
+                self.val_dataset = ConcatDataset([
+                    GymDataset(env=gym, num_rollouts=self.num_rollouts_val) for gym in self.val_gyms
                 ])
             else:
-                self.eval_dataset = GymDataset(env=self.eval_gyms, num_rollouts=self.num_rollouts_eval)
+                self.val_dataset = GymDataset(env=self.val_gyms, num_rollouts=self.num_rollouts_val)
 
         if stage == "test" and self.test_gyms:
             if isinstance(self.test_gyms, list):
@@ -216,9 +216,9 @@ class DataModule(LightningDataModule):
             DataLoader[Any]: Validation DataLoader with collate function for Gym environments.
         """
         return DataLoader(
-            self.eval_dataset,
+            self.val_dataset,
             batch_size=1,
-            collate_fn=_collate_env,  # type: ignore[arg-type]
+            collate_fn=_collate_gym,  # type: ignore[arg-type]
             shuffle=False,
         )
 
@@ -231,7 +231,7 @@ class DataModule(LightningDataModule):
         return DataLoader(
             self.test_dataset,
             batch_size=1,
-            collate_fn=_collate_env,  # type: ignore[arg-type]
+            collate_fn=_collate_gym,  # type: ignore[arg-type]
             shuffle=False,
         )
 

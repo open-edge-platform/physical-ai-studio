@@ -6,23 +6,26 @@ from aiortc import VideoStreamTrack
 from av import VideoFrame
 from frame_source import FrameSourceFactory
 
+from schemas import Camera, CameraProfile
+
 logger = logging.getLogger(__name__)
 
 
 class FrameSourceVideoStreamTrack(VideoStreamTrack):
     """Video stream track that captures frames directly from FrameSource."""
 
-    def __init__(self, driver: str, device: str):
+    def __init__(self, camera: Camera, stream_profile: CameraProfile):
         super().__init__()
         _id: str | int
-        if device.isdigit():
-            _id = int(device)
-        else:
-            _id = str(device)
-
-        self.driver = driver
-        self.device = _id
-        self.cam = FrameSourceFactory.create(driver, _id)
+        self.driver = camera.driver
+        self.device = camera.port_or_device_id
+        self.cam = FrameSourceFactory.create(
+            camera.driver,
+            camera.port_or_device_id,
+            width=stream_profile.width,
+            height=stream_profile.height,
+            fps=stream_profile.fps,
+        )
         self.cam.connect()
         self._running = True
 

@@ -533,3 +533,44 @@ class TestObservationDeviceTransfer:
         assert obs.action.device == original_device
         # New instance created
         assert obs is not obs_moved
+
+
+class TestGymInValidation:
+    """Tests for Gym usage in validation (no wrapper needed)."""
+
+    def test_gym_direct_usage(self):
+        """Test that Gym can be used directly in validation."""
+        from getiaction.gyms import Gym, PushTGym
+
+        gym = PushTGym()
+
+        assert isinstance(gym, Gym)
+        assert hasattr(gym, "reset")
+        assert hasattr(gym, "step")
+
+    def test_gym_reset_returns_observation(self):
+        """Test that Gym.reset() returns observation dict."""
+        from getiaction.gyms import PushTGym
+
+        gym = PushTGym()
+        observation, info = gym.reset(seed=42)
+
+        assert isinstance(observation, dict)
+        assert "pixels" in observation or "state" in observation
+
+    def test_gym_step_returns_observation(self):
+        """Test that Gym.step() returns observation dict."""
+        import numpy as np
+
+        from getiaction.gyms import PushTGym
+
+        gym = PushTGym()
+        gym.reset(seed=42)
+
+        action_shape = gym.action_space.shape
+        assert action_shape is not None
+        action = np.zeros(action_shape)
+        observation, reward, terminated, truncated, info = gym.step(action)
+
+        assert isinstance(observation, dict)
+        assert isinstance(reward, (int, float, np.number))

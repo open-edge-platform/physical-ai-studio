@@ -44,8 +44,10 @@ class TestACTolicy:
         """select_action returns a tensor of correct shape."""
         policy.model.eval()
         actions = policy.select_action(batch)
+
         assert isinstance(actions, torch.Tensor)
-        assert actions.shape == batch.action.shape
+        assert len(actions.shape) == 2
+        assert actions.shape[1] == 3
 
     def test_forward_training_and_eval(self, policy, batch):
         """Forward pass works in training and eval modes."""

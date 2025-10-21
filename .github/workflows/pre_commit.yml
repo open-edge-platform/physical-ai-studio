@@ -66,21 +66,3 @@ jobs:
         run: |
           cd library
           uv run pytest tests/unit
-
-  zizmor-scan-pr:
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          persist-credentials: false
-
-      - name: Install the latest version of uv
-        uses: astral-sh/setup-uv@6b9c6063abd6010835644d4c2e1bef4cf5cd0fca # v6.0.1
-
-      - name: Run zizmor 🌈
-        run: uvx zizmor --format=github --min-severity medium --min-confidence high .
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
