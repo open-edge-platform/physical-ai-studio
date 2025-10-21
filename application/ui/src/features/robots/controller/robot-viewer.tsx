@@ -4,11 +4,11 @@ import { Suspense, useEffect, useRef } from 'react';
 
 import { Grid, OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import { Canvas } from '@react-three/fiber';
+import { degToRad } from 'three/src/math/MathUtils.js';
 import { URDFRobot } from 'urdf-loader';
 
 import { useContainerSize } from '../../../components/zoom/use-container-size';
 import { useLoadModelMutation, useRobotModels } from './../robot-models-context';
-import { degToRad, radToDeg } from 'three/src/math/MathUtils.js';
 
 // This is a wrapper component for the loaded URDF model
 const ActualURDFModel = ({ model }: { model: URDFRobot }) => {
@@ -49,9 +49,9 @@ const useLoadSO101 = () => {
 };
 
 interface RobotViewerProps {
-    jointValues?: number[]
+    jointValues?: number[];
 }
-export const RobotViewer = ({jointValues}: RobotViewerProps) => {
+export const RobotViewer = ({ jointValues }: RobotViewerProps) => {
     const angle = degToRad(-45);
     useLoadSO101();
     const ref = useRef<HTMLDivElement>(null);
@@ -67,7 +67,7 @@ export const RobotViewer = ({jointValues}: RobotViewerProps) => {
                 model.joints[name].setJointValue(actionValues[index]);
             });
         }
-    },[jointValues, model])
+    }, [jointValues, model]);
 
     return (
         <div ref={ref} style={{ width: '100%', height: '100%' }}>

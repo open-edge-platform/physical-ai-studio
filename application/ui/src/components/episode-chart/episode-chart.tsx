@@ -1,15 +1,6 @@
 import { useRef, useState } from 'react';
 
-import {
-    CartesianGrid,
-    Legend,
-    Line,
-    LineChart,
-    ReferenceLine,
-    ResponsiveContainer,
-    XAxis,
-    YAxis,
-} from 'recharts';
+import { CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import { CategoricalChartState } from 'recharts/types/chart/types';
 
 function buildChartData(actions: number[][], joints: string[], fps: number) {
@@ -73,11 +64,11 @@ export default function EpisodeChart({ actions, joints, fps, time, seek, play, p
         }
     };
 
-     const handleMouseDown = (nextState: CategoricalChartState) => {
-        setMouseDown(true)
-        continuePlayingOnRelease.current = isPlaying
+    const handleMouseDown = () => {
+        setMouseDown(true);
+        continuePlayingOnRelease.current = isPlaying;
         pause();
-     }
+    };
 
     return (
         <ResponsiveContainer width='100%' height={300} style={{ userSelect: 'none' }}>

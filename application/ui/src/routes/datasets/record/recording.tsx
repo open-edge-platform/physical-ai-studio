@@ -16,7 +16,6 @@ export const Recording = ({ setup }: RecordingProps) => {
     const { startRecording, saveEpisode, cancelEpisode, observation, state, numberOfRecordings } = useRecording(setup);
     const client = useQueryClient();
     const navigate = useNavigate();
-    console.log(setup);
 
     const onDone = () => {
         client.invalidateQueries({ queryKey: ['get', '/api/projects/{project_id}/datasets/{repo}/{id}'] });

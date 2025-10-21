@@ -20,7 +20,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 
 import { $api } from '../../../api/client';
-import { SchemaCameraConfig, SchemaRobotConfig, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
+import { SchemaRobotConfig, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
 import { useSettings } from '../../../components/settings/use-settings';
 import { useProject } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
@@ -96,9 +96,6 @@ export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
     };
 
     const updateRobot = (type: 'leader' | 'follower', robot_config: SchemaRobotConfig) => {
-        //Update robot, but importantly swap the serial ids if the id was already selected by other robot config
-        const other = type == 'leader' ? 'follower' : 'leader';
-
         setConfig((c) => ({
             ...c,
             [type]: robot_config,

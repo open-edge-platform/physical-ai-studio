@@ -55,7 +55,7 @@ export const usePlayer = (episode: SchemaEpisode): Player => {
             }, frameTime * 1000);
             return () => clearInterval(interval);
         }
-    }, [isPlaying]);
+    }, [isPlaying, duration, frameTime, time]);
 
     return {
         time,

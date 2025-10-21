@@ -1,16 +1,16 @@
 import { useEffect, useRef } from 'react';
 
-import { Disclosure, DisclosurePanel, DisclosureTitle, Flex, Text, View, Well } from '@geti/ui';
+import { Disclosure, DisclosurePanel, DisclosureTitle, Flex, View, Well } from '@geti/ui';
 
 import { SchemaEpisode } from '../../api/openapi-spec';
 import EpisodeChart from '../../components/episode-chart/episode-chart';
 import { useProject } from '../../features/projects/use-project';
+import { RobotViewer } from '../../features/robots/controller/robot-viewer';
+import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 import { TimelineControls } from './timeline-controls';
 import { usePlayer } from './use-player';
 
 import classes from './episode-viewer.module.scss';
-import { RobotViewer } from '../../features/robots/controller/robot-viewer';
-import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 
 const joints = ['shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex', 'wrist_roll', 'gripper'];
 
@@ -32,6 +32,7 @@ const VideoView = ({ cameraName, dataset_id, episodeIndex, aspectRatio, time }: 
         }
     }, [time]);
 
+    /* eslint-disable jsx-a11y/media-has-caption */
     return (
         <Flex UNSAFE_style={{ aspectRatio }}>
             <Well flex UNSAFE_style={{ position: 'relative' }}>
@@ -71,7 +72,7 @@ export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
                         ))}
                     </Flex>
                     <Flex flex={3} minWidth={0}>
-                        <RobotViewer jointValues={episode.actions[frameIndex]}  />
+                        <RobotViewer jointValues={episode.actions[frameIndex]} />
                     </Flex>
                 </Flex>
                 <div className={classes.timeline}>

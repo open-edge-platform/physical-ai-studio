@@ -1,12 +1,28 @@
-import { View, Well, Content, Flex, Heading, Text, ActionButton, Tabs, TabList, TabPanels, Item, Button, ButtonGroup, TextField, NumberField } from '@geti/ui'
-import { v4 as uuidv4 } from 'uuid';
-import { useState } from "react"
-import { SchemaCameraConfig, SchemaProjectConfig } from "../../../api/openapi-spec"
-import { $api } from '../../../api/client';
+import { useState } from 'react';
 
+import {
+    ActionButton,
+    Button,
+    ButtonGroup,
+    Content,
+    Flex,
+    Heading,
+    Item,
+    NumberField,
+    TabList,
+    TabPanels,
+    Tabs,
+    TextField,
+    View,
+    Well,
+} from '@geti/ui';
 import { Close } from '@geti/ui/icons';
-import { useProjectId } from '../../../features/projects/use-project';
 import { useNavigate } from 'react-router';
+import { v4 as uuidv4 } from 'uuid';
+
+import { $api } from '../../../api/client';
+import { SchemaCameraConfig, SchemaProjectConfig } from '../../../api/openapi-spec';
+import { useProjectId } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
 
 interface CameraSetupProps {
@@ -18,21 +34,37 @@ const CameraSetup = ({ camera, updateCamera, removeCamera }: CameraSetupProps) =
     return (
         <Well>
             <Flex justifyContent={'end'}>
-                <ActionButton
-                    aria-label='Remove Camera'
-                    onPress={removeCamera}>
+                <ActionButton aria-label='Remove Camera' onPress={removeCamera}>
                     <Close />
                 </ActionButton>
             </Flex>
             <Flex direction={'column'}>
-                <TextField label='Name' value={camera.name} isRequired onChange={(name) => updateCamera({ ...camera, name })} />
-                <NumberField label='FPS' value={camera.fps} minValue={30} onChange={(fps) => updateCamera({ ...camera, fps })} />
-                <NumberField label='Width' value={camera.width} onChange={(width) => updateCamera({ ...camera, width })} />
-                <NumberField label='Height' value={camera.height} onChange={(height) => updateCamera({ ...camera, height })} />
+                <TextField
+                    label='Name'
+                    value={camera.name}
+                    isRequired
+                    onChange={(name) => updateCamera({ ...camera, name })}
+                />
+                <NumberField
+                    label='FPS'
+                    value={camera.fps}
+                    minValue={30}
+                    onChange={(fps) => updateCamera({ ...camera, fps })}
+                />
+                <NumberField
+                    label='Width'
+                    value={camera.width}
+                    onChange={(width) => updateCamera({ ...camera, width })}
+                />
+                <NumberField
+                    label='Height'
+                    value={camera.height}
+                    onChange={(height) => updateCamera({ ...camera, height })}
+                />
             </Flex>
         </Well>
-    )
-}
+    );
+};
 
 const emptyCamera = (): SchemaCameraConfig => {
     return {
@@ -43,9 +75,9 @@ const emptyCamera = (): SchemaCameraConfig => {
         id: uuidv4(),
         name: '',
         port_or_device_id: '',
-        use_depth: false
-    }
-}
+        use_depth: false,
+    };
+};
 
 export const ProjectSetup = () => {
     const navigate = useNavigate();
@@ -56,32 +88,32 @@ export const ProjectSetup = () => {
         id: uuidv4(),
         fps: 30,
         cameras: [emptyCamera()],
-        robot_type: "",
-    })
+        robot_type: '',
+    });
 
-    const saveMutation = $api.useMutation('post', '/api/projects/{project_id}/project_config', {})
+    const saveMutation = $api.useMutation('post', '/api/projects/{project_id}/project_config', {});
 
     const selectRobot = (robot_type: SchemaProjectConfig['robot_type']) => {
-        setConfig((c) => ({ ...c, robot_type }))
-        setActiveTab('cameras')
-    }
+        setConfig((c) => ({ ...c, robot_type }));
+        setActiveTab('cameras');
+    };
 
     const addCamera = () => {
-        setConfig((c) => ({ ...c, cameras: [...c.cameras, emptyCamera()] }))
-
-    }
+        setConfig((c) => ({ ...c, cameras: [...c.cameras, emptyCamera()] }));
+    };
 
     const removeCamera = (id: string) => {
-        setConfig((c) => ({ ...c, cameras: c.cameras.filter((b) => b.id !== id) }))
-    }
+        setConfig((c) => ({ ...c, cameras: c.cameras.filter((b) => b.id !== id) }));
+    };
 
     const updateCamera = (camera: SchemaCameraConfig) => {
         setConfig((c) => ({
-            ...c, cameras: c.cameras.map((b) => {
+            ...c,
+            cameras: c.cameras.map((b) => {
                 return camera.id === b.id ? camera : b;
-            })
-        }))
-    }
+            }),
+        }));
+    };
 
     const onSave = () => {
         saveMutation.mutate({
@@ -90,7 +122,7 @@ export const ProjectSetup = () => {
             },
             body: config,
         });
-    }
+    };
 
     const onBack = () => {
         if (activeTab === 'cameras') {
@@ -98,11 +130,15 @@ export const ProjectSetup = () => {
         } else {
             navigate(paths.project.datasets.index({ project_id }));
         }
-    }
+    };
 
     const canSave = () => {
-        return config.robot_type !== "" && config.cameras.length > 0 && config.cameras.find((c) => c.name === "") === undefined
-    }
+        return (
+            config.robot_type !== '' &&
+            config.cameras.length > 0 &&
+            config.cameras.find((c) => c.name === '') === undefined
+        );
+    };
 
     return (
         <Flex justifyContent={'center'} flex='1'>
@@ -110,7 +146,7 @@ export const ProjectSetup = () => {
                 <View paddingTop={'size-100'} paddingBottom={'size-100'}>
                     <Heading>Project Configuration</Heading>
                 </View>
-                <View backgroundColor={'gray-200'} padding={'size-200'} >
+                <View backgroundColor={'gray-200'} padding={'size-200'}>
                     <Tabs onSelectionChange={(key) => setActiveTab(key.toString())} selectedKey={activeTab}>
                         <TabList>
                             <Item key='robot'>Robot</Item>
@@ -118,25 +154,40 @@ export const ProjectSetup = () => {
                         </TabList>
                         <TabPanels>
                             <Item key='robot'>
-                                <Content justifySelf={'center'} margin={'size-100'}>Choose a robot</Content>
-                                <Flex height="size-2000" gap="size-200" justifyContent={'center'}>
-                                    <Button variant={config.robot_type === 'so101_follower' ? 'primary' : 'secondary'} width='size-2000' height='size-2000' onPress={() => selectRobot("so101_follower")}>SO 101</Button>
-                                    <Button variant='secondary' width='size-2000' height='size-2000'>More coming soon</Button>
+                                <Content justifySelf={'center'} margin={'size-100'}>
+                                    Choose a robot
+                                </Content>
+                                <Flex height='size-2000' gap='size-200' justifyContent={'center'}>
+                                    <Button
+                                        variant={config.robot_type === 'so101_follower' ? 'primary' : 'secondary'}
+                                        width='size-2000'
+                                        height='size-2000'
+                                        onPress={() => selectRobot('so101_follower')}
+                                    >
+                                        SO 101
+                                    </Button>
+                                    <Button variant='secondary' width='size-2000' height='size-2000'>
+                                        More coming soon
+                                    </Button>
                                 </Flex>
                             </Item>
                             <Item key='cameras'>
                                 <Flex direction={'column'}>
-                                    <Content alignSelf={'center'} margin={'size-100'}>Choose a robot</Content>
-                                    <Button alignSelf={'end'} onPress={addCamera}>Add camera</Button>
-                                    <Flex wrap gap="size-200">
-
+                                    <Content alignSelf={'center'} margin={'size-100'}>
+                                        Choose a robot
+                                    </Content>
+                                    <Button alignSelf={'end'} onPress={addCamera}>
+                                        Add camera
+                                    </Button>
+                                    <Flex wrap gap='size-200'>
                                         {config.cameras.map((camera) => (
                                             <CameraSetup
+                                                key={camera.id}
                                                 camera={camera}
                                                 removeCamera={() => removeCamera(camera.id)}
-                                                updateCamera={updateCamera} />
+                                                updateCamera={updateCamera}
+                                            />
                                         ))}
-
                                     </Flex>
                                 </Flex>
                             </Item>
@@ -144,14 +195,16 @@ export const ProjectSetup = () => {
                     </Tabs>
                     <Flex justifyContent={'end'} margin={'size-100'}>
                         <ButtonGroup>
-                            <Button variant='secondary' onPress={onBack}>Back</Button>
-                            <Button isDisabled={saveMutation.isPending || !canSave()} onPress={onSave}>Save</Button>
+                            <Button variant='secondary' onPress={onBack}>
+                                Back
+                            </Button>
+                            <Button isDisabled={saveMutation.isPending || !canSave()} onPress={onSave}>
+                                Save
+                            </Button>
                         </ButtonGroup>
                     </Flex>
                 </View>
             </View>
         </Flex>
-    )
-
-
-}
+    );
+};

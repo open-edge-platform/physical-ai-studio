@@ -72,7 +72,7 @@ export const Camera = () => {
                 width='100%'
             >
                 {camera && (
-                    <WebRTCConnectionProvider camera={camera} autoplay={false}>
+                    <WebRTCConnectionProvider camera={camera}>
                         <CameraView label={camera.port_or_device_id} />
                     </WebRTCConnectionProvider>
                 )}
@@ -96,7 +96,7 @@ export const CameraOverview = () => {
             >
                 {cameras.map((camera) => {
                     return (
-                        <WebRTCConnectionProvider camera={camera} key={camera.port_or_device_id} autoplay={false}>
+                        <WebRTCConnectionProvider camera={camera} key={camera.port_or_device_id}>
                             <CameraView label={camera.port_or_device_id} />
                         </WebRTCConnectionProvider>
                     );

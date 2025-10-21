@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { Button, Flex, Item, Key, Link, TabList, TabPanels, Tabs, Text, View, Well } from '@geti/ui';
+import { Button, Flex, Item, Key, Link, TabList, TabPanels, Tabs, Text, View } from '@geti/ui';
 import { Add } from '@geti/ui/icons';
 import { useNavigate } from 'react-router';
 
