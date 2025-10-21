@@ -16,8 +16,8 @@ from lerobot.utils.robot_utils import busy_wait
 from schemas import TeleoperationConfig
 from utils.camera import build_camera_config
 from utils.dataset import check_repository_exists
-from utils.robot import make_lerobot_robot_config_from_robot, make_lerobot_teleoperator_config_from_robot
 from utils.framesource_bridge import FrameSourceCameraBridge
+from utils.robot import make_lerobot_robot_config_from_robot, make_lerobot_teleoperator_config_from_robot
 
 from .base import BaseProcessWorker
 

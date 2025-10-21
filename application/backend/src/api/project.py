@@ -6,7 +6,7 @@ from fastapi.exceptions import HTTPException
 from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
 
 from api.dependencies import get_project_id, get_project_service
-from schemas import LeRobotDatasetInfo, Project, TeleoperationConfig, ProjectConfig
+from schemas import LeRobotDatasetInfo, Project, ProjectConfig, TeleoperationConfig
 from services import ProjectService
 from services.base import ResourceInUseError, ResourceNotFoundError
 from utils.dataset import build_dataset_from_lerobot_dataset, build_project_config_from_dataset, check_repository_exists
@@ -29,6 +29,7 @@ async def create_project(
 ) -> Project:
     """Create a new project."""
     return project_service.create_project(project)
+
 
 @router.post("/{project_id}/project_config")
 async def set_project_config(

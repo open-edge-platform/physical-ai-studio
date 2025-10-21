@@ -1,11 +1,14 @@
-import numpy as np
-
-from frame_source import FrameSourceFactory
-from schemas import CameraConfig
-from lerobot.cameras import Camera as LeRobotCamera, CameraConfig as LeRobotCameraConfig, ColorMode, Cv2Rotation
-from typing import Any
 import time
+from typing import Any
+
 import cv2
+import numpy as np
+from frame_source import FrameSourceFactory
+from lerobot.cameras import Camera as LeRobotCamera
+from lerobot.cameras import CameraConfig as LeRobotCameraConfig
+from lerobot.cameras import ColorMode, Cv2Rotation
+
+from schemas import CameraConfig
 
 
 class FrameSourceCameraBridge(LeRobotCamera):
@@ -69,7 +72,7 @@ class FrameSourceCameraBridge(LeRobotCamera):
             np.ndarray: Captured frame as a numpy array.
         """
         retrycount = 3
-        while (retrycount > 0):
+        while retrycount > 0:
             success, frame = self.camera.read()
             if success:
                 break
@@ -114,7 +117,7 @@ class FrameSourceCameraBridge(LeRobotCamera):
 
         return processed_image
 
-    def async_read(self, timeout_ms: float = ...) -> np.ndarray:
+    def async_read(self, _timeout_ms: float = 0.0) -> np.ndarray:
         """Asynchronously capture and return a single frame from the camera.
 
         Args:
