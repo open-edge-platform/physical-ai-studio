@@ -25,21 +25,24 @@ export const Recording = ({ setup }: RecordingProps) => {
 
     if (state.initialized) {
         return (
-            <Well flex='1'>
-                <Flex height={'100%'} gap='size-150'>
-                    <ListView
-                        minWidth={'size-3000'}
-                        selectedKeys={new Set([0])}
-                        selectionMode='single'
-                        selectionStyle='highlight'
-                    >
-                        {state.is_recording ? <Item key={0}>Recording...</Item> : <></>}
-                        <>
-                            {[...Array(numberOfRecordings)].map((_, i) => (
-                                <Item key={numberOfRecordings - i}>{`Episode ${numberOfRecordings - i}`}</Item>
-                            ))}
-                        </>
-                    </ListView>
+            <Well height={'100%'}>
+                <Flex flex height={'100%'} gap='size-150'>
+                    <Flex flex direction='column' maxWidth='size-2000'>
+                        <ListView
+                            minWidth={'size-3000'}
+                            selectedKeys={new Set([0])}
+                            selectionMode='single'
+                            selectionStyle='highlight'
+                            flex={'1 0 0'}
+                        >
+                            {state.is_recording ? <Item key={0}>Recording...</Item> : <></>}
+                            <>
+                                {[...Array(numberOfRecordings)].map((_, i) => (
+                                    <Item key={numberOfRecordings - i}>{`Episode ${numberOfRecordings - i}`}</Item>
+                                ))}
+                            </>
+                        </ListView>
+                    </Flex>
 
                     <Flex direction={'column'} flex={0} gap='size-100' justifyContent={'start'}>
                         {setup.cameras.map((camera) => (

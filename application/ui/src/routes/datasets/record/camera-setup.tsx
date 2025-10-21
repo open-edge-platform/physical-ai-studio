@@ -67,11 +67,10 @@ export const CameraSetup = ({ camera, availableCameras, updateCamera }: CameraSe
         }
     };
 
-    console.log(camera);
     return (
         <Flex direction={'column'} flex={1}>
             <Heading>{camera.name}</Heading>
-            <CameraPreview key={camera.port_or_device_id} camera={camera} />
+            {/*<CameraPreview key={camera.port_or_device_id} camera={camera} />*/}
             <Picker selectedKey={`${camera.driver}%${camera.port_or_device_id}`} onSelectionChange={onSelection}>
                 {camerasConnectedOfType.map((cam) => (
                     <Item key={makeKey(cam)}>{cam.name}</Item>

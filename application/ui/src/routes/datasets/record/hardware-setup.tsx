@@ -40,8 +40,6 @@ export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
         },
     });
 
-    console.log(project.config);
-
     const { geti_action_dataset_path } = useSettings();
 
     const isNewDataset = !dataset_id;
