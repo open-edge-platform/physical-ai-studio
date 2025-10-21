@@ -1,19 +1,21 @@
 # Rollout Evaluation
 
-Policy evaluation system with two APIs: functional `rollout()` for scripts and stateful `Rollout` metric for Lightning training.
+Policy evaluation system with two APIs: functional `rollout()` for scripts
+and stateful `Rollout` metric for Lightning training.
 
 ## Design
 
 The system separates rollout execution from metric aggregation:
 
 - **`rollout()`**: Stateless function that executes a single episode
-- **`Rollout`**: Stateful torchmetrics.Metric that accumulates results and handles distributed synchronization
+- **`Rollout`**: Stateful torchmetrics.Metric that accumulates results and
+  handles distributed synchronization
 
 Both share the same underlying rollout logic but serve different use cases.
 
 ## Architecture
 
-```
+```text
 ┌────────────────────────────────────────────┐
 │          Evaluation System                 │
 ├────────────────────────────────────────────┤
@@ -32,7 +34,8 @@ Both share the same underlying rollout logic but serve different use cases.
 ```
 
 ### File Structure
-```
+
+```text
 getiaction/eval/
 ├── rollout.py    # rollout() function
 └── metrics.py    # Rollout metric class
@@ -56,7 +59,8 @@ def rollout(
     """Execute one episode, return results immediately."""
 ```
 
-Returns: `sum_reward`, `max_reward`, `episode_length`, `is_success`, optionally `observations`/`actions`/`rewards`
+Returns: `sum_reward`, `max_reward`, `episode_length`, `is_success`,
+optionally `observations`/`actions`/`rewards`
 
 ### `Rollout` - Metric Class
 
@@ -72,22 +76,23 @@ class Rollout(torchmetrics.Metric):
         """Clear state (automatic between epochs)."""
 ```
 
-Returns: `avg_sum_reward`, `avg_max_reward`, `avg_episode_length`, `pc_success`, `n_episodes`
+Returns: `avg_sum_reward`, `avg_max_reward`, `avg_episode_length`,
+`pc_success`, `n_episodes`
 
 ## When to Use What
 
-| Use Case | Use `rollout()` | Use `Rollout` |
-|----------|----------------|---------------|
-| **Standalone scripts** | ✅ Simple, direct | ❌ Overkill |
-| **Custom aggregation** | ✅ Full control | ❌ Limited stats |
-| **Lightning training** | ❌ Manual boilerplate | ✅ Native integration |
-| **Multi-GPU** | ❌ Manual sync needed | ✅ Automatic sync |
-| **Debugging/analysis** | ✅ Return full trajectory | ❌ Only aggregates |
-| **Non-Lightning** | ✅ Framework agnostic | ❌ Requires Lightning |
+| Use Case               | Use `rollout()`           | Use `Rollout`         |
+| ---------------------- | ------------------------- | --------------------- |
+| **Standalone scripts** | ✅ Simple, direct         | ❌ Overkill           |
+| **Custom aggregation** | ✅ Full control           | ❌ Limited stats      |
+| **Lightning training** | ❌ Manual boilerplate     | ✅ Native integration |
+| **Multi-GPU**          | ❌ Manual sync needed     | ✅ Automatic sync     |
+| **Debugging/analysis** | ✅ Return full trajectory | ❌ Only aggregates    |
+| **Non-Lightning**      | ✅ Framework agnostic     | ❌ Requires Lightning |
 
 ### Decision Tree
 
-```
+```text
 Need evaluation?
 ├─ In Lightning training loop?
 │  ├─ Yes → Use Rollout metric (automatic aggregation + DDP)
@@ -111,6 +116,7 @@ trainer.fit(policy, datamodule)
 ```
 
 State variables use `dist_reduce_fx` for aggregation:
+
 - `dist_reduce_fx="sum"`: Sum values across GPUs (counts, totals)
 - `dist_reduce_fx="cat"`: Concatenate lists across GPUs (per-episode data)
 
@@ -134,6 +140,7 @@ class Policy(L.LightningModule):
 ```
 
 Two-level logging:
+
 - **Per-episode**: `on_step=True` - immediate feedback during validation
 - **Aggregated**: `on_epoch=True` - epoch summary for comparison
 
@@ -296,15 +303,16 @@ class MyPolicy(Policy):
 
 ## Summary
 
-| Aspect | `rollout()` | `Rollout` |
-|--------|-------------|-----------|
-| Type | Function | Metric Class |
-| State | Stateless | Stateful |
-| Use Case | Scripts, analysis | Training loops |
-| Framework | Agnostic | Lightning |
-| Multi-GPU | Manual | Automatic |
-| Aggregation | Manual | Automatic |
+| Aspect      | `rollout()`       | `Rollout`      |
+| ----------- | ----------------- | -------------- |
+| Type        | Function          | Metric Class   |
+| State       | Stateless         | Stateful       |
+| Use Case    | Scripts, analysis | Training loops |
+| Framework   | Agnostic          | Lightning      |
+| Multi-GPU   | Manual            | Automatic      |
+| Aggregation | Manual            | Automatic      |
 
 Choose based on use case:
+
 - Standalone evaluation, debugging, custom stats → `rollout()`
 - Lightning training, multi-GPU → `Rollout`
