@@ -8,6 +8,7 @@ import { URDFRobot } from 'urdf-loader';
 
 import { useContainerSize } from '../../../components/zoom/use-container-size';
 import { useLoadModelMutation, useRobotModels } from './../robot-models-context';
+import { degToRad, radToDeg } from 'three/src/math/MathUtils.js';
 
 // This is a wrapper component for the loaded URDF model
 const ActualURDFModel = ({ model }: { model: URDFRobot }) => {
@@ -47,13 +48,26 @@ const useLoadSO101 = () => {
     }, [models, loadModelMutation]);
 };
 
-export const RobotViewer = () => {
-    const angle = 10;
+interface RobotViewerProps {
+    jointValues?: number[]
+}
+export const RobotViewer = ({jointValues}: RobotViewerProps) => {
+    const angle = degToRad(-45);
     useLoadSO101();
     const ref = useRef<HTMLDivElement>(null);
     const size = useContainerSize(ref);
     const { models } = useRobotModels();
     const model = models.at(0);
+
+    useEffect(() => {
+        if (jointValues !== undefined && model !== undefined) {
+            const jointNames = ['shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex', 'wrist_roll', 'gripper'];
+            const actionValues = jointValues.map(degToRad);
+            jointNames.forEach((name, index) => {
+                model.joints[name].setJointValue(actionValues[index]);
+            });
+        }
+    },[jointValues, model])
 
     return (
         <div ref={ref} style={{ width: '100%', height: '100%' }}>
