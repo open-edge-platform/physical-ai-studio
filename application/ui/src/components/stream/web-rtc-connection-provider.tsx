@@ -12,12 +12,13 @@ export type WebRTCConnectionState = null | {
 
 export const WebRTCConnectionContext = createContext<WebRTCConnectionState>(null);
 
-const useWebRTCConnectionState = (camera: SchemaCamera) => {
+const useWebRTCConnectionState = (camera: SchemaCamera, autoplay: boolean = false) => {
     const webRTCConnectionRef = useRef<WebRTCConnection | null>(null);
     const [status, setStatus] = useState<WebRTCConnectionStatus>('idle');
 
     // Initialize WebRTCConnection on mount
     useEffect(() => {
+
         if (webRTCConnectionRef.current) {
             return;
         }
@@ -39,6 +40,10 @@ const useWebRTCConnectionState = (camera: SchemaCamera) => {
             }
         });
 
+        if (autoplay){
+            webRTCConnection.start()
+        }
+
         return () => {
             unsubscribe();
             webRTCConnection.stop(); // Ensure connection is closed on unmount
@@ -48,6 +53,7 @@ const useWebRTCConnectionState = (camera: SchemaCamera) => {
 
     const start = useCallback(async () => {
         if (!webRTCConnectionRef.current) {
+            console.error("starting without WebRTC connection")
             return;
         }
 
@@ -75,8 +81,8 @@ const useWebRTCConnectionState = (camera: SchemaCamera) => {
     };
 };
 
-export const WebRTCConnectionProvider = ({ children, camera }: { children: ReactNode; camera: SchemaCamera }) => {
-    const value = useWebRTCConnectionState(camera);
+export const WebRTCConnectionProvider = ({ children, camera, autoplay }: { children: ReactNode; camera: SchemaCamera, autoplay: boolean }) => {
+    const value = useWebRTCConnectionState(camera, autoplay);
 
     return <WebRTCConnectionContext.Provider value={value}>{children}</WebRTCConnectionContext.Provider>;
 };

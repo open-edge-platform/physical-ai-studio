@@ -101,10 +101,6 @@ export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
 
         setConfig((c) => ({
             ...c,
-            [other]: {
-                ...c[other],
-                serial_id: c[other].serial_id == robot_config.serial_id ? c[type].serial_id : c[other].serial_id,
-            },
             [type]: robot_config,
         }));
     };

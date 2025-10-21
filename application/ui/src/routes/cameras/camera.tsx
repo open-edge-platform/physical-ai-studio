@@ -10,7 +10,7 @@ import { useWebRTCConnection, WebRTCConnectionProvider } from '../../components/
 
 import classes from './camera.module.scss';
 
-const CameraView = ({ label }: { label: string }) => {
+export const CameraView = ({ label }: { label: string }) => {
     const [size, setSize] = useState({ width: 300, height: 300 });
     const { start, status, stop } = useWebRTCConnection();
 
@@ -72,7 +72,7 @@ export const Camera = () => {
                 width='100%'
             >
                 {camera && (
-                    <WebRTCConnectionProvider camera={camera}>
+                    <WebRTCConnectionProvider camera={camera} autoplay={false}>
                         <CameraView label={camera.port_or_device_id} />
                     </WebRTCConnectionProvider>
                 )}
@@ -96,7 +96,7 @@ export const CameraOverview = () => {
             >
                 {cameras.map((camera) => {
                     return (
-                        <WebRTCConnectionProvider camera={camera} key={camera.port_or_device_id}>
+                        <WebRTCConnectionProvider camera={camera} key={camera.port_or_device_id} autoplay={false}>
                             <CameraView label={camera.port_or_device_id} />
                         </WebRTCConnectionProvider>
                     );

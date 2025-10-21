@@ -1,54 +1,51 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Flex, Heading, Item, Key, Picker, ProgressCircle } from '@geti/ui';
 import useWebSocket from 'react-use-websocket';
 
 import { API_BASE_URL } from '../../../api/client';
 import { SchemaCamera, SchemaCameraConfig } from '../../../api/openapi-spec';
+import { useWebRTCConnection, WebRTCConnectionProvider } from '../../../components/stream/web-rtc-connection-provider';
+import { Stream } from '../../../components/stream/stream';
+
+export const CameraView = ({ label }: { label: string }) => {
+    const [size, setSize] = useState({ width: 280, height: 180 });
+    const { start, status, stop, webRTCConnectionRef } = useWebRTCConnection();
+    //useEffect(() => {
+    //    console.log(status);
+    //    console.log(webRTCConnectionRef.current)
+    //    if (status === "idle" && webRTCConnectionRef.current !== null) {
+    //        console.log("starting...")
+    //        start();
+    //    }
+    //}, [status, webRTCConnectionRef.current])
+
+    if (status === "connected") {
+        return (
+            <Stream setSize={setSize} size={size} />
+        )
+    }
+    return <></>
+}
 
 const CameraPreview = ({ camera }: { camera: SchemaCameraConfig }) => {
-    const [image, setImage] = useState<string>();
-    const { sendJsonMessage } = useWebSocket(`${API_BASE_URL}/api/cameras/offer/camera/ws`, {
-        onOpen: () => {
-            if (camera.port_or_device_id !== '') {
-                const cameraConfig: SchemaCamera = {
-                    driver: camera.driver,
-                    name: camera.name,
-                    port_or_device_id: camera.port_or_device_id,
-                    default_stream_profile: {
-                        fps: camera.fps,
-                        height: camera.height,
-                        width: camera.width,
-                    },
-                };
-                sendJsonMessage(cameraConfig);
-            }
-        },
-        onMessage: (message) => {
-            setImage(message.data);
-        },
-    });
 
-    if (image) {
-        return (
-            <img
-                alt='Preview Camera'
-                src={`data:image/jpg;base64,${image}`}
-                style={{ flex: 1, maxWidth: '280px', paddingBottom: '10px' }}
-            />
-        );
-    } else {
-        return (
-            <Flex
-                width={280}
-                height={(280 / camera.width) * camera.height + 10}
-                justifyContent={'center'}
-                alignItems={'center'}
-            >
-                {camera.port_or_device_id !== '' && <ProgressCircle isIndeterminate />}
-            </Flex>
-        );
-    }
+    const cameraConfig: SchemaCamera = {
+        driver: camera.driver,
+        name: camera.name,
+        port_or_device_id: camera.port_or_device_id,
+        default_stream_profile: {
+            fps: camera.fps,
+            height: camera.height,
+            width: camera.width,
+        },
+    };
+
+    return (
+        <WebRTCConnectionProvider camera={cameraConfig} autoplay={true}>
+            <CameraView label={camera.name} />
+        </WebRTCConnectionProvider>
+    );
 };
 
 interface CameraSetupProps {
