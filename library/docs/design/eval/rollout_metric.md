@@ -27,9 +27,9 @@ Both share the same underlying rollout logic but serve different use cases.
 │  └─ No framework       └─ Lightning + DDP  │
 │                                            │
 │         ↓                      ↓           │
-│    ┌────────────────────────────┐         │
-│    │  Gym Environment + Policy  │         │
-│    └────────────────────────────┘         │
+│    ┌────────────────────────────┐          │
+│    │  Gym Environment + Policy  │          │
+│    └────────────────────────────┘          │
 └────────────────────────────────────────────┘
 ```
 
