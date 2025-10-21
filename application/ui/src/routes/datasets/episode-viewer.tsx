@@ -84,6 +84,9 @@ export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
                                 fps={episode.fps}
                                 time={player.time}
                                 seek={player.seek}
+                                isPlaying={player.isPlaying}
+                                play={player.play}
+                                pause={player.pause}
                             />
                         </DisclosurePanel>
                     </Disclosure>

@@ -84,7 +84,7 @@ export const RobotViewer = ({jointValues}: RobotViewerProps) => {
                     />
                     <PerspectiveCamera makeDefault position={[2.0, 1, 1]} />
                     <OrbitControls />
-                    <Grid infiniteGrid cellSize={0.25} sectionColor={'rgb(0, 199, 253)'} />
+                    <Grid infiniteGrid cellSize={0.25} sectionColor={'rgb(0, 199, 253)'} fadeDistance={10} />
                     {model && (
                         <group key={model.uuid} position={[0, 0, 0]} rotation={[0, angle, 0]}>
                             <Suspense fallback={null}>

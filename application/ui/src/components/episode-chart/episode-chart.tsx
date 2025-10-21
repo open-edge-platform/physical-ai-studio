@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import {
     CartesianGrid,
@@ -37,13 +37,18 @@ interface EpisodeChartProps {
     fps: number;
     time: number;
     seek: (time: number) => void;
+    play: () => void;
+    pause: () => void;
+    isPlaying: boolean;
 }
 
-export default function EpisodeChart({ actions, joints, fps, time, seek }: EpisodeChartProps) {
+export default function EpisodeChart({ actions, joints, fps, time, seek, play, pause, isPlaying }: EpisodeChartProps) {
     const [hoverPosition, setHoverPosition] = useState<number | undefined>(undefined);
     const [mouseDown, setMouseDown] = useState<boolean>(false);
     const chartData = buildChartData(actions, joints, fps);
     const ticks = [...Array(Math.floor((actions.length / fps) * 2)).keys()].map((m) => m / 2);
+
+    const continuePlayingOnRelease = useRef<boolean>(false);
 
     const handleMouseMove = (nextState: CategoricalChartState) => {
         if (nextState.activeLabel === undefined) {
@@ -63,7 +68,16 @@ export default function EpisodeChart({ actions, joints, fps, time, seek }: Episo
             seek(newTime);
         }
         setMouseDown(false);
+        if (continuePlayingOnRelease.current) {
+            play();
+        }
     };
+
+     const handleMouseDown = (nextState: CategoricalChartState) => {
+        setMouseDown(true)
+        continuePlayingOnRelease.current = isPlaying
+        pause();
+     }
 
     return (
         <ResponsiveContainer width='100%' height={300} style={{ userSelect: 'none' }}>
@@ -71,7 +85,7 @@ export default function EpisodeChart({ actions, joints, fps, time, seek }: Episo
                 data={chartData}
                 margin={{ top: 20, right: 20, left: 20, bottom: 20 }}
                 onMouseUp={handleMouseUp}
-                onMouseDown={() => setMouseDown(true)}
+                onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
             >
                 <CartesianGrid opacity={0.2} />
