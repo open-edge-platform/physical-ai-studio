@@ -92,9 +92,8 @@ class FromCheckpoint:
         config = instantiate_obj_from_dict(yaml.safe_load(state_dict[GETIACTION_CONFIG_KEY]))
         state_dict.pop(GETIACTION_CONFIG_KEY)
 
-
-        if hasattr(cls, "from_dataclass") and callable(cls.from_dataclass): # type: ignore
-            return cls.from_dataclass(config) # type: ignore
+        if hasattr(cls, "from_dataclass") and callable(cls.from_dataclass):  # type: ignore [attr-defined]
+            return cls.from_dataclass(config)  # type: ignore [attr-defined]
 
         msg = "`FromCheckpoint` mixin requires the target class to implement `from_dataclass()` method."
         raise NotImplementedError(msg)

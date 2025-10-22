@@ -6,11 +6,11 @@
 import torch
 
 from getiaction.data import Dataset, Observation
+from getiaction.export import ToTorch
 from getiaction.gyms import Gym
 from getiaction.policies.act.model import ACT as ACTModel  # noqa: N811
 from getiaction.policies.base import Policy
 from getiaction.train.utils import reformat_dataset_to_match_policy
-from getiaction.export import ToTorch
 
 
 class ACT(Policy, ToTorch):

@@ -8,13 +8,14 @@ from collections.abc import Iterable
 import torch
 
 from getiaction.data import Observation
+from getiaction.export import ToTorch
 from getiaction.gyms import Gym
 from getiaction.policies.base import Policy
 from getiaction.policies.dummy.config import DummyConfig
 from getiaction.policies.dummy.model import Dummy as DummyModel
 
 
-class Dummy(Policy):
+class Dummy(Policy, ToTorch):
     """Dummy policy wrapper."""
 
     def __init__(self, config: DummyConfig) -> None:

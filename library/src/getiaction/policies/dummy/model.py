@@ -10,6 +10,10 @@ import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import nn
 
+from getiaction.config import FromConfig
+from getiaction.export import FromCheckpoint
+from getiaction.policies.dummy.config import DummyConfig
+
 
 def _infer_batch_size(batch: dict[str, Any]) -> int:
     """Infer the batch size from the first tensor in the batch.
@@ -34,7 +38,7 @@ def _infer_batch_size(batch: dict[str, Any]) -> int:
     raise ValueError(msg)
 
 
-class Dummy(nn.Module):
+class Dummy(nn.Module, FromConfig, FromCheckpoint):
     """A dummy model for testing training and evaluation loops.
 
     This model simulates behavior of an action-predicting model by returning
@@ -80,6 +84,15 @@ class Dummy(nn.Module):
 
         # dummy parameter for optimizer and backward
         self.dummy_param = nn.Parameter(torch.zeros(1))
+
+    @property
+    def config(self) -> DummyConfig:
+        """Get the configuration of the Dummy model.
+
+        Returns:
+            DummyConfig: The configuration dataclass instance.
+        """
+        return DummyConfig(action_shape=self.action_shape)
 
     @property
     def observation_delta_indices(self) -> list[int]:
