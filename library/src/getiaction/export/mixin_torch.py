@@ -15,7 +15,7 @@ import yaml
 
 from getiaction.config.instantiate import instantiate_obj_from_dict
 
-GETIACTION_CONFIG_KEY = "getiaction_config"
+GETIACTION_CONFIG_KEY = "model_config"
 
 
 class Export:
