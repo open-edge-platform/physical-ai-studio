@@ -18,7 +18,7 @@ from getiaction.config.instantiate import instantiate_obj_from_dict
 GETIACTION_CONFIG_KEY = "getiaction_config"
 
 
-class ToTorch:
+class Export:
     """Mixin class for exporting torch model checkpoints."""
 
     model: torch.nn.Module

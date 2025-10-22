@@ -3,6 +3,6 @@
 
 """Export and import mixins module."""
 
-from .mixin_torch import FromCheckpoint, ToTorch
+from .mixin_torch import FromCheckpoint, Export
 
-__all__ = ["FromCheckpoint", "ToTorch"]
+__all__ = ["FromCheckpoint", "Export"]

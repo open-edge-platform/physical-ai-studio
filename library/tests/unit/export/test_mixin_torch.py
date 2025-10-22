@@ -17,7 +17,7 @@ import yaml
 from getiaction.export.mixin_torch import (
     GETIACTION_CONFIG_KEY,
     FromCheckpoint,
-    ToTorch,
+    Export,
     _serialize_model_config,
 )
 
@@ -94,7 +94,7 @@ class SimpleModel(torch.nn.Module):
         return self.linear(x)
 
 
-class ModelWithToTorch(ToTorch):
+class ModelWithToTorch(Export):
     """Model implementing ToTorch mixin."""
 
     def __init__(self, config: SimpleConfig):
@@ -115,7 +115,7 @@ class ModelWithFromCheckpoint(FromCheckpoint):
         return cls(config)
 
 
-class ModelWithBothMixins(ToTorch, FromCheckpoint):
+class ModelWithBothMixins(Export, FromCheckpoint):
     """Model implementing both ToTorch and FromCheckpoint mixins."""
 
     def __init__(self, config: SimpleConfig):
@@ -290,7 +290,7 @@ class TestToTorch:
     def test_to_torch_without_config(self):
         """Test to_torch with model that has no config attribute."""
 
-        class ModelWithoutConfig(ToTorch):
+        class ModelWithoutConfig(Export):
             def __init__(self):
                 self.model = torch.nn.Linear(10, 10)
 
@@ -464,7 +464,7 @@ class TestRoundTrip:
             def forward(self, x):
                 return self.linear(x)
 
-        class ComplexModel(ToTorch, FromCheckpoint):
+        class ComplexModel(Export, FromCheckpoint):
             def __init__(self, config: ComplexRoundTripConfig):
                 self.config = config
                 self.model = ComplexTestModel(config)
