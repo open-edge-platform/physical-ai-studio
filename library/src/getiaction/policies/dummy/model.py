@@ -47,7 +47,7 @@ class Dummy(nn.Module, FromConfig, FromCheckpoint):
 
     def __init__(
         self,
-        action_shape: torch.Size,
+        action_shape: list | tuple,
         n_action_steps: int = 1,
         temporal_ensemble_coeff: float | None = None,
         n_obs_steps: int = 1,
@@ -56,7 +56,7 @@ class Dummy(nn.Module, FromConfig, FromCheckpoint):
         """Initialize the DummyModel.
 
         Args:
-            action_shape (torch.Size): The shape of a single action.
+            action_shape (list | tuple): The shape of a single action.
             n_action_steps (int, optional): Number of action steps per chunk.
                 Defaults to 1.
             temporal_ensemble_coeff (float | None, optional): Coefficient for
