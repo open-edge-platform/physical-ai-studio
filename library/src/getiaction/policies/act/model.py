@@ -24,13 +24,13 @@ from torchvision.ops.misc import FrozenBatchNorm2d
 
 from getiaction.config.mixin import FromConfig
 from getiaction.data import Feature, FeatureType, Observation
-from getiaction.export.mixin_torch import SnapshotIO
+from getiaction.export.mixin_torch import FromCheckpoint
 from getiaction.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
 
 from .config import ACTConfig
 
 
-class ACT(nn.Module, FromConfig, SnapshotIO):
+class ACT(nn.Module, FromConfig, FromCheckpoint):
     """Action Chunking Transformer (ACT) model.
 
     Supports training and inference modes.
@@ -45,7 +45,7 @@ class ACT(nn.Module, FromConfig, SnapshotIO):
         n_action_steps: int = 100,
         vision_backbone: str = "resnet18",
         pretrained_backbone_weights: str | None = "ResNet18_Weights.IMAGENET1K_V1",
-        replace_final_stride_with_dilation: int = False,
+        replace_final_stride_with_dilation: bool = False,
         pre_norm: bool = False,
         dim_model: int = 512,
         n_heads: int = 8,
