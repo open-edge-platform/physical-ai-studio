@@ -10,9 +10,10 @@ from getiaction.gyms import Gym
 from getiaction.policies.act.model import ACT as ACTModel  # noqa: N811
 from getiaction.policies.base import Policy
 from getiaction.train.utils import reformat_dataset_to_match_policy
+from getiaction.export import ToTorch
 
 
-class ACT(Policy):
+class ACT(Policy, ToTorch):
     """Action Chunking with Transformers (ACT) policy implementation.
 
     This class implements the ACT policy for imitation learning, which uses a transformer-based
