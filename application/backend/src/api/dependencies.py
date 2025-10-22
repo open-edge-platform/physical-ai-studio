@@ -5,7 +5,7 @@ from fastapi import Request, WebSocket, status
 from fastapi.exceptions import HTTPException
 
 from core.scheduler import Scheduler
-from services import DatasetService, ProjectService
+from services import DatasetService, ProjectService, ModelService
 from webrtc.manager import WebRTCManager
 
 
@@ -36,8 +36,13 @@ def get_project_service() -> ProjectService:
 
 @lru_cache
 def get_dataset_service() -> DatasetService:
-    """Provide a ProjectService instance for managing projects."""
+    """Provides a DatasetService instance for managing projects."""
     return DatasetService()
+
+@lru_cache
+def get_model_service() -> DatasetService:
+    """Provides a ModelService instance for managing projects."""
+    return ModelService()
 
 
 def get_project_id(project_id: str) -> UUID:

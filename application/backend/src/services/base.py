@@ -19,6 +19,7 @@ class ResourceType(StrEnum):
 
     PROJECT = "Project"
     DATASET = "Dataset"
+    MODEL = "Model"
 
 
 class ResourceError(Exception):

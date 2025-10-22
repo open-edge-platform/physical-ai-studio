@@ -10,6 +10,7 @@ from api.hardware import router as hardware_router
 from api.project import router as project_router
 from api.record import router as record_router
 from api.settings import router as settings_router
+from api.models import router as models_router
 from core import lifespan
 from exception_handlers import register_application_exception_handlers
 from settings import get_settings
@@ -31,6 +32,7 @@ app.include_router(camera_router)
 app.include_router(dataset_router)
 app.include_router(record_router)
 app.include_router(settings_router)
+app.include_router(models_router)
 
 register_application_exception_handlers(app)
 

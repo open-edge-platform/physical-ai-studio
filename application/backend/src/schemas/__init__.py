@@ -4,6 +4,7 @@ from .dataset import Dataset, Episode, EpisodeInfo, LeRobotDatasetInfo
 from .project import Project, ProjectConfig
 from .robot import RobotConfig, RobotPortInfo
 from .teleoperation import TeleoperationConfig
+from .model import Model
 
 __all__ = [
     "CalibrationConfig",
@@ -19,4 +20,5 @@ __all__ = [
     "RobotConfig",
     "RobotPortInfo",
     "TeleoperationConfig",
+    "Model",
 ]

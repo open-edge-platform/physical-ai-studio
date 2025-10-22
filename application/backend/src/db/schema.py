@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -22,6 +22,12 @@ class ProjectDB(Base):
     )
     datasets: Mapped[list["DatasetDB"]] = relationship(
         "DatasetDB",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    models: Mapped[list["ModelDB"]] = relationship(
+        "ModelDB",
         back_populates="project",
         cascade="all, delete-orphan",
         lazy="selectin",
@@ -73,3 +79,16 @@ class DatasetDB(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
     project: Mapped["ProjectDB"] = relationship("ProjectDB", back_populates="datasets")
+
+
+class ModelDB(Base):
+    __tablename__ = "models"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=lambda: str(uuid4()))
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    path: Mapped[str] = mapped_column(String(255), nullable=False)
+    properties: Mapped[JSON] = mapped_column(JSON(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
+    project: Mapped["ProjectDB"] = relationship("ProjectDB", back_populates="models")
