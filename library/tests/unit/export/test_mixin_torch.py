@@ -241,7 +241,7 @@ class TestToTorch:
             assert checkpoint_path.exists()
 
             # Load and verify checkpoint
-            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
             assert GETIACTION_CONFIG_KEY in state_dict
             assert isinstance(state_dict[GETIACTION_CONFIG_KEY], str)
 
@@ -255,7 +255,7 @@ class TestToTorch:
             model.to_torch(checkpoint_path)
 
             # Load checkpoint and parse config
-            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
             config_yaml = state_dict[GETIACTION_CONFIG_KEY]
             loaded_config = yaml.safe_load(config_yaml)
 
@@ -279,7 +279,7 @@ class TestToTorch:
             model.to_torch(checkpoint_path)
 
             # Load and verify weights
-            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
             state_dict.pop(GETIACTION_CONFIG_KEY)  # Remove config key
 
             assert "linear.weight" in state_dict
@@ -301,7 +301,7 @@ class TestToTorch:
             model.to_torch(checkpoint_path)
 
             # Should save successfully with empty config
-            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
             assert GETIACTION_CONFIG_KEY in state_dict
             config_yaml = state_dict[GETIACTION_CONFIG_KEY]
             loaded_config = yaml.safe_load(config_yaml)
@@ -440,7 +440,7 @@ class TestRoundTrip:
             loaded_model = ModelWithBothMixins.from_snapshot(checkpoint_path)
 
             # Load weights manually to verify
-            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
             state_dict.pop(GETIACTION_CONFIG_KEY)
             loaded_model.model.load_state_dict(state_dict)
 
