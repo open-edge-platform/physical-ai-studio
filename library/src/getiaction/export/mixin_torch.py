@@ -15,7 +15,7 @@ import yaml
 
 from getiaction.config.instantiate import instantiate_obj_from_dict
 
-GETIACTION_CONFIG_KEY = "model_config"
+CONFIG_KEY = "model_config"
 
 
 class Export:
@@ -44,7 +44,7 @@ class Export:
         """
         state_dict = self.model.state_dict()
         config_dict = _serialize_model_config(self.model.config) if hasattr(self.model, "config") else {}
-        state_dict[GETIACTION_CONFIG_KEY] = yaml.dump(config_dict, default_flow_style=False)
+        state_dict[CONFIG_KEY] = yaml.dump(config_dict, default_flow_style=False)
 
         torch.save(state_dict, checkpoint_path)  # nosec
 
@@ -85,12 +85,12 @@ class FromCheckpoint:
         """
         state_dict = {}
         if isinstance(snapshot, (str, PathLike)):
-            state_dict = torch.load(snapshot, map_location="cpu", weights_only=True)  # nosec
+            state_dict = torch.load(snapshot, map_location="cpu", weights_only=True)  # nosemgrep
         else:
             state_dict = copy(snapshot)
 
-        config = instantiate_obj_from_dict(yaml.safe_load(state_dict[GETIACTION_CONFIG_KEY]))
-        state_dict.pop(GETIACTION_CONFIG_KEY)
+        config = instantiate_obj_from_dict(yaml.safe_load(state_dict[CONFIG_KEY]))
+        state_dict.pop(CONFIG_KEY)
 
         if hasattr(cls, "from_dataclass") and callable(cls.from_dataclass):  # type: ignore [attr-defined]
             return cls.from_dataclass(config)  # type: ignore [attr-defined]

@@ -33,7 +33,7 @@ def _import_class(class_path: str) -> type:
     """
     try:
         module_path, class_name = class_path.rsplit(".", 1)
-        module = importlib.import_module(module_path)
+        module = importlib.import_module(module_path)  # nosemgrep
         return getattr(module, class_name)
     except (ValueError, ImportError, AttributeError) as e:
         msg = f"Cannot import '{class_path}': {e}"

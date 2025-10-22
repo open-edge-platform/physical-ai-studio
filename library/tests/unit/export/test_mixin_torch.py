@@ -15,7 +15,7 @@ import torch
 import yaml
 
 from getiaction.export.mixin_torch import (
-    GETIACTION_CONFIG_KEY,
+    CONFIG_KEY,
     FromCheckpoint,
     Export,
     _serialize_model_config,
@@ -241,9 +241,9 @@ class TestToTorch:
             assert checkpoint_path.exists()
 
             # Load and verify checkpoint
-            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
-            assert GETIACTION_CONFIG_KEY in state_dict
-            assert isinstance(state_dict[GETIACTION_CONFIG_KEY], str)
+            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)  # nosemgrep
+            assert CONFIG_KEY in state_dict
+            assert isinstance(state_dict[CONFIG_KEY], str)
 
     def test_to_torch_config_serialization(self):
         """Test that config is properly serialized in checkpoint."""
@@ -255,8 +255,8 @@ class TestToTorch:
             model.to_torch(checkpoint_path)
 
             # Load checkpoint and parse config
-            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
-            config_yaml = state_dict[GETIACTION_CONFIG_KEY]
+            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)  # nosemgrep
+            config_yaml = state_dict[CONFIG_KEY]
             loaded_config = yaml.safe_load(config_yaml)
 
             assert loaded_config["class_path"] == f"{SimpleConfig.__module__}.{SimpleConfig.__qualname__}"
@@ -279,8 +279,8 @@ class TestToTorch:
             model.to_torch(checkpoint_path)
 
             # Load and verify weights
-            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
-            state_dict.pop(GETIACTION_CONFIG_KEY)  # Remove config key
+            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)  # nosemgrep
+            state_dict.pop(CONFIG_KEY)  # Remove config key
 
             assert "linear.weight" in state_dict
             assert "linear.bias" in state_dict
@@ -301,9 +301,9 @@ class TestToTorch:
             model.to_torch(checkpoint_path)
 
             # Should save successfully with empty config
-            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
-            assert GETIACTION_CONFIG_KEY in state_dict
-            config_yaml = state_dict[GETIACTION_CONFIG_KEY]
+            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)  # nosemgrep
+            assert CONFIG_KEY in state_dict
+            config_yaml = state_dict[CONFIG_KEY]
             loaded_config = yaml.safe_load(config_yaml)
             assert loaded_config == {}
 
@@ -360,7 +360,7 @@ class TestFromCheckpoint:
         # Create a fake state dict
         state_dict = model.model.state_dict()
         config_dict = _serialize_model_config(config)
-        state_dict[GETIACTION_CONFIG_KEY] = yaml.dump(config_dict)
+        state_dict[CONFIG_KEY] = yaml.dump(config_dict)
 
         # Load from dict
         loaded_model = ModelWithBothMixins.load_checkpoint(state_dict)
@@ -393,7 +393,7 @@ class TestFromCheckpoint:
 
         config = SimpleConfig()
         config_dict = _serialize_model_config(config)
-        state_dict = {GETIACTION_CONFIG_KEY: yaml.dump(config_dict)}
+        state_dict = {CONFIG_KEY: yaml.dump(config_dict)}
 
         with pytest.raises(NotImplementedError, match="from_dataclass"):
             ModelWithoutFromDataclass.load_checkpoint(state_dict)
@@ -406,17 +406,17 @@ class TestFromCheckpoint:
         original_state_dict = {
             "linear.weight": torch.randn(128, 128),
             "linear.bias": torch.randn(128),
-            GETIACTION_CONFIG_KEY: yaml.dump(_serialize_model_config(config)),
+            CONFIG_KEY: yaml.dump(_serialize_model_config(config)),
         }
 
         # Verify config key is present
-        assert GETIACTION_CONFIG_KEY in original_state_dict
+        assert CONFIG_KEY in original_state_dict
 
         # Load model (uses copy internally, so original should not be modified)
         ModelWithBothMixins.load_checkpoint(original_state_dict)
 
         # Original dict should still have the config key (since from_snapshot uses copy)
-        assert GETIACTION_CONFIG_KEY in original_state_dict
+        assert CONFIG_KEY in original_state_dict
 
 
 class TestRoundTrip:
@@ -440,8 +440,8 @@ class TestRoundTrip:
             loaded_model = ModelWithBothMixins.load_checkpoint(checkpoint_path)
 
             # Load weights manually to verify
-            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
-            state_dict.pop(GETIACTION_CONFIG_KEY)
+            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)  # nosemgrep
+            state_dict.pop(CONFIG_KEY)
             loaded_model.model.load_state_dict(state_dict)
 
             # Verify config
