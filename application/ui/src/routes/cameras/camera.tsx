@@ -10,7 +10,7 @@ import { useWebRTCConnection, WebRTCConnectionProvider } from '../../components/
 
 import classes from './camera.module.scss';
 
-const CameraView = ({ label }: { label: string }) => {
+export const CameraView = ({ label }: { label: string }) => {
     const [size, setSize] = useState({ width: 300, height: 300 });
     const { start, status, stop } = useWebRTCConnection();
 

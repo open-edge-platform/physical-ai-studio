@@ -9,6 +9,8 @@ from db import MigrationManager
 from settings import get_settings
 from webrtc.manager import WebRTCManager
 
+from .scheduler import Scheduler
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,6 +23,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     logger.info("Starting %s application...", settings.app_name)
     webrtc_manager = WebRTCManager()
     app.state.webrtc_manager = webrtc_manager
+
+    app_scheduler = Scheduler()
+    app.state.scheduler = app_scheduler
     logger.info("Application startup completed")
 
     migration_manager = MigrationManager(settings)
@@ -33,4 +38,5 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # Shutdown
     logger.info("Shutting down %s application...", settings.app_name)
     await webrtc_manager.cleanup()
+    app_scheduler.shutdown()
     logger.info("Application shutdown completed")

@@ -8,7 +8,7 @@ interface CameraSetupProps {
     updateCamera: (name: string, id: string, oldId: string, driver: string, oldDriver: string) => void;
 }
 export const CameraSetup = ({ camera, availableCameras, updateCamera }: CameraSetupProps) => {
-    const camerasConnectedOfType = availableCameras;
+    const camerasConnectedOfType = availableCameras.filter((m) => m.driver === camera.driver);
     const makeKey = (cam: SchemaCamera) => `${cam.driver}%${cam.port_or_device_id}`;
 
     const onSelection = (key: Key | null) => {
@@ -21,12 +21,7 @@ export const CameraSetup = ({ camera, availableCameras, updateCamera }: CameraSe
     return (
         <Flex direction={'column'} flex={1}>
             <Heading>{camera.name}</Heading>
-            <img
-                alt='Preview Camera'
-                src={`/api/hardware/camera_feed?id=${camera.port_or_device_id}&driver=${camera.driver}`}
-                style={{ flex: 1, maxWidth: '280px', paddingBottom: '10px' }}
-            />
-            <Picker selectedKey={camera.port_or_device_id} onSelectionChange={onSelection}>
+            <Picker selectedKey={`${camera.driver}%${camera.port_or_device_id}`} onSelectionChange={onSelection}>
                 {camerasConnectedOfType.map((cam) => (
                     <Item key={makeKey(cam)}>{cam.name}</Item>
                 ))}

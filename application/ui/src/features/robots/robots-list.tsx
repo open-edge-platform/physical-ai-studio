@@ -132,7 +132,7 @@ export const RobotsList = () => {
                             return (
                                 <RobotListItem
                                     id={robot.serial_id}
-                                    name={hardwareRobot?.device_name ?? ''}
+                                    name={hardwareRobot?.robot_type ?? ''}
                                     port={hardwareRobot?.port}
                                     // TODO configure using some project endpoint
                                     type={'Leader'}

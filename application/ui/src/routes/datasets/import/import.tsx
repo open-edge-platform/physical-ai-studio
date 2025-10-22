@@ -4,6 +4,7 @@ import { clsx } from 'clsx';
 import { $api } from '../../../api/client';
 import { SchemaLeRobotDatasetInfo } from '../../../api/openapi-spec';
 import { useProjectId } from '../../../features/projects/use-project';
+import { paths } from '../../../router';
 
 import classes from './import.module.scss';
 
@@ -49,12 +50,15 @@ const ImportableDataset = ({ dataset }: ImportableDatasetProps) => {
 };
 
 export const ImportDataset = () => {
+    const { project_id } = useProjectId();
     const { data: lerobotDatasets } = $api.useSuspenseQuery('get', '/api/dataset/lerobot');
+    const { data: orphanDatasets } = $api.useSuspenseQuery('get', '/api/dataset/orphans');
 
     return (
         <View>
-            <Heading>New Dataset</Heading>
-            {lerobotDatasets.map((dataset) => (
+            <Heading>Import dataset</Heading>
+            <Button href={paths.project.datasets.record_new({ project_id })}>Setup</Button>
+            {[...lerobotDatasets, ...orphanDatasets].map((dataset) => (
                 <ImportableDataset dataset={dataset} key={dataset.repo_id} />
             ))}
         </View>

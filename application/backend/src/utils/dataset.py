@@ -9,10 +9,13 @@ from lerobot.constants import HF_LEROBOT_HOME
 from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
 
 from schemas import CameraConfig, Dataset, Episode, EpisodeInfo, LeRobotDatasetInfo, ProjectConfig
+from storage.storage import GETI_ACTION_DATASETS
 
 
 def get_dataset_episodes(repo_id: str, root: str | None) -> list[Episode]:
     """Load dataset from LeRobot cache and get info"""
+    if root and not check_repository_exists(Path(root)):
+        return []
     dataset = LeRobotDataset(repo_id, root)
     metadata = dataset.meta
     episodes = metadata.episodes
@@ -67,6 +70,18 @@ def get_local_repository_ids(home: str | Path | None = None) -> list[str]:
     return repo_ids
 
 
+def get_geti_action_datasets(home: str | Path | None = None) -> list[tuple[str, Path]]:
+    """Get all local repository ids."""
+    home = Path(home) if home is not None else GETI_ACTION_DATASETS
+
+    repo_ids: list[tuple[str, Path]] = []
+    for repo in list_directories(home):
+        if os.path.isdir(home / repo):
+            repo_ids.append((repo, home / repo))
+
+    return repo_ids
+
+
 def get_local_repositories(
     home: str | Path | None = None,
 ) -> list[LeRobotDatasetMetadata]:
@@ -115,6 +130,11 @@ def build_project_config_from_dataset(dataset: LeRobotDatasetInfo) -> ProjectCon
     )
 
 
-def build_dataset_from_lerobot_dataset(dataset: LeRobotDatasetInfo) -> Dataset:
+def build_dataset_from_lerobot_dataset(dataset: LeRobotDatasetInfo, project_id: uuid.UUID) -> Dataset:
     """Build dataset from LeRobotDatasetInfo."""
-    return Dataset(name=dataset.repo_id, path=dataset.root, id=uuid.uuid4())
+    return Dataset(name=dataset.repo_id, path=dataset.root, id=uuid.uuid4(), project_id=project_id)
+
+
+def check_repository_exists(path: Path) -> bool:
+    """Check if repository path contains info and therefor exists."""
+    return (path / Path("meta/info.json")).is_file()

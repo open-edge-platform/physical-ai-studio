@@ -13,12 +13,12 @@ def get_calibrations() -> list[CalibrationConfig]:
     robots_path = HF_LEROBOT_CALIBRATION / ROBOTS
 
     return [
-        *get_calibration_of_folder(teleoperators_path, "teleoperator"),
-        *get_calibration_of_folder(robots_path, "robot"),
+        *get_calibration_of_folder(teleoperators_path, "leader"),
+        *get_calibration_of_folder(robots_path, "follower"),
     ]
 
 
-def get_calibration_of_folder(folder: str, robot_type: Literal["teleoperator", "robot"]) -> list[CalibrationConfig]:
+def get_calibration_of_folder(folder: str, robot_type: Literal["leader", "follower"]) -> list[CalibrationConfig]:
     """Get all calibration configs available for either teleoperator or robot"""
     calibrations = []
     for root, dirs, files in os.walk(folder):

@@ -48,6 +48,7 @@ const useWebRTCConnectionState = (camera: SchemaCamera) => {
 
     const start = useCallback(async () => {
         if (!webRTCConnectionRef.current) {
+            console.error('starting without WebRTC connection');
             return;
         }
 
