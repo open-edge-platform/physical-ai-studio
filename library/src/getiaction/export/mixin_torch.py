@@ -85,7 +85,7 @@ class FromCheckpoint:
         """
         state_dict = {}
         if isinstance(snapshot, (str, PathLike)):
-            state_dict = torch.load(snapshot, map_location="cpu", weights_only=True)
+            state_dict = torch.load(snapshot, map_location="cpu", weights_only=True)  # nosec
         else:
             state_dict = copy(snapshot)
 
