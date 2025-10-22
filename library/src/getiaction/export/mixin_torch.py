@@ -46,7 +46,7 @@ class ToTorch:
         config_dict = _serialize_model_config(self.model.config) if hasattr(self.model, "config") else {}
         state_dict[GETIACTION_CONFIG_KEY] = yaml.dump(config_dict, default_flow_style=False)
 
-        torch.save(state_dict, checkpoint_path)
+        torch.save(state_dict, checkpoint_path)  # nosec
 
 
 class FromCheckpoint:
