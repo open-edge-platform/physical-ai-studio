@@ -10,8 +10,10 @@ from schemas import Camera, CameraProfile
 
 logger = logging.getLogger(__name__)
 
+
 class EmptyFrameError(Exception):
     pass
+
 
 class FrameSourceVideoStreamTrack(VideoStreamTrack):
     """Video stream track that captures frames directly from FrameSource."""
@@ -30,7 +32,7 @@ class FrameSourceVideoStreamTrack(VideoStreamTrack):
         )
         self.cam.connect()
         self._running = True
-        self._last_frame : VideoFrame | None = None
+        self._last_frame: VideoFrame | None = None
         self._error_counter = 0
 
     async def recv(self) -> VideoFrame:
