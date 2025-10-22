@@ -172,7 +172,7 @@ class TestDummyPolicyImportExport:
         assert export_path.exists()
 
         # Import the model back
-        loaded_model = DummyModel.from_snapshot(export_path)
+        loaded_model = DummyModel.load_checkpoint(export_path)
 
         assert isinstance(loaded_model, DummyModel)
         assert loaded_model.action_shape == policy.model.action_shape

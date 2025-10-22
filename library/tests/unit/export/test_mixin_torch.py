@@ -332,7 +332,7 @@ class TestFromCheckpoint:
             model.to_torch(checkpoint_path)
 
             # Load from path
-            loaded_model = ModelWithBothMixins.from_snapshot(checkpoint_path)
+            loaded_model = ModelWithBothMixins.load_checkpoint(checkpoint_path)
 
             assert loaded_model.config.hidden_size == 128
             assert loaded_model.config.num_layers == 3
@@ -348,7 +348,7 @@ class TestFromCheckpoint:
             model.to_torch(checkpoint_path)
 
             # Load from string path
-            loaded_model = ModelWithBothMixins.from_snapshot(checkpoint_path)
+            loaded_model = ModelWithBothMixins.load_checkpoint(checkpoint_path)
 
             assert loaded_model.config.hidden_size == 256
 
@@ -363,7 +363,7 @@ class TestFromCheckpoint:
         state_dict[GETIACTION_CONFIG_KEY] = yaml.dump(config_dict)
 
         # Load from dict
-        loaded_model = ModelWithBothMixins.from_snapshot(state_dict)
+        loaded_model = ModelWithBothMixins.load_checkpoint(state_dict)
 
         assert loaded_model.config.hidden_size == 64
         assert loaded_model.config.num_layers == 3
@@ -377,7 +377,7 @@ class TestFromCheckpoint:
             checkpoint_path = Path(tmpdir) / "model.pt"
             model.to_torch(checkpoint_path)
 
-            loaded_model = ModelWithBothMixins.from_snapshot(checkpoint_path)
+            loaded_model = ModelWithBothMixins.load_checkpoint(checkpoint_path)
 
             assert loaded_model.config.hidden_size == config.hidden_size
             assert loaded_model.config.num_layers == config.num_layers
@@ -396,7 +396,7 @@ class TestFromCheckpoint:
         state_dict = {GETIACTION_CONFIG_KEY: yaml.dump(config_dict)}
 
         with pytest.raises(NotImplementedError, match="from_dataclass"):
-            ModelWithoutFromDataclass.from_snapshot(state_dict)
+            ModelWithoutFromDataclass.load_checkpoint(state_dict)
 
     def test_from_snapshot_removes_config_key(self):
         """Test that config key is removed from copied state_dict."""
@@ -413,7 +413,7 @@ class TestFromCheckpoint:
         assert GETIACTION_CONFIG_KEY in original_state_dict
 
         # Load model (uses copy internally, so original should not be modified)
-        ModelWithBothMixins.from_snapshot(original_state_dict)
+        ModelWithBothMixins.load_checkpoint(original_state_dict)
 
         # Original dict should still have the config key (since from_snapshot uses copy)
         assert GETIACTION_CONFIG_KEY in original_state_dict
@@ -437,7 +437,7 @@ class TestRoundTrip:
             original_model.to_torch(checkpoint_path)
 
             # Load model
-            loaded_model = ModelWithBothMixins.from_snapshot(checkpoint_path)
+            loaded_model = ModelWithBothMixins.load_checkpoint(checkpoint_path)
 
             # Load weights manually to verify
             state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
@@ -487,7 +487,7 @@ class TestRoundTrip:
             checkpoint_path = Path(tmpdir) / "model.pt"
             original_model.to_torch(checkpoint_path)
 
-            loaded_model = ComplexModel.from_snapshot(checkpoint_path)
+            loaded_model = ComplexModel.load_checkpoint(checkpoint_path)
 
             assert loaded_model.config.simple.hidden_size == 256
             assert loaded_model.config.activation == "gelu"  # StrEnum converted to str
@@ -503,7 +503,7 @@ class TestRoundTrip:
             for i in range(3):
                 checkpoint_path = Path(tmpdir) / f"model_{i}.pt"
                 model.to_torch(checkpoint_path)
-                model = ModelWithBothMixins.from_snapshot(checkpoint_path)
+                model = ModelWithBothMixins.load_checkpoint(checkpoint_path)
 
                 # Config should remain consistent
                 assert model.config.hidden_size == 32
