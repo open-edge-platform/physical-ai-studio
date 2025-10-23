@@ -6,6 +6,7 @@
 
 """ACT torch model."""
 
+import dataclasses
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -21,14 +22,15 @@ from torch import Tensor, nn
 from torchvision.models._utils import IntermediateLayerGetter  # noqa: PLC2701
 from torchvision.ops.misc import FrozenBatchNorm2d
 
-from getiaction.config.mixin import FromConfig
+from getiaction.config import FromConfig
 from getiaction.data import Feature, FeatureType, Observation
+from getiaction.export import FromCheckpoint
 from getiaction.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
 
 from .config import ACTConfig
 
 
-class ACT(nn.Module, FromConfig):
+class ACT(nn.Module, FromConfig, FromCheckpoint):
     """Action Chunking Transformer (ACT) model.
 
     Supports training and inference modes.
@@ -43,7 +45,7 @@ class ACT(nn.Module, FromConfig):
         n_action_steps: int = 100,
         vision_backbone: str = "resnet18",
         pretrained_backbone_weights: str | None = "ResNet18_Weights.IMAGENET1K_V1",
-        replace_final_stride_with_dilation: int = False,
+        replace_final_stride_with_dilation: bool = False,
         pre_norm: bool = False,
         dim_model: int = 512,
         n_heads: int = 8,
@@ -170,6 +172,19 @@ class ACT(nn.Module, FromConfig):
             inverse=True,
         )
         self._model = _ACT(self._config)
+
+    @property
+    def config(self) -> ACTConfig:
+        """Get the ACT model configuration.
+
+        Returns:
+            ACTConfig: The configuration of the ACT model.
+        """
+        config_dict = {field.name: getattr(self._config, field.name) for field in dataclasses.fields(self._config)}
+        target_fields = dataclasses.fields(ACTConfig)
+        filtered_config_dict = {k: v for k, v in config_dict.items() if k in {f.name for f in target_fields}}
+
+        return ACTConfig(**filtered_config_dict)
 
     def forward(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]] | torch.Tensor:
         """Forward pass through the ACT model.
@@ -345,25 +360,25 @@ class _ACTConfig(ACTConfig):
     @property
     def robot_state_feature(self) -> Feature | None:
         for ft_name, ft in self.input_features.items():
-            if ft.ftype is FeatureType.STATE and ft_name == Observation.ComponentKeys.STATE:
+            if ft.ftype == FeatureType.STATE and ft_name == Observation.ComponentKeys.STATE:
                 return ft
         return None
 
     @property
     def image_features(self) -> dict[str, Feature]:
-        return {key: ft for key, ft in self.input_features.items() if ft.ftype is FeatureType.VISUAL}
+        return {key: ft for key, ft in self.input_features.items() if ft.ftype == FeatureType.VISUAL}
 
     @property
     def env_state_feature(self) -> Feature | None:
         for ft in self.input_features.values():
-            if ft.ftype is FeatureType.ENV:
+            if ft.ftype == FeatureType.ENV:
                 return ft
         return None
 
     @property
     def action_feature(self) -> Feature:
         for ft_name, ft in self.output_features.items():
-            if ft.ftype is FeatureType.ACTION and ft_name == Observation.ComponentKeys.ACTION:
+            if ft.ftype == FeatureType.ACTION and ft_name == Observation.ComponentKeys.ACTION:
                 return ft
         msg = "No action feature found in output features."
         raise ValueError(msg)

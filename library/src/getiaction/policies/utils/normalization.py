@@ -190,7 +190,7 @@ class FeatureNormalizeTransform(nn.Module):
 
             shape = ft.shape if ft.shape is not None else ()
 
-            if ft.ftype is FeatureType.VISUAL:
+            if ft.ftype == FeatureType.VISUAL:
                 # sanity checks
                 visual_feature_len = 3
                 if len(shape) != visual_feature_len:
@@ -209,13 +209,19 @@ class FeatureNormalizeTransform(nn.Module):
             # downstream by `stats` or `policy.load_state_dict`, as expected. During forward,
             # we assert they are not infinity anymore.
 
-            def get_torch_tensor(arr: np.ndarray | torch.Tensor | Integral, shape: tuple[int, ...]) -> torch.Tensor:
+            def get_torch_tensor(
+                arr: np.ndarray | torch.Tensor | Integral | list,
+                shape: tuple[int, ...],
+            ) -> torch.Tensor:
                 if isinstance(arr, np.ndarray):
                     return torch.from_numpy(arr).to(dtype=torch.float32).view(shape)
                 if isinstance(arr, torch.Tensor):
                     return arr.clone().to(dtype=torch.float32).view(shape)
                 if isinstance(arr, Integral):
                     return torch.tensor(arr, dtype=torch.float32).view(shape)
+                if isinstance(arr, list):
+                    return torch.tensor(arr, dtype=torch.float32).view(shape)
+
                 type_ = type(arr)
                 msg = f"np.ndarray or torch.Tensor expected, but type is '{type_}' instead."
                 raise TypeError(msg)
