@@ -82,7 +82,9 @@ class WebRTCManager:
                     connections.remove(webrtc_id)
                     if not connections:
                         # Last connection using this device
-                        self._tracks.pop(device, None)
+                        track = self._tracks.pop(device, None)
+                        if track:
+                            track.stop(last_user=True)
                         self._frame_queues.pop(device, None)
                         print(f"🎥 Closed track for device {device} - no more active connections")
 

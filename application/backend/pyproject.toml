@@ -23,7 +23,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-FrameSource = { git = "https://github.com/ArendJanKramer/FrameSource.git", rev = "1c1a88bc6af097cafbf62af2059a0c54d494c241" }
+FrameSource = { git = "https://github.com/ArendJanKramer/FrameSource.git", rev = "79443705f4d742fa0d8ce6d00849c88343709e5b" }
 
 [dependency-groups]
 dev = [
