@@ -1,16 +1,16 @@
 from uuid import UUID
 
-from repositories import DatasetRepository
+from repositories import ModelRepository
 from schemas import Model
 from services.base import GenericPersistenceService, ResourceNotFoundError, ResourceType, ServiceConfig
-from services.mappers import DatasetMapper
+from services.mappers import ModelMapper
 from services.parent_process_guard import parent_process_only
 
 
 class ModelService:
     def __init__(self) -> None:
-        self._persistence: GenericPersistenceService[Model, DatasetRepository] = GenericPersistenceService(
-            ServiceConfig(DatasetRepository, DatasetMapper, ResourceType.DATASET)
+        self._persistence: GenericPersistenceService[Model, ModelRepository] = GenericPersistenceService(
+            ServiceConfig(ModelRepository, ModelMapper, ResourceType.MODEL)
         )
 
     def list_models(self) -> list[Model]:

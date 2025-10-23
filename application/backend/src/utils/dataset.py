@@ -47,9 +47,10 @@ def get_episode_actions(dataset: LeRobotDataset, episode: EpisodeInfo) -> torch.
 def list_directories(folder: Path) -> list[str]:
     """Get list of directories from folder."""
     res = []
-    for candidate in listdir(folder):
-        if os.path.isdir(folder / candidate):
-            res.append(candidate)
+    if os.path.isdir(folder):
+        for candidate in listdir(folder):
+            if os.path.isdir(folder / candidate):
+                res.append(candidate)
     return res
 
 

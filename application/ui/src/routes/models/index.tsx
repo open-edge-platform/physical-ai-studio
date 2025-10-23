@@ -1,5 +1,23 @@
-import { ErrorMessage } from '../../components/error-page/error-page';
+import { $api } from '../../api/client';
+import { View, Text, Flex, Button, DialogTrigger } from "@geti/ui"
+import { TrainModelModal } from './train-model';
 
 export const Index = () => {
-    return <ErrorMessage message={'Coming soon...'} />;
+    const {data: models } = $api.useQuery('get','/api/models')
+
+    const showTrainModelModal = () => {
+        console.log("...")
+    }
+    return (
+        <View margin={'size-200'}>
+            <Flex justifyContent={'space-between'}>
+                <Text>Models</Text>
+                <DialogTrigger>
+                    <Button variant='secondary' onPress={showTrainModelModal}>Train model</Button>
+                    {TrainModelModal}
+                </DialogTrigger>
+            </Flex>
+            <Text>List goes here..</Text>
+        </View>
+    )
 };
