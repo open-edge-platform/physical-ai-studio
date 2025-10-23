@@ -186,6 +186,32 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
 
         return ACTConfig(**filtered_config_dict)
 
+    def get_sample_input(self) -> dict[str, torch.Tensor]:
+        """
+        Generate a sample input dictionary for the model with random tensors.
+        This method creates a dictionary containing sample input tensors that match the expected
+        input format of the model. The tensors are randomly initialized and have shapes derived
+        from the model's configuration.
+        Returns:
+            dict[str, torch.Tensor]: A dictionary with two keys:
+                - Observation.ComponentKeys.IMAGES: A random tensor with shape (1, *visual_feature.shape)
+                  representing image observations, where visual_feature is taken from the first
+                  image feature in the configuration.
+                - Observation.ComponentKeys.STATE: A random tensor with shape (1, *state_feature.shape)
+                  representing robot state observations, where state_feature comes from the
+                  robot_state_feature in the configuration.
+        Note:
+            The batch dimension (first dimension) is set to 1 for both tensors.
+        """
+
+        visual_feature = next(iter(self._config.image_features.values()))
+        state_feature = self._config.robot_state_feature
+
+        return {
+            Observation.ComponentKeys.IMAGES: torch.randn(1, *visual_feature.shape),
+            Observation.ComponentKeys.STATE: torch.randn(1, *state_feature.shape),
+        }
+
     def forward(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]] | torch.Tensor:
         """Forward pass through the ACT model.
 
