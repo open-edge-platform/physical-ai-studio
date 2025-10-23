@@ -688,7 +688,7 @@ wheels = [
 [[package]]
 name = "framesource"
 version = "0.2.2"
-source = { git = "https://github.com/ArendJanKramer/FrameSource.git?rev=79443705f4d742fa0d8ce6d00849c88343709e5b#79443705f4d742fa0d8ce6d00849c88343709e5b" }
+source = { git = "https://github.com/ArendJanKramer/FrameSource.git?rev=955693153b829e1c0edaac22f6c5a5a772375eeb#955693153b829e1c0edaac22f6c5a5a772375eeb" }
 dependencies = [
     { name = "mss" },
     { name = "numba" },
@@ -829,7 +829,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.3.0" },
     { name = "cv2-enumerate-cameras" },
     { name = "fastapi", extras = ["standard"] },
-    { name = "framesource", git = "https://github.com/ArendJanKramer/FrameSource.git?rev=79443705f4d742fa0d8ce6d00849c88343709e5b" },
+    { name = "framesource", git = "https://github.com/ArendJanKramer/FrameSource.git?rev=955693153b829e1c0edaac22f6c5a5a772375eeb" },
     { name = "harvesters" },
     { name = "lerobot", extras = ["feetech"], specifier = ">=0.3.3" },
     { name = "numpy" },
