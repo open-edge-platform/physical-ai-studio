@@ -28,7 +28,7 @@ async def create_project(
     project_service: Annotated[ProjectService, Depends(get_project_service)],
 ) -> Project:
     """Create a new project."""
-    return project_service.create_project(project)
+    return await project_service.create_project(project)
 
 
 @router.post("/{project_id}/project_config")
@@ -42,7 +42,7 @@ async def set_project_config(
     update = {
         "config": project_config,
     }
-    return project_service.update_project(project, update)
+    return await project_service.update_project(project, update)
 
 
 @router.post("/{project_id}/import_dataset")
@@ -52,7 +52,7 @@ async def import_dataset(
     project_service: Annotated[ProjectService, Depends(get_project_service)],
 ) -> Project:
     """Set the project from a dataset, only available when config is None."""
-    project = project_service.get_project_by_id(project_id)
+    project = await project_service.get_project_by_id(project_id)
     update = {}
     if project.config is not None:
         raise HTTPException(
@@ -65,7 +65,7 @@ async def import_dataset(
 
     update["config"] = build_project_config_from_dataset(lerobot_dataset)
     update["datasets"] = [build_dataset_from_lerobot_dataset(lerobot_dataset, project_id)]
-    return project_service.update_project(project, update)
+    return await project_service.update_project(project, update)
 
 
 @router.delete("/{project_id}")
@@ -75,7 +75,7 @@ async def delete_project(
 ) -> None:
     """Delete a project."""
     try:
-        project_service.delete_project_by_id(project_id)
+        await project_service.delete_project(project_id)
     except ResourceNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except ResourceInUseError as e:
