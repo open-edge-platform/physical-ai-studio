@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     @property
     def database_url(self) -> str:
         """Get database URL"""
-        return f"sqlite:///{self.data_dir / self.database_file}"
+        return f"sqlite+aiosqlite:///{self.data_dir / self.database_file}"
 
 
 @lru_cache

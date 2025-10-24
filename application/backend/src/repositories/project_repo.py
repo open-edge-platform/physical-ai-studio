@@ -1,14 +1,24 @@
-from sqlalchemy.orm import Session
+from collections.abc import Callable
+
+from sqlalchemy.ext.asyncio.session import AsyncSession
 
 from db.schema import ProjectDB
 from repositories.base import BaseRepository
+from repositories.mappers import ProjectMapper
+from schemas import Project
 
 
-class ProjectRepository(BaseRepository[ProjectDB]):
-    """Repository for project-related database operations."""
-
-    def __init__(self, db: Session):
+class ProjectRepository(BaseRepository):
+    def __init__(self, db: AsyncSession):
         super().__init__(db, ProjectDB)
 
-    def save(self, project: ProjectDB) -> ProjectDB:
-        return super().save(project)
+    @property
+    def to_schema(self) -> Callable[[Project], ProjectDB]:
+        return ProjectMapper.to_schema
+
+    @property
+    def from_schema(self) -> Callable[[ProjectDB], Project]:
+        return ProjectMapper.from_schema
+
+    async def get_by_name(self, name: str) -> list[Project]:
+        return await self.get_all(extra_filters={"name": name})
