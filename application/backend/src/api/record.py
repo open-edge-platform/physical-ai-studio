@@ -21,14 +21,13 @@ async def teleoperate_websocket(  # noqa: C901
     scheduler: Annotated[Scheduler, Depends(get_scheduler)],
 ) -> None:
     """Robot control websocket."""
-    print("wat")
     await websocket.accept()
     data = await websocket.receive_json("text")
     config = TeleoperationConfig.model_validate(data["data"])
     try:
-        dataset_service.get_dataset_by_id(config.dataset.id)
+        await dataset_service.get_dataset_by_id(config.dataset.id)
     except ResourceNotFoundError:
-        dataset_service.create_dataset(config.dataset)
+        await dataset_service.create_dataset(config.dataset)
     queue: mp.Queue = mp.Queue()
     process = TeleoperateWorker(
         stop_event=scheduler.mp_stop_event,

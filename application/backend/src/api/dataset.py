@@ -35,7 +35,7 @@ async def list_orphan_datasets(
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
 ) -> list[LeRobotDatasetInfo]:
     """Get all local lerobot datasets from huggingface cache."""
-    datasets = [dataset.path for dataset in dataset_service.list_datasets()]
+    datasets = [dataset.path for dataset in await dataset_service.get_dataset_list()]
 
     return [
         LeRobotDatasetInfo(
@@ -59,7 +59,7 @@ async def get_episodes_of_dataset(
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
 ) -> list[Episode]:
     """Get dataset episodes of dataset by id."""
-    dataset = dataset_service.get_dataset_by_id(dataset_id)
+    dataset = await dataset_service.get_dataset_by_id(dataset_id)
     return get_dataset_episodes(dataset.name, dataset.path)
 
 
@@ -71,7 +71,7 @@ async def dataset_video_endpoint(
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
 ) -> FileResponse:
     """Get path to video of episode"""
-    dataset = dataset_service.get_dataset_by_id(dataset_id)
+    dataset = await dataset_service.get_dataset_by_id(dataset_id)
     metadata = LeRobotDatasetMetadata(dataset.name, dataset.path, None, force_cache_sync=False)
     full_camera_name = f"observation.images.{camera}"
     video_path = os.path.join(metadata.root, metadata.get_video_file_path(episode, full_camera_name))
