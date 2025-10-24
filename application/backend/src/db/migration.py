@@ -44,7 +44,7 @@ class MigrationManager:
         """Get Alembic configuration"""
         alembic_cfg = Config(self.settings.alembic_config_path)
         alembic_cfg.set_main_option("script_location", self.settings.alembic_script_location)
-        alembic_cfg.set_main_option("sqlalchemy.url", self.settings.database_url)
+        alembic_cfg.set_main_option("sqlalchemy.url", self.settings.database_url_sync)
         return alembic_cfg
 
     def run_migrations(self) -> bool:
@@ -56,6 +56,7 @@ class MigrationManager:
             logger.info("✓ Database migrations completed successfully")
             return True
         except Exception as e:
+            print(e)
             logger.error(f"✗ Database migration failed: {e}")
             return False
 
