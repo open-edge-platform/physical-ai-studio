@@ -3,33 +3,32 @@ import { $api } from "../../api/client"
 import { useProject } from "../../features/projects/use-project"
 import { v4 as uuidv4 } from 'uuid';
 import { useState } from "react";
-import { SchemaModel } from "../../api/openapi-spec";
+import { SchemaModel, SchemaTrainJobPayload } from "../../api/openapi-spec";
 
 export const TrainModelModal = (close: () => void) => {
-    const { datasets } = useProject();
+    const { datasets, id: project_id } = useProject();
     const [name, setName] = useState<string>("");
     const [selectedDatasets, setSelectedDatasets] = useState<Key | null>(null);
     const [selectedPolicy, setSelectedPolicy] = useState<Key | null>("act");
 
+    const trainMutation = $api.useMutation('post','/api/jobs/train')
+
     const save = () => {
-        console.log({
-            id: uuidv4(),
-            name,
-            path: "",
-            properties: {
-                "dataset": selectedDatasets?.toString() ?? "",
-                "policy": selectedPolicy?.toString() ?? "",
-            }
-            
-        });
-        //saveMutation.mutateAsync(
-        //    { body: { id, name, datasets: [] } },
-        //    {
-        //        onSuccess: () => {
-        //            navigate(paths.project.datasets.index({ project_id: id }));
-        //        },
-        //    }
-        //);
+        const dataset_id = selectedDatasets?.toString()
+        const policy = selectedPolicy?.toString()!
+
+        if (!dataset_id || !policy) {
+            return;
+        }
+
+        const payload: SchemaTrainJobPayload = {
+            dataset_id: dataset_id!,
+            project_id,
+            model_name: name,
+            policy: policy!
+
+        }
+        trainMutation.mutate({ body: payload })
     };
 
     return (

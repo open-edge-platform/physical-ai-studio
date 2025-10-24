@@ -28,7 +28,7 @@ async def create_project(
     project_service: Annotated[ProjectService, Depends(get_project_service)],
 ) -> Project:
     """Create a new project."""
-    return project_service.create_project(project)
+    return await project_service.create_project(project)
 
 
 @router.post("/{project_id}/project_config")

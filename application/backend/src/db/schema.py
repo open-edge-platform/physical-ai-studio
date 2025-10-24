@@ -87,8 +87,25 @@ class ModelDB(Base):
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=lambda: str(uuid4()))
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     path: Mapped[str] = mapped_column(String(255), nullable=False)
+    policy: Mapped[str] = mapped_column(String(255), nullable=False)
     properties: Mapped[JSON] = mapped_column(JSON(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    dataset_id: Mapped[str] = mapped_column(String("datasets.id"))
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
     project: Mapped["ProjectDB"] = relationship("ProjectDB", back_populates="models")
+
+
+class JobDB(Base):
+    __tablename__ = "jobs"
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=lambda: str(uuid4()))
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
+    type: Mapped[str] = mapped_column(String(64), nullable=False)
+    progress: Mapped[int] = mapped_column(nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    start_time: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    end_time: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    payload: Mapped[str] = mapped_column(JSON, nullable=False)

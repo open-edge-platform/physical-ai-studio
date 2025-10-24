@@ -17,10 +17,11 @@ dependencies = [
   "aiortc>=1.13.0",
   "pydantic-settings>=2.10.1",
   "sqlalchemy>=2.0.43",
-  "aiosqlite~=0.21", 
+  "aiosqlite~=0.21",
   "alembic>=1.16.5",
   "click>=8.3.0",
-  "FrameSource>=0.2.2"
+  "FrameSource>=0.2.2",
+  "loguru>=0.7.3",
 ]
 
 [tool.uv.sources]

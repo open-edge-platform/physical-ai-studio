@@ -31,3 +31,17 @@ class ResourceNotFoundException(GetiBaseException):
             error_code=f"{resource_name}_not_found",
             http_status=http.HTTPStatus.NOT_FOUND,
         )
+
+class DuplicateJobException(GetiBaseException):
+    """
+    Exception raised when attempting to submit a duplicate job.
+
+    :param message: str containing a custom message about the duplicate job.
+    """
+
+    def __init__(self, message: str = "A job with the same payload is already running or queued") -> None:
+        super().__init__(
+            message=message,
+            error_code="duplicate_job",
+            http_status=http.HTTPStatus.CONFLICT,
+        )

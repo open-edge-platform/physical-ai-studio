@@ -5,6 +5,7 @@ from .project import Project, ProjectConfig
 from .robot import RobotConfig, RobotPortInfo
 from .teleoperation import TeleoperationConfig
 from .model import Model
+from .job import Job
 
 __all__ = [
     "CalibrationConfig",
@@ -21,4 +22,5 @@ __all__ = [
     "RobotPortInfo",
     "TeleoperationConfig",
     "Model",
+    "Job",
 ]

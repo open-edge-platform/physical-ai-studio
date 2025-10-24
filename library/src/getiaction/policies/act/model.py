@@ -213,7 +213,7 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
                 batch_ = dict(batch)  # shallow copy so that adding a key doesn't modify the original
                 if isinstance(batch[Observation.ComponentKeys.IMAGES], dict):
                     batch_[Observation.ComponentKeys.IMAGES] = [
-                        batch[Observation.ComponentKeys.IMAGES][key] for key in self._config.image_features
+                        batch[Observation.ComponentKeys.IMAGES][key[19:]] for key in self._config.image_features
                     ]
                     batch = batch_
                 else:

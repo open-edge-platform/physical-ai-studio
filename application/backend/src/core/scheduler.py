@@ -2,6 +2,7 @@ import logging
 import multiprocessing as mp
 import os
 from typing import TYPE_CHECKING
+from workers import TrainingWorker
 
 import psutil
 
@@ -22,6 +23,14 @@ class Scheduler:
         self.processes: list[mp.Process] = []
         self.threads: list[threading.Thread] = []
         logger.info("Scheduler initialized")
+
+    def start_workers(self) -> None:
+        training_proc = TrainingWorker(
+            stop_event=self.mp_stop_event,
+        )
+        training_proc.daemon = False
+        training_proc.start()
+        self.processes.extend([training_proc])
 
     def shutdown(self) -> None:
         """Shutdown all processes gracefully"""
