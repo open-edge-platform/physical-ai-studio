@@ -4,6 +4,7 @@ from os import listdir, path, stat
 from pathlib import Path
 
 import torch
+from json.decoder import JSONDecodeError
 from huggingface_hub.errors import RepositoryNotFoundError
 from lerobot.constants import HF_LEROBOT_HOME
 from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
@@ -95,6 +96,8 @@ def get_local_repositories(
             result.append(metadata)
         except RepositoryNotFoundError:
             print(f"Could not find local repository online: {repo_id}")
+        except JSONDecodeError:
+            print(f"Could not parse local repository: {repo_id}")
 
     return result
 
