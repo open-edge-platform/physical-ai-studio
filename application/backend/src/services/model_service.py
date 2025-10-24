@@ -1,28 +1,31 @@
 from uuid import UUID
 
+from db import get_async_db_session_ctx
 from repositories import ModelRepository
 from schemas import Model
-from services.base import GenericPersistenceService, ResourceNotFoundError, ResourceType, ServiceConfig
-from services.mappers import ModelMapper
-from services.parent_process_guard import parent_process_only
 
 
 class ModelService:
-    def __init__(self) -> None:
-        self._persistence: GenericPersistenceService[Model, ModelRepository] = GenericPersistenceService(
-            ServiceConfig(ModelRepository, ModelMapper, ResourceType.MODEL)
-        )
+    @staticmethod
+    async def get_model_list() -> list[Model]:
+        async with get_async_db_session_ctx() as session:
+            repo = ModelRepository(session)
+            return await repo.get_all()
 
-    def list_models(self) -> list[Model]:
-        return self._persistence.list_all()
+    @staticmethod
+    async def get_model_by_id(model_id: UUID) -> Model | None:
+        async with get_async_db_session_ctx() as session:
+            repo = ModelRepository(session)
+            return await repo.get_by_id(model_id)
 
-    @parent_process_only
-    def create_model(self, model: Model) -> Model:
-        return self._persistence.create(model)
+    @staticmethod
+    async def create_model(model: Model) -> Model:
+        async with get_async_db_session_ctx() as session:
+            repo = ModelRepository(session)
+            return await repo.save(model)
 
-    def get_model_by_id(self, model_id: UUID) -> Model:
-        model = self._persistence.get_by_id(model_id)
-        if not model:
-            raise ResourceNotFoundError(ResourceType.MODEL, str(model_id))
-        return model
-
+    @staticmethod
+    async def delete_model(model_id: UUID) -> None:
+        async with get_async_db_session_ctx() as session:
+            repo = ModelRepository(session)
+            await repo.delete_by_id(model_id)

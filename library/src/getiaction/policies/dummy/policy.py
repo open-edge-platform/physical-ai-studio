@@ -8,13 +8,14 @@ from collections.abc import Iterable
 import torch
 
 from getiaction.data import Observation
+from getiaction.export.mixin_torch import Export
 from getiaction.gyms import Gym
 from getiaction.policies.base import Policy
 from getiaction.policies.dummy.config import DummyConfig
 from getiaction.policies.dummy.model import Dummy as DummyModel
 
 
-class Dummy(Policy):
+class Dummy(Policy, Export):
     """Dummy policy wrapper."""
 
     def __init__(self, config: DummyConfig) -> None:
@@ -35,14 +36,14 @@ class Dummy(Policy):
         self.model = DummyModel(self.action_shape)
 
     @staticmethod
-    def _validate_action_shape(shape: torch.Size | Iterable) -> torch.Size:
+    def _validate_action_shape(shape: list | tuple) -> list | tuple:
         """Validate and normalize the action shape.
 
         Args:
-            shape (torch.Size | Iterable): The input shape to validate.
+            shape (list | tuple): The input shape to validate.
 
         Returns:
-            torch.Size: A validated torch.Size object.
+            list | tuple: A validated list or tuple object.
 
         Raises:
             ValueError: If `shape` is `None`.
@@ -60,9 +61,9 @@ class Dummy(Policy):
             raise TypeError(msg)
 
         if isinstance(shape, Iterable):
-            return torch.Size(shape)
+            return list(shape)
 
-        msg = f"The 'action_shape' argument must be a torch.Size or Iterable, but received type {type(shape).__name__}."
+        msg = f"The 'action_shape' argument must be a list or tuple, but received type {type(shape).__name__}."
         raise TypeError(msg)
 
     def select_action(self, batch: Observation) -> torch.Tensor:
