@@ -79,6 +79,14 @@
       matchDepTypes: ["uses-with"],
     },
 
+    // Github Actions remove mcr.microsoft.com/playwright from update
+    {
+      matchManagers: ["github-actions"],
+      matchDepNames: ["mcr.microsoft.com/playwright"],
+
+      enabled: false,
+    },
+
     // Group Docker base images updates
     {
       groupName: "Docker base images",
