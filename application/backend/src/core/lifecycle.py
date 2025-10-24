@@ -26,7 +26,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.scheduler = app_scheduler
     logger.info("Application startup completed")
 
-
     yield
 
     # Shutdown
