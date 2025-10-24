@@ -68,7 +68,11 @@ class FrameSourceVideoStreamTrack(VideoStreamTrack):
             raise EmptyFrameError("Got empty frame from camera")
         return frame
 
-    def stop(self) -> None:
-        self._running = False
-        self.cam.disconnect()
-        super().stop()
+    def stop(self, last_user: bool = False) -> None:
+        # Workaround, because RTCRtpSender calls stop when a client disconnects;
+        # even if this VideoStreamTrack is being reused by another stream.
+        # So we manage this manually, so this VideoStreamTrack is not closed until all clients are gone
+        if last_user:
+            self._running = False
+            self.cam.disconnect()
+            super().stop()
