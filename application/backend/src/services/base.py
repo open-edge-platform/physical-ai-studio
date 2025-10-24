@@ -44,4 +44,3 @@ class ResourceAlreadyExistsError(ResourceError):
     ):
         msg = message or f"{resource_type} with name '{resource_name}' already exists."
         super().__init__(resource_type, resource_name, msg)
-
