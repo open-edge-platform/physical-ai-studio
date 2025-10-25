@@ -1,5 +1,5 @@
 import http
-import logging
+from loguru import logger
 from collections import defaultdict
 from collections.abc import Sequence
 
@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 
 from exceptions import GetiBaseException
 
-logger = logging.getLogger(__name__)
+
 
 
 def handle_base_exception(request: Request, exception: Exception) -> Response:

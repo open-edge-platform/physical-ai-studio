@@ -1,6 +1,6 @@
 """Database migration management"""
 
-import logging
+from loguru import logger
 
 from sqlalchemy import text
 
@@ -11,7 +11,7 @@ from alembic.script import ScriptDirectory
 from db import sync_engine
 from settings import Settings
 
-logger = logging.getLogger(__name__)
+
 
 
 class RevisionNotFoundError(Exception):

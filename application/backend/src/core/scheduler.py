@@ -1,4 +1,4 @@
-import logging
+from loguru import logger
 import multiprocessing as mp
 import os
 from typing import TYPE_CHECKING
@@ -9,7 +9,7 @@ import psutil
 if TYPE_CHECKING:
     import threading
 
-logger = logging.getLogger(__name__)
+
 
 
 class Scheduler:

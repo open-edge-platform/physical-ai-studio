@@ -1,4 +1,4 @@
-import logging
+from loguru import logger
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -9,7 +9,7 @@ from webrtc.manager import WebRTCManager
 
 from .scheduler import Scheduler
 
-logger = logging.getLogger(__name__)
+
 
 
 @asynccontextmanager

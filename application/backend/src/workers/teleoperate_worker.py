@@ -1,5 +1,5 @@
 import base64
-import logging
+from loguru import logger
 import shutil
 import time
 from multiprocessing import Event, Queue
@@ -21,7 +21,7 @@ from utils.robot import make_lerobot_robot_config_from_robot, make_lerobot_teleo
 
 from .base import BaseProcessWorker
 
-logger = logging.getLogger(__name__)
+
 
 
 class TeleoperateWorker(BaseProcessWorker):

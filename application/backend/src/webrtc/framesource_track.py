@@ -1,5 +1,5 @@
 import asyncio
-import logging
+from loguru import logger
 
 import numpy as np
 from aiortc import VideoStreamTrack
@@ -8,7 +8,7 @@ from frame_source import FrameSourceFactory
 
 from schemas import Camera, CameraProfile
 
-logger = logging.getLogger(__name__)
+
 
 
 class EmptyFrameError(Exception):

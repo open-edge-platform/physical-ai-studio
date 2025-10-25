@@ -1,4 +1,3 @@
-import logging
 import os
 
 import uvicorn
@@ -16,7 +15,7 @@ from core import lifespan
 from exception_handlers import register_application_exception_handlers
 from settings import get_settings
 
-logger = logging.getLogger(__name__)
+
 
 settings = get_settings()
 app = FastAPI(
