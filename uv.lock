@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.12"
 resolution-markers = [
     "sys_platform == 'darwin'",
@@ -808,6 +808,8 @@ dependencies = [
     { name = "cv2-enumerate-cameras" },
     { name = "fastapi", extra = ["standard"] },
     { name = "framesource" },
+    { name = "getiaction" },
+    { name = "greenlet" },
     { name = "harvesters" },
     { name = "lerobot", extra = ["feetech"] },
     { name = "loguru" },
@@ -844,6 +846,8 @@ requires-dist = [
     { name = "cv2-enumerate-cameras" },
     { name = "fastapi", extras = ["standard"] },
     { name = "framesource", git = "https://github.com/ArendJanKramer/FrameSource.git?rev=1c1a88bc6af097cafbf62af2059a0c54d494c241" },
+    { name = "getiaction", editable = "library" },
+    { name = "greenlet", specifier = ">=3.2.4" },
     { name = "harvesters" },
     { name = "lerobot", extras = ["feetech"], specifier = ">=0.3.3" },
     { name = "loguru", specifier = ">=0.7.3" },

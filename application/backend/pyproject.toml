@@ -22,10 +22,13 @@ dependencies = [
   "click>=8.3.0",
   "FrameSource>=0.2.2",
   "loguru>=0.7.3",
+  "getiaction",
+  "greenlet>=3.2.4",
 ]
 
 [tool.uv.sources]
 FrameSource = { git = "https://github.com/ArendJanKramer/FrameSource.git", rev = "1c1a88bc6af097cafbf62af2059a0c54d494c241" }
+getiaction = { workspace = true }
 
 [dependency-groups]
 dev = [
