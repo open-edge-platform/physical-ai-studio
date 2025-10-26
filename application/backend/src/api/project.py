@@ -38,7 +38,7 @@ async def set_project_config(
     project_service: Annotated[ProjectService, Depends(get_project_service)],
 ) -> Project:
     """Set project config."""
-    project = project_service.get_project_by_id(project_id)
+    project = await project_service.get_project_by_id(project_id)
     update = {
         "config": project_config,
     }

@@ -1,10 +1,10 @@
 import os
 import uuid
+from json.decoder import JSONDecodeError
 from os import listdir, path, stat
 from pathlib import Path
 
 import torch
-from json.decoder import JSONDecodeError
 from huggingface_hub.errors import RepositoryNotFoundError
 from lerobot.constants import HF_LEROBOT_HOME
 from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
