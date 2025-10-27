@@ -25,6 +25,12 @@ class ProjectService:
             return await repo.save(project)
 
     @staticmethod
+    async def update_project(project: Project, update: dict) -> Project:
+        async with get_async_db_session_ctx() as session:
+            repo = ProjectRepository(session)
+            return await repo.update(project, update)
+
+    @staticmethod
     async def delete_project(project_id: UUID) -> None:
         async with get_async_db_session_ctx() as session:
             repo = ProjectRepository(session)

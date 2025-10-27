@@ -2,7 +2,7 @@ import asyncio
 import os
 
 from pathlib import Path
-from uuid import uuid4
+from uuid import uuid4, UUID
 #from utils.experiment_loggers import TrackioLogger
 from loguru import logger
 
@@ -17,9 +17,8 @@ from getiaction.policies import ACTModel, ACT
 from getiaction.train import Trainer
 from getiaction.data import LeRobotDataModule
 
-from lightning.pytorch.callbacks import Callback
+from lightning.pytorch.callbacks import ModelCheckpoint, Callback, ProgressBar
 from lightning.pytorch.utilities.types import STEP_OUTPUT
-from lightning.pytorch.callbacks import ModelCheckpoint
 import lightning.pytorch as pl
 from typing import Any
 
@@ -27,15 +26,34 @@ from settings import get_settings
 from multiprocessing.synchronize import Event
 
 class TrainingCallback(Callback):
-    def __init__(self, stop_event: Event):
+    def __init__(self, shutdown_event: Event, interrupt_event: Event):
         super().__init__()
-        self._stop_event = stop_event
+        self._shutdown_event = shutdown_event # global stop event in case of shutdown
+        self._interrupt_event = interrupt_event # event for interrupting training gracefully
 
     def on_train_batch_end(
         self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", outputs: STEP_OUTPUT, batch: Any, batch_idx: int
     ) -> None:
-        if self._stop_event.is_set():
+        if self._shutdown_event.is_set() or self._interrupt_event.is_set():
             trainer.should_stop = True
+
+class ProgressCallback(ProgressBar):
+    def __init__(self, job_id: UUID):
+        super().__init__()
+        self.job_id = job_id
+        self.enable = True
+
+    def on_fit_start(self, trainer, pl_module):
+        """Pre‑compute total steps once training begins."""
+        self.total_steps = trainer.max_steps
+
+    def on_train_batch_end(
+        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", outputs: STEP_OUTPUT, batch: Any, batch_idx: int
+    ) -> None:
+        super().on_train_batch_end(trainer, pl_module, outputs, batch, batch_idx)
+        progress = round((trainer.global_step) / self.total_steps * 100)
+        if progress < 100:
+            asyncio.run(JobService().update_job_status(job_id=self.job_id, status=JobStatus.RUNNING, progress=progress))
 
 
 class TrainingService:
@@ -51,7 +69,7 @@ class TrainingService:
     """
 
     @classmethod
-    async def train_pending_job(cls, stop_event: Event) -> Model | None:
+    async def train_pending_job(cls, stop_event: Event, interrupt_event: Event) -> Model | None:
         """
         Process the next pending training job from the queue.
 
@@ -68,16 +86,15 @@ class TrainingService:
             logger.trace("No pending training job")
             return None
 
-        return await cls._run_training_job(job, job_service, dataset_service, stop_event)
+        interrupt_event.clear() # Interrupt event cleared for new task
+        return await cls._run_training_job(job, job_service, dataset_service, stop_event, interrupt_event)
 
     @classmethod
-    async def _run_training_job(cls, job: Job, job_service: JobService, dataset_service: DatasetService, stop_event: Event) -> Model:
+    async def _run_training_job(cls, job: Job, job_service: JobService, dataset_service: DatasetService, stop_event: Event, interrupt_event: Event) -> Model:
         # Mark job as running
         await job_service.update_job_status(job_id=job.id, status=JobStatus.RUNNING, message="Training started")
         project_id = job.project_id
-        print(job.payload)
         payload = TrainJobPayload.model_validate(job.payload)
-        print(payload)
         model_service = ModelService()
 
         settings = get_settings()
@@ -88,18 +105,18 @@ class TrainingService:
             id=id,
             project_id=project_id,
             dataset_id=payload.dataset_id,
-            path=str(settings.storage_dir / str(id)),
+            path=str(settings.models_dir / str(id)),
             name=payload.model_name,
             policy=payload.policy,
             properties={},
         )
         dataset = await dataset_service.get_dataset_by_id(payload.dataset_id)
-        logger.info(f"Training mo   del `{model.name}` for job `{job.id}`")
+        logger.info(f"Training model `{model.name}` for job `{job.id}`")
 
         try:
             # Use asyncio.to_thread to keep event loop responsive
             # TODO: Consider ProcessPoolExecutor for true parallelism with multiple jobs
-            trained_model = await asyncio.to_thread(cls._train_model, model, dataset, stop_event)
+            trained_model = await asyncio.to_thread(cls._train_model, model, dataset, stop_event, interrupt_event, job.id)
             if trained_model is None:
                 raise ValueError("Training failed - model is None")
 
@@ -121,10 +138,10 @@ class TrainingService:
             raise e
 
     @staticmethod
-    def _train_model(model: Model, dataset: Dataset, stop_event: Event) -> Model | None:
+    def _train_model(model: Model, dataset: Dataset, shutdown_event: Event, interrupt_event: Event, job_id: UUID) -> Model | None:
         if model.policy != "act":
             raise ValueError(f"Unsupported policy type: {model.policy} -- Only ACT is supported for now.")
-        
+
         l_dm = LeRobotDataModule(
             repo_id=dataset.name,
             root=dataset.path,
@@ -136,19 +153,28 @@ class TrainingService:
         )
 
         Path(model.path).mkdir(parents=True)
-        
+
         checkpoint_callback = ModelCheckpoint(
-            dirpath=model.path,  # <-- your output folder
-            filename="epoch{epoch}-val_loss{val_loss:.2f}",  # optional pattern
+            dirpath=model.path,
+            filename=str(job_id),  # optional pattern
             save_top_k=1,  # only keep best checkpoint
-            monitor="val_loss",  # metric to monitor
+            monitor="train/loss",  # metric to monitor
             mode="min",
         )
 
         policy = ACT(model=lib_model)
 
-        trainer = Trainer(callbacks=[TrainingCallback(stop_event), checkpoint_callback])
+        trainer = Trainer(
+            callbacks=[
+                TrainingCallback(shutdown_event, interrupt_event),
+                ProgressCallback(job_id),
+                checkpoint_callback,
+            ], 
+            max_steps=200
+        )
         trainer.fit(model=policy, datamodule=l_dm)
+
+        return model
 
 
     @staticmethod
@@ -161,7 +187,7 @@ class TrainingService:
         """
         query = {"status": JobStatus.RUNNING, "type": JobType.TRAINING}
         running_jobs = await JobService.get_job_list(extra_filters=query)
-        for job in running_jobs.jobs:
+        for job in running_jobs:
             logger.warning(f"Aborting orphan training job with id: {job.id}")
             await JobService.update_job_status(
                 job_id=job.id,

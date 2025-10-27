@@ -1,9 +1,8 @@
-import { Dialog, Heading, Form, Header, Key, Picker, Item, Divider, Content, Text, ButtonGroup, Button, TextField } from "@geti/ui"
+import { Dialog, Heading, Form, Key, Picker, Item, Divider, Content, ButtonGroup, Button, TextField } from "@geti/ui"
 import { $api } from "../../api/client"
 import { useProject } from "../../features/projects/use-project"
-import { v4 as uuidv4 } from 'uuid';
 import { useState } from "react";
-import { SchemaModel, SchemaTrainJobPayload } from "../../api/openapi-spec";
+import { SchemaTrainJobPayload } from "../../api/openapi-spec";
 
 export const TrainModelModal = (close: () => void) => {
     const { datasets, id: project_id } = useProject();
@@ -37,7 +36,7 @@ export const TrainModelModal = (close: () => void) => {
             <Divider />
             <Content>
                 <Form onSubmit={(e) => { e.preventDefault(); save()}} validationBehavior="native">
-                    <TextField label="Name" value={name} onChange={setName} />
+                    <TextField label="Name" autoFocus value={name} onChange={setName} />
                     <Picker label="Dataset" selectedKey={selectedDatasets} onSelectionChange={setSelectedDatasets}>
                         {datasets.map((dataset) => <Item key={dataset.id}>{dataset.name}</Item>)}
                     </Picker>

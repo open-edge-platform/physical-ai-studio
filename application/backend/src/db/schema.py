@@ -79,6 +79,12 @@ class DatasetDB(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
     project: Mapped["ProjectDB"] = relationship("ProjectDB", back_populates="datasets")
+    models: Mapped[list["ModelDB"]] = relationship(
+        "ModelDB",
+        back_populates="dataset",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
 
 class ModelDB(Base):
@@ -91,9 +97,10 @@ class ModelDB(Base):
     properties: Mapped[JSON] = mapped_column(JSON(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
-    dataset_id: Mapped[str] = mapped_column(String("datasets.id"))
+    dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id"))
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
     project: Mapped["ProjectDB"] = relationship("ProjectDB", back_populates="models")
+    dataset: Mapped["DatasetDB"] = relationship("DatasetDB", back_populates="models")
 
 
 class JobDB(Base):

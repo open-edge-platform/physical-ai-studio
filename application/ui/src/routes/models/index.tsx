@@ -17,6 +17,7 @@ export const Index = () => {
                     {TrainModelModal}
                 </DialogTrigger>
             </Flex>
+            <Text>Active training model goes here..</Text>
             <Text>List goes here..</Text>
         </View>
     )

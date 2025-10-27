@@ -19,6 +19,7 @@ class Scheduler:
         logger.info("Initializing Scheduler...")
         # Event to sync all processes on application shutdown
         self.mp_stop_event = mp.Event()
+        self.training_interrupt_event = mp.Event()
 
         self.processes: list[mp.Process] = []
         self.threads: list[threading.Thread] = []
@@ -27,6 +28,7 @@ class Scheduler:
     def start_workers(self) -> None:
         training_proc = TrainingWorker(
             stop_event=self.mp_stop_event,
+            interrupt_event=self.training_interrupt_event,
         )
         training_proc.daemon = False
         training_proc.start()

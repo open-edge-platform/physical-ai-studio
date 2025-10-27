@@ -56,7 +56,17 @@ def get_project_id(project_id: str) -> UUID:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid project ID")
     return UUID(project_id)
 
+def validate_uuid(uuid: str) -> UUID:
+    """Initialize and validates UUID."""
+    if not is_valid_uuid(uuid):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid ID")
+    return UUID(uuid)
 
-def get_scheduler(request: WebSocket) -> Scheduler:
+
+def get_scheduler(request: Request) -> Scheduler:
     """Provide the global Scheduler instance."""
+    return request.app.state.scheduler
+
+def get_scheduler_ws(request: WebSocket) -> Scheduler:
+    """Provide the global Scheduler instance for WebSocket."""
     return request.app.state.scheduler

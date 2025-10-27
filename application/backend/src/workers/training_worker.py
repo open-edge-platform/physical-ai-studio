@@ -18,8 +18,9 @@ from loguru import logger
 class TrainingWorker(BaseProcessWorker):
     ROLE = "Training"
 
-    def __init__(self, stop_event: EventClass):
+    def __init__(self, stop_event: EventClass, interrupt_event: EventClass):
         super().__init__(stop_event=stop_event)
+        self.interrupt_event = interrupt_event
 
     async def run_loop(self) -> None:
         """Main training loop that polls for jobs and manages concurrent training tasks."""
@@ -38,7 +39,7 @@ class TrainingWorker(BaseProcessWorker):
                 # - Multiple training jobs to run concurrently
                 # - Event loop to remain responsive for shutdown signals
                 if len(running_tasks) < MAX_CONCURRENT_TRAINING:
-                    running_tasks.add(asyncio.create_task(training_service.train_pending_job(self._stop_event)))
+                    running_tasks.add(asyncio.create_task(training_service.train_pending_job(self._stop_event, self.interrupt_event)))
             except Exception as e:
                 logger.error(f"Error occurred in training loop: {e}", exc_info=True)
 
@@ -60,12 +61,10 @@ class TrainingWorker(BaseProcessWorker):
 
     def setup(self) -> None:
         super().setup()
-        # TODO Nuke orphans
-        #with logger.contextualize(worker=self.__class__.__name__):
-        #    asyncio.run(TrainingService.abort_orphan_jobs())
+        with logger.contextualize(worker=self.__class__.__name__):
+            asyncio.run(TrainingService.abort_orphan_jobs())
 
     def teardown(self) -> None:
         super().teardown()
-        # TODO Nuke orphans
-        #with logger.contextualize(worker=self.__class__.__name__):
-        #    asyncio.run(TrainingService.abort_orphan_jobs())
+        with logger.contextualize(worker=self.__class__.__name__):
+            asyncio.run(TrainingService.abort_orphan_jobs())
