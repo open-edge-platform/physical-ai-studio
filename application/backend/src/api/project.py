@@ -1,14 +1,13 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends,  status
-from fastapi.exceptions import HTTPException
+from fastapi import APIRouter, Depends, status
 from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
 
 from api.dependencies import get_project_id, get_project_service
+from exceptions import ResourceAlreadyExistsError
 from schemas import LeRobotDatasetInfo, Project, ProjectConfig, TeleoperationConfig
 from services import ProjectService
-from services.base import ResourceInUseError, ResourceNotFoundError
 from utils.dataset import build_dataset_from_lerobot_dataset, build_project_config_from_dataset, check_repository_exists
 
 router = APIRouter(prefix="/api/projects", tags=["Projects"])
@@ -51,17 +50,14 @@ async def import_dataset(
     lerobot_dataset: LeRobotDatasetInfo,
     project_service: Annotated[ProjectService, Depends(get_project_service)],
 ) -> Project:
-    """Set the project from a dataset, only available when config is None."""
+    """Set the project from a dataset, only available when config is None.
+    """
     project = await project_service.get_project_by_id(project_id)
     update = {}
     if project.config is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Import disabled when project already has config."
-        )
+        raise ResourceAlreadyExistsError("project config", "Import disabled when project already has config.")
     if project.datasets:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Import disabled when project already has a dataset."
-        )
+        raise ResourceAlreadyExistsError("dataset", "Import disabled when project already has a dataset.")
 
     update["config"] = build_project_config_from_dataset(lerobot_dataset)
     update["datasets"] = [build_dataset_from_lerobot_dataset(lerobot_dataset, project_id)]
@@ -74,12 +70,8 @@ async def delete_project(
     project_service: Annotated[ProjectService, Depends(get_project_service)],
 ) -> None:
     """Delete a project."""
-    try:
-        await project_service.delete_project(project_id)
-    except ResourceNotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except ResourceInUseError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    await project_service.delete_project(project_id)
+
 
 @router.get("/{project_id}")
 async def get_project(
@@ -87,10 +79,7 @@ async def get_project(
     project_service: Annotated[ProjectService, Depends(get_project_service)],
 ) -> Project:
     """Get project by id."""
-    try:
-        return await project_service.get_project_by_id(project_id)
-    except ResourceNotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    return await project_service.get_project_by_id(project_id)
 
 
 @router.get("/example_teleoperation_config")
@@ -111,4 +100,3 @@ async def get_tasks_for_dataset(
         for dataset in project.datasets
         if check_repository_exists(dataset.path)
     }
-

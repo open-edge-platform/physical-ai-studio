@@ -9,7 +9,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from exceptions import GetiBaseException
+from exceptions import GetiBaseException 
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,7 @@ def handle_base_exception(request: Request, exception: Exception) -> Response:
     if exception.http_status in [204, 304] or exception.http_status < 200:
         return Response(status_code=int(exception.http_status), headers=headers)
     return JSONResponse(content=response, status_code=int(exception.http_status), headers=headers)
+
 
 
 async def handle_error(_request: Request, exception: Exception) -> JSONResponse:
@@ -131,12 +132,15 @@ async def pydantic_validation_exception_handler(_request: Request, exception: Ex
     )
 
 
+
 def register_application_exception_handlers(app: FastAPI) -> None:
     """
     Register application exception handlers
     """
     app.add_exception_handler(GetiBaseException, handle_base_exception)
+
     app.add_exception_handler(500, handle_error)
     app.add_exception_handler(404, handle_not_found)
+
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(pydantic.ValidationError, pydantic_validation_exception_handler)

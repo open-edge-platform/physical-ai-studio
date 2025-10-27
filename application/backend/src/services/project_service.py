@@ -1,9 +1,9 @@
 from uuid import UUID
 
+from exceptions import ResourceNotFoundError, ResourceType
 from db import get_async_db_session_ctx
 from repositories import ProjectRepository
 from schemas import Project
-from services.base import ResourceNotFoundError, ResourceType
 
 
 class ProjectService:

@@ -1,6 +1,13 @@
 import http
+from enum import StrEnum
 from uuid import UUID
 
+
+class ResourceType(StrEnum):
+    """Enumeration for resource types."""
+
+    PROJECT = "Project"
+    DATASET = "Dataset"
 
 class GetiBaseException(Exception):
     """
@@ -18,16 +25,43 @@ class GetiBaseException(Exception):
         super().__init__(message)
 
 
-class ResourceNotFoundException(GetiBaseException):
+class ResourceNotFoundError(GetiBaseException):
     """
     Exception raised when a resource could not be found in database.
 
     :param resource_id: ID of the resource that was not found
     """
 
-    def __init__(self, resource_id: str | UUID, resource_name: str) -> None:
+    def __init__(self, resource_type: ResourceType, resource_id: str | UUID, message: str | None = None):
+        msg = message or f"The requested {resource_type} could not be found. {resource_type.title()} ID: `{resource_id}`."
+
         super().__init__(
-            message=f"The requested {resource_name} could not be found. {resource_name.title()} ID: `{resource_id}`.",
-            error_code=f"{resource_name}_not_found",
+            message=msg,
+            error_code=f"{resource_type}_not_found",
             http_status=http.HTTPStatus.NOT_FOUND,
+        )
+
+class ResourceInUseError(GetiBaseException):
+    """Exception raised when trying to delete a resource that is currently in use."""
+
+    def __init__(self, resource_type: ResourceType, resource_id: str | UUID, message: str | None = None):
+        msg = message or f"{resource_type} with ID {resource_id} cannot be deleted because it is in use."
+        super().__init__(
+            message=msg,
+            error_code=f"{resource_type}_not_found",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+class ResourceAlreadyExistsError(GetiBaseException):
+    """
+    Exception raised when a resource already exists.
+
+    :param resource_name: Name of the resource that was not found
+    """
+
+    def __init__(self, resource_name: str, detail: str) -> None:
+        super().__init__(
+            message=f"{resource_name} already exists. {detail}",
+            error_code=f"{resource_name}_already_exists",
+            http_status=http.HTTPStatus.CONFLICT,
         )
