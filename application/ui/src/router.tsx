@@ -50,7 +50,7 @@ export const paths = {
             new: cameras.path('/new'),
             show: cameras.path(':camera_id'),
         },
-        robotConfiguration: {
+        robots: {
             index: robots,
             new: robots.path('new'),
             show: robot,
@@ -101,7 +101,7 @@ export const router = createBrowserRouter([
                             }
 
                             return redirect(
-                                paths.project.robotConfiguration.index({
+                                paths.project.robots.index({
                                     project_id: params.project_id,
                                 })
                             );
@@ -129,7 +129,7 @@ export const router = createBrowserRouter([
                         element: <Models />,
                     },
                     {
-                        path: paths.project.robotConfiguration.index.pattern,
+                        path: paths.project.robots.index.pattern,
                         element: <RobotConfigurationLayout />,
                         children: [
                             {
@@ -137,18 +137,18 @@ export const router = createBrowserRouter([
                                 element: <div>Illustration to persuade user to select robot</div>,
                             },
                             {
-                                path: paths.project.robotConfiguration.new.pattern,
+                                path: paths.project.robots.new.pattern,
                                 element: <div>New</div>,
                             },
                             {
-                                path: paths.project.robotConfiguration.show.pattern,
+                                path: paths.project.robots.show.pattern,
                                 element: <Robot />,
                                 children: [
                                     {
                                         index: true,
                                         loader: ({ params }) => {
                                             return redirect(
-                                                paths.project.robotConfiguration.controller({
+                                                paths.project.robots.controller({
                                                     project_id: params.project_id ?? '',
                                                     robot_id: params.robot_id ?? '',
                                                 })
@@ -156,15 +156,15 @@ export const router = createBrowserRouter([
                                         },
                                     },
                                     {
-                                        path: paths.project.robotConfiguration.controller.pattern,
+                                        path: paths.project.robots.controller.pattern,
                                         element: <Controller />,
                                     },
                                     {
-                                        path: paths.project.robotConfiguration.calibration.pattern,
+                                        path: paths.project.robots.calibration.pattern,
                                         element: <Calibration />,
                                     },
                                     {
-                                        path: paths.project.robotConfiguration.setupMotors.pattern,
+                                        path: paths.project.robots.setupMotors.pattern,
                                         element: <SetupMotors />,
                                     },
                                 ],

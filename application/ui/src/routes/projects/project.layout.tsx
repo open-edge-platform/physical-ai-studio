@@ -30,7 +30,7 @@ const Header = ({ project_id }: { project_id: string }) => {
                     <Item
                         textValue='Robot configuration'
                         key={'robots'}
-                        href={paths.project.robotConfiguration.index({ project_id })}
+                        href={paths.project.robots.index({ project_id })}
                     >
                         <Flex alignItems='center' gap='size-100'>
                             <RobotIcon />

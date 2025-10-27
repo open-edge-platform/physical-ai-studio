@@ -121,7 +121,7 @@ export const RobotsList = () => {
             {(robots ?? []).map((robot) => {
                 const hardwareRobot = robot;
 
-                const to = paths.project.robotConfiguration.show({
+                const to = paths.project.robots.show({
                     project_id,
                     robot_id: robot.serial_id,
                 });
