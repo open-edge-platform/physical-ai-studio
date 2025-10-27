@@ -891,7 +891,7 @@ requires-dist = [
     { name = "gym-pusht", specifier = ">=0.1.5" },
     { name = "gymnasium", specifier = ">=0.29.1" },
     { name = "httpx", marker = "extra == 'tests'" },
-    { name = "jsonargparse", extras = ["signatures"], specifier = ">=4.27.0" },
+    { name = "jsonargparse", extras = ["signatures"], specifier = ">=4.42.0" },
     { name = "lerobot", specifier = ">=0.3.3" },
     { name = "lightning" },
     { name = "lightning-utilities" },
@@ -1287,14 +1287,14 @@ wheels = [
 
 [[package]]
 name = "jsonargparse"
-version = "4.41.0"
+version = "4.42.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/44/86/60032fb5623df8d938d31f733e4b3385c40791d85d0fae3dfb4e3be10c42/jsonargparse-4.41.0.tar.gz", hash = "sha256:ba1806bf0ed0ad1975e403dffb18b3a755fee3bfe4e7b36d8cce2f297b552b5f", size = 206634, upload-time = "2025-09-04T03:46:34.715Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/32/ef/6bcc6d88e401af6d1c05c6a3f3955ebeae538711f1199e25c53326c921e5/jsonargparse-4.42.0.tar.gz", hash = "sha256:170551344f06500091ca6732bf93726c5aa79f4f2632a7f2a18d7a897ae2c5c1", size = 212273, upload-time = "2025-10-14T05:23:43.15Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/62/fc/6ac1943f22f3d2e14703335d64a7d68496f0480c82a3077cde44b2c55ef5/jsonargparse-4.41.0-py3-none-any.whl", hash = "sha256:cd49b6a2fea723ee4d80f9df034f51af226128a7f166be8755d6acdeb3e077a7", size = 228528, upload-time = "2025-09-04T03:46:32.668Z" },
+    { url = "https://files.pythonhosted.org/packages/0b/a1/3f06c00dc217baaa273b08022c00bc6c71d619c4d03325179b8fec80d90f/jsonargparse-4.42.0-py3-none-any.whl", hash = "sha256:d112bdaab22918ff5a8fb2d6036596f8527961922fd972b6e50afc6340514a28", size = 235760, upload-time = "2025-10-14T05:23:40.849Z" },
 ]
 
 [package.optional-dependencies]
