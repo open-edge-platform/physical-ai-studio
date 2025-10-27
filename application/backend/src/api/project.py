@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends,  status
 from fastapi.exceptions import HTTPException
 from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
 
@@ -22,7 +22,7 @@ async def list_projects(
     return await project_service.get_project_list()
 
 
-@router.post("")
+@router.post("", status_code=status.HTTP_201_CREATED)
 async def create_project(
     project: Project,
     project_service: Annotated[ProjectService, Depends(get_project_service)],
@@ -31,7 +31,7 @@ async def create_project(
     return await project_service.create_project(project)
 
 
-@router.post("/{project_id}/project_config")
+@router.put("/{project_id}/project_config")
 async def set_project_config(
     project_id: Annotated[UUID, Depends(get_project_id)],
     project_config: ProjectConfig,
@@ -45,7 +45,7 @@ async def set_project_config(
     return await project_service.update_project(project, update)
 
 
-@router.post("/{project_id}/import_dataset")
+@router.post("/{project_id}/import_dataset", status_code=status.HTTP_201_CREATED)
 async def import_dataset(
     project_id: Annotated[UUID, Depends(get_project_id)],
     lerobot_dataset: LeRobotDatasetInfo,
@@ -68,7 +68,7 @@ async def import_dataset(
     return await project_service.update_project(project, update)
 
 
-@router.delete("/{project_id}")
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_project(
     project_id: Annotated[UUID, Depends(get_project_id)],
     project_service: Annotated[ProjectService, Depends(get_project_service)],
@@ -81,12 +81,14 @@ async def delete_project(
     except ResourceInUseError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
-
-@router.get("/{id}")
-async def get_project(id: str, project_service: Annotated[ProjectService, Depends(get_project_service)]) -> Project:
+@router.get("/{project_id}")
+async def get_project(
+    project_id: Annotated[UUID, Depends(get_project_id)],
+    project_service: Annotated[ProjectService, Depends(get_project_service)],
+) -> Project:
     """Get project by id."""
     try:
-        return await project_service.get_project_by_id(id)
+        return await project_service.get_project_by_id(project_id)
     except ResourceNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
@@ -109,3 +111,4 @@ async def get_tasks_for_dataset(
         for dataset in project.datasets
         if check_repository_exists(dataset.path)
     }
+
