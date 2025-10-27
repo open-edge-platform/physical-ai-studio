@@ -14,12 +14,13 @@ import pytest
 import torch
 import yaml
 
-from getiaction.export.mixin_torch import (
-    CONFIG_KEY,
+from getiaction.export import (
     FromCheckpoint,
     Export,
-    _serialize_model_config,
 )
+
+from getiaction.export.mixin_torch import CONFIG_KEY
+from getiaction.export.mixin_export import _serialize_model_config
 
 
 # Test enums

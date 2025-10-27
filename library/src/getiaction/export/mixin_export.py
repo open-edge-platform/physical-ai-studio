@@ -4,6 +4,7 @@
 """Mixin classes for exporting PyTorch models."""
 
 import dataclasses
+import inspect
 from enum import StrEnum
 from os import PathLike
 from typing import Any
@@ -11,7 +12,6 @@ from typing import Any
 import numpy as np
 import torch
 import yaml
-
 
 CONFIG_KEY = "model_config"
 
@@ -46,32 +46,61 @@ class Export:
 
         torch.save(state_dict, checkpoint_path)  # nosec
 
+    @torch.no_grad()
     def to_onnx(
         self,
         output_path: PathLike | str,
-        input_sample: dict[str, torch.Tensor] | None,
-        **export_kwargs: Any,
+        input_sample: dict[str, torch.Tensor] | None = None,
+        **export_kwargs: dict,
     ) -> None:
         """Export the model to ONNX format.
 
         This method exports the model to the ONNX format using a provided input
         sample for tracing. Additional export options can be specified via keyword
-        arguments.
+        arguments or through the model's `extra_export_args` property if it exists.
 
         Args:
-            onnx_path (PathLike | str): The file path where the ONNX model will be saved.
-            input_sample (dict[str, torch.Tensor] | None): A sample input dictionary
-        """
-        if input_sample is None and hasattr(self.model, "get_sample_input") and callable(self.model.get_sample_input):
-            input_sample = self.model.get_sample_input()
-        else:
-            msg = "An input sample must be provided for ONNX export, or the model must implement `get_sample_input()`."
-            raise ValueError(msg)
+            output_path (PathLike | str): The file path where the ONNX model will be saved.
+            input_sample (dict[str, torch.Tensor] | None): A sample input dictionary.
+                If `None`, the method will attempt to use the model's `sample_input`
+                property. This input is used to trace the model during export.
+            **export_kwargs: Additional keyword arguments to pass to `torch.onnx.export`.
 
-        self.super().to_onnx(
-            output_path,
-            input_sample,
-            **export_kwargs,
+        Raises:
+            RuntimeError: If input sample is not provided and the model does not
+                implement `sample_input` property.
+        """
+        if input_sample is None and hasattr(self.model, "sample_input"):
+            input_sample = self.model.sample_input
+        else:
+            msg = (
+                "An input sample must be provided for ONNX export, or the model must implement `sample_input` property."
+            )
+            raise RuntimeError(msg)
+
+        extra_model_args = {}
+        if hasattr(self.model, "extra_export_args") and "onnx" in self.model.extra_export_args:
+            extra_model_args = self.model.extra_export_args["onnx"]
+
+        extra_model_args.update(export_kwargs)
+
+        sig = inspect.signature(self.model.forward)
+        positional_args = [
+            param_name
+            for param_name, param in sig.parameters.items()
+            if param.kind in {inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.POSITIONAL_ONLY}
+            and param_name != "self"
+        ]
+        arg_name = next(iter(positional_args))
+
+        self.model.eval()
+        torch.onnx.export(
+            self.model,
+            args=(),
+            kwargs={arg_name: input_sample},
+            f=output_path,
+            input_names=list(input_sample.keys()),
+            **extra_model_args,
         )
 
 

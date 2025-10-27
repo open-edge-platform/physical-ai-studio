@@ -3,16 +3,14 @@
 
 """Mixin classes for handling PyTorch model checkpoints."""
 
-
 from copy import copy
-from typing import Self
 from os import PathLike
-from getiaction.config.instantiate import instantiate_obj_from_dict
-
+from typing import Self
 
 import torch
 import yaml
 
+from getiaction.config.instantiate import instantiate_obj_from_dict
 
 from .mixin_export import CONFIG_KEY
 
