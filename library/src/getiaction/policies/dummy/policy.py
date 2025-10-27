@@ -15,7 +15,7 @@ from getiaction.policies.dummy.config import DummyConfig
 from getiaction.policies.dummy.model import Dummy as DummyModel
 
 
-class Dummy(Policy, Export):
+class Dummy(Export, Policy):
     """Dummy policy wrapper."""
 
     def __init__(self, config: DummyConfig) -> None:
