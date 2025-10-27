@@ -1,24 +1,54 @@
 import { $api } from '../../api/client';
-import { View, Text, Flex, Button, DialogTrigger } from "@geti/ui"
+import { View, Heading, Text, Flex, Button, DialogTrigger, TableView, TableHeader, Column, TableBody, Cell, Row, Divider } from "@geti/ui"
 import { TrainModelModal } from './train-model';
 
-export const Index = () => {
-    const {data: models } = $api.useQuery('get','/api/models')
+const ModelList = () => {
+    const { data: models } = $api.useQuery('get', '/api/models')
 
-    const showTrainModelModal = () => {
-        console.log("...")
-    }
+    return (
+        <View borderTopWidth='thin' borderTopColor='gray-400' backgroundColor={'gray-300'}>
+            <TableView
+                aria-label='Models'
+                overflowMode='wrap'
+                selectionStyle='highlight'
+                selectionMode='single'
+            >
+                <TableHeader>
+                    <Column>MODEL NAME</Column>
+                    <Column>TRAINED</Column>
+                    <Column>ARCHITECTURE</Column>
+                    <Column>{''}</Column>
+                </TableHeader>
+                <TableBody>
+                    {(models ?? []).map((model) => (
+                        <Row key={model.id}>
+                            <Cell>{model.name}</Cell>
+                            <Cell>{new Date(model.created_at!).toLocaleString()}</Cell>
+                            <Cell>{model.policy}</Cell>
+                            <Cell>Run model</Cell>
+                        </Row>
+                    ))}
+                </TableBody>
+            </TableView>
+        </View>
+    )
+}
+
+export const Index = () => {
     return (
         <View margin={'size-200'}>
-            <Flex justifyContent={'space-between'}>
-                <Text>Models</Text>
-                <DialogTrigger>
-                    <Button variant='secondary' onPress={showTrainModelModal}>Train model</Button>
-                    {TrainModelModal}
-                </DialogTrigger>
-            </Flex>
-            <Text>Active training model goes here..</Text>
-            <Text>List goes here..</Text>
+            <Heading level={4}>Models</Heading>
+            <Divider size='S' />
+            <View margin={'size-300'}>
+                <Flex justifyContent={'end'}>
+                    <DialogTrigger>
+                        <Button variant='secondary'>Train model</Button>
+                        {TrainModelModal}
+                    </DialogTrigger>
+                </Flex>
+                <Text>Active training model goes here..</Text>
+                <ModelList />
+            </View >
         </View>
     )
 };
