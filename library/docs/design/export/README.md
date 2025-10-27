@@ -70,6 +70,7 @@ policy.to_torch("checkpoint.pt")
 ```
 
 **Checkpoint Contents:**
+
 - Model state dictionary (weights and biases)
 - Model configuration (serialized as YAML)
 
@@ -83,6 +84,7 @@ policy.to_onnx("model.onnx")
 ```
 
 **ONNX Benefits:**
+
 - Cross-platform inference
 - Hardware acceleration support
 - Runtime optimizations
@@ -195,7 +197,6 @@ input_sample = {
 }
 policy.to_onnx("model.onnx", input_sample=input_sample)
 ```
-
 
 ## Related Documentation
 
