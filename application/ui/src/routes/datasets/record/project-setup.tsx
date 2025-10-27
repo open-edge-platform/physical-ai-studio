@@ -91,7 +91,7 @@ export const ProjectSetup = () => {
         robot_type: '',
     });
 
-    const saveMutation = $api.useMutation('post', '/api/projects/{project_id}/project_config', {});
+    const saveMutation = $api.useMutation('put', '/api/projects/{project_id}/project_config', {});
 
     const selectRobot = (robot_type: SchemaProjectConfig['robot_type']) => {
         setConfig((c) => ({ ...c, robot_type }));
