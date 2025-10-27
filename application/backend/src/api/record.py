@@ -5,8 +5,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
 from api.dependencies import get_dataset_service, get_scheduler
-from exceptions import ResourceNotFoundError
 from core.scheduler import Scheduler
+from exceptions import ResourceNotFoundError
 from schemas import TeleoperationConfig
 from services import DatasetService
 from workers import TeleoperateWorker

@@ -9,6 +9,7 @@ class ResourceType(StrEnum):
     PROJECT = "Project"
     DATASET = "Dataset"
 
+
 class GetiBaseException(Exception):
     """
     Base class for Geti exceptions with a predefined HTTP error code.
@@ -33,13 +34,16 @@ class ResourceNotFoundError(GetiBaseException):
     """
 
     def __init__(self, resource_type: ResourceType, resource_id: str | UUID, message: str | None = None):
-        msg = message or f"The requested {resource_type} could not be found. {resource_type.title()} ID: `{resource_id}`."
+        msg = (
+            message or f"The requested {resource_type} could not be found. {resource_type.title()} ID: `{resource_id}`."
+        )
 
         super().__init__(
             message=msg,
             error_code=f"{resource_type}_not_found",
             http_status=http.HTTPStatus.NOT_FOUND,
         )
+
 
 class ResourceInUseError(GetiBaseException):
     """Exception raised when trying to delete a resource that is currently in use."""
@@ -51,6 +55,7 @@ class ResourceInUseError(GetiBaseException):
             error_code=f"{resource_type}_not_found",
             http_status=http.HTTPStatus.CONFLICT,
         )
+
 
 class ResourceAlreadyExistsError(GetiBaseException):
     """

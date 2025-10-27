@@ -50,8 +50,7 @@ async def import_dataset(
     lerobot_dataset: LeRobotDatasetInfo,
     project_service: Annotated[ProjectService, Depends(get_project_service)],
 ) -> Project:
-    """Set the project from a dataset, only available when config is None.
-    """
+    """Set the project from a dataset, only available when config is None."""
     project = await project_service.get_project_by_id(project_id)
     update = {}
     if project.config is not None:
