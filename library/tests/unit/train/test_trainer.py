@@ -1,36 +1,49 @@
 import pytest
-from unittest.mock import MagicMock
+
 from getiaction.train.trainer import Trainer
 
-class TestLightningActionTrainer:
-    """Tests for LightningActionTrainer without testing the callback."""
 
-    @pytest.fixture
-    def dummy_datamodule(self):
-        dm = MagicMock()
-        dm.val_dataset = MagicMock()
-        return dm
+class TestGetiActionTrainer:
+    """Tests for getiaction.train.Trainer (Lightning Trainer subclass)."""
 
-    @pytest.fixture
-    def dummy_model(self):
-        return MagicMock()
+    def test_trainer_is_lightning_subclass(self):
+        """Verify Trainer is a subclass of Lightning Trainer."""
+        import lightning
 
-    def test_fit_limits_val_batches_when_no_val_dataset(self, dummy_model):
-        """If datamodule has no val_dataset, limit_val_batches is set to 0."""
-        datamodule = MagicMock(val_dataset=None)
-        trainer_wrapper = Trainer()
-        trainer_wrapper.backend.fit = MagicMock()
+        assert issubclass(Trainer, lightning.Trainer)
 
-        trainer_wrapper.fit(model=dummy_model, datamodule=datamodule)
+    def test_trainer_defaults(self):
+        """Verify getiaction-specific defaults are set."""
+        trainer = Trainer(accelerator="cpu", logger=False, enable_checkpointing=False)
 
-        assert trainer_wrapper.backend.limit_val_batches == 0
-        trainer_wrapper.backend.fit.assert_called_once_with(model=dummy_model, datamodule=datamodule)
+        # getiaction default: num_sanity_val_steps=0 (instead of Lightning's 2)
+        assert trainer.num_sanity_val_steps == 0
 
-    def test_predict_validate_test_raise(self, dummy_model, dummy_datamodule):
-        """test and predict methods raise NotImplementedError."""
-        trainer_wrapper = Trainer()
+    def test_policy_dataset_interaction_callback_injected(self):
+        """Verify PolicyDatasetInteraction callback is automatically added."""
+        from getiaction.train.callbacks import PolicyDatasetInteraction
 
-        # Test predict and test - these are abstract methods that raise NotImplementedError
-        for fn in (trainer_wrapper.predict, trainer_wrapper.test):
-            with pytest.raises(NotImplementedError):
-                fn()
+        trainer = Trainer(accelerator="cpu", logger=False, enable_checkpointing=False)
+
+        # Check that PolicyDatasetInteraction callback was auto-injected
+        callback_types = [type(cb) for cb in trainer.callbacks]
+        assert PolicyDatasetInteraction in callback_types
+
+    def test_user_callbacks_preserved(self):
+        """Verify user callbacks are preserved alongside auto-injected callback."""
+        from lightning.pytorch.callbacks import EarlyStopping
+
+        from getiaction.train.callbacks import PolicyDatasetInteraction
+
+        user_callback = EarlyStopping(monitor="val_loss")
+        trainer = Trainer(
+            accelerator="cpu",
+            logger=False,
+            enable_checkpointing=False,
+            callbacks=[user_callback],
+        )
+
+        # Both user callback and auto-injected callback should be present
+        callback_types = [type(cb) for cb in trainer.callbacks]
+        assert EarlyStopping in callback_types
+        assert PolicyDatasetInteraction in callback_types
