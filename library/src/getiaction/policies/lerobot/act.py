@@ -58,7 +58,7 @@ class ACT(Policy, LeRobotFromConfig):
         Basic usage with explicit arguments (recommended):
             >>> from getiaction.policies.lerobot import ACT
             >>> from getiaction.data.lerobot import LeRobotDataModule
-            >>> from lightning import Trainer
+            >>> from getiaction.train import Trainer
 
             >>> # Create policy with explicit parameters
             >>> policy = ACT(

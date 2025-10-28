@@ -311,7 +311,7 @@ class ACT(Policy):
 ### Policy Usage Example
 
 ```python
-from lightning import Trainer
+from getiaction.train import Trainer
 
 # Create policy
 policy = MyCustomPolicy()
@@ -338,7 +338,7 @@ trainer.fit(policy, datamodule)
 ```python
 from getiaction.data import Dataset, DataModule, Observation
 from getiaction.policies.base import Policy
-from lightning import Trainer
+from getiaction.train import Trainer
 import torch
 
 # 1. Dataset returns single Observations

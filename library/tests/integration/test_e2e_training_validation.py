@@ -23,10 +23,10 @@ Test Classes:
 from __future__ import annotations
 
 import pytest
-from lightning.pytorch import Trainer
 
 from getiaction.data import DataModule
 from getiaction.gyms import PushTGym
+from getiaction.train import Trainer
 
 
 @pytest.fixture
