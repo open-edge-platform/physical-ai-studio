@@ -253,3 +253,75 @@ class TestToOnnx:
         # Should include the keys from sample_input
         assert "input_a" in input_names
         assert "input_b" in input_names
+
+
+class TestToOpenVINO:
+    """Tests for to_openvino method."""
+
+    def test_to_openvino_with_sample_input_from_model(self, tmp_path):
+        """Test OpenVINO export using model's sample_input property."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        output_path = tmp_path / "model.xml"
+        wrapper.to_openvino(output_path)
+
+        assert output_path.exists()
+        assert (tmp_path / "model.bin").exists()
+
+    def test_to_openvino_with_provided_input_sample(self, tmp_path):
+        """Test OpenVINO export with explicitly provided input sample."""
+        model = SimpleModel(SimpleConfig(input_dim=8, output_dim=4))
+
+        # Wrap the model with a forward that accepts batch dict
+        class WrappedModel(torch.nn.Module):
+            def __init__(self, inner_model):
+                super().__init__()
+                self.inner = inner_model
+
+            def forward(self, batch):
+                return self.inner(batch["x"])
+
+        wrapped = WrappedModel(model)
+        wrapper = ExportWrapper(wrapped)
+
+        input_sample = {"x": torch.randn(1, 8)}
+        output_path = tmp_path / "model.xml"
+
+        wrapper.to_openvino(output_path, input_sample=input_sample)
+
+        assert output_path.exists()
+        assert (tmp_path / "model.bin").exists()
+
+    def test_to_openvino_with_multiple_inputs(self, tmp_path):
+        """Test OpenVINO export with model having multiple inputs."""
+        model = ModelWithMultipleInputs()
+        wrapper = ExportWrapper(model)
+
+        output_path = tmp_path / "model.xml"
+        wrapper.to_openvino(output_path)
+
+        assert output_path.exists()
+        assert (tmp_path / "model.bin").exists()
+
+    def test_to_openvino_with_dict_input(self, tmp_path):
+        """Test OpenVINO export with model accepting dict as single parameter."""
+        model = ModelWithDictInput()
+        wrapper = ExportWrapper(model)
+
+        output_path = tmp_path / "model.xml"
+        wrapper.to_openvino(output_path)
+
+        assert output_path.exists()
+        assert (tmp_path / "model.bin").exists()
+
+    def test_to_openvino_without_sample_input_raises_error(self, tmp_path):
+        """Test that RuntimeError is raised when no input sample is provided."""
+        # Model without sample_input property
+        model = SimpleModel(SimpleConfig())
+        wrapper = ExportWrapper(model)
+
+        output_path = tmp_path / "model.xml"
+
+        with pytest.raises(RuntimeError, match="input sample must be provided"):
+            wrapper.to_openvino(output_path)
