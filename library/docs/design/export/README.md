@@ -35,6 +35,9 @@ policy.to_torch("model.pt")
 
 # Export to ONNX
 policy.to_onnx("model.onnx")
+
+# Export to OpenVINO
+policy.to_onnx("model.xml")
 ```
 
 ## Architecture
@@ -44,18 +47,23 @@ graph TB
     A[Model with Export Mixin] --> B[Export Methods]
     B --> C[to_torch]
     B --> D[to_onnx]
+    B --> P[to_openvino]
 
     C --> E[Save State Dict]
     C --> F[Serialize Config]
 
     D --> G[Trace Model]
-    D --> H[Export to ONNX]
+    G --> H[Export to ONNX]
+
+    P --> S[Trace Model]
+    S --> M[Export to OpenVINO]
 
     E --> I[PyTorch Checkpoint]
     F --> I
 
-    G --> J[ONNX Model]
-    H --> J
+    H --> J[ONNX Model]
+
+    M --> N[OpenVINO Model]
 ```
 
 ## Export Formats
@@ -89,6 +97,21 @@ policy.to_onnx("model.onnx")
 - Hardware acceleration support
 - Runtime optimizations
 - Deployment to edge devices
+
+### OpenVINO Format
+
+Optimized format for deployment and inference on Intel hardware:
+
+```python
+policy = Dummy(config=DummyConfig(action_shape=(7,)))
+policy.to_openvino("model.onnx")
+```
+
+**OpenVINO Benefits:**
+
+- Cross-platform inference
+- Hardware acceleration support on Intel hardware
+- Runtime optimizations
 
 ## Configuration Serialization for Torch models
 
@@ -174,6 +197,9 @@ policy.to_torch("trained_model.pt")
 
 # Export to ONNX
 policy.to_onnx("trained_model.onnx")
+
+# Export to ONNX
+policy.to_openvino("trained_model.xml")
 ```
 
 ### Custom ONNX Export
