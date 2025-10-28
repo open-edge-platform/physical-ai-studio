@@ -13,7 +13,7 @@ from getiaction.policies.base import Policy
 from getiaction.train.utils import reformat_dataset_to_match_policy
 
 
-class ACT(Policy, Export):
+class ACT(Export, Policy):
     """Action Chunking with Transformers (ACT) policy implementation.
 
     This class implements the ACT policy for imitation learning, which uses a transformer-based

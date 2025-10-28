@@ -95,6 +95,44 @@ class Dummy(nn.Module, FromConfig, FromCheckpoint):
         return DummyConfig(action_shape=self.action_shape)
 
     @property
+    def sample_input(self) -> dict[str, torch.Tensor]:
+        """Generate a sample input dictionary for the model.
+
+        This method creates a dictionary containing random tensor data that matches
+        the expected input format and shape for the model. Useful for testing and
+        validation purposes.
+
+        Returns:
+            dict[str, torch.Tensor]: A dictionary with a single key "action" containing
+                a randomly initialized tensor of shape (1, action_shape).
+        """
+        return {
+            "action": torch.randn((1, *self.action_shape)),
+        }
+
+    @property
+    def extra_export_args(self) -> dict:
+        """Additional export arguments for model conversion.
+
+        This property provides extra configuration parameters needed when exporting
+        the model to different formats, particularly ONNX format.
+
+        Returns:
+            dict: A dictionary containing format-specific export arguments.
+
+        Example:
+            >>> extra_args = model.extra_export_args()
+            >>> print(extra_args)
+            {'onnx': {'output_names': ['action']}}
+        """
+        extra_args = {}
+        extra_args["onnx"] = {
+            "output_names": ["action"],
+        }
+
+        return extra_args
+
+    @property
     def observation_delta_indices(self) -> list[int]:
         """Get indices of observations relative to the current timestep.
 
