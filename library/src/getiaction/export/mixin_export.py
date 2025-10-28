@@ -97,7 +97,20 @@ class Export:
     def to_openvino(self, output_path: PathLike | str,
                     input_sample: dict[str, torch.Tensor] | None = None,
                     **export_kwargs: dict) -> None:
+        """
+        Export the model to OpenVINO format.
 
+        Args:
+            output_path (PathLike | str): Path where the OpenVINO model will be saved.
+            input_sample (dict[str, torch.Tensor] | None, optional): Sample input tensor(s) for model tracing.
+                If None, attempts to use the model's `sample_input` property. Defaults to None.
+            **export_kwargs (dict): Additional keyword arguments to pass to the OpenVINO conversion process.
+        Raises:
+            RuntimeError: If no input sample is provided and the model does not implement a `sample_input` property.
+        Notes:
+            - The model is set to evaluation mode before conversion.
+            - Output names can be specified in export_kwargs using the "output" key.
+        """
         if input_sample is None and hasattr(self.model, "sample_input"):
             input_sample = self.model.sample_input
         elif input_sample is None:
@@ -115,11 +128,16 @@ class Export:
         if output_names is not None:
             extra_model_args.pop("output")
 
+        input_shapes = []
+        for tensor in input_sample.values():
+            input_shapes.append(openvino.Shape(tuple(tensor.shape)))
+
         self.model.eval()
 
         ov_model = openvino.convert_model(
             self.model,
             example_input={arg_name: input_sample},
+            input=input_shapes,
             **extra_model_args,
         )
         _postprocess_openvino_model(ov_model, output_names)

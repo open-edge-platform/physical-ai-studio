@@ -247,6 +247,9 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
         extra_args["onnx"] = {
             "output_names": ["action"],
         }
+        extra_args["openvino"] = {
+            "output": ["action"],
+        }
 
         return extra_args
 
