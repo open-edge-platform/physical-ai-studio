@@ -19,6 +19,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from getiaction.gyms import Gym
+
 if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 else:
@@ -67,7 +69,7 @@ class LeRobotDataModule(DataModule):
         ... )
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         repo_id: str | None = None,
@@ -84,7 +86,12 @@ class LeRobotDataModule(DataModule):
         video_backend: str | None = None,
         batch_encoding_size: int = 1,
         data_format: Literal["getiaction", "lerobot"] | DataFormat = "getiaction",
-        **action_datamodule_kwargs,  # noqa: ANN003
+        # Base DataModule parameters (val/test gyms)
+        val_gyms: Gym | list[Gym] | None = None,
+        num_rollouts_val: int = 10,
+        test_gyms: Gym | list[Gym] | None = None,
+        num_rollouts_test: int = 10,
+        max_episode_steps: int | None = 300,
     ) -> None:
         """Initialize a LeRobot-specific Action DataModule.
 
@@ -121,7 +128,16 @@ class LeRobotDataModule(DataModule):
                 Output format for the data. Use "getiaction" for the native `Observation` format,
                 or "lerobot" for LeRobot's original dict format.
                 Defaults to "getiaction".
-            **action_datamodule_kwargs: Additional keyword arguments passed to the base `DataModule`.
+            val_gyms (Gym | list[Gym] | None, optional): Validation gym environments.
+                Defaults to `None`.
+            num_rollouts_val (int, optional): Number of rollouts for validation.
+                Defaults to 10.
+            test_gyms (Gym | list[Gym] | None, optional): Test gym environments.
+                Defaults to `None`.
+            num_rollouts_test (int, optional): Number of rollouts for testing.
+                Defaults to `10`.
+            max_episode_steps (int | None, optional): Maximum steps per episode.
+                Defaults to `300`.
 
         Raises:
             ValueError: If neither `repo_id` nor `dataset` is provided, or if invalid `data_format`.
@@ -189,7 +205,11 @@ class LeRobotDataModule(DataModule):
         super().__init__(
             train_dataset=train_dataset,
             train_batch_size=train_batch_size,
-            **action_datamodule_kwargs,
+            val_gyms=val_gyms,
+            num_rollouts_val=num_rollouts_val,
+            test_gyms=test_gyms,
+            num_rollouts_test=num_rollouts_test,
+            max_episode_steps=max_episode_steps,
         )
 
     def train_dataloader(self) -> DataLoader:
