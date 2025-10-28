@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 import torch
 import yaml
+import openvino
 
 CONFIG_KEY = "model_config"
 
@@ -78,20 +79,10 @@ class Export:
             )
             raise RuntimeError(msg)
 
-        extra_model_args = {}
-        if hasattr(self.model, "extra_export_args") and "onnx" in self.model.extra_export_args:
-            extra_model_args = self.model.extra_export_args["onnx"]
-
+        extra_model_args = self._get_export_extra_args("onnx")
         extra_model_args.update(export_kwargs)
 
-        sig = inspect.signature(self.model.forward)
-        positional_args = [
-            param_name
-            for param_name, param in sig.parameters.items()
-            if param.kind in {inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.POSITIONAL_ONLY}
-            and param_name != "self"
-        ]
-        arg_name = next(iter(positional_args))
+        arg_name = self._get_forward_arg_name()
 
         self.model.eval()
         torch.onnx.export(
@@ -102,6 +93,111 @@ class Export:
             input_names=list(input_sample.keys()),
             **extra_model_args,
         )
+
+    def to_openvino(self, output_path: PathLike | str,
+                    input_sample: dict[str, torch.Tensor] | None = None,
+                    **export_kwargs: dict) -> None:
+
+        if input_sample is None and hasattr(self.model, "sample_input"):
+            input_sample = self.model.sample_input
+        elif input_sample is None:
+            msg = (
+                "An input sample must be provided for openvino export, or the model must implement `sample_input` property."
+            )
+            raise RuntimeError(msg)
+
+        extra_model_args = self._get_export_extra_args("openvino")
+        extra_model_args.update(export_kwargs)
+
+        arg_name = self._get_forward_arg_name()
+
+        output_names = extra_model_args.get("output", None)
+        if output_names is not None:
+            extra_model_args.pop("output")
+
+        self.model.eval()
+
+        ov_model = openvino.convert_model(
+            self.model,
+            example_input={arg_name: input_sample},
+            **extra_model_args,
+        )
+        _postprocess_openvino_model(ov_model, output_names)
+
+        openvino.save_model(ov_model, output_path)
+
+    def _get_export_extra_args(self, format: str) -> dict[str, Any]:
+        """Retrieve extra export arguments for a specific format.
+
+        This method checks if the model has an `extra_export_args` property and
+        retrieves any additional export arguments for the specified format.
+
+        Args:
+            format (str): The export format (e.g., "onnx", "openvino").
+
+        Returns:
+            dict[str, Any]: A dictionary of extra export arguments for the specified format.
+                Returns an empty dictionary if no extra arguments are found.
+        """
+        extra_model_args: dict[str, Any] = {}
+        if hasattr(self.model, "extra_export_args") and format in self.model.extra_export_args:
+            extra_model_args = self.model.extra_export_args[format]
+        return extra_model_args
+
+    def _get_forward_arg_name(self) -> str:
+        """Get the name of the first positional argument of the model's forward method.
+
+        This method inspects the signature of the model's forward method and returns
+        the name of the first positional argument (excluding 'self').
+        Returns:
+            str: The name of the first positional argument in the forward method.
+        Raises:
+            StopIteration: If no positional arguments are found in the forward method
+                           signature (excluding 'self').
+        """
+
+        sig = inspect.signature(self.model.forward)
+        positional_args = [
+            param_name
+            for param_name, param in sig.parameters.items()
+            if param.kind in {inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.POSITIONAL_ONLY}
+            and param_name != "self"
+        ]
+
+        return next(iter(positional_args))
+
+
+def _postprocess_openvino_model(ov_model: openvino.Model, output_names: list[str] | None) -> openvino.Model:
+    """
+    Postprocess an OpenVINO model by setting output tensor names.
+    This function handles two scenarios:
+    1. Workaround for OpenVINO Converter (OVC) bug where a single output model
+        doesn't have a name assigned to its output tensor.
+    2. Assigns custom output names to the model's output tensors when provided.
+    The naming process follows a similar approach to PyTorch's ONNX export.
+    Args:
+            ov_model (openvino.Model): The OpenVINO model to postprocess.
+            output_names (list[str] | None): Optional list of custom names to assign
+                to the model's output tensors. If provided and the model has at least
+                as many outputs as names in the list, the names will be assigned to
+                the corresponding output tensors in order.
+    Returns:
+            openvino.Model: The postprocessed OpenVINO model with updated output tensor names.
+    Note:
+            - If a single output exists without a name, it will be named "output1".
+            - When output_names is provided, only the first len(output_names) outputs
+            will be renamed, even if the model has more outputs.
+    """
+
+    if len(ov_model.outputs) == 1 and len(ov_model.outputs[0].get_names()) == 0:
+        # workaround for OVC's bug: single output doesn't have a name in OV model
+        ov_model.outputs[0].tensor.set_names({"output1"})
+
+    # name assignment process is similar to torch onnx export
+    if output_names is not None:
+        if len(ov_model.outputs) >= len(output_names):
+            for i, name in enumerate(output_names):
+                ov_model.outputs[i].tensor.set_names({name})
 
 
 def _serialize_model_config(config: Any) -> dict:  # noqa: ANN401
