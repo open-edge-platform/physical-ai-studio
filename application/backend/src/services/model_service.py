@@ -25,6 +25,12 @@ class ModelService:
             return await repo.save(model)
 
     @staticmethod
+    async def update_model(model: Model, update: dict) -> Model:
+        async with get_async_db_session_ctx() as session:
+            repo = ModelRepository(session)
+            return await repo.update(model, update)
+
+    @staticmethod
     async def delete_model(model_id: UUID) -> None:
         async with get_async_db_session_ctx() as session:
             repo = ModelRepository(session)

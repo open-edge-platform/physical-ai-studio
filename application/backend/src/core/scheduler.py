@@ -1,3 +1,4 @@
+import asyncio
 from loguru import logger
 import multiprocessing as mp
 import os
@@ -10,10 +11,8 @@ if TYPE_CHECKING:
     import threading
 
 
-
-
 class Scheduler:
-    """Manages application processes and threads"""
+    """Manages application processes and threads."""
 
     def __init__(self) -> None:
         logger.info("Initializing Scheduler...")
@@ -23,6 +22,7 @@ class Scheduler:
 
         self.processes: list[mp.Process] = []
         self.threads: list[threading.Thread] = []
+        self.tasks: list[asyncio.Task] = []
         logger.info("Scheduler initialized")
 
     def start_workers(self) -> None:
@@ -33,6 +33,7 @@ class Scheduler:
         training_proc.daemon = False
         training_proc.start()
         self.processes.extend([training_proc])
+        self.tasks.extend([asyncio.create_task(training_proc.event_processor())])
 
     def shutdown(self) -> None:
         """Shutdown all processes gracefully"""
@@ -67,6 +68,9 @@ class Scheduler:
                     if process.is_alive():
                         logger.error("Force killing process %s", process.name)
                         process.kill()
+
+        for task in self.tasks:
+            task.cancel()
 
         logger.info("All workers shut down gracefully")
 
