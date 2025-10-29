@@ -28,6 +28,7 @@ export const TrainModelModal = (close: () => void) => {
 
         }
         trainMutation.mutate({ body: payload })
+        close();
     };
 
     return (

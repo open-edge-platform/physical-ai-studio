@@ -24,6 +24,12 @@ class EventProcessor:
         for event_type in event_types:
             self._event_handlers[event_type].append(handler)
 
+    def unsubscribe(self, event_types: Sequence[EventType], handler: Callable) -> None:
+        """Subscribe to events of event bus."""
+        logger.info("unsubscribing")
+        for event_type in event_types:
+            self._event_handlers[event_type] = [h for h in self._event_handlers[event_type] if h != handler]
+
     async def processor(self):
         """Run inside FastAPI (async task). Empties queus and dispatches events with payloads."""
         logger.info("Started event processor.")

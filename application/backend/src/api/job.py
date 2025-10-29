@@ -36,8 +36,11 @@ async def interrupt_job(
 ) -> None:
     """Endpoint to interrupt job"""
     job = await job_service.get_job_by_id(job_id)
-    if job is not None and job.status == JobStatus.RUNNING:
-        scheduler.training_interrupt_event.set()
+    if job is not None:
+        if job.status == JobStatus.RUNNING:
+            scheduler.training_interrupt_event.set()
+        await job_service.update_job_status(job_id, status=JobStatus.CANCELED)
+
 
 @router.websocket("/ws")
 async def jobs_websocket(  # noqa: C901
@@ -51,7 +54,7 @@ async def jobs_websocket(  # noqa: C901
         print("sending data: ")
         await websocket.send_json({
             "event": event,
-            "data": Job.model_dump_json(payload),
+            "data": payload.model_dump(mode="json"),
         })
 
     event_processor.subscribe([EventType.JOB_UPDATE], send_data)
@@ -60,6 +63,9 @@ async def jobs_websocket(  # noqa: C901
         while True:
             data = await websocket.receive_json("text")
             print(data)
+
     except WebSocketDisconnect:
         print("Except: disconnected!")
+
+    event_processor.unsubscribe([EventType.JOB_UPDATE], send_data)
     print("websocket handling done...")
