@@ -179,7 +179,12 @@ datamodule = DataModule(
     max_episode_steps=500,
 )
 
-policy = ACT(config)
+conf = ACTConfig(
+        input_features=datamodule.train_dataset.observation_features,
+        output_features=datamodule.train_dataset.action_features,
+    )
+model = ACTModel.from_config(conf)
+act_policy = ACT(model=model)
 trainer = Trainer(max_epochs=100)
 trainer.fit(policy, datamodule)
 
