@@ -111,7 +111,7 @@ export const Index = () => {
 
     const onMessage = ({ data }: WebSocketEventMap['message']) => {
         const message = JSON.parse(data) as { event: string, data: SchemaJob };
-        if (message.event === 'JOB_UPDATE') {
+        if (message.event === 'JOB_UPDATE' && message.data.project_id === project_id) {
             if (message.data.status === "completed") {
                 client.invalidateQueries({ queryKey: ['get', '/api/models/{project_id}'] });
 
