@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     @property
     def database_url(self) -> str:
         """Get database URL"""
+        return f"sqlite+aiosqlite:///{self.data_dir / self.database_file}"
+
+    @property
+    def database_url_sync(self) -> str:
+        """Get synchronous database URL"""
         return f"sqlite:///{self.data_dir / self.database_file}"
 
 

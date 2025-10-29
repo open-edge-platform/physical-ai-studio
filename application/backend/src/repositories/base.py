@@ -1,55 +1,125 @@
-from datetime import datetime
-from typing import TypeVar
+import abc
+from collections.abc import Callable
+from typing import Any, Generic, TypeVar
+from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio.session import AsyncSession
+from sqlalchemy.sql import expression
+from sqlalchemy.sql.selectable import Select, and_
 
 from db.schema import Base
+from schemas.base import BaseIDModel
 
-ModelType = TypeVar("ModelType", bound=Base)
+ModelType = TypeVar("ModelType", bound=BaseIDModel)
+SchemaType = TypeVar("SchemaType", bound=Base)
 
 
-class BaseRepository[ModelType]:
+class BaseRepository(Generic[ModelType, SchemaType], metaclass=abc.ABCMeta):
     """Base repository class for database operations."""
 
-    def __init__(self, db: Session, model: type[ModelType]) -> None:
+    def __init__(self, db: AsyncSession, schema: type[SchemaType]):
         self.db = db
-        self.model = model
+        self.schema = schema
 
-    def get_by_id(self, obj_id: str) -> ModelType | None:
-        return self.db.get(self.model, obj_id)
+    @property
+    @abc.abstractmethod
+    def to_schema(self) -> Callable[[ModelType], SchemaType]:
+        """to_schema mapper callable"""
 
-    def list_all(self) -> list[ModelType]:
-        return self.db.query(self.model).all()
+    @property
+    @abc.abstractmethod
+    def from_schema(self) -> Callable[[SchemaType], ModelType]:
+        """from_schema mapper callable"""
 
-    def save(self, item: ModelType) -> ModelType:
-        item.updated_at = datetime.now()  # type: ignore[attr-defined]
-        self.db.add(item)
-        self.db.flush()
+    @property
+    def base_filters(self) -> dict:
+        """Base filter expression for the repository"""
+        return {}
+
+    def _get_filter_query(self, extra_filters: dict | None = None, expressions: list[Any] | None = None) -> Select:
+        """Build query with filters and expressions combined with AND."""
+        query = expression.select(self.schema)
+
+        # Apply keyword filters (column=value)
+        if extra_filters is None:
+            extra_filters = {}
+        combined_filters = extra_filters | self.base_filters
+        if combined_filters:
+            query = query.filter_by(**combined_filters)
+
+        # Apply additional expressions with AND
+        if expressions:
+            query = query.where(and_(*expressions))
+
+        return query
+
+    async def get_by_id(self, obj_id: str | UUID) -> ModelType | None:
+        return await self.get_one(extra_filters={"id": self._id_to_str(obj_id)})
+
+    async def get_one(
+        self,
+        extra_filters: dict | None = None,
+        expressions: list[Any] | None = None,
+        order_by: Any | None = None,
+        ascending: bool = False,
+    ) -> ModelType | None:
+        query = self._get_filter_query(extra_filters=extra_filters, expressions=expressions)
+        if order_by is not None:
+            query = query.order_by(order_by.asc() if ascending else order_by.desc())
+        result = await self.db.execute(query)
+        first_result = result.scalars().first()
+        if first_result:
+            return self.from_schema(first_result)
+        return None
+
+    async def get_all(self, extra_filters: dict | None = None, expressions: list[Any] | None = None) -> list[ModelType]:
+        query = self._get_filter_query(extra_filters=extra_filters, expressions=expressions)
+        results = await self.db.execute(query)
+        scalars = results.scalars().all()
+        return [self.from_schema(result) for result in scalars]
+
+    async def save(self, item: ModelType) -> ModelType:
+        schema_item: SchemaType = self.to_schema(item)
+        self.db.add(schema_item)
+        await self.db.commit()
         return item
 
-    def update(self, item: ModelType) -> ModelType:
-        item.updated_at = datetime.now()  # type: ignore[attr-defined]
-        updated = self.db.merge(item)
-        self.db.flush()
-        self.db.refresh(updated)
+    async def update(self, item: ModelType, partial_update: dict) -> ModelType:
+        # note: model_copy does not validate the model, so we need to validate explicitly
+        to_update = item.model_copy(update=partial_update, deep=True)
+        item.__class__.model_validate(to_update.model_dump())
+        schema_item: SchemaType = self.to_schema(to_update)
+        await self.db.merge(schema_item)
+        await self.db.commit()
+        updated = await self.get_by_id(item.id)
+        if updated is None:
+            raise ValueError(f"{item.__class__} with ID `{item.id}` doesn't exist")
         return updated
 
-    def delete(self, obj_id: str) -> bool:
-        return self.db.query(self.model).filter(self.model.id == obj_id).delete() > 0  # type: ignore[attr-defined]
+    async def delete_by_id(self, obj_id: str | UUID) -> None:
+        if not hasattr(self.schema, "id"):
+            raise AttributeError(f"Delete by ID is not supported by schema: `{self.schema}`")
 
-    def save_batch(self, items: list[ModelType]) -> list[ModelType]:
-        for item in items:
-            item.updated_at = datetime.now()  # type: ignore[attr-defined]
-        self.db.add_all(items)
-        self.db.flush()
-        return items
+        obj_id = self._id_to_str(obj_id)
+        where_expression = [
+            self.schema.id == obj_id,  # type: ignore[attr-defined]
+            *[self.schema.__table__.c[k] == v for k, v in self.base_filters.items()],
+        ]
+        query = expression.delete(self.schema).where(*where_expression)
+        await self.db.execute(query)
 
-    def update_batch(self, updates: list[ModelType]) -> None:
-        for update in updates:
-            update.updated_at = datetime.now()  # type: ignore[attr-defined]
-            self.db.merge(update)
-        self.db.flush()
+    @staticmethod
+    def _id_to_str(obj_id: str | UUID) -> str:
+        if isinstance(obj_id, UUID):
+            return str(obj_id)
+        return obj_id
 
-    def delete_batch(self, obj_ids: list[str]) -> None:
-        self.db.query(self.model).filter(self.model.id.in_(obj_ids)).delete(synchronize_session=False)  # type: ignore[attr-defined]
-        self.db.flush()
+
+class ProjectBaseRepository(BaseRepository, metaclass=abc.ABCMeta):
+    def __init__(self, db: AsyncSession, project_id: str | UUID, schema: type[SchemaType]):
+        super().__init__(db, schema)
+        self.project_id = self._id_to_str(project_id)
+
+    @property
+    def base_filters(self) -> dict:
+        return {"project_id": self.project_id}

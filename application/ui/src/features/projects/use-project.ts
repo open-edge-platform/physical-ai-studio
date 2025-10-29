@@ -16,8 +16,8 @@ export function useProjectId(): { project_id: string } {
 export function useProject(): SchemaProjectInput {
     const { project_id } = useProjectId();
 
-    const { data: project } = $api.useSuspenseQuery('get', '/api/projects/{id}', {
-        params: { path: { id: project_id } },
+    const { data: project } = $api.useSuspenseQuery('get', '/api/projects/{project_id}', {
+        params: { path: { project_id } },
     });
 
     return project;

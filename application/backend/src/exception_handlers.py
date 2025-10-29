@@ -136,7 +136,9 @@ def register_application_exception_handlers(app: FastAPI) -> None:
     Register application exception handlers
     """
     app.add_exception_handler(GetiBaseException, handle_base_exception)
+
     app.add_exception_handler(500, handle_error)
     app.add_exception_handler(404, handle_not_found)
+
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(pydantic.ValidationError, pydantic_validation_exception_handler)

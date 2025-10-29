@@ -5,7 +5,7 @@ import sys
 
 import click
 
-from db import MigrationManager, get_db_session
+from db import MigrationManager, sync_engine
 from db.schema import CameraConfigDB, DatasetDB, ProjectConfigDB, ProjectDB
 from settings import get_settings
 
@@ -52,13 +52,37 @@ def init_db() -> None:
 @cli.command()
 def clean_db() -> None:
     """Remove all data from the database (clean but don't drop tables)."""
-    with get_db_session() as db:
+    with sync_engine as db:
         db.query(ProjectDB).delete()
         db.query(ProjectConfigDB).delete()
         db.query(DatasetDB).delete()
         db.query(CameraConfigDB).delete()
         db.commit()
     click.echo("✓ Database cleaned successfully!")
+
+
+@cli.command()
+def check_db() -> None:
+    """Check database status"""
+    click.echo("Checking database status...")
+
+    # Check connection
+    if not migration_manager.check_connection():
+        click.echo("✗ Cannot connect to database")
+        sys.exit(1)
+
+    click.echo("✓ Database connection OK")
+
+    # Check migration status
+    needs_migration, status = migration_manager.check_migration_status()
+    click.echo(f"Migration status: {status}")
+
+    if needs_migration:
+        click.echo("⚠ Database needs migration")
+        sys.exit(2)
+    else:
+        click.echo("✓ Database is up to date")
+        sys.exit(0)
 
 
 @cli.command()

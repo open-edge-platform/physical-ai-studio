@@ -1,5 +1,6 @@
 import os
 import uuid
+from json.decoder import JSONDecodeError
 from os import listdir, path, stat
 from pathlib import Path
 
@@ -95,6 +96,8 @@ def get_local_repositories(
             result.append(metadata)
         except RepositoryNotFoundError:
             print(f"Could not find local repository online: {repo_id}")
+        except JSONDecodeError:
+            print(f"Could not parse local repository: {repo_id}")
 
     return result
 

@@ -1,4 +1,4 @@
-from db.engine import db_engine, get_db_session
+from db.engine import get_async_db_session_ctx, sync_engine
 from db.migration import MigrationManager
 
-__all__ = ["MigrationManager", "db_engine", "get_db_session"]
+__all__ = ["MigrationManager", "get_async_db_session_ctx", "sync_engine"]
