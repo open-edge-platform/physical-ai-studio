@@ -1,12 +1,10 @@
 import asyncio
 
 from uuid import UUID
-#from utils.experiment_loggers import TrackioLogger
 from loguru import logger
 
 from schemas.job import JobStatus, JobType
 
-#from repositories.binary_repo import ImageBinaryRepository, ModelBinaryRepository
 from services.job_service import JobService
 from services.event_processor import EventType
 
@@ -16,7 +14,7 @@ import multiprocessing as mp
 from queue import Empty
 
 
-from lightning.pytorch.callbacks import ModelCheckpoint, Callback, ProgressBar
+from lightning.pytorch.callbacks import Callback, ProgressBar
 from lightning.pytorch.utilities.types import STEP_OUTPUT
 import lightning.pytorch as pl
 from typing import Any
@@ -88,12 +86,6 @@ class TrainingTrackingCallback(Callback):
         self.dispatcher.update_progress(progress)
         if self.shutdown_event.is_set() or self.interrupt_event.is_set():
             trainer.should_stop = True
-
-class CheckpointStorageCallback(ModelCheckpoint):
-    def on_save_checkpoint(self, trainer, pl_module, checkpoint):
-        filepath = trainer.checkpoint_callback.best_model_path
-        print(filepath)
-
 
 
 class TrainingService:

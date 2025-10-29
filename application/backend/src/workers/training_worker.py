@@ -11,7 +11,7 @@ from settings import get_settings
 if TYPE_CHECKING:
     from multiprocessing.synchronize import Event as EventClass
 
-from schemas import Dataset, Job, Model
+from schemas import Job, Model
 from schemas.job import JobStatus, TrainJobPayload
 from services import DatasetService, JobService, ModelService
 from services.training_service import (
@@ -41,8 +41,6 @@ class TrainingWorker(BaseProcessWorker):
 
     async def run_loop(self) -> None:
         job_service = JobService()
-        dataset_service = DatasetService()
-
         logger.info("Training Worker is running")
         while not self.should_stop():
             settings = get_settings()
@@ -59,11 +57,11 @@ class TrainingWorker(BaseProcessWorker):
                     name=payload.model_name,
                     policy=payload.policy,
                     properties={},
+                    created_at=None,
                 )
 
-                dataset = await dataset_service.get_dataset_by_id(payload.dataset_id)
                 self.interrupt_event.clear()
-                await asyncio.create_task(self._train_model(job, dataset, model))
+                await asyncio.create_task(self._train_model(job, model))
             await asyncio.sleep(0.5)
 
     def setup(self) -> None:
@@ -76,11 +74,16 @@ class TrainingWorker(BaseProcessWorker):
         with logger.contextualize(worker=self.__class__.__name__):
             asyncio.run(TrainingService.abort_orphan_jobs())
 
-    async def _train_model(self, job: Job, dataset: Dataset, model: Model):
+    async def _train_model(self, job: Job, model: Model):
+
         await JobService.update_job_status(
             job_id=job.id, status=JobStatus.RUNNING, message="Training started"
         )
         try:
+            dataset = await DatasetService.get_dataset_by_id(model.dataset_id)
+            if dataset is None:
+                raise ValueError(f"Dataset not found: {model.dataset_id}")
+
             l_dm = LeRobotDataModule(
                 repo_id=dataset.name,
                 root=dataset.path,
@@ -95,9 +98,9 @@ class TrainingWorker(BaseProcessWorker):
 
             checkpoint_callback = ModelCheckpoint(
                 dirpath=model.path,
-                filename="checkpoint_{step}",  # optional pattern
-                save_top_k=1,  # only keep best checkpoint
-                monitor="train/loss",  # metric to monitor
+                filename="checkpoint_{step}",
+                save_top_k=1,
+                monitor="train/loss",
                 mode="min",
             )
 
