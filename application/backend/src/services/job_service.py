@@ -26,7 +26,7 @@ class JobService:
             return await repo.get_by_id(job_id)
 
     @staticmethod
-    async def submit_train_job(payload: TrainJobPayload) -> JobSubmitted:
+    async def submit_train_job(payload: TrainJobPayload) -> Job:
         async with get_async_db_session_ctx() as session:
             repo = JobRepository(session)
             if await repo.is_job_duplicate(project_id=payload.project_id, payload=payload):
@@ -39,10 +39,7 @@ class JobService:
                     payload=payload.model_dump(),
                     message="Training job submitted",
                 )
-                print(job)
-                print("here")
-                saved_job = await repo.save(job)
-                return JobSubmitted(job_id=saved_job.id)
+                return await repo.save(job)
             except IntegrityError:
                 raise ResourceNotFoundException(resource_id=payload.project_id, resource_name="project")
 

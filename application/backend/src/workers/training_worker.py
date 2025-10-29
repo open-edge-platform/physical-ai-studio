@@ -1,109 +1,34 @@
 from __future__ import annotations
-import traceback
 
 import asyncio
-from typing import TYPE_CHECKING
-
-from uuid import uuid4, UUID
 import multiprocessing as mp
+import traceback
+from typing import TYPE_CHECKING
+from uuid import uuid4
+
 from settings import get_settings
 
 if TYPE_CHECKING:
     from multiprocessing.synchronize import Event as EventClass
 
-from services import JobService, ModelService, TrainingService, DatasetService
-from workers.base import BaseProcessWorker, BaseThreadWorker
-from schemas import Model, Dataset, Job
-from schemas.job import TrainJobPayload, JobStatus
+from schemas import Dataset, Job, Model
+from schemas.job import JobStatus, TrainJobPayload
+from services import DatasetService, JobService, ModelService
+from services.training_service import (
+    TrainingTrackingCallback,
+    TrainingTrackingDispatcher,
+    TrainingService
+)
+from workers.base import BaseProcessWorker
 
-SCHEDULE_INTERVAL_SEC = 5
-
-import loguru
-from loguru import logger
-
-from getiaction.policies import ACTModel, ACT
-from getiaction.train import Trainer
 from getiaction.data import LeRobotDataModule
-
-from lightning.pytorch.callbacks import ModelCheckpoint, Callback, ProgressBar
-from lightning.pytorch.utilities.types import STEP_OUTPUT
-import lightning.pytorch as pl
-from typing import Any
+from getiaction.policies import ACT, ACTModel
+from getiaction.train import Trainer
+from lightning.pytorch.callbacks import ModelCheckpoint
+from loguru import logger
 from services.event_processor import EventType
 
-class TrainingTrackingDispatcher(BaseThreadWorker):
-    """Dispatch events from the callback to a queue asynchronously."""
-    def __init__(self, job_id: UUID, event_queue: mp.Queue, interrupt_event: mp.Event):
-        super().__init__(stop_event=interrupt_event)
-        self.job_id = job_id
-        self.event_queue = event_queue
-        self.queue = mp.Queue()
-        self.interrupt_event = interrupt_event
-
-    async def run_loop(self):
-        while not self.interrupt_event.is_set():
-            try:
-                progress = self.queue.get_nowait()
-                job = await JobService.update_job_status(self.job_id, JobStatus.RUNNING, progress=progress)
-                self.event_queue.put((EventType.JOB_UPDATE, job))
-            except mp.queues.Empty:
-                await asyncio.sleep(0.05)
-
-    def update_progress(self, progress: int):
-        self.queue.put(progress)
-
-
-class TrainingTrackingCallback(Callback):
-    def __init__(
-        self,
-        shutdown_event: mp.Event,
-        interrupt_event: mp.Event,
-        dispatcher: TrainingTrackingDispatcher,
-    ):
-        super().__init__()
-        self.shutdown_event = shutdown_event  # global stop event in case of shutdown
-        self.interrupt_event = (
-            interrupt_event  # event for interrupting training gracefully
-        )
-        self.dispatcher = dispatcher
-
-    def on_train_batch_end(
-        self,
-        trainer: "pl.Trainer",
-        pl_module: "pl.LightningModule",
-        outputs: STEP_OUTPUT,
-        batch: Any,
-        batch_idx: int,
-    ) -> None:
-        progress = round((trainer.global_step) / trainer.max_steps * 100)
-        self.dispatcher.update_progress(progress)
-        if self.shutdown_event.is_set() or self.interrupt_event.is_set():
-            trainer.should_stop = True
-
-class CheckpointStorageCallback(ModelCheckpoint):
-    def on_save_checkpoint(self, trainer, pl_module, checkpoint):
-        filepath = trainer.checkpoint_callback.best_model_path
-        print(filepath)
-
-
-class TrainingCallback(Callback):
-    def __init__(self, shutdown_event: mp.Event, interrupt_event: mp.Event):
-        super().__init__()
-        self._shutdown_event = shutdown_event  # global stop event in case of shutdown
-        self._interrupt_event = (
-            interrupt_event  # event for interrupting training gracefully
-        )
-
-    def on_train_batch_end(
-        self,
-        trainer: "pl.Trainer",
-        pl_module: "pl.LightningModule",
-        outputs: STEP_OUTPUT,
-        batch: Any,
-        batch_idx: int,
-    ) -> None:
-        if self._shutdown_event.is_set() or self._interrupt_event.is_set():
-            trainer.should_stop = True
+SCHEDULE_INTERVAL_SEC = 5
 
 
 class TrainingWorker(BaseProcessWorker):
@@ -151,7 +76,7 @@ class TrainingWorker(BaseProcessWorker):
         with logger.contextualize(worker=self.__class__.__name__):
             asyncio.run(TrainingService.abort_orphan_jobs())
 
-    async def _train_model(self, job, dataset, model):
+    async def _train_model(self, job: Job, dataset: Dataset, model: Model):
         await JobService.update_job_status(
             job_id=job.id, status=JobStatus.RUNNING, message="Training started"
         )

@@ -20,24 +20,23 @@ async def list_jobs(
     """Fetch all jobs."""
     return await job_service.get_job_list()
 
-
 @router.post("/train")
 async def submit_train_job(
     job_service: Annotated[JobService, Depends(get_job_service)],
     payload: Annotated[TrainJobPayload, Body()],
-) -> JobSubmitted:
+) -> Job:
     """Endpoint to submit a training job"""
     return await job_service.submit_train_job(payload=payload)
 
-@router.post("/{job_id}")
-async def submit_train_job(
+@router.post("/{job_id}/interrupt")
+async def interrupt_job(
     job_id: Annotated[UUID, Depends(validate_uuid)],
     job_service: Annotated[JobService, Depends(get_job_service)],
     scheduler: Annotated[Scheduler, Depends(get_scheduler)],
 ) -> None:
     """Endpoint to interrupt job"""
     job = await job_service.get_job_by_id(job_id)
-    if job.status == JobStatus.RUNNING:
+    if job is not None and job.status == JobStatus.RUNNING:
         scheduler.training_interrupt_event.set()
 
 @router.websocket("/ws")
