@@ -87,7 +87,7 @@ class TrainingWorker(BaseProcessWorker):
             l_dm = LeRobotDataModule(
                 repo_id=dataset.name,
                 root=dataset.path,
-                train_batch_size=48,
+                train_batch_size=32,
             )
             lib_model = ACTModel(
                 input_features=l_dm.train_dataset.observation_features,

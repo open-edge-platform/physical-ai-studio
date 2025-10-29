@@ -2,9 +2,14 @@ import { Dialog, Heading, Form, Key, Picker, Item, Divider, Content, ButtonGroup
 import { $api } from "../../api/client"
 import { useProject } from "../../features/projects/use-project"
 import { useState } from "react";
-import { SchemaTrainJobPayload } from "../../api/openapi-spec";
+import { SchemaJob, SchemaTrainJobPayload } from "../../api/openapi-spec";
 
-export const TrainModelModal = (close: () => void) => {
+export type SchemaTrainJob = Omit<SchemaJob, 'payload'> & {
+    payload: SchemaTrainJobPayload;
+};
+
+
+export const TrainModelModal = (close: (job: SchemaTrainJob | undefined) => void) => {
     const { datasets, id: project_id } = useProject();
     const [name, setName] = useState<string>("");
     const [selectedDatasets, setSelectedDatasets] = useState<Key | null>(null);
@@ -27,8 +32,9 @@ export const TrainModelModal = (close: () => void) => {
             policy: policy!
 
         }
-        trainMutation.mutate({ body: payload })
-        close();
+        trainMutation.mutateAsync({ body: payload }).then((response) => {
+            close(response as SchemaTrainJob | undefined)
+        })
     };
 
     return (
@@ -47,7 +53,7 @@ export const TrainModelModal = (close: () => void) => {
                 </Form>
             </Content>
             <ButtonGroup>
-                <Button variant="secondary" onPress={close}>Cancel</Button>
+                <Button variant="secondary" onPress={() => close(undefined)}>Cancel</Button>
                 <Button variant="accent" onPress={save}>Train</Button>
             </ButtonGroup>
         </Dialog>
