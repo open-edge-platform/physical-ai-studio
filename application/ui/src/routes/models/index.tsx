@@ -1,6 +1,15 @@
-import { $api } from '../../api/client';
+import { $api, API_BASE_URL } from '../../api/client';
 import { View, Heading, Text, Flex, Button, DialogTrigger, TableView, TableHeader, Column, TableBody, Cell, Row, Divider } from "@geti/ui"
 import { TrainModelModal } from './train-model';
+import useWebSocket from 'react-use-websocket';
+
+const JobTestWidget = () => {
+    const { lastJsonMessage } = useWebSocket(`${API_BASE_URL}/api/jobs/ws`);
+    console.log(lastJsonMessage)
+    return (
+        <Text>{JSON.stringify(lastJsonMessage) ?? ""}</Text>
+    )
+}
 
 const ModelList = () => {
     const { data: models } = $api.useQuery('get', '/api/models')
@@ -46,6 +55,7 @@ export const Index = () => {
                         {TrainModelModal}
                     </DialogTrigger>
                 </Flex>
+                <JobTestWidget/>
                 <Text>Active training model goes here..</Text>
                 <ModelList />
             </View >

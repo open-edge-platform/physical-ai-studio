@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 from settings import get_settings
 from webrtc.manager import WebRTCManager
+from services.event_processor import EventProcessor
 
 from .scheduler import Scheduler
 
@@ -22,9 +23,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     webrtc_manager = WebRTCManager()
     app.state.webrtc_manager = webrtc_manager
 
+
     app_scheduler = Scheduler()
     app_scheduler.start_workers()
     app.state.scheduler = app_scheduler
+    app.state.event_processor = EventProcessor(app_scheduler.event_queue)
     logger.info("Application startup completed")
 
     yield
@@ -33,4 +36,5 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     logger.info("Shutting down %s application...", settings.app_name)
     await webrtc_manager.cleanup()
     app_scheduler.shutdown()
+    app.state.event_processor.shutdown()
     logger.info("Application shutdown completed")

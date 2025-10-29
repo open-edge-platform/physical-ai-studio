@@ -55,7 +55,7 @@ class JobService:
     @staticmethod
     async def update_job_status(
         job_id: UUID, status: JobStatus, message: str | None = None, progress: int | None = None
-    ) -> None:
+    ) -> Job:
         async with get_async_db_session_ctx() as session:
             repo = JobRepository(session)
             job = await repo.get_by_id(job_id)
@@ -67,7 +67,7 @@ class JobService:
             progress_ = 100 if status is JobStatus.COMPLETED else progress
             if progress_ is not None:
                 updates["progress"] = progress_
-            await repo.update(job, updates)
+            return await repo.update(job, updates)
 
     @classmethod
     async def stream_logs(cls, job_id: UUID | str):

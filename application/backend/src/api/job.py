@@ -1,13 +1,14 @@
 from typing import Annotated
 
 from uuid import UUID
-from fastapi import APIRouter, Depends, Body
+from fastapi import APIRouter, Depends, Body, WebSocket, WebSocketDisconnect
 
-from api.dependencies import get_job_service, validate_uuid, get_scheduler
+from api.dependencies import get_job_service, validate_uuid, get_scheduler, get_event_processor_ws
 from schemas import Job
 from schemas.job import TrainJobPayload, JobSubmitted, JobStatus
 from services import JobService
 from core.scheduler import Scheduler
+from services.event_processor import EventType, EventProcessor
 
 router = APIRouter(prefix="/api/jobs", tags=["Jobs"])
 
@@ -38,3 +39,28 @@ async def submit_train_job(
     job = await job_service.get_job_by_id(job_id)
     if job.status == JobStatus.RUNNING:
         scheduler.training_interrupt_event.set()
+
+@router.websocket("/ws")
+async def jobs_websocket(  # noqa: C901
+    websocket: WebSocket,
+    event_processor: Annotated[EventProcessor, Depends(get_event_processor_ws)],
+) -> None:
+    """Robot control websocket."""
+    await websocket.accept()
+
+    async def send_data(event, payload):
+        print("sending data: ")
+        await websocket.send_json({
+            "event": event,
+            "data": Job.model_dump_json(payload),
+        })
+
+    event_processor.subscribe([EventType.JOB_UPDATE], send_data)
+
+    try:
+        while True:
+            data = await websocket.receive_json("text")
+            print(data)
+    except WebSocketDisconnect:
+        print("Except: disconnected!")
+    print("websocket handling done...")

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import traceback
 
 import asyncio
 from typing import TYPE_CHECKING
@@ -10,9 +11,8 @@ from settings import get_settings
 if TYPE_CHECKING:
     from multiprocessing.synchronize import Event as EventClass
 
-from services.training_service import TrainingService
-from services import JobService, ModelService
-from workers.base import BaseProcessWorker
+from services import JobService, ModelService, TrainingService, DatasetService
+from workers.base import BaseProcessWorker, BaseThreadWorker
 from schemas import Model, Dataset, Job
 from schemas.job import TrainJobPayload, JobStatus
 
@@ -29,14 +29,28 @@ from lightning.pytorch.callbacks import ModelCheckpoint, Callback, ProgressBar
 from lightning.pytorch.utilities.types import STEP_OUTPUT
 import lightning.pytorch as pl
 from typing import Any
+from services.event_processor import EventType
 
-from enum import StrEnum
+class TrainingTrackingDispatcher(BaseThreadWorker):
+    """Dispatch events from the callback to a queue asynchronously."""
+    def __init__(self, job_id: UUID, event_queue: mp.Queue, interrupt_event: mp.Event):
+        super().__init__(stop_event=interrupt_event)
+        self.job_id = job_id
+        self.event_queue = event_queue
+        self.queue = mp.Queue()
+        self.interrupt_event = interrupt_event
 
+    async def run_loop(self):
+        while not self.interrupt_event.is_set():
+            try:
+                progress = self.queue.get_nowait()
+                job = await JobService.update_job_status(self.job_id, JobStatus.RUNNING, progress=progress)
+                self.event_queue.put((EventType.JOB_UPDATE, job))
+            except mp.queues.Empty:
+                await asyncio.sleep(0.05)
 
-class EventType(StrEnum):
-    CHECKPOINT = "CHECKPOINT"
-    PROGRESS = "PROGRESS"
-    DONE = "DONE"
+    def update_progress(self, progress: int):
+        self.queue.put(progress)
 
 
 class TrainingTrackingCallback(Callback):
@@ -44,18 +58,14 @@ class TrainingTrackingCallback(Callback):
         self,
         shutdown_event: mp.Event,
         interrupt_event: mp.Event,
-        queue: mp.Queue,
-        model: Model,
-        job_id: UUID,
+        dispatcher: TrainingTrackingDispatcher,
     ):
         super().__init__()
         self.shutdown_event = shutdown_event  # global stop event in case of shutdown
         self.interrupt_event = (
             interrupt_event  # event for interrupting training gracefully
         )
-        self.queue = queue
-        self.model = model
-        self.job_id = job_id
+        self.dispatcher = dispatcher
 
     def on_train_batch_end(
         self,
@@ -66,17 +76,9 @@ class TrainingTrackingCallback(Callback):
         batch_idx: int,
     ) -> None:
         progress = round((trainer.global_step) / trainer.max_steps * 100)
-        print("PROGRESS", progress)
-        self.queue.put((EventType.PROGRESS, (self.job_id, progress)))
-
+        self.dispatcher.update_progress(progress)
         if self.shutdown_event.is_set() or self.interrupt_event.is_set():
             trainer.should_stop = True
-
-    def on_save_checkpoint(self, trainer, pl_module, checkpoint):
-        filepath = trainer.checkpoint_callback.best_model_path
-        print("ON SAVE CHECKPOINT")
-        self.queue.put((EventType.CHECKPOINT, (self.model, filepath)))
-
 
 class CheckpointStorageCallback(ModelCheckpoint):
     def on_save_checkpoint(self, trainer, pl_module, checkpoint):
@@ -107,26 +109,21 @@ class TrainingCallback(Callback):
 class TrainingWorker(BaseProcessWorker):
     ROLE = "Training"
 
-    def __init__(self, stop_event: EventClass, interrupt_event: EventClass):
+    def __init__(self, stop_event: EventClass, interrupt_event: EventClass, event_queue: mp.Queue):
         super().__init__(stop_event=stop_event)
-        self.queue = mp.Queue()
+        self.queue = event_queue
         self.interrupt_event = interrupt_event
 
     async def run_loop(self) -> None:
-        """Main training loop that polls for jobs and manages concurrent training tasks."""
-        print("run loop")
         job_service = JobService()
+        dataset_service = DatasetService()
 
         logger.info("Training Worker is running")
         while not self.should_stop():
-            # Clean up completed tasks
             settings = get_settings()
 
             job = await job_service.get_pending_train_job()
             if job is not None:
-                await JobService.update_job_status(
-                    job_id=job.id, status=JobStatus.RUNNING, message="Training started"
-                )
                 payload = TrainJobPayload.model_validate(job.payload)
                 id = uuid4()
                 model = Model(
@@ -139,45 +136,10 @@ class TrainingWorker(BaseProcessWorker):
                     properties={},
                 )
 
-                dataset = Dataset(
-                    id="b55bf695-8927-4ad9-96a1-88a6a0f33326",
-                    name="block-placement",
-                    path="/home/ronald/.cache/geti_action/datasets/block-placement",
-                    project_id="cf8062f8-7354-4643-8899-9be8d57ab2ce",
-                )
-                self._train_model(job, dataset, model)
+                dataset = await dataset_service.get_dataset_by_id(payload.dataset_id)
+                self.interrupt_event.clear()
+                await asyncio.create_task(self._train_model(job, dataset, model))
             await asyncio.sleep(0.5)
-
-    async def event_processor(self):
-        print("Starting event processor")
-        try:
-            while not self._stop_event.is_set():
-                try:
-                    event, payload = self.queue.get_nowait()
-                    logger.info(f"{event} {payload}")
-                    if event == EventType.CHECKPOINT:
-                        model, path = payload
-                        db_model = await ModelService.get_model_by_id(model.id)
-                        if db_model is None:
-                            model.path = path
-                            await ModelService.create_model(model)
-                        else:
-                            await ModelService.update_model(model, {"path": path})
-                    if event == EventType.DONE:
-                        job_id, progress = payload
-                        JobService.update_job_status(
-                            job_id, JobStatus.COMPLETED, progress=progress
-                        )
-                    if event == EventType.PROGRESS:
-                        job_id, progress = payload
-                        if progress < 100:
-                            JobService.update_job_status(
-                                job_id, JobStatus.RUNNING, progress=progress
-                            )
-                except mp.queues.Empty:
-                    await asyncio.sleep(0.05)
-        except Exception as e:
-            print(f"Outgoing task stopped: {e}")
 
     def setup(self) -> None:
         super().setup()
@@ -189,39 +151,64 @@ class TrainingWorker(BaseProcessWorker):
         with logger.contextualize(worker=self.__class__.__name__):
             asyncio.run(TrainingService.abort_orphan_jobs())
 
-    def _train_model(self, job, dataset, model):
-        l_dm = LeRobotDataModule(
-            repo_id=dataset.name,
-            root=dataset.path,
-            train_batch_size=48,
+    async def _train_model(self, job, dataset, model):
+        await JobService.update_job_status(
+            job_id=job.id, status=JobStatus.RUNNING, message="Training started"
         )
-        lib_model = ACTModel(
-            input_features=l_dm.train_dataset.observation_features,
-            output_features=l_dm.train_dataset.action_features,
-        )
+        try:
+            l_dm = LeRobotDataModule(
+                repo_id=dataset.name,
+                root=dataset.path,
+                train_batch_size=48,
+            )
+            lib_model = ACTModel(
+                input_features=l_dm.train_dataset.observation_features,
+                output_features=l_dm.train_dataset.action_features,
+            )
 
-        policy = ACT(model=lib_model)
+            policy = ACT(model=lib_model)
 
-        checkpoint_callback = ModelCheckpoint(
-            dirpath=model.path,
-            filename="checkpoint_{step}",  # optional pattern
-            save_top_k=1,  # only keep best checkpoint
-            monitor="train/loss",  # metric to monitor
-            mode="min",
-        )
+            checkpoint_callback = ModelCheckpoint(
+                dirpath=model.path,
+                filename="checkpoint_{step}",  # optional pattern
+                save_top_k=1,  # only keep best checkpoint
+                monitor="train/loss",  # metric to monitor
+                mode="min",
+            )
 
-        trainer = Trainer(
-            callbacks=[
-                checkpoint_callback,
-                TrainingTrackingCallback(
-                    shutdown_event=self._stop_event,
-                    interrupt_event=mp.Event(),
-                    queue=self.queue,
-                    model=model,
-                    job_id=job.id,
-                ),  # placeholder event for interrupt
-            ],
-            max_steps=10,
-        )
+            dispatcher = TrainingTrackingDispatcher(
+                job_id=job.id,
+                event_queue=self.queue,
+                interrupt_event=self.interrupt_event,
+            )
 
-        trainer.fit(model=policy, datamodule=l_dm)
+            trainer = Trainer(
+                callbacks=[
+                    checkpoint_callback,
+                    TrainingTrackingCallback(
+                        shutdown_event=self._stop_event,
+                        interrupt_event=self.interrupt_event,
+                        dispatcher=dispatcher,
+                    ),
+                ],
+                max_steps=10,
+            )
+
+            dispatcher.start()
+            trainer.fit(model=policy, datamodule=l_dm)
+
+            self.interrupt_event.set()
+            dispatcher.join(timeout=10)
+
+            job = await JobService.update_job_status(
+                job_id=job.id, status=JobStatus.COMPLETED, message="Training finished"
+            )
+            model = await ModelService.create_model(model)
+            self.queue.put((EventType.MODEL_UPDATE, model))
+        except Exception as e:
+            logger.error(f"Training failed: {e}")
+            logger.error(traceback.format_exc())
+            job = await JobService.update_job_status(
+                job_id=job.id, status=JobStatus.FAILED, message=f"Training failed: {e}"
+            )
+        self.queue.put((EventType.JOB_UPDATE, job))

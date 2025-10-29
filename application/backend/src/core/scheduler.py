@@ -19,21 +19,21 @@ class Scheduler:
         # Event to sync all processes on application shutdown
         self.mp_stop_event = mp.Event()
         self.training_interrupt_event = mp.Event()
+        self.event_queue = mp.Queue()
 
         self.processes: list[mp.Process] = []
         self.threads: list[threading.Thread] = []
-        self.tasks: list[asyncio.Task] = []
         logger.info("Scheduler initialized")
 
     def start_workers(self) -> None:
         training_proc = TrainingWorker(
             stop_event=self.mp_stop_event,
             interrupt_event=self.training_interrupt_event,
+            event_queue=self.event_queue,
         )
         training_proc.daemon = False
         training_proc.start()
         self.processes.extend([training_proc])
-        self.tasks.extend([asyncio.create_task(training_proc.event_processor())])
 
     def shutdown(self) -> None:
         """Shutdown all processes gracefully"""
@@ -68,9 +68,6 @@ class Scheduler:
                     if process.is_alive():
                         logger.error("Force killing process %s", process.name)
                         process.kill()
-
-        for task in self.tasks:
-            task.cancel()
 
         logger.info("All workers shut down gracefully")
 

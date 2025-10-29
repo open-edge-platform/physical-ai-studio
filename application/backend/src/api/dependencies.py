@@ -6,6 +6,7 @@ from fastapi.exceptions import HTTPException
 
 from core.scheduler import Scheduler
 from services import DatasetService, ProjectService, ModelService, JobService
+from services.event_processor import EventProcessor
 from webrtc.manager import WebRTCManager
 
 
@@ -70,3 +71,7 @@ def get_scheduler(request: Request) -> Scheduler:
 def get_scheduler_ws(request: WebSocket) -> Scheduler:
     """Provide the global Scheduler instance for WebSocket."""
     return request.app.state.scheduler
+
+def get_event_processor_ws(request: WebSocket) -> EventProcessor:
+    """Provide the global event_processor instance for WebSocket."""
+    return request.app.state.event_processor
