@@ -188,3 +188,15 @@ class TestDummyPolicyImportExport:
         policy.to_onnx(export_path)
 
         assert export_path.exists()
+
+    def test_export_to_openvino(self, tmp_path):
+        """Test exporting to OpenVINO format."""
+        from getiaction.policies.dummy import Dummy, DummyConfig
+
+        config = DummyConfig(action_shape=(2,))
+        policy = Dummy(config=config)
+
+        export_path = tmp_path / "dummy_policy.xml"
+        policy.to_openvino(export_path)
+
+        assert export_path.exists()
