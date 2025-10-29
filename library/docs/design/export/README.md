@@ -37,7 +37,7 @@ policy.to_torch("model.pt")
 policy.to_onnx("model.onnx")
 
 # Export to OpenVINO
-policy.to_onnx("model.xml")
+policy.to_openvino("model.xml")
 ```
 
 ## Architecture
@@ -104,7 +104,7 @@ Optimized format for deployment and inference on Intel hardware:
 
 ```python
 policy = Dummy(config=DummyConfig(action_shape=(7,)))
-policy.to_openvino("model.onnx")
+policy.to_openvino("model.xml")
 ```
 
 **OpenVINO Benefits:**
@@ -198,7 +198,7 @@ policy.to_torch("trained_model.pt")
 # Export to ONNX
 policy.to_onnx("trained_model.onnx")
 
-# Export to ONNX
+# Export to OpenVINO
 policy.to_openvino("trained_model.xml")
 ```
 
