@@ -6,13 +6,19 @@ import { SchemaJob, SchemaTrainJobPayload } from '../../api/openapi-spec';
 import { useState } from 'react';
 
 import { v4 as uuidv4 } from 'uuid'
+import { useQueryClient } from '@tanstack/react-query';
+import { useProjectId } from '../../features/projects/use-project';
 
 type SchemaTrainJob = Omit<SchemaJob, 'payload'> & {
     payload: SchemaTrainJobPayload;
 };
 
 const ModelList = () => {
-    const { data: models } = $api.useQuery('get', '/api/models')
+    const { project_id } = useProjectId()
+    const { data: models } = $api.useQuery('get', '/api/models/{project_id}', { params: {path: { project_id }} })
+
+
+    const sortedModels = models?.toSorted((a, b) => new Date(b.created_at!).getTime() - new Date(a.created_at!).getTime()) ?? []
 
     return (
         <View borderTopWidth='thin' borderTopColor='gray-400' backgroundColor={'gray-300'}>
@@ -29,7 +35,7 @@ const ModelList = () => {
                     <Column>{''}</Column>
                 </TableHeader>
                 <TableBody>
-                    {(models ?? []).map((model) => (
+                    {sortedModels.map((model) => (
                         <Row key={model.id}>
                             <Cell>{model.name}</Cell>
                             <Cell>{new Date(model.created_at!).toLocaleString()}</Cell>
@@ -48,6 +54,7 @@ const ModelInTraining = () => {
     const {} = useWebSocket(`${API_BASE_URL}/api/jobs/ws`, {
         onMessage: (event: WebSocketEventMap['message']) => onMessage(event),
     });
+    const client = useQueryClient();
 
     const [trainJob, setTrainJob] = useState<SchemaTrainJob>();
 
@@ -57,7 +64,13 @@ const ModelInTraining = () => {
         const message = JSON.parse(data) as { event: string, data: SchemaJob };
         if (message.event === 'JOB_UPDATE') {
             console.log(message);
-            setTrainJob(message.data as SchemaTrainJob)
+            if (message.data.status === "completed"){
+                client.invalidateQueries({ queryKey: ['get', '/api/models/{project_id}'] });
+
+                setTrainJob(undefined)
+            } else {
+                setTrainJob(message.data as SchemaTrainJob)
+            }
         }
     };
 
@@ -106,7 +119,7 @@ const ModelInTraining = () => {
                 </TableBody>
             </TableView>
             </View>
-            <ProgressBar width={'100%'} value={trainJob.progress} />
+            {trainJob.status === "running" && <ProgressBar width={'100%'} value={trainJob.progress} />}
         </View>
     )
 }
@@ -118,7 +131,7 @@ export const Index = () => {
             <Heading level={4}>Models</Heading>
             <Divider size='S' />
             <View margin={'size-300'}>
-                <Flex justifyContent={'end'}>
+                <Flex justifyContent={'end'} marginBottom='size-300'>
                     <DialogTrigger >
                         <Button variant='secondary'>Train model</Button>
                         {TrainModelModal}

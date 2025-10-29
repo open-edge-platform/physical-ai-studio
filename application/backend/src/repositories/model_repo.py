@@ -2,6 +2,7 @@ from collections.abc import Callable
 
 from sqlalchemy.ext.asyncio.session import AsyncSession
 
+from uuid import UUID
 from db.schema import ModelDB
 from repositories.base import BaseRepository
 from repositories.mappers import ModelMapper
@@ -19,3 +20,8 @@ class ModelRepository(BaseRepository):
     @property
     def from_schema(self) -> Callable[[ModelDB], Model]:
         return ModelMapper.from_schema
+
+    async def get_project_models(self, project_id: UUID) -> list[Model]:
+        return await self.get_all(
+            extra_filters={"project_id": str(project_id)},
+        )

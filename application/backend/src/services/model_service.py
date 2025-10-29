@@ -35,3 +35,9 @@ class ModelService:
         async with get_async_db_session_ctx() as session:
             repo = ModelRepository(session)
             await repo.delete_by_id(model_id)
+
+    @staticmethod
+    async def get_project_models(project_id: UUID) -> list[Model]:
+        async with get_async_db_session_ctx() as session:
+            repo = ModelRepository(session)
+            return await repo.get_project_models(project_id)
