@@ -66,13 +66,13 @@ const ModelList = ({ models }: { models: SchemaModel[] }) => {
 
 
 const ModelInTraining = ({trainJob}: {trainJob: SchemaTrainJob}) => {
-    const cancelMutation = $api.useMutation('post', '/api/jobs/{job_id}/interrupt')
-    const onCancel = () => {
+    const interruptMutation = $api.useMutation('post', '/api/jobs/{job_id}/interrupt')
+    const onInterrupt = () => {
         if (trainJob?.id !== undefined) {
-            cancelMutation.mutate({
+            interruptMutation.mutate({
                 params: {
-                    path: {
-                        job_id: trainJob.id!,
+                    query: {
+                        uuid: trainJob.id!,
                     }
                 },
             })
@@ -106,7 +106,7 @@ const ModelInTraining = ({trainJob}: {trainJob: SchemaTrainJob}) => {
                             <Cell>...</Cell>
                             <Cell>{trainJob.payload.policy}</Cell>
                             <Cell>
-                                <Button variant='secondary' onPress={onCancel}>Cancel</Button>
+                                <Button variant='secondary' onPress={onInterrupt}>Interrupt</Button>
                             </Cell>
                         </Row>
                     </TableBody>
@@ -120,7 +120,7 @@ const ModelInTraining = ({trainJob}: {trainJob: SchemaTrainJob}) => {
 
 export const Index = () => {
     const { project_id } = useProjectId()
-    const { data: models } = $api.useQuery('get', '/api/models/{project_id}', { params: { path: { project_id } } })
+    const { data: models } = $api.useSuspenseQuery('get', '/api/models/{project_id}', { params: { path: { project_id } } })
 
     const {} = useWebSocket(`${API_BASE_URL}/api/jobs/ws`, {
         onMessage: (event: WebSocketEventMap['message']) => onMessage(event),
@@ -142,7 +142,7 @@ export const Index = () => {
         }
     };
 
-    const hasModels = (models ?? []).length > 0
+    const hasModels = models.length > 0
     const showIllustratedMessage = !hasModels && !trainJob
 
     return (
@@ -173,7 +173,7 @@ export const Index = () => {
                             </DialogTrigger>
                         </Flex>
                         {trainJob && <ModelInTraining trainJob={trainJob} />}
-                        {hasModels && <ModelList models={models ?? []} />}
+                        {hasModels && <ModelList models={models} />}
                     </View>
                 }
             </Flex>

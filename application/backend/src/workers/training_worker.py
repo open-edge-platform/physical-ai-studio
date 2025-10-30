@@ -121,7 +121,7 @@ class TrainingWorker(BaseProcessWorker):
                         dispatcher=dispatcher,
                     ),
                 ],
-                max_steps=10,
+                max_steps=100,
             )
 
             dispatcher.start()
