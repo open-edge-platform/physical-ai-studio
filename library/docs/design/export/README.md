@@ -9,8 +9,8 @@ The export system provides a consistent interface for:
 
 1. **PyTorch Checkpoints** - Save model state with configuration
 2. **ONNX Export** - Convert models to ONNX format for deployment
-2. **OpenVINO** - Convert models to OpenVINO IR format for deployment
-2. **Torch IR** - Convert models to Torch IR format for deployment
+3. **OpenVINO** - Convert models to OpenVINO IR format for deployment
+4. **Torch IR** - Convert models to Torch IR format for deployment
 
 ## Design Goals
 
@@ -122,7 +122,6 @@ policy.to_openvino("model.xml")
 - Cross-platform inference
 - Hardware acceleration support on Intel hardware
 - Runtime optimizations
-
 
 ### Torch IR Format
 
