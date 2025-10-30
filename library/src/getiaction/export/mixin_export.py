@@ -118,7 +118,7 @@ class Export:
         if input_sample is None and hasattr(self.model, "sample_input"):
             input_sample = self.model.sample_input
         elif input_sample is None:
-            msg = "An input sample must be provided for openvino export, or the model must implement "
+            msg = "An input sample must be provided for OpenVINO export, or the model must implement "
             "`sample_input` property."
             raise RuntimeError(msg)
 
@@ -144,6 +144,53 @@ class Export:
         _postprocess_openvino_model(ov_model, output_names)
 
         openvino.save_model(ov_model, output_path)
+
+    def to_torch_ir(
+        self,
+        output_path: PathLike | str,
+        input_sample: dict[str, torch.Tensor] | None = None,
+        **export_kwargs: dict,
+    ) -> None:
+        """Export the model to TorchIR format.
+
+        This method exports the model to TorchScript IR (Intermediate Representation) format,
+        which can be used for deployment and for further optimization and inference via executorch or similar tools.
+
+        Args:
+            output_path (PathLike | str): The file path where the exported Torch IR model will be saved.
+            input_sample (dict[str, torch.Tensor] | None, optional): A sample input tensor dictionary
+                to trace the model. If None, the method will attempt to use the model's
+                `sample_input` property. Defaults to None.
+            **export_kwargs (dict): Additional keyword arguments to pass to the torch.export.export function.
+
+        Raises:
+            RuntimeError: If no input sample is provided and the model does not have a `sample_input` property.
+
+        Note:
+            - The model is set to evaluation mode before export.
+            - The export uses strict mode by default.
+            - Additional export arguments can be specified through the model's export configuration
+              and will be merged with the provided export_kwargs.
+        """
+        if input_sample is None and hasattr(self.model, "sample_input"):
+            input_sample = self.model.sample_input
+        elif input_sample is None:
+            msg = (
+                "An input sample must be provided for ONNX export, or the model must implement `sample_input` property."
+            )
+            raise RuntimeError(msg)
+
+        extra_model_args = self._get_export_extra_args("torch_ir")
+        extra_model_args.update(export_kwargs)
+
+        self.model.eval()
+        torch_program = torch.export.export(
+            self.model,
+            args=(input_sample,),
+            **extra_model_args,
+        )
+
+        torch.export.save(torch_program, output_path)  # nosec
 
     def _get_export_extra_args(self, backend: str) -> dict[str, Any]:
         """Retrieve extra export arguments for a specific format.
