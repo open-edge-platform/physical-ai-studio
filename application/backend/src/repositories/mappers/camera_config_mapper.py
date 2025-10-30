@@ -5,6 +5,7 @@ from schemas import CameraConfig
 
 class CameraConfigMapper(IBaseMapper):
     """Mapper for Camera schema entity <-> DB entity conversions."""
+
     @staticmethod
     def to_schema(camera_config: CameraConfig) -> CameraConfigDB:
         return CameraConfigDB(**camera_config.model_dump(mode="json"))

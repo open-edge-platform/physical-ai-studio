@@ -1,16 +1,14 @@
-from loguru import logger
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from loguru import logger
 
+from services.event_processor import EventProcessor
 from settings import get_settings
 from webrtc.manager import WebRTCManager
-from services.event_processor import EventProcessor
 
 from .scheduler import Scheduler
-
-
 
 
 @asynccontextmanager

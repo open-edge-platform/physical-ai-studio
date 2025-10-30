@@ -1,5 +1,5 @@
-from typing import Annotated
 from datetime import datetime
+from typing import Annotated
 from uuid import UUID
 
 from schemas.base import BaseIDModel, Field
@@ -13,7 +13,6 @@ class Model(BaseIDModel):
     project_id: Annotated[UUID, Field(description="Unique identifier")]
     dataset_id: Annotated[UUID, Field(description="Unique identifier")]
     created_at: datetime | None = Field(None)
-
 
     model_config = {
         "json_schema_extra": {

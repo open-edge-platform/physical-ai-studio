@@ -6,10 +6,10 @@ import anyio
 from sqlalchemy.exc import IntegrityError
 
 from db import get_async_db_session_ctx
-from exceptions import DuplicateJobException, ResourceNotFoundError,ResourceType
-from schemas import Job
-from schemas.job import JobStatus, TrainJobPayload, JobType
+from exceptions import DuplicateJobException, ResourceNotFoundError, ResourceType
 from repositories import JobRepository
+from schemas import Job
+from schemas.job import JobStatus, JobType, TrainJobPayload
 
 
 class JobService:
@@ -57,7 +57,7 @@ class JobService:
             repo = JobRepository(session)
             job = await repo.get_by_id(job_id)
             if job is None:
-                raise ResourceNotFoundException(resource_id=job_id, resource_name="job")
+                raise ResourceNotFoundError(ResourceType.JOB, resource_id=job_id)
             updates: dict = {"status": status}
             if message is not None:
                 updates["message"] = message

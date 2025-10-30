@@ -1,8 +1,8 @@
 from collections.abc import Callable
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio.session import AsyncSession
 
-from uuid import UUID
 from db.schema import ModelDB
 from repositories.base import BaseRepository
 from repositories.mappers import ModelMapper

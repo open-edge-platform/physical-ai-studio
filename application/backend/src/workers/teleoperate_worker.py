@@ -1,5 +1,4 @@
 import base64
-from loguru import logger
 import shutil
 import time
 from multiprocessing import Event, Queue
@@ -12,6 +11,7 @@ from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
 from lerobot.robots.utils import make_robot_from_config
 from lerobot.teleoperators.utils import make_teleoperator_from_config
 from lerobot.utils.robot_utils import busy_wait
+from loguru import logger
 
 from schemas import TeleoperationConfig
 from utils.camera import build_camera_config
@@ -20,8 +20,6 @@ from utils.framesource_bridge import FrameSourceCameraBridge
 from utils.robot import make_lerobot_robot_config_from_robot, make_lerobot_teleoperator_config_from_robot
 
 from .base import BaseProcessWorker
-
-
 
 
 class TeleoperateWorker(BaseProcessWorker):
@@ -133,7 +131,7 @@ class TeleoperateWorker(BaseProcessWorker):
             }
         )
 
-    def run_loop(self) -> None:
+    async def run_loop(self) -> None:
         """Teleoperation loop."""
         logger.info("run loop")
         self.events["reset"].clear()

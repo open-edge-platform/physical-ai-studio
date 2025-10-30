@@ -1,33 +1,29 @@
 import asyncio
-
+import multiprocessing as mp
+from multiprocessing.synchronize import Event
+from queue import Empty
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
+
+if TYPE_CHECKING:
+    import lightning.pytorch as pl
+from lightning.pytorch.callbacks import Callback, ProgressBar
+from lightning.pytorch.utilities.types import STEP_OUTPUT
 from loguru import logger
 
 from schemas.job import JobStatus, JobType
-
-from services.job_service import JobService
 from services.event_processor import EventType
-
+from services.job_service import JobService
 from workers.base import BaseThreadWorker
 
-import multiprocessing as mp
-from queue import Empty
-
-
-from lightning.pytorch.callbacks import Callback, ProgressBar
-from lightning.pytorch.utilities.types import STEP_OUTPUT
-import lightning.pytorch as pl
-from typing import Any
-
-from multiprocessing.synchronize import Event
 
 class ProgressCallback(ProgressBar):
     def __init__(self, job_id: UUID):
         super().__init__()
         self.job_id = job_id
 
-    def on_fit_start(self, trainer, pl_module):
-        """Pre‑compute total steps once training begins."""
+    def on_fit_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:  # noqa ARG002
+        """Pre-compute total steps once training begins."""
         self.total_steps = trainer.max_steps
 
     def on_train_batch_end(
@@ -38,16 +34,18 @@ class ProgressCallback(ProgressBar):
         if progress < 100:
             asyncio.run(JobService().update_job_status(job_id=self.job_id, status=JobStatus.RUNNING, progress=progress))
 
+
 class TrainingTrackingDispatcher(BaseThreadWorker):
     """Dispatch events from the callback to a queue asynchronously."""
+
     def __init__(self, job_id: UUID, event_queue: mp.Queue, interrupt_event: Event):
         super().__init__(stop_event=interrupt_event)
         self.job_id = job_id
         self.event_queue = event_queue
-        self.queue = mp.Queue()
+        self.queue: mp.Queue = mp.Queue()
         self.interrupt_event = interrupt_event
 
-    async def run_loop(self):
+    async def run_loop(self) -> None:
         while not self.interrupt_event.is_set():
             try:
                 progress = self.queue.get_nowait()
@@ -56,7 +54,7 @@ class TrainingTrackingDispatcher(BaseThreadWorker):
             except Empty:
                 await asyncio.sleep(0.05)
 
-    def update_progress(self, progress: int):
+    def update_progress(self, progress: int) -> None:
         self.queue.put(progress)
 
 
@@ -69,18 +67,16 @@ class TrainingTrackingCallback(Callback):
     ):
         super().__init__()
         self.shutdown_event = shutdown_event  # global stop event in case of shutdown
-        self.interrupt_event = (
-            interrupt_event  # event for interrupting training gracefully
-        )
+        self.interrupt_event = interrupt_event  # event for interrupting training gracefully
         self.dispatcher = dispatcher
 
     def on_train_batch_end(
         self,
         trainer: "pl.Trainer",
-        pl_module: "pl.LightningModule",
-        outputs: STEP_OUTPUT,
-        batch: Any,
-        batch_idx: int,
+        pl_module: "pl.LightningModule",  # noqa ARG002
+        outputs: STEP_OUTPUT,  # noqa ARG002
+        batch: Any,  # noqa ARG002
+        batch_idx: int,  # noqa ARG002
     ) -> None:
         progress = round((trainer.global_step) / trainer.max_steps * 100)
         self.dispatcher.update_progress(progress)
@@ -99,7 +95,6 @@ class TrainingService:
     Note: asyncio.to_thread is used assuming single concurrent training job.
     For true parallelism with multiple training jobs, consider ProcessPoolExecutor.
     """
-
 
     @staticmethod
     async def abort_orphan_jobs() -> None:

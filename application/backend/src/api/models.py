@@ -1,13 +1,13 @@
+from pathlib import Path
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends
 
-from uuid import UUID
 from api.dependencies import get_model_service, get_project_id, validate_uuid
+from exceptions import ResourceNotFoundError, ResourceType
 from schemas import Model
 from services import ModelService
-from pathlib import Path
-from exceptions import ResourceNotFoundError, ResourceType
 
 router = APIRouter(prefix="/api/models", tags=["Models"])
 
@@ -19,6 +19,7 @@ async def list_models(
 ) -> list[Model]:
     """Fetch all projects."""
     return await model_service.get_project_models(project_id)
+
 
 @router.delete("")
 async def remove_model(

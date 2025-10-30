@@ -39,4 +39,3 @@ async def get_lerobot_calibrations() -> list[CalibrationConfig]:
 async def identify_robot(robot: RobotPortInfo, joint: str | None = None) -> None:
     """Visually identify the robot by moving given joint on robot"""
     await identify_robot_visually(robot, joint)
-

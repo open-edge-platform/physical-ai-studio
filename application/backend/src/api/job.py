@@ -1,14 +1,14 @@
 from typing import Annotated
-
 from uuid import UUID
-from fastapi import APIRouter, Depends, Body, WebSocket, WebSocketDisconnect
 
-from api.dependencies import get_job_service, validate_uuid, get_scheduler, get_event_processor_ws
-from schemas import Job
-from schemas.job import TrainJobPayload, JobStatus
-from services import JobService
+from fastapi import APIRouter, Body, Depends, WebSocket, WebSocketDisconnect
+
+from api.dependencies import get_event_processor_ws, get_job_service, get_scheduler, validate_uuid
 from core.scheduler import Scheduler
-from services.event_processor import EventType, EventProcessor
+from schemas import Job
+from schemas.job import JobStatus, TrainJobPayload
+from services import JobService
+from services.event_processor import EventProcessor, EventType
 
 router = APIRouter(prefix="/api/jobs", tags=["Jobs"])
 
@@ -20,6 +20,7 @@ async def list_jobs(
     """Fetch all jobs."""
     return await job_service.get_job_list()
 
+
 @router.post("/train")
 async def submit_train_job(
     job_service: Annotated[JobService, Depends(get_job_service)],
@@ -27,6 +28,7 @@ async def submit_train_job(
 ) -> Job:
     """Endpoint to submit a training job"""
     return await job_service.submit_train_job(payload=payload)
+
 
 @router.post("/{job_id}/interrupt")
 async def interrupt_job(
@@ -43,19 +45,21 @@ async def interrupt_job(
 
 
 @router.websocket("/ws")
-async def jobs_websocket(  # noqa: C901
+async def jobs_websocket(
     websocket: WebSocket,
     event_processor: Annotated[EventProcessor, Depends(get_event_processor_ws)],
 ) -> None:
     """Robot control websocket."""
     await websocket.accept()
 
-    async def send_data(event, payload):
-        print("sending data: ")
-        await websocket.send_json({
-            "event": event,
-            "data": payload.model_dump(mode="json"),
-        })
+    async def send_data(event: EventType, payload: Job):
+        """Pass job update through to websocket."""
+        await websocket.send_json(
+            {
+                "event": event,
+                "data": payload.model_dump(mode="json"),
+            }
+        )
 
     event_processor.subscribe([EventType.JOB_UPDATE], send_data)
 

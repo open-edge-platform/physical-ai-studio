@@ -8,7 +8,6 @@ from pydantic import BaseModel, Field, field_serializer
 class BaseIDModel(ABC, BaseModel):
     """Base model with an id field."""
 
-
     id: UUID = Field(default_factory=uuid4)
 
     @field_serializer("id")

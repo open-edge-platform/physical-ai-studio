@@ -4,6 +4,7 @@ from lerobot.cameras import Camera as LeRobotCamera
 from lerobot.cameras import CameraConfig as LeRobotCameraConfig
 from lerobot.cameras.opencv import OpenCVCamera, OpenCVCameraConfig
 from lerobot.cameras.realsense import RealSenseCamera, RealSenseCameraConfig
+
 from schemas import CameraConfig
 
 VIDEO4LINUX_PATH = "/sys/class/video4linux"

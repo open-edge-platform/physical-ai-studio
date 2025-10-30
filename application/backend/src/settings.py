@@ -32,7 +32,7 @@ class Settings(BaseSettings):
 
     @property
     def models_dir(self) -> Path:
-        """ Storage directory for models. """
+        """Storage directory for models."""
         return self.storage_dir / "models"
 
     # Server

@@ -1,11 +1,11 @@
-import asyncio
-from loguru import logger
 import multiprocessing as mp
 import os
 from typing import TYPE_CHECKING
-from workers import TrainingWorker
 
 import psutil
+from loguru import logger
+
+from workers import TrainingWorker
 
 if TYPE_CHECKING:
     import threading
@@ -19,7 +19,7 @@ class Scheduler:
         # Event to sync all processes on application shutdown
         self.mp_stop_event = mp.Event()
         self.training_interrupt_event = mp.Event()
-        self.event_queue = mp.Queue()
+        self.event_queue: mp.Queue = mp.Queue()
 
         self.processes: list[mp.Process] = []
         self.threads: list[threading.Thread] = []

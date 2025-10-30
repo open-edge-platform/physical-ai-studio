@@ -1,8 +1,10 @@
-from collections import defaultdict
 import asyncio
-from enum import StrEnum
 import multiprocessing as mp
-from typing import Callable, Sequence
+from collections import defaultdict
+from collections.abc import Callable, Sequence
+from enum import StrEnum
+from queue import Empty
+
 from loguru import logger
 
 
@@ -14,7 +16,6 @@ class EventType(StrEnum):
 class EventProcessor:
     def __init__(self, event_queue: mp.Queue) -> None:
         self._event_handlers: dict[EventType, list[Callable]] = defaultdict(list)
-        self._pending_events = []
         self.task = asyncio.create_task(self.processor())
         self.queue = event_queue
 
@@ -30,7 +31,7 @@ class EventProcessor:
         for event_type in event_types:
             self._event_handlers[event_type] = [h for h in self._event_handlers[event_type] if h != handler]
 
-    async def processor(self):
+    async def processor(self) -> None:
         """Run inside FastAPI (async task). Empties queus and dispatches events with payloads."""
         logger.info("Started event processor.")
         try:
@@ -40,16 +41,16 @@ class EventProcessor:
                     logger.info(event)
                     for handler in self._event_handlers[event]:
                         if asyncio.iscoroutinefunction(handler):
-                            asyncio.create_task(handler(event, payload))
+                            await asyncio.create_task(handler(event, payload))
                         else:
                             handler(event, payload)
-                except mp.queues.Empty:
+                except Empty:
                     await asyncio.sleep(0.05)
 
         except Exception as e:
             logger.error(f"Outgoing task stopped: {e}")
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         """Stop processor task."""
         logger.info("Shutdown event processor.")
         self.task.cancel()

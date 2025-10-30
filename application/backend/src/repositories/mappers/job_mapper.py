@@ -1,6 +1,6 @@
 from db.schema import JobDB
-from schemas import Job
 from repositories.mappers.base_mapper_interface import IBaseMapper
+from schemas import Job
 
 
 class JobMapper(IBaseMapper):

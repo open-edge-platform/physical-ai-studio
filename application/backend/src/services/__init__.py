@@ -1,11 +1,11 @@
 from .dataset_service import DatasetService
-from .project_service import ProjectService
-from .model_service import ModelService
 from .job_service import JobService
+from .model_service import ModelService
+from .project_service import ProjectService
 
 __all__ = [
     "DatasetService",
-    "ProjectService",
-    "ModelService",
     "JobService",
+    "ModelService",
+    "ProjectService",
 ]

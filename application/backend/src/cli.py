@@ -1,6 +1,5 @@
 """Command line interface for interacting with the Geti Action application."""
 
-from loguru import logger
 import sys
 
 import click

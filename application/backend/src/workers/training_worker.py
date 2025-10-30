@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import multiprocessing as mp
 import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -10,24 +9,21 @@ from uuid import uuid4
 from settings import get_settings
 
 if TYPE_CHECKING:
+    import multiprocessing as mp
     from multiprocessing.synchronize import Event as EventClass
-
-from schemas import Job, Model
-from schemas.job import JobStatus, TrainJobPayload
-from services import DatasetService, JobService, ModelService
-from services.training_service import (
-    TrainingTrackingCallback,
-    TrainingTrackingDispatcher,
-    TrainingService
-)
-from workers.base import BaseProcessWorker
 
 from getiaction.data import LeRobotDataModule
 from getiaction.policies import ACT, ACTModel
 from getiaction.train import Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint
 from loguru import logger
+
+from schemas import Job, Model
+from schemas.job import JobStatus, TrainJobPayload
+from services import DatasetService, JobService, ModelService
 from services.event_processor import EventType
+from services.training_service import TrainingService, TrainingTrackingCallback, TrainingTrackingDispatcher
+from workers.base import BaseProcessWorker
 
 SCHEDULE_INTERVAL_SEC = 5
 
@@ -76,10 +72,7 @@ class TrainingWorker(BaseProcessWorker):
             asyncio.run(TrainingService.abort_orphan_jobs())
 
     async def _train_model(self, job: Job, model: Model):
-
-        await JobService.update_job_status(
-            job_id=job.id, status=JobStatus.RUNNING, message="Training started"
-        )
+        await JobService.update_job_status(job_id=job.id, status=JobStatus.RUNNING, message="Training started")
         try:
             dataset = await DatasetService.get_dataset_by_id(model.dataset_id)
             if dataset is None:
@@ -100,7 +93,7 @@ class TrainingWorker(BaseProcessWorker):
 
             checkpoint_callback = ModelCheckpoint(
                 dirpath=path.parent,
-                filename=path.stem, # filename without suffix
+                filename=path.stem,  # filename without suffix
                 save_top_k=1,
                 monitor="train/loss",
                 mode="min",
