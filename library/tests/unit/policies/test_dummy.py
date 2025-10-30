@@ -200,3 +200,15 @@ class TestDummyPolicyImportExport:
         policy.to_openvino(export_path)
 
         assert export_path.exists()
+
+    def test_export_to_torch_ir(self, tmp_path):
+        """Test exporting to Torch IR format."""
+        from getiaction.policies.dummy import Dummy, DummyConfig
+
+        config = DummyConfig(action_shape=(2,))
+        policy = Dummy(config=config)
+
+        export_path = tmp_path / "dummy_policy_torch_ir.ptir"
+        policy.to_torch_ir(export_path)
+
+        assert export_path.exists()
