@@ -1,5 +1,5 @@
 import { $api, API_BASE_URL } from '../../api/client';
-import { View, Well, Heading, Text, Content, Flex, Button, DialogTrigger, TableView, TableHeader, Column, TableBody, Cell, Row, Divider, Tag, ProgressBar, IllustratedMessage } from "@geti/ui"
+import { View, Well, Heading, Menu, Text, Content, Item, Flex, Button, Key, DialogTrigger, TableView, TableHeader, Column, TableBody, Cell, Row, Divider, Tag, ProgressBar, IllustratedMessage, ActionMenu, MenuTrigger } from "@geti/ui"
 import { SchemaTrainJob, TrainModelModal } from './train-model';
 import useWebSocket from 'react-use-websocket';
 import { SchemaJob, SchemaModel } from '../../api/openapi-spec';
@@ -10,10 +10,21 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useProjectId } from '../../features/projects/use-project';
 
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
+import { ActionButton } from '@adobe/react-spectrum';
+import { MoreMenu } from '@geti/ui/icons';
 
 
 const ModelList = ({ models }: { models: SchemaModel[] }) => {
     const sortedModels = models.toSorted((a, b) => new Date(b.created_at!).getTime() - new Date(a.created_at!).getTime())
+
+    const deleteModelMutation = $api.useMutation('delete','/api/models')
+
+    const onAction = (key: Key, model: SchemaModel) => {
+        const action = key.toString()
+        if (action === "delete") {
+            deleteModelMutation.mutate({params: {query: { uuid: model.id! }}})
+        }
+    }
 
     return (
         <View borderTopWidth='thin' borderTopColor='gray-400' backgroundColor={'gray-300'}>
@@ -28,6 +39,7 @@ const ModelList = ({ models }: { models: SchemaModel[] }) => {
                     <Column>TRAINED</Column>
                     <Column>ARCHITECTURE</Column>
                     <Column>{''}</Column>
+                    <Column>{''}</Column>
                 </TableHeader>
                 <TableBody>
                     {sortedModels.map((model) => (
@@ -36,6 +48,14 @@ const ModelList = ({ models }: { models: SchemaModel[] }) => {
                             <Cell>{new Date(model.created_at!).toLocaleString()}</Cell>
                             <Cell>{model.policy}</Cell>
                             <Cell>Run model</Cell>
+                            <Cell>
+                                <MenuTrigger>
+                                    <ActionButton isQuiet UNSAFE_style={{ fill: 'var(--spectrum-gray-900)' }} aria-label='options'><MoreMenu /></ActionButton>
+                                    <Menu onAction={(key) => onAction(key, model)}>
+                                        <Item key='delete'>Delete</Item>
+                                    </Menu>
+                                </MenuTrigger>
+                            </Cell>
                         </Row>
                     ))}
                 </TableBody>

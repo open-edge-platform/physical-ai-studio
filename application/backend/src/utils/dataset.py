@@ -9,7 +9,7 @@ from huggingface_hub.errors import RepositoryNotFoundError
 from lerobot.constants import HF_LEROBOT_HOME
 from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
 
-from schemas import CameraConfig, Dataset, Episode, EpisodeInfo, LeRobotDatasetInfo, ProjectConfig
+from schemas import CameraConfig, Dataset, Episode, LeRobotDatasetInfo, ProjectConfig
 from storage.storage import GETI_ACTION_DATASETS
 
 

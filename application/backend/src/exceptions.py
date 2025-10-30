@@ -8,6 +8,7 @@ class ResourceType(StrEnum):
 
     PROJECT = "Project"
     DATASET = "Dataset"
+    MODEL = "Model"
     JOB="JOB"
     JOB_FILE="JOB_FILE"
 

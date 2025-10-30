@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import multiprocessing as mp
 import traceback
+from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -53,7 +54,7 @@ class TrainingWorker(BaseProcessWorker):
                     id=id,
                     project_id=payload.project_id,
                     dataset_id=payload.dataset_id,
-                    path=str(settings.models_dir / str(id)),
+                    path=str(settings.models_dir / str(id) / "model.ckpt"),
                     name=payload.model_name,
                     policy=payload.policy,
                     properties={},
@@ -95,10 +96,11 @@ class TrainingWorker(BaseProcessWorker):
             )
 
             policy = ACT(model=lib_model)
+            path = Path(model.path)
 
             checkpoint_callback = ModelCheckpoint(
-                dirpath=model.path,
-                filename="checkpoint_{step}",
+                dirpath=path.parent,
+                filename=path.stem, # filename without suffix
                 save_top_k=1,
                 monitor="train/loss",
                 mode="min",
