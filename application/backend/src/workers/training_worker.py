@@ -107,7 +107,7 @@ class TrainingWorker(BaseProcessWorker):
 
             trainer = Trainer(
                 callbacks=[
-                    checkpoint_callback,
+                    #checkpoint_callback,
                     TrainingTrackingCallback(
                         shutdown_event=self._stop_event,
                         interrupt_event=self.interrupt_event,
@@ -119,6 +119,8 @@ class TrainingWorker(BaseProcessWorker):
 
             dispatcher.start()
             trainer.fit(model=policy, datamodule=l_dm)
+            path.parent.mkdir(parents=True)
+            policy.to_torch(path)
 
             self.interrupt_event.set()
             dispatcher.join(timeout=10)

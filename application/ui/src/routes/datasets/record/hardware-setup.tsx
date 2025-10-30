@@ -190,7 +190,7 @@ export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
                                     <Flex gap='40px'>
                                         {config.cameras.map((camera) => (
                                             <CameraSetup
-                                                key={`${camera.name}${camera.port_or_device_id}`}
+                                                key={camera.name}
                                                 camera={camera}
                                                 availableCameras={availableCameras ?? []}
                                                 updateCamera={updateCamera}

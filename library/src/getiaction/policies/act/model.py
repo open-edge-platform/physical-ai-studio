@@ -335,7 +335,7 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
         batch = self._input_normalizer(batch)
         if self._config.image_features:
             batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-            batch[Observation.ComponentKeys.IMAGES] = [batch[key] for key in self._config.image_features]
+            batch[Observation.ComponentKeys.IMAGES] = [batch[Observation.ComponentKeys.IMAGES][key] for key in self._config.image_features]
 
         actions = self._model(batch)[0]  # only select the actions, ignore the latent params
         return self._output_denormalizer({Observation.ComponentKeys.ACTION: actions})[Observation.ComponentKeys.ACTION]

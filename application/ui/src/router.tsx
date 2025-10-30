@@ -12,6 +12,7 @@ import { CameraWebcam } from './routes/cameras/webcam';
 import { Index as Datasets } from './routes/datasets/index';
 import { Record } from './routes/datasets/record/record';
 import { Index as Models } from './routes/models/index';
+import { Index as Inference } from './routes/models/inference/index';
 import { OpenApi } from './routes/openapi';
 import { Index as Projects } from './routes/projects/index';
 import { ProjectLayout } from './routes/projects/project.layout';
@@ -60,6 +61,7 @@ export const paths = {
         },
         models: {
             index: models,
+            inference: models.path("/:model_id/inference"),
         },
     },
 };
@@ -126,7 +128,17 @@ export const router = createBrowserRouter([
                     },
                     {
                         path: paths.project.models.index.pattern,
-                        element: <Models />,
+                        children: [
+                            {
+                                index: true,
+                                element: <Models />,
+                            },
+                            {
+                                path: paths.project.models.inference.pattern,
+                                element: <Inference />,
+                            },
+
+                        ],
                     },
                     {
                         path: paths.project.robotConfiguration.index.pattern,
