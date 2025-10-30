@@ -250,6 +250,7 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
         extra_args["openvino"] = {
             "output": ["action"],
         }
+        extra_args["torch_ir"] = {}
 
         return extra_args
 
@@ -337,7 +338,9 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
             batch[Observation.ComponentKeys.IMAGES.value] = [batch[str(key)] for key in self._config.image_features]
 
         actions = self._model(batch)[0]  # only select the actions, ignore the latent params
-        return self._output_denormalizer({Observation.ComponentKeys.ACTION.value: actions})[Observation.ComponentKeys.ACTION.value]
+        return self._output_denormalizer({Observation.ComponentKeys.ACTION.value: actions})[
+            Observation.ComponentKeys.ACTION.value
+        ]
 
     @property
     def reward_delta_indices(self) -> None:
@@ -643,9 +646,13 @@ class _ACT(nn.Module):
                 b=batch_size,
             )  # (B, 1, D)
             if self.config.robot_state_feature:
-                robot_state_embed = self.vae_encoder_robot_state_input_proj(batch[Observation.ComponentKeys.STATE.value])
+                robot_state_embed = self.vae_encoder_robot_state_input_proj(
+                    batch[Observation.ComponentKeys.STATE.value],
+                )
                 robot_state_embed = robot_state_embed.unsqueeze(1)  # (B, 1, D)
-            action_embed = self.vae_encoder_action_input_proj(batch[Observation.ComponentKeys.ACTION.value])  # (B, S, D)
+            action_embed = self.vae_encoder_action_input_proj(
+                batch[Observation.ComponentKeys.ACTION.value],
+            )  # (B, S, D)
             if self.config.robot_state_feature:
                 vae_encoder_input = [cls_embed, robot_state_embed, action_embed]  # (B, S+2, D)
             else:
