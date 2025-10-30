@@ -94,6 +94,7 @@ class Export:
             **extra_model_args,
         )
 
+    @torch.no_grad()
     def to_openvino(
         self,
         output_path: PathLike | str,
@@ -145,6 +146,7 @@ class Export:
 
         openvino.save_model(ov_model, output_path)
 
+    @torch.no_grad()
     def to_torch_ir(
         self,
         output_path: PathLike | str,
