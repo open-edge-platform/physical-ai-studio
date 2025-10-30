@@ -84,9 +84,9 @@ const SelectedProjectButton = ({ name }: SelectedProjectProps) => {
 export const ProjectsListPanel = () => {
     const { project_id } = useProjectId();
     const { data: projects } = $api.useSuspenseQuery('get', '/api/projects');
-    const { data: project } = $api.useSuspenseQuery('get', '/api/projects/{id}', {
+    const { data: project } = $api.useSuspenseQuery('get', '/api/projects/{project_id}', {
         params: {
-            path: { id: project_id },
+            path: { project_id },
         },
     });
     const otherProjects = projects.filter(({ id }) => id !== project_id);

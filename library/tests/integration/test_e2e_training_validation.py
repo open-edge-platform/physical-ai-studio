@@ -23,10 +23,10 @@ Test Classes:
 from __future__ import annotations
 
 import pytest
-from lightning.pytorch import Trainer
 
 from getiaction.data import DataModule
 from getiaction.gyms import PushTGym
+from getiaction.train import Trainer
 
 
 @pytest.fixture
@@ -326,16 +326,30 @@ class TestRolloutMetrics:
 
         trainer.fit(policy, datamodule=datamodule)
 
-        # Check specific metric keys (metrics are prefixed with val/gym/)
-        expected_metrics = [
-            "val/gym/episode_length",
-            "val/gym/sum_reward",
-            "val/gym/success",
+        # Check specific metric keys
+        # Per-episode metrics (logged on_step=True)
+        per_episode_metrics = [
+            "val/gym/episode/episode_length",
+            "val/gym/episode/sum_reward",
+            "val/gym/episode/success",
+        ]
+
+        # Aggregated metrics (logged on_epoch=True, computed at epoch end)
+        aggregated_metrics = [
+            "val/gym/avg_episode_length",
+            "val/gym/avg_sum_reward",
+            "val/gym/pc_success",
         ]
 
         logged_keys = list(trainer.logged_metrics.keys())
-        for metric in expected_metrics:
-            assert metric in logged_keys, f"Missing metric: {metric}"
+
+        # Check per-episode metrics
+        for metric in per_episode_metrics:
+            assert metric in logged_keys, f"Missing per-episode metric: {metric}"
+
+        # Check aggregated metrics
+        for metric in aggregated_metrics:
+            assert metric in logged_keys, f"Missing aggregated metric: {metric}"
 
     def test_multiple_validation_rollouts(self, dummy_dataset, pusht_gym):
         """Test that multiple rollouts are aggregated correctly."""

@@ -115,7 +115,8 @@ class FeatureNormalizeTransform(nn.Module):
         inverse: bool,
     ) -> None:
         def check_inf(t: torch.Tensor, name: str = "") -> None:
-            if torch.isinf(t).any():
+            is_tracing = torch.jit.is_scripting() or torch.jit.is_tracing()
+            if not is_tracing and torch.isinf(t).any():
                 msg = (
                     f"Normalization buffer '{name}' is infinity. You should either initialize "
                     "model with correct features stats, or use a pretrained model."

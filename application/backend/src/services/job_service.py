@@ -6,9 +6,9 @@ import anyio
 from sqlalchemy.exc import IntegrityError
 
 from db import get_async_db_session_ctx
-from exceptions import DuplicateJobException, ResourceNotFoundException
+from exceptions import DuplicateJobException, ResourceNotFoundError,ResourceType
 from schemas import Job
-from schemas.job import JobStatus, JobSubmitted, TrainJobPayload, JobType
+from schemas.job import JobStatus, TrainJobPayload, JobType
 from repositories import JobRepository
 
 
@@ -41,7 +41,7 @@ class JobService:
                 )
                 return await repo.save(job)
             except IntegrityError:
-                raise ResourceNotFoundException(resource_id=payload.project_id, resource_name="project")
+                raise ResourceNotFoundError(resource_type=ResourceType.PROJECT, resource_id=payload.project_id)
 
     @staticmethod
     async def get_pending_train_job() -> Job | None:
@@ -72,12 +72,12 @@ class JobService:
 
         log_file = get_job_logs_path(job_id=job_id)
         if not os.path.exists(log_file):
-            raise ResourceNotFoundException(resource_id=job_id, resource_name="job_logs")
+            raise ResourceNotFoundError(resource_type=ResourceType.JOB_FILE, resource_id=job_id)
 
         async def is_job_still_running():
             job = await cls.get_job_by_id(job_id=job_id)
             if job is None:
-                raise ResourceNotFoundException(resource_id=job_id, resource_name="job")
+                raise ResourceNotFoundError(resource_type=ResourceType.JOB_FILE, resource_id=job_id)
             return job.status == JobStatus.RUNNING
 
         # Cache job status and only check every 2 seconds

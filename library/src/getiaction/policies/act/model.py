@@ -186,6 +186,73 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
 
         return ACTConfig(**filtered_config_dict)
 
+    @property
+    def sample_input(self) -> dict[str, torch.Tensor]:
+        """Generate a sample input dictionary for the model with random tensors.
+
+        This method creates a dictionary containing sample input tensors that match the expected
+        input format of the model. The tensors are randomly initialized and have shapes derived
+        from the model's configuration.
+
+        Returns:
+            dict[str, torch.Tensor | dict[str, torch.Tensor]]: A dictionary with two keys
+                - 'state': A tensor representing the robot state with shape (1, *state_feature.shape).
+                - 'images': Either a single tensor or a dictionary of tensors representing visual inputs,
+                    depending on the number of image features configured.
+
+        Note:
+            The batch dimension (first dimension) is set to 1 for both tensors.
+
+        Raises:
+            RuntimeError: If input features are not configured.
+        """
+        state_feature = self._config.robot_state_feature
+
+        if state_feature is None:
+            msg = "Robot state feature is not defined in the model configuration."
+            raise RuntimeError(msg)
+
+        sample_input = {
+            str(Observation.ComponentKeys.STATE): torch.randn(1, *state_feature.shape),
+        }
+
+        if len(self._config.image_features) == 1:
+            visual_feature = next(iter(self._config.image_features.values()))
+            sample_input[str(Observation.ComponentKeys.IMAGES)] = torch.randn(1, *visual_feature.shape)
+        else:
+            images_dict = {}
+            for key, visual_feature in self._config.image_features.items():
+                images_dict[key] = torch.randn(1, *visual_feature.shape)
+
+            sample_input[str(Observation.ComponentKeys.IMAGES)] = images_dict
+
+        return sample_input
+
+    @property
+    def extra_export_args(self) -> dict:
+        """Additional export arguments for model conversion.
+
+        This property provides extra configuration parameters needed when exporting
+        the model to different formats, particularly ONNX format.
+
+        Returns:
+            dict: A dictionary containing format-specific export arguments.
+
+        Example:
+            >>> extra_args = model.extra_export_args()
+            >>> print(extra_args)
+            {'onnx': {'output_names': ['action']}}
+        """
+        extra_args = {}
+        extra_args["onnx"] = {
+            "output_names": ["action"],
+        }
+        extra_args["openvino"] = {
+            "output": ["action"],
+        }
+
+        return extra_args
+
     def forward(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]] | torch.Tensor:
         """Forward pass through the ACT model.
 

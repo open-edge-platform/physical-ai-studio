@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Body, WebSocket, WebSocketDisconnect
 
 from api.dependencies import get_job_service, validate_uuid, get_scheduler, get_event_processor_ws
 from schemas import Job
-from schemas.job import TrainJobPayload, JobSubmitted, JobStatus
+from schemas.job import TrainJobPayload, JobStatus
 from services import JobService
 from core.scheduler import Scheduler
 from services.event_processor import EventType, EventProcessor

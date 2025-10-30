@@ -23,7 +23,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     webrtc_manager = WebRTCManager()
     app.state.webrtc_manager = webrtc_manager
 
-
     app_scheduler = Scheduler()
     app_scheduler.start_workers()
     app.state.scheduler = app_scheduler

@@ -309,3 +309,11 @@ def dummy_lerobot_datamodule(dummy_lerobot_dataset):
     )
 
     return datamodule
+
+
+@pytest.fixture
+def pusht_gym():
+    """Create PushT gym environment for testing."""
+    from getiaction.gyms import PushTGym
+
+    return PushTGym()

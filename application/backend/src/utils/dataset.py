@@ -1,5 +1,6 @@
 import os
 import uuid
+from json.decoder import JSONDecodeError
 from os import listdir, path, stat
 from pathlib import Path
 
@@ -25,7 +26,7 @@ def get_dataset_episodes(repo_id: str, root: str | None) -> list[Episode]:
         stat_result = stat(full_path)
         result.append(
             Episode(
-                actions=get_episode_actions(dataset, episodes[episode_index]),
+                actions=get_episode_actions(dataset, episodes[episode_index]).tolist(),
                 fps=metadata.fps,
                 modification_timestamp=stat_result.st_mtime_ns // 1e6,
                 **episodes[episode_index],
@@ -35,7 +36,7 @@ def get_dataset_episodes(repo_id: str, root: str | None) -> list[Episode]:
     return result
 
 
-def get_episode_actions(dataset: LeRobotDataset, episode: EpisodeInfo) -> torch.Tensor:
+def get_episode_actions(dataset: LeRobotDataset, episode: dict) -> torch.Tensor:
     """Get episode actions tensor from specific episode."""
     episode_index = episode["episode_index"]
     from_idx = dataset.episode_data_index["from"][episode_index].item()
@@ -96,6 +97,8 @@ def get_local_repositories(
             result.append(metadata)
         except RepositoryNotFoundError:
             print(f"Could not find local repository online: {repo_id}")
+        except JSONDecodeError:
+            print(f"Could not parse local repository: {repo_id}")
 
     return result
 

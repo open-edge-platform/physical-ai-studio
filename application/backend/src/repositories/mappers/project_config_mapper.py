@@ -1,21 +1,36 @@
 from db.schema import ProjectConfigDB
 from repositories.mappers.base_mapper_interface import IBaseMapper
+from repositories.mappers.camera_config_mapper import CameraConfigMapper
 from schemas import ProjectConfig
-from .camera_config_mapper import CameraConfigMapper
 
 
 class ProjectConfigMapper(IBaseMapper):
+    """Mapper for ProjectConfig schema entity <-> DB entity conversions."""
+
     @staticmethod
-    def to_schema(project_config: ProjectConfig) -> ProjectConfigDB:
-        if project_config is None:
+    def from_schema(project_config_db: ProjectConfigDB | None) -> ProjectConfig | None:
+        """Convert ProjectConfig db entity to schema."""
+        if project_config_db is None:
             return None
 
-        return ProjectConfigDB(
-            fps=project_config.fps,
-            cameras=[CameraConfigMapper.to_schema(camera) for camera in project_config.cameras],
-            robot_type=project_config.robot_type,
+        return ProjectConfig.model_validate(
+            {
+                "id": project_config_db.id,
+                "fps": project_config_db.fps,
+                "robot_type": project_config_db.robot_type,
+                "cameras": [CameraConfigMapper.from_schema(camera) for camera in project_config_db.cameras],
+            },
+            from_attributes=True,
         )
 
     @staticmethod
-    def from_schema(model_db: ProjectConfigDB) -> ProjectConfig:
-        return ProjectConfig.model_validate(model_db, from_attributes=True)
+    def to_schema(config: ProjectConfig | None) -> ProjectConfigDB | None:
+        """Convert ProjectConfig schema to db model."""
+        if config is None:
+            return None
+
+        return ProjectConfigDB(
+            fps=config.fps,
+            cameras=[CameraConfigMapper.to_schema(camera) for camera in config.cameras],
+            robot_type=config.robot_type,
+        )

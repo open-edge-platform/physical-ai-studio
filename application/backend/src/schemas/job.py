@@ -40,10 +40,6 @@ class JobList(BaseModel):
     jobs: list[Job]
 
 
-class JobSubmitted(BaseModel):
-    job_id: UUID
-
-
 class TrainJobPayload(BaseModel):
     project_id: UUID
     dataset_id: UUID
