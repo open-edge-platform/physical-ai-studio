@@ -4,7 +4,7 @@ import { Button, Flex, Item, Key, Link, TabList, TabPanels, Tabs, Text, View } f
 import { Add } from '@geti/ui/icons';
 import { useNavigate } from 'react-router';
 
-import { SchemaDataset } from '../../api/openapi-spec';
+import { SchemaDatasetOutput } from '../../api/openapi-spec';
 import { useProject } from '../../features/projects/use-project';
 import { paths } from '../../router';
 import { DatasetViewer } from './dataset-viewer';
@@ -14,7 +14,9 @@ export const Index = () => {
     const navigate = useNavigate();
     const project = useProject();
     const datasets = project.datasets;
-    const [dataset, setDataset] = useState<SchemaDataset | undefined>(datasets.length > 0 ? datasets[0] : undefined);
+    const [dataset, setDataset] = useState<SchemaDatasetOutput | undefined>(
+        datasets.length > 0 ? datasets[0] : undefined
+    );
 
     const onSelectionChange = (key: Key) => {
         if (key.toString() === '#new-dataset') {
@@ -40,7 +42,7 @@ export const Index = () => {
                             </Item>,
                         ]}
                     </TabList>
-                    {dataset !== undefined && (
+                    {dataset?.id !== undefined && (
                         <View padding={'size-30'}>
                             <Link
                                 href={paths.project.datasets.record({

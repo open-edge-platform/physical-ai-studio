@@ -21,13 +21,13 @@ import { useNavigate } from 'react-router';
 import { v4 as uuidv4 } from 'uuid';
 
 import { $api } from '../../../api/client';
-import { SchemaCameraConfig, SchemaProjectConfig } from '../../../api/openapi-spec';
+import { SchemaCameraConfigInput, SchemaProjectConfigInput } from '../../../api/openapi-spec';
 import { useProjectId } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
 
 interface CameraSetupProps {
-    camera: SchemaCameraConfig;
-    updateCamera: (camera: SchemaCameraConfig) => void;
+    camera: SchemaCameraConfigInput;
+    updateCamera: (camera: SchemaCameraConfigInput) => void;
     removeCamera: () => void;
 }
 const CameraSetup = ({ camera, updateCamera, removeCamera }: CameraSetupProps) => {
@@ -66,7 +66,7 @@ const CameraSetup = ({ camera, updateCamera, removeCamera }: CameraSetupProps) =
     );
 };
 
-const emptyCamera = (): SchemaCameraConfig => {
+const emptyCamera = (): SchemaCameraConfigInput => {
     return {
         driver: 'webcam',
         fps: 30,
@@ -84,7 +84,7 @@ export const ProjectSetup = () => {
 
     const { project_id } = useProjectId();
     const [activeTab, setActiveTab] = useState<string>('robot');
-    const [config, setConfig] = useState<SchemaProjectConfig>({
+    const [config, setConfig] = useState<SchemaProjectConfigInput>({
         id: uuidv4(),
         fps: 30,
         cameras: [emptyCamera()],
@@ -93,7 +93,7 @@ export const ProjectSetup = () => {
 
     const saveMutation = $api.useMutation('put', '/api/projects/{project_id}/project_config', {});
 
-    const selectRobot = (robot_type: SchemaProjectConfig['robot_type']) => {
+    const selectRobot = (robot_type: SchemaProjectConfigInput['robot_type']) => {
         setConfig((c) => ({ ...c, robot_type }));
         setActiveTab('cameras');
     };
@@ -106,7 +106,7 @@ export const ProjectSetup = () => {
         setConfig((c) => ({ ...c, cameras: c.cameras.filter((b) => b.id !== id) }));
     };
 
-    const updateCamera = (camera: SchemaCameraConfig) => {
+    const updateCamera = (camera: SchemaCameraConfigInput) => {
         setConfig((c) => ({
             ...c,
             cameras: c.cameras.map((b) => {
@@ -184,7 +184,7 @@ export const ProjectSetup = () => {
                                             <CameraSetup
                                                 key={camera.id}
                                                 camera={camera}
-                                                removeCamera={() => removeCamera(camera.id)}
+                                                removeCamera={() => camera.id && removeCamera(camera.id)}
                                                 updateCamera={updateCamera}
                                             />
                                         ))}
