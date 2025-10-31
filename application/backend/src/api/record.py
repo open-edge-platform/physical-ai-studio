@@ -1,5 +1,6 @@
 import asyncio
 import multiprocessing as mp
+from queue import Empty
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
@@ -24,8 +25,9 @@ async def teleoperate_websocket(  # noqa: C901
     await websocket.accept()
     data = await websocket.receive_json("text")
     config = TeleoperationConfig.model_validate(data["data"])
-    dataset = await dataset_service.get_dataset_by_id(config.dataset.id)
-    if dataset is None:
+    try:
+        await dataset_service.get_dataset_by_id(config.dataset.id)
+    except ResourceNotFoundError:
         await dataset_service.create_dataset(config.dataset)
     queue: mp.Queue = mp.Queue()
     process = TeleoperateWorker(
@@ -59,7 +61,7 @@ async def teleoperate_websocket(  # noqa: C901
                 try:
                     message = queue.get_nowait()
                     await websocket.send_json(message)
-                except mp.queues.Empty:
+                except Empty:
                     await asyncio.sleep(0.05)
         except Exception as e:
             print(f"Outgoing task stopped: {e}")
@@ -67,7 +69,7 @@ async def teleoperate_websocket(  # noqa: C901
     incoming_task = asyncio.create_task(handle_incoming())
     outgoing_task = asyncio.create_task(handle_outgoing())
 
-    done, pending = await asyncio.wait(
+    _, pending = await asyncio.wait(
         {incoming_task, outgoing_task},
         return_when=asyncio.FIRST_COMPLETED,
     )
