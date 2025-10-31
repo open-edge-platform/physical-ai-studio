@@ -278,16 +278,14 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
         if self._model.training:
             batch = self._input_normalizer(batch)
             if self._config.image_features:
-                batch_ = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-                if isinstance(batch[Observation.ComponentKeys.IMAGES], dict):
-                    batch_[Observation.ComponentKeys.IMAGES] = [
-                        batch[Observation.ComponentKeys.IMAGES][key] for key in self._config.image_features
-                    ]
-                    batch = batch_
-                else:
-                    batch[Observation.ComponentKeys.IMAGES] = [
-                        batch[Observation.ComponentKeys.IMAGES],
-                    ]
+                batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
+                images_dict = (
+                    batch[Observation.ComponentKeys.IMAGES.value]
+                    if isinstance(batch[Observation.ComponentKeys.IMAGES.value], dict)
+                    else batch
+                )
+                batch[Observation.ComponentKeys.IMAGES.value] = [images_dict[key] for key in self._config.image_features]
+
             actions_hat, (mu_hat, log_sigma_x2_hat) = self._model(batch)
 
             l1_loss = (
@@ -335,7 +333,12 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
 
         if self._config.image_features:
             batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-            batch[Observation.ComponentKeys.IMAGES.value] = [batch[str(key)] for key in self._config.image_features]
+            images_dict = (
+                batch[Observation.ComponentKeys.IMAGES.value]
+                if isinstance(batch[Observation.ComponentKeys.IMAGES.value], dict)
+                else batch
+            )
+            batch[Observation.ComponentKeys.IMAGES.value] = [images_dict[key] for key in self._config.image_features]
 
         actions = self._model(batch)[0]  # only select the actions, ignore the latent params
         return self._output_denormalizer({Observation.ComponentKeys.ACTION.value: actions})[
