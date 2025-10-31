@@ -1,14 +1,33 @@
 import { useState } from 'react';
 
-import { Button, Flex, Item, Key, Link, TabList, TabPanels, Tabs, Text, View } from '@geti/ui';
+import { Button, Divider, DialogTrigger, Content, Dialog, Flex, Heading, Item, Key, TabList, TabPanels, Tabs, Text, View } from '@geti/ui';
 import { Add } from '@geti/ui/icons';
 import { useNavigate } from 'react-router';
 
-import { SchemaDatasetOutput } from '../../api/openapi-spec';
+import { SchemaDatasetOutput, SchemaTeleoperationConfig } from '../../api/openapi-spec';
 import { useProject } from '../../features/projects/use-project';
 import { paths } from '../../router';
 import { DatasetViewer } from './dataset-viewer';
 import { ImportDataset } from './import/import';
+import { HardwareSetup } from './record/hardware-setup';
+
+
+const HardwareSetupModal = (close: () => void, dataset_id: string) => {
+    const onDone = (setup: SchemaTeleoperationConfig) => {
+        console.log(setup);
+        close();
+    }
+
+    return (
+        <Dialog>
+            <Heading>Teleoperate Setup</Heading>
+            <Divider />
+            <Content>
+                <HardwareSetup dataset_id={dataset_id} onDone={onDone}/>
+            </Content>
+        </Dialog>
+    )
+}
 
 export const Index = () => {
     const navigate = useNavigate();
@@ -44,14 +63,10 @@ export const Index = () => {
                     </TabList>
                     {dataset?.id !== undefined && (
                         <View padding={'size-30'}>
-                            <Link
-                                href={paths.project.datasets.record({
-                                    project_id: project.id,
-                                    dataset_id: dataset.id,
-                                })}
-                            >
-                                <Button>Start recording</Button>
-                            </Link>
+                            <DialogTrigger>
+                                <Button variant='accent'>Start recording</Button>
+                                {(close) => HardwareSetupModal(close, dataset.id)}
+                            </DialogTrigger>
                         </View>
                     )}
                 </Flex>

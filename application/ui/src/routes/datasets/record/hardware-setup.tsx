@@ -29,9 +29,9 @@ import { RobotSetup } from './robot-setup';
 
 interface HardwareSetupProps {
     onDone: (config: SchemaTeleoperationConfig) => void;
+    dataset_id: string;
 }
-export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
-    const { dataset_id } = useParams<{ dataset_id: string }>();
+export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
     const [activeTab, setActiveTab] = useState<string>('cameras');
     const project = useProject();
     const { data: projectTasks } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/tasks', {
@@ -146,96 +146,89 @@ export const HardwareSetup = ({ onDone }: HardwareSetupProps) => {
     };
 
     return (
-        <Flex justifyContent={'center'} flex='1'>
-            <View flex='1' padding='size-150' maxWidth={'640px'}>
-                <View paddingTop={'size-100'} paddingBottom={'size-100'}>
-                    <Heading>Hardware setup</Heading>
-                </View>
-                <View backgroundColor={'gray-200'} padding={'size-200'}>
-                    <Form>
-                        <TextField
-                            validationState={config.dataset.name == '' ? 'invalid' : 'valid'}
-                            isRequired
-                            label='Name'
-                            width={'100%'}
-                            value={config.dataset.name}
-                            isDisabled={!isNewDataset}
-                            onChange={updateDataset}
-                        />
-                        <ComboBox
-                            validationState={config.task === '' ? 'invalid' : 'valid'}
-                            isRequired
-                            label='Task'
-                            allowsCustomValue
-                            inputValue={config.task}
-                            onInputChange={(task) => setConfig((c) => ({ ...c, task }))}
-                        >
-                            {Object.keys(projectTasks).map((datasetName) => (
-                                <Section key={datasetName} title={datasetName}>
-                                    {projectTasks[datasetName].map((task) => (
-                                        <Item key={`${datasetName}-${task}`}>{task}</Item>
-                                    ))}
-                                </Section>
+        <View>
+            <Form>
+                <TextField
+                    validationState={config.dataset.name == '' ? 'invalid' : 'valid'}
+                    isRequired
+                    label='Name'
+                    width={'100%'}
+                    value={config.dataset.name}
+                    isDisabled={!isNewDataset}
+                    onChange={updateDataset}
+                />
+                <ComboBox
+                    validationState={config.task === '' ? 'invalid' : 'valid'}
+                    isRequired
+                    label='Task'
+                    allowsCustomValue
+                    inputValue={config.task}
+                    onInputChange={(task) => setConfig((c) => ({ ...c, task }))}
+                >
+                    {Object.keys(projectTasks).map((datasetName) => (
+                        <Section key={datasetName} title={datasetName}>
+                            {projectTasks[datasetName].map((task) => (
+                                <Item key={`${datasetName}-${task}`}>{task}</Item>
                             ))}
-                        </ComboBox>
-                    </Form>
-                    <View height={'330px'}>
-                        <Tabs onSelectionChange={onTabSwitch} selectedKey={activeTab}>
-                            <TabList>
-                                <Item key='cameras'>Cameras</Item>
-                                <Item key='robots'>Robots</Item>
-                            </TabList>
-                            <TabPanels>
-                                <Item key='cameras'>
-                                    <Flex gap='40px'>
-                                        {config.cameras.map((camera) => (
-                                            <CameraSetup
-                                                key={`${camera.name}${camera.port_or_device_id}`}
-                                                camera={camera}
-                                                availableCameras={availableCameras ?? []}
-                                                updateCamera={updateCamera}
-                                            />
-                                        ))}
-                                    </Flex>
-                                </Item>
-                                <Item key='robots'>
-                                    <Flex gap='40px'>
-                                        <RobotSetup
-                                            key={'leader'}
-                                            config={config.leader}
-                                            portInfos={foundRobots ?? []}
-                                            calibrations={availableCalibrations ?? []}
-                                            setConfig={(c) => updateRobot('leader', c)}
-                                        />
-                                        <RobotSetup
-                                            key={'follower'}
-                                            config={config.follower}
-                                            portInfos={foundRobots ?? []}
-                                            calibrations={availableCalibrations ?? []}
-                                            setConfig={(c) => updateRobot('follower', c)}
-                                        />
-                                    </Flex>
-                                </Item>
-                            </TabPanels>
-                        </Tabs>
-                    </View>
-                    <Flex justifyContent={'end'}>
-                        <View paddingTop={'size-300'}>
-                            <ButtonGroup>
-                                <Button onPress={onRefresh} variant='secondary'>
-                                    Refresh
-                                </Button>
-                                <Button onPress={onBack} variant='secondary'>
-                                    {activeTab === 'robots' ? 'Back' : 'Cancel'}
-                                </Button>
-                                <Button onPress={onNext} isDisabled={activeTab == 'robots' && !isValid()}>
-                                    {activeTab === 'robots' ? 'Start' : 'Next'}
-                                </Button>
-                            </ButtonGroup>
-                        </View>
-                    </Flex>
-                </View>
+                        </Section>
+                    ))}
+                </ComboBox>
+            </Form>
+            <View height={'330px'}>
+                <Tabs onSelectionChange={onTabSwitch} selectedKey={activeTab}>
+                    <TabList>
+                        <Item key='cameras'>Cameras</Item>
+                        <Item key='robots'>Robots</Item>
+                    </TabList>
+                    <TabPanels>
+                        <Item key='cameras'>
+                            <Flex gap='40px'>
+                                {config.cameras.map((camera) => (
+                                    <CameraSetup
+                                        key={`${camera.name}${camera.port_or_device_id}`}
+                                        camera={camera}
+                                        availableCameras={availableCameras ?? []}
+                                        updateCamera={updateCamera}
+                                    />
+                                ))}
+                            </Flex>
+                        </Item>
+                        <Item key='robots'>
+                            <Flex gap='40px'>
+                                <RobotSetup
+                                    key={'leader'}
+                                    config={config.leader}
+                                    portInfos={foundRobots ?? []}
+                                    calibrations={availableCalibrations ?? []}
+                                    setConfig={(c) => updateRobot('leader', c)}
+                                />
+                                <RobotSetup
+                                    key={'follower'}
+                                    config={config.follower}
+                                    portInfos={foundRobots ?? []}
+                                    calibrations={availableCalibrations ?? []}
+                                    setConfig={(c) => updateRobot('follower', c)}
+                                />
+                            </Flex>
+                        </Item>
+                    </TabPanels>
+                </Tabs>
             </View>
-        </Flex>
+            <Flex justifyContent={'end'}>
+                <View paddingTop={'size-300'}>
+                    <ButtonGroup>
+                        <Button onPress={onRefresh} variant='secondary'>
+                            Refresh
+                        </Button>
+                        <Button onPress={onBack} variant='secondary'>
+                            {activeTab === 'robots' ? 'Back' : 'Cancel'}
+                        </Button>
+                        <Button onPress={onNext} isDisabled={activeTab == 'robots' && !isValid()}>
+                            {activeTab === 'robots' ? 'Start' : 'Next'}
+                        </Button>
+                    </ButtonGroup>
+                </View>
+            </Flex>
+        </View>
     );
 };
