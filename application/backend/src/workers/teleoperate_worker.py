@@ -13,9 +13,10 @@ from lerobot.teleoperators.utils import make_teleoperator_from_config
 from lerobot.utils.robot_utils import busy_wait
 from loguru import logger
 
+from schemas.dataset import Episode
 from schemas import TeleoperationConfig
 from utils.camera import build_camera_config
-from utils.dataset import check_repository_exists
+from utils.dataset import check_repository_exists, get_episode_actions
 from utils.robot import make_lerobot_robot_config_from_robot, make_lerobot_teleoperator_config_from_robot
 
 from .base import BaseProcessWorker
@@ -130,6 +131,19 @@ class TeleoperateWorker(BaseProcessWorker):
             }
         )
 
+    def _report_episode(self, episode: dict):
+        self.queue.put(
+            {
+                "event": "episode",
+                "data": Episode(
+                    actions=get_episode_actions(self.dataset, episode).tolist(),
+                    fps=self.dataset.meta.fps,
+                    modification_timestamp=int(time.time()),
+                    **episode,
+                ).model_dump()
+            }
+        )
+
     async def run_loop(self) -> None:
         """Teleoperation loop."""
         logger.info("run loop")
@@ -147,6 +161,10 @@ class TeleoperateWorker(BaseProcessWorker):
                 self.events["save"].clear()
                 busy_wait(0.3)  # TODO check if neccesary
                 self.dataset.save_episode()
+                episode_index = self.dataset.meta.total_episodes - 1 # starts with 0
+                print(self.dataset.meta.episodes[episode_index])
+                print(self.dataset.hf_dataset)
+                self._report_episode(self.dataset.meta.episodes[episode_index])
                 self.is_recording = False
                 self._report_state()
 

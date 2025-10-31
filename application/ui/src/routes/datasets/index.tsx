@@ -12,18 +12,13 @@ import { ImportDataset } from './import/import';
 import { HardwareSetup } from './record/hardware-setup';
 
 
-const HardwareSetupModal = (close: () => void, dataset_id: string) => {
-    const onDone = (setup: SchemaTeleoperationConfig) => {
-        console.log(setup);
-        close();
-    }
-
+const HardwareSetupModal = (close: (config: SchemaTeleoperationConfig | undefined) => void, dataset_id: string | undefined) => {
     return (
         <Dialog>
             <Heading>Teleoperate Setup</Heading>
             <Divider />
             <Content>
-                <HardwareSetup dataset_id={dataset_id} onDone={onDone}/>
+                <HardwareSetup dataset_id={dataset_id} onDone={close}/>
             </Content>
         </Dialog>
     )
@@ -37,12 +32,15 @@ export const Index = () => {
         datasets.length > 0 ? datasets[0] : undefined
     );
 
+    const [recordingConfig, setRecordingConfig] = useState<SchemaTeleoperationConfig>();
+
     const onSelectionChange = (key: Key) => {
         if (key.toString() === '#new-dataset') {
             if (datasets.length === 0) {
                 setDataset(undefined);
             } else {
-                navigate(paths.project.datasets.record_new({ project_id: project.id }));
+                //return;
+                //navigate(paths.project.datasets.record_new({ project_id: project.id }));
             }
         } else {
             setDataset(datasets.find((d) => d.id === key.toString()));
@@ -51,21 +49,25 @@ export const Index = () => {
 
     return (
         <Flex height='100%'>
-            <Tabs onSelectionChange={onSelectionChange} flex='1' margin={'size-200'}>
+            <Tabs onSelectionChange={onSelectionChange} selectedKey={undefined} flex='1' margin={'size-200'}>
                 <Flex alignItems={'end'}>
                     <TabList flex={1}>
                         {[
                             ...datasets.map((data) => <Item key={data.id}>{data.name}</Item>),
-                            <Item key='#new-dataset'>
-                                <Add fill='white' height='10px' /> New dataset
-                            </Item>,
+                            <Item key='#new-dataset'> <Add fill='white' height='10px' /> Import dataset </Item>,
                         ]}
                     </TabList>
-                    {dataset?.id !== undefined && (
+
+                    {dataset?.id !== undefined && recordingConfig === undefined && (
                         <View padding={'size-30'}>
                             <DialogTrigger>
+                                <Button variant='secondary'>New Dataset</Button>
+                                {(close) => HardwareSetupModal((config) => { setRecordingConfig(config); console.log('wat'); close() }, undefined)}
+                            </DialogTrigger>
+
+                            <DialogTrigger>
                                 <Button variant='accent'>Start recording</Button>
-                                {(close) => HardwareSetupModal(close, dataset.id)}
+                                {(close) => HardwareSetupModal((config) => { setRecordingConfig(config); close() }, dataset.id)}
                             </DialogTrigger>
                         </View>
                     )}
@@ -79,7 +81,7 @@ export const Index = () => {
                             {dataset === undefined ? (
                                 <Text>No datasets yet...</Text>
                             ) : (
-                                <DatasetViewer id={dataset.id!} />
+                                <DatasetViewer id={dataset.id!} recordingConfig={recordingConfig} />
                             )}
                         </Flex>
                     </Item>

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 
 import { API_BASE_URL } from '../../../api/client';
-import { SchemaTeleoperationConfig } from '../../../api/openapi-spec';
+import { SchemaEpisode, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
 import useWebSocketWithResponse from '../../../components/websockets/use-websocket-with-response';
 
 interface RobotState {
@@ -34,7 +34,7 @@ export interface Observation {
     cameras: { [key: string]: string };
 }
 
-export const useRecording = (setup: SchemaTeleoperationConfig) => {
+export const useRecording = (setup: SchemaTeleoperationConfig, onEpisode: (episode: SchemaEpisode) => void) => {
     const [state, setState] = useState<RobotState>(createRobotState());
     const { sendJsonMessage, lastJsonMessage, readyState, sendJsonMessageAndWait } = useWebSocketWithResponse(
         `${API_BASE_URL}/api/record/teleoperate/ws`,
@@ -64,8 +64,16 @@ export const useRecording = (setup: SchemaTeleoperationConfig) => {
 
     const onMessage = ({ data }: WebSocketEventMap['message']) => {
         const message = JSON.parse(data) as RecordApiJsonResponse;
-        if (message['event'] === 'observations') {
-            observation.current = message['data'] as Observation;
+        switch (message.event) {
+            case 'state':
+                setState(message.data as RobotState);
+                break;
+            case 'observations':
+                observation.current = message['data'] as Observation;
+                break;
+            case 'episode':
+                onEpisode(message['data'] as SchemaEpisode)
+                break;
         }
     };
 

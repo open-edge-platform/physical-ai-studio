@@ -20,7 +20,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 
 import { $api } from '../../../api/client';
-import { SchemaRobotConfig, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
+import { SchemaProjectOutput, SchemaRobotConfig, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
 import { useSettings } from '../../../components/settings/use-settings';
 import { useProject } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
@@ -28,9 +28,49 @@ import { CameraSetup } from './camera-setup';
 import { RobotSetup } from './robot-setup';
 
 interface HardwareSetupProps {
-    onDone: (config: SchemaTeleoperationConfig) => void;
-    dataset_id: string;
+    onDone: (config: SchemaTeleoperationConfig | undefined) => void;
+    dataset_id: string | undefined;
 }
+
+const TELEOPERATION_CONFIG_CACHE_KEY = "teleoperation_config"
+
+const storeConfigToCache = (config: SchemaTeleoperationConfig) => {
+    localStorage.setItem(TELEOPERATION_CONFIG_CACHE_KEY, JSON.stringify(config))
+}
+
+const initialTeleoperationConfig = (initialTask: string, project: SchemaProjectOutput, dataset_id: string | undefined): SchemaTeleoperationConfig => {
+    const cachedConfig = localStorage.getItem(TELEOPERATION_CONFIG_CACHE_KEY)
+    if (cachedConfig === null) {
+        return {
+            task: initialTask,
+            fps: project.config?.fps ?? 30,
+            dataset: project.datasets.find((d) => d.id === dataset_id) ?? {
+                project_id: project.id!,
+                name: '',
+                path: '',
+                id: uuidv4(),
+            },
+            cameras: project.config?.cameras ?? [],
+            follower: {
+                id: '',
+                robot_type: project.config?.robot_type ?? '',
+                serial_id: '',
+                port: '',
+                type: 'follower',
+            },
+            leader: {
+                id: '',
+                robot_type: project.config?.robot_type ?? '',
+                serial_id: '',
+                port: '',
+                type: 'leader',
+            },
+        }
+    } else {
+        return JSON.parse(cachedConfig) as SchemaTeleoperationConfig;
+    }
+}
+
 export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
     const [activeTab, setActiveTab] = useState<string>('cameras');
     const project = useProject();
@@ -45,31 +85,7 @@ export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
     const isNewDataset = !dataset_id;
     const initialTask = Object.values(projectTasks).flat()[0];
 
-    const [config, setConfig] = useState<SchemaTeleoperationConfig>({
-        task: initialTask,
-        fps: project.config?.fps ?? 30,
-        dataset: project.datasets.find((d) => d.id === dataset_id) ?? {
-            project_id: project.id!,
-            name: '',
-            path: '',
-            id: uuidv4(),
-        },
-        cameras: project.config?.cameras ?? [],
-        follower: {
-            id: '',
-            robot_type: project.config?.robot_type ?? '',
-            serial_id: '',
-            port: '',
-            type: 'follower',
-        },
-        leader: {
-            id: '',
-            robot_type: project.config?.robot_type ?? '',
-            serial_id: '',
-            port: '',
-            type: 'leader',
-        },
-    });
+    const [config, setConfig] = useState<SchemaTeleoperationConfig>(initialTeleoperationConfig(initialTask, project, dataset_id));
 
     const { data: availableCameras, refetch: refreshCameras } = $api.useQuery('get', '/api/hardware/cameras');
     const { data: foundRobots, refetch: refreshRobots } = $api.useQuery('get', '/api/hardware/robots');
@@ -121,6 +137,7 @@ export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
         if (activeTab === 'cameras') {
             setActiveTab('robots');
         } else {
+            storeConfigToCache(config);
             onDone(config);
         }
     };
@@ -129,7 +146,7 @@ export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
         if (activeTab === 'robots') {
             setActiveTab('cameras');
         } else {
-            navigate(paths.project.datasets.index({ project_id: project.id }));
+            onDone(undefined)
         }
     };
 

@@ -4,6 +4,7 @@ from json.decoder import JSONDecodeError
 from os import listdir, path, stat
 from pathlib import Path
 
+from lerobot.datasets.utils import get_episode_data_index
 import torch
 from huggingface_hub.errors import RepositoryNotFoundError
 from lerobot.constants import HF_LEROBOT_HOME
@@ -17,30 +18,35 @@ def get_dataset_episodes(repo_id: str, root: str | None) -> list[Episode]:
     """Load dataset from LeRobot cache and get info"""
     if root and not check_repository_exists(Path(root)):
         return []
-    dataset = LeRobotDataset(repo_id, root)
-    metadata = dataset.meta
-    episodes = metadata.episodes
-    result = []
-    for episode_index in episodes:
-        full_path = path.join(metadata.root, metadata.get_data_file_path(episode_index))
-        stat_result = stat(full_path)
-        result.append(
-            Episode(
-                actions=get_episode_actions(dataset, episodes[episode_index]).tolist(),
-                fps=metadata.fps,
-                modification_timestamp=stat_result.st_mtime_ns // 1e6,
-                **episodes[episode_index],
+    try:
+        dataset = LeRobotDataset(repo_id, root)
+        metadata = dataset.meta
+        episodes = metadata.episodes
+        result = []
+        for episode_index in episodes:
+            full_path = path.join(metadata.root, metadata.get_data_file_path(episode_index))
+            stat_result = stat(full_path)
+            result.append(
+                Episode(
+                    actions=get_episode_actions(dataset, episodes[episode_index]).tolist(),
+                    fps=metadata.fps,
+                    modification_timestamp=stat_result.st_mtime_ns // 1e6,
+                    **episodes[episode_index],
+                )
             )
-        )
 
-    return result
+        return result
+    except Exception:
+        return []
+
 
 
 def get_episode_actions(dataset: LeRobotDataset, episode: dict) -> torch.Tensor:
     """Get episode actions tensor from specific episode."""
     episode_index = episode["episode_index"]
-    from_idx = dataset.episode_data_index["from"][episode_index].item()
-    to_idx = dataset.episode_data_index["to"][episode_index].item()
+    episode_data_index = get_episode_data_index(dataset.meta.episodes)
+    from_idx = episode_data_index["from"][episode_index].item()
+    to_idx = episode_data_index["to"][episode_index].item()
     actions = dataset.hf_dataset["action"][from_idx:to_idx]
     return torch.stack(actions)
 
