@@ -336,7 +336,7 @@ class TestToOpenVINO:
             wrapper = ExportWrapper(model)
 
             output_path = tmp_path / "model.pt2"
-            wrapper.to_torch_ir(output_path)
+            wrapper.to_torch_export_ir(output_path)
 
             assert output_path.exists()
 
@@ -352,7 +352,7 @@ class TestToOpenVINO:
             input_sample = {"data": torch.randn(1, 10)}
             output_path = tmp_path / "model.pt2"
 
-            wrapper.to_torch_ir(output_path, input_sample=input_sample)
+            wrapper.to_torch_export_ir(output_path, input_sample=input_sample)
 
             assert output_path.exists()
 
@@ -375,7 +375,7 @@ class TestToOpenVINO:
 
             output_path = tmp_path / "model.pt2"
             # Override the strict mode from the model
-            wrapper.to_torch_ir(output_path, strict=False)
+            wrapper.to_torch_export_ir(output_path, strict=False)
 
             assert output_path.exists()
 
@@ -389,7 +389,7 @@ class TestToOpenVINO:
             wrapper = ExportWrapper(model)
 
             output_path = tmp_path / "model.pt2"
-            wrapper.to_torch_ir(output_path)
+            wrapper.to_torch_export_ir(output_path)
 
             assert output_path.exists()
 
@@ -403,7 +403,7 @@ class TestToOpenVINO:
             wrapper = ExportWrapper(model)
 
             output_path = tmp_path / "model.pt2"
-            wrapper.to_torch_ir(output_path)
+            wrapper.to_torch_export_ir(output_path)
 
             assert output_path.exists()
 
@@ -420,7 +420,7 @@ class TestToOpenVINO:
             output_path = tmp_path / "model.pt2"
 
             with pytest.raises(RuntimeError, match="input sample must be provided"):
-                wrapper.to_torch_ir(output_path)
+                wrapper.to_torch_export_ir(output_path)
 
         def test_to_torch_ir_model_in_eval_mode(self, tmp_path):
             """Test that model is set to eval mode during TorchIR export."""
@@ -432,7 +432,7 @@ class TestToOpenVINO:
             assert model.training is True
 
             output_path = tmp_path / "model.pt2"
-            wrapper.to_torch_ir(output_path)
+            wrapper.to_torch_export_ir(output_path)
 
             # Model should be in eval mode after export
             assert model.training is False

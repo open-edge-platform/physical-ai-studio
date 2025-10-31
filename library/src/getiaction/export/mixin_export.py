@@ -147,15 +147,15 @@ class Export:
         openvino.save_model(ov_model, output_path)
 
     @torch.no_grad()
-    def to_torch_ir(
+    def to_torch_export_ir(
         self,
         output_path: PathLike | str,
         input_sample: dict[str, torch.Tensor] | None = None,
         **export_kwargs: dict,
     ) -> None:
-        """Export the model to TorchIR format.
+        """Export the model to Torch Export IR format.
 
-        This method exports the model to TorchScript IR (Intermediate Representation) format,
+        This method exports the model to Torch Export IR (Intermediate Representation) format,
         which can be used for deployment and for further optimization and inference via executorch or similar tools.
 
         Args:

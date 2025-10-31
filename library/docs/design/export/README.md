@@ -42,7 +42,7 @@ policy.to_onnx("model.onnx")
 policy.to_openvino("model.xml")
 
 # Export to Torch IR
-policy.to_torch_ir("model.ptir")
+policy.to_torch_export_ir("model.ptir")
 ```
 
 ## Architecture
@@ -70,10 +70,10 @@ graph TB
 
     M --> N[OpenVINO Model]
 
-    B --> Q[to_torch_ir]
+    B --> Q[to_torch_export_ir]
 
     Q --> Y[Torch Dynamo tracing]
-    Y --> Z[torch IR]
+    Y --> Z[Torch Export IR]
 ```
 
 ## Export Formats
@@ -130,7 +130,7 @@ Model can be loaded and executed by pytorch without any extra deps:
 
 ```python
 policy = Dummy(config=DummyConfig(action_shape=(7,)))
-policy.to_torch_ir("model.ptir")
+policy.to_torch_export_ir("model.ptir")
 
 loaded_program = torch.export.load("model.ptir")
 output = loaded_program.module()(policy.model.sample_input)
@@ -231,7 +231,7 @@ policy.to_onnx("trained_model.onnx")
 policy.to_openvino("trained_model.xml")
 
 # Export to Torch IR
-policy.to_torch_ir("trained_model.ptir")
+policy.to_torch_export_ir("trained_model.ptir")
 ```
 
 ### Custom ONNX Export

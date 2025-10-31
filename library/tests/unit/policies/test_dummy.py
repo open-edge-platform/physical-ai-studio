@@ -209,6 +209,6 @@ class TestDummyPolicyImportExport:
         policy = Dummy(config=config)
 
         export_path = tmp_path / "dummy_policy_torch_ir.ptir"
-        policy.to_torch_ir(export_path)
+        policy.to_torch_export_ir(export_path)
 
         assert export_path.exists()
