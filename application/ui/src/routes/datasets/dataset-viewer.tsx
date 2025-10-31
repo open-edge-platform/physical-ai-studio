@@ -6,13 +6,13 @@ import { $api } from '../../api/client';
 import { EpisodeViewer } from './episode-viewer';
 import { SchemaEpisode, SchemaTeleoperationConfig } from '../../api/openapi-spec';
 import { RecordingViewer } from './recording-viewer';
-import { EpisodesProvider } from './episode-provider';
+import { useRecording } from './recording-provider';
 
 interface DatasetViewerProps {
     id: string;
-    recordingConfig: SchemaTeleoperationConfig | undefined;
 }
-export const DatasetViewer = ({ id: dataset_id, recordingConfig }: DatasetViewerProps) => {
+export const DatasetViewer = ({ id: dataset_id }: DatasetViewerProps) => {
+    const { isRecording, recordingConfig } = useRecording();
     const { data: existingEpisodes } = $api.useSuspenseQuery('get', '/api/dataset/{dataset_id}/episodes', {
         params: {
             path: {
@@ -39,10 +39,11 @@ export const DatasetViewer = ({ id: dataset_id, recordingConfig }: DatasetViewer
             </View>
         );
     }
+    console.log(isRecording, recordingConfig);
     return (
         <Flex direction={'row'} height='100%' flex gap={'size-100'}>
             <View flex={1}>
-                {recordingConfig === undefined
+                {!isRecording || recordingConfig === undefined
                     ? <EpisodeViewer episode={episodes[currentEpisode]} dataset_id={dataset_id} />
                     : <RecordingViewer recordingConfig={recordingConfig} addEpisode={addEpisode} />
                 }

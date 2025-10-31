@@ -2,10 +2,11 @@ import { ButtonGroup, Flex, Heading, ProgressCircle, Button, View, Well } from "
 import { SchemaCameraConfigOutput, SchemaEpisode, SchemaTeleoperationConfig } from "../../api/openapi-spec"
 import { RobotModelsProvider } from "../../features/robots/robot-models-context"
 import { RobotViewer } from "../../features/robots/controller/robot-viewer"
-import { Observation, useRecording } from "./record/use-recording"
+import { Observation, useTeleoperation } from "./record/use-teleoperation"
 import { RefObject, useEffect, useRef, useState } from "react"
 
 import classes from './episode-viewer.module.scss';
+import { useRecording } from "./recording-provider"
 
 function useInterval(callback: () => void, delay: number) {
     const savedCallback = useRef<() => void>(callback);
@@ -75,7 +76,13 @@ const formatActionDictToArray = (actions: { [key: string]: number }): number[] =
     return jointNames.map((name) => actions[`${name}.pos`])
 }
 export const RecordingViewer = ({ recordingConfig, addEpisode }: RecordingViewerProps) => {
-  const { startRecording, saveEpisode, cancelEpisode, observation, state, disconnect } = useRecording(recordingConfig, addEpisode);
+    const { startRecording, saveEpisode, cancelEpisode, observation, state, disconnect } = useTeleoperation(recordingConfig, addEpisode);
+
+    const { setIsRecording } = useRecording();
+    const onStop = () => {
+      disconnect();
+      setIsRecording(false);
+    }
 
     if (!state.initialized) {
         <Flex width='100%' height={'100%'} alignItems={'center'} justifyContent={'center'}>
@@ -99,7 +106,7 @@ export const RecordingViewer = ({ recordingConfig, addEpisode }: RecordingViewer
                         <RobotViewer jointValues={actions} />
                     </Flex>
                 </Flex>
-                <Button onPress={disconnect} alignSelf={'start'}>Stop recording</Button>
+                <Button onPress={onStop} alignSelf={'start'}>Stop recording</Button>
                 {state.is_recording
                     ? (
                         <ButtonGroup alignSelf='end'>
