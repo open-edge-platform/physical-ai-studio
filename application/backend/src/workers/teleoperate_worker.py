@@ -72,7 +72,7 @@ class TeleoperateWorker(BaseProcessWorker):
         # After setting up the robot, instantiate the FrameSource using a bridge
         # This can be done directly once switched over to LeRobotDataset V3.
         # We do need to first instantiate using the lerobot dict because a follower requires cameras.
-        self.robot.cameras = {camera.name: FrameSourceCameraBridge(camera) for camera in self.config.cameras}
+        #self.robot.cameras = {camera.name: FrameSourceCameraBridge(camera) for camera in self.config.cameras}
 
         if check_repository_exists(self.config.dataset.path):
             self.dataset = LeRobotDataset(

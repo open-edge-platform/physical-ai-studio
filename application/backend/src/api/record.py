@@ -24,9 +24,8 @@ async def teleoperate_websocket(  # noqa: C901
     await websocket.accept()
     data = await websocket.receive_json("text")
     config = TeleoperationConfig.model_validate(data["data"])
-    try:
-        await dataset_service.get_dataset_by_id(config.dataset.id)
-    except ResourceNotFoundError:
+    dataset = await dataset_service.get_dataset_by_id(config.dataset.id)
+    if dataset is None:
         await dataset_service.create_dataset(config.dataset)
     queue: mp.Queue = mp.Queue()
     process = TeleoperateWorker(
