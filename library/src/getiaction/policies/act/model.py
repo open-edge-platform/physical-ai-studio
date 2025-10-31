@@ -284,7 +284,9 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
                     if isinstance(batch[Observation.ComponentKeys.IMAGES.value], dict)
                     else batch
                 )
-                batch[Observation.ComponentKeys.IMAGES.value] = [images_dict[key] for key in self._config.image_features]
+                batch[Observation.ComponentKeys.IMAGES.value] = [
+                    images_dict[key] for key in self._config.image_features
+                ]
 
             actions_hat, (mu_hat, log_sigma_x2_hat) = self._model(batch)
 
