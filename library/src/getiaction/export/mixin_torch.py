@@ -19,7 +19,7 @@ class FromCheckpoint:
     """Mixin class for loading torch models from checkpoints."""
 
     @classmethod
-    def load_checkpoint(
+    def load_from_checkpoint(
         cls,
         snapshot: dict | PathLike | str,
     ) -> Self:
