@@ -1,5 +1,6 @@
 import asyncio
 import multiprocessing as mp
+from queue import Empty
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
@@ -60,7 +61,7 @@ async def teleoperate_websocket(  # noqa: C901
                 try:
                     message = queue.get_nowait()
                     await websocket.send_json(message)
-                except mp.queues.Empty:
+                except Empty:
                     await asyncio.sleep(0.05)
         except Exception as e:
             print(f"Outgoing task stopped: {e}")
@@ -68,7 +69,7 @@ async def teleoperate_websocket(  # noqa: C901
     incoming_task = asyncio.create_task(handle_incoming())
     outgoing_task = asyncio.create_task(handle_outgoing())
 
-    done, pending = await asyncio.wait(
+    _, pending = await asyncio.wait(
         {incoming_task, outgoing_task},
         return_when=asyncio.FIRST_COMPLETED,
     )

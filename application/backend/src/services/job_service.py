@@ -1,8 +1,5 @@
-import asyncio
-import os
 from uuid import UUID
 
-import anyio
 from sqlalchemy.exc import IntegrityError
 
 from db import get_async_db_session_ctx
@@ -20,10 +17,13 @@ class JobService:
             return await repo.get_all(extra_filters=extra_filters)
 
     @staticmethod
-    async def get_job_by_id(job_id: UUID) -> Job | None:
+    async def get_job_by_id(job_id: UUID) -> Job:
         async with get_async_db_session_ctx() as session:
             repo = JobRepository(session)
-            return await repo.get_by_id(job_id)
+            job = await repo.get_by_id(job_id)
+            if job is None:
+                raise ResourceNotFoundError(ResourceType.JOB, str(job_id))
+            return job
 
     @staticmethod
     async def submit_train_job(payload: TrainJobPayload) -> Job:
@@ -65,42 +65,3 @@ class JobService:
             if progress_ is not None:
                 updates["progress"] = progress_
             return await repo.update(job, updates)
-
-    @classmethod
-    async def stream_logs(cls, job_id: UUID | str):
-        from core.logging.utils import get_job_logs_path
-
-        log_file = get_job_logs_path(job_id=job_id)
-        if not os.path.exists(log_file):
-            raise ResourceNotFoundError(resource_type=ResourceType.JOB_FILE, resource_id=job_id)
-
-        async def is_job_still_running():
-            job = await cls.get_job_by_id(job_id=job_id)
-            if job is None:
-                raise ResourceNotFoundError(resource_type=ResourceType.JOB_FILE, resource_id=job_id)
-            return job.status == JobStatus.RUNNING
-
-        # Cache job status and only check every 2 seconds
-        status_check_interval = 2.0  # seconds
-        last_status_check = 0.0
-        cached_still_running = True
-        loop = asyncio.get_running_loop()
-
-        async with await anyio.open_file(log_file) as f:
-            while True:
-                line = await f.readline()
-                now = loop.time()
-                # Only check job status every status_check_interval seconds
-                if now - last_status_check > status_check_interval:
-                    cached_still_running = await is_job_still_running()
-                    last_status_check = now
-                still_running = cached_still_running
-                if not line:
-                    # wait for more lines if job is still running
-                    if still_running:
-                        await asyncio.sleep(0.5)
-                        continue
-                    # No more lines are expected
-                    else:
-                        break
-                yield line

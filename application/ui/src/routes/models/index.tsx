@@ -91,7 +91,7 @@ const ModelList = ({ models }: { models: SchemaModel[] }) => {
 };
 
 const ModelInTraining = ({ trainJob }: { trainJob: SchemaTrainJob }) => {
-    const interruptMutation = $api.useMutation('post', '/api/jobs/{job_id}/interrupt');
+    const interruptMutation = $api.useMutation('post', '/api/jobs/{job_id}:interrupt');
     const onInterrupt = () => {
         if (trainJob?.id !== undefined) {
             interruptMutation.mutate({
@@ -142,11 +142,12 @@ const ModelInTraining = ({ trainJob }: { trainJob: SchemaTrainJob }) => {
 
 export const Index = () => {
     const { project_id } = useProjectId();
-    const { data: models } = $api.useSuspenseQuery('get', '/api/models/{project_id}', {
+    const { data: models } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/models', {
         params: { path: { project_id } },
     });
 
     const {} = useWebSocket(`${API_BASE_URL}/api/jobs/ws`, {
+        shouldReconnect: () => true,
         onMessage: (event: WebSocketEventMap['message']) => onMessage(event),
     });
     const client = useQueryClient();
@@ -158,10 +159,11 @@ export const Index = () => {
         if (message.event === 'JOB_UPDATE' && message.data.project_id === project_id) {
             if (message.data.status === 'completed') {
                 client.invalidateQueries({ queryKey: ['get', '/api/models/{project_id}'] });
-
                 setTrainJob(undefined);
-            } else {
+            } else if (message.data.status === 'running') {
                 setTrainJob(message.data as SchemaTrainJob);
+            } else {
+                setTrainJob(undefined);
             }
         }
     };

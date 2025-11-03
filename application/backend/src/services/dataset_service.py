@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from db import get_async_db_session_ctx
+from exceptions import ResourceNotFoundError, ResourceType
 from repositories import DatasetRepository
 from schemas import Dataset
 
@@ -13,10 +14,13 @@ class DatasetService:
             return await repo.get_all()
 
     @staticmethod
-    async def get_dataset_by_id(dataset_id: UUID) -> Dataset | None:
+    async def get_dataset_by_id(dataset_id: UUID) -> Dataset:
         async with get_async_db_session_ctx() as session:
             repo = DatasetRepository(session)
-            return await repo.get_by_id(dataset_id)
+            dataset = await repo.get_by_id(dataset_id)
+            if dataset is None:
+                raise ResourceNotFoundError(ResourceType.DATASET, str(dataset_id))
+            return dataset
 
     @staticmethod
     async def create_dataset(dataset: Dataset) -> Dataset:

@@ -2,6 +2,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, WebSocket, WebSocketDisconnect
+from loguru import logger
 
 from api.dependencies import get_event_processor_ws, get_job_service, get_scheduler, validate_uuid
 from core.scheduler import Scheduler
@@ -21,7 +22,7 @@ async def list_jobs(
     return await job_service.get_job_list()
 
 
-@router.post("/train")
+@router.post(":train")
 async def submit_train_job(
     job_service: Annotated[JobService, Depends(get_job_service)],
     payload: Annotated[TrainJobPayload, Body()],
@@ -30,7 +31,7 @@ async def submit_train_job(
     return await job_service.submit_train_job(payload=payload)
 
 
-@router.post("/{job_id}/interrupt")
+@router.post("/{job_id}:interrupt")
 async def interrupt_job(
     job_id: Annotated[UUID, Depends(validate_uuid)],
     job_service: Annotated[JobService, Depends(get_job_service)],
@@ -65,8 +66,9 @@ async def jobs_websocket(
 
     try:
         while True:
+            # TODO implement subscribing to specific events
             data = await websocket.receive_json("text")
-            print(data)
+            logger.info(f"Received websocket message: {data}")
 
     except WebSocketDisconnect:
         print("Except: disconnected!")

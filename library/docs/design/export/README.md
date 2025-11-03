@@ -9,6 +9,8 @@ The export system provides a consistent interface for:
 
 1. **PyTorch Checkpoints** - Save model state with configuration
 2. **ONNX Export** - Convert models to ONNX format for deployment
+3. **OpenVINO** - Convert models to OpenVINO IR format for deployment
+4. **Torch Export IR** - Convert models to Torch Export IR format for deployment
 
 ## Design Goals
 
@@ -38,6 +40,9 @@ policy.to_onnx("model.onnx")
 
 # Export to OpenVINO
 policy.to_openvino("model.xml")
+
+# Export to Torch IR
+policy.to_torch_export_ir("model.ptir")
 ```
 
 ## Architecture
@@ -64,6 +69,11 @@ graph TB
     H --> J[ONNX Model]
 
     M --> N[OpenVINO Model]
+
+    B --> Q[to_torch_export_ir]
+
+    Q --> Y[Torch Dynamo tracing]
+    Y --> Z[Torch Export IR]
 ```
 
 ## Export Formats
@@ -111,6 +121,25 @@ policy.to_openvino("model.xml")
 
 - Cross-platform inference
 - Hardware acceleration support on Intel hardware
+- Runtime optimizations
+
+### Torch IR Format
+
+That format aims to preserve input model graph in the original pythorch aten dialect.
+Model can be loaded and executed by pytorch without any extra deps:
+
+```python
+policy = Dummy(config=DummyConfig(action_shape=(7,)))
+policy.to_torch_export_ir("model.ptir")
+
+loaded_program = torch.export.load("model.ptir")
+output = loaded_program.module()(policy.model.sample_input)
+```
+
+**OpenVINO Benefits:**
+
+- Cross-platform inference
+- Hardware acceleration support via executorch
 - Runtime optimizations
 
 ## Configuration Serialization for Torch models
@@ -200,6 +229,9 @@ policy.to_onnx("trained_model.onnx")
 
 # Export to OpenVINO
 policy.to_openvino("trained_model.xml")
+
+# Export to Torch IR
+policy.to_torch_export_ir("trained_model.ptir")
 ```
 
 ### Custom ONNX Export

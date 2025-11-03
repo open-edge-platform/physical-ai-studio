@@ -10,7 +10,6 @@ from schemas.base import BaseIDModel
 
 class JobType(StrEnum):
     TRAINING = "training"
-    OPTIMIZATION = "optimization"
 
 
 class JobStatus(StrEnum):

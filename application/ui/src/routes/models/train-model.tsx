@@ -16,7 +16,7 @@ export const TrainModelModal = (close: (job: SchemaTrainJob | undefined) => void
     const [selectedDatasets, setSelectedDatasets] = useState<Key | null>(null);
     const [selectedPolicy, setSelectedPolicy] = useState<Key | null>('act');
 
-    const trainMutation = $api.useMutation('post', '/api/jobs/train');
+    const trainMutation = $api.useMutation('post', '/api/jobs:train');
 
     const save = () => {
         const dataset_id = selectedDatasets?.toString();

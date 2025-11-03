@@ -73,15 +73,18 @@ class TrainingWorker(BaseProcessWorker):
 
     async def _train_model(self, job: Job, model: Model):
         await JobService.update_job_status(job_id=job.id, status=JobStatus.RUNNING, message="Training started")
+        dispatcher = TrainingTrackingDispatcher(
+            job_id=job.id,
+            event_queue=self.queue,
+            interrupt_event=self.interrupt_event,
+        )
         try:
             dataset = await DatasetService.get_dataset_by_id(model.dataset_id)
-            if dataset is None:
-                raise ValueError(f"Dataset not found: {model.dataset_id}")
 
             l_dm = LeRobotDataModule(
                 repo_id=dataset.name,
                 root=dataset.path,
-                train_batch_size=32,
+                train_batch_size=8,
             )
             lib_model = ACTModel(
                 input_features=l_dm.train_dataset.observation_features,
@@ -97,12 +100,6 @@ class TrainingWorker(BaseProcessWorker):
                 save_top_k=1,
                 monitor="train/loss",
                 mode="min",
-            )
-
-            dispatcher = TrainingTrackingDispatcher(
-                job_id=job.id,
-                event_queue=self.queue,
-                interrupt_event=self.interrupt_event,
             )
 
             trainer = Trainer(
@@ -122,9 +119,6 @@ class TrainingWorker(BaseProcessWorker):
             path.parent.mkdir(parents=True)
             policy.to_torch(path)
 
-            self.interrupt_event.set()
-            dispatcher.join(timeout=10)
-
             job = await JobService.update_job_status(
                 job_id=job.id, status=JobStatus.COMPLETED, message="Training finished"
             )
@@ -136,4 +130,6 @@ class TrainingWorker(BaseProcessWorker):
             job = await JobService.update_job_status(
                 job_id=job.id, status=JobStatus.FAILED, message=f"Training failed: {e}"
             )
+        self.interrupt_event.set()
+        dispatcher.join(timeout=10)
         self.queue.put((EventType.JOB_UPDATE, job))
