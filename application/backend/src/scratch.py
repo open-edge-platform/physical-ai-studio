@@ -101,6 +101,7 @@ async def main():
         start_loop_t = time.perf_counter()
 
         robot_observation = robot.get_observation()
+        action_keys =  [f"{key}.pos" for key in robot.bus.sync_read("Present_Position")]
         state = torch.tensor(list(robot_observation.values())).unsqueeze(0)
         images: dict = {}
         for name, camera in cameras.items():
@@ -112,6 +113,9 @@ async def main():
             images[key] = images[key].float()
             images[key] = images[key].permute(2, 0, 1).contiguous()
             images[key] = images[key].unsqueeze(0)
+
+        print(state)
+        print({key: value.shape for key, value in images.items()})
 
         observation = Observation(
             state=state,

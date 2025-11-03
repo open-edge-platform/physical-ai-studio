@@ -1,6 +1,7 @@
 from pathlib import Path
 from uuid import UUID
 
+from exceptions import ResourceNotFoundError, ResourceType
 from db import get_async_db_session_ctx
 from repositories import ModelRepository
 from schemas import Model
@@ -14,10 +15,14 @@ class ModelService:
             return await repo.get_all()
 
     @staticmethod
-    async def get_model_by_id(model_id: UUID) -> Model | None:
+    async def get_model_by_id(model_id: UUID) -> Model:
         async with get_async_db_session_ctx() as session:
             repo = ModelRepository(session)
-            return await repo.get_by_id(model_id)
+            model = await repo.get_by_id(model_id)
+            if model is None:
+                raise ResourceNotFoundError(ResourceType.MODEL, str(model_id))
+
+            return model
 
     @staticmethod
     async def create_model(model: Model) -> Model:

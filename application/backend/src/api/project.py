@@ -6,7 +6,7 @@ from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
 
 from api.dependencies import get_model_service, get_project_id, get_project_service
 from exceptions import ResourceAlreadyExistsError
-from schemas import LeRobotDatasetInfo, Model, Project, ProjectConfig, TeleoperationConfig
+from schemas import LeRobotDatasetInfo, Model, Project, ProjectConfig, TeleoperationConfig, InferenceConfig
 from services import ModelService, ProjectService
 from utils.dataset import build_dataset_from_lerobot_dataset, build_project_config_from_dataset, check_repository_exists
 
@@ -92,8 +92,13 @@ async def get_project_models(
 
 @router.get("/example_teleoperation_config")
 async def get_example_teleoperation_config() -> TeleoperationConfig:
-    """Stub call to get definition in ui, probably will be used later."""
+    """Stub call to get definition in ui."""
     return TeleoperationConfig()
+
+@router.get("/example_inference_config")
+async def get_example_inference_config() -> InferenceConfig:
+    """Stub call to get definition in ui."""
+    return InferenceConfig()
 
 
 @router.get("/{project_id}/tasks")
