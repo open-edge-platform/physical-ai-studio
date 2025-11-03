@@ -75,11 +75,12 @@ class PushTGym(Gym):
             if not isinstance(pixels, torch.Tensor):
                 pixels = torch.from_numpy(pixels)
 
+            pixels_torch_type = pixels.dtype
             # Ensure float32 (gym often returns float64 or uint8)
             if pixels.dtype not in {torch.float32, torch.float16}:
                 pixels = pixels.float()
 
-                if pixels.dtype == torch.uint8:
+                if pixels_torch_type == torch.uint8:
                     pixels /= 255.0  # Normalize uint8 to [0, 1]
 
             # Convert HWC → CHW if needed
