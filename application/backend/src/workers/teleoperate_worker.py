@@ -122,7 +122,7 @@ class TeleoperateWorker(BaseProcessWorker):
                 "data": {
                     "actions": {key: observation.get(key, 0) for key in self.action_keys},
                     "cameras": {
-                        key: self._base_64_encode_observation(observation.get(key))
+                        key: self._base_64_encode_observation(cv2.cvtColor(observation.get(key), cv2.COLOR_RGB2BGR))
                         for key in self.camera_keys
                         if key in observation
                     },
