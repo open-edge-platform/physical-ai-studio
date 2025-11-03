@@ -2,11 +2,11 @@ import { useState } from 'react';
 
 import {
     ActionButton,
-    Dialog,
-    Divider,
     Button,
     ButtonGroup,
     Content,
+    Dialog,
+    Divider,
     Flex,
     Heading,
     Item,
@@ -19,13 +19,11 @@ import {
     Well,
 } from '@geti/ui';
 import { Close } from '@geti/ui/icons';
-import { useNavigate } from 'react-router';
 import { v4 as uuidv4 } from 'uuid';
 
 import { $api } from '../../../api/client';
 import { SchemaCameraConfigInput, SchemaProjectConfigInput } from '../../../api/openapi-spec';
 import { useProjectId } from '../../../features/projects/use-project';
-import { paths } from '../../../router';
 
 interface CameraSetupProps {
     camera: SchemaCameraConfigInput;
@@ -82,10 +80,10 @@ const emptyCamera = (): SchemaCameraConfigInput => {
 };
 
 interface ProjectSetupProps {
-    onDone: (config?: SchemaProjectConfigInput ) => void;
+    onDone: (config?: SchemaProjectConfigInput) => void;
 }
 
-const ProjectSetup = ({onDone}: ProjectSetupProps) => {
+const ProjectSetup = ({ onDone }: ProjectSetupProps) => {
     const { project_id } = useProjectId();
     const [activeTab, setActiveTab] = useState<string>('robot');
     const [config, setConfig] = useState<SchemaProjectConfigInput>({
@@ -214,7 +212,7 @@ const ProjectSetup = ({onDone}: ProjectSetupProps) => {
     );
 };
 
-export const ProjectSetupModal = (close: (config?: SchemaProjectConfigInput ) => void) => {
+export const ProjectSetupModal = (close: (config?: SchemaProjectConfigInput) => void) => {
     return (
         <Dialog>
             <Heading>Teleoperate Setup</Heading>
@@ -223,6 +221,5 @@ export const ProjectSetupModal = (close: (config?: SchemaProjectConfigInput ) =>
                 <ProjectSetup onDone={close} />
             </Content>
         </Dialog>
-    )
-
-}
+    );
+};

@@ -13,8 +13,8 @@ from lerobot.teleoperators.utils import make_teleoperator_from_config
 from lerobot.utils.robot_utils import busy_wait
 from loguru import logger
 
-from schemas.dataset import Episode
 from schemas import TeleoperationConfig
+from schemas.dataset import Episode
 from utils.camera import build_camera_config
 from utils.dataset import check_repository_exists, get_episode_actions
 from utils.robot import make_lerobot_robot_config_from_robot, make_lerobot_teleoperator_config_from_robot
@@ -122,7 +122,7 @@ class TeleoperateWorker(BaseProcessWorker):
                 "data": {
                     "actions": {key: observation.get(key, 0) for key in self.action_keys},
                     "cameras": {
-                        key: self._base_64_encode_observation(cv2.cvtColor(observation.get(key), cv2.COLOR_RGB2BGR))
+                        key: self._base_64_encode_observation(cv2.cvtColor(observation[key], cv2.COLOR_RGB2BGR))
                         for key in self.camera_keys
                         if key in observation
                     },
@@ -140,7 +140,7 @@ class TeleoperateWorker(BaseProcessWorker):
                     fps=self.dataset.meta.fps,
                     modification_timestamp=int(time.time()),
                     **episode,
-                ).model_dump()
+                ).model_dump(),
             }
         )
 
@@ -161,7 +161,7 @@ class TeleoperateWorker(BaseProcessWorker):
                 self.events["save"].clear()
                 busy_wait(0.3)  # TODO check if neccesary
                 self.dataset.save_episode()
-                episode_index = self.dataset.meta.total_episodes - 1 # starts with 0
+                episode_index = self.dataset.meta.total_episodes - 1  # starts with 0
                 print(self.dataset.meta.episodes[episode_index])
                 print(self.dataset.hf_dataset)
                 self._report_episode(self.dataset.meta.episodes[episode_index])

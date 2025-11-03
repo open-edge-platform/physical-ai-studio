@@ -1,12 +1,14 @@
-import { ButtonGroup, Flex, Heading, ProgressCircle, Button, View, Well } from "@geti/ui"
-import { SchemaCameraConfigOutput, SchemaEpisode, SchemaTeleoperationConfig } from "../../api/openapi-spec"
-import { RobotModelsProvider } from "../../features/robots/robot-models-context"
-import { RobotViewer } from "../../features/robots/controller/robot-viewer"
-import { Observation, useTeleoperation } from "./record/use-teleoperation"
-import { RefObject, useEffect, useRef, useState } from "react"
+import { RefObject, useEffect, useRef, useState } from 'react';
+
+import { Button, ButtonGroup, Flex, Heading, ProgressCircle, View, Well } from '@geti/ui';
+
+import { SchemaCameraConfigOutput, SchemaEpisode, SchemaTeleoperationConfig } from '../../api/openapi-spec';
+import { RobotViewer } from '../../features/robots/controller/robot-viewer';
+import { RobotModelsProvider } from '../../features/robots/robot-models-context';
+import { Observation, useTeleoperation } from './record/use-teleoperation';
+import { useRecording } from './recording-provider';
 
 import classes from './episode-viewer.module.scss';
-import { useRecording } from "./recording-provider"
 
 function useInterval(callback: () => void, delay: number) {
     const savedCallback = useRef<() => void>(callback);
@@ -42,26 +44,25 @@ const CameraView = ({ camera, observation }: CameraViewProps) => {
 
     const aspectRatio = camera.width / camera.height;
 
-    /* eslint-disable jsx-a11y/media-has-caption */
     return (
         <Flex UNSAFE_style={{ aspectRatio }}>
             <Well flex UNSAFE_style={{ position: 'relative' }}>
                 <View height={'100%'} position={'relative'}>
-                    {
-                        img === undefined
-                            ? <Flex width="100%" height="100%" justifyContent={'center'} alignItems={'center'}>
-                                <ProgressCircle isIndeterminate />
-                              </Flex>
-                            : <img
-                                alt={`Camera frame of ${camera.name}`}
-                                src={`data:image/jpg;base64,${img}`}
-                                style={{
-                                    objectFit: 'contain',
-                                    height: '100%',
-                                    width: '100%',
-                                }}
-                            />
-                    }
+                    {img === undefined ? (
+                        <Flex width='100%' height='100%' justifyContent={'center'} alignItems={'center'}>
+                            <ProgressCircle isIndeterminate />
+                        </Flex>
+                    ) : (
+                        <img
+                            alt={`Camera frame of ${camera.name}`}
+                            src={`data:image/jpg;base64,${img}`}
+                            style={{
+                                objectFit: 'contain',
+                                height: '100%',
+                                width: '100%',
+                            }}
+                        />
+                    )}
                 </View>
                 <div className={classes.cameraTag}> {camera.name} </div>
             </Well>
@@ -70,32 +71,35 @@ const CameraView = ({ camera, observation }: CameraViewProps) => {
 };
 
 interface RecordingViewerProps {
-    recordingConfig: SchemaTeleoperationConfig
-    addEpisode: (episode: SchemaEpisode) => void
+    recordingConfig: SchemaTeleoperationConfig;
+    addEpisode: (episode: SchemaEpisode) => void;
 }
-
 
 const formatActionDictToArray = (actions: { [key: string]: number }): number[] => {
     const jointNames = ['shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex', 'wrist_roll', 'gripper'];
-    return jointNames.map((name) => actions[`${name}.pos`])
-}
+    return jointNames.map((name) => actions[`${name}.pos`]);
+};
 export const RecordingViewer = ({ recordingConfig, addEpisode }: RecordingViewerProps) => {
-    const { startEpisode, saveEpisode, cancelEpisode, observation, state, disconnect } = useTeleoperation(recordingConfig, addEpisode);
+    const { startEpisode, saveEpisode, cancelEpisode, observation, state, disconnect } = useTeleoperation(
+        recordingConfig,
+        addEpisode
+    );
 
     const { setIsRecording } = useRecording();
     const onStop = () => {
         disconnect();
         setIsRecording(false);
-    }
+    };
 
     if (!state.initialized) {
         <Flex width='100%' height={'100%'} alignItems={'center'} justifyContent={'center'}>
             <Heading>Initializing</Heading>
             <ProgressCircle isIndeterminate />
-        </Flex>
+        </Flex>;
     }
 
-    const actions = observation.current === undefined ? undefined : formatActionDictToArray(observation.current["actions"])
+    const actions =
+        observation.current === undefined ? undefined : formatActionDictToArray(observation.current['actions']);
 
     return (
         <RobotModelsProvider>
@@ -110,19 +114,24 @@ export const RecordingViewer = ({ recordingConfig, addEpisode }: RecordingViewer
                         <RobotViewer jointValues={actions} />
                     </Flex>
                 </Flex>
-                <Button onPress={onStop} alignSelf={'start'}>Stop recording</Button>
-                {state.is_recording
-                    ? (
-                        <ButtonGroup alignSelf='end'>
-                            <Button isDisabled={saveEpisode.isPending} variant={'negative'} onPress={cancelEpisode}>Discard</Button>
-                            <Button isPending={saveEpisode.isPending} onPress={() => saveEpisode.mutate()}>Accept</Button>
-                        </ButtonGroup>
-                    )
-                    :
-                    <Button onPress={startEpisode} alignSelf={'center'}>Start episode</Button>
-                }
+                <Button onPress={onStop} alignSelf={'start'}>
+                    Stop recording
+                </Button>
+                {state.is_recording ? (
+                    <ButtonGroup alignSelf='end'>
+                        <Button isDisabled={saveEpisode.isPending} variant={'negative'} onPress={cancelEpisode}>
+                            Discard
+                        </Button>
+                        <Button isPending={saveEpisode.isPending} onPress={() => saveEpisode.mutate()}>
+                            Accept
+                        </Button>
+                    </ButtonGroup>
+                ) : (
+                    <Button onPress={startEpisode} alignSelf={'center'}>
+                        Start episode
+                    </Button>
+                )}
             </Flex>
         </RobotModelsProvider>
-    )
-
-}
+    );
+};

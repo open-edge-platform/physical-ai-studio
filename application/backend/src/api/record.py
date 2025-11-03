@@ -29,10 +29,7 @@ async def teleoperate_websocket(  # noqa: C901
         await dataset_service.get_dataset_by_id(config.dataset.id)
     except ResourceNotFoundError:
         dataset = await dataset_service.create_dataset(config.dataset)
-        await websocket.send_json({
-            "event": "dataset",
-            "data": dataset.model_dump()
-        })
+        await websocket.send_json({"event": "dataset", "data": dataset.model_dump()})
     queue: mp.Queue = mp.Queue()
     process = TeleoperateWorker(
         stop_event=scheduler.mp_stop_event,

@@ -1,22 +1,36 @@
 import { useState } from 'react';
 
-import { Button, Divider, DialogTrigger, Content, Dialog, Flex, Heading, Item, Key, TabList, TabPanels, Tabs, Text, View, IllustratedMessage } from '@geti/ui';
+import {
+    Button,
+    Content,
+    DialogTrigger,
+    Flex,
+    Heading,
+    IllustratedMessage,
+    Item,
+    Key,
+    TabList,
+    TabPanels,
+    Tabs,
+    Text,
+    View,
+} from '@geti/ui';
 
-import { SchemaDatasetOutput, SchemaProjectConfigOutput, SchemaTeleoperationConfig } from '../../api/openapi-spec';
+import { SchemaDatasetOutput, SchemaProjectConfigOutput } from '../../api/openapi-spec';
 import { useProject } from '../../features/projects/use-project';
+import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
 import { DatasetViewer } from './dataset-viewer';
 import { HardwareSetupModal } from './record/hardware-setup';
 import { ProjectSetupModal } from './record/project-setup';
 import { RecordingProvider, useRecording } from './recording-provider';
-import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
 
 interface DatasetsProps {
-    datasets: SchemaDatasetOutput[]
-    projectConfig?: SchemaProjectConfigOutput
+    datasets: SchemaDatasetOutput[];
+    projectConfig?: SchemaProjectConfigOutput;
 }
 
 const Datasets = ({ datasets, projectConfig }: DatasetsProps) => {
-    const { isRecording, setRecordingConfig} = useRecording();
+    const { isRecording, setRecordingConfig } = useRecording();
     const [dataset, setDataset] = useState<SchemaDatasetOutput | undefined>(
         datasets.length > 0 ? datasets[0] : undefined
     );
@@ -46,7 +60,7 @@ const Datasets = ({ datasets, projectConfig }: DatasetsProps) => {
                     </View>
                 </IllustratedMessage>
             </Flex>
-        )
+        );
     }
 
     if (datasets.length === 0) {
@@ -60,12 +74,17 @@ const Datasets = ({ datasets, projectConfig }: DatasetsProps) => {
                     <View margin={'size-100'}>
                         <DialogTrigger>
                             <Button variant='accent'>Start recording a new dataset</Button>
-                            {(close) => HardwareSetupModal((config) => { setRecordingConfig(config); close() }, undefined)}
+                            {(close) =>
+                                HardwareSetupModal((config) => {
+                                    setRecordingConfig(config);
+                                    close();
+                                }, undefined)
+                            }
                         </DialogTrigger>
                     </View>
                 </IllustratedMessage>
             </Flex>
-        )
+        );
     }
 
     return (
@@ -73,22 +92,34 @@ const Datasets = ({ datasets, projectConfig }: DatasetsProps) => {
             <Tabs onSelectionChange={onSelectionChange} flex='1' margin={'size-200'}>
                 <Flex alignItems={'end'}>
                     <TabList flex={1}>
-                        {datasets.map((data) => <Item key={data.id}>{data.name}</Item>)}
+                        {datasets.map((data) => (
+                            <Item key={data.id}>{data.name}</Item>
+                        ))}
                     </TabList>
 
-                    { !isRecording &&
+                    {!isRecording && (
                         <View padding={'size-30'}>
                             <DialogTrigger>
                                 <Button variant='secondary'>New Dataset</Button>
-                                {(close) => HardwareSetupModal((config) => { setRecordingConfig(config); close() }, undefined)}
+                                {(close) =>
+                                    HardwareSetupModal((config) => {
+                                        setRecordingConfig(config);
+                                        close();
+                                    }, undefined)
+                                }
                             </DialogTrigger>
 
                             <DialogTrigger>
                                 <Button variant='accent'>Start recording</Button>
-                                {(close) => HardwareSetupModal((config) => { setRecordingConfig(config); close() }, dataset?.id)}
+                                {(close) =>
+                                    HardwareSetupModal((config) => {
+                                        setRecordingConfig(config);
+                                        close();
+                                    }, dataset?.id)
+                                }
                             </DialogTrigger>
                         </View>
-                    }
+                    )}
                 </Flex>
                 <TabPanels UNSAFE_style={{ border: 'none' }} marginTop={'size-200'}>
                     <Item key={dataset?.id}>
@@ -104,14 +135,17 @@ const Datasets = ({ datasets, projectConfig }: DatasetsProps) => {
             </Tabs>
         </Flex>
     );
-}
+};
 
 export const Index = () => {
     const project = useProject();
 
     return (
         <RecordingProvider>
-            <Datasets datasets={project.datasets} projectConfig={project.config === null ? undefined : project.config} />
+            <Datasets
+                datasets={project.datasets}
+                projectConfig={project.config === null ? undefined : project.config}
+            />
         </RecordingProvider>
     );
 };

@@ -35,7 +35,6 @@ export interface Observation {
 }
 
 export const useTeleoperation = (setup: SchemaTeleoperationConfig, onEpisode: (episode: SchemaEpisode) => void) => {
-
     const [state, setState] = useState<RobotState>(createRobotState());
     const { sendJsonMessage, lastJsonMessage, readyState, sendJsonMessageAndWait } = useWebSocketWithResponse(
         `${API_BASE_URL}/api/record/teleoperate/ws`,
@@ -73,7 +72,7 @@ export const useTeleoperation = (setup: SchemaTeleoperationConfig, onEpisode: (e
                 observation.current = message['data'] as Observation;
                 break;
             case 'episode':
-                onEpisode(message['data'] as SchemaEpisode)
+                onEpisode(message['data'] as SchemaEpisode);
                 break;
         }
     };

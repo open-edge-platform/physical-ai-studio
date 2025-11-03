@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
 
 from api.dependencies import get_dataset_service
-from schemas import Episode, LeRobotDatasetInfo, Dataset
+from schemas import Dataset, Episode, LeRobotDatasetInfo
 from services import DatasetService
 from utils.dataset import get_dataset_episodes, get_geti_action_datasets, get_local_repositories
 
@@ -77,9 +77,10 @@ async def dataset_video_endpoint(
     video_path = os.path.join(metadata.root, metadata.get_video_file_path(episode, full_camera_name))
     return FileResponse(video_path)
 
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_dataset(
-    dataset: Dataset,
-    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)]) -> Dataset:
+    dataset: Dataset, dataset_service: Annotated[DatasetService, Depends(get_dataset_service)]
+) -> Dataset:
     """Create a new dataset."""
     return await dataset_service.create_dataset(dataset)
