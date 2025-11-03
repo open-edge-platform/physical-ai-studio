@@ -4,10 +4,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, status
 from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
 
-from api.dependencies import get_project_id, get_project_service
+from api.dependencies import get_model_service, get_project_id, get_project_service
 from exceptions import ResourceAlreadyExistsError
-from schemas import LeRobotDatasetInfo, Project, ProjectConfig, TeleoperationConfig
-from services import ProjectService
+from schemas import LeRobotDatasetInfo, Project, ProjectConfig, TeleoperationConfig, Model
+from services import ProjectService, ModelService
 from utils.dataset import build_dataset_from_lerobot_dataset, build_project_config_from_dataset, check_repository_exists
 
 router = APIRouter(prefix="/api/projects", tags=["Projects"])
@@ -79,6 +79,14 @@ async def get_project(
 ) -> Project:
     """Get project by id."""
     return await project_service.get_project_by_id(project_id)
+
+@router.get("/{project_id}/models")
+async def get_project_models(
+    project_id: Annotated[UUID, Depends(get_project_id)],
+    model_service: Annotated[ModelService, Depends(get_model_service)],
+) -> list[Model]:
+    """Get all models of a project."""
+    return await model_service.get_project_models(project_id)
 
 
 @router.get("/example_teleoperation_config")
