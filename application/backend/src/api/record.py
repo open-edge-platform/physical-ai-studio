@@ -1,10 +1,11 @@
 import asyncio
 import multiprocessing as mp
+from queue import Empty
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
-from api.dependencies import get_dataset_service, get_scheduler
+from api.dependencies import get_dataset_service, get_scheduler_ws
 from core.scheduler import Scheduler
 from exceptions import ResourceNotFoundError
 from schemas import TeleoperationConfig
@@ -18,7 +19,7 @@ router = APIRouter(prefix="/api/record")
 async def teleoperate_websocket(  # noqa: C901
     websocket: WebSocket,
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
-    scheduler: Annotated[Scheduler, Depends(get_scheduler)],
+    scheduler: Annotated[Scheduler, Depends(get_scheduler_ws)],
 ) -> None:
     """Robot control websocket."""
     await websocket.accept()
@@ -60,7 +61,7 @@ async def teleoperate_websocket(  # noqa: C901
                 try:
                     message = queue.get_nowait()
                     await websocket.send_json(message)
-                except mp.queues.Empty:
+                except Empty:
                     await asyncio.sleep(0.05)
         except Exception as e:
             print(f"Outgoing task stopped: {e}")
@@ -68,7 +69,7 @@ async def teleoperate_websocket(  # noqa: C901
     incoming_task = asyncio.create_task(handle_incoming())
     outgoing_task = asyncio.create_task(handle_outgoing())
 
-    done, pending = await asyncio.wait(
+    _, pending = await asyncio.wait(
         {incoming_task, outgoing_task},
         return_when=asyncio.FIRST_COMPLETED,
     )

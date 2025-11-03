@@ -40,9 +40,7 @@ class ProjectService:
     async def delete_project(project_id: UUID) -> None:
         async with get_async_db_session_ctx() as session:
             repo = ProjectRepository(session)
-
             project = await repo.get_by_id(project_id)
             if project is None:
                 raise ResourceNotFoundError(ResourceType.PROJECT, str(project_id))
-
             await repo.delete_by_id(project_id)

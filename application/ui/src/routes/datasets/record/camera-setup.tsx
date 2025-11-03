@@ -1,9 +1,9 @@
 import { Flex, Heading, Item, Key, Picker } from '@geti/ui';
 
-import { SchemaCamera, SchemaCameraConfig } from '../../../api/openapi-spec';
+import { SchemaCamera, SchemaCameraConfigInput } from '../../../api/openapi-spec';
 
 interface CameraSetupProps {
-    camera: SchemaCameraConfig;
+    camera: SchemaCameraConfigInput;
     availableCameras: SchemaCamera[];
     updateCamera: (name: string, id: string, oldId: string, driver: string, oldDriver: string) => void;
 }

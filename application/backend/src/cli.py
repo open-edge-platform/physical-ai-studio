@@ -1,6 +1,5 @@
 """Command line interface for interacting with the Geti Action application."""
 
-import logging
 import sys
 
 import click
@@ -9,8 +8,6 @@ from db import MigrationManager, sync_engine
 from db.schema import CameraConfigDB, DatasetDB, ProjectConfigDB, ProjectDB
 from settings import get_settings
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 settings = get_settings()
 migration_manager = MigrationManager(settings)
 

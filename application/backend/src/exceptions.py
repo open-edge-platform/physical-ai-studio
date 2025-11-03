@@ -8,6 +8,9 @@ class ResourceType(StrEnum):
 
     PROJECT = "Project"
     DATASET = "Dataset"
+    MODEL = "Model"
+    JOB = "JOB"
+    JOB_FILE = "JOB_FILE"
 
 
 class GetiBaseException(Exception):
@@ -43,6 +46,17 @@ class ResourceNotFoundError(GetiBaseException):
             error_code=f"{resource_type}_not_found",
             http_status=http.HTTPStatus.NOT_FOUND,
         )
+
+
+class DuplicateJobException(GetiBaseException):
+    """
+    Exception raised when attempting to submit a duplicate job.
+
+    :param message: str containing a custom message about the duplicate job.
+    """
+
+    def __init__(self, message: str = "A job with the same payload is already running or queued") -> None:
+        super().__init__(message=message, error_code="duplicate_job", http_status=http.HTTPStatus.CONFLICT)
 
 
 class ResourceInUseError(GetiBaseException):

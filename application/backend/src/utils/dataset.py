@@ -9,7 +9,7 @@ from huggingface_hub.errors import RepositoryNotFoundError
 from lerobot.constants import HF_LEROBOT_HOME
 from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
 
-from schemas import CameraConfig, Dataset, Episode, EpisodeInfo, LeRobotDatasetInfo, ProjectConfig
+from schemas import CameraConfig, Dataset, Episode, LeRobotDatasetInfo, ProjectConfig
 from storage.storage import GETI_ACTION_DATASETS
 
 
@@ -26,7 +26,7 @@ def get_dataset_episodes(repo_id: str, root: str | None) -> list[Episode]:
         stat_result = stat(full_path)
         result.append(
             Episode(
-                actions=get_episode_actions(dataset, episodes[episode_index]),
+                actions=get_episode_actions(dataset, episodes[episode_index]).tolist(),
                 fps=metadata.fps,
                 modification_timestamp=stat_result.st_mtime_ns // 1e6,
                 **episodes[episode_index],
@@ -36,7 +36,7 @@ def get_dataset_episodes(repo_id: str, root: str | None) -> list[Episode]:
     return result
 
 
-def get_episode_actions(dataset: LeRobotDataset, episode: EpisodeInfo) -> torch.Tensor:
+def get_episode_actions(dataset: LeRobotDataset, episode: dict) -> torch.Tensor:
     """Get episode actions tensor from specific episode."""
     episode_index = episode["episode_index"]
     from_idx = dataset.episode_data_index["from"][episode_index].item()
@@ -48,9 +48,10 @@ def get_episode_actions(dataset: LeRobotDataset, episode: EpisodeInfo) -> torch.
 def list_directories(folder: Path) -> list[str]:
     """Get list of directories from folder."""
     res = []
-    for candidate in listdir(folder):
-        if os.path.isdir(folder / candidate):
-            res.append(candidate)
+    if os.path.isdir(folder):
+        for candidate in listdir(folder):
+            if os.path.isdir(folder / candidate):
+                res.append(candidate)
     return res
 
 

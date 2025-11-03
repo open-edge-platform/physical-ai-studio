@@ -1,5 +1,4 @@
 import base64
-import logging
 import shutil
 import time
 from multiprocessing import Event, Queue
@@ -12,16 +11,14 @@ from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
 from lerobot.robots.utils import make_robot_from_config
 from lerobot.teleoperators.utils import make_teleoperator_from_config
 from lerobot.utils.robot_utils import busy_wait
+from loguru import logger
 
 from schemas import TeleoperationConfig
 from utils.camera import build_camera_config
 from utils.dataset import check_repository_exists
-from utils.framesource_bridge import FrameSourceCameraBridge
 from utils.robot import make_lerobot_robot_config_from_robot, make_lerobot_teleoperator_config_from_robot
 
 from .base import BaseProcessWorker
-
-logger = logging.getLogger(__name__)
 
 
 class TeleoperateWorker(BaseProcessWorker):
@@ -74,7 +71,7 @@ class TeleoperateWorker(BaseProcessWorker):
         # After setting up the robot, instantiate the FrameSource using a bridge
         # This can be done directly once switched over to LeRobotDataset V3.
         # We do need to first instantiate using the lerobot dict because a follower requires cameras.
-        self.robot.cameras = {camera.name: FrameSourceCameraBridge(camera) for camera in self.config.cameras}
+        # self.robot.cameras = {camera.name: FrameSourceCameraBridge(camera) for camera in self.config.cameras}
 
         if check_repository_exists(self.config.dataset.path):
             self.dataset = LeRobotDataset(
@@ -133,7 +130,7 @@ class TeleoperateWorker(BaseProcessWorker):
             }
         )
 
-    def run_loop(self) -> None:
+    async def run_loop(self) -> None:
         """Teleoperation loop."""
         logger.info("run loop")
         self.events["reset"].clear()

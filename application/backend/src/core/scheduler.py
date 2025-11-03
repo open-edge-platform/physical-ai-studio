@@ -1,27 +1,39 @@
-import logging
 import multiprocessing as mp
 import os
 from typing import TYPE_CHECKING
 
 import psutil
+from loguru import logger
+
+from workers import TrainingWorker
 
 if TYPE_CHECKING:
     import threading
 
-logger = logging.getLogger(__name__)
-
 
 class Scheduler:
-    """Manages application processes and threads"""
+    """Manages application processes and threads."""
 
     def __init__(self) -> None:
         logger.info("Initializing Scheduler...")
         # Event to sync all processes on application shutdown
         self.mp_stop_event = mp.Event()
+        self.training_interrupt_event = mp.Event()
+        self.event_queue: mp.Queue = mp.Queue()
 
         self.processes: list[mp.Process] = []
         self.threads: list[threading.Thread] = []
         logger.info("Scheduler initialized")
+
+    def start_workers(self) -> None:
+        training_proc = TrainingWorker(
+            stop_event=self.mp_stop_event,
+            interrupt_event=self.training_interrupt_event,
+            event_queue=self.event_queue,
+        )
+        training_proc.daemon = False
+        training_proc.start()
+        self.processes.extend([training_proc])
 
     def shutdown(self) -> None:
         """Shutdown all processes gracefully"""

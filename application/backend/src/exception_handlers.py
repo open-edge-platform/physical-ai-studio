@@ -1,5 +1,4 @@
 import http
-import logging
 from collections import defaultdict
 from collections.abc import Sequence
 
@@ -8,10 +7,9 @@ from fastapi import FastAPI, Request, Response, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from loguru import logger
 
 from exceptions import GetiBaseException
-
-logger = logging.getLogger(__name__)
 
 
 def handle_base_exception(request: Request, exception: Exception) -> Response:
