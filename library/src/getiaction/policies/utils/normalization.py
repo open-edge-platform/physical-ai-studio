@@ -129,7 +129,7 @@ class FeatureNormalizeTransform(nn.Module):
         if batch[key] is None:
             return
 
-        if norm_mode is NormalizationType.MEAN_STD:
+        if norm_mode == NormalizationType.MEAN_STD:
             mean = buffer["mean"]
             std = buffer["std"]
             check_inf(mean, "mean")
@@ -139,7 +139,7 @@ class FeatureNormalizeTransform(nn.Module):
             else:
                 batch[key] = (batch[key] - mean) / (std + 1e-8)
 
-        elif norm_mode is NormalizationType.MIN_MAX:
+        elif norm_mode == NormalizationType.MIN_MAX:
             min_ = buffer["min"]
             max_ = buffer["max"]
             check_inf(min_, "min")
