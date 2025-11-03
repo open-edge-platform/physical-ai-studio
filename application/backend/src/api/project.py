@@ -6,8 +6,8 @@ from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
 
 from api.dependencies import get_model_service, get_project_id, get_project_service
 from exceptions import ResourceAlreadyExistsError
-from schemas import LeRobotDatasetInfo, Project, ProjectConfig, TeleoperationConfig, Model
-from services import ProjectService, ModelService
+from schemas import LeRobotDatasetInfo, Model, Project, ProjectConfig, TeleoperationConfig
+from services import ModelService, ProjectService
 from utils.dataset import build_dataset_from_lerobot_dataset, build_project_config_from_dataset, check_repository_exists
 
 router = APIRouter(prefix="/api/projects", tags=["Projects"])
@@ -79,6 +79,7 @@ async def get_project(
 ) -> Project:
     """Get project by id."""
     return await project_service.get_project_by_id(project_id)
+
 
 @router.get("/{project_id}/models")
 async def get_project_models(

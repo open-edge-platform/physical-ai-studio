@@ -1,6 +1,6 @@
+from pathlib import Path
 from uuid import UUID
 
-from pathlib import Path
 from db import get_async_db_session_ctx
 from repositories import ModelRepository
 from schemas import Model

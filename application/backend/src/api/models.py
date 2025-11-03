@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
@@ -9,6 +8,7 @@ from exceptions import ResourceNotFoundError, ResourceType
 from services import ModelService
 
 router = APIRouter(prefix="/api/models", tags=["Models"])
+
 
 @router.delete("")
 async def remove_model(
