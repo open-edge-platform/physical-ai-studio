@@ -40,34 +40,36 @@ const storeConfigToCache = (config: SchemaTeleoperationConfig) => {
 
 const initialTeleoperationConfig = (initialTask: string, project: SchemaProjectOutput, dataset_id: string | undefined): SchemaTeleoperationConfig => {
     const cachedConfig = localStorage.getItem(TELEOPERATION_CONFIG_CACHE_KEY)
-    if (cachedConfig === null) {
-        return {
-            task: initialTask,
-            fps: project.config?.fps ?? 30,
-            dataset: project.datasets.find((d) => d.id === dataset_id) ?? {
-                project_id: project.id!,
-                name: '',
-                path: '',
-                id: uuidv4(),
-            },
-            cameras: project.config?.cameras ?? [],
-            follower: {
-                id: '',
-                robot_type: project.config?.robot_type ?? '',
-                serial_id: '',
-                port: '',
-                type: 'follower',
-            },
-            leader: {
-                id: '',
-                robot_type: project.config?.robot_type ?? '',
-                serial_id: '',
-                port: '',
-                type: 'leader',
-            },
-        }
+    const config: SchemaTeleoperationConfig = {
+        task: initialTask,
+        fps: project.config?.fps ?? 30,
+        dataset: project.datasets.find((d) => d.id === dataset_id) ?? {
+            project_id: project.id!,
+            name: '',
+            path: '',
+            id: uuidv4(),
+        },
+        cameras: project.config?.cameras ?? [],
+        follower: {
+            id: '',
+            robot_type: project.config?.robot_type ?? '',
+            serial_id: '',
+            port: '',
+            type: 'follower',
+        },
+        leader: {
+            id: '',
+            robot_type: project.config?.robot_type ?? '',
+            serial_id: '',
+            port: '',
+            type: 'leader',
+        },
+    }
+    if (cachedConfig !== null) {
+        const { cameras, follower, leader } = JSON.parse(cachedConfig) as SchemaTeleoperationConfig;
+        return { ...config, follower, leader, cameras }
     } else {
-        return JSON.parse(cachedConfig) as SchemaTeleoperationConfig;
+        return config;
     }
 }
 
