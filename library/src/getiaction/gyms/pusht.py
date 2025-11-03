@@ -79,6 +79,9 @@ class PushTGym(Gym):
             if pixels.dtype not in {torch.float32, torch.float16}:
                 pixels = pixels.float()
 
+                if pixels.dtype == torch.uint8:
+                    pixels /= 255.0  # Normalize uint8 to [0, 1]
+
             # Convert HWC → CHW if needed
             if pixels.ndim == 3 and pixels.shape[-1] in {1, 3, 4}:  # noqa: PLR2004
                 pixels = pixels.permute(2, 0, 1)  # (H, W, C) → (C, H, W)
