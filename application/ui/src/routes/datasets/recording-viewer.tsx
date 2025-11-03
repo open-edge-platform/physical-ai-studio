@@ -11,12 +11,10 @@ import { useRecording } from "./recording-provider"
 function useInterval(callback: () => void, delay: number) {
     const savedCallback = useRef<() => void>(callback);
 
-    // Remember the latest callback.
     useEffect(() => {
         savedCallback.current = callback;
     }, [callback]);
 
-    // Set up the interval.
     useEffect(() => {
         function tick() {
             savedCallback.current();
@@ -49,15 +47,21 @@ const CameraView = ({ camera, observation }: CameraViewProps) => {
         <Flex UNSAFE_style={{ aspectRatio }}>
             <Well flex UNSAFE_style={{ position: 'relative' }}>
                 <View height={'100%'} position={'relative'}>
-                    <img
-                        alt={`Camera frame of ${camera.name}`}
-                        src={`data:image/jpg;base64,${img}`}
-                        style={{
-                            objectFit: 'contain',
-                            height: '100%',
-                            width: '100%',
-                        }}
-                    />
+                    {
+                        img === undefined
+                            ? <Flex width="100%" height="100%" justifyContent={'center'} alignItems={'center'}>
+                                <ProgressCircle isIndeterminate />
+                              </Flex>
+                            : <img
+                                alt={`Camera frame of ${camera.name}`}
+                                src={`data:image/jpg;base64,${img}`}
+                                style={{
+                                    objectFit: 'contain',
+                                    height: '100%',
+                                    width: '100%',
+                                }}
+                            />
+                    }
                 </View>
                 <div className={classes.cameraTag}> {camera.name} </div>
             </Well>
@@ -76,12 +80,12 @@ const formatActionDictToArray = (actions: { [key: string]: number }): number[] =
     return jointNames.map((name) => actions[`${name}.pos`])
 }
 export const RecordingViewer = ({ recordingConfig, addEpisode }: RecordingViewerProps) => {
-    const { startRecording, saveEpisode, cancelEpisode, observation, state, disconnect } = useTeleoperation(recordingConfig, addEpisode);
+    const { startEpisode, saveEpisode, cancelEpisode, observation, state, disconnect } = useTeleoperation(recordingConfig, addEpisode);
 
     const { setIsRecording } = useRecording();
     const onStop = () => {
-      disconnect();
-      setIsRecording(false);
+        disconnect();
+        setIsRecording(false);
     }
 
     if (!state.initialized) {
@@ -115,7 +119,7 @@ export const RecordingViewer = ({ recordingConfig, addEpisode }: RecordingViewer
                         </ButtonGroup>
                     )
                     :
-                    <Button onPress={startRecording} alignSelf={'center'}>Start episode</Button>
+                    <Button onPress={startEpisode} alignSelf={'center'}>Start episode</Button>
                 }
             </Flex>
         </RobotModelsProvider>

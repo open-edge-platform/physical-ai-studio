@@ -17,7 +17,7 @@ export const RecordingProvider = ({ children }: { children: ReactNode }) => {
 
     const setRecordingConfigProxy = (config: SchemaTeleoperationConfig | undefined) => {
       setRecordingConfig(config)
-      setIsRecording(true);
+      setIsRecording(config !== undefined);
     }
 
     return (
@@ -37,19 +37,3 @@ export const RecordingProvider = ({ children }: { children: ReactNode }) => {
 export const useRecording = () => {
     return useContext(RecordingContext)!;
 };
-
-//export const useLoadModelMutation = () => {
-//    const { setModels } = useRobotModels();
-//
-//    return useMutation({
-//        mutationFn: async (path: string) => {
-//            const loader = new URDFLoader();
-//            return new Promise<URDFRobot>((resolve, reject) => {
-//                loader.load(path, resolve, console.info, reject);
-//            });
-//        },
-//        onSuccess: async (model) => {
-//            setModels((models) => [...models, model]);
-//        },
-//    });
-//};

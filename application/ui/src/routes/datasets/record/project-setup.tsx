@@ -2,6 +2,8 @@ import { useState } from 'react';
 
 import {
     ActionButton,
+    Dialog,
+    Divider,
     Button,
     ButtonGroup,
     Content,
@@ -79,9 +81,11 @@ const emptyCamera = (): SchemaCameraConfigInput => {
     };
 };
 
-export const ProjectSetup = () => {
-    const navigate = useNavigate();
+interface ProjectSetupProps {
+    onDone: (config?: SchemaProjectConfigInput ) => void;
+}
 
+const ProjectSetup = ({onDone}: ProjectSetupProps) => {
     const { project_id } = useProjectId();
     const [activeTab, setActiveTab] = useState<string>('robot');
     const [config, setConfig] = useState<SchemaProjectConfigInput>({
@@ -115,20 +119,21 @@ export const ProjectSetup = () => {
         }));
     };
 
-    const onSave = () => {
-        saveMutation.mutate({
+    const onSave = async () => {
+        await saveMutation.mutateAsync({
             params: {
                 path: { project_id },
             },
             body: config,
         });
+        onDone();
     };
 
     const onBack = () => {
         if (activeTab === 'cameras') {
             setActiveTab('robot');
         } else {
-            navigate(paths.project.datasets.index({ project_id }));
+            onDone();
         }
     };
 
@@ -208,3 +213,16 @@ export const ProjectSetup = () => {
         </Flex>
     );
 };
+
+export const ProjectSetupModal = (close: (config?: SchemaProjectConfigInput ) => void) => {
+    return (
+        <Dialog>
+            <Heading>Teleoperate Setup</Heading>
+            <Divider />
+            <Content>
+                <ProjectSetup onDone={close} />
+            </Content>
+        </Dialog>
+    )
+
+}

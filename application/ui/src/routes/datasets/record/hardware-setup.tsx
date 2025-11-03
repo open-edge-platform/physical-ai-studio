@@ -3,7 +3,9 @@ import { useState } from 'react';
 import {
     Button,
     ButtonGroup,
+    Text,
     ComboBox,
+    Dialog,
     Flex,
     Form,
     Heading,
@@ -11,19 +13,19 @@ import {
     Key,
     Section,
     TabList,
+    Content,
+    Divider,
     TabPanels,
     Tabs,
     TextField,
     View,
 } from '@geti/ui';
-import { useNavigate, useParams } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 
 import { $api } from '../../../api/client';
-import { SchemaProjectOutput, SchemaRobotConfig, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
+import { SchemaProjectConfigOutput, SchemaProjectOutput, SchemaRobotConfig, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
 import { useSettings } from '../../../components/settings/use-settings';
 import { useProject } from '../../../features/projects/use-project';
-import { paths } from '../../../router';
 import { CameraSetup } from './camera-setup';
 import { RobotSetup } from './robot-setup';
 
@@ -32,10 +34,43 @@ interface HardwareSetupProps {
     dataset_id: string | undefined;
 }
 
+const makeNameSafeForPath = (name: string): string => {
+    return name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+}
+
 const TELEOPERATION_CONFIG_CACHE_KEY = "teleoperation_config"
 
 const storeConfigToCache = (config: SchemaTeleoperationConfig) => {
     localStorage.setItem(TELEOPERATION_CONFIG_CACHE_KEY, JSON.stringify(config))
+}
+
+const teleoperateCacheMatchesProject = (cache: SchemaTeleoperationConfig, projectConfig?: SchemaProjectConfigOutput | null): boolean => {
+    if (projectConfig === undefined || projectConfig === null) {
+        return false;
+    }
+
+    const problemsInCacheCamera = cache.cameras.find((cachedCamera) => {
+        const projectCamera = projectConfig.cameras.find((m) => m.name === cachedCamera.name)
+        if (projectCamera === undefined) {
+            return true;
+        }
+        const sameProps =
+               projectCamera.name === cachedCamera.name &&
+               projectCamera.width === cachedCamera.width &&
+               projectCamera.height === cachedCamera.height &&
+               projectCamera.fps === cachedCamera.fps &&
+               projectCamera.use_depth === cachedCamera.use_depth &&
+               projectCamera.driver === cachedCamera.driver
+
+
+        return !sameProps;
+    }) !== undefined
+
+    const problemsInCacheRobot =
+          cache.follower.robot_type !== projectConfig.robot_type ||
+          cache.leader.robot_type !== projectConfig.robot_type
+
+    return !problemsInCacheCamera && !problemsInCacheRobot
 }
 
 const initialTeleoperationConfig = (initialTask: string, project: SchemaProjectOutput, dataset_id: string | undefined): SchemaTeleoperationConfig => {
@@ -66,11 +101,13 @@ const initialTeleoperationConfig = (initialTask: string, project: SchemaProjectO
         },
     }
     if (cachedConfig !== null) {
-        const { cameras, follower, leader } = JSON.parse(cachedConfig) as SchemaTeleoperationConfig;
-        return { ...config, follower, leader, cameras }
-    } else {
-        return config;
+        const cache = JSON.parse(cachedConfig) as SchemaTeleoperationConfig;
+        if (teleoperateCacheMatchesProject(cache, project.config)) {
+            const  {follower, leader, cameras} = cache;
+            return { ...config, follower, leader, cameras }
+        }
     }
+    return config;
 }
 
 export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
@@ -82,6 +119,7 @@ export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
         },
     });
 
+    const createDatasetMutation = $api.useMutation("post", "/api/dataset")
     const { geti_action_dataset_path } = useSettings();
 
     const isNewDataset = !dataset_id;
@@ -95,8 +133,6 @@ export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
         'get',
         '/api/hardware/calibrations'
     );
-
-    const navigate = useNavigate();
 
     const updateCamera = (name: string, id: string, oldId: string, driver: string, oldDriver: string) => {
         setConfig({
@@ -126,7 +162,7 @@ export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
             dataset: {
                 ...c.dataset,
                 name,
-                path: `${geti_action_dataset_path}/${name}`,
+                path: `${geti_action_dataset_path}/${makeNameSafeForPath(name)}`,
             },
         }));
     };
@@ -135,10 +171,13 @@ export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
         setActiveTab(key.toString());
     };
 
-    const onNext = () => {
+    const onNext = async () => {
         if (activeTab === 'cameras') {
             setActiveTab('robots');
         } else {
+            if (isNewDataset) {
+                await createDatasetMutation.mutateAsync({ body: config.dataset });
+            }
             storeConfigToCache(config);
             onDone(config);
         }
@@ -170,7 +209,7 @@ export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
                 <TextField
                     validationState={config.dataset.name == '' ? 'invalid' : 'valid'}
                     isRequired
-                    label='Name'
+                    label='Dataset Name'
                     width={'100%'}
                     value={config.dataset.name}
                     isDisabled={!isNewDataset}
@@ -251,3 +290,15 @@ export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
         </View>
     );
 };
+
+export const HardwareSetupModal = (close: (config: SchemaTeleoperationConfig | undefined) => void, dataset_id: string | undefined) => {
+    return (
+        <Dialog>
+            <Heading>Teleoperate Setup</Heading>
+            <Divider />
+            <Content>
+                <HardwareSetup dataset_id={dataset_id} onDone={close} />
+            </Content>
+        </Dialog>
+    )
+}
