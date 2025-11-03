@@ -1,4 +1,4 @@
-name: pre-commit
+name: Geti Action training
 permissions: {} # No permissions by default on workflow level
 
 on:
