@@ -327,10 +327,10 @@ class TestToOpenVINO:
             wrapper.to_openvino(output_path)
 
 
-    class TestToTorchIR:
-        """Tests for to_torch_ir method."""
+    class TestToTorchExportIR:
+        """Tests for to_torch_export_ir method."""
 
-        def test_to_torch_ir_with_sample_input_from_model(self, tmp_path):
+        def test_to_torch_export_ir_with_sample_input_from_model(self, tmp_path):
             """Test TorchIR export using model's sample_input property."""
             model = ModelWithSampleInput(input_dim=10, output_dim=5)
             wrapper = ExportWrapper(model)
@@ -344,7 +344,7 @@ class TestToOpenVINO:
             loaded_program = torch.export.load(output_path) # nosec
             assert loaded_program is not None
 
-        def test_to_torch_ir_with_provided_input_sample(self, tmp_path):
+        def test_to_torch_export_ir_with_provided_input_sample(self, tmp_path):
             """Test TorchIR export with explicitly provided input sample."""
             model = ModelWithDictInput()
             wrapper = ExportWrapper(model)
@@ -360,7 +360,7 @@ class TestToOpenVINO:
             loaded_program = torch.export.load(output_path) # nosec
             assert loaded_program is not None
 
-        def test_to_torch_ir_kwargs_override_model_args(self, tmp_path):
+        def test_to_torch_export_ir_kwargs_override_model_args(self, tmp_path):
             """Test that provided kwargs override model's extra_export_args."""
             model = ModelWithSampleInput(input_dim=10, output_dim=5)
 
@@ -383,7 +383,7 @@ class TestToOpenVINO:
             loaded_program = torch.export.load(output_path) # nosec
             assert loaded_program is not None
 
-        def test_to_torch_ir_with_multiple_inputs(self, tmp_path):
+        def test_to_torch_export_ir_with_multiple_inputs(self, tmp_path):
             """Test TorchIR export with model having multiple inputs."""
             model = ModelWithMultipleInputs()
             wrapper = ExportWrapper(model)
@@ -397,7 +397,7 @@ class TestToOpenVINO:
             loaded_program = torch.export.load(output_path) # nosec
             assert loaded_program is not None
 
-        def test_to_torch_ir_with_dict_input(self, tmp_path):
+        def test_to_torch_export_ir_with_dict_input(self, tmp_path):
             """Test TorchIR export with model accepting dict as single parameter."""
             model = ModelWithDictInput()
             wrapper = ExportWrapper(model)
@@ -411,7 +411,7 @@ class TestToOpenVINO:
             loaded_program = torch.export.load(output_path) # nosec
             assert loaded_program is not None
 
-        def test_to_torch_ir_without_sample_input_raises_error(self, tmp_path):
+        def test_to_torch_export_ir_without_sample_input_raises_error(self, tmp_path):
             """Test that RuntimeError is raised when no input sample is provided."""
             # Model without sample_input property
             model = SimpleModel(SimpleConfig())
@@ -422,7 +422,7 @@ class TestToOpenVINO:
             with pytest.raises(RuntimeError, match="input sample must be provided"):
                 wrapper.to_torch_export_ir(output_path)
 
-        def test_to_torch_ir_model_in_eval_mode(self, tmp_path):
+        def test_to_torch_export_ir_model_in_eval_mode(self, tmp_path):
             """Test that model is set to eval mode during TorchIR export."""
             model = ModelWithSampleInput(input_dim=10, output_dim=5)
             wrapper = ExportWrapper(model)
