@@ -140,7 +140,7 @@ const ModelInTraining = ({ trainJob }: { trainJob: SchemaTrainJob }) => {
 
 export const Index = () => {
     const { project_id } = useProjectId();
-    const { data: models } = $api.useSuspenseQuery('get', '/api/models/{project_id}', {
+    const { data: models } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/models', {
         params: { path: { project_id } },
     });
 

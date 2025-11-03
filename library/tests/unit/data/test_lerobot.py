@@ -36,6 +36,37 @@ class FakeLeRobotDataset:
             "random": ["thing"]
         }
 
+    @property
+    def features(self) -> dict[str, dict]:
+        """Mock features property."""
+        return {
+            "observation.state": {
+                "shape": (8,), "dtype": "float32",
+            },
+            "observation.action": {
+                "shape": (7,), "dtype": "int64"
+            },
+        }
+
+    @property
+    def meta(self):
+        """Mock meta property."""
+        class MockMeta:
+            @property
+            def features(self):
+                return {
+                            "observation.state": {"shape": (8,), "dtype": "float32"},
+                            "observation.action": {"shape": (7,), "dtype": "int64"},
+                        }
+            @property
+            def stats(self):
+                return {
+                    "observation.state": {},
+                    "observation.action": {},
+                }
+
+        return MockMeta()
+
 
 class FakeLeRobotDataset2:
     """A mock that mimics LeRobotDataset without needing ffmpeg or network access."""
@@ -153,3 +184,15 @@ class TestLeRobotActionDataset:
             assert torch.equal(observation.action["continuous"], raw_item["action.continuous"])
         else:
             raise AssertionError("No recognizable action field in mock dataset")
+
+
+class TestLeRobotActionDatasetFeatures:
+    def test_observation_features_meta_retrieval(self):
+        """Tests that features metadata can be retrieved from the adapter."""
+        action_dataset = _LeRobotDatasetAdapter.from_lerobot(FakeLeRobotDataset())
+        obs_features = action_dataset.observation_features
+
+        assert isinstance(obs_features, dict), "Observation features should be a dictionary"
+
+        for k in obs_features:
+            assert not k.startswith("observation."), "Keys should not have 'observation.' prefix"
