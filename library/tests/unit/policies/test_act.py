@@ -70,3 +70,15 @@ class TestACTolicy:
 
         assert "loss" in loss
         assert loss["loss"] >= 0
+
+    def test_predict_action_chunk_with_explain(self, policy, batch):
+        """Test predict_action_chunk_with_explain method."""
+        policy.model.eval()
+        actions, explain = policy.model.predict_action_chunk_with_explain(batch.to_dict())
+
+        assert isinstance(actions, torch.Tensor)
+        assert actions.shape == batch.action.shape
+        assert isinstance(explain, torch.Tensor)
+        assert explain.shape[0] == 1
+        assert explain.shape[1] > 1
+        assert explain.shape[2] > 1
