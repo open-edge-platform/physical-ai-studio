@@ -125,10 +125,10 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_table("projects")
-    op.drop_table("project_configs")
-    op.drop_table("datasets")
-    op.drop_table("camera_configs")
+    op.drop_table("project_robots")
     op.drop_table("models")
     op.drop_table("jobs")
-    op.drop_table("project_robots")
+    op.drop_table("camera_configs")
+    op.drop_table("datasets")
+    op.drop_table("project_configs")
+    op.drop_table("projects")
