@@ -103,7 +103,6 @@ class ACTConfig:
     # Inference.
     # Note: the value used in ACT when temporal ensembling is enabled is 0.01.
     temporal_ensemble_coeff: float | None = None
-    enable_explainability: bool = False
 
     # Training and loss computation.
     dropout: float = 0.1
