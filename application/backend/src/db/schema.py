@@ -18,7 +18,10 @@ class ProjectDB(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     config: Mapped["ProjectConfigDB"] = relationship(
-        "ProjectConfigDB", back_populates="project", cascade="all, delete-orphan", lazy="selectin"
+        "ProjectConfigDB",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        lazy="selectin",
     )
     datasets: Mapped[list["DatasetDB"]] = relationship(
         "DatasetDB",
@@ -32,6 +35,21 @@ class ProjectDB(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+
+
+class ProjectRobotDB(Base):
+    __tablename__ = "project_robots"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(String(255))
+    serial_id: Mapped[str] = mapped_column(String(255))
+    type: Mapped[str] = mapped_column(String(50))
+    cameras: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+
+    project: Mapped["ProjectDB"] = relationship(back_populates="robots")
 
 
 class ProjectConfigDB(Base):
