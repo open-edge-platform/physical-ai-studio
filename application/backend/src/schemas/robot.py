@@ -1,10 +1,10 @@
+from abc import ABC
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
-
-from schemas.base import BaseIDModel
 
 
 class RobotPortInfo(BaseModel):
@@ -30,17 +30,23 @@ class RobotCamera(BaseModel):
     name: str = Field(..., description="Camera identifier name")
     port: str = Field(..., description="Camera connection port")
 
-    model_config = ConfigDict(json_schema_extra={"example": {"name": "front_camera", "port": "/dev/video0"}})
+    model_config = ConfigDict(
+        json_schema_extra={"example": {"name": "front_camera", "port": "/dev/video0"}}
+    )
 
 
-class Robot(BaseIDModel):
+class Robot(ABC, BaseModel):
+    id: Annotated[UUID, Field(description="Unique identifier")]
+
     created_at: datetime | None = Field(None)
     updated_at: datetime | None = Field(None)
 
     name: str = Field(..., description="Human-readable robot name")
     serial_id: str = Field(..., description="Unique serial identifier for the robot")
     type: RobotType = Field(..., description="Type of robot configuration")
-    cameras: list[RobotCamera] = Field(default_factory=list, description="List of cameras attached to this robot")
+    cameras: list[RobotCamera] = Field(
+        default_factory=list, description="List of cameras attached to this robot"
+    )
 
     model_config = ConfigDict(
         json_schema_extra={
