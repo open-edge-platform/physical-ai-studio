@@ -63,8 +63,8 @@ const CameraView = () => {
 };
 
 export const CameraThumbnail = ({ name, fingerprint }: { name: string; fingerprint: string | null }) => {
-    const availableCamerasQuery = $api.useSuspenseQuery('get', '/api/hardware/cameras');
-    const availableCamera = availableCamerasQuery.data.find(
+    const availableCamerasQuery = $api.useQuery('get', '/api/hardware/cameras');
+    const availableCamera = availableCamerasQuery.data?.find(
         ({ port_or_device_id }) => port_or_device_id === fingerprint
     );
 

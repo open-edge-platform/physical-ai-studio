@@ -1,3 +1,5 @@
+import { Suspense } from 'react';
+
 import {
     ActionButton,
     Button,
@@ -7,6 +9,7 @@ import {
     Heading,
     Icon,
     Item,
+    Loading,
     Picker,
     Text,
     TextField,
@@ -177,7 +180,7 @@ const CameraFormFields = () => {
     };
 
     return (
-        <>
+        <Suspense fallback={<Loading mode='inline' />}>
             {robotForm.cameras.map((camera, idx) => {
                 return <Camera key={idx} idx={idx} onRemove={() => removeCamera(idx)} camera={camera} />;
             })}
@@ -185,7 +188,7 @@ const CameraFormFields = () => {
             <Button variant='primary' onPress={addCamera}>
                 Add camera
             </Button>
-        </>
+        </Suspense>
     );
 };
 
