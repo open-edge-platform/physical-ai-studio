@@ -28,11 +28,9 @@ class RobotType(StrEnum):
 
 class RobotCamera(BaseModel):
     name: str = Field(..., description="Camera identifier name")
-    port: str = Field(..., description="Camera connection port")
+    fingerprint: str = Field(..., description="Camera fingerprint used to find the camera")
 
-    model_config = ConfigDict(
-        json_schema_extra={"example": {"name": "front_camera", "port": "/dev/video0"}}
-    )
+    model_config = ConfigDict(json_schema_extra={"example": {"name": "front_camera", "fingerprint": "/dev/video0"}})
 
 
 class Robot(ABC, BaseModel):
@@ -44,9 +42,7 @@ class Robot(ABC, BaseModel):
     name: str = Field(..., description="Human-readable robot name")
     serial_id: str = Field(..., description="Unique serial identifier for the robot")
     type: RobotType = Field(..., description="Type of robot configuration")
-    cameras: list[RobotCamera] = Field(
-        default_factory=list, description="List of cameras attached to this robot"
-    )
+    cameras: list[RobotCamera] = Field(default_factory=list, description="List of cameras attached to this robot")
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -56,8 +52,8 @@ class Robot(ABC, BaseModel):
                 "serial_id": "SO101-2024-001",
                 "robot_type": "SO101_Leader",
                 "cameras": [
-                    {"name": "front_camera", "port": "/dev/video0"},
-                    {"name": "side_camera", "port": "/dev/video1"},
+                    {"name": "front_camera", "fingerprint": "/dev/video0"},
+                    {"name": "side_camera", "fingerprint": "/dev/video1"},
                 ],
                 "created_at": "2024-01-15T10:30:00Z",
                 "updated_at": "2024-01-15T10:30:00Z",
