@@ -108,24 +108,9 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
 
-    op.create_table(
-        "project_robots",
-        sa.Column("id", sa.Text(), nullable=False),
-        sa.Column("project_id", sa.Text(), nullable=False),
-        sa.Column("name", sa.String(length=255), nullable=False),
-        sa.Column("serial_id", sa.String(length=255), nullable=False),
-        sa.Column("type", sa.String(length=50), nullable=False),
-        sa.Column("cameras", sa.JSON(), nullable=True),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False),
-        sa.PrimaryKeyConstraint("id"),
-        sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
-    )
-
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_table("project_robots")
     op.drop_table("models")
     op.drop_table("jobs")
     op.drop_table("camera_configs")
