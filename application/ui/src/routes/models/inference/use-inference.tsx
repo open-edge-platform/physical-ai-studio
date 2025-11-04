@@ -88,5 +88,6 @@ export const useInference = (setup: SchemaInferenceConfig) => {
         startTask,
         stop,
         disconnect,
+        observation,
     }
 }

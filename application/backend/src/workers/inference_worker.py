@@ -88,6 +88,8 @@ class InferenceWorker(BaseProcessWorker):
         self.events["disconnect"].clear()
 
         self.is_running = False
+
+        start_episode_t = time.perf_counter()
         while not self.should_stop() and not self.events["disconnect"].is_set():
             start_loop_t = time.perf_counter()
             if self.events["start"].is_set():
@@ -95,6 +97,7 @@ class InferenceWorker(BaseProcessWorker):
                 self.events["start"].clear()
                 busy_wait(0.3)  # TODO check if neccesary
                 self.is_running = True
+                start_episode_t = time.perf_counter()
                 self._report_state()
 
             if self.events["stop"].is_set():
@@ -105,10 +108,14 @@ class InferenceWorker(BaseProcessWorker):
                 self._report_state()
 
             if self.is_running:
+
+                timestamp = time.perf_counter() - start_episode_t
                 lerobot_obs = self.robot.get_observation()
                 observation = self._build_geti_action_observation(lerobot_obs)
+                print(observation)
                 actions = self.policy.select_action(observation)
                 formatted_actions = dict(zip(self.action_keys, actions[0].tolist()))
+                self._report_action(formatted_actions, lerobot_obs, timestamp)
                 self.robot.send_action(formatted_actions)
 
             dt_s = time.perf_counter() - start_loop_t
@@ -126,13 +133,13 @@ class InferenceWorker(BaseProcessWorker):
         logger.info(f"inference state: {state}")
         self.queue.put(state)
 
-    def _report_observation(self, observation: dict, timestamp: float):
+    def _report_action(self, actions: dict, observation: dict, timestamp: float):
         """Report observation to queue."""
         self.queue.put(
             {
                 "event": "observations",
                 "data": {
-                    "actions": {key: observation.get(key, 0) for key in self.action_keys},
+                    "actions": actions,
                     "cameras": {
                         key: self._base_64_encode_observation(observation.get(key))
                         for key in self.camera_keys
