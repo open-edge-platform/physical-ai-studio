@@ -37,7 +37,7 @@ def get_project_service() -> ProjectService:
 
 @lru_cache
 def get_robot_service() -> RobotService:
-    """Provide a ProjectService instance for managing projects."""
+    """Provide a RobotService instance for managing robots in a project."""
     return RobotService()
 
 
@@ -67,7 +67,7 @@ def get_project_id(project_id: str) -> UUID:
 
 
 def get_robot_id(robot_id: str) -> UUID:
-    """Initialize and validates a project ID."""
+    """Initialize and validates a robot ID."""
     if not is_valid_uuid(robot_id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid robot ID")
     return UUID(robot_id)
