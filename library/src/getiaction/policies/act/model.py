@@ -944,6 +944,9 @@ class _ACT(nn.Module):
                 )
                 log.warning(msg)
 
+            if i > 0:
+                continue  # only process the first image for now
+
             if img_attn_tensor_for_map.shape[1] != num_img_tokens:
                 msg = (
                     f"(map_attention): Mismatch in token count for image {i}. "
@@ -956,7 +959,7 @@ class _ACT(nn.Module):
 
             try:
                 # Get the tensor for the first batch item, still on device
-                img_attn_map_1d_tensor = img_attn_tensor_for_map[0]  # [num_img_tokens]
+                img_attn_map_1d_tensor = img_attn_tensor_for_map[i]  # [num_img_tokens]
                 # Reshape to 2D tensor
                 img_attn_map_2d_tensor = img_attn_map_1d_tensor.reshape(h_feat, w_feat)
                 raw_attention_maps.append(img_attn_map_2d_tensor)
