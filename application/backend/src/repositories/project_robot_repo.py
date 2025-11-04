@@ -2,11 +2,11 @@ import json
 from typing import Any
 from uuid import UUID
 
-from application.backend.src.exceptions import ResourceNotFoundError, ResourceType
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio.session import AsyncSession
 
 from db.schema import ProjectRobotDB
+from exceptions import ResourceNotFoundError, ResourceType
 from schemas.robot import Robot, RobotCamera
 
 
