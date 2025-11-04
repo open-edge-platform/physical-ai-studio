@@ -17,7 +17,9 @@ import { Index as Projects } from './routes/projects/index';
 import { ProjectLayout } from './routes/projects/project.layout';
 import { Calibration } from './routes/robots/calibration';
 import { Controller } from './routes/robots/controller';
-import { Layout as RobotConfigurationLayout } from './routes/robots/layout';
+import { Edit as RobotEdit } from './routes/robots/edit';
+import { Layout as RobotsLayout } from './routes/robots/layout';
+import { New as RobotsNew } from './routes/robots/new';
 import { Robot } from './routes/robots/robot';
 import { SetupMotors } from './routes/robots/setup-motors';
 
@@ -53,6 +55,7 @@ export const paths = {
         robots: {
             index: robots,
             new: robots.path('new'),
+            edit: robot.path('edit'),
             show: robot,
             controller: robot.path('/controller'),
             calibration: robot.path('/calibration'),
@@ -129,16 +132,20 @@ export const router = createBrowserRouter([
                         element: <Models />,
                     },
                     {
+                        path: paths.project.robots.new.pattern,
+                        element: <RobotsNew />,
+                    },
+                    {
+                        path: paths.project.robots.edit.pattern,
+                        element: <RobotEdit />,
+                    },
+                    {
                         path: paths.project.robots.index.pattern,
-                        element: <RobotConfigurationLayout />,
+                        element: <RobotsLayout />,
                         children: [
                             {
                                 index: true,
                                 element: <div>Illustration to persuade user to select robot</div>,
-                            },
-                            {
-                                path: paths.project.robots.new.pattern,
-                                element: <div>New</div>,
                             },
                             {
                                 path: paths.project.robots.show.pattern,

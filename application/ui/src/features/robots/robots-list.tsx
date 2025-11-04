@@ -1,6 +1,7 @@
 import { Grid, StatusLight } from '@adobe/react-spectrum';
-import { ActionButton, Flex, Heading, Item, Menu, MenuTrigger, View } from '@geti/ui';
-import { MoreMenu } from '@geti/ui/icons';
+import { ActionButton, Button, Flex, Heading, Icon, Item, Menu, MenuTrigger, View } from '@geti/ui';
+import { Add, MoreMenu } from '@geti/ui/icons';
+import { clsx } from 'clsx';
 import { NavLink } from 'react-router-dom';
 
 import { $api } from '../../api/client';
@@ -8,16 +9,27 @@ import { paths } from '../../router';
 import { useProjectId } from '../projects/use-project';
 import RobotArm from './../../assets/robot-arm.png';
 
-const MenuActions = () => {
+import classes from './robots-list.module.scss';
+
+const MenuActions = ({ robot_id }: { robot_id: string }) => {
+    const { project_id } = useProjectId();
+    const deleteRobotMutation = $api.useMutation('delete', '/api/projects/{project_id}/robots/{robot_id}');
+
     return (
         <MenuTrigger>
             <ActionButton isQuiet UNSAFE_style={{ fill: 'var(--spectrum-gray-900)' }}>
                 <MoreMenu />
             </ActionButton>
-            <Menu>
-                <Item>Edit</Item>
-                <Item>Disconnect</Item>
-                <Item>Delete</Item>
+            <Menu
+                selectionMode='single'
+                onAction={(action) => {
+                    if (action === 'delete') {
+                        deleteRobotMutation.mutate({ params: { path: { project_id, robot_id } } });
+                    }
+                }}
+            >
+                <Item href={paths.project.robots.edit({ project_id, robot_id })}>Edit</Item>
+                <Item key='delete'>Delete</Item>
             </Menu>
         </MenuTrigger>
     );
@@ -27,15 +39,9 @@ const ConnectionStatus = ({ status }: { status: 'connected' | 'disconnected' }) 
     return (
         <StatusLight
             variant={status === 'connected' ? 'positive' : 'negative'}
-            UNSAFE_style={{
-                background: 'var(--spectrum-global-color-gray-100)',
-                borderRadius: '4px',
-                paddingRight: '1em',
-                scale: 0.7,
-                transformOrigin: 'top right',
-            }}
+            UNSAFE_className={classes.connectionStatus}
         >
-            {status === 'connected' ? 'Connected' : 'Disconnected'}
+            {status === 'connected' ? 'Online' : 'Offline'}
         </StatusLight>
     );
 };
@@ -57,11 +63,11 @@ const RobotListItem = ({
 }) => {
     return (
         <View
-            backgroundColor={'gray-50'}
             padding='size-200'
-            UNSAFE_style={{
-                border: `1px solid ${isActive ? 'var(--energy-blue)' : 'var(--spectrum-global-color-gray-200)'}`,
-            }}
+            UNSAFE_className={clsx({
+                [classes.robotListItem]: true,
+                [classes.robotListItemActive]: isActive,
+            })}
         >
             <Flex justifyContent={'space-between'} direction='column' gap='size-100'>
                 <Grid areas={['icon name status', 'icon type status']} columns={['auto', '1fr']} columnGap={'size-100'}>
@@ -104,7 +110,7 @@ const RobotListItem = ({
                         </ul>
                     </View>
                     <View alignSelf={'end'}>
-                        <MenuActions />
+                        <MenuActions robot_id={id} />
                     </View>
                 </Flex>
             </Flex>
@@ -115,29 +121,40 @@ const RobotListItem = ({
 export const RobotsList = () => {
     const { project_id } = useProjectId();
     const { data: robots } = $api.useSuspenseQuery('get', '/api/hardware/robots');
+    const { data: projectRobots } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/robots', {
+        params: { path: { project_id } },
+    });
 
     return (
         <Flex direction='column' gap='size-100'>
-            {(robots ?? []).map((robot) => {
-                const hardwareRobot = robot;
+            <Button
+                variant='secondary'
+                href={paths.project.robots.new({ project_id })}
+                UNSAFE_className={classes.addNewRobotButton}
+            >
+                <Icon marginEnd='size-50'>
+                    <Add />
+                </Icon>
+                Add new robot
+            </Button>
 
-                const to = paths.project.robots.show({
-                    project_id,
-                    robot_id: robot.serial_id,
+            {projectRobots.map((robot) => {
+                const hardwareRobot = robots.find((hardware) => {
+                    return hardware.serial_id === robot.serial_id;
                 });
 
+                const to = paths.project.robots.show({ project_id, robot_id: robot.id });
+
                 return (
-                    <NavLink key={robot.serial_id} to={to}>
+                    <NavLink key={robot.id} to={to}>
                         {({ isActive }) => {
                             return (
                                 <RobotListItem
-                                    id={robot.serial_id}
-                                    name={hardwareRobot?.robot_type ?? ''}
+                                    id={robot.id}
+                                    name={robot.name}
                                     port={hardwareRobot?.port}
-                                    // TODO configure using some project endpoint
-                                    type={'Leader'}
-                                    // Fake connected mode for now
-                                    status={hardwareRobot?.port === '/dev/ttyACM1' ? 'connected' : 'disconnected'}
+                                    type={robot.type}
+                                    status={hardwareRobot !== undefined ? 'connected' : 'disconnected'}
                                     isActive={isActive}
                                 />
                             );
