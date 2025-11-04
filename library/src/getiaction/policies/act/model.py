@@ -276,17 +276,7 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
             - KL divergence loss is computed when config.use_vae is True
         """
         if self._model.training:
-            batch = self._input_normalizer(batch)
-            if self._config.image_features:
-                batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-                images_dict = (
-                    batch[Observation.ComponentKeys.IMAGES.value]
-                    if isinstance(batch[Observation.ComponentKeys.IMAGES.value], dict)
-                    else batch
-                )
-                batch[Observation.ComponentKeys.IMAGES.value] = [
-                    images_dict[key] for key in self._config.image_features
-                ]
+            batch = self._preprocess_input_dict(batch)
 
             actions_hat, (mu_hat, log_sigma_x2_hat) = self._model(batch)
 
@@ -331,18 +321,9 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
             - The model is set to evaluation mode during prediction
             - Input normalization is applied to the batch
         """
-        batch = self._input_normalizer(batch)
-
-        if self._config.image_features:
-            batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-            images_dict = (
-                batch[Observation.ComponentKeys.IMAGES.value]
-                if isinstance(batch[Observation.ComponentKeys.IMAGES.value], dict)
-                else batch
-            )
-            batch[Observation.ComponentKeys.IMAGES.value] = [images_dict[key] for key in self._config.image_features]
-
+        batch = self._preprocess_input_dict(batch)
         actions = self._model(batch)[0]  # only select the actions, ignore the latent params
+
         return self._output_denormalizer({Observation.ComponentKeys.ACTION.value: actions})[
             Observation.ComponentKeys.ACTION.value
         ]
@@ -375,6 +356,30 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
             list[int]: A list of relative observation indices.
         """
         return None
+
+    def _preprocess_input_dict(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        """Preprocess input batch dictionary.
+
+        This method preprocesses the input batch dictionary by flattening image features
+        to a list if multiple image features are present. Also, normalization is applied to
+        known features.
+
+        Args:
+            batch (dict[str, torch.Tensor]): A dictionary containing input data.
+
+        """
+        batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
+        batch = self._input_normalizer(batch)
+
+        if self._config.image_features:
+            images_dict = (
+                batch[Observation.ComponentKeys.IMAGES.value]
+                if isinstance(batch[Observation.ComponentKeys.IMAGES.value], dict)
+                else batch
+            )
+            batch[Observation.ComponentKeys.IMAGES.value] = [images_dict[key] for key in self._config.image_features]
+
+        return batch
 
 
 @dataclass(frozen=True)
@@ -567,9 +572,6 @@ class _ACT(nn.Module):
             pre_norm=config.pre_norm,
         )
         self.explain_attention_layer = self.decoder.layers[-1].multihead_attn
-
-        if config.enable_explainability:
-            self.explain_attention_layer.register_forward_hook(self._attention_hook)
         self.attention_weights_capture = []
 
         # Transformer encoder input projections. The tokens will be structured like
@@ -782,6 +784,8 @@ class _ACT(nn.Module):
         return actions, (mu, log_sigma_x2)
 
     def forward_with_explain(self, batch: dict[str, Tensor]) -> tuple[Tensor, tuple[Tensor, Tensor, Tensor] | tuple[None, None, None]]:  # noqa: PLR0914, PLR0915
+        self.attention_weights_capture = []
+        self.explain_attention_layer.register_forward_hook(self._attention_hook)
         result = self.forward(batch)
 
         if self.attention_weights_capture:
