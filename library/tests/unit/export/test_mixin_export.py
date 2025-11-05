@@ -9,8 +9,7 @@ import onnx
 import pytest
 import torch
 
-from getiaction.export.mixin_export import Export
-from getiaction.export.mixin_export import ExportBackend
+from getiaction.export.mixin_export import Export, ExportBackend
 
 
 # Test configurations
@@ -458,7 +457,7 @@ class TestToTorchExportIR:
         wrapper = ExportWrapper(model)
 
         output_path = tmp_path / "model.pt2"
-        wrapper.export(backend="torch_export_ir", output_path=output_path)
+        wrapper.export(backend=ExportBackend.TORCH_EXPORT_IR, output_path=output_path)
 
         assert output_path.exists()
 
