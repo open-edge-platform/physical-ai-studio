@@ -59,13 +59,15 @@ class InferenceWorker(BaseProcessWorker):
         logger.info("connect to robot, cameras and setup dataset")
         cameras = {camera.name: build_camera_config(camera) for camera in self.config.cameras}
         follower_config = make_lerobot_robot_config_from_robot(self.config.robot, cameras)
+        follower_config.max_relative_target = 1
 
         self.robot = make_robot_from_config(follower_config)
         logger.info(f"loading model: {self.config.model.path}")
         act_model = ACTModel.load_from_checkpoint(Path(self.config.model.path))
+        act_model.eval()
 
         self.policy = ACT(act_model)
-        self.policy.setup("predict")
+        self.policy.eval()
 
         # After setting up the robot, instantiate the FrameSource using a bridge
         # This can be done directly once switched over to LeRobotDataset V3.
@@ -116,7 +118,7 @@ class InferenceWorker(BaseProcessWorker):
                 actions = self.policy.select_action(observation)
                 formatted_actions = dict(zip(self.action_keys, actions[0].tolist()))
                 self._report_action(formatted_actions, lerobot_obs, timestamp)
-                self.robot.send_action(formatted_actions)
+                #self.robot.send_action(formatted_actions)
 
             dt_s = time.perf_counter() - start_loop_t
             wait_time = 1 / self.config.fps - dt_s
