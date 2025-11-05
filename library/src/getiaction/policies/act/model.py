@@ -250,7 +250,7 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
         extra_args["openvino"] = {
             "output": ["action"],
         }
-        extra_args["torch_ir"] = {}
+        extra_args["torch_export_ir"] = {}
 
         return extra_args
 
@@ -277,7 +277,10 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
         """
         if self._model.training:
             batch = self._input_normalizer(batch)
-            if self._config.image_features:
+            if self._config.image_features and not isinstance(
+                batch[Observation.ComponentKeys.IMAGES.value],
+                torch.Tensor,
+            ):
                 batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
                 images_dict = (
                     batch[Observation.ComponentKeys.IMAGES.value]
@@ -333,7 +336,7 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
         """
         batch = self._input_normalizer(batch)
 
-        if self._config.image_features:
+        if self._config.image_features and not isinstance(batch[Observation.ComponentKeys.IMAGES.value], torch.Tensor):
             batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
             images_dict = (
                 batch[Observation.ComponentKeys.IMAGES.value]
