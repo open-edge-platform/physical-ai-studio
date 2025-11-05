@@ -10,6 +10,7 @@ import pytest
 import torch
 
 from getiaction.export.mixin_export import Export
+from getiaction.export.mixin_export import ExportBackend
 
 
 # Test configurations
@@ -254,6 +255,20 @@ class TestToOnnx:
         assert "input_a" in input_names
         assert "input_b" in input_names
 
+    def test_to_onnx_via_export_method(self, tmp_path):
+        """Test ONNX export using the generic export method."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        output_path = tmp_path / "model.onnx"
+        wrapper.export(backend="onnx", output_path=output_path)
+
+        assert output_path.exists()
+
+        # Verify the ONNX model can be loaded
+        onnx_model = onnx.load(str(output_path))
+        onnx.checker.check_model(onnx_model)
+
 
 class TestToOpenVINO:
     """Tests for to_openvino method."""
@@ -325,6 +340,17 @@ class TestToOpenVINO:
 
         with pytest.raises(RuntimeError, match="input sample must be provided"):
             wrapper.to_openvino(output_path)
+
+    def test_to_openvino_via_export_method(self, tmp_path):
+        """Test OpenVINO export using the generic export method."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        output_path = tmp_path / "model.xml"
+        wrapper.export(backend="openvino", output_path=output_path)
+
+        assert output_path.exists()
+        assert (tmp_path / "model.bin").exists()
 
 
     class TestToTorchExportIR:
@@ -436,3 +462,17 @@ class TestToOpenVINO:
 
             # Model should be in eval mode after export
             assert model.training is False
+
+    def test_to_torch_export_ir_via_export_method(self, tmp_path):
+        """Test TorchIR export using the generic export method."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        output_path = tmp_path / "model.pt2"
+        wrapper.export(backend="torch_export_ir", output_path=output_path)
+
+        assert output_path.exists()
+
+        # Verify the exported program can be loaded
+        loaded_program = torch.export.load(output_path)  # nosec
+        assert loaded_program is not None
