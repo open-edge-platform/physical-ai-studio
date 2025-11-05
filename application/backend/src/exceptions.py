@@ -7,6 +7,7 @@ class ResourceType(StrEnum):
     """Enumeration for resource types."""
 
     PROJECT = "Project"
+    ROBOT = "Robot"
     DATASET = "Dataset"
     MODEL = "Model"
     JOB = "JOB"
