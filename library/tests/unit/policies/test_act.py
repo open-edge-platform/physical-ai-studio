@@ -79,6 +79,7 @@ class TestACTolicy:
         assert isinstance(actions, torch.Tensor)
         assert actions.shape == batch.action.shape
         assert isinstance(explain, torch.Tensor)
-        assert explain.shape[0] == 1
-        assert explain.shape[1] > 1
+        assert explain.shape[0] == batch.action.shape[0]
+        assert explain.shape[1] == 1
         assert explain.shape[2] > 1
+        assert explain.shape[3] > 1

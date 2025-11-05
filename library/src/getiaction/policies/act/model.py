@@ -850,7 +850,7 @@ class _ACT(nn.Module):
         self,
         attention: torch.Tensor,
         specific_decoder_token_index: int | None = None,
-    ) -> tuple[Tensor | None, float]:
+    ) -> tuple[Tensor | None, Tensor]:
         """Map transformer attention weights back to the original images and extract proprioception attention.
 
         Normalizes attention maps globally across all images AND proprioception for this timestep.
@@ -864,13 +864,14 @@ class _ACT(nn.Module):
         Returns:
             Tuple of:
             - Tensor containing globally normalized attention maps
-            - Proprioception attention value (float, normalized to same scale as visual attention)
+            - Proprioception attention value (Tensor, normalized to same scale as visual attention)
 
         Raises:
             ValueError: If attention tensor has unexpected number of dimensions (not 3 or 4).
         """
         extra_attn_len = 4
         expected_attn_len = 3
+        batch_size = attention.shape[0]
 
         if attention.dim() == extra_attn_len:
             attention = attention.mean(dim=1)  # -> [batch, tgt_len, src_len]
@@ -888,7 +889,7 @@ class _ACT(nn.Module):
             n_prefix_tokens += 1
 
         # --- Step 1: Extract proprioception attention ---
-        proprio_attention = 0.0
+        proprio_attention = torch.zeros(batch_size, device=attention.device)
         if proprio_token_idx is not None:
             # Extract attention to proprioception token
             if specific_decoder_token_index is not None:
@@ -899,8 +900,7 @@ class _ACT(nn.Module):
             else:
                 proprio_attention_tensor = attention[:, :, proprio_token_idx].mean(dim=1)
 
-            # Take first batch element
-            proprio_attention = proprio_attention_tensor[0].item()
+            proprio_attention = proprio_attention_tensor
 
         # --- Step 2: Collect all raw (unnormalized) 2D numpy attention maps ---
 
@@ -944,9 +944,6 @@ class _ACT(nn.Module):
                 )
                 log.warning(msg)
 
-            if i > 0:
-                continue  # only process the first image for now
-
             if img_attn_tensor_for_map.shape[1] != num_img_tokens:
                 msg = (
                     f"(map_attention): Mismatch in token count for image {i}. "
@@ -958,10 +955,8 @@ class _ACT(nn.Module):
                 continue
 
             try:
-                # Get the tensor for the first batch item, still on device
-                img_attn_map_1d_tensor = img_attn_tensor_for_map[i]  # [num_img_tokens]
                 # Reshape to 2D tensor
-                img_attn_map_2d_tensor = img_attn_map_1d_tensor.reshape(h_feat, w_feat)
+                img_attn_map_2d_tensor = img_attn_tensor_for_map.reshape(-1, h_feat, w_feat)
                 raw_attention_maps.append(img_attn_map_2d_tensor)
             except RuntimeError as e:
                 msg = (
@@ -974,53 +969,63 @@ class _ACT(nn.Module):
                 continue
 
         # --- Step 3: Find global min and max from all valid raw maps AND proprioception ---
-        global_min = float("inf")
-        global_max = float("-inf")
+        global_min = float("inf") * torch.ones_like(proprio_attention)
+        global_max = float("-inf") * torch.ones_like(proprio_attention)
         found_any_valid_map = False
 
         # Include proprioception attention in global scaling
-        if proprio_attention is not None:
-            global_min = min(global_min, proprio_attention)
-            global_max = max(global_max, proprio_attention)
+        if proprio_token_idx is not None:
+            global_min = torch.min(global_min, proprio_attention)
+            global_max = torch.max(global_max, proprio_attention)
             found_any_valid_map = True
 
         for raw_map_torch in raw_attention_maps:
             if raw_map_torch is not None:
-                current_min = raw_map_torch.min().item()
-                current_max = raw_map_torch.max().item()
-                global_min = min(global_min, current_min)
-                global_max = max(global_max, current_max)
+                current_min, _ = raw_map_torch.min(dim=1)
+                current_max, _ = raw_map_torch.max(dim=1)
+                global_min = torch.min(global_min, current_min)
+                global_max = torch.max(global_max, current_max)
                 found_any_valid_map = True
 
         if not found_any_valid_map:
             # All maps were None, return the list of Nones
-            return None, 0.0
+            return None, torch.zeros_like(proprio_attention)
 
         # --- Step 4: Normalize proprioception attention ---
-        if global_max > global_min:
-            normalized_proprio_attention = (proprio_attention - global_min) / (global_max - global_min)
-        else:
-            normalized_proprio_attention = 0.0
+        normalized_proprio_attention = torch.where(
+            global_max > global_min,
+            (proprio_attention - global_min) / (global_max - global_min),
+            0.0,
+        )
 
         # --- Step 5: Normalize all valid visual attention maps using global min/max ---
-        final_normalized_attention_maps: list[torch.Tensor] = []
+        final_normalized_attention_maps_list: list[torch.Tensor] = []
         for raw_map_torch in raw_attention_maps:
             if raw_map_torch is None:
                 return None, normalized_proprio_attention
 
+            normalized_map = torch.where(
+                global_max > global_min,
+                (raw_map_torch - global_min) / (global_max - global_min),
+                0.0,
+            )
+
+            """
             if global_max > global_min:
                 # Perform normalization
-                normalized_map = (raw_map_torch - global_min) / (global_max - global_min)
             else:
                 # All values across all valid maps are the same (e.g., all are 0.001, or all are 0)
                 # Create a uniform map (e.g., all zeros or all 0.5s)
                 # If global_max == global_min, it implies all values are equal to global_min (or global_max).
                 # If global_min is 0, then (raw_map_np - 0) / (0-0) is problematic.
                 # A common practice is to make such a map uniform, often zeros.
-                normalized_map = torch.zeros_like(raw_map_torch, dtype=torch.float32)
-            final_normalized_attention_maps.append(normalized_map)
+            """
+            final_normalized_attention_maps_list.append(normalized_map)
 
-        return torch.stack(final_normalized_attention_maps), normalized_proprio_attention
+        final_normalized_attention_maps = torch.stack(final_normalized_attention_maps_list)
+        final_normalized_attention_maps = final_normalized_attention_maps.permute(1, 0, 2, 3)  # (batch, n_images, H, W)
+
+        return final_normalized_attention_maps, normalized_proprio_attention
 
 
 class _ACTEncoder(nn.Module):
