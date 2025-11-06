@@ -47,13 +47,13 @@ export const useInference = (setup: SchemaInferenceConfig) => {
         }
     );
 
+    console.log(lastJsonMessage);
+
     const init = useMutation({
-        mutationFn: async () => {
-            await sendJsonMessageAndWait(
+        mutationFn: async () => await sendJsonMessageAndWait(
                 { event: 'initialize', data: setup },
-                ({ data }) => JSON.parse(data)['data']['initialized'] == true
-            );
-        },
+                (data) => data['data']['initialized'] == true
+        )
     });
 
     const onMessage = ({ data }: WebSocketEventMap['message']) => {
@@ -69,6 +69,16 @@ export const useInference = (setup: SchemaInferenceConfig) => {
             data: { task_index: taskIndex },
         });
     };
+
+    const calculateTrajectory = useMutation({
+        mutationFn: async () => {
+            const {data} = await sendJsonMessageAndWait(
+                { event: 'calculate_trajectory', data: {} },
+                (data) => data['event'] === "trajectory"
+            );
+            return data["trajectory"];
+        }
+    });
 
     const disconnect = () => {
         sendJsonMessage({
@@ -89,5 +99,6 @@ export const useInference = (setup: SchemaInferenceConfig) => {
         stop,
         disconnect,
         observation,
+        calculateTrajectory,
     }
 }

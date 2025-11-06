@@ -70,12 +70,10 @@ export const useRecording = (setup: SchemaTeleoperationConfig) => {
     };
 
     const init = useMutation({
-        mutationFn: async () => {
-            await sendJsonMessageAndWait(
-                { event: 'initialize', data: setup },
-                ({ data }) => JSON.parse(data)['data']['initialized'] == true
-            );
-        },
+        mutationFn: async () => await sendJsonMessageAndWait(
+            { event: 'initialize', data: setup },
+            (data) => data['data']['initialized'] == true
+        ),
     });
 
     const startRecording = () => {
@@ -87,11 +85,12 @@ export const useRecording = (setup: SchemaTeleoperationConfig) => {
 
     const saveEpisode = useMutation({
         mutationFn: async () => {
-            await sendJsonMessageAndWait(
+            const message = await sendJsonMessageAndWait(
                 { event: 'save', data: {} },
-                ({ data }) => JSON.parse(data)['data']['is_recording'] == false
+                (data) => data['data']['is_recording'] == false
             );
             setNumberOfRecordings((n) => n + 1);
+            return message;
         },
     });
 

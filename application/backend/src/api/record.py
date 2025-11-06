@@ -106,13 +106,15 @@ async def inference_websocket(  # noqa: C901
                     process.start_task(task_index)
                 if data["event"] == "stop":
                     process.stop()
+                if data["event"] == "calculate_trajectory":
+                    process.calculate_trajectory()
                 if data["event"] == "disconnect":
                     process.disconnect()
                     break
         except WebSocketDisconnect:
             print("Except: disconnected!")
             if process is not None:
-                process.stop()
+                process.disconnect()
 
     async def handle_outgoing():
         try:

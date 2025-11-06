@@ -1,4 +1,4 @@
-import { Button, View, Flex } from "@geti/ui"
+import { Button, View, Flex, Slider } from "@geti/ui"
 import { useParams } from "react-router"
 import { useInference } from "./use-inference";
 import { $api } from "../../../api/client";
@@ -6,12 +6,14 @@ import { SchemaInferenceConfig } from "../../../api/openapi-spec";
 import { useProject } from "../../../features/projects/use-project";
 import { RobotViewer } from "../../../features/robots/controller/robot-viewer";
 import { RobotModelsProvider } from "../../../features/robots/robot-models-context";
+import { useState } from "react";
 
 export const Index = () => {
     const { project_id, model_id } = useParams();
     const { data: model } = $api.useSuspenseQuery("get", "/api/models/{model_id}", { params: { query: { uuid: model_id! } } })
 
     const project = useProject();
+    const [index, setIndex] = useState<number>();
 
     const config: SchemaInferenceConfig = {
         model,
@@ -47,7 +49,7 @@ export const Index = () => {
             "type": "follower",
         },
     }
-    const { startTask, stop, state, disconnect, observation } = useInference(config);
+    const { startTask, stop, state, disconnect, observation, calculateTrajectory } = useInference(config);
     console.log(project_id, model_id)
 
     const formatActionDictToArray = (actions: { [key: string]: number }): number[] => {
@@ -55,7 +57,15 @@ export const Index = () => {
         return jointNames.map((name) => actions[`${name}.pos`]);
     };
 
-    const actions = observation.current === undefined ? undefined : formatActionDictToArray(observation.current.actions)
+    let actions = observation.current === undefined ? undefined : formatActionDictToArray(observation.current.actions)
+
+    if (calculateTrajectory.data !== undefined) {
+        const i = index ?? 0;
+        if (calculateTrajectory.data.length >= i) {
+            actions = calculateTrajectory.data[i];
+        }
+    }
+
     return (
         <RobotModelsProvider>
             <Flex height="100%" flex direction={'column'}>
@@ -63,10 +73,12 @@ export const Index = () => {
                     <Button onPress={() => startTask(0)}>StartTask</Button>
                     <Button onPress={stop}>Pause</Button>
                     <Button onPress={disconnect}>Disconnect</Button>
+                    <Button onPress={() => calculateTrajectory.mutate()}>Calculate a Trajectory</Button>
+                    {calculateTrajectory.data && <Slider maxValue={calculateTrajectory.data?.length} value={index} onChange={setIndex} />}
                 </Flex>
 
                 <Flex flex={3} minWidth={0}>
-                    <RobotViewer jointValues={actions} />
+                    <RobotViewer jointValues={actions}/>
                 </Flex>
             </Flex>
         </RobotModelsProvider>

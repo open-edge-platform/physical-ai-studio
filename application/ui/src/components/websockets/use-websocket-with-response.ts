@@ -30,13 +30,17 @@ export default function useWebSocketWithResponse(
         matcher: (message: MessageEvent) => boolean,
         messageOptions?: { timeout: number }
     ) => {
-        socket.sendJsonMessage(data);
         const requestId = uuidv4();
-        await new Promise((resolve, reject) => {
+        socket.sendJsonMessage(data);
+
+        return new Promise((resolve, reject) => {
             messagePromises.current.set(requestId, (message) => {
-                if (matcher(message)) {
+                console.log("parsing", message.data)
+                const data = JSON.parse(message.data)
+                console.log(data);
+                if (matcher(data)) {
                     messagePromises.current.delete(requestId);
-                    resolve(message);
+                    resolve(data);
                 }
             });
             if (messageOptions?.timeout)

@@ -37,9 +37,14 @@ class InferenceWorker(BaseProcessWorker):
         self.queue = queue
         self.events = {
             "stop": Event(),
+            "calculate_trajectory": Event(),
             "start": Event(),
             "disconnect": Event(),
         }
+
+    def calculate_trajectory(self) -> None:
+        """Calculate trajectory."""
+        self.events["calculate_trajectory"].set()
 
     def start_task(self, task_index: int) -> None:
         """Start specific task index"""
@@ -59,15 +64,21 @@ class InferenceWorker(BaseProcessWorker):
         logger.info("connect to robot, cameras and setup dataset")
         cameras = {camera.name: build_camera_config(camera) for camera in self.config.cameras}
         follower_config = make_lerobot_robot_config_from_robot(self.config.robot, cameras)
-        follower_config.max_relative_target = 1
+        #follower_config.max_relative_target = 1
 
         self.robot = make_robot_from_config(follower_config)
         logger.info(f"loading model: {self.config.model.path}")
-        act_model = ACTModel.load_from_checkpoint(Path(self.config.model.path))
-        act_model.eval()
+        self.model = ACTModel.load_from_checkpoint(Path(self.config.model.path))
+        self.model.eval()
 
-        self.policy = ACT(act_model)
+        self.policy = ACT(self.model)
         self.policy.eval()
+
+        #TODO: Define this somehow
+        # LeRobot tends to return the robot arm to root position on reset.
+        # This seems to work better for act when I change the environment mid inference
+        self.root_position_action = {'shoulder_pan.pos': -2.271006813020435, 'shoulder_lift.pos': -98.08027923211169, 'elbow_flex.pos': 99.37527889335118, 'wrist_flex.pos': 67.34527687296418, 'wrist_roll.pos': -13.406593406593402, 'gripper.pos': 27.128953771289538}
+
 
         # After setting up the robot, instantiate the FrameSource using a bridge
         # This can be done directly once switched over to LeRobotDataset V3.
@@ -92,14 +103,17 @@ class InferenceWorker(BaseProcessWorker):
         self.is_running = False
 
         start_episode_t = time.perf_counter()
+        frame_index = 0
         while not self.should_stop() and not self.events["disconnect"].is_set():
             start_loop_t = time.perf_counter()
             if self.events["start"].is_set():
                 logger.info("start")
                 self.events["start"].clear()
+                self.robot.send_action(self.root_position_action)
                 busy_wait(0.3)  # TODO check if neccesary
                 self.is_running = True
                 start_episode_t = time.perf_counter()
+                frame_index = 0
                 self._report_state()
 
             if self.events["stop"].is_set():
@@ -109,16 +123,24 @@ class InferenceWorker(BaseProcessWorker):
                 self.is_running = False
                 self._report_state()
 
+            if self.events["calculate_trajectory"].is_set():
+                logger.info("calculate_trajectory")
+                self.events["calculate_trajectory"].clear()
+                lerobot_obs = self.robot.get_observation()
+                observation = self._build_geti_action_observation(lerobot_obs, 0, 0)
+                self._report_trajectory(self.model(observation.to_dict())[0].tolist())
+
             if self.is_running:
 
                 timestamp = time.perf_counter() - start_episode_t
                 lerobot_obs = self.robot.get_observation()
-                observation = self._build_geti_action_observation(lerobot_obs)
-                print(observation)
+                observation = self._build_geti_action_observation(lerobot_obs, timestamp, frame_index)
+                #print(observation)
                 actions = self.policy.select_action(observation)
                 formatted_actions = dict(zip(self.action_keys, actions[0].tolist()))
                 self._report_action(formatted_actions, lerobot_obs, timestamp)
-                #self.robot.send_action(formatted_actions)
+                self.robot.send_action(formatted_actions)
+                frame_index += 1
 
             dt_s = time.perf_counter() - start_loop_t
             wait_time = 1 / self.config.fps - dt_s
@@ -134,6 +156,17 @@ class InferenceWorker(BaseProcessWorker):
         state = {"event": "state", "data": {"initialized": True, "is_running": self.is_running, "task_index": self.config.task_index}}
         logger.info(f"inference state: {state}")
         self.queue.put(state)
+
+    def _report_trajectory(self, trajectory: list[dict]):
+        self.queue.put(
+            {
+                "event": "trajectory",
+                "data": {
+                    "trajectory": trajectory
+                }
+            }
+        )
+
 
     def _report_action(self, actions: dict, observation: dict, timestamp: float):
         """Report observation to queue."""
@@ -152,10 +185,8 @@ class InferenceWorker(BaseProcessWorker):
             }
         )
 
-    def _build_geti_action_observation(self, robot_observation: dict):
+    def _build_geti_action_observation(self, robot_observation: dict, timestamp: float, frame_index: int):
         state = torch.tensor([value for key, value in robot_observation.items() if key in self.action_keys ]).unsqueeze(0)
-        print(state)
-        print(robot_observation.keys())
         images: dict = {}
         for name in self.camera_keys:
             #key = f"observation.images.{name}"
@@ -163,16 +194,17 @@ class InferenceWorker(BaseProcessWorker):
             logger.info(frame.shape)
 
             images[name] = torch.from_numpy(frame)
-            images[name] = images[name].float()
+            images[name] = images[name].float() / 255
             images[name] = images[name].permute(2, 0, 1).contiguous()
             images[name] = images[name].unsqueeze(0)
-
-        print(state)
-        print({key: value.shape for key, value in images.items()})
 
         return Observation(
             state=state,
             images=images,
+            task_index=torch.tensor([0]),
+            task=["Place block on paper"],
+            timestamp=torch.tensor([timestamp]),
+            frame_index=torch.tensor([frame_index]),
         )
 
     def _base_64_encode_observation(self, observation: np.ndarray | None) -> str:

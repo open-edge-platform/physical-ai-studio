@@ -5,10 +5,11 @@ import { Suspense, useEffect, useRef } from 'react';
 import { Grid, OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import { Canvas } from '@react-three/fiber';
 import { degToRad } from 'three/src/math/MathUtils.js';
-import { URDFRobot } from 'urdf-loader';
+import { URDFJoint, URDFRobot } from 'urdf-loader';
 
 import { useContainerSize } from '../../../components/zoom/use-container-size';
 import { useLoadModelMutation, useRobotModels } from './../robot-models-context';
+import { Matrix4, Quaternion, Vector3 } from 'three';
 
 // This is a wrapper component for the loaded URDF model
 const ActualURDFModel = ({ model }: { model: URDFRobot }) => {

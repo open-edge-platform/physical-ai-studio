@@ -1,10 +1,15 @@
+from getiaction.data.lerobot.datamodule import LeRobotDataModule
+from torch.utils.data import DataLoader
+import yaml
+from pathlib import Path
 import time
 import asyncio
 from uuid import UUID
 from pathlib import Path
 
+from getiaction.train import Trainer
 from getiaction.data import Observation
-from getiaction.policies import ACT, ACTModel
+from getiaction.policies import ACT, ACTModel, ACTConfig
 from lerobot.utils.robot_utils import busy_wait
 import torch
 from lerobot.robots import make_robot_from_config
@@ -64,7 +69,8 @@ config = InferenceConfig(
 
 
 async def main():
-    model = await ModelService.get_model_by_id(UUID(config.model_id))
+    model_path = "/home/ronald/intel/geti-action/application/backend/place-block-model.ckpt"
+    #model = await ModelService.get_model_by_id(UUID(config.model_id))
     #dataset = await DatasetService().get_dataset_by_id(UUID("222d929a-39e7-4376-95fd-3d8809b7d9fb"))
     #if dataset is None:
     #    raise ValueError("dataset not found")
@@ -78,13 +84,14 @@ async def main():
     # FormatConverter.to_observation(lerobot_dataset.episodes[0])
 
     # return
-    if model is None:
-        raise ValueError("Model not found")
+    #if model is None:
+    #    raise ValueError("Model not found")
     # path = "/home/ronald/intel/geti-action/application/backend/experiments/lightning_logs/version_8/checkpoints/epoch=1-step=100.ckpt"
-    act_model = ACTModel.load_from_checkpoint(Path(model.path).expanduser())
+    act_model = ACTModel.load_from_checkpoint(model_path)
+    act_model.eval()
     ## act = ACT.load_checkpoint(path)
     policy = ACT(act_model)
-    policy.setup("predict")
+    policy.eval()
 
     cameras = {camera.name: initialize_camera(build_camera_config(camera)) for camera in config.cameras}
     follower_config = make_lerobot_robot_config_from_robot(config.robot, {})
@@ -94,10 +101,11 @@ async def main():
     for camera in cameras.values():
         camera.connect()
 
-    # obs = FormatConverter.to_observation(robot.get_observation())
 
+    print(robot.bus.sync_read("Present_Position"))
 
     while True:
+        break
         start_loop_t = time.perf_counter()
 
         robot_observation = robot.get_observation()
@@ -110,20 +118,22 @@ async def main():
             print(frame.shape)
 
             images[key] = torch.from_numpy(frame)
-            images[key] = images[key].float()
+            images[key] = images[key].float() / 255
             images[key] = images[key].permute(2, 0, 1).contiguous()
             images[key] = images[key].unsqueeze(0)
-
-        print(state)
-        print({key: value.shape for key, value in images.items()})
 
         observation = Observation(
             state=state,
             images=images,
         )
 
+        print(observation.to_dict())
+        #print(act_model(observation.to_dict()))
+        break
+        #break
         actions = policy.select_action(observation)
         formatted_actions = dict(zip(robot_observation.keys(), actions[0].tolist()))
+        print(formatted_actions)
         robot.send_action(formatted_actions)
 
         dt_s = time.perf_counter() - start_loop_t
@@ -138,5 +148,73 @@ async def main():
     robot.disconnect()
 
 
+def export_existing_model():
+    donor_model_path = "/home/ronald/intel/geti-action/application/backend/config_donor_model.ckpt"
+    donor_data = torch.load(donor_model_path, map_location="cpu", weights_only=True)
+    print(donor_data["model_config"])
+    model_path = "/home/ronald/intel/geti-action/application/backend/lightning_logs/version_3/checkpoints/epoch=748-step=47187.ckpt"
+
+    data = torch.load(model_path, map_location="cpu", weights_only=True)
+    data["model_config"] = donor_data["model_config"]
+    act_model = ACTModel.load_from_checkpoint(data)
+    ACT(model=act_model).to_torch("./place-block-model.ckpt")
+
+def build_donor_model():
+    l_dm = LeRobotDataModule(
+        repo_id="rhecker/place-block",
+        train_batch_size=8,
+    )
+    lib_model = ACTModel(
+        input_features=l_dm.train_dataset.observation_features,
+        output_features=l_dm.train_dataset.action_features,
+    )
+
+    trainer = Trainer(
+        max_steps=1,
+    )
+
+    policy = ACT(model=lib_model)
+
+    trainer.fit(model=policy, datamodule=l_dm)
+    policy.to_torch("./config_donor_model.ckpt")
+
+def second():
+    l_dm = LeRobotDataModule(
+        repo_id="rhecker/place-block",
+        train_batch_size=1,
+    )
+    lib_model = ACTModel(
+        input_features=l_dm.train_dataset.observation_features,
+        output_features=l_dm.train_dataset.action_features,
+    )
+    policy = ACT(model=lib_model)
+
+    l_dm.val_dataset = l_dm.train_dataset
+    test_loader = l_dm.val_dataloader()
+    #test_loader = l_dm.train_dataloader()
+    i = 0
+    for data in test_loader:
+        print(data)
+        i += 1
+        if data.episode_index.tolist() > 0:
+            break
+
+
+
+    #trainer = Trainer(
+    #    callbacks=[
+    #        #checkpoint_callback,
+    #        TrainingTrackingCallback(
+    #            shutdown_event=self._stop_event,
+    #            interrupt_event=self.interrupt_event,
+    #            dispatcher=dispatcher,
+    #        ),
+    #    ],
+    #    max_steps=10000,
+    #)
+
+
 if __name__ == "__main__":
+    #export_existing_model()
+    #second()
     asyncio.run(main())
