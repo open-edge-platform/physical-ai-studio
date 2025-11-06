@@ -414,10 +414,11 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
                 if isinstance(batch[Observation.ComponentKeys.IMAGES.value], dict)
                 else batch
             )
-            if batch[Observation.ComponentKeys.IMAGES.value].ndim == 4:
-                    batch[Observation.ComponentKeys.IMAGES.value] = [
-                        images_dict[key] for key in self._config.image_features
-                    ]
+            image_nchw_ndims = 4
+            if batch[Observation.ComponentKeys.IMAGES.value].ndim == image_nchw_ndims:
+                batch[Observation.ComponentKeys.IMAGES.value] = [
+                    images_dict[key] for key in self._config.image_features
+                ]
 
         return batch
 
