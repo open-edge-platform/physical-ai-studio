@@ -1,12 +1,15 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
+# Copyright 2025 Ville Kuosmanen
+# SPDX-License-Identifier: MIT
 # Copyright 2024 Tony Z. Zhao and The HuggingFace Inc. team.
 # SPDX-License-Identifier: Apache-2.0
 
 """ACT torch model."""
 
 import dataclasses
+import logging
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -28,6 +31,8 @@ from getiaction.export import FromCheckpoint
 from getiaction.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
 
 from .config import ACTConfig
+
+log = logging.getLogger(__name__)
 
 
 class ACT(nn.Module, FromConfig, FromCheckpoint):
@@ -276,17 +281,7 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
             - KL divergence loss is computed when config.use_vae is True
         """
         if self._model.training:
-            batch = self._input_normalizer(batch)
-            if self._config.image_features:
-                batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-                images_dict = (
-                    batch[Observation.ComponentKeys.IMAGES.value]
-                    if isinstance(batch[Observation.ComponentKeys.IMAGES.value], dict)
-                    else batch
-                )
-                batch[Observation.ComponentKeys.IMAGES.value] = [
-                    images_dict[key] for key in self._config.image_features
-                ]
+            batch = self._preprocess_input_dict(batch)
 
             actions_hat, (mu_hat, log_sigma_x2_hat) = self._model(batch)
 
@@ -331,21 +326,42 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
             - The model is set to evaluation mode during prediction
             - Input normalization is applied to the batch
         """
-        batch = self._input_normalizer(batch)
-
-        if self._config.image_features:
-            batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-            images_dict = (
-                batch[Observation.ComponentKeys.IMAGES.value]
-                if isinstance(batch[Observation.ComponentKeys.IMAGES.value], dict)
-                else batch
-            )
-            batch[Observation.ComponentKeys.IMAGES.value] = [images_dict[key] for key in self._config.image_features]
-
+        batch = self._preprocess_input_dict(batch)
         actions = self._model(batch)[0]  # only select the actions, ignore the latent params
+
         return self._output_denormalizer({Observation.ComponentKeys.ACTION.value: actions})[
             Observation.ComponentKeys.ACTION.value
         ]
+
+    @torch.no_grad()
+    def predict_action_chunk_with_explain(
+        self,
+        batch: dict[str, torch.Tensor],
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Predict an action chunk with explainability information.
+
+        This method processes input data through the model to generate action predictions
+        along with explainability results that help interpret the model's decision-making process.
+
+        Args:
+            batch (dict[str, torch.Tensor]): A dictionary containing input tensors for the model.
+                The keys should correspond to the expected input components (e.g., observations,
+                states, etc.) and values should be torch.Tensor objects.
+
+        Returns:
+            tuple[torch.Tensor, torch.Tensor | None]: A tuple containing:
+                - action (torch.Tensor): The predicted and denormalized action tensor.
+                - explain_result (torch.Tensor | None): Explainability information from the model,
+                  which may be None if explainability features are not available or enabled.
+        """
+        batch = self._preprocess_input_dict(batch)
+        actions, _, explain_result = self._model.forward_with_explain(batch)
+
+        action = self._output_denormalizer({Observation.ComponentKeys.ACTION.value: actions})[
+            Observation.ComponentKeys.ACTION.value
+        ]
+
+        return action, explain_result
 
     @property
     def reward_delta_indices(self) -> None:
@@ -375,6 +391,32 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
             list[int]: A list of relative observation indices.
         """
         return None
+
+    def _preprocess_input_dict(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        """Preprocess input batch dictionary.
+
+        This method preprocesses the input batch dictionary by flattening image features
+        to a list if multiple image features are present. Also, normalization is applied to
+        known features.
+
+        Args:
+            batch (dict[str, torch.Tensor]): A dictionary containing input data.
+
+        Returns:
+            dict[str, torch.Tensor]: The preprocessed input batch dictionary.
+        """
+        batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
+        batch = self._input_normalizer(batch)
+
+        if self._config.image_features:
+            images_dict = (
+                batch[Observation.ComponentKeys.IMAGES.value]
+                if isinstance(batch[Observation.ComponentKeys.IMAGES.value], dict)
+                else batch
+            )
+            batch[Observation.ComponentKeys.IMAGES.value] = [images_dict[key] for key in self._config.image_features]
+
+        return batch
 
 
 @dataclass(frozen=True)
@@ -566,6 +608,8 @@ class _ACT(nn.Module):
             n_decoder_layers=config.n_decoder_layers,
             pre_norm=config.pre_norm,
         )
+        self.explain_attention_layer = self.decoder.layers[-1].multihead_attn
+        self.attention_weights_capture: list[torch.Tensor] = []
 
         # Transformer encoder input projections. The tokens will be structured like
         # [latent, (robot_state), (env_state), (image_feature_map_pixels)].
@@ -603,7 +647,30 @@ class _ACT(nn.Module):
         # Final action regression head on the output of the transformer's decoder.
         self.action_head = nn.Linear(config.dim_model, cast("tuple", self.config.action_feature.shape)[0])
 
+        # xai helper variables
+        self.collect_image_features_shapes = False
+        self.image_features_shapes: list[tuple[int, int]] = []
+
         self._reset_parameters()
+
+    def _attention_hook(self, module: nn.Module, input_args: tuple, output_tuple: tuple) -> None:
+        # Capture the attention weights
+        # In some MultiheadAttention implementations, the attention weights
+        # might be returned with shape: [batch_size, tgt_len, src_len]
+        # or [batch_size, num_heads, tgt_len, src_len]
+
+        del input_args
+        if isinstance(output_tuple, tuple) and len(output_tuple) > 1:
+            # If output is a tuple with attention weights as second element
+            attn_weights = output_tuple[1]
+        else:
+            # If output format is different, try to get weights from the module directly
+            # Some implementations store attention weights in the module after forward pass
+            attn_weights = getattr(module, "attn_weights", None)
+
+        if attn_weights is not None:
+            # Store the weights regardless of shape - we'll handle reshape later
+            self.attention_weights_capture.append(attn_weights.detach())
 
     def _reset_parameters(self) -> None:
         """Xavier-uniform initialization of the transformer parameters as in the original code."""
@@ -611,7 +678,7 @@ class _ACT(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, batch: dict[str, Tensor]) -> tuple[Tensor, tuple[Tensor, Tensor] | tuple[None, None]]:  # noqa: PLR0914, PLR0915
+    def forward(self, batch: dict[str, Tensor]) -> tuple[Tensor, tuple[Tensor, Tensor] | tuple[None, None]]:  # noqa: PLR0914, PLR0915, PLR0912
         """A forward pass through the Action Chunking Transformer (with optional VAE encoder).
 
         `batch` should have the following structure:
@@ -721,6 +788,9 @@ class _ACT(nn.Module):
             # gradients remain stable (no explosions or NaNs).
             for img in batch[Observation.ComponentKeys.IMAGES.value]:
                 cam_features = self.backbone(img)["feature_map"]
+                if self.collect_image_features_shapes:
+                    self.image_features_shapes.append((cam_features.shape[2], cam_features.shape[3]))
+
                 cam_pos_embed = self.encoder_cam_feat_pos_embed(cam_features).to(dtype=cam_features.dtype)
                 cam_features = self.encoder_img_feat_input_proj(cam_features)
 
@@ -758,6 +828,204 @@ class _ACT(nn.Module):
         actions = self.action_head(decoder_out)
 
         return actions, (mu, log_sigma_x2)
+
+    def forward_with_explain(self, batch: dict[str, Tensor]) -> tuple[Tensor, tuple[Tensor, Tensor], Tensor | None]:
+        self.collect_image_features_shapes = True
+        self.attention_weights_capture = []
+        handle = self.explain_attention_layer.register_forward_hook(self._attention_hook)
+        actions, latent_params = self.forward(batch)
+        handle.remove()
+        self.collect_image_features_shapes = False
+
+        if self.attention_weights_capture:
+            attn = self.attention_weights_capture[0]
+            attention_maps, _ = self._map_attention_to_images(attn)
+            self.attention_weights_capture = []
+        else:
+            attention_maps = None
+
+        return actions, latent_params, attention_maps
+
+    def _map_attention_to_images(  # noqa: PLR0914, PLR0915, PLR0912, C901
+        self,
+        attention: torch.Tensor,
+        specific_decoder_token_index: int | None = None,
+    ) -> tuple[Tensor | None, Tensor]:
+        """Map transformer attention weights back to the original images and extract proprioception attention.
+
+        Normalizes attention maps globally across all images AND proprioception for this timestep.
+
+        Args:
+            attention: Tensor of shape [batch, heads, tgt_len, src_len]
+                       (tgt_len is config.chunk_size)
+            specific_decoder_token_index: If provided, use this index of the decoder's output tokens
+                to extract attention maps. If None, average over all decoder tokens.
+
+        Returns:
+            Tuple of:
+            - Tensor containing globally normalized attention maps
+            - Proprioception attention value (Tensor, normalized to same scale as visual attention)
+
+        Raises:
+            ValueError: If attention tensor has unexpected number of dimensions (not 3 or 4).
+        """
+        extra_attn_len = 4
+        expected_attn_len = 3
+        batch_size = attention.shape[0]
+
+        if attention.dim() == extra_attn_len:
+            attention = attention.mean(dim=1)  # -> [batch, tgt_len, src_len]
+        elif attention.dim() != expected_attn_len:
+            msg = f"Unexpected attention dimension: {attention.shape}. Expected 3 or 4."
+            raise ValueError(msg)
+
+        # Token structure: [latent, (robot_state), (env_state), (image_tokens)]
+        n_prefix_tokens = 1  # latent token
+        proprio_token_idx = None
+        if self.config.robot_state_feature:
+            proprio_token_idx = n_prefix_tokens  # proprioception is the next token
+            n_prefix_tokens += 1
+        if self.config.env_state_feature:
+            n_prefix_tokens += 1
+
+        # --- Step 1: Extract proprioception attention ---
+        proprio_attention = torch.zeros(batch_size, device=attention.device)
+        if proprio_token_idx is not None:
+            # Extract attention to proprioception token
+            if specific_decoder_token_index is not None:
+                if 0 <= specific_decoder_token_index < attention.shape[1]:
+                    proprio_attention_tensor = attention[:, specific_decoder_token_index, proprio_token_idx]
+                else:
+                    proprio_attention_tensor = attention[:, :, proprio_token_idx].mean(dim=1)
+            else:
+                proprio_attention_tensor = attention[:, :, proprio_token_idx].mean(dim=1)
+
+            proprio_attention = proprio_attention_tensor
+
+        # --- Step 2: Collect all raw (unnormalized) 2D numpy attention maps ---
+
+        raw_attention_maps: list[torch.Tensor | None] = []
+        # Store the per-image token counts for reshaping, needed later
+        tokens_per_image = [h * w for h, w in self.image_features_shapes]
+
+        current_src_token_idx = n_prefix_tokens
+        for i, (h_feat, w_feat) in enumerate(self.image_features_shapes):
+            if h_feat == 0 or w_feat == 0:
+                raw_attention_maps.append(None)
+                if tokens_per_image[i] > 0:  # if shape was (0,0) but tokens_per_image[i] was not 0
+                    current_src_token_idx += tokens_per_image[i]
+                continue
+
+            num_img_tokens = tokens_per_image[i]
+            start_idx = current_src_token_idx
+            end_idx = start_idx + num_img_tokens
+            current_src_token_idx = end_idx
+
+            attention_to_img_features = attention[:, :, start_idx:end_idx]
+
+            if specific_decoder_token_index is not None:
+                if not (0 <= specific_decoder_token_index < attention_to_img_features.shape[1]):
+                    msg = (
+                        f"(map_attention): specific_decoder_token_index {specific_decoder_token_index} "
+                        f"is out of bounds for actual tgt_len {attention_to_img_features.shape[1]}. "
+                        f"Falling back to averaging."
+                    )
+                    log.warning(msg)
+                    img_attn_tensor_for_map = attention_to_img_features.mean(dim=1)
+                else:
+                    img_attn_tensor_for_map = attention_to_img_features[:, specific_decoder_token_index, :]
+            else:
+                img_attn_tensor_for_map = attention_to_img_features.mean(dim=1)
+
+            if img_attn_tensor_for_map.shape[0] > 1 and i == 0:
+                msg = (
+                    f"(map_attention): Batch size is {img_attn_tensor_for_map.shape[0]}. "
+                    f"Processing only the first element"
+                )
+                log.warning(msg)
+
+            if img_attn_tensor_for_map.shape[1] != num_img_tokens:
+                msg = (
+                    f"(map_attention): Mismatch in token count for image {i}. "
+                    f"Expected {num_img_tokens}, got {img_attn_tensor_for_map.shape[1]}. "
+                    f"Skipping map for this image."
+                )
+                log.warning(msg)
+                raw_attention_maps.append(None)
+                continue
+
+            try:
+                # Reshape to 2D tensor
+                img_attn_map_2d_tensor = img_attn_tensor_for_map.reshape(-1, h_feat, w_feat)
+                raw_attention_maps.append(img_attn_map_2d_tensor)
+            except RuntimeError as e:
+                msg = (
+                    f"Error (map_attention): Reshaping attention for image {i}: {e}. "
+                    f"Shape was {img_attn_tensor_for_map[0].shape}, target HxW: {h_feat}x{w_feat}. "
+                    f"Num tokens: {num_img_tokens}. Skipping."
+                )
+                log.warning(msg)
+                raw_attention_maps.append(None)
+                continue
+
+        # --- Step 3: Find global min and max from all valid raw maps AND proprioception ---
+        global_min = float("inf") * torch.ones_like(proprio_attention)
+        global_max = float("-inf") * torch.ones_like(proprio_attention)
+        found_any_valid_map = False
+
+        # Include proprioception attention in global scaling
+        if proprio_token_idx is not None:
+            global_min = torch.min(global_min, proprio_attention)
+            global_max = torch.max(global_max, proprio_attention)
+            found_any_valid_map = True
+
+        for raw_map_torch in raw_attention_maps:
+            if raw_map_torch is not None:
+                current_min, _ = raw_map_torch.min(dim=1)
+                current_max, _ = raw_map_torch.max(dim=1)
+                global_min = torch.min(global_min, current_min)
+                global_max = torch.max(global_max, current_max)
+                found_any_valid_map = True
+
+        if not found_any_valid_map:
+            # All maps were None, return the list of Nones
+            return None, torch.zeros_like(proprio_attention)
+
+        # --- Step 4: Normalize proprioception attention ---
+        normalized_proprio_attention = torch.where(
+            global_max > global_min,
+            (proprio_attention - global_min) / (global_max - global_min),
+            0.0,
+        )
+
+        # --- Step 5: Normalize all valid visual attention maps using global min/max ---
+        final_normalized_attention_maps_list: list[torch.Tensor] = []
+        for raw_map_torch in raw_attention_maps:
+            if raw_map_torch is None:
+                return None, normalized_proprio_attention
+
+            normalized_map = torch.where(
+                global_max > global_min,
+                (raw_map_torch - global_min) / (global_max - global_min),
+                0.0,
+            )
+
+            """
+            if global_max > global_min:
+                # Perform normalization
+            else:
+                # All values across all valid maps are the same (e.g., all are 0.001, or all are 0)
+                # Create a uniform map (e.g., all zeros or all 0.5s)
+                # If global_max == global_min, it implies all values are equal to global_min (or global_max).
+                # If global_min is 0, then (raw_map_np - 0) / (0-0) is problematic.
+                # A common practice is to make such a map uniform, often zeros.
+            """
+            final_normalized_attention_maps_list.append(normalized_map)
+
+        final_normalized_attention_maps = torch.stack(final_normalized_attention_maps_list)
+        final_normalized_attention_maps = final_normalized_attention_maps.permute(1, 0, 2, 3)  # (batch, n_images, H, W)
+
+        return final_normalized_attention_maps, normalized_proprio_attention
 
 
 class _ACTEncoder(nn.Module):
