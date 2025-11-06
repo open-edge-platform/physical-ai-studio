@@ -6,7 +6,7 @@
 ## Type of Change
 <!-- Mark the relevant option with an 'x' -->
 - [ ] ✨ feat: A new feature
-- [ ] 🐛 fix: A bug fix
+- [ ] 🐞 fix: A bug fix
 - [ ] 📚 docs: Documentation only changes
 - [ ] 🎨 style: Changes that do not affect the meaning of the code (white-space, formatting, missing semi-colons, etc)
 - [ ] ♻️ refactor: A code change that neither fixes a bug nor adds a feature
@@ -27,6 +27,14 @@ Relates to #(issue number)
 -
 -
 -
+
+## Examples
+<!-- Demonstrate the changes with high-level code, pseudo-code, or before/after comparisons -->
+
+```
+# Add examples here: usage examples, pseudo-code, or before/after comparisons
+
+```
 
 ## Screenshots/Videos
 <!-- If applicable, add screenshots or videos to help explain your changes -->
