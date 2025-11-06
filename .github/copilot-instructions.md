@@ -170,6 +170,7 @@ library/src/getiaction/
   - High-level pseudo-code for complex changes
 - Ensure PR title follows conventional commit format
 - Request reviews from appropriate team members
+- **Tip**: When drafting PRs, save the filled template as a temporary markdown file (e.g., `tmp_PR_TEMPLATE_<branch-name>.md`) for easy preview and editing before creating the actual PR
 
 ## Performance Considerations
 - Lazy load heavy dependencies in Python
