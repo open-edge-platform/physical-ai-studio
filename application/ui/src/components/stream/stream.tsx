@@ -38,7 +38,7 @@ const useSetTargetSizeBasedOnVideo = (
     }, [setSize, videoRef]);
 };
 
-const useStreamToVideo = () => {
+export const useStreamToVideo = () => {
     const videoRef = useRef<HTMLVideoElement>(null);
 
     const { status, webRTCConnectionRef } = useWebRTCConnection();
