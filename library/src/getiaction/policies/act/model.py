@@ -218,18 +218,15 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
             raise RuntimeError(msg)
 
         sample_input = {
-            str(Observation.ComponentKeys.STATE): torch.randn(1, *state_feature.shape),
+            Observation.ComponentKeys.STATE.value: torch.randn(1, *state_feature.shape),
         }
 
         if len(self._config.image_features) == 1:
             visual_feature = next(iter(self._config.image_features.values()))
-            sample_input[str(Observation.ComponentKeys.IMAGES)] = torch.randn(1, *visual_feature.shape)
+            sample_input[Observation.ComponentKeys.IMAGES.value] = torch.randn(1, *visual_feature.shape)
         else:
-            images_dict = {}
             for key, visual_feature in self._config.image_features.items():
-                images_dict[key] = torch.randn(1, *visual_feature.shape)
-
-            sample_input[str(Observation.ComponentKeys.IMAGES)] = images_dict
+                sample_input[Observation.ComponentKeys.IMAGES.value + "." + key] = torch.randn(1, *visual_feature.shape)
 
         return sample_input
 
@@ -281,13 +278,13 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
             - KL divergence loss is computed when config.use_vae is True
         """
         if self._model.training:
-            batch = self._preprocess_input_dict(batch)
+            batch = self._input_normalizer(batch)
 
             actions_hat, (mu_hat, log_sigma_x2_hat) = self._model(batch)
 
             l1_loss = (
                 F.l1_loss(batch[Observation.ComponentKeys.ACTION], actions_hat, reduction="none")
-                * ~batch[Observation.ComponentKeys.EXTRA]["action_is_pad"].unsqueeze(-1)
+                * ~batch[Observation.ComponentKeys.EXTRA.value + ".action_is_pad"].unsqueeze(-1)
             ).mean()
 
             loss_dict = {"l1_loss": l1_loss.item()}
@@ -326,7 +323,7 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
             - The model is set to evaluation mode during prediction
             - Input normalization is applied to the batch
         """
-        batch = self._preprocess_input_dict(batch)
+        batch = self._input_normalizer(batch)
         actions = self._model(batch)[0]  # only select the actions, ignore the latent params
 
         return self._output_denormalizer({Observation.ComponentKeys.ACTION.value: actions})[
@@ -354,7 +351,7 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
                 - explain_result (torch.Tensor | None): Explainability information from the model,
                   which may be None if explainability features are not available or enabled.
         """
-        batch = self._preprocess_input_dict(batch)
+        batch = self._input_normalizer(batch)
         actions, _, explain_result = self._model.forward_with_explain(batch)
 
         action = self._output_denormalizer({Observation.ComponentKeys.ACTION.value: actions})[
@@ -391,36 +388,6 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
             list[int]: A list of relative observation indices.
         """
         return None
-
-    def _preprocess_input_dict(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-        """Preprocess input batch dictionary.
-
-        This method preprocesses the input batch dictionary by flattening image features
-        to a list if multiple image features are present. Also, normalization is applied to
-        known features.
-
-        Args:
-            batch (dict[str, torch.Tensor]): A dictionary containing input data.
-
-        Returns:
-            dict[str, torch.Tensor]: The preprocessed input batch dictionary.
-        """
-        batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-        batch = self._input_normalizer(batch)
-
-        if self._config.image_features:
-            images_dict = (
-                batch[Observation.ComponentKeys.IMAGES.value]
-                if isinstance(batch[Observation.ComponentKeys.IMAGES.value], dict)
-                else batch
-            )
-            image_nchw_ndims = 4
-            if batch[Observation.ComponentKeys.IMAGES.value].ndim == image_nchw_ndims:
-                batch[Observation.ComponentKeys.IMAGES.value] = [
-                    images_dict[key] for key in self._config.image_features
-                ]
-
-        return batch
 
 
 @dataclass(frozen=True)
@@ -682,7 +649,7 @@ class _ACT(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, batch: dict[str, Tensor]) -> tuple[Tensor, tuple[Tensor, Tensor] | tuple[None, None]]:  # noqa: PLR0914, PLR0915, PLR0912
+    def forward(self, batch: dict[str, Tensor]) -> tuple[Tensor, tuple[Tensor, Tensor] | tuple[None, None]]:  # noqa: PLR0914, PLR0915
         """A forward pass through the Action Chunking Transformer (with optional VAE encoder).
 
         `batch` should have the following structure:
@@ -708,10 +675,7 @@ class _ACT(nn.Module):
             msg = "Actions must be provided when using the variational objective in training mode."
             raise RuntimeError(msg)
 
-        if Observation.ComponentKeys.IMAGES.value in batch:
-            batch_size = batch[Observation.ComponentKeys.IMAGES.value][0].shape[0]
-        else:
-            batch_size = batch["environment_state"].shape[0]
+        batch_size = batch[Observation.ComponentKeys.STATE.value].shape[0]
 
         # Prepare the latent for input to the transformer encoder.
         if self.config.use_vae and Observation.ComponentKeys.ACTION.value in batch and self.training:
@@ -748,7 +712,7 @@ class _ACT(nn.Module):
                 device=batch[Observation.ComponentKeys.STATE].device,
             )
             key_padding_mask = torch.cat(
-                [cls_joint_is_pad, batch[Observation.ComponentKeys.EXTRA.value]["action_is_pad"]],
+                [cls_joint_is_pad, batch[Observation.ComponentKeys.EXTRA.value + ".action_is_pad"]],
                 axis=1,
             )  # (bs, seq+1 or 2)
 
@@ -790,7 +754,8 @@ class _ACT(nn.Module):
             # For a list of images, the H and W may vary but H*W is constant.
             # NOTE: If modifying this section, verify on MPS devices that
             # gradients remain stable (no explosions or NaNs).
-            for img in batch[Observation.ComponentKeys.IMAGES.value]:
+            for img_k in Observation.get_all_component_dict_keys(batch, Observation.ComponentKeys.IMAGES):
+                img = batch[img_k]
                 cam_features = self.backbone(img)["feature_map"]
                 if self.collect_image_features_shapes:
                     self.image_features_shapes.append((cam_features.shape[2], cam_features.shape[3]))
