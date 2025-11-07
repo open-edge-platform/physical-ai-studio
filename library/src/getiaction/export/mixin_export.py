@@ -20,6 +20,7 @@ CONFIG_KEY = "model_config"
 class ExportBackend(StrEnum):
     """Supported export backends."""
 
+    TORCH = "torch"
     ONNX = "onnx"
     OPENVINO = "openvino"
     TORCH_EXPORT_IR = "torch_export_ir"
@@ -248,6 +249,8 @@ class Export:
             self.to_openvino(output_path, input_sample, **export_kwargs)
         elif backend == ExportBackend.TORCH_EXPORT_IR:
             self.to_torch_export_ir(output_path, input_sample, **export_kwargs)
+        elif backend == ExportBackend.TORCH:
+            self.to_torch(output_path)
         else:
             msg = f"Unsupported export backend: {backend}"
             raise ValueError(msg)
