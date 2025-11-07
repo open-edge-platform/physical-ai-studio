@@ -210,7 +210,8 @@ class TestToOnnx:
 
         # Check that both inputs are in the model
         input_names = [input.name for input in onnx_model.graph.input]
-        assert "images" in input_names
+        assert "input_a" in input_names
+        assert "input_b" in input_names
 
     def test_to_onnx_with_dict_input(self, tmp_path):
         """Test ONNX export with model accepting dict as single parameter."""
