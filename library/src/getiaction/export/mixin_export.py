@@ -141,26 +141,13 @@ class Export:
         if output_names is not None:
             extra_model_args.pop("output")
 
-        input_shapes: list[openvino.Shape] = []
-        for input_descr in input_sample.values():
-            if isinstance(input_descr, dict):
-                base_shape = next(iter(input_descr.values())).shape
-                input_shapes.append(openvino.Shape((len(input_descr), *base_shape)))
-            else:
-                input_shapes.append(openvino.Shape(tuple(input_descr.shape)))
-
-        input_sample_flat: dict[str, torch.Tensor | list[torch.Tensor]] = {}
-        for key, input_descr in input_sample.items():
-            if isinstance(input_descr, dict):
-                input_sample_flat[key] = torch.cat([tensor.unsqueeze_(0) for tensor in input_descr.values()])
-            else:
-                input_sample_flat[key] = input_descr
+        input_shapes = [openvino.Shape(tuple(tensor.shape)) for tensor in input_sample.values()]
 
         self.model.eval()
 
         ov_model = openvino.convert_model(
             self.model,
-            example_input={arg_name: input_sample_flat},
+            example_input={arg_name: input_sample},
             input=input_shapes,
             **extra_model_args,
         )
