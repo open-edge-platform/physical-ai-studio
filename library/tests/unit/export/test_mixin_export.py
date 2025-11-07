@@ -93,23 +93,17 @@ class ModelWithMultipleInputs(torch.nn.Module):
 
     def forward(self, batch):
         # batch is a dict containing multiple tensors
-        if isinstance(batch["images"], dict):
-            x1 = self.linear1(batch["images"]["input_a"])
-            x2 = self.linear2(batch["images"]["input_b"])
-        else:
-            x1 = self.linear1(batch["images"][0])
-            x2 = self.linear2(batch["images"][1])
+        x1 = self.linear1(batch["input_a"])
+        x2 = self.linear2(batch["input_b"])
         combined = torch.cat([x1, x2], dim=-1)
         return self.combine(combined)
 
     @property
-    def sample_input(self) -> dict[str, dict[str, torch.Tensor]]:
+    def sample_input(self) -> dict[str, torch.Tensor]:
         """Generate sample input."""
         return {
-            "images":{
-                "input_a": torch.randn(1, 5),
-                "input_b": torch.randn(1, 5),
-            }
+            "input_a": torch.randn(1, 5),
+            "input_b": torch.randn(1, 5),
         }
 
 
