@@ -194,14 +194,6 @@ Backend detected from file extensions: `.xml` (OpenVINO), `.onnx` (ONNX), `.pt` 
 
 ## Performance
 
-### Typical Latency (ACT, chunk_size=100)
-
-| Backend | Intel CPU | Intel GPU | NVIDIA GPU |
-|---------|-----------|-----------|------------|
-| OpenVINO | 5-10ms | 3-5ms | 10-15ms |
-| ONNX | 10-15ms | 8-12ms | 3-5ms |
-| TorchScript | 15-20ms | - | 8-10ms |
-
 ### Optimization
 
 - Action queuing amortizes cost over `chunk_size`
