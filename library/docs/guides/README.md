@@ -20,6 +20,21 @@ Comprehensive guide to using the GetiAction command-line interface.
 
 **Audience:** Users who want to train policies and run experiments
 
+### [Export & Inference Guide](export_inference.md)
+
+Complete guide for exporting trained policies and deploying to production.
+
+**Topics Covered:**
+
+- Training to production workflow
+- Export to multiple backends (OpenVINO, ONNX, TorchScript)
+- Inference deployment
+- Backend selection and optimization
+- Performance tuning
+- Troubleshooting
+
+**Audience:** Users deploying models to production environments
+
 ---
 
 ## Guide vs Design Documentation
