@@ -177,15 +177,10 @@ policy.to_onnx("model.onnx")
 For ONNX export, provide a sample input:
 
 ```python
-from getiaction.policies.act.model import ACT as ACTModel
-
-class ACTModel(nn.Module):
+class MyModel(nn.Module):
     @property
     def sample_input(self) -> dict[str, torch.Tensor]:
-        return {
-            "image": torch.randn(1, 3, 224, 224),
-            "state": torch.randn(1, 14),
-        }
+        return {"action": torch.randn(1, *self.action_shape)}
 ```
 
 ### 2. Provide extra_export_args
@@ -193,17 +188,13 @@ class ACTModel(nn.Module):
 Customize ONNX export with additional arguments:
 
 ```python
-class ACTModel(nn.Module):
+class MyModel(nn.Module):
     @property
     def extra_export_args(self) -> dict:
         return {
             "onnx": {
                 "output_names": ["action"],
-                "dynamic_axes": {
-                    "image": {0: "batch_size"},
-                    "state": {0: "batch_size"},
-                    "action": {0: "batch_size"},
-                },
+                "dynamic_axes": {"action": {0: "batch_size"}},
             }
         }
 ```
@@ -213,10 +204,8 @@ class ACTModel(nn.Module):
 Store model configuration for serialization:
 
 ```python
-from getiaction.policies.act.config import ACTConfig
-
-class ACTModel(nn.Module):
-    def __init__(self, config: ACTConfig):
+class MyModel(nn.Module):
+    def __init__(self, config: MyConfig):
         super().__init__()
         self.config = config  # Will be automatically serialized
 ```

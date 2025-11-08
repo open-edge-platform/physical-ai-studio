@@ -28,7 +28,7 @@ Common interface for all inference backends:
 class RuntimeAdapter(ABC):
     @abstractmethod
     def load(self, model_path: Path) -> None: ...
-    
+
     @abstractmethod
     def predict(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]: ...
 ```
@@ -63,14 +63,21 @@ graph TD
     B -->|OpenVINO| C[OpenVINOAdapter]
     B -->|ONNX| D[ONNXAdapter]
     B -->|TorchScript| E[TorchScriptAdapter]
-    
-    C --> F[OpenVINO Runtime]
-    D --> G[ONNX Runtime]
-    E --> H[PyTorch JIT]
-    
-    F --> I[Hardware: CPU/GPU/NPU]
-    G --> J[Hardware: CPU/CUDA/TensorRT]
-    H --> K[Hardware: CPU/CUDA]
+    B -.->|Future| F[ExecuTorchAdapter]
+
+    C --> G[OpenVINO Runtime]
+    D --> H[ONNX Runtime]
+    E --> I[PyTorch JIT]
+    F -.-> J[ExecuTorch Runtime]
+
+    G --> K[Hardware: CPU/GPU/NPU]
+    H --> L[Hardware: CPU/CUDA/TensorRT]
+    I --> M[Hardware: CPU/CUDA]
+    J -.-> N[Hardware: Edge/Mobile]
+
+    style F stroke-dasharray: 5 5
+    style J stroke-dasharray: 5 5
+    style N stroke-dasharray: 5 5
 ```
 
 ### Factory Pattern
@@ -106,7 +113,7 @@ sequenceDiagram
     participant Factory
     participant Adapter
     participant Metadata
-    
+
     User->>InferenceModel: load(export_dir)
     InferenceModel->>Metadata: read metadata.yaml
     InferenceModel->>Factory: get_adapter(backend)
@@ -122,7 +129,7 @@ sequenceDiagram
     participant User
     participant InferenceModel
     participant Adapter
-    
+
     User->>InferenceModel: select_action(obs)
     InferenceModel->>InferenceModel: preprocess obs
     InferenceModel->>Adapter: predict(inputs)
@@ -140,10 +147,10 @@ sequenceDiagram
     participant InferenceModel
     participant Queue
     participant Adapter
-    
+
     User->>InferenceModel: select_action(obs)
     InferenceModel->>Queue: check queue
-    
+
     alt Queue Empty
         InferenceModel->>Adapter: predict(inputs)
         Adapter->>InferenceModel: actions [chunk_size, action_dim]
