@@ -23,12 +23,12 @@ action = inference_model.select_action(observation)
 
 ## Backends
 
-| Backend | Best For | Install | Support |
-|---------|----------|---------|---------|
-| **OpenVINO** | Intel CPUs/GPUs/NPUs | `pip install openvino` | ✅ |
-| **ONNX** | NVIDIA GPUs, cross-platform | `pip install onnxruntime` | ✅ |
-| **TorchScript** | PyTorch ecosystem | Built-in | ✅ |
-| **Torch Export IR** | Edge/mobile devices | Built-in | ✅ |
+| Backend             | Best For                    | Install                   | Support |
+| ------------------- | --------------------------- | ------------------------- | ------- |
+| **OpenVINO**        | Intel CPUs/GPUs/NPUs        | `pip install openvino`    | ✅      |
+| **ONNX**            | NVIDIA GPUs, cross-platform | `pip install onnxruntime` | ✅      |
+| **TorchScript**     | PyTorch ecosystem           | Built-in                  | ✅      |
+| **Torch Export IR** | Edge/mobile devices         | Built-in                  | ✅      |
 
 ## Export
 
@@ -44,7 +44,8 @@ policy.export("./exports", backend="openvino")
 ```
 
 **Output:**
-```
+
+```text
 exports/
 ├── model.xml / model.onnx / model.pt
 ├── metadata.yaml
@@ -97,18 +98,18 @@ print(f"{(time.time()-start)/1000*1000:.2f}ms per action")
 
 ### Export Errors
 
-| Error | Cause | Solution |
-|-------|-------|----------|
-| `RuntimeError: Policy not initialized` | Exporting before training | Call `trainer.fit()` first |
-| `ValueError: Cannot create dummy input` | Missing input shapes | Train with proper datamodule |
+| Error                                   | Cause                     | Solution                     |
+| --------------------------------------- | ------------------------- | ---------------------------- |
+| `RuntimeError: Policy not initialized`  | Exporting before training | Call `trainer.fit()` first   |
+| `ValueError: Cannot create dummy input` | Missing input shapes      | Train with proper datamodule |
 
 ### Inference Errors
 
-| Error | Cause | Solution |
-|-------|-------|----------|
-| `ImportError: openvino not installed` | Backend missing | `pip install openvino/onnxruntime` |
-| `ValueError: Cannot detect backend` | No model file | Verify export completed |
-| `RuntimeError: Input shape mismatch` | Wrong observation shape | Check `policy.metadata["input_shapes"]` |
+| Error                                 | Cause                   | Solution                                |
+| ------------------------------------- | ----------------------- | --------------------------------------- |
+| `ImportError: openvino not installed` | Backend missing         | `pip install openvino/onnxruntime`      |
+| `ValueError: Cannot detect backend`   | No model file           | Verify export completed                 |
+| `RuntimeError: Input shape mismatch`  | Wrong observation shape | Check `policy.metadata["input_shapes"]` |
 
 ### Numerical Differences
 

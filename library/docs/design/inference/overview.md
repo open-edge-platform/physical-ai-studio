@@ -35,12 +35,12 @@ class RuntimeAdapter(ABC):
 
 ### Concrete Adapters
 
-| Adapter | Hardware | Key Features |
-|---------|----------|--------------|
-| **OpenVINOAdapter** | Intel CPU/GPU/NPU | Hardware optimizations, model caching, quantization |
-| **ONNXAdapter** | Cross-platform | CUDA/TensorRT support, graph optimization |
-| **TorchScriptAdapter** | PyTorch ecosystem | JIT compilation, mobile deployment |
-| **ExecuTorchAdapter** | Edge/mobile devices | Torch Export IR, resource-constrained deployment |
+| Adapter                | Hardware            | Key Features                                        |
+| ---------------------- | ------------------- | --------------------------------------------------- |
+| **OpenVINOAdapter**    | Intel CPU/GPU/NPU   | Hardware optimizations, model caching, quantization |
+| **ONNXAdapter**        | Cross-platform      | CUDA/TensorRT support, graph optimization           |
+| **TorchScriptAdapter** | PyTorch ecosystem   | JIT compilation, mobile deployment                  |
+| **ExecuTorchAdapter**  | Edge/mobile devices | Torch Export IR, resource-constrained deployment    |
 
 **Note:** ExecuTorchAdapter will be fully validated with real policy exports in PR #2 (First-Party ACT Export).
 
@@ -95,8 +95,8 @@ backend: openvino
 policy_class: getiaction.policies.act.policy.ACT
 chunk_size: 100
 use_action_queue: true
-input_shapes: {image: [3, 224, 224], state: [14]}
-output_shapes: {action: [7]}
+input_shapes: { image: [3, 224, 224], state: [14] }
+output_shapes: { action: [7] }
 ```
 
 ## Data Flow
@@ -183,11 +183,11 @@ Backend detected from file extensions: `.xml` (OpenVINO), `.onnx` (ONNX), `.pt` 
 
 ### Device Priority
 
-| Backend | Device Priority |
-|---------|----------------|
-| OpenVINO | GPU → NPU → CPU |
-| ONNX | CUDA → TensorRT → CPU |
-| TorchScript | cuda → cpu |
+| Backend     | Device Priority       |
+| ----------- | --------------------- |
+| OpenVINO    | GPU → NPU → CPU       |
+| ONNX        | CUDA → TensorRT → CPU |
+| TorchScript | cuda → cpu            |
 
 ## Performance
 
@@ -209,6 +209,7 @@ Common errors: `ImportError` (backend not installed), `ValueError` (invalid expo
 - **Compatibility tests**: Backend consistency validation
 
 **Testing Plan:**
+
 - OpenVINO, ONNX, TorchScript: Fully tested in PR #2 with ACT policy
 - ExecuTorch: Implementation complete, full E2E testing in PR #2
 
