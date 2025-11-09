@@ -146,8 +146,6 @@ class InferenceModel:
             >>> action = policy.select_action(obs)
             >>> next_obs, reward, done = env.step(action)
         """
-        import numpy as np  # noqa: PLC0415
-
         # For chunked policies, use action queue
         if self.use_action_queue and len(self._action_queue) > 0:
             return self._action_queue.popleft()
@@ -172,7 +170,8 @@ class InferenceModel:
 
         # For non-chunked policies, return directly
         # Remove temporal dimension if present: (batch, 1, action_dim) -> (batch, action_dim)
-        if actions.dim() == 3 and actions.shape[1] == 1:
+        temporal_dim = 3
+        if actions.dim() == temporal_dim and actions.shape[1] == 1:
             actions = actions.squeeze(1)
 
         return actions
@@ -283,7 +282,8 @@ class InferenceModel:
 
         return mapping
 
-    def _get_action_output_key(self, outputs: dict[str, np.ndarray]) -> str:
+    @staticmethod
+    def _get_action_output_key(outputs: dict[str, np.ndarray]) -> str:
         """Determine which output contains actions.
 
         Args:
@@ -338,7 +338,8 @@ class InferenceModel:
             # e.g., "getiaction.policies.act.ACT" -> "act"
             class_path = self.metadata["policy_class"]
             parts = class_path.lower().split(".")
-            if len(parts) >= 3:
+            min_parts_for_module_extraction = 3
+            if len(parts) >= min_parts_for_module_extraction:
                 return parts[-2]  # Get policy module name
 
         # Try to infer from model files
@@ -409,7 +410,7 @@ class InferenceModel:
             ExportBackend.OPENVINO: ".xml",
             ExportBackend.ONNX: ".onnx",
             ExportBackend.TORCH: ".pt",
-            ExportBackend.TORCH_IR: ".pt",
+            ExportBackend.TORCH_EXPORT_IR: ".ptir",
         }
 
         ext = extension_map[self.backend]

@@ -61,7 +61,7 @@ class TorchScriptAdapter(RuntimeAdapter):
             raise FileNotFoundError(msg)
 
         # Load model
-        self.model = torch.jit.load(str(model_path), map_location=self.device)
+        self.model = torch.jit.load(str(model_path), map_location=self.device)  # nosec B614
         self.model.eval()
 
         # Try to extract input names from model if available
@@ -84,7 +84,6 @@ class TorchScriptAdapter(RuntimeAdapter):
         Raises:
             RuntimeError: If model is not loaded
         """
-        import numpy as np  # noqa: PLC0415
         import torch  # noqa: PLC0415
 
         if self.model is None:

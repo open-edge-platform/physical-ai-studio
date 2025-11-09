@@ -45,7 +45,7 @@ policy = InferenceModel(
 
 ### Module Structure
 
-```
+```text
 inference/
 ├── __init__.py          # Public API
 ├── model.py             # InferenceModel class
@@ -84,6 +84,7 @@ InferenceModel(
 ```
 
 **Parameters:**
+
 - `export_dir`: Directory containing exported policy files
 - `policy_name`: Policy name (auto-detected from files if None)
 - `backend`: Backend to use ("openvino", "onnx", "torch", or "auto")
@@ -108,11 +109,13 @@ def select_action(self, observation: Observation) -> torch.Tensor
 Select action for given observation. Matches PyTorch policy API.
 
 **For chunked policies (chunk_size > 1):**
+
 - Automatically manages action queue
 - Returns one action at a time
 - Only calls model when queue is empty
 
 **Returns:**
+
 - Action tensor: `(batch_size, action_dim)` or `(action_dim,)`
 
 #### Method: reset()
@@ -235,11 +238,13 @@ The inference module automatically detects:
 ### 1. Backend
 
 From file extensions in export directory:
+
 - `.xml` → OpenVINO
 - `.onnx` → ONNX
 - `.pt` → TorchScript
 
 Or from `metadata.yaml`:
+
 ```yaml
 backend: openvino
 ```
@@ -249,12 +254,14 @@ backend: openvino
 **OpenVINO:** Defaults to `"CPU"` (most compatible)
 
 **ONNX/TorchScript:**
+
 - Uses `"cuda"` if available
 - Falls back to `"cpu"`
 
 ### 3. Policy Configuration
 
 From `metadata.yaml`:
+
 ```yaml
 backend: openvino
 chunk_size: 100
@@ -267,11 +274,11 @@ policy_class: getiaction.policies.act.ACT
 Export creates `metadata.yaml` with policy configuration:
 
 ```yaml
-backend: openvino                          # Backend used for export
-chunk_size: 100                            # Action chunk size
-use_action_queue: true                     # Whether to use action queue
-policy_class: getiaction.policies.act.ACT  # Policy class path
-n_action_steps: 100                        # Number of action steps (optional)
+backend: openvino # Backend used for export
+chunk_size: 100 # Action chunk size
+use_action_queue: true # Whether to use action queue
+policy_class: getiaction.policies.act.ACT # Policy class path
+n_action_steps: 100 # Number of action steps (optional)
 ```
 
 ## Performance Tips
@@ -332,6 +339,7 @@ except ImportError as e:
 ## Testing
 
 Run tests with:
+
 ```bash
 uv run pytest tests/unit/inference/
 ```
@@ -339,16 +347,19 @@ uv run pytest tests/unit/inference/
 ## Dependencies
 
 ### Core
+
 - `torch`: For tensor operations
 - `numpy`: For array operations
 - `pyyaml`: For metadata parsing
 
 ### Backend-specific (optional)
+
 - `openvino`: For OpenVINO backend
 - `onnxruntime` or `onnxruntime-gpu`: For ONNX backend
 - `torch`: Already included for TorchScript
 
 Install with:
+
 ```bash
 # OpenVINO
 uv pip install openvino

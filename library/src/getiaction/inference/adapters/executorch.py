@@ -51,11 +51,12 @@ class ExecuTorchAdapter(RuntimeAdapter):
             raise FileNotFoundError(msg)
 
         try:
-            self._program = torch.export.load(str(model_path))
-            self._module = self._program.module()
+            program = torch.export.load(str(model_path))  # nosec B614
+            self._program = program
+            self._module = program.module()
 
             # Extract input/output names from the graph signature
-            graph_signature = self._program.graph_signature
+            graph_signature = program.graph_signature
             self._input_names = [str(name) for name in graph_signature.user_inputs]
             self._output_names = [str(name) for name in graph_signature.user_outputs]
 
@@ -75,7 +76,6 @@ class ExecuTorchAdapter(RuntimeAdapter):
         Raises:
             RuntimeError: If model is not loaded or inference fails
             ValueError: If input names don't match model expectations
-            TypeError: If output type is unexpected
         """
         if self._module is None:
             msg = "Model not loaded. Call load() first."
@@ -96,21 +96,37 @@ class ExecuTorchAdapter(RuntimeAdapter):
                 torch_outputs = self._module(torch_inputs)
 
             # Handle different output formats
-            if isinstance(torch_outputs, torch.Tensor):
-                # Single output
-                return {self._output_names[0]: torch_outputs.numpy()}
-            if isinstance(torch_outputs, dict):
-                # Dict output
-                return {k: v.numpy() if isinstance(v, torch.Tensor) else v for k, v in torch_outputs.items()}
-            if isinstance(torch_outputs, (list, tuple)):
-                # Multiple outputs as list/tuple
-                return {name: output.numpy() for name, output in zip(self._output_names, torch_outputs, strict=True)}
-            msg = f"Unexpected output type: {type(torch_outputs)}"
-            raise TypeError(msg)
+            return self._convert_outputs_to_numpy(torch_outputs)
 
         except Exception as e:
             msg = f"Inference failed: {e}"
             raise RuntimeError(msg) from e
+
+    def _convert_outputs_to_numpy(self, torch_outputs: torch.Tensor | dict | list | tuple) -> dict[str, np.ndarray]:
+        """Convert model outputs to numpy format.
+
+        Args:
+            torch_outputs: Model outputs (tensor, dict, list, or tuple)
+
+        Returns:
+            Dictionary mapping output names to numpy arrays
+
+        Raises:
+            TypeError: If output type is unexpected
+        """
+        if isinstance(torch_outputs, torch.Tensor):
+            # Single output
+            return {self._output_names[0]: torch_outputs.numpy()}
+        if isinstance(torch_outputs, dict):
+            # Dict output
+            return {k: v.numpy() if isinstance(v, torch.Tensor) else v for k, v in torch_outputs.items()}
+        if isinstance(torch_outputs, (list, tuple)):
+            # Multiple outputs as list/tuple
+            return {name: output.numpy() for name, output in zip(self._output_names, torch_outputs, strict=True)}
+
+        # Unexpected output type
+        msg = f"Unexpected output type: {type(torch_outputs)}"
+        raise TypeError(msg)
 
     @property
     def input_names(self) -> list[str]:
