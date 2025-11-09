@@ -23,14 +23,12 @@ action = inference_model.select_action(observation)
 
 ## Backends
 
-| Backend | Best For | Install | Inference Support |
-|---------|----------|---------|-------------------|
+| Backend | Best For | Install | Support |
+|---------|----------|---------|---------|
 | **OpenVINO** | Intel CPUs/GPUs/NPUs | `pip install openvino` | ✅ |
 | **ONNX** | NVIDIA GPUs, cross-platform | `pip install onnxruntime` | ✅ |
 | **TorchScript** | PyTorch ecosystem | Built-in | ✅ |
-| **Torch Export IR** | Edge/mobile (ExecuTorch) | Built-in | ⏳ Export only |
-
-**Note:** Torch Export IR can be exported via `policy.to_torch_export_ir()` but inference adapter is planned for a future release.
+| **Torch Export IR** | Edge/mobile devices | Built-in | ✅ |
 
 ## Export
 
@@ -74,6 +72,7 @@ while not done:
 - **OpenVINO**: Intel hardware (CPU/GPU/NPU), edge devices
 - **ONNX**: NVIDIA GPUs (TensorRT), cross-platform, cloud
 - **TorchScript**: PyTorch ecosystem, mobile, debugging
+- **Torch Export IR**: Edge/mobile deployment, resource-constrained devices
 
 ## Performance Tips
 

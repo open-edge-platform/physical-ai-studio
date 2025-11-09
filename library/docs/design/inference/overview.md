@@ -40,8 +40,9 @@ class RuntimeAdapter(ABC):
 | **OpenVINOAdapter** | Intel CPU/GPU/NPU | Hardware optimizations, model caching, quantization |
 | **ONNXAdapter** | Cross-platform | CUDA/TensorRT support, graph optimization |
 | **TorchScriptAdapter** | PyTorch ecosystem | JIT compilation, mobile deployment |
+| **ExecuTorchAdapter** | Edge/mobile devices | Torch Export IR, resource-constrained deployment |
 
-**Note:** ExecuTorch (Torch Export IR) is supported for export via `to_torch_export_ir()` but inference adapter is not yet implemented. Planned for future release.
+**Note:** ExecuTorchAdapter will be fully validated with real policy exports in PR #2 (First-Party ACT Export).
 
 ### InferenceModel
 
@@ -63,21 +64,17 @@ graph TD
     B -->|OpenVINO| C[OpenVINOAdapter]
     B -->|ONNX| D[ONNXAdapter]
     B -->|TorchScript| E[TorchScriptAdapter]
-    B -.->|Future| F[ExecuTorchAdapter]
+    B -->|ExecuTorch| F[ExecuTorchAdapter]
 
     C --> G[OpenVINO Runtime]
     D --> H[ONNX Runtime]
     E --> I[PyTorch JIT]
-    F -.-> J[ExecuTorch Runtime]
+    F --> J[Torch Export]
 
     G --> K[Hardware: CPU/GPU/NPU]
     H --> L[Hardware: CPU/CUDA/TensorRT]
     I --> M[Hardware: CPU/CUDA]
-    J -.-> N[Hardware: Edge/Mobile]
-
-    style F stroke-dasharray: 5 5
-    style J stroke-dasharray: 5 5
-    style N stroke-dasharray: 5 5
+    J --> N[Hardware: Edge/Mobile]
 ```
 
 ### Factory Pattern
@@ -211,6 +208,10 @@ Common errors: `ImportError` (backend not installed), `ValueError` (invalid expo
 - **Integration tests**: Train → export → inference pipeline
 - **Compatibility tests**: Backend consistency validation
 
+**Testing Plan:**
+- OpenVINO, ONNX, TorchScript: Fully tested in PR #2 with ACT policy
+- ExecuTorch: Implementation complete, full E2E testing in PR #2
+
 ## Extension Points
 
 - **Custom Adapters**: Implement `RuntimeAdapter` for new backends
@@ -218,7 +219,6 @@ Common errors: `ImportError` (backend not installed), `ValueError` (invalid expo
 
 ## Future Work
 
-- **ExecuTorch Adapter**: Inference support for Torch Export IR format (edge/mobile deployment)
 - INT8 quantization support
 - Batch inference
 - Streaming inference

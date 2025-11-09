@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from getiaction.inference.adapters.base import RuntimeAdapter
+from getiaction.inference.adapters.executorch import ExecuTorchAdapter
 from getiaction.inference.adapters.onnx import ONNXAdapter
 from getiaction.inference.adapters.openvino import OpenVINOAdapter
 from getiaction.inference.adapters.torchscript import TorchScriptAdapter
@@ -15,7 +16,14 @@ from getiaction.inference.adapters.torchscript import TorchScriptAdapter
 if TYPE_CHECKING:
     from getiaction.export import ExportBackend
 
-__all__ = ["ONNXAdapter", "OpenVINOAdapter", "RuntimeAdapter", "TorchScriptAdapter", "get_adapter"]
+__all__ = [
+    "ExecuTorchAdapter",
+    "ONNXAdapter",
+    "OpenVINOAdapter",
+    "RuntimeAdapter",
+    "TorchScriptAdapter",
+    "get_adapter",
+]
 
 
 def get_adapter(backend: ExportBackend | str, **kwargs: Any) -> RuntimeAdapter:  # noqa: ARG001, ANN401
@@ -48,6 +56,7 @@ def get_adapter(backend: ExportBackend | str, **kwargs: Any) -> RuntimeAdapter: 
         ExportBackend.OPENVINO: OpenVINOAdapter,
         ExportBackend.ONNX: ONNXAdapter,
         ExportBackend.TORCH: TorchScriptAdapter,
+        ExportBackend.TORCH_EXPORT_IR: ExecuTorchAdapter,
     }
 
     if backend not in adapter_map:
