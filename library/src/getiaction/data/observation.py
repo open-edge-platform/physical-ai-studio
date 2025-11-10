@@ -87,21 +87,67 @@ class Observation:
         INFO = "info"
         EXTRA = "extra"
 
-    def to_dict(self) -> dict[str, Any]:
-        """Convert Observation to a nested dictionary format.
+    def to_dict(self, *, flatten: bool = True) -> dict[str, Any]:
+        """Convert Observation to a dictionary format.
 
         Returns a dictionary with the same structure as the Observation fields,
-        preserving nested dictionaries (e.g., images with multiple cameras).
+        preserving nested dictionaries (e.g., images with multiple cameras) if flatten is False.
+        Otherwise, flattens nested dictionaries into keys with dot notation.
 
         Returns:
-            dict[str, Any]: Dictionary representation with nested structure.
+            dict[str, Any]: Dictionary representation with optional nested structure.
 
         Examples:
             >>> obs = Observation(action=torch.tensor([1.0, 2.0]))
             >>> d = obs.to_dict()
             >>> # d = {"action": tensor([1.0, 2.0]), "task": None, ...}
         """
-        return asdict(self)
+        if not flatten:
+            return asdict(self)
+        flat_dict = {}
+        for key, value in asdict(self).items():
+            if isinstance(value, dict):
+                key_entries = []
+                for sub_key, sub_value in value.items():
+                    flat_dict[f"{key}.{sub_key}"] = sub_value
+                    key_entries.append(f"{key}.{sub_key}")
+                flat_dict[f"_{key}_keys"] = key_entries
+            else:
+                flat_dict[key] = value
+
+        return flat_dict
+
+    @staticmethod
+    def get_flattened_keys(data: dict[str, Any], component: Observation.ComponentKeys | str) -> list[str]:
+        """Retrieve all keys associated with a specific component from the data dictionary.
+
+        This method checks for component keys in two ways:
+        1. Directly if the component exists as a key in the data dictionary
+        2. Through a cached list of keys stored with the pattern "_{component}_keys"
+        Args:
+            data: Dictionary containing observation data and component keys
+            component: The component identifier to search for, either as an
+                      Observation.ComponentKeys enum value or a string
+
+        Returns:
+            A list of string keys associated with the component. Returns a list
+            containing the component itself if it exists directly in data, the
+            cached list of keys if available, or an empty list if neither exists.
+
+        Example:
+            >>> data = {"label": {...}, "_label_keys": ["label1", "label2"]}
+            >>> Observation.get_flattened_keys(data, "label")
+            ["label"]
+            >>> Observation.get_flattened_keys(data, "annotation")
+            ["label1", "label2"]
+        """
+        if component in data:
+            return [component]
+
+        if f"_{component}_keys" in data:
+            return data[f"_{component}_keys"]
+
+        return []
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Observation:

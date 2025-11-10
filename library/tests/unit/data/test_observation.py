@@ -101,11 +101,28 @@ class TestObservationToDict:
         }
         obs = Observation(images=images)
 
-        obs_dict = obs.to_dict()
+        obs_dict = obs.to_dict(flatten=False)
 
         assert isinstance(obs_dict["images"], dict)
         assert "top" in obs_dict["images"]
         assert "wrist" in obs_dict["images"]
+
+    def test_to_flat_dict_with_nested_images(self):
+        """Test to_dict preserves nested structure."""
+        images = {
+            "top": torch.rand(3, 224, 224),
+            "wrist": torch.rand(3, 224, 224),
+        }
+        obs = Observation(images=images)
+
+        obs_dict = obs.to_dict(flatten=True)
+
+        assert "images" not in obs_dict
+        assert "images.top" in obs_dict
+        assert "images.wrist" in obs_dict
+
+        for k in Observation.get_flattened_keys(obs_dict, Observation.ComponentKeys.IMAGES):
+            assert k in obs_dict
 
     def test_to_dict_includes_none_fields(self):
         """Test to_dict includes None fields."""
