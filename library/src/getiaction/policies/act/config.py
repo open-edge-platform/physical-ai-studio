@@ -5,7 +5,7 @@
 
 from dataclasses import dataclass, field
 
-from getiaction.data import Feature, Observation
+from getiaction.data import Feature
 
 
 @dataclass(frozen=True)
