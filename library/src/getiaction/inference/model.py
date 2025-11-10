@@ -27,7 +27,7 @@ class InferenceModel:
     """Unified inference interface for exported policies.
 
     Automatically detects backend and provides consistent API across
-    all export formats (OpenVINO, ONNX, TorchScript, etc.).
+    all export formats (OpenVINO, ONNX, Torch Export IR).
 
     The interface matches PyTorch policy API:
     - `select_action(obs)` - Get action from observation
@@ -369,8 +369,8 @@ class InferenceModel:
         extension_map = {
             ".xml": "openvino",  # OpenVINO IR
             ".onnx": "onnx",  # ONNX
-            ".pt": "torch",  # TorchScript
-            ".pth": "torch",  # TorchScript alternative
+            ".pt2": "torch_export_ir",  # Torch Export IR (PyTorch 2.x)
+            ".ptir": "torch_export_ir",  # Torch Export IR (alternative extension)
         }
 
         for ext, backend in extension_map.items():
@@ -390,7 +390,7 @@ class InferenceModel:
         if self.backend == ExportBackend.OPENVINO:
             return "CPU"
 
-        # For ONNX/TorchScript, check CUDA availability
+        # For ONNX/Torch Export IR, check CUDA availability
         if torch.cuda.is_available():
             return "cuda"
 
@@ -405,28 +405,30 @@ class InferenceModel:
         Raises:
             FileNotFoundError: If model file doesn't exist
         """
-        # Map backend to file extension
+        # Map backend to file extension(s)
         extension_map = {
-            ExportBackend.OPENVINO: ".xml",
-            ExportBackend.ONNX: ".onnx",
-            ExportBackend.TORCH: ".pt",
-            ExportBackend.TORCH_EXPORT_IR: ".ptir",
+            ExportBackend.OPENVINO: [".xml"],
+            ExportBackend.ONNX: [".onnx"],
+            ExportBackend.TORCH_EXPORT_IR: [".pt2", ".ptir"],
         }
 
-        ext = extension_map[self.backend]
+        extensions = extension_map[self.backend]
 
-        # Try with policy name
+        # Try with policy name first
         if self.policy_name:
-            model_path = self.export_dir / f"{self.policy_name}{ext}"
-            if model_path.exists():
-                return model_path
+            for ext in extensions:
+                model_path = self.export_dir / f"{self.policy_name}{ext}"
+                if model_path.exists():
+                    return model_path
 
-        # Try finding any file with the extension
-        files = list(self.export_dir.glob(f"*{ext}"))
-        if files:
-            return files[0]
+        # Try finding any file with any of the extensions
+        for ext in extensions:
+            files = list(self.export_dir.glob(f"*{ext}"))
+            if files:
+                return files[0]
 
-        msg = f"No {ext} model file found in {self.export_dir}"
+        ext_str = " or ".join(extensions)
+        msg = f"No {ext_str} model file found in {self.export_dir}"
         raise FileNotFoundError(msg)
 
     def __repr__(self) -> str:

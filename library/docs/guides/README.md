@@ -27,7 +27,7 @@ Complete guide for exporting trained policies and deploying to production.
 **Topics Covered:**
 
 - Training to production workflow
-- Export to multiple backends (OpenVINO, ONNX, TorchScript)
+- Export to multiple backends (OpenVINO, ONNX, Torch Export IR)
 - Inference deployment
 - Backend selection and optimization
 - Performance tuning

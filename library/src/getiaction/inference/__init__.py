@@ -4,7 +4,7 @@
 """Production inference module for exported policies.
 
 This module provides a unified interface for running inference with
-exported policies across different backends (OpenVINO, ONNX, TorchScript).
+exported policies across different backends (OpenVINO, ONNX, Torch Export IR).
 
 Key Features:
     - Unified API matching PyTorch policies

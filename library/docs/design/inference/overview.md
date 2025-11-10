@@ -7,7 +7,7 @@ inference with multiple optimized backends.
 
 The inference system provides a unified API for deploying trained policies:
 
-- **Runtime Adapters** - Backend abstraction (OpenVINO, ONNX, TorchScript)
+- **Runtime Adapters** - Backend abstraction (OpenVINO, ONNX, Torch Export IR)
 - **InferenceModel** - Unified interface matching training policy API
 - **Auto-detection** - Automatic backend and device selection
 - **Action Queuing** - Manages chunked policy outputs
@@ -28,10 +28,12 @@ Common interface for all inference backends:
 ```python
 class RuntimeAdapter(ABC):
     @abstractmethod
-    def load(self, model_path: Path) -> None: ...
+    def load(self, model_path: Path) -> None:
+        ...
 
     @abstractmethod
-    def predict(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]: ...
+    def predict(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        ...
 ```
 
 ### Concrete Adapters
@@ -40,10 +42,9 @@ class RuntimeAdapter(ABC):
 | ---------------------- | ------------------- | --------------------------- |
 | **OpenVINOAdapter**    | Intel CPU/GPU/NPU   | Hardware opts, quantization |
 | **ONNXAdapter**        | Cross-platform      | CUDA/TensorRT, optimization |
-| **TorchScriptAdapter** | PyTorch ecosystem   | JIT, mobile deployment      |
-| **ExecuTorchAdapter**  | Edge/mobile devices | Torch Export IR, edge/IoT   |
+| **TorchExportAdapter** | Edge/mobile devices | Torch Export IR, PyTorch    |
 
-**Note:** ExecuTorchAdapter will be fully validated with real policy
+**Note:** TorchExportAdapter will be fully validated with real policy
 exports in PR #2 (First-Party ACT Export).
 
 ### InferenceModel
@@ -66,18 +67,15 @@ graph TD
     A[InferenceModel] --> B{Backend Type}
     B -->|OpenVINO| C[OpenVINOAdapter]
     B -->|ONNX| D[ONNXAdapter]
-    B -->|TorchScript| E[TorchScriptAdapter]
-    B -->|ExecuTorch| F[ExecuTorchAdapter]
+    B -->|Torch Export IR| E[TorchExportAdapter]
 
-    C --> G[OpenVINO Runtime]
-    D --> H[ONNX Runtime]
-    E --> I[PyTorch JIT]
-    F --> J[Torch Export]
+    C --> F[OpenVINO Runtime]
+    D --> G[ONNX Runtime]
+    E --> H[PyTorch torch.export]
 
-    G --> K[Hardware: CPU/GPU/NPU]
-    H --> L[Hardware: CPU/CUDA/TensorRT]
-    I --> M[Hardware: CPU/CUDA]
-    J --> N[Hardware: Edge/Mobile]
+    F --> I[Hardware: CPU/GPU/NPU]
+    G --> J[Hardware: CPU/CUDA/TensorRT]
+    H --> K[Hardware: CPU/CUDA]
 ```
 
 ### Factory Pattern
@@ -182,15 +180,19 @@ action_100 = policy.select_action(obs_100)  # Runs model again
 
 ### Auto-Detection
 
-Backend detected from file extensions: `.xml` (OpenVINO), `.onnx` (ONNX), `.pt` (TorchScript)
+Backend detected from file extensions:
+
+- `.xml` → OpenVINO
+- `.onnx` → ONNX
+- `.pt2` / `.ptir` → Torch Export IR
 
 ### Device Priority
 
-| Backend     | Device Priority       |
-| ----------- | --------------------- |
-| OpenVINO    | GPU → NPU → CPU       |
-| ONNX        | CUDA → TensorRT → CPU |
-| TorchScript | cuda → cpu            |
+| Backend         | Device Priority       |
+| --------------- | --------------------- |
+| OpenVINO        | GPU → NPU → CPU       |
+| ONNX            | CUDA → TensorRT → CPU |
+| Torch Export IR | cuda → cpu            |
 
 ## Performance
 
@@ -214,8 +216,8 @@ Common errors: `ImportError` (backend not installed), `ValueError`
 
 **Testing Plan:**
 
-- OpenVINO, ONNX, TorchScript: Fully tested in PR #2 with ACT policy
-- ExecuTorch: Implementation complete, full E2E testing in PR #2
+- OpenVINO, ONNX: Fully tested in PR #2 with ACT policy
+- Torch Export IR (ExecuTorch): Implementation complete, full testing in PR#2
 
 ## Extension Points
 
