@@ -304,16 +304,16 @@ class NormalizationParameters:
 # - batch[Observation.FieldName.ACTION] (enum member)
 #
 # Using imported constants is recommended for IDE autocomplete, refactoring support, and consistency.
-ACTION = Observation.FieldName.ACTION
-EPISODE_INDEX = Observation.FieldName.EPISODE_INDEX
-EXTRA = Observation.FieldName.EXTRA
-FRAME_INDEX = Observation.FieldName.FRAME_INDEX
-IMAGES = Observation.FieldName.IMAGES
-INDEX = Observation.FieldName.INDEX
-INFO = Observation.FieldName.INFO
-NEXT_REWARD = Observation.FieldName.NEXT_REWARD
-NEXT_SUCCESS = Observation.FieldName.NEXT_SUCCESS
-STATE = Observation.FieldName.STATE
-TASK = Observation.FieldName.TASK
-TASK_INDEX = Observation.FieldName.TASK_INDEX
-TIMESTAMP = Observation.FieldName.TIMESTAMP
+ACTION = Observation.FieldName.ACTION.value
+EPISODE_INDEX = Observation.FieldName.EPISODE_INDEX.value
+EXTRA = Observation.FieldName.EXTRA.value
+FRAME_INDEX = Observation.FieldName.FRAME_INDEX.value
+IMAGES = Observation.FieldName.IMAGES.value
+INDEX = Observation.FieldName.INDEX.value
+INFO = Observation.FieldName.INFO.value
+NEXT_REWARD = Observation.FieldName.NEXT_REWARD.value
+NEXT_SUCCESS = Observation.FieldName.NEXT_SUCCESS.value
+STATE = Observation.FieldName.STATE.value
+TASK = Observation.FieldName.TASK.value
+TASK_INDEX = Observation.FieldName.TASK_INDEX.value
+TIMESTAMP = Observation.FieldName.TIMESTAMP.value
