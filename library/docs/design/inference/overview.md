@@ -1,6 +1,7 @@
 # Inference System
 
-Design documentation for the `getiaction.inference` module - production-ready inference with multiple optimized backends.
+Design documentation for the `getiaction.inference` module - production-ready
+inference with multiple optimized backends.
 
 ## Overview
 
@@ -35,14 +36,15 @@ class RuntimeAdapter(ABC):
 
 ### Concrete Adapters
 
-| Adapter                | Hardware            | Key Features                                        |
-| ---------------------- | ------------------- | --------------------------------------------------- |
-| **OpenVINOAdapter**    | Intel CPU/GPU/NPU   | Hardware optimizations, model caching, quantization |
-| **ONNXAdapter**        | Cross-platform      | CUDA/TensorRT support, graph optimization           |
-| **TorchScriptAdapter** | PyTorch ecosystem   | JIT compilation, mobile deployment                  |
-| **ExecuTorchAdapter**  | Edge/mobile devices | Torch Export IR, resource-constrained deployment    |
+| Adapter                | Hardware            | Key Features                |
+| ---------------------- | ------------------- | --------------------------- |
+| **OpenVINOAdapter**    | Intel CPU/GPU/NPU   | Hardware opts, quantization |
+| **ONNXAdapter**        | Cross-platform      | CUDA/TensorRT, optimization |
+| **TorchScriptAdapter** | PyTorch ecosystem   | JIT, mobile deployment      |
+| **ExecuTorchAdapter**  | Edge/mobile devices | Torch Export IR, edge/IoT   |
 
-**Note:** ExecuTorchAdapter will be fully validated with real policy exports in PR #2 (First-Party ACT Export).
+**Note:** ExecuTorchAdapter will be fully validated with real policy
+exports in PR #2 (First-Party ACT Export).
 
 ### InferenceModel
 
@@ -54,7 +56,8 @@ policy.reset()
 action = policy.select_action(observation)
 ```
 
-**Key Features:** Auto-detection, metadata-driven config, action queuing, device selection
+**Key Features:** Auto-detection, metadata-driven config, action queuing,
+device selection
 
 ## Architecture
 
@@ -200,7 +203,8 @@ Backend detected from file extensions: `.xml` (OpenVINO), `.onnx` (ONNX), `.pt` 
 
 ## Error Handling
 
-Common errors: `ImportError` (backend not installed), `ValueError` (invalid export), `RuntimeError` (shape mismatch)
+Common errors: `ImportError` (backend not installed), `ValueError`
+(invalid export), `RuntimeError` (shape mismatch)
 
 ## Testing
 

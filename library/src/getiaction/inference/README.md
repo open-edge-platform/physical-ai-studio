@@ -4,7 +4,10 @@ Production-ready inference API for exported GetiAction policies.
 
 ## Overview
 
-The inference module provides a unified, production-ready interface for running robot policies across different backends (OpenVINO, ONNX, TorchScript). It automatically handles backend detection, device selection, and maintains API compatibility with PyTorch training policies.
+The inference module provides a unified, production-ready interface for
+running robot policies across different backends (OpenVINO, ONNX,
+TorchScript). It automatically handles backend detection, device selection,
+and maintains API compatibility with PyTorch training policies.
 
 ## Key Features
 
