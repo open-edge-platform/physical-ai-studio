@@ -59,7 +59,7 @@ Training infrastructure, metrics, and logging.
 
 ### Export
 
-Model export system supporting multiple backends (OpenVINO, ONNX, TorchScript).
+Model export system supporting multiple backends (OpenVINO, ONNX, Torch Export IR).
 
 [📖 Export Documentation](export/overview.md)
 

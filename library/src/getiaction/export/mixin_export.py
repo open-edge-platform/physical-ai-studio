@@ -187,7 +187,8 @@ class Export:
             input_sample = self.model.sample_input
         elif input_sample is None:
             msg = (
-                "An input sample must be provided for ONNX export, or the model must implement `sample_input` property."
+                "An input sample must be provided for Torch Export IR export, "
+                "or the model must implement `sample_input` property."
             )
             raise RuntimeError(msg)
 

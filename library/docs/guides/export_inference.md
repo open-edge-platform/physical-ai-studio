@@ -27,7 +27,6 @@ action = inference_model.select_action(observation)
 | ------------------- | ------------- | ------------------ | ------- |
 | **OpenVINO**        | Intel HW      | `pip install ov`   | ✅      |
 | **ONNX**            | NVIDIA/x-plat | `pip install onnx` | ✅      |
-| **TorchScript**     | PyTorch       | Built-in           | ✅      |
 | **Torch Export IR** | Edge/mobile   | Built-in           | ✅      |
 
 ## Export
@@ -72,7 +71,6 @@ while not done:
 
 - **OpenVINO**: Intel hardware (CPU/GPU/NPU), edge devices
 - **ONNX**: NVIDIA GPUs (TensorRT), cross-platform, cloud
-- **TorchScript**: PyTorch ecosystem, mobile, debugging
 - **Torch Export IR**: Edge/mobile deployment, resource-constrained devices
 
 ## Performance Tips

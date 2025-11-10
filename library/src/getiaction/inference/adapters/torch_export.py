@@ -1,7 +1,7 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""ExecuTorch (Torch Export IR) runtime adapter for inference."""
+"""Torch Export IR runtime adapter for inference."""
 
 from pathlib import Path
 
@@ -11,36 +11,36 @@ import torch
 from .base import RuntimeAdapter
 
 
-class ExecuTorchAdapter(RuntimeAdapter):
-    """Runtime adapter for ExecuTorch (Torch Export IR) models.
+class TorchExportAdapter(RuntimeAdapter):
+    """Runtime adapter for Torch Export IR models.
 
-    This adapter loads and runs models exported via `to_torch_export_ir()`.
-    ExecuTorch is designed for edge and mobile deployment with optimized
-    execution for resource-constrained devices.
+    This adapter loads and runs models exported via `to_torch_export_ir()`
+    using PyTorch's `torch.export` API. The exported models are in PyTorch's
+    intermediate representation format and can be executed directly with PyTorch.
 
     Note:
-        This adapter is implemented but will be fully tested with real policy
-        exports in subsequent PRs. The implementation follows the same pattern
-        as other adapters (OpenVINO, ONNX, TorchScript).
+        This uses `torch.export.load()` which is part of PyTorch's export API,
+        not the separate ExecuTorch runtime. This adapter is implemented but
+        will be fully tested with real policy exports in subsequent PRs.
 
     Example:
-        >>> adapter = ExecuTorchAdapter()
-        >>> adapter.load("model.ptir")
+        >>> adapter = TorchExportAdapter()
+        >>> adapter.load("model.pt2")
         >>> outputs = adapter.predict({"image": image_array, "state": state_array})
     """
 
     def __init__(self) -> None:
-        """Initialize the ExecuTorch adapter."""
+        """Initialize the Torch Export adapter."""
         self._program = None
         self._module = None
         self._input_names: list[str] = []
         self._output_names: list[str] = []
 
     def load(self, model_path: Path) -> None:
-        """Load ExecuTorch program from file.
+        """Load Torch Export IR program from file.
 
         Args:
-            model_path: Path to the .ptir file created by torch.export.save()
+            model_path: Path to the .pt2/.ptir file created by torch.export.save()
 
         Raises:
             FileNotFoundError: If model file doesn't exist
@@ -61,11 +61,11 @@ class ExecuTorchAdapter(RuntimeAdapter):
             self._output_names = [str(name) for name in graph_signature.user_outputs]
 
         except Exception as e:
-            msg = f"Failed to load ExecuTorch model from {model_path}: {e}"
+            msg = f"Failed to load Torch Export IR model from {model_path}: {e}"
             raise RuntimeError(msg) from e
 
     def predict(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-        """Run inference using ExecuTorch runtime.
+        """Run inference using Torch Export IR.
 
         Args:
             inputs: Dictionary mapping input names to numpy arrays
