@@ -3,8 +3,7 @@
 
 """Export and import mixins module."""
 
-from .enums import ExportBackend
-from .mixin_export import Export
+from .mixin_export import Export, ExportBackend
 from .mixin_torch import FromCheckpoint
 
 __all__ = ["Export", "ExportBackend", "FromCheckpoint"]

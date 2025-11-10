@@ -20,7 +20,7 @@ from getiaction.export import (
 )
 
 from getiaction.export.mixin_torch import CONFIG_KEY
-from getiaction.export.mixin_export import _serialize_model_config
+from getiaction.export.mixin_export import ExportBackend, _serialize_model_config
 
 
 # Test enums
@@ -299,7 +299,7 @@ class TestToTorch:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             checkpoint_path = Path(tmpdir) / "model.pt"
-            model.to_torch(checkpoint_path)
+            model.export(ExportBackend.TORCH, checkpoint_path)
 
             # Should save successfully with empty config
             state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)  # nosemgrep
