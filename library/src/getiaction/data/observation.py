@@ -118,7 +118,7 @@ class Observation:
         return flat_dict
 
     @staticmethod
-    def get_all_component_dict_keys(data: dict[str, Any], component: Observation.ComponentKeys | str) -> list[str]:
+    def get_flattened_keys(data: dict[str, Any], component: Observation.ComponentKeys | str) -> list[str]:
         """Retrieve all keys associated with a specific component from the data dictionary.
 
         This method checks for component keys in two ways:
@@ -136,9 +136,9 @@ class Observation:
 
         Example:
             >>> data = {"label": {...}, "_label_keys": ["label1", "label2"]}
-            >>> get_all_component_dict_keys(data, "label")
+            >>> Observation.get_flattened_keys(data, "label")
             ["label"]
-            >>> get_all_component_dict_keys(data, "annotation")
+            >>> Observation.get_flattened_keys(data, "annotation")
             ["label1", "label2"]
         """
         if component in data:

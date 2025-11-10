@@ -121,7 +121,7 @@ class TestObservationToDict:
         assert "images.top" in obs_dict
         assert "images.wrist" in obs_dict
 
-        for k in Observation.get_all_component_dict_keys(obs_dict, Observation.ComponentKeys.IMAGES):
+        for k in Observation.get_flattened_keys(obs_dict, Observation.ComponentKeys.IMAGES):
             assert k in obs_dict
 
     def test_to_dict_includes_none_fields(self):

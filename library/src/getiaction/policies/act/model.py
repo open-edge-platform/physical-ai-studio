@@ -754,7 +754,7 @@ class _ACT(nn.Module):
             # For a list of images, the H and W may vary but H*W is constant.
             # NOTE: If modifying this section, verify on MPS devices that
             # gradients remain stable (no explosions or NaNs).
-            for img_k in Observation.get_all_component_dict_keys(batch, Observation.ComponentKeys.IMAGES):
+            for img_k in Observation.get_flattened_keys(batch, Observation.ComponentKeys.IMAGES):
                 img = batch[img_k]
                 cam_features = self.backbone(img)["feature_map"]
                 if self.collect_image_features_shapes:
