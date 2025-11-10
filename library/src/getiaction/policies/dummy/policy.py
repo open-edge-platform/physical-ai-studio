@@ -102,6 +102,16 @@ class Dummy(Export, Policy):
         # During evaluation, return action predictions
         return self.select_action(batch)
 
+    def _generate_example_inputs(self) -> dict[str, torch.Tensor]:
+        """Generate example inputs for export.
+        
+        Returns:
+            Dict[str, torch.Tensor]: Dictionary with dummy observation inputs.
+        """
+        return {
+            "state": torch.randn(1, 4),  # Simple state observation
+        }
+
     def training_step(self, batch: Observation, batch_idx: int) -> dict[str, torch.Tensor]:
         """Training step for the policy.
 

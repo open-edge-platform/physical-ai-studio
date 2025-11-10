@@ -43,6 +43,7 @@ dependencies = [
     "gym-pusht>=0.1.5",
     "pymunk>=6.6.0,<7.0.0",
     "onnx",
+    "onnxruntime",
     "openvino>=2025.0",
     "jsonargparse[signatures]>=4.27.0", # This could be extra
     "pydantic", # This could be extra
@@ -161,6 +162,7 @@ pythonpath = "src"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "requires_download: marks tests that require downloading external datasets",
+    "integration: marks tests as integration tests",
 ]
 
 
