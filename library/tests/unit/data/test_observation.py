@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 import torch
 
-from getiaction.data import Observation, IMAGES
 from getiaction.data.lerobot import FormatConverter
+from getiaction.data.observation import IMAGES, Observation
 
 
 class TestObservationCreation:

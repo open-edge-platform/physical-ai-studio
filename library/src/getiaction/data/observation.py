@@ -73,8 +73,9 @@ class Observation:
     class FieldName(StrEnum):
         """Observation field name constants for dict access and type annotations."""
 
-        STATE = "state"
         ACTION = "action"
+        TASK = "task"
+        STATE = "state"
         IMAGES = "images"
 
         NEXT_REWARD = "next_reward"
@@ -292,25 +293,27 @@ class NormalizationParameters:
 
 
 # Module-level constants for convenient dict access
-# Usage: from getiaction.data import STATE, ACTION, IMAGES
+# Generated from Observation.FieldName enum to avoid duplication.
+#
+# Usage: from getiaction.data.observation import STATE, ACTION, IMAGES
 # Then: batch[STATE] instead of batch["state"]
 #
 # Note: All of the following are equivalent for dict access:
-# - batch[ACTION]                    (recommended: imported constant)
-# - batch["action"]                  (string literal)
-# - batch[Observation.FieldName.ACTION]  (enum member)
+# - batch[ACTION]                       (recommended: imported constant)
+# - batch["action"]                     (string literal)
+# - batch[Observation.FieldName.ACTION] (enum member)
 #
 # Using imported constants is recommended for IDE autocomplete, refactoring support, and consistency.
-ACTION = "action"
-EPISODE_INDEX = "episode_index"
-EXTRA = "extra"
-FRAME_INDEX = "frame_index"
-IMAGES = "images"
-INDEX = "index"
-INFO = "info"
-NEXT_REWARD = "next_reward"
-NEXT_SUCCESS = "next_success"
-STATE = "state"
-TASK = "task"
-TASK_INDEX = "task_index"
-TIMESTAMP = "timestamp"
+ACTION = Observation.FieldName.ACTION
+EPISODE_INDEX = Observation.FieldName.EPISODE_INDEX
+EXTRA = Observation.FieldName.EXTRA
+FRAME_INDEX = Observation.FieldName.FRAME_INDEX
+IMAGES = Observation.FieldName.IMAGES
+INDEX = Observation.FieldName.INDEX
+INFO = Observation.FieldName.INFO
+NEXT_REWARD = Observation.FieldName.NEXT_REWARD
+NEXT_SUCCESS = Observation.FieldName.NEXT_SUCCESS
+STATE = Observation.FieldName.STATE
+TASK = Observation.FieldName.TASK
+TASK_INDEX = Observation.FieldName.TASK_INDEX
+TIMESTAMP = Observation.FieldName.TIMESTAMP

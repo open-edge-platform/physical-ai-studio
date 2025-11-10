@@ -26,7 +26,8 @@ from torchvision.models._utils import IntermediateLayerGetter  # noqa: PLC2701
 from torchvision.ops.misc import FrozenBatchNorm2d
 
 from getiaction.config import FromConfig
-from getiaction.data import ACTION, EXTRA, IMAGES, STATE, Feature, FeatureType, Observation
+from getiaction.data import Feature, FeatureType
+from getiaction.data.observation import ACTION, EXTRA, IMAGES, STATE, Observation
 from getiaction.export import FromCheckpoint
 from getiaction.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
 
