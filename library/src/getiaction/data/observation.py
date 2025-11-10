@@ -70,8 +70,8 @@ class Observation:
     info: dict[str, Any] | None = None
     extra: dict[str, Any] | None = None
 
-    class ComponentKeys(StrEnum):
-        """Enum for batch observation components."""
+    class FieldName(StrEnum):
+        """Observation field name constants for dict access and type annotations."""
 
         STATE = "state"
         ACTION = "action"
@@ -118,7 +118,7 @@ class Observation:
         return flat_dict
 
     @staticmethod
-    def get_flattened_keys(data: dict[str, Any], component: Observation.ComponentKeys | str) -> list[str]:
+    def get_flattened_keys(data: dict[str, Any], field: Observation.FieldName | str) -> list[str]:
         """Retrieve all keys associated with a specific component from the data dictionary.
 
         This method checks for component keys in two ways:
@@ -126,8 +126,8 @@ class Observation:
         2. Through a cached list of keys stored with the pattern "_{component}_keys"
         Args:
             data: Dictionary containing observation data and component keys
-            component: The component identifier to search for, either as an
-                      Observation.ComponentKeys enum value or a string
+            field: The field identifier to search for, either as an
+                      Observation.FieldName enum value or a string
 
         Returns:
             A list of string keys associated with the component. Returns a list
@@ -141,11 +141,11 @@ class Observation:
             >>> Observation.get_flattened_keys(data, "annotation")
             ["label1", "label2"]
         """
-        if component in data:
-            return [component]
+        if field in data:
+            return [field]
 
-        if f"_{component}_keys" in data:
-            return data[f"_{component}_keys"]
+        if f"_{field}_keys" in data:
+            return data[f"_{field}_keys"]
 
         return []
 
@@ -289,3 +289,28 @@ class NormalizationParameters:
     std: torch.Tensor | np.ndarray | None = None
     min: torch.Tensor | np.ndarray | None = None
     max: torch.Tensor | np.ndarray | None = None
+
+
+# Module-level constants for convenient dict access
+# Usage: from getiaction.data import STATE, ACTION, IMAGES
+# Then: batch[STATE] instead of batch["state"]
+#
+# Note: All of the following are equivalent for dict access:
+# - batch[ACTION]                    (recommended: imported constant)
+# - batch["action"]                  (string literal)
+# - batch[Observation.FieldName.ACTION]  (enum member)
+#
+# Using imported constants is recommended for IDE autocomplete, refactoring support, and consistency.
+ACTION = "action"
+EPISODE_INDEX = "episode_index"
+EXTRA = "extra"
+FRAME_INDEX = "frame_index"
+IMAGES = "images"
+INDEX = "index"
+INFO = "info"
+NEXT_REWARD = "next_reward"
+NEXT_SUCCESS = "next_success"
+STATE = "state"
+TASK = "task"
+TASK_INDEX = "task_index"
+TIMESTAMP = "timestamp"

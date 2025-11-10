@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 import torch
 
-from getiaction.data import Observation
+from getiaction.data import Observation, IMAGES
 from getiaction.data.lerobot import FormatConverter
 
 
@@ -121,7 +121,7 @@ class TestObservationToDict:
         assert "images.top" in obs_dict
         assert "images.wrist" in obs_dict
 
-        for k in Observation.get_flattened_keys(obs_dict, Observation.ComponentKeys.IMAGES):
+        for k in Observation.get_flattened_keys(obs_dict, field=IMAGES):
             assert k in obs_dict
 
     def test_to_dict_includes_none_fields(self):

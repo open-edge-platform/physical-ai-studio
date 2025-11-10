@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
-from gymnasium.wrappers.time_limit import TimeLimit
+from gymnasium.wrappers import TimeLimit
 from lightning.pytorch import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 

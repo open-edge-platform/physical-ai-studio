@@ -71,8 +71,8 @@ class ACTConfig:
             is enabled. Loss is then calculated as: `reconstruction_loss + kl_weight * kld_loss`.
     """
 
-    input_features: dict[str | Observation.ComponentKeys, Feature] = field(default_factory=dict)
-    output_features: dict[str | Observation.ComponentKeys, Feature] = field(default_factory=dict)
+    input_features: dict[str, Feature] = field(default_factory=dict)
+    output_features: dict[str, Feature] = field(default_factory=dict)
 
     # Input / output structure.
     n_obs_steps: int = 1
