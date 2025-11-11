@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 import yaml
 
+from getiaction.data.observation import ACTION, IMAGES, STATE
 from getiaction.export import ExportBackend
 from getiaction.inference.adapters import get_adapter
 
@@ -263,11 +264,12 @@ class InferenceModel:
         """
         mapping = {}
 
-        # Common observation fields
+        # Common observation fields with their possible model input names
+        # Supports both first-party (e.g., "state") and LeRobot (e.g., "observation.state") conventions
         obs_fields = {
-            "state": ["state", "observation.state"],
-            "images": ["images", "image", "observation.image", "observation.images"],
-            "action": ["action"],
+            STATE: [STATE, f"observation.{STATE}"],
+            IMAGES: [IMAGES, "image", "observation.image", f"observation.{IMAGES}"],
+            ACTION: [ACTION],
         }
 
         for obs_key, possible_model_keys in obs_fields.items():
