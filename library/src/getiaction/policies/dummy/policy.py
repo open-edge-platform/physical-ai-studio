@@ -3,7 +3,6 @@
 
 """Dummy lightning module and policy for testing usage."""
 
-import stat
 from collections.abc import Iterable
 
 import torch
