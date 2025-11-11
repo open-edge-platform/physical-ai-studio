@@ -5,8 +5,10 @@
 
 import dataclasses
 import inspect
+import json
 from enum import StrEnum
 from os import PathLike
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -31,6 +33,70 @@ class Export:
 
     model: torch.nn.Module
 
+    def _create_metadata(
+        self,
+        export_dir: Path,
+        backend: ExportBackend,
+        **metadata_kwargs: dict,
+    ) -> None:
+        """Create metadata files for exported model.
+
+        Args:
+            export_dir: Directory containing exported model
+            backend: Export backend used
+            **metadata_kwargs: Additional metadata to include
+        """
+        # Build metadata
+        metadata = {
+            "policy_class": f"{self.__class__.__module__}.{self.__class__.__name__}",
+            "backend": str(backend),
+            **metadata_kwargs,
+        }
+
+        # Add model config if available
+        if hasattr(self.model, "config"):
+            config_dict = _serialize_model_config(self.model.config)
+            metadata["config"] = config_dict
+
+            # Add chunking information for inference (for policies like ACT)
+            if hasattr(self.model.config, "chunk_size"):
+                chunk_size = self.model.config.chunk_size
+                metadata["chunk_size"] = chunk_size
+                metadata["use_action_queue"] = chunk_size > 1
+
+        # Save as YAML (preferred)
+        yaml_path = export_dir / "metadata.yaml"
+        with yaml_path.open("w") as f:
+            yaml.dump(metadata, f, default_flow_style=False)
+
+        # Also save as JSON for compatibility
+        json_path = export_dir / "metadata.json"
+        with json_path.open("w") as f:
+            json.dump(metadata, f, indent=2)
+
+    def _prepare_export_path(self, output_path: PathLike | str, extension: str) -> Path:
+        """Prepare export path, handling both directory and file paths.
+
+        Args:
+            output_path: Directory or file path for export
+            extension: File extension to use (e.g., ".xml", ".onnx", ".pt")
+
+        Returns:
+            Path: Complete file path with proper extension
+        """
+        path = Path(output_path)
+
+        # If path is a directory or doesn't have the right extension, add filename
+        if path.is_dir() or (not path.suffix or path.suffix != extension):
+            # Use policy name for filename
+            policy_name = self.__class__.__name__.lower()
+            path /= f"{policy_name}{extension}"
+
+        # Create parent directory
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        return path
+
     def to_torch(self, checkpoint_path: PathLike | str) -> None:
         """Export the model as a checkpoint with model configuration.
 
@@ -39,9 +105,7 @@ class Export:
         under a special key for later retrieval.
 
         Args:
-            checkpoint_path (PathLike | str): The file path where the checkpoint
-                will be saved. Can be a string or path-like object.
-            None: The method saves the checkpoint to disk and returns nothing.
+            checkpoint_path: Path where the checkpoint will be saved.
 
         Note:
             - If the model has a 'config' attribute, it will be serialized and
@@ -50,11 +114,17 @@ class Export:
               GETIACTION_CONFIG_KEY in the state dictionary.
             - The saved checkpoint can be used to re-instantiate the model later.
         """
+        model_path = self._prepare_export_path(checkpoint_path, ".pt")
+        export_dir = model_path.parent
+
         state_dict = self.model.state_dict()
         config_dict = _serialize_model_config(self.model.config) if hasattr(self.model, "config") else {}
         state_dict[CONFIG_KEY] = yaml.dump(config_dict, default_flow_style=False)
 
-        torch.save(state_dict, checkpoint_path)  # nosec
+        torch.save(state_dict, str(model_path))  # nosec
+
+        # Create metadata files
+        self._create_metadata(export_dir, ExportBackend.TORCH)
 
     @torch.no_grad()
     def to_onnx(
@@ -70,7 +140,8 @@ class Export:
         arguments or through the model's `extra_export_args` property if it exists.
 
         Args:
-            output_path (PathLike | str): The file path where the ONNX model will be saved.
+            output_path (PathLike | str): Directory or file path where the ONNX model will be saved.
+                If directory, creates {policy_name}.onnx. If file, uses as-is.
             input_sample (dict[str, torch.Tensor] | None): A sample input dictionary.
                 If `None`, the method will attempt to use the model's `sample_input`
                 property. This input is used to trace the model during export.
@@ -88,6 +159,9 @@ class Export:
             )
             raise RuntimeError(msg)
 
+        model_path = self._prepare_export_path(output_path, ".onnx")
+        export_dir = model_path.parent
+
         extra_model_args = self._get_export_extra_args(ExportBackend.ONNX)
         extra_model_args.update(export_kwargs)
 
@@ -98,10 +172,13 @@ class Export:
             self.model,
             args=(),
             kwargs={arg_name: input_sample},
-            f=output_path,
+            f=str(model_path),
             input_names=list(input_sample.keys()),
             **extra_model_args,
         )
+
+        # Create metadata files
+        self._create_metadata(export_dir, ExportBackend.ONNX)
 
     @torch.no_grad()
     def to_openvino(
@@ -113,7 +190,8 @@ class Export:
         """Export the model to OpenVINO format.
 
         Args:
-            output_path (PathLike | str): Path where the OpenVINO model will be saved.
+            output_path (PathLike | str): Directory or file path where the OpenVINO model will be saved.
+                If directory, creates {policy_name}.xml. If file, uses as-is.
             input_sample (dict[str, torch.Tensor] | None, optional): Sample input tensor(s) for model tracing.
                 If None, attempts to use the model's `sample_input` property. Defaults to None.
             **export_kwargs (dict): Additional keyword arguments to pass to the OpenVINO conversion process.
@@ -131,6 +209,9 @@ class Export:
             msg = "An input sample must be provided for OpenVINO export, or the model must implement "
             "`sample_input` property."
             raise RuntimeError(msg)
+
+        model_path = self._prepare_export_path(output_path, ".xml")
+        export_dir = model_path.parent
 
         extra_model_args = self._get_export_extra_args(ExportBackend.OPENVINO)
         extra_model_args.update(export_kwargs)
@@ -153,7 +234,10 @@ class Export:
         )
         _postprocess_openvino_model(ov_model, output_names)
 
-        openvino.save_model(ov_model, output_path)
+        openvino.save_model(ov_model, str(model_path))
+
+        # Create metadata files
+        self._create_metadata(export_dir, ExportBackend.OPENVINO)
 
     @torch.no_grad()
     def to_torch_export_ir(
@@ -168,7 +252,8 @@ class Export:
         which can be used for deployment and for further optimization and inference via executorch or similar tools.
 
         Args:
-            output_path (PathLike | str): The file path where the exported Torch IR model will be saved.
+            output_path (PathLike | str): Directory or file path where the exported Torch IR model will be saved.
+                If directory, creates {policy_name}.pt2. If file, uses as-is.
             input_sample (dict[str, torch.Tensor] | None, optional): A sample input tensor dictionary
                 to trace the model. If None, the method will attempt to use the model's
                 `sample_input` property. Defaults to None.
@@ -192,6 +277,9 @@ class Export:
             )
             raise RuntimeError(msg)
 
+        model_path = self._prepare_export_path(output_path, ".pt2")
+        export_dir = model_path.parent
+
         extra_model_args = self._get_export_extra_args(ExportBackend.TORCH_EXPORT_IR)
         extra_model_args.update(export_kwargs)
 
@@ -202,12 +290,15 @@ class Export:
             **extra_model_args,
         )
 
-        torch.export.save(torch_program, output_path)  # nosec
+        torch.export.save(torch_program, str(model_path))  # nosec
+
+        # Create metadata files
+        self._create_metadata(export_dir, ExportBackend.TORCH_EXPORT_IR)
 
     def export(
         self,
-        backend: ExportBackend | str,
         output_path: PathLike | str,
+        backend: ExportBackend | str,
         input_sample: dict[str, torch.Tensor] | None = None,
         **export_kwargs: dict,
     ) -> None:
@@ -217,14 +308,16 @@ class Export:
         formats by dispatching to the appropriate backend-specific export method.
 
         Args:
-            backend (ExportBackend | str): The export backend to use. Can be an ExportBackend
-            enum value or a string ("onnx", "openvino", "torch_export_ir").
             output_path (PathLike | str): The file path where the exported model will be saved.
-            input_sample (dict[str, torch.Tensor] | None, optional): A sample input tensor
-            dictionary for model tracing. If None, attempts to use the model's
-            `sample_input` property. Defaults to None.
-            **export_kwargs (dict): Additional keyword arguments to pass to the backend-specific
-            export method.
+            backend (ExportBackend | str): The export backend to use.
+                Can be an ExportBackend enum value or a string
+                ("onnx", "openvino", "torch_export_ir").
+            input_sample (dict[str, torch.Tensor] | None, optional): A sample
+                input tensor dictionary for model tracing.
+                If None, attempts to use the model's `sample_input` property.
+                Defaults to None.
+            **export_kwargs (dict): Additional keyword arguments to pass to the
+                backend-specific export method.
 
         Raises:
             ValueError: If an unsupported backend is specified.
