@@ -23,11 +23,11 @@ action = inference_model.select_action(observation)
 
 ## Backends
 
-| Backend             | Best For      | Install            | Support |
-| ------------------- | ------------- | ------------------ | ------- |
-| **OpenVINO**        | Intel HW      | `pip install ov`   | ✅      |
-| **ONNX**            | NVIDIA/x-plat | `pip install onnx` | ✅      |
-| **Torch Export IR** | Edge/mobile   | Built-in           | ✅      |
+| Backend             | Best For      | Install                | Support |
+| ------------------- | ------------- | ---------------------- | ------- |
+| **OpenVINO**        | Intel HW      | `pip install openvino` | ✅      |
+| **ONNX**            | NVIDIA/x-plat | `pip install onnx`     | ✅      |
+| **Torch Export IR** | Edge/mobile   | Built-in               | ✅      |
 
 ## Export
 
@@ -90,49 +90,6 @@ start = time.time()
 for _ in range(1000):
     action = policy.select_action(obs)
 print(f"{(time.time()-start)/1000*1000:.2f}ms per action")
-```
-
-## Troubleshooting
-
-### Export Errors
-
-| Error                       | Cause          | Solution              |
-| --------------------------- | -------------- | --------------------- |
-| `RuntimeError: Not init`    | Export pre-fit | Call `fit()` first    |
-| `ValueError: Cannot create` | Missing shapes | Use proper datamodule |
-
-### Inference Errors
-
-| Error                       | Cause         | Solution              |
-| --------------------------- | ------------- | --------------------- |
-| `ImportError: ov not found` | Missing pkg   | `pip install ov/onnx` |
-| `ValueError: No backend`    | No model file | Verify export done    |
-| `RuntimeError: Shape error` | Wrong shape   | Check metadata        |
-
-### Numerical Differences
-
-Small differences (rtol=0.15) between training and inference are normal
-due to backend optimizations.
-
-## Advanced
-
-### Compare Backends
-
-```python
-# Export and benchmark all backends
-for backend in ["openvino", "onnx", "torch"]:
-    policy.export(f"./{backend}", backend=backend)
-    p = InferenceModel.load(f"./{backend}")
-    # ... benchmark ...
-```
-
-### Access Metadata
-
-```python
-policy = InferenceModel.load("./exports")
-print(policy.backend)           # ExportBackend.OPENVINO
-print(policy.chunk_size)        # 100
-print(policy.metadata)          # Full config dict
 ```
 
 ## See Also
