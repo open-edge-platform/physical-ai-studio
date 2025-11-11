@@ -73,15 +73,9 @@ def get_policy(policy_name: str, *, source: str = "getiaction", **kwargs) -> Pol
         # First-party policies
         if policy_name == "act":
             return ACT(**kwargs)
-        if policy_name == "dummy":
-            return Dummy(**kwargs)
 
-        msg = f"Unknown getiaction policy: {policy_name}. Supported policies: act, dummy"
+        msg = f"Unknown getiaction policy: {policy_name}. Supported policies: act"
         raise ValueError(msg)
 
-    if source == "lerobot":
-        # LeRobot policies
-        return lerobot.get_lerobot_policy(policy_name, **kwargs)
-
-    msg = f"Unknown source: {source}. Supported sources: getiaction, lerobot"
+    msg = f"Unknown source: {source}. Supported sources: getiaction"
     raise ValueError(msg)
