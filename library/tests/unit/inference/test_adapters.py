@@ -201,14 +201,14 @@ class TestTorchExportAdapter:
         # Test missing inputs
         mock_program = MagicMock()
         mock_program.module.return_value = MagicMock()
-        
+
         # Mock call_spec for input names
         mock_dict_spec = Mock()
         mock_dict_spec.context = ["input1", "input2"]
         mock_in_spec = Mock()
         mock_in_spec.children_specs = [Mock(children_specs=[mock_dict_spec])]
         mock_program.call_spec.in_spec = mock_in_spec
-        
+
         # Mock graph_signature for output names
         mock_program.graph_signature.user_outputs = ["output"]
 
