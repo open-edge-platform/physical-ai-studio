@@ -80,8 +80,13 @@ class Export:
         """
         path = Path(output_path)
 
-        # If path is a directory or doesn't have the right extension, add filename
-        if path.is_dir() or (not path.suffix or path.suffix != extension):
+        # For torch checkpoints, accept both .pt and .pth extensions
+        valid_extensions = [extension]
+        if extension == ".pt":
+            valid_extensions.append(".pth")
+
+        # If path is a directory or doesn't have a valid extension, add filename
+        if path.is_dir() or (not path.suffix or path.suffix not in valid_extensions):
             # Use policy name for filename
             policy_name = self.__class__.__name__.lower()
             path /= f"{policy_name}{extension}"

@@ -299,7 +299,7 @@ class TestToTorch:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             checkpoint_path = Path(tmpdir) / "model.pt"
-            model.export(ExportBackend.TORCH, checkpoint_path)
+            model.export(checkpoint_path, ExportBackend.TORCH)
 
             # Should save successfully with empty config
             state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)  # nosemgrep
