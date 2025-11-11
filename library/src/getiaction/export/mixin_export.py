@@ -58,12 +58,6 @@ class Export:
             config_dict = _serialize_model_config(self.model.config)
             metadata["config"] = config_dict
 
-            # Add chunking information for inference (for policies like ACT)
-            if hasattr(self.model.config, "chunk_size"):
-                chunk_size = self.model.config.chunk_size
-                metadata["chunk_size"] = chunk_size
-                metadata["use_action_queue"] = chunk_size > 1
-
         # Save as YAML (preferred)
         yaml_path = export_dir / "metadata.yaml"
         with yaml_path.open("w") as f:
