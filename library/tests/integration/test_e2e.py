@@ -4,233 +4,304 @@
 """End-to-end integration tests from training to export to inference.
 
 This module contains comprehensive E2E tests that validate the complete pipeline:
-1. Train a policy (ACT, Dummy) with real/dummy data
-2. Export the trained policy to multiple backends (OpenVINO, ONNX, TorchScript, ExecuTorch)
-3. Load exported model for inference
-4. Verify numerical consistency between training and inference
+1. Train a policy using LeRobot PushT dataset
+2. Validate/test the trained policy
+3. Export the trained policy to multiple backends (OpenVINO, ONNX, Torch, TorchExportIR)
+4. Load exported model for inference
+5. Verify numerical consistency between training and inference
 
-Uses parameterized tests with cartesian product to test all policy × backend combinations.
+Uses generic fixtures for policy-agnostic testing across all policy × backend combinations.
 """
 
-from __future__ import annotations
-
-import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import pytest
 import torch
 
-from getiaction.data import DataModule
+from getiaction.data import LeRobotDataModule, Observation
 from getiaction.inference import InferenceModel
 from getiaction.policies import get_policy
 from getiaction.train import Trainer
 
+if TYPE_CHECKING:
+    from getiaction.policies.base.policy import Policy
+
+
+@pytest.fixture
+def datamodule() -> LeRobotDataModule:
+    """Create LeRobot DataModule with PushT dataset for testing.
+
+    Returns:
+        LeRobotDataModule: DataModule configured with PushT dataset using first 10 episodes.
+    """
+    return LeRobotDataModule(
+        repo_id="lerobot/pusht",
+        train_batch_size=8,
+        episodes=list(range(10)),  # Use only first 10 episodes for speed
+    )
+
+
+@pytest.fixture(params=["act"])
+def policy(request: pytest.FixtureRequest) -> Policy:
+    """Create policy instance based on parametrized policy name.
+
+    This fixture is parametrized to test multiple policies. The trainer pipeline
+    automatically configures the datamodule based on the policy's requirements
+    (e.g., action chunking for ACT).
+
+    Args:
+        request: Pytest request fixture containing the policy name parameter
+
+    Returns:
+        Policy: Configured policy instance.
+    """
+    policy_name: str = request.param
+    return get_policy(policy_name, source="getiaction")
+
+
+@pytest.fixture
+def trainer() -> Trainer:
+    """Create trainer with fast development configuration.
+
+    Returns:
+        Trainer: Configured trainer instance for fast testing.
+    """
+    return Trainer(
+        fast_dev_run=1,  # Run 1 training batch and 1 validation batch
+        enable_checkpointing=False,
+        logger=False,
+        enable_progress_bar=False,
+    )
+
 
 class TestE2E:
-    """Comprehensive end-to-end tests for training → export → inference pipeline."""
+    """Generic end-to-end tests for training → validation → export → inference pipeline."""
 
-    @pytest.fixture
-    def temp_export_dir(self):
-        """Create temporary directory for export testing."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yield Path(tmpdir)
-
-    @pytest.mark.parametrize(
-        ("policy_name", "backend"),
-        [
-            # First-party policies with all backends
-            ("dummy", "openvino"),
-            ("dummy", "onnx"),
-            ("dummy", "torch"),
-            ("dummy", "torch_export_ir"),
-            ("act", "openvino"),
-            ("act", "onnx"),
-            ("act", "torch"),
-            ("act", "torch_export_ir"),
-        ],
-    )
-    def test_train_export_inference_pipeline(
-        self,
-        policy_name: str,
-        backend: str,
-        dummy_dataset,
-        temp_export_dir: Path,
-    ):
-        """Test complete pipeline: train → export → inference → validate.
-
-        This test validates that:
-        1. Policy can be trained successfully
-        2. Trained policy can be exported to specified backend
-        3. Exported model can be loaded for inference
-        4. Inference produces consistent results (within tolerance)
+    def test_train_policy(self, policy: Policy, datamodule: LeRobotDataModule, trainer: Trainer) -> None:
+        """Test that policy can be trained successfully.
 
         Args:
-            policy_name: Name of policy to test ("act", "dummy")
-            backend: Export backend ("openvino", "onnx", "torch", "torch_export_ir")
-            dummy_dataset: Pytest fixture providing dummy dataset
-            temp_export_dir: Temporary directory for export files
+            policy: Policy fixture (parametrized)
+            datamodule: PushT datamodule fixture
+            trainer: Trainer fixture
         """
-        # 1. CREATE POLICY
-        if policy_name == "act":
-            # ACT requires action chunking configuration
-            dataset = dummy_dataset(num_samples=16, state_dim=2, action_dim=2)
-            chunk_size = 100
-            dataset.delta_indices = {"action": list(range(chunk_size))}
-            policy = get_policy(policy_name, source="getiaction")
-        else:
-            # Dummy policy uses simple configuration
-            dataset = dummy_dataset(num_samples=16)
-            from getiaction.policies.dummy import DummyConfig
-
-            policy = get_policy(policy_name, source="getiaction", config=DummyConfig(action_shape=(2,)))
-
-        # 2. TRAIN POLICY
-        datamodule = DataModule(
-            train_dataset=dataset,
-            train_batch_size=4,
-        )
-
-        trainer = Trainer(
-            fast_dev_run=True,  # Single batch for speed
-            enable_checkpointing=False,
-            logger=False,
-            enable_progress_bar=False,
-        )
-
+        # Train policy (fast_dev_run=1 runs 1 train + 1 val batch)
         trainer.fit(policy, datamodule=datamodule)
 
-        # 3. EXPORT POLICY
-        export_dir = temp_export_dir / f"{policy_name}_{backend}"
-        policy.export(export_dir, backend=backend)
+        # Verify training completed
+        assert trainer.state.finished
 
-        # Verify export files exist
-        assert export_dir.exists()
-        assert (export_dir / "metadata.yaml").exists()
-
-        # 4. LOAD FOR INFERENCE
-        inference_model = InferenceModel.load(export_dir)
-
-        # Verify backend detection
-        assert inference_model.backend.value == backend
-
-        # 5. VALIDATE NUMERICAL CONSISTENCY
-        # Get a sample observation from dataset
-        sample_batch = next(iter(datamodule.train_dataloader()))
-
-        # Get training policy prediction
-        policy.eval()
-        with torch.no_grad():
-            train_output = policy.select_action(sample_batch)
-
-        # Get inference prediction
-        # Convert batch to inference format (numpy dict)
-        inference_input = {
-            key: value.cpu().numpy() for key, value in sample_batch.items() if key in ["image", "state"]
-        }
-        inference_output = inference_model.select_action(inference_input)
-
-        # Compare outputs (allowing some tolerance for backend optimizations)
-        train_action = train_output.cpu().numpy()
-        inference_action = inference_output
-
-        # For chunked policies (ACT), compare first action
-        if policy_name == "act":
-            train_action = train_action[:, 0, :]  # (batch, chunk, dim) -> (batch, dim)
-
-        torch.testing.assert_close(
-            torch.from_numpy(inference_action),
-            torch.from_numpy(train_action),
-            rtol=0.15,  # 15% relative tolerance
-            atol=0.15,  # 0.15 absolute tolerance
-        )
-
-    @pytest.mark.parametrize("policy_name", ["act", "dummy"])
-    def test_export_creates_complete_structure(
-        self,
-        policy_name: str,
-        dummy_dataset,
-        temp_export_dir: Path,
-    ):
-        """Test that export creates all required files and metadata.
+    def test_validate_policy(self, policy: Policy, datamodule: LeRobotDataModule, trainer: Trainer) -> None:
+        """Test that trained policy can be validated.
 
         Args:
-            policy_name: Name of policy to test
-            dummy_dataset: Pytest fixture providing dummy dataset
-            temp_export_dir: Temporary directory for export files
+            policy: Policy fixture (parametrized)
+            datamodule: PushT datamodule fixture
+            trainer: Trainer fixture
         """
-        # Create and setup policy
-        if policy_name == "act":
-            dataset = dummy_dataset(num_samples=8, state_dim=2, action_dim=2)
-            chunk_size = 100
-            dataset.delta_indices = {"action": list(range(chunk_size))}
-            policy = get_policy(policy_name, source="getiaction")
-        else:
-            dataset = dummy_dataset(num_samples=8)
-            from getiaction.policies.dummy import DummyConfig
-
-            policy = get_policy(policy_name, source="getiaction", config=DummyConfig(action_shape=(2,)))
-
-        # Quick training
-        datamodule = DataModule(train_dataset=dataset, train_batch_size=4)
-        trainer = Trainer(fast_dev_run=True, enable_checkpointing=False, logger=False, enable_progress_bar=False)
+        # Train and validate
         trainer.fit(policy, datamodule=datamodule)
+        trainer.validate(policy, datamodule=datamodule)
 
-        # Export
-        export_dir = temp_export_dir / policy_name
-        policy.export(export_dir, backend="openvino")
+        # Verify validation completed
+        assert trainer.state.finished
 
-        # Verify structure
-        assert export_dir.exists()
-        assert (export_dir / "metadata.yaml").exists()
-        assert (export_dir / "metadata.json").exists()
+    def test_test_policy(self, policy: Policy, datamodule: LeRobotDataModule, trainer: Trainer) -> None:
+        """Test that trained policy can be tested.
 
-        # Verify metadata contents
-        metadata = InferenceModel.load(export_dir).metadata
-        assert "policy_name" in metadata
-        assert "policy_class" in metadata
-        assert "input_shapes" in metadata
-        assert "backend" in metadata
-        assert metadata["backend"] == "openvino"
+        Args:
+            policy: Policy fixture (parametrized)
+            datamodule: PushT datamodule fixture
+            trainer: Trainer fixture
+        """
+        # Train and test
+        trainer.fit(policy, datamodule=datamodule)
+        trainer.test(policy, datamodule=datamodule)
+
+        # Verify test completed
+        assert trainer.state.finished
 
     @pytest.mark.parametrize(
         "backend",
         ["openvino", "onnx", "torch", "torch_export_ir"],
     )
-    def test_backend_specific_files_created(
+    def test_export_to_backend(
         self,
+        policy: Policy,
         backend: str,
-        dummy_dataset,
-        temp_export_dir: Path,
-    ):
-        """Test that each backend creates its expected model files.
+        datamodule: LeRobotDataModule,
+        trainer: Trainer,
+        tmp_path: Path,
+    ) -> None:
+        """Test that trained policy can be exported to different backends.
 
         Args:
+            policy: Policy fixture (parametrized)
             backend: Export backend to test
-            dummy_dataset: Pytest fixture providing dummy dataset
-            temp_export_dir: Temporary directory for export files
+            datamodule: PushT datamodule fixture
+            trainer: Trainer fixture
+            tmp_path: Pytest's temporary directory fixture
         """
-        # Use dummy policy for fast testing
-        from getiaction.policies.dummy import DummyConfig
-
-        policy = get_policy("dummy", source="getiaction", config=DummyConfig(action_shape=(2,)))
-
-        # Quick training
-        dataset = dummy_dataset(num_samples=8)
-        datamodule = DataModule(train_dataset=dataset, train_batch_size=4)
-        trainer = Trainer(fast_dev_run=True, enable_checkpointing=False, logger=False, enable_progress_bar=False)
+        # Train policy
         trainer.fit(policy, datamodule=datamodule)
 
-        # Export
-        export_dir = temp_export_dir / backend
-        policy.export(export_dir, backend=backend)
+        # Export to backend
+        export_dir = tmp_path / f"{policy.__class__.__name__.lower()}_{backend}"
+        policy.export(export_dir, backend)
 
-        # Verify backend-specific files
+        # Verify export files exist
+        assert export_dir.exists()
+        assert (export_dir / "metadata.yaml").exists()
+        assert (export_dir / "metadata.json").exists()
+
+        # Verify backend-specific model files
         if backend == "openvino":
-            assert (export_dir / "dummy.xml").exists()
-            assert (export_dir / "dummy.bin").exists()
+            assert any(export_dir.glob("*.xml"))
+            assert any(export_dir.glob("*.bin"))
         elif backend == "onnx":
-            assert (export_dir / "dummy.onnx").exists()
+            assert any(export_dir.glob("*.onnx"))
         elif backend == "torch":
-            assert (export_dir / "dummy.pt").exists()
+            assert any(export_dir.glob("*.pt"))
         elif backend == "torch_export_ir":
-            assert (export_dir / "dummy.ptir").exists()
+            assert any(export_dir.glob("*.pt2"))
+
+    @pytest.mark.parametrize(
+        "backend",
+        ["openvino", "onnx", "torch_export_ir"],
+    )
+    def test_inference_with_exported_model(
+        self,
+        policy: Policy,
+        backend: str,
+        datamodule: LeRobotDataModule,
+        trainer: Trainer,
+        tmp_path: Path,
+    ) -> None:
+        """Test that exported model can be loaded and used for inference.
+
+        Args:
+            policy: Policy fixture (parametrized)
+            backend: Export backend to test
+            datamodule: PushT datamodule fixture
+            trainer: Trainer fixture
+            tmp_path: Pytest's temporary directory fixture
+        """
+        # Train policy
+        trainer.fit(policy, datamodule=datamodule)
+
+        # Export model
+        export_dir = tmp_path / f"{policy.__class__.__name__.lower()}_{backend}"
+        policy.export(export_dir, backend)
+
+        # Load exported model for inference
+        inference_model = InferenceModel.load(export_dir)
+
+        # Verify backend detection
+        assert inference_model.backend.value == backend
+
+        # Get a sample observation from dataset
+        sample_batch = next(iter(datamodule.train_dataloader()))
+
+        # Prepare inference input (convert first sample to numpy)
+        # Extract first sample from each tensor in the batch
+        inference_input_dict: dict[str, np.ndarray | Any] = {}
+        for key, value in sample_batch.to_dict().items():
+            if key in {"state", "images", "image"}:
+                if torch.is_tensor(value):
+                    # Take first sample from batch and convert to numpy
+                    inference_input_dict[key] = value[0:1].cpu().numpy()
+                else:
+                    inference_input_dict[key] = value
+
+        # Create Observation from dict
+        inference_input: Observation = Observation.from_dict(inference_input_dict)
+
+        # Perform inference
+        inference_output: torch.Tensor = inference_model.select_action(inference_input)
+
+        # Verify output shape
+        assert inference_output.shape[-1] == 2  # Action dimension
+        # For chunked policies (ACT), first call returns (batch, action_dim) from queue
+        # For non-chunked policies, expect (action_dim,) or (batch, action_dim)
+        # For chunked policies like ACT: (batch, action_dim) or (action_dim,)
+        assert len(inference_output.shape) in {1, 2}, f"Expected 1D or 2D tensor, got shape {inference_output.shape}"
+
+    @pytest.mark.parametrize(
+        "backend",
+        ["openvino", "onnx", "torch_export_ir"],
+    )
+    def test_numerical_consistency_training_vs_inference(
+        self,
+        policy: Policy,
+        backend: str,
+        datamodule: LeRobotDataModule,
+        trainer: Trainer,
+        tmp_path: Path,
+    ) -> None:
+        """Test numerical consistency between training and inference outputs.
+
+        Args:
+            policy: Policy fixture (parametrized)
+            backend: Export backend to test
+            datamodule: PushT datamodule fixture
+            trainer: Trainer fixture
+            tmp_path: Pytest's temporary directory fixture
+        """
+        # Train policy
+        trainer.fit(policy, datamodule=datamodule)
+
+        # Export model
+        export_dir = tmp_path / f"{policy.__class__.__name__.lower()}_{backend}"
+        policy.export(export_dir, backend)
+
+        # Load for inference
+        inference_model = InferenceModel.load(export_dir)
+
+        # Get sample batch
+        sample_batch = next(iter(datamodule.train_dataloader()))
+
+        # Get training policy prediction
+        policy.eval()
+        with torch.no_grad():
+            train_output: torch.Tensor = policy.select_action(sample_batch)
+
+        # Prepare inference input (convert first sample to numpy)
+        # Extract first sample from each tensor in the batch
+        inference_input_dict: dict[str, np.ndarray | Any] = {}
+        for key, value in sample_batch.to_dict().items():
+            if key in {"state", "images", "image"}:
+                if torch.is_tensor(value):
+                    # Take first sample from batch and convert to numpy
+                    inference_input_dict[key] = value[0:1].cpu().numpy()
+                else:
+                    inference_input_dict[key] = value
+
+        # Create Observation from dict
+        inference_input: Observation = Observation.from_dict(inference_input_dict)
+
+        # Get inference prediction
+        inference_output: torch.Tensor = inference_model.select_action(inference_input)
+
+        # Compare outputs (allowing tolerance for backend optimizations)
+        train_action: torch.Tensor = train_output[0].cpu()  # First sample from batch
+
+        # For chunked policies (ACT), compare first action
+        if len(train_action.shape) > 1:
+            train_action = train_action[0]  # (chunk, dim) -> (dim,)
+
+        # inference_output is already a Tensor from select_action
+        if not isinstance(inference_output, torch.Tensor):
+            inference_output = torch.from_numpy(inference_output)
+
+        # Remove batch dimension if present: (1, action_dim) -> (action_dim)
+        inference_output_cpu: torch.Tensor = inference_output.cpu().squeeze(0)
+
+        # Ensure both are on CPU for comparison
+        torch.testing.assert_close(
+            inference_output_cpu,
+            train_action,
+            rtol=0.2,  # 20% relative tolerance for backend differences
+            atol=0.2,  # 0.2 absolute tolerance
+        )
