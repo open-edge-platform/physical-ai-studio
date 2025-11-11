@@ -83,7 +83,9 @@ graph TB
 Standard PyTorch checkpoint with embedded configuration:
 
 ```python
-policy = Dummy(config=DummyConfig(action_shape=(7,)))
+from getiaction.policies.act import ACT
+
+policy = ACT(...)
 policy.to_torch("checkpoint.pt")
 ```
 
@@ -97,7 +99,7 @@ policy.to_torch("checkpoint.pt")
 Optimized format for deployment and inference:
 
 ```python
-policy = Dummy(config=DummyConfig(action_shape=(7,)))
+policy = ACT(...)
 policy.to_onnx("model.onnx")
 ```
 
@@ -113,7 +115,7 @@ policy.to_onnx("model.onnx")
 Optimized format for deployment and inference on Intel hardware:
 
 ```python
-policy = Dummy(config=DummyConfig(action_shape=(7,)))
+policy = ACT(...)
 policy.to_openvino("model.xml")
 ```
 
@@ -129,7 +131,7 @@ That format aims to preserve input model graph in the original pythorch aten dia
 Model can be loaded and executed by pytorch without any extra deps:
 
 ```python
-policy = Dummy(config=DummyConfig(action_shape=(7,)))
+policy = ACT(...)
 policy.to_torch_export_ir("model.ptir")
 
 loaded_program = torch.export.load("model.ptir")
@@ -157,7 +159,9 @@ The export system automatically serializes model configurations to preserve repr
 All policies automatically inherit export capabilities:
 
 ```python
-class Dummy(Export, Policy):
+from getiaction.policies.act import ACT
+
+class ACT(Export, Policy):
     """Export is inherited automatically."""
     pass
 
@@ -214,12 +218,13 @@ or related getiaction entities. Only in that case, serializaiton is guaranteed.
 ### Basic Export
 
 ```python
-from getiaction.policies import Dummy, DummyConfig
+from getiaction.policies.act import ACT
+from getiaction.train import Trainer
 
 # Create and train model
-config = DummyConfig(action_shape=(7,))
-policy = Dummy(config=config)
-# ... training ...
+policy = ACT(...)
+trainer = Trainer(max_epochs=100)
+trainer.fit(policy, datamodule)
 
 # Export to PyTorch
 policy.to_torch("trained_model.pt")
@@ -250,8 +255,8 @@ policy.to_onnx(
 ```python
 # Explicit input sample
 input_sample = {
-    "observation": torch.randn(1, 64),
-    "state": torch.randn(1, 8),
+    "image": torch.randn(1, 3, 224, 224),
+    "state": torch.randn(1, 14),
 }
 policy.to_onnx("model.onnx", input_sample=input_sample)
 ```

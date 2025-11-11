@@ -20,9 +20,9 @@ CONFIG_KEY = "model_config"
 class ExportBackend(StrEnum):
     """Supported export backends."""
 
-    TORCH = "torch"
     ONNX = "onnx"
     OPENVINO = "openvino"
+    TORCH = "torch"
     TORCH_EXPORT_IR = "torch_export_ir"
 
 
@@ -187,7 +187,8 @@ class Export:
             input_sample = self.model.sample_input
         elif input_sample is None:
             msg = (
-                "An input sample must be provided for ONNX export, or the model must implement `sample_input` property."
+                "An input sample must be provided for Torch Export IR export, "
+                "or the model must implement `sample_input` property."
             )
             raise RuntimeError(msg)
 
