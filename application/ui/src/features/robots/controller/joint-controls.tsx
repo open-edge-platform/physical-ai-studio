@@ -82,7 +82,7 @@ const Joints = () => {
 
     return (
         <ul>
-            <Grid gap='size-50' columns={repeat('auto-fit', minmax('size-6000', '1fr'))}>
+            <Grid gap='size-50' columns={repeat('auto-fit', minmax('size-4600', '1fr'))}>
                 {joints.map((joint) => {
                     return (
                         <Joint

@@ -3,7 +3,7 @@ import { useParams } from 'react-router';
 import { $api } from '../../api/client';
 import { SchemaProjectInput } from '../../api/openapi-spec';
 
-export function useProjectId(): { project_id: string } {
+export function useProjectId() {
     const { project_id } = useParams<{ project_id: string }>();
 
     if (project_id === undefined) {
