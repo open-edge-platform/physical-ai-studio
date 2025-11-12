@@ -16,7 +16,7 @@ from lightning_utilities.core.imports import module_available
 from getiaction.data.lerobot import FormatConverter
 from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 from getiaction.policies.base import Policy
-from getiaction.policies.lerobot.mixin import LeRobotFromConfig
+from getiaction.policies.lerobot.mixin import LeRobotExport, LeRobotFromConfig
 
 if TYPE_CHECKING:
     from torch import nn
@@ -39,7 +39,7 @@ else:
     LEROBOT_AVAILABLE = False
 
 
-class ACT(Policy, LeRobotFromConfig):
+class ACT(LeRobotExport, Policy, LeRobotFromConfig):  # type: ignore[misc]
     """Action Chunking Transformer (ACT) policy from LeRobot.
 
     PyTorch Lightning wrapper around LeRobot's ACT implementation that provides
@@ -310,33 +310,76 @@ class ACT(Policy, LeRobotFromConfig):
             )
 
         # Initialize the policy
-        policy = _LeRobotACTPolicy(lerobot_config, dataset_stats=stats)  # type: ignore[arg-type,misc]
-        self.add_module("_lerobot_policy", policy)
-        self.model = self._lerobot_policy.model
+        lerobot_policy = _LeRobotACTPolicy(lerobot_config, dataset_stats=stats)  # type: ignore[arg-type,misc]
+        self.add_module("_lerobot_policy", lerobot_policy)
 
-    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
+        # Use LeRobot policy directly as model (it's already an nn.Module)
+        self.model = self._lerobot_policy
+
+    @property
+    def metadata_extra(self) -> dict[str, Any]:
+        """Add ACT-specific metadata for export.
+
+        Returns:
+            Dictionary containing ACT-specific parameters for inference.
+        """
+        return {
+            "chunk_size": self.lerobot_policy.config.chunk_size,
+            "use_action_queue": True,
+        }
+
+    def forward(
+        self,
+        batch: Observation | dict[str, torch.Tensor],
+    ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """Forward pass for LeRobot ACT policy.
 
         The return value depends on the model's training mode:
         - In training mode: Returns (loss, loss_dict) from LeRobot's forward method
-        - In evaluation mode: Returns action predictions via select_action method
+        - In evaluation mode: Returns action predictions
+
+        For torch.export compatibility, this calls the underlying transformer model directly
+        instead of select_action() which contains mode-changing calls that break tracing.
 
         Args:
-            batch (Observation): Input batch of observations
+            batch: Input batch - can be Observation object (during training/inference)
+                or dict[str, Tensor] (during export)
 
         Returns:
             torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]: In training mode,
-                returns tuple of (loss, loss_dict). In eval mode, returns selected actions tensor.
+                returns tuple of (loss, loss_dict). In eval mode, returns action predictions.
         """
-        # Convert to LeRobot format for internal processing
-        batch_dict = FormatConverter.to_lerobot_dict(batch)
+        # Handle both Observation and dict inputs (dict for export, Observation for training/inference)
+        batch_dict = batch if isinstance(batch, dict) else FormatConverter.to_lerobot_dict(batch)
 
         if self.training:
             # During training, return loss information for backpropagation
             return self.lerobot_policy(batch_dict)
 
-        # During evaluation, return action predictions
-        return self.select_action(batch)
+        # During evaluation/export, replicate predict_action_chunk logic inline
+        # to avoid LeRobot's internal tensor shape bug and self.eval() call issues
+
+        # Normalize inputs (same as LeRobot's predict_action_chunk)
+        batch_dict = self.lerobot_policy.normalize_inputs(batch_dict)
+
+        # Squeeze singleton temporal dimensions for n_obs_steps==1
+        # This prevents shape mismatches in LeRobot's internal model
+        if self.lerobot_policy.config.n_obs_steps == 1:
+            batch_dict = {
+                k: v.squeeze(1) if torch.is_tensor(v) and v.ndim > 1 and v.shape[1] == 1 else v
+                for k, v in batch_dict.items()
+            }
+
+        # Prepare batch for model (add observation.images key if needed)
+        if self.lerobot_policy.config.image_features:
+            batch_dict = dict(batch_dict)  # shallow copy
+            batch_dict["observation.images"] = [batch_dict[key] for key in self.lerobot_policy.config.image_features]
+
+        # Call model directly to get actions
+        actions = self.lerobot_policy.model(batch_dict)[0]
+
+        # Unnormalize outputs (same as LeRobot's predict_action_chunk)
+        return self.lerobot_policy.unnormalize_outputs({"action": actions})["action"]
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
         """Configure optimizer using LeRobot's custom parameter groups.
@@ -360,6 +403,17 @@ class ACT(Policy, LeRobotFromConfig):
 
         # Convert to LeRobot format if needed (handles Observation or collated dict)
         batch_dict = FormatConverter.to_lerobot_dict(batch)
+
+        # Ensure observation.state is 2D (batch, state_dim) for LeRobot ACT
+        # LeRobot's dataset might add temporal dimension, but ACT expects 2D state
+        if "observation.state" in batch_dict:
+            state = batch_dict["observation.state"]
+            if isinstance(state, torch.Tensor):
+                # If state has extra singleton temporal dimension, squeeze it
+                # Expected: (batch, state_dim), but might get (batch, 1, state_dim)
+                while state.ndim > 2 and state.shape[1] == 1:  # noqa: PLR2004
+                    state = state.squeeze(1)
+                batch_dict["observation.state"] = state
 
         total_loss, loss_dict = self.lerobot_policy(batch_dict)
         for key, value in loss_dict.items():
@@ -403,19 +457,27 @@ class ACT(Policy, LeRobotFromConfig):
         Converts the Observation to LeRobot dict format and passes it to the
         underlying LeRobot policy for action prediction.
 
+        For ACT (chunked policy), this returns the full action chunk.
+        The InferenceModel handles extracting individual actions when needed.
+
         Args:
             batch: Input batch of observations.
 
         Returns:
-            The selected action tensor.
+            The action tensor - full chunk for chunked policies.
         """
         # Move batch to device (observations from gym are on CPU)
         batch = batch.to(self.device)
 
-        # Convert to LeRobot format
-        batch_dict = FormatConverter.to_lerobot_dict(batch)
-
-        return self.lerobot_policy.select_action(batch_dict)
+        # Use forward() in eval mode for consistency with export behavior
+        self.eval()
+        with torch.no_grad():
+            result = self.forward(batch)
+            # In eval mode, forward returns actions tensor (not tuple)
+            if not isinstance(result, torch.Tensor):
+                msg = "select_action expects tensor output in eval mode"
+                raise TypeError(msg)
+            return result
 
     def reset(self) -> None:
         """Reset the policy state."""
