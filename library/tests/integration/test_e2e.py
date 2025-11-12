@@ -23,10 +23,8 @@ import torch
 from getiaction.data import LeRobotDataModule, Observation
 from getiaction.inference import InferenceModel
 from getiaction.policies import get_policy
+from getiaction.policies.base.policy import Policy
 from getiaction.train import Trainer
-
-if TYPE_CHECKING:
-    from getiaction.policies.base.policy import Policy
 
 
 @pytest.fixture
@@ -43,7 +41,7 @@ def datamodule() -> LeRobotDataModule:
     )
 
 
-@pytest.fixture(params=["act"])
+@pytest.fixture(params=["act", "diffusion"])
 def policy(request: pytest.FixtureRequest) -> Policy:
     """Create policy instance based on parametrized policy name.
 
@@ -58,7 +56,14 @@ def policy(request: pytest.FixtureRequest) -> Policy:
         Policy: Configured policy instance.
     """
     policy_name: str = request.param
-    return get_policy(policy_name, source="getiaction")
+    
+    # Determine source based on policy name
+    # First-party: act, dummy
+    # LeRobot: diffusion, vqbet, tdmpc, sac, pi0, pi05, smolvla, groot
+    getiaction_policies = {"act", "dummy"}
+    source = "getiaction" if policy_name in getiaction_policies else "lerobot"
+    
+    return get_policy(policy_name, source=source)
 
 
 @pytest.fixture
@@ -242,6 +247,13 @@ class TestE2E:
     ) -> None:
         """Test numerical consistency between training and inference outputs.
 
+        For Diffusion policies, this test uses the full denoising loop (100 steps)
+        to ensure numerical consistency with training. This makes diffusion tests
+        significantly slower (~4 minutes vs ~10 seconds for fast export).
+        Use `pytest -m "not slow"` to skip slow tests, or `pytest -m slow` to run only slow tests.
+
+        Other policies use default (fast) export settings.
+
         Args:
             policy: Policy fixture (parametrized)
             backend: Export backend to test
@@ -252,9 +264,17 @@ class TestE2E:
         # Train policy
         trainer.fit(policy, datamodule=datamodule)
 
-        # Export model
+        # Export model with policy-specific parameters
         export_dir = tmp_path / f"{policy.__class__.__name__.lower()}_{backend}"
-        policy.export(export_dir, backend)
+        export_kwargs = {}
+        
+        # For Diffusion: use full 100-step denoising for numerical accuracy (slow: ~4 minutes)
+        # For other policies: use default (fast) export settings
+        if policy.__class__.__name__.lower() == "diffusion":
+            pytest.mark.slow(lambda: None)()  # Mark as slow test
+            export_kwargs["num_inference_steps"] = 100
+        
+        policy.export(export_dir, backend, **export_kwargs)
 
         # Load for inference
         inference_model = InferenceModel.load(export_dir)

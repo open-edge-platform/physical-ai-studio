@@ -368,8 +368,8 @@ class Diffusion(Policy, LeRobotFromConfig):
         """
         del batch_idx  # Unused argument
 
-        # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch_dict = FormatConverter.to_lerobot_dict(batch)
+        # Convert to LeRobot format and adjust dimensions/horizons using policy config
+        batch_dict = FormatConverter.to_lerobot_dict(batch, policy_config=self.lerobot_policy.config)
 
         loss, _ = self.lerobot_policy(batch_dict)
         self.log("train/loss", loss, prog_bar=True)
