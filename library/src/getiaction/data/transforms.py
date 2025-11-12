@@ -109,7 +109,7 @@ def center_crop_image(image: torch.Tensor, output_size: list[int] | tuple[int, i
     return cropped
 
 
-class OnnxCenterCrop(Transform):
+class CenterCrop(Transform):
     """ONNX-compatible center crop transform.
 
     This is a drop-in replacement for torchvision.transforms.CenterCrop that
@@ -124,7 +124,7 @@ class OnnxCenterCrop(Transform):
             If size is a sequence of length 2, it should be (height, width).
 
     Example:
-        >>> crop = OnnxCenterCrop(224)
+        >>> crop = CenterCrop(224)
         >>> # 3D tensor
         >>> input_3d = torch.randn(3, 256, 256)
         >>> output_3d = crop(input_3d)
@@ -191,7 +191,7 @@ def replace_center_crop_with_onnx_compatible(model: nn.Module) -> None:
     """Replace all CenterCrop transforms in a model with ONNX-compatible versions.
 
     This function recursively traverses the model and replaces any instances of
-    torchvision.transforms.CenterCrop with OnnxCenterCrop, which uses only
+    torchvision.transforms.CenterCrop with our ONNX-compatible CenterCrop, which uses only
     tensor operations that are ONNX-exportable.
 
     Args:
@@ -208,7 +208,7 @@ def replace_center_crop_with_onnx_compatible(model: nn.Module) -> None:
             # Replace with ONNX-compatible version
             # Extract size from the CenterCrop module - type annotation removed due to torchvision internals
             crop_size = module.size if hasattr(module, "size") else (module.crop_height, module.crop_width)
-            setattr(model, name, OnnxCenterCrop(crop_size))  # type: ignore[arg-type]
+            setattr(model, name, CenterCrop(crop_size))  # type: ignore[arg-type]
         else:
             # Recursively process child modules
             replace_center_crop_with_onnx_compatible(module)
