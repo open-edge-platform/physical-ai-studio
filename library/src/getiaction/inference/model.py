@@ -240,12 +240,20 @@ class InferenceModel:
 
             # Convert to numpy
             if isinstance(value, torch.Tensor):
-                inputs[model_key] = value.cpu().numpy()
+                arr = value.cpu().numpy()
             elif isinstance(value, np.ndarray):
-                inputs[model_key] = value
+                arr = value
             else:
                 # Handle nested structures if needed
-                inputs[model_key] = np.array(value)
+                arr = np.array(value)
+
+            # Remove singleton temporal dimension if present
+            # Models exported for inference typically expect (batch, ...) not (batch, 1, ...)
+            temporal_dim = 1
+            if arr.ndim >= 3 and arr.shape[temporal_dim] == 1:  # noqa: PLR2004
+                arr = np.squeeze(arr, axis=temporal_dim)
+
+            inputs[model_key] = arr
 
         return inputs
 
