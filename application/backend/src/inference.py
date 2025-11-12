@@ -5,7 +5,7 @@ import time
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import build_dataset_frame
 from lerobot.policies.act.configuration_act import ACTConfig
-from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
+from lerobot.policies.act.modeling_act import ACTPolicy
 from lerobot.robots.utils import make_robot_from_config
 from lerobot.utils.control_utils import predict_action
 from lerobot.utils.robot_utils import busy_wait
@@ -29,20 +29,30 @@ class InferenceConfig(BaseModel):
 
 
 config = InferenceConfig(
-    task="grab block",
+    task="Place block on paper",
     policy="rhecker/duplo_act_policy",
     device="cuda",
     dataset={
         "id": "c574e5a0-f57e-4103-b823-4f2ef41a1969",
-        "name": "duplo-bright",
-        "path": "/home/ronald/.cache/geti_action/datasets/duplo-top-1cam",
+        "name": "eval_place-block",
+        "path": "/home/ronald/.cache/huggingface/lerobot/rhecker/eval_place-block",
         "project_id": "a7ec475b-3094-4a8e-9479-2bea8157a90b",
     },
     cameras=[
         {
             "id": "e55489e2-5761-4c4b-8bc3-845bdfae6c50",
-            "port_or_device_id": "200:4:/dev/video4",
+            "port_or_device_id": "/dev/video4",
             "name": "top",
+            "driver": "webcam",
+            "width": 640,
+            "height": 480,
+            "fps": 30,
+            "use_depth": False,
+        },
+        {
+            "id": "e55489e2-5761-4c4b-8bc3-845bdfae6c50",
+            "port_or_device_id": "/dev/video6",
+            "name": "grabber",
             "driver": "webcam",
             "width": 640,
             "height": 480,
@@ -54,7 +64,7 @@ config = InferenceConfig(
         "id": "khaos",
         "robot_type": "so101_follower",
         "serial_id": "5AA9017083",
-        "port": "/dev/ttyACM2",
+        "port": "/dev/ttyACM0",
         "type": "follower",
     },
 )
@@ -115,8 +125,8 @@ dataset = LeRobotDataset(config.dataset.name, config.dataset.path)
 # push_to_hub_own(policy)
 
 # "/home/ronald/projects/lerobot/outputs/train/duplo-top/checkpoints/0200000/pretrained_model/"
-policy = SmolVLAPolicy.from_pretrained(checkpoint_path)
-# policy = ACTPolicy.from_pretrained( checkpoint_path)
+# policy = SmolVLAPolicy.from_pretrained(checkpoint_path)
+policy = ACTPolicy.from_pretrained( checkpoint_path)
 
 timestamp = 0
 start_episode_t = time.perf_counter()

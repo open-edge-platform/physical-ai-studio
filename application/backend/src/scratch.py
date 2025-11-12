@@ -62,7 +62,7 @@ config = InferenceConfig(
         "id": "khaos",
         "robot_type": "so101_follower",
         "serial_id": "5AA9017083",
-        "port": "/dev/ttyACM2",
+        "port": "/dev/ttyACM0",
         "type": "follower",
     },
 )
@@ -103,9 +103,12 @@ async def main():
 
 
     print(robot.bus.sync_read("Present_Position"))
+    root_position_action = {'shoulder_pan.pos': -2.271006813020435, 'shoulder_lift.pos': -98.08027923211169, 'elbow_flex.pos': 99.37527889335118, 'wrist_flex.pos': 67.34527687296418, 'wrist_roll.pos': -13.406593406593402, 'gripper.pos': 27.128953771289538}
+    robot.send_action(root_position_action)
+
+
 
     while True:
-        break
         start_loop_t = time.perf_counter()
 
         robot_observation = robot.get_observation()
@@ -127,11 +130,11 @@ async def main():
             images=images,
         )
 
-        print(observation.to_dict())
+        #print(observation.to_dict())
         #print(act_model(observation.to_dict()))
-        break
         #break
         actions = policy.select_action(observation)
+        print(actions.shape)
         formatted_actions = dict(zip(robot_observation.keys(), actions[0].tolist()))
         print(formatted_actions)
         robot.send_action(formatted_actions)
@@ -139,6 +142,7 @@ async def main():
         dt_s = time.perf_counter() - start_loop_t
         wait_time = 1 / config.fps - dt_s
 
+        break
         busy_wait(wait_time)
 
 
@@ -155,6 +159,7 @@ def export_existing_model():
     model_path = "/home/ronald/intel/geti-action/application/backend/lightning_logs/version_3/checkpoints/epoch=748-step=47187.ckpt"
 
     data = torch.load(model_path, map_location="cpu", weights_only=True)
+    return
     data["model_config"] = donor_data["model_config"]
     act_model = ACTModel.load_from_checkpoint(data)
     ACT(model=act_model).to_torch("./place-block-model.ckpt")
@@ -212,9 +217,112 @@ def second():
     #    ],
     #    max_steps=10000,
     #)
+    #
+
+
+from dataclasses import fields
+from typing import TYPE_CHECKING, Any
+import numpy as np
+def _collate_observations(batch: list[Observation]) -> Observation:
+    """Collate a batch of Observations into a single batched Observation.
+
+    Args:
+        batch (list[Observation]): A list containing Observations.
+
+    Returns:
+        Observation: A single Observation with batched tensors.
+    """
+    if not batch:
+        return Observation()
+
+    collated_data: dict[str, Any] = {}
+
+    # Iterate through all fields defined in the Observation dataclass
+    for field in fields(Observation):
+        key = field.name
+        values = [getattr(elem, key) for elem in batch]
+
+        # Filter out None values to determine the data type
+        non_none_values = [v for v in values if v is not None]
+
+        if not non_none_values:
+            collated_data[key] = None
+            continue
+
+        first_non_none = non_none_values[0]
+
+        # Handle tensors and NumPy arrays
+        if isinstance(first_non_none, (torch.Tensor, np.ndarray)):
+            # Convert NumPy arrays to PyTorch tensors before stacking
+            tensors_to_stack = [torch.from_numpy(v) if isinstance(v, np.ndarray) else v for v in non_none_values]
+            collated_data[key] = torch.stack(tensors_to_stack, dim=0)
+
+        # Handle nested dictionaries, such as the `images` field
+        elif isinstance(first_non_none, dict):
+            collated_inner_dict = {}
+            for inner_key in first_non_none:
+                inner_values = [d.get(inner_key) for d in values if d is not None]
+                if inner_values:
+                    first_inner_value = inner_values[0]
+                    # Only stack if the values are tensors or arrays
+                    if isinstance(first_inner_value, (torch.Tensor, np.ndarray)):
+                        tensors_to_stack = [
+                            torch.from_numpy(v) if isinstance(v, np.ndarray) else v for v in inner_values
+                        ]
+                        collated_inner_dict[inner_key] = torch.stack(tensors_to_stack, dim=0)
+                    else:
+                        # For non-tensor values (like strings), just keep them as a list
+                        collated_inner_dict[inner_key] = inner_values
+            collated_data[key] = collated_inner_dict
+
+        # Handle primitive types like booleans, integers, and floats
+        elif isinstance(first_non_none, (bool, int, float)):
+            collated_data[key] = torch.tensor(non_none_values)
+
+        # Fallback for other types, like strings
+        else:
+            collated_data[key] = values
+
+    return Observation(**collated_data)
+
+def dataset_check():
+    """Check the dataset if the action matches the selected action via policy."""
+    model_path = "/home/ronald/intel/geti-action/application/backend/act_policy_real_data.pt"
+    repo_id = "rhecker/place-block"
+    l_dm = LeRobotDataModule(
+        repo_id=repo_id
+    )
+
+    dl =  DataLoader(
+        l_dm.train_dataset,
+        batch_size=1,
+        collate_fn=_collate_observations,  # type: ignore[arg-type]
+        shuffle=True,
+    )
+
+    act_model = ACTModel.load_from_checkpoint(model_path)
+    act_model.eval()
+    policy = ACT(model=act_model)
+    policy.eval()
+
+    for batch in dl:
+        print(batch.state.shape) # [1, 6]
+        print(batch.images["top"].shape) # [1, 3, 480, 640]
+        obs = Observation(
+            state=batch.state,
+            images=batch.images,
+        )
+        print(obs)
+        action = policy.select_action(obs)
+        # for some random sample the following values
+        print(batch.action) # tensor([[ -2.0124, -91.5318,  83.9262,  65.9940,  -7.6163,  23.2374]])
+        print(action)       # tensor([[-14.0694, -16.2433, -40.7977,  65.4488,   2.0635,  19.5631]])
+
+        break
 
 
 if __name__ == "__main__":
+    dataset_check()
     #export_existing_model()
     #second()
-    asyncio.run(main())
+    #asyncio.run(main())

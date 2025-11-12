@@ -66,9 +66,10 @@ class InferenceWorker(BaseProcessWorker):
         follower_config = make_lerobot_robot_config_from_robot(self.config.robot, cameras)
         #follower_config.max_relative_target = 1
 
+        model_path = "/home/ronald/intel/geti-action/application/backend/act_policy_real_data.pt"
         self.robot = make_robot_from_config(follower_config)
-        logger.info(f"loading model: {self.config.model.path}")
-        self.model = ACTModel.load_from_checkpoint(Path(self.config.model.path))
+        logger.info(f"loading model: {model_path}")
+        self.model = ACTModel.load_from_checkpoint(Path(model_path))
         self.model.eval()
 
         self.policy = ACT(self.model)
@@ -128,6 +129,7 @@ class InferenceWorker(BaseProcessWorker):
                 self.events["calculate_trajectory"].clear()
                 lerobot_obs = self.robot.get_observation()
                 observation = self._build_geti_action_observation(lerobot_obs, 0, 0)
+                logger.info(observation.keys())
                 self._report_trajectory(self.model(observation.to_dict())[0].tolist())
 
             if self.is_running:
@@ -192,6 +194,7 @@ class InferenceWorker(BaseProcessWorker):
             #key = f"observation.images.{name}"
             frame = robot_observation[name]
             logger.info(frame.shape)
+            logger.info(frame.dtype)
 
             images[name] = torch.from_numpy(frame)
             images[name] = images[name].float() / 255

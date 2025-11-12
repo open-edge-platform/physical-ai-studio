@@ -45,7 +45,7 @@ export const Index = () => {
             "id": "khaos",
             "robot_type": "so101_follower",
             "serial_id": "5AA9017083",
-            "port": "/dev/ttyACM2",
+            "port": "/dev/ttyACM0",
             "type": "follower",
         },
     }
