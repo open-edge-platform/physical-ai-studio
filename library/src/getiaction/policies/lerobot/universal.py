@@ -273,13 +273,11 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         policy_cls = get_policy_class(self.policy_name)
 
         # Instantiate the LeRobot policy
-        policy = policy_cls(config, dataset_stats=dataset_stats)
-        self.add_module("_lerobot_policy", policy)
+        lerobot_policy = policy_cls(config, dataset_stats=dataset_stats)
+        self.add_module("_lerobot_policy", lerobot_policy)
 
-        # Expose the underlying model for Lightning compatibility (if available)
-        # Some policies (like Diffusion) don't have a .model attribute
-        if hasattr(self._lerobot_policy, "model"):
-            self.model = self._lerobot_policy.model
+        # Use LeRobot policy directly as model (it's already an nn.Module)
+        self.model = self._lerobot_policy
 
         # Expose framework info
         self._framework = "lerobot"
