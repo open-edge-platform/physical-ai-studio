@@ -51,7 +51,58 @@ def _prepare_inputs(self, observation: Observation) -> dict[str, np.ndarray]:
 
 ---
 
-### 2. Data Pipeline Format Mismatch
+### 2. Input Naming Convention Mismatch
+
+**Problem**:
+- Different policies use different input naming conventions
+- ACT: `state`, `images` (simple names)
+- LeRobot: `observation.state`, `observation.images` (dot notation)
+- ONNX export: Converts to `observation_state`, `observation_images` (underscores)
+
+**Root Cause**:
+- **Python identifiers cannot contain dots (`.`)**
+- Dots are attribute access operators, not valid in variable names
+- `observation.state` as a keyword argument is invalid Python syntax
+- ONNX/PyTorch must convert dots → underscores during export
+
+**Example**:
+```python
+# ❌ Invalid Python
+def forward(observation.state, observation.images):
+    pass
+
+# ✅ Valid Python  
+def forward(observation_state, observation_images):
+    pass
+```
+
+**Current Status**:
+- LeRobot policies internally use dot notation (their convention)
+- Export process converts to underscores (Python requirement)
+- InferenceModel._prepare_inputs() handles mapping between conventions
+
+**Solution** ✅ **IMPLEMENTED**:
+1. **Keep LeRobot's internal dot notation** (respect their design)
+2. **Standardize export to underscores**:
+   ```python
+   # library/src/getiaction/policies/lerobot/mixin.py
+   input_names_normalized = [name.replace(".", "_") for name in input_sample]
+   torch.onnx.export(..., input_names=input_names_normalized)
+   ```
+3. **InferenceModel maps between conventions** based on model type
+
+**Benefits**:
+- ✅ LeRobot policies work correctly with their expected format
+- ✅ All exported models have valid Python identifier names
+- ✅ Consistent ONNX/OpenVINO naming across all exports
+- ✅ Clear separation: internal format vs export format
+
+**Files Changed**:
+- ✅ `library/src/getiaction/policies/lerobot/mixin.py` (export standardization)
+
+---
+
+### 3. Data Pipeline Format Conversion
 
 **Problem**:
 - `Observation` uses `state`, `images`

@@ -383,6 +383,11 @@ class LeRobotExport(Export):
 
         arg_name = self._get_forward_arg_name()
 
+        # Convert dots to underscores in input names for ONNX compatibility
+        # Python identifiers cannot contain dots, so ONNX will convert them anyway
+        # We do it explicitly to maintain consistency with model expectations
+        input_names_normalized = [name.replace(".", "_") for name in input_sample]
+
         # Export the wrapper (self) instead of self.model to use wrapper's forward()
         self.eval()
         torch.onnx.export(
@@ -390,7 +395,7 @@ class LeRobotExport(Export):
             args=(),
             kwargs={arg_name: input_sample},
             f=str(model_path),
-            input_names=list(input_sample.keys()),
+            input_names=input_names_normalized,
             **extra_model_args,
         )
 

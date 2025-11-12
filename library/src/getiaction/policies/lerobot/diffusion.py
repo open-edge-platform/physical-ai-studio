@@ -16,11 +16,9 @@ from lightning_utilities.core.imports import module_available
 from getiaction.data.lerobot import FormatConverter
 from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 from getiaction.policies.base import Policy
-from getiaction.policies.lerobot.mixin import LeRobotFromConfig
+from getiaction.policies.lerobot.mixin import LeRobotExport, LeRobotFromConfig
 
 if TYPE_CHECKING:
-    from torch import nn
-
     from getiaction.data import Observation
     from getiaction.gyms import Gym
 
@@ -39,7 +37,7 @@ else:
     dataset_to_policy_features = None
 
 
-class Diffusion(Policy, LeRobotFromConfig):
+class Diffusion(LeRobotExport, Policy, LeRobotFromConfig):  # type: ignore[misc]
     """Diffusion Policy from LeRobot with lazy initialization.
 
     This class wraps LeRobot's Diffusion Policy implementation, providing a
@@ -256,7 +254,6 @@ class Diffusion(Policy, LeRobotFromConfig):
 
         # Policy will be initialized in setup()
         self._lerobot_policy: _LeRobotDiffusionPolicy
-        self.model: nn.Module | None = None
 
         self.save_hyperparameters()
 
@@ -321,7 +318,6 @@ class Diffusion(Policy, LeRobotFromConfig):
         # Initialize the policy
         policy = _LeRobotDiffusionPolicy(lerobot_config, dataset_stats=stats)  # type: ignore[arg-type,misc]
         self.add_module("_lerobot_policy", policy)
-        self.model = self._lerobot_policy.diffusion
 
     def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """Forward pass for LeRobot Diffusion policy.
