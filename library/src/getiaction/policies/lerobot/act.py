@@ -465,6 +465,9 @@ class ACT(LeRobotExport, Policy, LeRobotFromConfig):  # type: ignore[misc]
 
         Returns:
             The action tensor - full chunk for chunked policies.
+
+        Raises:
+            TypeError: If forward() returns non-tensor result.
         """
         # Move batch to device (observations from gym are on CPU)
         batch = batch.to(self.device)
