@@ -20,21 +20,18 @@ export const Robot = () => {
                         '--spectrum-tabs-selection-indicator-color': 'var(--energy-blue)',
                     }}
                 >
-                    <Item
-                        key={paths.project.robotConfiguration.controller(params)}
-                        href={paths.project.robotConfiguration.controller(params)}
-                    >
+                    <Item key={paths.project.robots.controller(params)} href={paths.project.robots.controller(params)}>
                         Robot controller
                     </Item>
                     <Item
-                        key={paths.project.robotConfiguration.calibration(params)}
-                        href={paths.project.robotConfiguration.calibration(params)}
+                        key={paths.project.robots.calibration(params)}
+                        href={paths.project.robots.calibration(params)}
                     >
                         Calibration
                     </Item>
                     <Item
-                        key={paths.project.robotConfiguration.setupMotors(params)}
-                        href={paths.project.robotConfiguration.setupMotors(params)}
+                        key={paths.project.robots.setupMotors(params)}
+                        href={paths.project.robots.setupMotors(params)}
                     >
                         Setup motors
                     </Item>
@@ -54,13 +51,13 @@ export const Robot = () => {
                 </div>
             </Flex>
             <TabPanels>
-                <Item key={paths.project.robotConfiguration.controller(params)}>
+                <Item key={paths.project.robots.controller(params)}>
                     <Outlet />
                 </Item>
-                <Item key={paths.project.robotConfiguration.calibration(params)}>
+                <Item key={paths.project.robots.calibration(params)}>
                     <Outlet />
                 </Item>
-                <Item key={paths.project.robotConfiguration.setupMotors(params)}>
+                <Item key={paths.project.robots.setupMotors(params)}>
                     <Outlet />
                 </Item>
             </TabPanels>

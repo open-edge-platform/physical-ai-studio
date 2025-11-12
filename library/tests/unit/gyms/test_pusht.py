@@ -4,6 +4,7 @@
 """Unit Tests - PushT Gym."""
 
 import numpy as np
+import torch
 
 from getiaction.data.observation import Observation
 from getiaction.gyms import PushTGym
@@ -38,7 +39,7 @@ class TestPushTGym(BaseTestGym):
     def test_convert_raw_observation_with_pixels_and_state(self):
         """Test PushTGym.convert_raw_observation() with typical PushT observation."""
         raw_obs = {
-            "pixels": np.random.rand(480, 640, 3).astype(np.float32),
+            "pixels": (np.random.rand(480, 640, 3) * 255).astype(np.uint8),
             "agent_pos": np.array([0.5, 0.3], dtype=np.float32),
         }
 
@@ -51,6 +52,8 @@ class TestPushTGym(BaseTestGym):
         assert hasattr(obs.images, 'shape')  # Should be tensor, not dict
         assert obs.images.shape == (1, 3, 480, 640)  # Batched, CHW  # type: ignore[attr-defined]
         assert obs.state.shape == (1, 2)  # Batched state  # type: ignore[attr-defined]
+        assert obs.images.dtype == torch.float32  # type: ignore[attr-defined]
+        assert torch.max(obs.images) <= 1.0  # type: ignore[attr-defined]
 
     def test_to_observation_delegates_to_static_method(self):
         """Test that instance method delegates to static method."""

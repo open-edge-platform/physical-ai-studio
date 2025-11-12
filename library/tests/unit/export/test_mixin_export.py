@@ -9,7 +9,7 @@ import onnx
 import pytest
 import torch
 
-from getiaction.export.mixin_export import Export
+from getiaction.export.mixin_export import Export, ExportBackend
 
 
 # Test configurations
@@ -238,21 +238,19 @@ class TestToOnnx:
         with pytest.raises(RuntimeError, match="input sample must be provided"):
             wrapper.to_onnx(output_path)
 
-    def test_to_onnx_input_names_match_sample(self, tmp_path):
-        """Test that input names in ONNX model match the sample input dict keys."""
-        model = ModelWithMultipleInputs()
+    def test_to_onnx_via_export_method(self, tmp_path):
+        """Test ONNX export using the generic export method."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
         wrapper = ExportWrapper(model)
 
         output_path = tmp_path / "model.onnx"
-        wrapper.to_onnx(output_path)
+        wrapper.export(backend="onnx", output_path=output_path)
 
-        # Load ONNX model and check input names
+        assert output_path.exists()
+
+        # Verify the ONNX model can be loaded
         onnx_model = onnx.load(str(output_path))
-        input_names = [input.name for input in onnx_model.graph.input]
-
-        # Should include the keys from sample_input
-        assert "input_a" in input_names
-        assert "input_b" in input_names
+        onnx.checker.check_model(onnx_model)
 
 
 class TestToOpenVINO:
@@ -325,3 +323,139 @@ class TestToOpenVINO:
 
         with pytest.raises(RuntimeError, match="input sample must be provided"):
             wrapper.to_openvino(output_path)
+
+    def test_to_openvino_via_export_method(self, tmp_path):
+        """Test OpenVINO export using the generic export method."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        output_path = tmp_path / "model.xml"
+        wrapper.export(backend="openvino", output_path=output_path)
+
+        assert output_path.exists()
+        assert (tmp_path / "model.bin").exists()
+
+
+class TestToTorchExportIR:
+    """Tests for to_torch_export_ir method."""
+
+    def test_to_torch_export_ir_with_sample_input_from_model(self, tmp_path):
+        """Test TorchIR export using model's sample_input property."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        output_path = tmp_path / "model.pt2"
+        wrapper.to_torch_export_ir(output_path)
+
+        assert output_path.exists()
+
+        # Verify the exported program can be loaded
+        loaded_program = torch.export.load(output_path) # nosec
+        assert loaded_program is not None
+
+    def test_to_torch_export_ir_with_provided_input_sample(self, tmp_path):
+        """Test TorchIR export with explicitly provided input sample."""
+        model = ModelWithDictInput()
+        wrapper = ExportWrapper(model)
+
+        input_sample = {"data": torch.randn(1, 10)}
+        output_path = tmp_path / "model.pt2"
+
+        wrapper.to_torch_export_ir(output_path, input_sample=input_sample)
+
+        assert output_path.exists()
+
+        # Verify the exported program can be loaded
+        loaded_program = torch.export.load(output_path) # nosec
+        assert loaded_program is not None
+
+    def test_to_torch_export_ir_kwargs_override_model_args(self, tmp_path):
+        """Test that provided kwargs override model's extra_export_args."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+
+        # Add extra_export_args for torch_ir
+        model.extra_export_args = {
+            "torch_ir": {
+                "strict": True,
+            }
+        }
+
+        wrapper = ExportWrapper(model)
+
+        output_path = tmp_path / "model.pt2"
+        # Override the strict mode from the model
+        wrapper.to_torch_export_ir(output_path, strict=False)
+
+        assert output_path.exists()
+
+        # Verify the exported program can be loaded
+        loaded_program = torch.export.load(output_path) # nosec
+        assert loaded_program is not None
+
+    def test_to_torch_export_ir_with_multiple_inputs(self, tmp_path):
+        """Test TorchIR export with model having multiple inputs."""
+        model = ModelWithMultipleInputs()
+        wrapper = ExportWrapper(model)
+
+        output_path = tmp_path / "model.pt2"
+        wrapper.to_torch_export_ir(output_path)
+
+        assert output_path.exists()
+
+        # Verify the exported program can be loaded
+        loaded_program = torch.export.load(output_path) # nosec
+        assert loaded_program is not None
+
+    def test_to_torch_export_ir_with_dict_input(self, tmp_path):
+        """Test TorchIR export with model accepting dict as single parameter."""
+        model = ModelWithDictInput()
+        wrapper = ExportWrapper(model)
+
+        output_path = tmp_path / "model.pt2"
+        wrapper.to_torch_export_ir(output_path)
+
+        assert output_path.exists()
+
+        # Verify the exported program can be loaded
+        loaded_program = torch.export.load(output_path) # nosec
+        assert loaded_program is not None
+
+    def test_to_torch_export_ir_without_sample_input_raises_error(self, tmp_path):
+        """Test that RuntimeError is raised when no input sample is provided."""
+        # Model without sample_input property
+        model = SimpleModel(SimpleConfig())
+        wrapper = ExportWrapper(model)
+
+        output_path = tmp_path / "model.pt2"
+
+        with pytest.raises(RuntimeError, match="input sample must be provided"):
+            wrapper.to_torch_export_ir(output_path)
+
+    def test_to_torch_export_ir_model_in_eval_mode(self, tmp_path):
+        """Test that model is set to eval mode during TorchIR export."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        # Set model to training mode
+        model.train()
+        assert model.training is True
+
+        output_path = tmp_path / "model.pt2"
+        wrapper.to_torch_export_ir(output_path)
+
+        # Model should be in eval mode after export
+        assert model.training is False
+
+    def test_to_torch_export_ir_via_export_method(self, tmp_path):
+        """Test TorchIR export using the generic export method."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        output_path = tmp_path / "model.pt2"
+        wrapper.export(backend=ExportBackend.TORCH_EXPORT_IR, output_path=output_path)
+
+        assert output_path.exists()
+
+        # Verify the exported program can be loaded
+        loaded_program = torch.export.load(output_path)  # nosec
+        assert loaded_program is not None

@@ -70,11 +70,12 @@ class Observation:
     info: dict[str, Any] | None = None
     extra: dict[str, Any] | None = None
 
-    class ComponentKeys(StrEnum):
-        """Enum for batch observation components."""
+    class FieldName(StrEnum):
+        """Observation field name constants for dict access and type annotations."""
 
-        STATE = "state"
         ACTION = "action"
+        TASK = "task"
+        STATE = "state"
         IMAGES = "images"
 
         NEXT_REWARD = "next_reward"
@@ -87,21 +88,67 @@ class Observation:
         INFO = "info"
         EXTRA = "extra"
 
-    def to_dict(self) -> dict[str, Any]:
-        """Convert Observation to a nested dictionary format.
+    def to_dict(self, *, flatten: bool = True) -> dict[str, Any]:
+        """Convert Observation to a dictionary format.
 
         Returns a dictionary with the same structure as the Observation fields,
-        preserving nested dictionaries (e.g., images with multiple cameras).
+        preserving nested dictionaries (e.g., images with multiple cameras) if flatten is False.
+        Otherwise, flattens nested dictionaries into keys with dot notation.
 
         Returns:
-            dict[str, Any]: Dictionary representation with nested structure.
+            dict[str, Any]: Dictionary representation with optional nested structure.
 
         Examples:
             >>> obs = Observation(action=torch.tensor([1.0, 2.0]))
             >>> d = obs.to_dict()
             >>> # d = {"action": tensor([1.0, 2.0]), "task": None, ...}
         """
-        return asdict(self)
+        if not flatten:
+            return asdict(self)
+        flat_dict = {}
+        for key, value in asdict(self).items():
+            if isinstance(value, dict):
+                key_entries = []
+                for sub_key, sub_value in value.items():
+                    flat_dict[f"{key}.{sub_key}"] = sub_value
+                    key_entries.append(f"{key}.{sub_key}")
+                flat_dict[f"_{key}_keys"] = key_entries
+            else:
+                flat_dict[key] = value
+
+        return flat_dict
+
+    @staticmethod
+    def get_flattened_keys(data: dict[str, Any], field: Observation.FieldName | str) -> list[str]:
+        """Retrieve all keys associated with a specific component from the data dictionary.
+
+        This method checks for component keys in two ways:
+        1. Directly if the component exists as a key in the data dictionary
+        2. Through a cached list of keys stored with the pattern "_{component}_keys"
+        Args:
+            data: Dictionary containing observation data and component keys
+            field: The field identifier to search for, either as an
+                      Observation.FieldName enum value or a string
+
+        Returns:
+            A list of string keys associated with the component. Returns a list
+            containing the component itself if it exists directly in data, the
+            cached list of keys if available, or an empty list if neither exists.
+
+        Example:
+            >>> data = {"label": {...}, "_label_keys": ["label1", "label2"]}
+            >>> Observation.get_flattened_keys(data, "label")
+            ["label"]
+            >>> Observation.get_flattened_keys(data, "annotation")
+            ["label1", "label2"]
+        """
+        if field in data:
+            return [field]
+
+        if f"_{field}_keys" in data:
+            return data[f"_{field}_keys"]
+
+        return []
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Observation:
@@ -243,3 +290,30 @@ class NormalizationParameters:
     std: torch.Tensor | np.ndarray | None = None
     min: torch.Tensor | np.ndarray | None = None
     max: torch.Tensor | np.ndarray | None = None
+
+
+# Module-level constants for convenient dict access
+# Generated from Observation.FieldName enum to avoid duplication.
+#
+# Usage: from getiaction.data.observation import STATE, ACTION, IMAGES
+# Then: batch[STATE] instead of batch["state"]
+#
+# Note: All of the following are equivalent for dict access:
+# - batch[ACTION]                       (recommended: imported constant)
+# - batch["action"]                     (string literal)
+# - batch[Observation.FieldName.ACTION] (enum member)
+#
+# Using imported constants is recommended for IDE autocomplete, refactoring support, and consistency.
+ACTION = Observation.FieldName.ACTION.value
+EPISODE_INDEX = Observation.FieldName.EPISODE_INDEX.value
+EXTRA = Observation.FieldName.EXTRA.value
+FRAME_INDEX = Observation.FieldName.FRAME_INDEX.value
+IMAGES = Observation.FieldName.IMAGES.value
+INDEX = Observation.FieldName.INDEX.value
+INFO = Observation.FieldName.INFO.value
+NEXT_REWARD = Observation.FieldName.NEXT_REWARD.value
+NEXT_SUCCESS = Observation.FieldName.NEXT_SUCCESS.value
+STATE = Observation.FieldName.STATE.value
+TASK = Observation.FieldName.TASK.value
+TASK_INDEX = Observation.FieldName.TASK_INDEX.value
+TIMESTAMP = Observation.FieldName.TIMESTAMP.value

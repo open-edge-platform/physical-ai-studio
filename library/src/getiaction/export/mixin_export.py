@@ -17,6 +17,15 @@ import yaml
 CONFIG_KEY = "model_config"
 
 
+class ExportBackend(StrEnum):
+    """Supported export backends."""
+
+    TORCH = "torch"
+    ONNX = "onnx"
+    OPENVINO = "openvino"
+    TORCH_EXPORT_IR = "torch_export_ir"
+
+
 class Export:
     """Mixin class for exporting torch model checkpoints."""
 
@@ -79,7 +88,7 @@ class Export:
             )
             raise RuntimeError(msg)
 
-        extra_model_args = self._get_export_extra_args("onnx")
+        extra_model_args = self._get_export_extra_args(ExportBackend.ONNX)
         extra_model_args.update(export_kwargs)
 
         arg_name = self._get_forward_arg_name()
@@ -94,6 +103,7 @@ class Export:
             **extra_model_args,
         )
 
+    @torch.no_grad()
     def to_openvino(
         self,
         output_path: PathLike | str,
@@ -118,11 +128,11 @@ class Export:
         if input_sample is None and hasattr(self.model, "sample_input"):
             input_sample = self.model.sample_input
         elif input_sample is None:
-            msg = "An input sample must be provided for openvino export, or the model must implement "
+            msg = "An input sample must be provided for OpenVINO export, or the model must implement "
             "`sample_input` property."
             raise RuntimeError(msg)
 
-        extra_model_args = self._get_export_extra_args("openvino")
+        extra_model_args = self._get_export_extra_args(ExportBackend.OPENVINO)
         extra_model_args.update(export_kwargs)
 
         arg_name = self._get_forward_arg_name()
@@ -145,7 +155,94 @@ class Export:
 
         openvino.save_model(ov_model, output_path)
 
-    def _get_export_extra_args(self, backend: str) -> dict[str, Any]:
+    @torch.no_grad()
+    def to_torch_export_ir(
+        self,
+        output_path: PathLike | str,
+        input_sample: dict[str, torch.Tensor] | None = None,
+        **export_kwargs: dict,
+    ) -> None:
+        """Export the model to Torch Export IR format.
+
+        This method exports the model to Torch Export IR (Intermediate Representation) format,
+        which can be used for deployment and for further optimization and inference via executorch or similar tools.
+
+        Args:
+            output_path (PathLike | str): The file path where the exported Torch IR model will be saved.
+            input_sample (dict[str, torch.Tensor] | None, optional): A sample input tensor dictionary
+                to trace the model. If None, the method will attempt to use the model's
+                `sample_input` property. Defaults to None.
+            **export_kwargs (dict): Additional keyword arguments to pass to the torch.export.export function.
+
+        Raises:
+            RuntimeError: If no input sample is provided and the model does not have a `sample_input` property.
+
+        Note:
+            - The model is set to evaluation mode before export.
+            - The export uses strict mode by default.
+            - Additional export arguments can be specified through the model's export configuration
+              and will be merged with the provided export_kwargs.
+        """
+        if input_sample is None and hasattr(self.model, "sample_input"):
+            input_sample = self.model.sample_input
+        elif input_sample is None:
+            msg = (
+                "An input sample must be provided for ONNX export, or the model must implement `sample_input` property."
+            )
+            raise RuntimeError(msg)
+
+        extra_model_args = self._get_export_extra_args(ExportBackend.TORCH_EXPORT_IR)
+        extra_model_args.update(export_kwargs)
+
+        self.model.eval()
+        torch_program = torch.export.export(
+            self.model,
+            args=(input_sample,),
+            **extra_model_args,
+        )
+
+        torch.export.save(torch_program, output_path)  # nosec
+
+    def export(
+        self,
+        backend: ExportBackend | str,
+        output_path: PathLike | str,
+        input_sample: dict[str, torch.Tensor] | None = None,
+        **export_kwargs: dict,
+    ) -> None:
+        """Export the model to the specified backend format.
+
+        This method serves as a unified interface for exporting the model to different
+        formats by dispatching to the appropriate backend-specific export method.
+
+        Args:
+            backend (ExportBackend | str): The export backend to use. Can be an ExportBackend
+            enum value or a string ("onnx", "openvino", "torch_export_ir").
+            output_path (PathLike | str): The file path where the exported model will be saved.
+            input_sample (dict[str, torch.Tensor] | None, optional): A sample input tensor
+            dictionary for model tracing. If None, attempts to use the model's
+            `sample_input` property. Defaults to None.
+            **export_kwargs (dict): Additional keyword arguments to pass to the backend-specific
+            export method.
+
+        Raises:
+            ValueError: If an unsupported backend is specified.
+        """
+        backend = ExportBackend(backend)
+
+        if backend == ExportBackend.ONNX:
+            self.to_onnx(output_path, input_sample, **export_kwargs)
+        elif backend == ExportBackend.OPENVINO:
+            self.to_openvino(output_path, input_sample, **export_kwargs)
+        elif backend == ExportBackend.TORCH_EXPORT_IR:
+            self.to_torch_export_ir(output_path, input_sample, **export_kwargs)
+        elif backend == ExportBackend.TORCH:
+            self.to_torch(output_path)
+        else:
+            msg = f"Unsupported export backend: {backend}"
+            raise ValueError(msg)
+
+    def _get_export_extra_args(self, backend: ExportBackend | str) -> dict[str, Any]:
         """Retrieve extra export arguments for a specific format.
 
         This method checks if the model has an `extra_export_args` property and

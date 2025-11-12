@@ -1,9 +1,11 @@
 from datetime import datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
+
+from schemas.robot import RobotType
 
 
 class Base(DeclarativeBase):
@@ -18,7 +20,10 @@ class ProjectDB(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     config: Mapped["ProjectConfigDB"] = relationship(
-        "ProjectConfigDB", back_populates="project", cascade="all, delete-orphan", lazy="selectin"
+        "ProjectConfigDB",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        lazy="selectin",
     )
     datasets: Mapped[list["DatasetDB"]] = relationship(
         "DatasetDB",
@@ -32,6 +37,27 @@ class ProjectDB(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+
+    robots: Mapped[list["ProjectRobotDB"]] = relationship(
+        "ProjectRobotDB",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+
+
+class ProjectRobotDB(Base):
+    __tablename__ = "project_robots"
+
+    id: Mapped[UUID] = mapped_column(Text, primary_key=True, default=uuid4)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(String(255))
+    serial_id: Mapped[str] = mapped_column(String(255))
+    type: Mapped[RobotType] = mapped_column(Enum(RobotType))
+    cameras: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+
+    project: Mapped["ProjectDB"] = relationship(back_populates="robots")
 
 
 class ProjectConfigDB(Base):
