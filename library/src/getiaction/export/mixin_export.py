@@ -66,11 +66,6 @@ class Export:
         with yaml_path.open("w") as f:
             yaml.dump(metadata, f, default_flow_style=False)
 
-        # Also save as JSON for compatibility
-        json_path = export_dir / "metadata.json"
-        with json_path.open("w") as f:
-            json.dump(metadata, f, indent=2)
-
     def _prepare_export_path(self, output_path: PathLike | str, extension: str) -> Path:
         """Prepare export path, handling both directory and file paths.
 
