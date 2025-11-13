@@ -295,7 +295,7 @@ class ACT(Policy, LeRobotFromConfig):
             )
             raise TypeError(msg)
         features = dataset_to_policy_features(lerobot_dataset.meta.features)
-        stats = lerobot_dataset.meta.stats
+        dataset_stats = lerobot_dataset.meta.stats
 
         # Create or update LeRobot ACT configuration based on what user provided
         if self._config_object is not None:
@@ -317,7 +317,7 @@ class ACT(Policy, LeRobotFromConfig):
         self.model = self._lerobot_policy.model
 
         # Create preprocessor/postprocessor for normalization (LeRobot 0.4+)
-        self._preprocessor, self._postprocessor = make_pre_post_processors(lerobot_config, dataset_stats=stats)
+        self._preprocessor, self._postprocessor = make_pre_post_processors(lerobot_config, dataset_stats=dataset_stats)
 
     def forward(
         self,

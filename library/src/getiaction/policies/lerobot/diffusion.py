@@ -311,7 +311,7 @@ class Diffusion(Policy, LeRobotFromConfig):
             raise TypeError(msg)
 
         features = dataset_to_policy_features(lerobot_dataset.meta.features)  # type: ignore[misc]
-        stats = lerobot_dataset.meta.stats
+        dataset_stats = lerobot_dataset.meta.stats
 
         # Create LeRobot Diffusion configuration
         lerobot_config = _LeRobotDiffusionConfig(  # type: ignore[misc]
@@ -326,9 +326,12 @@ class Diffusion(Policy, LeRobotFromConfig):
         self.model = self._lerobot_policy.diffusion
 
         # Create preprocessor/postprocessor for normalization (LeRobot 0.4+)
-        self._preprocessor, self._postprocessor = make_pre_post_processors(lerobot_config, dataset_stats=stats)
+        self._preprocessor, self._postprocessor = make_pre_post_processors(lerobot_config, dataset_stats=dataset_stats)
 
-    def forward(self, batch: Observation | dict) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    def forward(
+        self,
+        batch: Observation | dict[str, torch.Tensor],
+    ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """Forward pass for LeRobot Diffusion policy.
 
         The return value depends on the model's training mode:
