@@ -1,6 +1,69 @@
 import { Flex, Heading, Item, Key, Picker } from '@geti/ui';
 
 import { SchemaCamera, SchemaCameraConfigInput } from '../../../api/openapi-spec';
+import { useEffect, useRef, useState } from 'react';
+import { WebRTCConnection } from '../../../components/stream/web-rtc-connection';
+
+export const CameraPreview = ({ camera }: { camera: SchemaCameraConfigInput }) => {
+    const [size, setSize] = useState({ width: 240, height: 180 });
+
+    const cameraRef = useRef<SchemaCameraConfigInput | null>(null);
+    const webRTCConnectionRef = useRef<WebRTCConnection | null>(null);
+    const videoRef = useRef<HTMLVideoElement>(null);
+
+    useEffect(() => {
+        console.log(`camera: ${JSON.stringify(camera)}`)
+        if (cameraRef.current !== camera) {
+            cameraRef.current = camera;
+
+            const webRTCConnection = new WebRTCConnection(camera);
+            webRTCConnectionRef.current = webRTCConnection;
+            const unsubscribe = webRTCConnection.subscribe((event) => {
+                if (event.type === 'status_change' && event.status === "connected") {
+                    const peerConnection = webRTCConnection?.getPeerConnection();
+                    if (!peerConnection) {
+                        return;
+                    }
+                    const receivers = peerConnection.getReceivers() ?? [];
+                    const stream = new MediaStream(receivers.map((receiver) => receiver.track));
+
+                    if (videoRef.current && videoRef.current.srcObject !== stream) {
+                        videoRef.current.srcObject = stream
+                    }
+                }
+
+                if (event.type === 'error') {
+                    if (webRTCConnectionRef.current?.getStatus() !== 'failed') {
+                        console.log('failed');
+                    }
+                }
+            });
+            webRTCConnectionRef.current.start();
+
+            return () => {
+                if (cameraRef.current !== camera) {
+                    unsubscribe();
+                    webRTCConnection.stop(); // Ensure connection is closed on unmount
+                    webRTCConnectionRef.current = null;
+                }
+            };
+        }
+    }, [camera, cameraRef, webRTCConnectionRef]);
+
+    return (
+        <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            width={size.width}
+            height={size.height}
+            controls={false}
+            style={{
+                background: 'var(--spectrum-global-color-gray-200)',
+            }}
+        />
+    )
+}
 
 interface CameraSetupProps {
     camera: SchemaCameraConfigInput;
@@ -26,6 +89,8 @@ export const CameraSetup = ({ camera, availableCameras, updateCamera }: CameraSe
                     <Item key={makeKey(cam)}>{cam.name}</Item>
                 ))}
             </Picker>
+            {<CameraPreview key={camera.port_or_device_id} camera={camera} />}
+
         </Flex>
     );
 };

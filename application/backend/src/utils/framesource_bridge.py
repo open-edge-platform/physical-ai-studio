@@ -19,7 +19,6 @@ class FrameSourceCameraBridge(LeRobotCamera):
         self.color_mode: ColorMode = ColorMode.RGB
         self.rotation: Cv2Rotation = Cv2Rotation.NO_ROTATION
         self.warmup_s: int = 1
-
         self.camera = FrameSourceFactory.create(
             config.driver, source=config.port_or_device_id, width=config.width, height=config.height, fps=config.fps
         )
@@ -52,11 +51,12 @@ class FrameSourceCameraBridge(LeRobotCamera):
                    If False, skips the warmup frame.
         """
         self.camera.connect()
-        if warmup:
-            start_time = time.time()
-            while time.time() - start_time < self.warmup_s:
-                self.read()
-                time.sleep(0.1)
+        # disable warmup for now due to reuse of devices
+        #if warmup:
+        #    start_time = time.time()
+        #    while time.time() - start_time < self.warmup_s:
+        #        self.read()
+        #        time.sleep(0.1)
 
         # No async reading since syncing is hard.
         # self.camera.start_async()

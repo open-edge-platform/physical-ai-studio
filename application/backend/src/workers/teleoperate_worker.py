@@ -13,16 +13,17 @@ from lerobot.teleoperators.utils import make_teleoperator_from_config
 from lerobot.utils.robot_utils import busy_wait
 from loguru import logger
 
+from utils.framesource_bridge import FrameSourceCameraBridge
 from schemas import TeleoperationConfig
 from schemas.dataset import Episode
 from utils.camera import build_camera_config
 from utils.dataset import check_repository_exists, get_episode_actions
 from utils.robot import make_lerobot_robot_config_from_robot, make_lerobot_teleoperator_config_from_robot
 
-from .base import BaseProcessWorker
+from .base import BaseProcessWorker, BaseThreadWorker
 
 
-class TeleoperateWorker(BaseProcessWorker):
+class TeleoperateWorker(BaseThreadWorker):
     ROLE: str = "TeleoperateWorker"
 
     events: dict[str, EventClass]
@@ -33,7 +34,7 @@ class TeleoperateWorker(BaseProcessWorker):
     camera_keys: list[str] = []
 
     def __init__(self, stop_event: EventClass, queue: Queue, config: TeleoperationConfig):
-        super().__init__(stop_event=stop_event, queues_to_cancel=[queue])
+        super().__init__(stop_event=stop_event)
         self.config = config
         self.queue = queue
         self.events = {
@@ -72,7 +73,7 @@ class TeleoperateWorker(BaseProcessWorker):
         # After setting up the robot, instantiate the FrameSource using a bridge
         # This can be done directly once switched over to LeRobotDataset V3.
         # We do need to first instantiate using the lerobot dict because a follower requires cameras.
-        # self.robot.cameras = {camera.name: FrameSourceCameraBridge(camera) for camera in self.config.cameras}
+        self.robot.cameras = {camera.name: FrameSourceCameraBridge(camera) for camera in self.config.cameras}
 
         if check_repository_exists(self.config.dataset.path):
             self.dataset = LeRobotDataset(
@@ -202,6 +203,11 @@ class TeleoperateWorker(BaseProcessWorker):
 
     def teardown(self) -> None:
         """Disconnect robots and close queue."""
+
+        try:
+            self.queue.cancel_join_thread()
+        except Exception as e:
+            logger.warning(f"Failed cancelling queue join thread: {e}")
 
         # Ensure the dataset is removed if there are episodes
         # This is because lerobot dataset needs episodes otherwise it will be in an invalid state
