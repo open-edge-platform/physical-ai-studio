@@ -19,12 +19,9 @@ import {
     TextField,
     View,
 } from '@geti/ui';
-import { v4 as uuidv4 } from 'uuid';
 
 import { $api } from '../../../api/client';
 import {
-    SchemaProjectConfigOutput,
-    SchemaProjectOutput,
     SchemaRobotConfig,
     SchemaTeleoperationConfig,
 } from '../../../api/openapi-spec';
@@ -32,93 +29,13 @@ import { useSettings } from '../../../components/settings/use-settings';
 import { useProject } from '../../../features/projects/use-project';
 import { CameraSetup } from './camera-setup';
 import { RobotSetup } from './robot-setup';
+import { initialTeleoperationConfig, makeNameSafeForPath, storeConfigToCache } from './utils';
 
 interface HardwareSetupProps {
     onDone: (config: SchemaTeleoperationConfig | undefined) => void;
     dataset_id: string | undefined;
 }
 
-const makeNameSafeForPath = (name: string): string => {
-    return name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-};
-
-const TELEOPERATION_CONFIG_CACHE_KEY = 'teleoperation_config';
-
-const storeConfigToCache = (config: SchemaTeleoperationConfig) => {
-    localStorage.setItem(TELEOPERATION_CONFIG_CACHE_KEY, JSON.stringify(config));
-};
-
-const teleoperateCacheMatchesProject = (
-    cache: SchemaTeleoperationConfig,
-    projectConfig?: SchemaProjectConfigOutput | null
-): boolean => {
-    if (projectConfig === undefined || projectConfig === null) {
-        return false;
-    }
-
-    const problemsInCacheCamera =
-        cache.cameras.find((cachedCamera) => {
-            const projectCamera = projectConfig.cameras.find((m) => m.name === cachedCamera.name);
-            if (projectCamera === undefined) {
-                return true;
-            }
-            const sameProps =
-                projectCamera.name === cachedCamera.name &&
-                projectCamera.width === cachedCamera.width &&
-                projectCamera.height === cachedCamera.height &&
-                projectCamera.fps === cachedCamera.fps &&
-                projectCamera.use_depth === cachedCamera.use_depth &&
-                projectCamera.driver === cachedCamera.driver;
-
-            return !sameProps;
-        }) !== undefined;
-
-    const problemsInCacheRobot =
-        cache.follower.robot_type !== projectConfig.robot_type || cache.leader.robot_type !== projectConfig.robot_type;
-
-    return !problemsInCacheCamera && !problemsInCacheRobot;
-};
-
-const initialTeleoperationConfig = (
-    initialTask: string,
-    project: SchemaProjectOutput,
-    dataset_id: string | undefined
-): SchemaTeleoperationConfig => {
-    const cachedConfig = localStorage.getItem(TELEOPERATION_CONFIG_CACHE_KEY);
-    const config: SchemaTeleoperationConfig = {
-        task: initialTask,
-        fps: project.config?.fps ?? 30,
-        dataset: project.datasets.find((d) => d.id === dataset_id) ?? {
-            project_id: project.id!,
-            name: '',
-            path: '',
-            id: uuidv4(),
-        },
-        cameras: project.config?.cameras ?? [],
-        follower: {
-            id: '',
-            robot_type: project.config?.robot_type ?? '',
-            serial_id: '',
-            port: '',
-            type: 'follower',
-        },
-        leader: {
-            id: '',
-            robot_type: project.config?.robot_type ?? '',
-            serial_id: '',
-            port: '',
-            type: 'leader',
-        },
-    };
-    if (cachedConfig !== null) {
-        const cache = JSON.parse(cachedConfig) as SchemaTeleoperationConfig;
-        if (teleoperateCacheMatchesProject(cache, project.config)) {
-            const { follower, leader, cameras } = cache;
-            return { ...config, follower, leader, cameras };
-        }
-    }
-    return config;
-};
 
 export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
     const [activeTab, setActiveTab] = useState<string>('cameras');
@@ -128,6 +45,12 @@ export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
             path: { project_id: project.id! },
         },
     });
+    const { data: availableCameras, refetch: refreshCameras } = $api.useSuspenseQuery('get', '/api/hardware/cameras');
+    const { data: foundRobots, refetch: refreshRobots } = $api.useSuspenseQuery('get', '/api/hardware/robots');
+    const { data: availableCalibrations, refetch: refreshCalibrations } = $api.useSuspenseQuery(
+        'get',
+        '/api/hardware/calibrations'
+    );
 
     const createDatasetMutation = $api.useMutation('post', '/api/dataset');
     const { geti_action_dataset_path } = useSettings();
@@ -136,14 +59,7 @@ export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
     const initialTask = Object.values(projectTasks).flat()[0];
 
     const [config, setConfig] = useState<SchemaTeleoperationConfig>(
-        initialTeleoperationConfig(initialTask, project, dataset_id)
-    );
-
-    const { data: availableCameras, refetch: refreshCameras } = $api.useQuery('get', '/api/hardware/cameras');
-    const { data: foundRobots, refetch: refreshRobots } = $api.useQuery('get', '/api/hardware/robots');
-    const { data: availableCalibrations, refetch: refreshCalibrations } = $api.useQuery(
-        'get',
-        '/api/hardware/calibrations'
+        initialTeleoperationConfig(initialTask, project, dataset_id, foundRobots)
     );
 
     const updateCamera = (name: string, id: string, oldId: string, driver: string, oldDriver: string) => {
