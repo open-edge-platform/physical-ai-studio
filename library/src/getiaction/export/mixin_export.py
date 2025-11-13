@@ -16,6 +16,8 @@ import openvino
 import torch
 import yaml
 
+from getiaction import __version__
+
 CONFIG_KEY = "model_config"
 
 
@@ -48,6 +50,7 @@ class Export:
         """
         # Build metadata
         metadata = {
+            "getiaction_version": __version__,
             "policy_class": f"{self.__class__.__module__}.{self.__class__.__name__}",
             "backend": str(backend),
             **metadata_kwargs,
