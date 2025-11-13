@@ -3,7 +3,7 @@ import { RefObject, useEffect, useRef, useState } from 'react';
 import { View } from '@geti/ui';
 
 import { SchemaCameraConfigOutput } from '../../../api/openapi-spec';
-import { Observation } from './use-recording';
+import { Observation } from './use-teleoperation';
 
 function useInterval(callback: () => void, delay: number) {
     const savedCallback = useRef<() => void>(callback);
