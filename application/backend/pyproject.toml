@@ -9,7 +9,7 @@ dependencies = [
   "cv2-enumerate-cameras",
   "harvesters",
   "fastapi[standard]",
-  "lerobot[feetech]>=0.4.1",
+  "lerobot[feetech]>=0.3.3",
   "numpy",
   "websockets",
   'pyrealsense2-macosx; sys_platform == "darwin"',
