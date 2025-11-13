@@ -325,7 +325,7 @@ class Diffusion(Policy, LeRobotFromConfig):
         self.add_module("_lerobot_policy", policy)
         self.model = self._lerobot_policy.diffusion
 
-        # Create preprocessor/postprocessor for normalization (LeRobot 0.4+)
+        # Create preprocessor/postprocessor for normalization
         self._preprocessor, self._postprocessor = make_pre_post_processors(lerobot_config, dataset_stats=dataset_stats)
 
     def forward(

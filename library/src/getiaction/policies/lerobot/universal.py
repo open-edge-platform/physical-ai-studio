@@ -282,7 +282,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         if hasattr(self._lerobot_policy, "model"):
             self.model = self._lerobot_policy.model
 
-        # Create preprocessor/postprocessor for normalization (LeRobot 0.4+)
+        # Create preprocessor/postprocessor for normalization
         self._preprocessor, self._postprocessor = make_pre_post_processors(config, dataset_stats=dataset_stats)
 
         # Expose framework info
