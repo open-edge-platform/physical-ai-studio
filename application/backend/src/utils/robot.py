@@ -2,8 +2,8 @@ import asyncio
 
 from lerobot.cameras import CameraConfig
 from lerobot.robots.config import RobotConfig as LeRobotConfig
-from lerobot.teleoperators.config import TeleoperatorConfig as LeRobotTeleoperatorConfig
 from lerobot.robots.so101_follower import SO101Follower, SO101FollowerConfig
+from lerobot.teleoperators.config import TeleoperatorConfig as LeRobotTeleoperatorConfig
 from serial.tools import list_ports
 from serial.tools.list_ports_common import ListPortInfo
 

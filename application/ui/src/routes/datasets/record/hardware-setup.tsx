@@ -22,10 +22,7 @@ import {
 } from '@geti/ui';
 
 import { $api } from '../../../api/client';
-import {
-    SchemaRobotConfig,
-    SchemaTeleoperationConfig,
-} from '../../../api/openapi-spec';
+import { SchemaRobotConfig, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
 import { useSettings } from '../../../components/settings/use-settings';
 import { useProject } from '../../../features/projects/use-project';
 import { CameraSetup } from './camera-setup';
@@ -36,7 +33,6 @@ interface HardwareSetupProps {
     onDone: (config: SchemaTeleoperationConfig | undefined) => void;
     dataset_id: string | undefined;
 }
-
 
 export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
     const [activeTab, setActiveTab] = useState<string>('cameras');

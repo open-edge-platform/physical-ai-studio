@@ -51,12 +51,11 @@ class FrameSourceCameraBridge(LeRobotCamera):
                    If False, skips the warmup frame.
         """
         self.camera.connect()
-        # disable warmup for now due to reuse of devices
-        #if warmup:
-        #    start_time = time.time()
-        #    while time.time() - start_time < self.warmup_s:
-        #        self.read()
-        #        time.sleep(0.1)
+        if warmup:
+            start_time = time.time()
+            while time.time() - start_time < self.warmup_s:
+                self.read()
+                time.sleep(0.1)
 
         # No async reading since syncing is hard.
         # self.camera.start_async()

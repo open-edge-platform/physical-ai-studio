@@ -13,14 +13,14 @@ from lerobot.teleoperators.utils import make_teleoperator_from_config
 from lerobot.utils.robot_utils import busy_wait
 from loguru import logger
 
-from utils.framesource_bridge import FrameSourceCameraBridge
 from schemas import TeleoperationConfig
 from schemas.dataset import Episode
 from utils.camera import build_camera_config
 from utils.dataset import check_repository_exists, get_episode_actions
+from utils.framesource_bridge import FrameSourceCameraBridge
 from utils.robot import make_lerobot_robot_config_from_robot, make_lerobot_teleoperator_config_from_robot
 
-from .base import BaseProcessWorker, BaseThreadWorker
+from .base import BaseThreadWorker
 
 
 class TeleoperateWorker(BaseThreadWorker):

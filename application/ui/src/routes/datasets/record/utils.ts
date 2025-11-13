@@ -1,5 +1,11 @@
 import { v4 as uuidv4 } from 'uuid';
-import { SchemaProjectConfigOutput, SchemaProjectOutput, SchemaRobotPortInfo, SchemaTeleoperationConfig } from "../../../api/openapi-spec";
+
+import {
+    SchemaProjectConfigOutput,
+    SchemaProjectOutput,
+    SchemaRobotPortInfo,
+    SchemaTeleoperationConfig,
+} from '../../../api/openapi-spec';
 
 export const TELEOPERATION_CONFIG_CACHE_KEY = 'teleoperation_config';
 
@@ -12,14 +18,14 @@ export const storeConfigToCache = (config: SchemaTeleoperationConfig) => {
 };
 
 export const robotConfigMatches = (a: SchemaRobotPortInfo, b: SchemaRobotPortInfo): boolean => {
-    return a.serial_id === b.serial_id && a.port == b.port && a.robot_type === b.robot_type
-}
+    return a.serial_id === b.serial_id && a.port == b.port && a.robot_type === b.robot_type;
+};
 
 export const configFromCache = (
     cache: SchemaTeleoperationConfig,
     projectConfig: SchemaProjectConfigOutput | undefined | null,
     defaultConfig: SchemaTeleoperationConfig,
-    availableRobots: SchemaRobotPortInfo[],
+    availableRobots: SchemaRobotPortInfo[]
 ): SchemaTeleoperationConfig => {
     let output = defaultConfig;
 
@@ -45,21 +51,23 @@ export const configFromCache = (
         }) !== undefined;
 
     if (!problemsInCacheCamera) {
-        output = {...output, cameras: cache.cameras};
+        output = { ...output, cameras: cache.cameras };
     }
 
-    const problemsInFollower = cache.leader.robot_type !== projectConfig.robot_type &&
-        !!availableRobots.find((b) => robotConfigMatches(cache.leader, b))
+    const problemsInFollower =
+        cache.leader.robot_type !== projectConfig.robot_type &&
+        !!availableRobots.find((b) => robotConfigMatches(cache.leader, b));
 
     if (!problemsInFollower) {
-        output = {...output, follower: cache.follower}
+        output = { ...output, follower: cache.follower };
     }
 
-    const problemsInLeader = cache.leader.robot_type !== projectConfig.robot_type &&
-        !!availableRobots.find((b) => robotConfigMatches(cache.leader, b))
+    const problemsInLeader =
+        cache.leader.robot_type !== projectConfig.robot_type &&
+        !!availableRobots.find((b) => robotConfigMatches(cache.leader, b));
 
     if (!problemsInLeader) {
-        output = {...output, leader: cache.leader}
+        output = { ...output, leader: cache.leader };
     }
 
     return output;
@@ -69,7 +77,7 @@ export const initialTeleoperationConfig = (
     initialTask: string,
     project: SchemaProjectOutput,
     dataset_id: string | undefined,
-    availableRobots: SchemaRobotPortInfo[],
+    availableRobots: SchemaRobotPortInfo[]
 ): SchemaTeleoperationConfig => {
     const cachedConfig = localStorage.getItem(TELEOPERATION_CONFIG_CACHE_KEY);
     const config: SchemaTeleoperationConfig = {
