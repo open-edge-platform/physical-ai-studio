@@ -470,7 +470,7 @@ class TestRoundTrip:
                 return self.linear(x)
 
             @classmethod
-            def from_dataclass(cls, config: SimpleConfig):
+            def from_dataclass(cls, config: ComplexRoundTripConfig):
                 """Create model from dataclass config."""
                 return cls(config)
 
