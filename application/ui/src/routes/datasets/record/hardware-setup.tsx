@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 
 import {
     Button,
@@ -12,6 +12,7 @@ import {
     Heading,
     Item,
     Key,
+    Loading,
     Section,
     TabList,
     TabPanels,
@@ -228,7 +229,9 @@ export const HardwareSetupModal = (
             <Heading>Teleoperate Setup</Heading>
             <Divider />
             <Content>
-                <HardwareSetup dataset_id={dataset_id} onDone={close} />
+                <Suspense fallback={<Loading mode='overlay' />}>
+                    <HardwareSetup dataset_id={dataset_id} onDone={close} />
+                </Suspense>
             </Content>
         </Dialog>
     );
