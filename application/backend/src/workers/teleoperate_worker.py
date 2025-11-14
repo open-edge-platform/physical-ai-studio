@@ -14,14 +14,16 @@ from lerobot.utils.robot_utils import busy_wait
 from loguru import logger
 
 from schemas import TeleoperationConfig
+from schemas.dataset import Episode
 from utils.camera import build_camera_config
-from utils.dataset import check_repository_exists
+from utils.dataset import check_repository_exists, get_episode_actions
+from utils.framesource_bridge import FrameSourceCameraBridge
 from utils.robot import make_lerobot_robot_config_from_robot, make_lerobot_teleoperator_config_from_robot
 
-from .base import BaseProcessWorker
+from .base import BaseThreadWorker
 
 
-class TeleoperateWorker(BaseProcessWorker):
+class TeleoperateWorker(BaseThreadWorker):
     ROLE: str = "TeleoperateWorker"
 
     events: dict[str, EventClass]
@@ -32,7 +34,7 @@ class TeleoperateWorker(BaseProcessWorker):
     camera_keys: list[str] = []
 
     def __init__(self, stop_event: EventClass, queue: Queue, config: TeleoperationConfig):
-        super().__init__(stop_event=stop_event, queues_to_cancel=[queue])
+        super().__init__(stop_event=stop_event)
         self.config = config
         self.queue = queue
         self.events = {
@@ -71,7 +73,7 @@ class TeleoperateWorker(BaseProcessWorker):
         # After setting up the robot, instantiate the FrameSource using a bridge
         # This can be done directly once switched over to LeRobotDataset V3.
         # We do need to first instantiate using the lerobot dict because a follower requires cameras.
-        # self.robot.cameras = {camera.name: FrameSourceCameraBridge(camera) for camera in self.config.cameras}
+        self.robot.cameras = {camera.name: FrameSourceCameraBridge(camera) for camera in self.config.cameras}
 
         if check_repository_exists(self.config.dataset.path):
             self.dataset = LeRobotDataset(
@@ -121,12 +123,25 @@ class TeleoperateWorker(BaseProcessWorker):
                 "data": {
                     "actions": {key: observation.get(key, 0) for key in self.action_keys},
                     "cameras": {
-                        key: self._base_64_encode_observation(observation.get(key))
+                        key: self._base_64_encode_observation(cv2.cvtColor(observation[key], cv2.COLOR_RGB2BGR))
                         for key in self.camera_keys
                         if key in observation
                     },
                     "timestamp": timestamp,
                 },
+            }
+        )
+
+    def _report_episode(self, episode: dict):
+        self.queue.put(
+            {
+                "event": "episode",
+                "data": Episode(
+                    actions=get_episode_actions(self.dataset, episode).tolist(),
+                    fps=self.dataset.meta.fps,
+                    modification_timestamp=int(time.time()),
+                    **episode,
+                ).model_dump(),
             }
         )
 
@@ -147,6 +162,10 @@ class TeleoperateWorker(BaseProcessWorker):
                 self.events["save"].clear()
                 busy_wait(0.3)  # TODO check if neccesary
                 self.dataset.save_episode()
+                episode_index = self.dataset.meta.total_episodes - 1  # starts with 0
+                print(self.dataset.meta.episodes[episode_index])
+                print(self.dataset.hf_dataset)
+                self._report_episode(self.dataset.meta.episodes[episode_index])
                 self.is_recording = False
                 self._report_state()
 
@@ -184,6 +203,11 @@ class TeleoperateWorker(BaseProcessWorker):
 
     def teardown(self) -> None:
         """Disconnect robots and close queue."""
+
+        try:
+            self.queue.cancel_join_thread()
+        except Exception as e:
+            logger.warning(f"Failed cancelling queue join thread: {e}")
 
         # Ensure the dataset is removed if there are episodes
         # This is because lerobot dataset needs episodes otherwise it will be in an invalid state

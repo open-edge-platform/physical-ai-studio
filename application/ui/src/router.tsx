@@ -10,7 +10,6 @@ import { Camera, CameraOverview } from './routes/cameras/camera';
 import { Layout as CamerasLayout } from './routes/cameras/layout';
 import { CameraWebcam } from './routes/cameras/webcam';
 import { Index as Datasets } from './routes/datasets/index';
-import { Record } from './routes/datasets/record/record';
 import { Index as Models } from './routes/models/index';
 import { OpenApi } from './routes/openapi';
 import { Index as Projects } from './routes/projects/index';
@@ -42,8 +41,6 @@ export const paths = {
         index: project,
         datasets: {
             index: datasets,
-            record: datasets.path('/:dataset_id/record'),
-            record_new: datasets.path('/record/new'),
         },
         cameras: {
             index: cameras,
@@ -112,20 +109,7 @@ export const router = createBrowserRouter([
                     },
                     {
                         path: paths.project.datasets.index.pattern,
-                        children: [
-                            {
-                                index: true,
-                                element: <Datasets />,
-                            },
-                            {
-                                path: paths.project.datasets.record.pattern,
-                                element: <Record />,
-                            },
-                            {
-                                path: paths.project.datasets.record_new.pattern,
-                                element: <Record />,
-                            },
-                        ],
+                        element: <Datasets />,
                     },
                     {
                         path: paths.project.models.index.pattern,
