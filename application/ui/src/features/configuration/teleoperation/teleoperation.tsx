@@ -21,20 +21,21 @@ import {
     View,
 } from '@geti/ui';
 
-import { $api } from '../../../api/client';
-import { SchemaRobotConfig, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
-import { useSettings } from '../../../components/settings/use-settings';
-import { useProject } from '../../../features/projects/use-project';
-import { CameraSetup } from './camera-setup';
-import { RobotSetup } from './robot-setup';
-import { initialTeleoperationConfig, makeNameSafeForPath, storeConfigToCache } from './utils';
 
-interface HardwareSetupProps {
+import { SchemaRobotConfig, SchemaTeleoperationConfig } from "../../../api/openapi-spec";
+import { initialTeleoperationConfig, makeNameSafeForPath, storeConfigToCache } from '../../../routes/datasets/record/utils';
+import { useSettings } from '../../../components/settings/use-settings';
+import { $api } from '../../../api/client';
+import { useProject } from '../../projects/use-project';
+import { CameraSetup } from '../shared/camera-setup';
+import { RobotSetup } from '../shared/robot-setup';
+
+interface TeleoperationSetupProps {
     onDone: (config: SchemaTeleoperationConfig | undefined) => void;
     dataset_id: string | undefined;
 }
 
-export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
+export const TeleoperationSetup = ({dataset_id, onDone}: TeleoperationSetupProps) => {
     const [activeTab, setActiveTab] = useState<string>('cameras');
     const project = useProject();
     const { data: projectTasks } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/tasks', {
@@ -213,9 +214,9 @@ export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
             </Flex>
         </View>
     );
-};
+}
 
-export const HardwareSetupModal = (
+export const TeleoperationSetupModal = (
     close: (config: SchemaTeleoperationConfig | undefined) => void,
     dataset_id: string | undefined
 ) => {
@@ -225,7 +226,7 @@ export const HardwareSetupModal = (
             <Divider />
             <Content>
                 <Suspense fallback={<Loading mode='overlay' />}>
-                    <HardwareSetup dataset_id={dataset_id} onDone={close} />
+                    <TeleoperationSetup dataset_id={dataset_id} onDone={close} />
                 </Suspense>
             </Content>
         </Dialog>
