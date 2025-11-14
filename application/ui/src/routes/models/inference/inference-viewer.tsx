@@ -1,15 +1,16 @@
-import { Button, ButtonGroup, Flex, Link, Heading, ComboBox, Item, ProgressCircle } from "@geti/ui"
-import { useParams } from "react-router"
-import { useInference } from "./use-inference";
-import { $api } from "../../../api/client";
-import { SchemaInferenceConfig, SchemaTeleoperationConfig } from "../../../api/openapi-spec";
-import { RobotViewer } from "../../../features/robots/controller/robot-viewer";
-import { RobotModelsProvider } from "../../../features/robots/robot-models-context";
-import { useState } from "react";
-import { CameraView } from "../../datasets/camera-view";
-import { Back, Play, Pause, StepBackward } from '@geti/ui/icons';
-import { paths } from "../../../router";
-import { useInferenceParams } from "./use-inference-params";
+import { useState } from 'react';
+
+import { Button, ButtonGroup, ComboBox, Flex, Heading, Item, Link, ProgressCircle } from '@geti/ui';
+import { Back, Pause, Play, StepBackward } from '@geti/ui/icons';
+
+import { $api } from '../../../api/client';
+import { SchemaInferenceConfig } from '../../../api/openapi-spec';
+import { RobotViewer } from '../../../features/robots/controller/robot-viewer';
+import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
+import { paths } from '../../../router';
+import { CameraView } from '../../datasets/camera-view';
+import { useInference } from './use-inference';
+import { useInferenceParams } from './use-inference-params';
 
 interface InferenceViewerProps {
     config: SchemaInferenceConfig;
@@ -17,9 +18,13 @@ interface InferenceViewerProps {
 export const InferenceViewer = ({ config }: InferenceViewerProps) => {
     const { project_id, model_id } = useInferenceParams();
 
-    const { data: model } = $api.useSuspenseQuery("get", "/api/models/{model_id}", { params: { query: { uuid: model_id } } })
-    const { data: tasks } = $api.useSuspenseQuery("get", "/api/models/{model_id}/tasks", { params: { query: { uuid: model_id } } })
-    const [task, setTask] = useState<string>(tasks[0] ?? "");
+    const { data: model } = $api.useSuspenseQuery('get', '/api/models/{model_id}', {
+        params: { query: { uuid: model_id } },
+    });
+    const { data: tasks } = $api.useSuspenseQuery('get', '/api/models/{model_id}/tasks', {
+        params: { query: { uuid: model_id } },
+    });
+    const [task, setTask] = useState<string>(tasks[0] ?? '');
 
     const { startTask, stop, state, observation } = useInference(config);
 
@@ -29,7 +34,7 @@ export const InferenceViewer = ({ config }: InferenceViewerProps) => {
         return jointNames.map((name) => actions[`${name}.pos`]);
     };
 
-    let actions = observation.current === undefined ? undefined : formatActionDictToArray(observation.current.state)
+    const actions = observation.current === undefined ? undefined : formatActionDictToArray(observation.current.state);
 
     if (!state.initialized) {
         return (
@@ -41,26 +46,20 @@ export const InferenceViewer = ({ config }: InferenceViewerProps) => {
     }
 
     const onStart = () => {
-        startTask(tasks.indexOf(task))
-    }
+        startTask(tasks.indexOf(task));
+    };
 
     return (
         <RobotModelsProvider>
             <Flex flex direction={'column'} height={'100%'} position={'relative'}>
-                <Flex alignItems={'center'} gap='size-100' height="size-400" margin="size-200">
+                <Flex alignItems={'center'} gap='size-100' height='size-400' margin='size-200'>
                     <Link aria-label='Rewind' href={paths.project.models.index({ project_id })}>
                         <Back fill='white' />
                     </Link>
                     <Heading>Model Run {model.name}</Heading>
-                    <ComboBox
-                        flex
-                        isRequired
-                        allowsCustomValue={false}
-                        inputValue={task}
-                        onInputChange={setTask}
-                    >
-                        {tasks.map((task, index) => (
-                            <Item key={index}>{task}</Item>
+                    <ComboBox flex isRequired allowsCustomValue={false} inputValue={task} onInputChange={setTask}>
+                        {tasks.map((taskText, index) => (
+                            <Item key={index}>{taskText}</Item>
                         ))}
                     </ComboBox>
                     <ButtonGroup>
@@ -69,19 +68,18 @@ export const InferenceViewer = ({ config }: InferenceViewerProps) => {
                             Restart
                         </Button>
 
-                        { state.is_running
-                            ? <Button variant='primary' onPress={stop}>
+                        {state.is_running ? (
+                            <Button variant='primary' onPress={stop}>
                                 <Pause fill='white' />
                                 Stop
                             </Button>
-                            : <Button variant='primary' onPress={onStart}>
+                        ) : (
+                            <Button variant='primary' onPress={onStart}>
                                 <Play fill='white' />
                                 Play
                             </Button>
-                        }
-                        <Button variant="negative">
-                            Start Recording
-                        </Button>
+                        )}
+                        <Button variant='negative'>Start Recording</Button>
                     </ButtonGroup>
                 </Flex>
                 <Flex direction={'row'} flex gap={'size-100'} margin='size-200'>
@@ -96,5 +94,5 @@ export const InferenceViewer = ({ config }: InferenceViewerProps) => {
                 </Flex>
             </Flex>
         </RobotModelsProvider>
-    )
-}
+    );
+};

@@ -2,8 +2,8 @@ import { useEffect, useRef } from 'react';
 
 import { Flex, Heading, Item, Key, Picker } from '@geti/ui';
 
-import { WebRTCConnection } from '../../../components/stream/web-rtc-connection';
 import { SchemaCamera, SchemaCameraConfigInput } from '../../../api/openapi-spec';
+import { WebRTCConnection } from '../../../components/stream/web-rtc-connection';
 
 export const CameraPreview = ({ camera }: { camera: SchemaCameraConfigInput }) => {
     const size = { width: 240, height: 180 };

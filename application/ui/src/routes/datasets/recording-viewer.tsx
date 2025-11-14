@@ -1,13 +1,11 @@
-import { RefObject, useEffect, useRef, useState } from 'react';
+import { Button, ButtonGroup, Flex, Heading, ProgressCircle } from '@geti/ui';
 
-import { Button, ButtonGroup, Flex, Heading, ProgressCircle, View, Well } from '@geti/ui';
-
-import { SchemaCameraConfigOutput, SchemaEpisode, SchemaTeleoperationConfig } from '../../api/openapi-spec';
+import { SchemaEpisode, SchemaTeleoperationConfig } from '../../api/openapi-spec';
 import { RobotViewer } from '../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
-import { Observation, useTeleoperation } from './record/use-teleoperation';
-import { useRecording } from './recording-provider';
 import { CameraView } from './camera-view';
+import { useTeleoperation } from './record/use-teleoperation';
+import { useRecording } from './recording-provider';
 
 interface RecordingViewerProps {
     recordingConfig: SchemaTeleoperationConfig;

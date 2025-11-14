@@ -8,7 +8,6 @@ import {
     Dialog,
     Divider,
     Flex,
-    Form,
     Heading,
     Item,
     Key,
@@ -21,11 +20,14 @@ import {
     View,
 } from '@geti/ui';
 
-
-import { SchemaRobotConfig, SchemaTeleoperationConfig } from "../../../api/openapi-spec";
-import { initialTeleoperationConfig, makeNameSafeForPath, storeConfigToCache } from '../../../routes/datasets/record/utils';
-import { useSettings } from '../../../components/settings/use-settings';
 import { $api } from '../../../api/client';
+import { SchemaRobotConfig, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
+import { useSettings } from '../../../components/settings/use-settings';
+import {
+    initialTeleoperationConfig,
+    makeNameSafeForPath,
+    storeConfigToCache,
+} from '../../../routes/datasets/record/utils';
 import { useProject } from '../../projects/use-project';
 import { CameraSetup } from '../shared/camera-setup';
 import { RobotSetup } from '../shared/robot-setup';
@@ -35,7 +37,7 @@ interface TeleoperationSetupProps {
     dataset_id: string | undefined;
 }
 
-export const TeleoperationSetup = ({dataset_id, onDone}: TeleoperationSetupProps) => {
+export const TeleoperationSetup = ({ dataset_id, onDone }: TeleoperationSetupProps) => {
     const [activeTab, setActiveTab] = useState<string>('cameras');
     const project = useProject();
     const { data: projectTasks } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/tasks', {
@@ -214,7 +216,7 @@ export const TeleoperationSetup = ({dataset_id, onDone}: TeleoperationSetupProps
             </Flex>
         </View>
     );
-}
+};
 
 export const TeleoperationSetupModal = (
     close: (config: SchemaTeleoperationConfig | undefined) => void,

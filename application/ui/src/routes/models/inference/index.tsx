@@ -1,18 +1,19 @@
-import { Suspense, useState } from "react";
-import { InferenceViewer } from "./inference-viewer"
-import { SchemaInferenceConfig } from "../../../api/openapi-spec";
-import { InferenceSetup } from "../../../features/configuration/inference/inference-setup";
-import { useInferenceParams } from "./use-inference-params";
-import { View, Well, Flex, Heading, Divider, Content, Loading } from "@geti/ui";
+import { Suspense, useState } from 'react';
+
+import { Content, Divider, Flex, Heading, Loading, Well } from '@geti/ui';
+
+import { SchemaInferenceConfig } from '../../../api/openapi-spec';
+import { InferenceSetup } from '../../../features/configuration/inference/inference-setup';
+import { InferenceViewer } from './inference-viewer';
+import { useInferenceParams } from './use-inference-params';
 
 export const Index = () => {
     const { model_id } = useInferenceParams();
-    const [config, setConfig] = useState<SchemaInferenceConfig>()
-
+    const [config, setConfig] = useState<SchemaInferenceConfig>();
 
     if (!config) {
         return (
-            <Flex flex width="100%" justifyContent={'center'}>
+            <Flex flex width='100%' justifyContent={'center'}>
                 <Well margin={'size-200'} width={'600px'}>
                     <Heading>Inference Setup</Heading>
                     <Divider />
@@ -23,10 +24,8 @@ export const Index = () => {
                     </Content>
                 </Well>
             </Flex>
-        )
-    } else {
-        return (
-            <InferenceViewer config={config} />
         );
+    } else {
+        return <InferenceViewer config={config} />;
     }
-}
+};

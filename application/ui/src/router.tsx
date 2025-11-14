@@ -61,7 +61,7 @@ export const paths = {
         },
         models: {
             index: models,
-            inference: models.path("/:model_id/inference"),
+            inference: models.path('/:model_id/inference'),
         },
     },
 };
@@ -124,7 +124,6 @@ export const router = createBrowserRouter([
                                 path: paths.project.models.inference.pattern,
                                 element: <Inference />,
                             },
-
                         ],
                     },
                     {

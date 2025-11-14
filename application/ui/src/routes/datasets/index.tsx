@@ -17,12 +17,12 @@ import {
 } from '@geti/ui';
 
 import { SchemaDatasetOutput, SchemaProjectConfigOutput } from '../../api/openapi-spec';
+import { TeleoperationSetupModal } from '../../features/configuration/teleoperation/teleoperation';
 import { useProject } from '../../features/projects/use-project';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
 import { DatasetViewer } from './dataset-viewer';
 import { ProjectSetupModal } from './record/project-setup';
 import { RecordingProvider, useRecording } from './recording-provider';
-import { TeleoperationSetupModal } from '../../features/configuration/teleoperation/teleoperation';
 
 interface DatasetsProps {
     datasets: SchemaDatasetOutput[];

@@ -17,23 +17,24 @@ import {
     View,
 } from '@geti/ui';
 
-
-import { SchemaInferenceConfig, SchemaTeleoperationConfig } from "../../../api/openapi-spec";
-import { TELEOPERATION_CONFIG_CACHE_KEY } from '../../../routes/datasets/record/utils';
 import { $api } from '../../../api/client';
+import { SchemaInferenceConfig, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
+import { TELEOPERATION_CONFIG_CACHE_KEY } from '../../../routes/datasets/record/utils';
 import { useProject } from '../../projects/use-project';
 import { CameraSetup } from '../shared/camera-setup';
 import { RobotSetup } from '../shared/robot-setup';
 
 interface InferenceSetupProps {
-  onDone: (config: SchemaInferenceConfig | undefined) => void;
-    model_id: string | undefined;
+    onDone: (config: SchemaInferenceConfig | undefined) => void;
+    model_id: string;
 }
 
-export const InferenceSetup = ({model_id, onDone}: InferenceSetupProps) => {
+export const InferenceSetup = ({ model_id, onDone }: InferenceSetupProps) => {
     const [activeTab, setActiveTab] = useState<string>('cameras');
     const project = useProject();
-    const { data: model } = $api.useSuspenseQuery("get", "/api/models/{model_id}", { params: { query: { uuid: model_id } } })
+    const { data: model } = $api.useSuspenseQuery('get', '/api/models/{model_id}', {
+        params: { query: { uuid: model_id } },
+    });
     const { data: availableCameras, refetch: refreshCameras } = $api.useSuspenseQuery('get', '/api/hardware/cameras');
     const { data: foundRobots, refetch: refreshRobots } = $api.useSuspenseQuery('get', '/api/hardware/robots');
     const { data: availableCalibrations, refetch: refreshCalibrations } = $api.useSuspenseQuery(
@@ -41,13 +42,12 @@ export const InferenceSetup = ({model_id, onDone}: InferenceSetupProps) => {
         '/api/hardware/calibrations'
     );
 
-    const createDatasetMutation = $api.useMutation('post', '/api/dataset');
-
-    const cachedConfig = JSON.parse(localStorage.getItem(TELEOPERATION_CONFIG_CACHE_KEY) ?? "{}") as SchemaTeleoperationConfig
+    const cachedConfig = JSON.parse(
+        localStorage.getItem(TELEOPERATION_CONFIG_CACHE_KEY) ?? '{}'
+    ) as SchemaTeleoperationConfig;
 
     // TODO: make cached config better...
-    const [config, setConfig] = useState<SchemaInferenceConfig>(
-      {
+    const [config, setConfig] = useState<SchemaInferenceConfig>({
         model,
         task_index: 0,
         fps: project.config!.fps,
@@ -59,8 +59,7 @@ export const InferenceSetup = ({model_id, onDone}: InferenceSetupProps) => {
             port: '',
             type: 'follower',
         },
-      }
-    );
+    });
 
     const updateCamera = (name: string, id: string, oldId: string, driver: string, oldDriver: string) => {
         setConfig({
@@ -91,8 +90,8 @@ export const InferenceSetup = ({model_id, onDone}: InferenceSetupProps) => {
     };
 
     const isValid = () => {
-      return true;
-    }
+        return true;
+    };
 
     const onBack = () => {
         if (activeTab === 'robots') {
@@ -136,7 +135,7 @@ export const InferenceSetup = ({model_id, onDone}: InferenceSetupProps) => {
                                     config={config.robot}
                                     portInfos={foundRobots ?? []}
                                     calibrations={availableCalibrations ?? []}
-                                    setConfig={(robot) => setConfig((r) => ({...r, robot}))}
+                                    setConfig={(robot) => setConfig((r) => ({ ...r, robot }))}
                                 />
                             </Flex>
                         </Item>
@@ -160,12 +159,9 @@ export const InferenceSetup = ({model_id, onDone}: InferenceSetupProps) => {
             </Flex>
         </View>
     );
-}
+};
 
-export const InferenceSetupModal = (
-    close: (config: SchemaInferenceConfig | undefined) => void,
-    model_id: string | undefined
-) => {
+export const InferenceSetupModal = (close: (config: SchemaInferenceConfig | undefined) => void, model_id: string) => {
     return (
         <Dialog>
             <Heading>Inference Setup</Heading>

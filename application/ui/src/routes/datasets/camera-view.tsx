@@ -1,12 +1,12 @@
-import { Well, View, Flex, ProgressCircle } from "@geti/ui"
+import { RefObject, useState } from 'react';
 
-import { RefObject, useState } from "react";
-import { Observation } from "./record/use-teleoperation";
-import { SchemaCameraConfigOutput } from "../../api/openapi-spec";
+import { Flex, ProgressCircle, View, Well } from '@geti/ui';
+
+import { SchemaCameraConfigOutput } from '../../api/openapi-spec';
+import { Observation } from './record/use-teleoperation';
+import { useInterval } from './use-interval';
 
 import classes from './episode-viewer.module.scss';
-import { useInterval } from "./use-interval";
-
 
 interface CameraViewProps {
     observation: RefObject<Observation | undefined>;

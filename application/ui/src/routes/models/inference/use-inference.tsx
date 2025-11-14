@@ -12,9 +12,9 @@ interface InferenceState {
     task_index: number;
 }
 
-interface RecordApiJsonResponse {
+interface InferenceApiJsonResponse<Object> {
     event: string;
-    data: object;
+    data: Object;
 }
 
 export interface Observation {
@@ -24,21 +24,19 @@ export interface Observation {
     cameras: { [key: string]: string };
 }
 
-
 const createInferenceState = (): InferenceState => {
     return {
         initialized: false,
         is_running: false,
         task_index: 0,
     };
-
-}
+};
 
 export const useInference = (setup: SchemaInferenceConfig) => {
     const [state, setState] = useState<InferenceState>(createInferenceState());
     const observation = useRef<Observation | undefined>(undefined);
 
-    const { sendJsonMessage, lastJsonMessage, readyState, sendJsonMessageAndWait } = useWebSocketWithResponse(
+    const { sendJsonMessage, sendJsonMessageAndWait } = useWebSocketWithResponse(
         `${API_BASE_URL}/api/record/inference/ws`,
         {
             shouldReconnect: () => true,
@@ -50,14 +48,15 @@ export const useInference = (setup: SchemaInferenceConfig) => {
     );
 
     const init = useMutation({
-        mutationFn: async () => await sendJsonMessageAndWait(
+        mutationFn: async () =>
+            await sendJsonMessageAndWait<InferenceApiJsonResponse<InferenceState>>(
                 { event: 'initialize', data: setup },
                 (data) => data['data']['initialized'] == true
-        )
+            ),
     });
 
     const onMessage = ({ data }: WebSocketEventMap['message']) => {
-        const message = JSON.parse(data) as RecordApiJsonResponse;
+        const message = JSON.parse(data) as InferenceApiJsonResponse<object>;
         if (message['event'] === 'observations') {
             observation.current = message['data'] as Observation;
         }
@@ -75,12 +74,12 @@ export const useInference = (setup: SchemaInferenceConfig) => {
 
     const calculateTrajectory = useMutation({
         mutationFn: async () => {
-            const {data} = await sendJsonMessageAndWait(
+            const { data } = await sendJsonMessageAndWait<InferenceApiJsonResponse<{ trajectory: number[][] }>>(
                 { event: 'calculate_trajectory', data: {} },
-                (data) => data['event'] === "trajectory"
+                ({ event }) => event === 'trajectory'
             );
-            return data["trajectory"];
-        }
+            return data['trajectory'];
+        },
     });
 
     const disconnect = () => {
@@ -103,5 +102,5 @@ export const useInference = (setup: SchemaInferenceConfig) => {
         disconnect,
         observation,
         calculateTrajectory,
-    }
-}
+    };
+};

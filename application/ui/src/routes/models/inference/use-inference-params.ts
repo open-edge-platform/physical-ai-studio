@@ -1,4 +1,4 @@
-import { useParams } from "react-router";
+import { useParams } from 'react-router';
 
 export const useInferenceParams = () => {
     const { project_id, model_id } = useParams();
@@ -12,4 +12,4 @@ export const useInferenceParams = () => {
     }
 
     return { project_id, model_id };
-}
+};
