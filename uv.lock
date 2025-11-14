@@ -877,7 +877,7 @@ requires-dist = [
     { name = "getiaction", editable = "library" },
     { name = "greenlet", specifier = ">=3.2.4" },
     { name = "harvesters" },
-    { name = "lerobot", extras = ["feetech"], specifier = ">=0.3.3" },
+    { name = "lerobot", extras = ["feetech"], specifier = ">=0.4.1" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "numpy" },
     { name = "opencv-python" },
