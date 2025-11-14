@@ -1,5 +1,6 @@
 from typing import Annotated
 from uuid import UUID
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, status
 from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
@@ -111,5 +112,5 @@ async def get_tasks_for_dataset(
     return {
         dataset.name: list(LeRobotDatasetMetadata(dataset.name, dataset.path).tasks.values())
         for dataset in project.datasets
-        if check_repository_exists(dataset.path)
+        if check_repository_exists(Path(dataset.path))
     }

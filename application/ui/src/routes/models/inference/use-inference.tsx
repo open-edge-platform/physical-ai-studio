@@ -61,6 +61,9 @@ export const useInference = (setup: SchemaInferenceConfig) => {
         if (message['event'] === 'observations') {
             observation.current = message['data'] as Observation;
         }
+        if (message['event'] === 'state') {
+            setState(message['data'] as InferenceState);
+        }
     };
 
     const startTask = (taskIndex: number) => {

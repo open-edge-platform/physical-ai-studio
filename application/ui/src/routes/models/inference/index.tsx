@@ -1,4 +1,4 @@
-import { Button, ButtonGroup, Flex, Link, Heading, ProgressCircle } from "@geti/ui"
+import { Button, ButtonGroup, Flex, Link, Heading, ComboBox, Item, ProgressCircle } from "@geti/ui"
 import { useParams } from "react-router"
 import { useInference } from "./use-inference";
 import { $api } from "../../../api/client";
@@ -9,7 +9,7 @@ import { RobotModelsProvider } from "../../../features/robots/robot-models-conte
 import { useState } from "react";
 import { TELEOPERATION_CONFIG_CACHE_KEY } from "../../datasets/record/utils";
 import { CameraView } from "../../datasets/camera-view";
-import { Back, Play, StepBackward } from '@geti/ui/icons';
+import { Back, Play, Pause, StepBackward } from '@geti/ui/icons';
 import { paths } from "../../../router";
 
 const useInferenceParams = () => {
@@ -29,7 +29,9 @@ const useInferenceParams = () => {
 export const Index = () => {
     const { project_id, model_id } = useInferenceParams();
 
-    const { data: model } = $api.useSuspenseQuery("get", "/api/models/{model_id}", { params: { query: { uuid: model_id! } } })
+    const { data: model } = $api.useSuspenseQuery("get", "/api/models/{model_id}", { params: { query: { uuid: model_id } } })
+    const { data: tasks } = $api.useSuspenseQuery("get", "/api/models/{model_id}/tasks", { params: { query: { uuid: model_id } } })
+    const [task, setTask] = useState<string>(tasks[0] ?? "");
 
     const project = useProject();
     const [index, setIndex] = useState<number>();
@@ -57,12 +59,17 @@ export const Index = () => {
             actions = calculateTrajectory.data[i];
         }
     }
-
     if (!state.initialized) {
-        <Flex width='100%' height={'100%'} alignItems={'center'} justifyContent={'center'}>
-            <Heading>Initializing</Heading>
-            <ProgressCircle isIndeterminate />
-        </Flex>;
+        return (
+            <Flex width='100%' height={'100%'} alignItems={'center'} justifyContent={'center'}>
+                <Heading>Initializing</Heading>
+                <ProgressCircle isIndeterminate />
+            </Flex>
+        );
+    }
+
+    const onStart = () => {
+        startTask(tasks.indexOf(task))
     }
 
     return (
@@ -72,22 +79,40 @@ export const Index = () => {
                     <Link aria-label='Rewind' href={paths.project.models.index({ project_id })}>
                         <Back fill='white' />
                     </Link>
-                    <Heading flex>Model Run {model.name}</Heading>
+                    <Heading>Model Run {model.name}</Heading>
+                    <ComboBox
+                        flex
+                        isRequired
+                        allowsCustomValue={false}
+                        inputValue={task}
+                        onInputChange={setTask}
+                    >
+                        {tasks.map((task, index) => (
+                            <Item key={index}>{task}</Item>
+                        ))}
+                    </ComboBox>
                     <ButtonGroup>
                         <Button variant='primary'>
-                            <StepBackward fill='white'/>
+                            <StepBackward fill='white' />
                             Restart
                         </Button>
-                        <Button variant='primary' onPress={() => startTask(0)}>
-                            <Play fill='white' />
-                            Play
-                        </Button>
+
+                        { state.is_running
+                            ? <Button variant='primary' onPress={stop}>
+                                <Pause fill='white' />
+                                Stop
+                            </Button>
+                            : <Button variant='primary' onPress={onStart}>
+                                <Play fill='white' />
+                                Play
+                            </Button>
+                        }
                         <Button variant="negative">
                             Start Recording
                         </Button>
                     </ButtonGroup>
                 </Flex>
-                <Flex direction={'row'} flex gap={'size-100'}>
+                <Flex direction={'row'} flex gap={'size-100'} margin='size-200'>
                     <Flex direction={'column'} alignContent={'start'} flex gap={'size-30'}>
                         {config.cameras.map((camera) => (
                             <CameraView key={camera.id} camera={camera} observation={observation} />

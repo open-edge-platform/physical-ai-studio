@@ -120,6 +120,7 @@ class InferenceWorker(BaseThreadWorker):
             if self.events["stop"].is_set():
                 logger.info("stop")
                 self.events["stop"].clear()
+                action_queue.clear()
                 busy_wait(0.3)  # TODO check if neccesary
                 self.is_running = False
                 self._report_state()
