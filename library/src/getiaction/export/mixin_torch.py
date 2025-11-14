@@ -59,7 +59,9 @@ class FromCheckpoint:
         state_dict.pop(CONFIG_KEY)
 
         if hasattr(cls, "from_dataclass") and callable(cls.from_dataclass):  # type: ignore [attr-defined]
-            return cls.from_dataclass(config)  # type: ignore [attr-defined]
+            model: Self = cls.from_dataclass(config)  # type: ignore [attr-defined]
+            model.load_state_dict(state_dict)  # type: ignore [attr-defined]
+            return model
 
         msg = "`FromCheckpoint` mixin requires the target class to implement `from_dataclass()` method."
         raise NotImplementedError(msg)

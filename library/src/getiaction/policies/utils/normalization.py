@@ -95,19 +95,6 @@ class FeatureNormalizeTransform(nn.Module):
                     buffer = getattr(self, "buffer_" + raw_name.replace(".", "_"))
                     self._apply_normalization(batch, batch_key, norm_mode, buffer, inverse=self._inverse)
 
-            """
-                for item in batch.values():
-                    if isinstance(item, dict) and ft.name in item:
-                        root_dict = item
-                        break
-            if root_dict:
-                key = raw_name
-                norm_mode = self._norm_map.get(cast("FeatureType", ft.ftype), NormalizationType.IDENTITY)
-                if norm_mode == NormalizationType.IDENTITY:
-                    continue
-                buffer = getattr(self, "buffer_" + key.replace(".", "_"))
-                self._apply_normalization(root_dict, key, norm_mode, buffer, inverse=self._inverse)
-            """
         return batch
 
     @staticmethod
