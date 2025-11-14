@@ -5,7 +5,6 @@
 
 import dataclasses
 import inspect
-import json
 from enum import StrEnum
 from os import PathLike
 from pathlib import Path
