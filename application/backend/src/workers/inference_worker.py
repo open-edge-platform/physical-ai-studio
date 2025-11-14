@@ -1,25 +1,25 @@
 import base64
-from pathlib import Path
-import shutil
 import time
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
+from pathlib import Path
 
 import cv2
+import numpy as np
+import torch
 from getiaction.data import Observation
 from getiaction.policies import ACT, ACTModel
-import numpy as np
 from lerobot.robots.utils import make_robot_from_config
 from lerobot.utils.robot_utils import busy_wait
 from loguru import logger
-import torch
 
-from utils.framesource_bridge import FrameSourceCameraBridge
 from schemas import InferenceConfig
 from utils.camera import build_camera_config
+from utils.framesource_bridge import FrameSourceCameraBridge
 from utils.robot import make_lerobot_robot_config_from_robot
 
 from .base import BaseThreadWorker
+
 
 class InferenceWorker(BaseThreadWorker):
     ROLE: str = "InferenceWorker"
@@ -64,7 +64,7 @@ class InferenceWorker(BaseThreadWorker):
         logger.info("connect to robot, cameras and setup dataset")
         cameras = {camera.name: build_camera_config(camera) for camera in self.config.cameras}
         follower_config = make_lerobot_robot_config_from_robot(self.config.robot, cameras)
-        #follower_config.max_relative_target = 1
+        # follower_config.max_relative_target = 1
 
         model_path = self.config.model.path
         self.robot = make_robot_from_config(follower_config)
@@ -75,11 +75,17 @@ class InferenceWorker(BaseThreadWorker):
         self.policy = ACT(self.model)
         self.policy.eval()
 
-        #TODO: Define this somehow
+        # TODO: Define this somehow
         # LeRobot tends to return the robot arm to root position on reset.
         # This seems to work better for act when I change the environment mid inference
-        self.root_position_action = {'shoulder_pan.pos': -2.271006813020435, 'shoulder_lift.pos': -98.08027923211169, 'elbow_flex.pos': 99.37527889335118, 'wrist_flex.pos': 67.34527687296418, 'wrist_roll.pos': -13.406593406593402, 'gripper.pos': 27.128953771289538}
-
+        self.root_position_action = {
+            "shoulder_pan.pos": -2.271006813020435,
+            "shoulder_lift.pos": -98.08027923211169,
+            "elbow_flex.pos": 99.37527889335118,
+            "wrist_flex.pos": 67.34527687296418,
+            "wrist_roll.pos": -13.406593406593402,
+            "gripper.pos": 27.128953771289538,
+        }
 
         # After setting up the robot, instantiate the FrameSource using a bridge
         # This can be done directly once switched over to LeRobotDataset V3.
@@ -105,7 +111,7 @@ class InferenceWorker(BaseThreadWorker):
         self.is_running = False
 
         start_episode_t = time.perf_counter()
-        action_queue = []
+        action_queue: list[list[float]] = []
         while not self.should_stop() and not self.events["disconnect"].is_set():
             start_loop_t = time.perf_counter()
             if self.events["start"].is_set():
@@ -141,8 +147,8 @@ class InferenceWorker(BaseThreadWorker):
                     action_queue = self.model(observation.to_dict())[0].tolist()
                 action = action_queue.pop(0)
 
-                #print(observation)
-                #actions = self.policy.select_action(observation)
+                # print(observation)
+                # actions = self.policy.select_action(observation)
                 formatted_actions = dict(zip(self.action_keys, action))
                 self.robot.send_action(formatted_actions)
                 self._report_action(formatted_actions, lerobot_obs, timestamp)
@@ -161,20 +167,15 @@ class InferenceWorker(BaseThreadWorker):
         self.queue.cancel_join_thread()
 
     def _report_state(self):
-        state = {"event": "state", "data": {"initialized": True, "is_running": self.is_running, "task_index": self.config.task_index}}
+        state = {
+            "event": "state",
+            "data": {"initialized": True, "is_running": self.is_running, "task_index": self.config.task_index},
+        }
         logger.info(f"inference state: {state}")
         self.queue.put(state)
 
     def _report_trajectory(self, trajectory: list[dict]):
-        self.queue.put(
-            {
-                "event": "trajectory",
-                "data": {
-                    "trajectory": trajectory
-                }
-            }
-        )
-
+        self.queue.put({"event": "trajectory", "data": {"trajectory": trajectory}})
 
     def _report_action(self, actions: dict, observation: dict, timestamp: float):
         """Report observation to queue."""
@@ -195,7 +196,9 @@ class InferenceWorker(BaseThreadWorker):
         )
 
     def _build_geti_action_observation(self, robot_observation: dict):
-        state = torch.tensor([value for key, value in robot_observation.items() if key in self.action_keys ]).unsqueeze(0)
+        state = torch.tensor([value for key, value in robot_observation.items() if key in self.action_keys]).unsqueeze(
+            0
+        )
         images: dict = {}
         for name in self.camera_keys:
             frame = robot_observation[name]

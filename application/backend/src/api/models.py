@@ -2,14 +2,15 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
-
 from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
-from api.dependencies import get_model_service, get_dataset_service, validate_uuid
+
+from api.dependencies import get_dataset_service, get_model_service, validate_uuid
 from exceptions import ResourceNotFoundError, ResourceType
-from services import ModelService, DatasetService
 from schemas import Model
+from services import DatasetService, ModelService
 
 router = APIRouter(prefix="/api/models", tags=["Models"])
+
 
 @router.get("/{model_id}")
 async def get_model_by_id(
@@ -30,6 +31,7 @@ async def get_tasks_of_model(
     model = await model_service.get_model_by_id(model_id)
     dataset = await dataset_service.get_dataset_by_id(model.dataset_id)
     return list(LeRobotDatasetMetadata(dataset.name, dataset.path).tasks.values())
+
 
 @router.delete("")
 async def remove_model(

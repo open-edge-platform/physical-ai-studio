@@ -10,8 +10,8 @@ from lerobot.constants import HF_LEROBOT_HOME
 from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
 from lerobot.datasets.utils import get_episode_data_index
 
-from settings import get_settings
 from schemas import CameraConfig, Dataset, Episode, LeRobotDatasetInfo, ProjectConfig
+from settings import get_settings
 
 
 def get_dataset_episodes(repo_id: str, root: str | None) -> list[Episode]:

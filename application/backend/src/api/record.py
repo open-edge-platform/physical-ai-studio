@@ -8,9 +8,9 @@ from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from api.dependencies import get_dataset_service, get_scheduler_ws
 from core.scheduler import Scheduler
 from exceptions import ResourceNotFoundError
-from schemas import TeleoperationConfig, InferenceConfig
+from schemas import InferenceConfig, TeleoperationConfig
 from services import DatasetService
-from workers import TeleoperateWorker, InferenceWorker
+from workers import InferenceWorker, TeleoperateWorker
 
 router = APIRouter(prefix="/api/record")
 
@@ -80,6 +80,7 @@ async def teleoperate_websocket(  # noqa: C901
         task.cancel()
 
     print("websocket handling done...")
+
 
 @router.websocket("/inference/ws")
 async def inference_websocket(  # noqa: C901

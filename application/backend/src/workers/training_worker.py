@@ -15,7 +15,6 @@ if TYPE_CHECKING:
 from getiaction.data import LeRobotDataModule
 from getiaction.policies import ACT, ACTModel
 from getiaction.train import Trainer
-from lightning.pytorch.callbacks import ModelCheckpoint
 from loguru import logger
 
 from schemas import Job, Model
@@ -94,17 +93,8 @@ class TrainingWorker(BaseProcessWorker):
             policy = ACT(model=lib_model)
             path = Path(model.path)
 
-            checkpoint_callback = ModelCheckpoint(
-                dirpath=path.parent,
-                filename=path.stem,  # filename without suffix
-                save_top_k=1,
-                monitor="train/loss",
-                mode="min",
-            )
-
             trainer = Trainer(
                 callbacks=[
-                    #checkpoint_callback,
                     TrainingTrackingCallback(
                         shutdown_event=self._stop_event,
                         interrupt_event=self.interrupt_event,

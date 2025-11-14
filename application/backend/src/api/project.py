@@ -1,13 +1,13 @@
+from pathlib import Path
 from typing import Annotated
 from uuid import UUID
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, status
 from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
 
 from api.dependencies import get_model_service, get_project_id, get_project_service
 from exceptions import ResourceAlreadyExistsError
-from schemas import LeRobotDatasetInfo, Model, Project, ProjectConfig, TeleoperationConfig, InferenceConfig
+from schemas import InferenceConfig, LeRobotDatasetInfo, Model, Project, ProjectConfig, TeleoperationConfig
 from services import ModelService, ProjectService
 from utils.dataset import build_dataset_from_lerobot_dataset, build_project_config_from_dataset, check_repository_exists
 
@@ -95,6 +95,7 @@ async def get_project_models(
 async def get_example_teleoperation_config() -> TeleoperationConfig:
     """Stub call to get definition in ui."""
     return TeleoperationConfig()
+
 
 @router.get("/example_inference_config")
 async def get_example_inference_config() -> InferenceConfig:
