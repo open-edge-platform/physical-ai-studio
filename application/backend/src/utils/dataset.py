@@ -41,7 +41,6 @@ def get_dataset_episodes(repo_id: str, root: str | None) -> list[Episode]:
 
 def get_episode_actions(dataset: LeRobotDataset, episode: dict) -> torch.Tensor:
     """Get episode actions tensor from specific episode."""
-    # In v3.0, episode dict contains dataset_from_index and dataset_to_index
     from_idx = episode["dataset_from_index"]
     to_idx = episode["dataset_to_index"]
     actions = dataset.hf_dataset["action"][from_idx:to_idx]
