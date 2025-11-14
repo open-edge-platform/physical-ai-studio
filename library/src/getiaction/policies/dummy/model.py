@@ -10,6 +10,10 @@ import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import nn
 
+from getiaction.config import FromConfig
+from getiaction.export import FromCheckpoint
+from getiaction.policies.dummy.config import DummyConfig
+
 
 def _infer_batch_size(batch: dict[str, Any]) -> int:
     """Infer the batch size from the first tensor in the batch.
@@ -34,7 +38,7 @@ def _infer_batch_size(batch: dict[str, Any]) -> int:
     raise ValueError(msg)
 
 
-class Dummy(nn.Module):
+class Dummy(nn.Module, FromConfig, FromCheckpoint):
     """A dummy model for testing training and evaluation loops.
 
     This model simulates behavior of an action-predicting model by returning
@@ -43,7 +47,7 @@ class Dummy(nn.Module):
 
     def __init__(
         self,
-        action_shape: torch.Size,
+        action_shape: list | tuple,
         n_action_steps: int = 1,
         temporal_ensemble_coeff: float | None = None,
         n_obs_steps: int = 1,
@@ -52,7 +56,7 @@ class Dummy(nn.Module):
         """Initialize the DummyModel.
 
         Args:
-            action_shape (torch.Size): The shape of a single action.
+            action_shape (list | tuple): The shape of a single action.
             n_action_steps (int, optional): Number of action steps per chunk.
                 Defaults to 1.
             temporal_ensemble_coeff (float | None, optional): Coefficient for
@@ -80,6 +84,53 @@ class Dummy(nn.Module):
 
         # dummy parameter for optimizer and backward
         self.dummy_param = nn.Parameter(torch.zeros(1))
+
+    @property
+    def config(self) -> DummyConfig:
+        """Get the configuration of the Dummy model.
+
+        Returns:
+            DummyConfig: The configuration dataclass instance.
+        """
+        return DummyConfig(action_shape=self.action_shape)
+
+    @property
+    def sample_input(self) -> dict[str, torch.Tensor]:
+        """Generate a sample input dictionary for the model.
+
+        This method creates a dictionary containing random tensor data that matches
+        the expected input format and shape for the model. Useful for testing and
+        validation purposes.
+
+        Returns:
+            dict[str, torch.Tensor]: A dictionary with a single key "action" containing
+                a randomly initialized tensor of shape (1, action_shape).
+        """
+        return {
+            "action": torch.randn((1, *self.action_shape)),
+        }
+
+    @property
+    def extra_export_args(self) -> dict:
+        """Additional export arguments for model conversion.
+
+        This property provides extra configuration parameters needed when exporting
+        the model to different formats, particularly ONNX format.
+
+        Returns:
+            dict: A dictionary containing format-specific export arguments.
+
+        Example:
+            >>> extra_args = model.extra_export_args()
+            >>> print(extra_args)
+            {'onnx': {'output_names': ['action']}}
+        """
+        extra_args = {}
+        extra_args["onnx"] = {
+            "output_names": ["action"],
+        }
+
+        return extra_args
 
     @property
     def observation_delta_indices(self) -> list[int]:

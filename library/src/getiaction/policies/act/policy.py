@@ -6,13 +6,14 @@
 import torch
 
 from getiaction.data import Dataset, Observation
+from getiaction.export import Export
 from getiaction.gyms import Gym
 from getiaction.policies.act.model import ACT as ACTModel  # noqa: N811
 from getiaction.policies.base import Policy
 from getiaction.train.utils import reformat_dataset_to_match_policy
 
 
-class ACT(Policy):
+class ACT(Export, Policy):
     """Action Chunking with Transformers (ACT) policy implementation.
 
     This class implements the ACT policy for imitation learning, which uses a transformer-based
@@ -95,6 +96,27 @@ class ACT(Policy):
         # select only first action from the predicted chunk to unify output with other policies
         return chunk[:, 1, :]
 
+    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
+        """Perform forward pass of the ACT policy.
+
+        The return value depends on the model's training mode:
+        - In training mode: Returns (loss, loss_dict) from the model's forward method
+        - In evaluation mode: Returns action predictions via select_action method
+
+        Args:
+            batch (Observation): Input batch of observations
+
+        Returns:
+            torch.Tensor | tuple[torch.Tensor, dict[str, float]]: In training mode, returns
+                tuple of (loss, loss_dict). In eval mode, returns selected actions tensor.
+        """
+        if self.training:
+            # During training, return loss information for backpropagation
+            return self.model(batch.to_dict())
+
+        # During evaluation, return action predictions
+        return self.select_action(batch)
+
     def training_step(self, batch: Observation, batch_idx: int) -> dict[str, torch.Tensor]:
         """Training step for the policy.
 
@@ -106,7 +128,7 @@ class ACT(Policy):
             Dict[str, torch.Tensor]: Dictionary containing the loss.
         """
         del batch_idx
-        loss, loss_dict = self.model.forward(batch.to_dict())  # noqa: RUF059
+        loss, loss_dict = self.model(batch.to_dict())  # noqa: RUF059
         self.log("train/loss_step", loss, on_step=True, on_epoch=False, prog_bar=True, logger=True)
         self.log(
             "train/loss",

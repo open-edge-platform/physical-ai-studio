@@ -1,4 +1,3 @@
-import logging
 import os
 
 import uvicorn
@@ -7,12 +6,15 @@ from fastapi import FastAPI
 from api.camera import router as camera_router
 from api.dataset import router as dataset_router
 from api.hardware import router as hardware_router
+from api.job import router as job_router
+from api.models import router as models_router
 from api.project import router as project_router
+from api.record import router as record_router
+from api.robots import router as project_robots_router
+from api.settings import router as settings_router
 from core import lifespan
 from exception_handlers import register_application_exception_handlers
 from settings import get_settings
-
-logger = logging.getLogger(__name__)
 
 settings = get_settings()
 app = FastAPI(
@@ -24,9 +26,14 @@ app = FastAPI(
 )
 
 app.include_router(project_router)
+app.include_router(project_robots_router)
 app.include_router(hardware_router)
 app.include_router(camera_router)
 app.include_router(dataset_router)
+app.include_router(record_router)
+app.include_router(settings_router)
+app.include_router(models_router)
+app.include_router(job_router)
 
 register_application_exception_handlers(app)
 

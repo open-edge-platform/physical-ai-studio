@@ -22,7 +22,13 @@ const useWebRTCConnectionState = (camera: SchemaCamera) => {
             return;
         }
 
-        const webRTCConnection = new WebRTCConnection(camera);
+        //TODO: Implement camera width/height profile
+        const webRTCConnection = new WebRTCConnection({
+            ...camera,
+            ...camera.default_stream_profile,
+            use_depth: false,
+        });
+
         webRTCConnectionRef.current = webRTCConnection;
 
         const unsubscribe = webRTCConnection.subscribe((event) => {
@@ -48,6 +54,7 @@ const useWebRTCConnectionState = (camera: SchemaCamera) => {
 
     const start = useCallback(async () => {
         if (!webRTCConnectionRef.current) {
+            console.error('starting without WebRTC connection');
             return;
         }
 

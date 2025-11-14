@@ -38,11 +38,7 @@ export const ProjectsList = ({ menuWidth = '100%', projects }: ProjectListProps)
     return (
         <Menu UNSAFE_className={styles.projectMenu} width={menuWidth} items={projects}>
             {(item) => (
-                <Item
-                    key={item.id}
-                    textValue={item.name}
-                    href={paths.project.robotConfiguration.index({ project_id: item.id! })}
-                >
+                <Item key={item.id} textValue={item.name} href={paths.project.robots.index({ project_id: item.id! })}>
                     <Text>
                         <Flex justifyContent='space-between' alignItems='center' marginX={'size-200'}>
                             {item.name}
@@ -84,9 +80,9 @@ const SelectedProjectButton = ({ name }: SelectedProjectProps) => {
 export const ProjectsListPanel = () => {
     const { project_id } = useProjectId();
     const { data: projects } = $api.useSuspenseQuery('get', '/api/projects');
-    const { data: project } = $api.useSuspenseQuery('get', '/api/projects/{id}', {
+    const { data: project } = $api.useSuspenseQuery('get', '/api/projects/{project_id}', {
         params: {
-            path: { id: project_id },
+            path: { project_id },
         },
     });
     const otherProjects = projects.filter(({ id }) => id !== project_id);

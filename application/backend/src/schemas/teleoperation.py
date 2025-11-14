@@ -1,14 +1,14 @@
-#!/usr/bin/env python3
-
-
 from pydantic import BaseModel
 
 from .camera import CameraConfig
+from .dataset import Dataset
 from .robot import RobotConfig
 
 
 class TeleoperationConfig(BaseModel):
     task: str
-    dataset_id: str | None
+    dataset: Dataset
+    fps: int
     cameras: list[CameraConfig]
-    robots: list[RobotConfig]
+    follower: RobotConfig
+    leader: RobotConfig

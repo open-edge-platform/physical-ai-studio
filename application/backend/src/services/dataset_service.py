@@ -1,24 +1,35 @@
 from uuid import UUID
 
+from db import get_async_db_session_ctx
+from exceptions import ResourceNotFoundError, ResourceType
 from repositories import DatasetRepository
 from schemas import Dataset
-from services.base import GenericPersistenceService, ResourceNotFoundError, ResourceType, ServiceConfig
-from services.mappers import DatasetMapper
-from services.parent_process_guard import parent_process_only
 
 
 class DatasetService:
-    def __init__(self) -> None:
-        self._persistence: GenericPersistenceService[Dataset, DatasetRepository] = GenericPersistenceService(
-            ServiceConfig(DatasetRepository, DatasetMapper, ResourceType.DATASET)
-        )
+    @staticmethod
+    async def get_dataset_list() -> list[Dataset]:
+        async with get_async_db_session_ctx() as session:
+            repo = DatasetRepository(session)
+            return await repo.get_all()
 
-    @parent_process_only
-    def create_dataset(self, dataset: Dataset) -> Dataset:
-        return self._persistence.create(dataset)
+    @staticmethod
+    async def get_dataset_by_id(dataset_id: UUID) -> Dataset:
+        async with get_async_db_session_ctx() as session:
+            repo = DatasetRepository(session)
+            dataset = await repo.get_by_id(dataset_id)
+            if dataset is None:
+                raise ResourceNotFoundError(ResourceType.DATASET, str(dataset_id))
+            return dataset
 
-    def get_dataset_by_id(self, dataset_id: UUID) -> Dataset:
-        dataset = self._persistence.get_by_id(dataset_id)
-        if not dataset:
-            raise ResourceNotFoundError(ResourceType.DATASET, str(dataset_id))
-        return dataset
+    @staticmethod
+    async def create_dataset(dataset: Dataset) -> Dataset:
+        async with get_async_db_session_ctx() as session:
+            repo = DatasetRepository(session)
+            return await repo.save(dataset)
+
+    @staticmethod
+    async def delete_dataset(dataset_id: UUID) -> None:
+        async with get_async_db_session_ctx() as session:
+            repo = DatasetRepository(session)
+            await repo.delete_by_id(dataset_id)

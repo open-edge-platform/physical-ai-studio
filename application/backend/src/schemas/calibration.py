@@ -6,4 +6,4 @@ from pydantic import BaseModel
 class CalibrationConfig(BaseModel):
     id: str
     path: str
-    robot_type: Literal["teleoperator", "robot"]
+    robot_type: Literal["follower", "leader"]

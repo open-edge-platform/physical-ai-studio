@@ -5,7 +5,7 @@
 
 from dataclasses import dataclass, field
 
-from getiaction.data import Feature, Observation
+from getiaction.data import Feature
 
 
 @dataclass(frozen=True)
@@ -71,8 +71,8 @@ class ACTConfig:
             is enabled. Loss is then calculated as: `reconstruction_loss + kl_weight * kld_loss`.
     """
 
-    input_features: dict[str | Observation.ComponentKeys, Feature] = field(default_factory=dict)
-    output_features: dict[str | Observation.ComponentKeys, Feature] = field(default_factory=dict)
+    input_features: dict[str, Feature] = field(default_factory=dict)
+    output_features: dict[str, Feature] = field(default_factory=dict)
 
     # Input / output structure.
     n_obs_steps: int = 1
@@ -83,7 +83,7 @@ class ACTConfig:
     # Vision backbone.
     vision_backbone: str = "resnet18"
     pretrained_backbone_weights: str | None = "ResNet18_Weights.IMAGENET1K_V1"
-    replace_final_stride_with_dilation: int = False
+    replace_final_stride_with_dilation: bool = False
     # Transformer layers.
     pre_norm: bool = False
     dim_model: int = 512

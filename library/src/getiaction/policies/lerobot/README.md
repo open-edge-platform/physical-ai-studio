@@ -13,10 +13,10 @@ uv pip install getiaction[lerobot]
 
 ```python
 from getiaction.policies.lerobot import ACT
-import lightning as L
+from getiaction.train import Trainer
 
 policy = ACT(dim_model=512, chunk_size=100)
-trainer = L.Trainer(max_epochs=100)
+trainer = Trainer(max_epochs=100)
 trainer.fit(policy, datamodule)
 ```
 

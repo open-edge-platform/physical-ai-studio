@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
-from gymnasium.wrappers.time_limit import TimeLimit
+from gymnasium.wrappers import TimeLimit
 from lightning.pytorch import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
@@ -212,9 +212,18 @@ class DataModule(LightningDataModule):
     def val_dataloader(self) -> DataLoader[Any]:
         """Return the DataLoader for validation.
 
+        If no validation dataset is configured, returns an empty DataLoader
+        to allow training to proceed without validation.
+
         Returns:
-            DataLoader[Any]: Validation DataLoader with collate function for Gym environments.
+            DataLoader[Any]: Validation DataLoader with collate function for Gym environments,
+                           or empty DataLoader if no validation dataset is configured.
         """
+        if self.val_dataset is None:
+            # Return empty dataloader when no validation dataset
+            # This allows training to proceed without validation
+            return DataLoader([], batch_size=1)
+
         return DataLoader(
             self.val_dataset,
             batch_size=1,
@@ -225,9 +234,18 @@ class DataModule(LightningDataModule):
     def test_dataloader(self) -> DataLoader[Any]:
         """Return the DataLoader for testing.
 
+        If no test dataset is configured, returns an empty DataLoader
+        to allow training to proceed without testing.
+
         Returns:
-            DataLoader[Any]: Test DataLoader with collate function for Gym environments.
+            DataLoader[Any]: Test DataLoader with collate function for Gym environments,
+                           or empty DataLoader if no test dataset is configured.
         """
+        if self.test_dataset is None:
+            # Return empty dataloader when no test dataset
+            # This allows training to proceed without testing
+            return DataLoader([], batch_size=1)
+
         return DataLoader(
             self.test_dataset,
             batch_size=1,

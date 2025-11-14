@@ -11,6 +11,8 @@ graph TD
     A --> E["gyms/ <br/> Simulated gym environments"]
     A --> F["policy/ <br/> Policies"]
     A --> G["train/ <br/> Trainers and Metrics"]
+    A --> H["export/ <br/> Model Export"]
+    A --> I["inference/ <br/> Production Inference"]
 ```
 
 ## Core Modules
@@ -54,3 +56,15 @@ Policy implementations and base classes for robot learning algorithms.
 Training infrastructure, metrics, and logging.
 
 [📖 Train Documentation](trainer/overview.md)
+
+### Export
+
+Model export system supporting multiple backends (OpenVINO, ONNX, Torch Export IR).
+
+[📖 Export Documentation](export/overview.md)
+
+### Inference
+
+Production inference infrastructure with unified API across backends.
+
+[📖 Inference Documentation](inference/overview.md)

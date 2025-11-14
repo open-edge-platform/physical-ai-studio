@@ -28,13 +28,13 @@ class TestDummyPolicy:
     def test_initialization(self, policy):
         """Check model and action shape."""
         assert isinstance(policy.model, DummyModel)
-        assert policy.model.action_shape == torch.Size([3])
+        assert policy.model.action_shape == [3]
 
     def test_select_action_returns_tensor(self, policy, batch):
         """select_action returns a tensor of correct shape."""
         actions = policy.select_action(batch)
         assert isinstance(actions, torch.Tensor)
-        assert actions.shape[1:] == policy.model.action_shape
+        assert list(actions.shape[1:]) == policy.model.action_shape
 
     def test_forward_training_and_eval(self, policy, batch_dict):
         """Forward pass works in training and eval modes."""
@@ -153,3 +153,62 @@ class TestDummyPolicyValidation:
 
         # All keys should start with 'test/'
         assert all(key.startswith("test/") for key in metrics.keys())
+
+
+class TestDummyPolicyImportExport:
+    """Tests for DummyPolicy import/export functionality."""
+
+    def test_export_and_import_torch(self, tmp_path):
+        """Test exporting to and importing from Torch format."""
+        from getiaction.policies.dummy import Dummy, DummyConfig
+        from getiaction.policies.dummy.model import Dummy as DummyModel
+
+        config = DummyConfig(action_shape=(2,))
+        policy = Dummy(config=config)
+
+        export_path = tmp_path / "dummy_policy.pth"
+        policy.to_torch(export_path)
+
+        assert export_path.exists()
+
+        # Import the model back
+        loaded_model = DummyModel.load_from_checkpoint(export_path)
+
+        assert isinstance(loaded_model, DummyModel)
+        assert loaded_model.action_shape == policy.model.action_shape
+
+    def test_export_to_onnx(self, tmp_path):
+        """Test exporting to ONNX format."""
+        from getiaction.policies.dummy import Dummy, DummyConfig
+
+        config = DummyConfig(action_shape=(2,))
+        policy = Dummy(config=config)
+
+        export_path = tmp_path / "dummy_policy.onnx"
+        policy.to_onnx(export_path)
+
+        assert export_path.exists()
+
+    def test_export_to_openvino(self, tmp_path):
+        """Test exporting to OpenVINO format."""
+        from getiaction.policies.dummy import Dummy, DummyConfig
+
+        config = DummyConfig(action_shape=(2,))
+        policy = Dummy(config=config)
+
+        export_path = tmp_path / "dummy_policy.xml"
+        policy.to_openvino(export_path)
+
+        assert export_path.exists()
+
+    def test_export_to_torch_ir(self, tmp_path):
+        """Test exporting to Torch IR format."""
+        from getiaction.policies.dummy import Dummy, DummyConfig
+
+        config = DummyConfig(action_shape=(2,))
+        policy = Dummy(config=config)
+
+        export_path = tmp_path / "dummy_policy_torch_ir.ptir"
+        policy.to_torch_export_ir(export_path)
+
+        assert export_path.exists()

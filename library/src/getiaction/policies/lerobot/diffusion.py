@@ -323,27 +323,30 @@ class Diffusion(Policy, LeRobotFromConfig):
         self.add_module("_lerobot_policy", policy)
         self.model = self._lerobot_policy.diffusion
 
-    def forward(
-        self,
-        batch: dict[str, torch.Tensor] | Observation,
-        *args: Any,  # noqa: ARG002, ANN401
-        **kwargs: Any,  # noqa: ARG002, ANN401
-    ) -> torch.Tensor:
-        """Forward pass delegates to LeRobot.
+    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
+        """Forward pass for LeRobot Diffusion policy.
+
+        The return value depends on the model's training mode:
+        - In training mode: Returns (loss, loss_dict) from LeRobot's forward method
+        - In evaluation mode: Returns action predictions via select_action method
 
         Args:
-            batch: A batch of data containing observations and actions (dict or Observation).
-            *args: Additional positional arguments (unused).
-            **kwargs: Additional keyword arguments (unused).
+            batch (Observation): Input batch of observations
 
         Returns:
-            The computed loss tensor.
+            torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]: In training mode,
+                returns tuple of (loss, loss_dict). In eval mode, returns selected actions tensor.
         """
-        # Convert to LeRobot format if needed (handles Observation or collated dict)
+        # Convert to LeRobot format for internal processing
         batch_dict = FormatConverter.to_lerobot_dict(batch)
 
-        loss, _ = self.lerobot_policy.forward(batch_dict)
-        return loss
+        if self.training:
+            # During training, return loss information for backpropagation
+            loss, loss_dict = self.lerobot_policy(batch_dict)
+            return loss, loss_dict or {}
+
+        # During evaluation, return action predictions
+        return self.select_action(batch)
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
         """Configure optimizer using LeRobot's parameters.
@@ -368,7 +371,7 @@ class Diffusion(Policy, LeRobotFromConfig):
         # Convert to LeRobot format if needed (handles Observation or collated dict)
         batch_dict = FormatConverter.to_lerobot_dict(batch)
 
-        loss, _ = self.lerobot_policy.forward(batch_dict)
+        loss, _ = self.lerobot_policy(batch_dict)
         self.log("train/loss", loss, prog_bar=True)
         return loss
 

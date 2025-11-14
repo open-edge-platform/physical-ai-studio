@@ -17,7 +17,7 @@ class TestACTolicy:
 
     @pytest.fixture
     def policy(self):
-        config = ACTConfig({"observation.image": Feature(normalization_data=NormalizationParameters(mean=np.array([0]*3), std=np.array([1]*3)), shape=(3, 64, 64), ftype=FeatureType.VISUAL),
+        config = ACTConfig({"image": Feature(normalization_data=NormalizationParameters(mean=np.array([0]*3), std=np.array([1]*3)), shape=(3, 64, 64), ftype=FeatureType.VISUAL),
                             "state": Feature(normalization_data=NormalizationParameters(mean=np.array([0]*3), std=np.array([1]*3)), shape=(3,), ftype=FeatureType.STATE)},
                            {"action": Feature(normalization_data=NormalizationParameters(mean=np.array([0]*3), std=np.array([1]*3)), shape=(3,), ftype=FeatureType.ACTION)},
                             chunk_size=100)
@@ -70,3 +70,25 @@ class TestACTolicy:
 
         assert "loss" in loss
         assert loss["loss"] >= 0
+
+    def test_predict_action_chunk_with_explain(self, policy, batch):
+        """Test predict_action_chunk_with_explain method."""
+        policy.model.eval()
+        actions, explain = policy.model.predict_action_chunk_with_explain(batch.to_dict())
+
+        assert isinstance(actions, torch.Tensor)
+        assert actions.shape == batch.action.shape
+        assert isinstance(explain, torch.Tensor)
+        assert explain.shape[0] == batch.action.shape[0]
+        assert explain.shape[1] == 1
+        assert explain.shape[2] > 1
+        assert explain.shape[3] > 1
+
+    def test_sample_input(self, policy):
+        """Test sample_input generation."""
+        sample_input = policy.model.sample_input
+
+        print(sample_input.keys())
+        assert isinstance(sample_input, dict)
+        assert "state" in sample_input
+        assert "images" in sample_input

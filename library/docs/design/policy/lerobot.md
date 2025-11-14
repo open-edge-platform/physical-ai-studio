@@ -291,6 +291,8 @@ getiaction fit \
 
 ```python
 from getiaction.policies.lerobot import ACT
+from getiaction.train import Trainer
+
 # Create policy (full IDE support!)
 policy = ACT(
     dim_model=512,              # ← Autocomplete works!
@@ -305,7 +307,7 @@ datamodule = LeRobotDataModule(
     train_batch_size=8,
 )
 
-trainer = L.Trainer(max_epochs=100)
+trainer = Trainer(max_epochs=100)
 trainer.fit(policy, datamodule)
 ```
 

@@ -1,15 +1,14 @@
-import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from loguru import logger
 
-# from app.core.scheduler import Scheduler
-from db import MigrationManager
+from services.event_processor import EventProcessor
 from settings import get_settings
 from webrtc.manager import WebRTCManager
 
-logger = logging.getLogger(__name__)
+from .scheduler import Scheduler
 
 
 @asynccontextmanager
@@ -21,16 +20,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     logger.info("Starting %s application...", settings.app_name)
     webrtc_manager = WebRTCManager()
     app.state.webrtc_manager = webrtc_manager
-    logger.info("Application startup completed")
 
-    migration_manager = MigrationManager(settings)
-    if not migration_manager.initialize_database():
-        logger.error("Failed to initialize database. Application cannot start.")
-        raise RuntimeError("Database initialization failed")
+    app_scheduler = Scheduler()
+    app_scheduler.start_workers()
+    app.state.scheduler = app_scheduler
+    app.state.event_processor = EventProcessor(app_scheduler.event_queue)
+    logger.info("Application startup completed")
 
     yield
 
     # Shutdown
     logger.info("Shutting down %s application...", settings.app_name)
     await webrtc_manager.cleanup()
+    app_scheduler.shutdown()
+    app.state.event_processor.shutdown()
     logger.info("Application shutdown completed")

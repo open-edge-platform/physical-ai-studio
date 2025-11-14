@@ -144,8 +144,8 @@ batch_action = batch.action     # torch.Tensor of shape [B, action_dim]
 ### Conversion Methods
 
 ```python
-# Convert to dictionary (generic)
-obs_dict = obs.to_dict()
+# Convert to dictionary (generic), non-flattened
+obs_dict = obs.to_dict(flatten=False)
 # Returns: {"action": tensor, "state": tensor, "images": {...}, ...}
 
 # Create from dictionary
@@ -311,7 +311,7 @@ class ACT(Policy):
 ### Policy Usage Example
 
 ```python
-from lightning import Trainer
+from getiaction.train import Trainer
 
 # Create policy
 policy = MyCustomPolicy()
@@ -338,7 +338,7 @@ trainer.fit(policy, datamodule)
 ```python
 from getiaction.data import Dataset, DataModule, Observation
 from getiaction.policies.base import Policy
-from lightning import Trainer
+from getiaction.train import Trainer
 import torch
 
 # 1. Dataset returns single Observations

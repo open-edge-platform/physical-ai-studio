@@ -160,18 +160,21 @@ class _LeRobotDatasetAdapter(Dataset):
         observation_features = {}
         for k in raw_obs_features:
             if k in dataset_meta.features:
+                feature_name = k[len("observation.") :]  # Remove "observation." prefix, filtering was done above
                 feature_type = FeatureType.STATE
                 feature_shape = dataset_meta.features[k]["shape"]
                 if dataset_meta.features[k]["dtype"] in {"image", "video"}:
                     feature_type = FeatureType.VISUAL
                     # Backward compatibility for "channel" which is an error introduced in LeRobotDataset v2.0
                     # for ported datasets.
+                    if "images." in feature_name:
+                        feature_name = feature_name[len("images.") :]
                     if dataset_meta.features[k]["names"][2] in {"channel", "channels"}:  # (h, w, c) -> (c, h, w)
                         feature_shape = (feature_shape[2], feature_shape[0], feature_shape[1])
                 elif k == "observation.environment_state":
                     feature_type = FeatureType.ENV
 
-                observation_features[k] = Feature(
+                observation_features[feature_name] = Feature(
                     ftype=feature_type,
                     normalization_data=NormalizationParameters(
                         mean=dataset_meta.stats[k].get("mean", 0.0),
@@ -180,7 +183,7 @@ class _LeRobotDatasetAdapter(Dataset):
                         max=dataset_meta.stats[k].get("max", 0.0),
                     ),
                     shape=feature_shape,
-                    name=k,
+                    name=feature_name,
                 )
         return observation_features
 

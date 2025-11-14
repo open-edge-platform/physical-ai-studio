@@ -1,21 +1,24 @@
 import asyncio
 
+from lerobot.cameras import CameraConfig
+from lerobot.robots.config import RobotConfig as LeRobotConfig
 from lerobot.robots.so101_follower import SO101Follower, SO101FollowerConfig
+from lerobot.teleoperators.config import TeleoperatorConfig as LeRobotTeleoperatorConfig
 from serial.tools import list_ports
 from serial.tools.list_ports_common import ListPortInfo
 
-from schemas import RobotPortInfo
+from schemas import RobotConfig, RobotPortInfo
 
 available_ports = list_ports.comports()
 
 
-def from_port(port: ListPortInfo, device_name: str) -> RobotPortInfo | None:
+def from_port(port: ListPortInfo, robot_type: str) -> RobotPortInfo | None:
     """Detect if the device is a SO-100 robot.π"""
     # The Feetech UART board CH340 has PID 29987
     if port.pid in {21971, 29987}:
         # The serial number is not always available
         serial_number = port.serial_number or "no_serial"
-        return RobotPortInfo(port=port.device, serial_id=serial_number, device_name=device_name)
+        return RobotPortInfo(port=port.device, serial_id=serial_number, robot_type=robot_type)
     return None
 
 
@@ -56,7 +59,7 @@ class RobotConnectionManager:
                 "so-100",
             ]:
                 print(f"Trying to connect to {name} on {port.device}.")
-                robot = from_port(port, device_name=name)
+                robot = from_port(port, robot_type=name)
                 if robot is None:
                     print(f"Failed to create robot from {name} on {port.device}.")
                     continue
@@ -85,8 +88,8 @@ async def find_robots() -> list[RobotPortInfo]:
 
 async def identify_robot_visually(robot: RobotPortInfo, joint: str | None = None) -> None:
     """Identify the robot by moving the joint from current to min to max to initial position"""
-    if robot.device_name != "so-100":
-        raise ValueError(f"Trying to identify unsupported robot: {robot.device_name}")
+    if robot.robot_type != "so-100":
+        raise ValueError(f"Trying to identify unsupported robot: {robot.robot_type}")
 
     if joint is None:
         joint = "gripper"
@@ -107,3 +110,40 @@ async def identify_robot_visually(robot: RobotPortInfo, joint: str | None = None
     robot.bus.write(GOAL_POSITION_KEY, joint, current_position[joint], normalize=False)
     await asyncio.sleep(1)
     robot.bus.disconnect()
+
+
+def make_lerobot_robot_config_from_robot(config: RobotConfig, cameras: dict[str, CameraConfig]) -> LeRobotConfig:
+    """Build LeRobot Follower Config from our RobotConfig."""
+    le_config = {
+        "id": config.id,
+        "port": config.port,
+        "cameras": cameras,
+    }
+
+    if config.robot_type == "so100_follower":
+        from lerobot.robots.so100_follower import SO100FollowerConfig
+
+        return SO100FollowerConfig(**le_config)
+    if config.robot_type == "so101_follower":
+        from lerobot.robots.so101_follower import SO101FollowerConfig
+
+        return SO101FollowerConfig(**le_config)
+    raise ValueError(config.type)
+
+
+def make_lerobot_teleoperator_config_from_robot(config: RobotConfig) -> LeRobotTeleoperatorConfig:
+    """Build LeRobot Teleoperator Config from our RobotConfig."""
+    le_config = {
+        "id": config.id,
+        "port": config.port,
+        "calibration_dir": None,
+    }
+    if config.robot_type == "so100_follower":
+        from lerobot.teleoperators.so100_leader import SO100LeaderConfig
+
+        return SO100LeaderConfig(**le_config)
+    if config.robot_type == "so101_follower":
+        from lerobot.teleoperators.so101_leader import SO101LeaderConfig
+
+        return SO101LeaderConfig(**le_config)
+    raise ValueError(config.type)

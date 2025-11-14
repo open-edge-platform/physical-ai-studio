@@ -9,7 +9,7 @@ dependencies = [
   "cv2-enumerate-cameras",
   "harvesters",
   "fastapi[standard]",
-  "lerobot[feetech]>=0.3.3",
+  "lerobot[feetech]==0.3.3",
   "numpy",
   "websockets",
   'pyrealsense2-macosx; sys_platform == "darwin"',
@@ -17,13 +17,18 @@ dependencies = [
   "aiortc>=1.13.0",
   "pydantic-settings>=2.10.1",
   "sqlalchemy>=2.0.43",
+  "aiosqlite~=0.21",
   "alembic>=1.16.5",
   "click>=8.3.0",
-  "FrameSource"
+  "FrameSource>=0.2.2",
+  "loguru>=0.7.3",
+  "getiaction",
+  "greenlet>=3.2.4",
 ]
 
 [tool.uv.sources]
-FrameSource = { git = "https://github.com/ArendJanKramer/FrameSource.git", rev = "1c1a88bc6af097cafbf62af2059a0c54d494c241" }
+FrameSource = { git = "https://github.com/ArendJanKramer/FrameSource.git", rev = "1eec5b2df1c7af9c8a941ee90bfc5e617c5b4522" }
+getiaction = { workspace = true }
 
 [dependency-groups]
 dev = [

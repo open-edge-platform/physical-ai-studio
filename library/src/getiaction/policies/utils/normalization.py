@@ -87,10 +87,15 @@ class FeatureNormalizeTransform(nn.Module):
                                    the relevant features in-place.
         """
         for raw_name, ft in self._features.items():
-            root_dict = {}
-            if raw_name in batch:
-                root_dict = batch
-            else:
+            for batch_key in batch:
+                if batch_key.endswith("." + raw_name) or batch_key == raw_name:
+                    norm_mode = self._norm_map.get(cast("FeatureType", ft.ftype), NormalizationType.IDENTITY)
+                    if norm_mode == NormalizationType.IDENTITY:
+                        continue
+                    buffer = getattr(self, "buffer_" + raw_name.replace(".", "_"))
+                    self._apply_normalization(batch, batch_key, norm_mode, buffer, inverse=self._inverse)
+
+            """
                 for item in batch.values():
                     if isinstance(item, dict) and ft.name in item:
                         root_dict = item
@@ -98,11 +103,11 @@ class FeatureNormalizeTransform(nn.Module):
             if root_dict:
                 key = raw_name
                 norm_mode = self._norm_map.get(cast("FeatureType", ft.ftype), NormalizationType.IDENTITY)
-                if norm_mode is NormalizationType.IDENTITY:
+                if norm_mode == NormalizationType.IDENTITY:
                     continue
                 buffer = getattr(self, "buffer_" + key.replace(".", "_"))
                 self._apply_normalization(root_dict, key, norm_mode, buffer, inverse=self._inverse)
-
+            """
         return batch
 
     @staticmethod
@@ -115,7 +120,8 @@ class FeatureNormalizeTransform(nn.Module):
         inverse: bool,
     ) -> None:
         def check_inf(t: torch.Tensor, name: str = "") -> None:
-            if torch.isinf(t).any():
+            is_tracing = torch.jit.is_scripting() or torch.jit.is_tracing()
+            if not is_tracing and torch.isinf(t).any():
                 msg = (
                     f"Normalization buffer '{name}' is infinity. You should either initialize "
                     "model with correct features stats, or use a pretrained model."
@@ -128,7 +134,7 @@ class FeatureNormalizeTransform(nn.Module):
         if batch[key] is None:
             return
 
-        if norm_mode is NormalizationType.MEAN_STD:
+        if norm_mode == NormalizationType.MEAN_STD:
             mean = buffer["mean"]
             std = buffer["std"]
             check_inf(mean, "mean")
@@ -138,7 +144,7 @@ class FeatureNormalizeTransform(nn.Module):
             else:
                 batch[key] = (batch[key] - mean) / (std + 1e-8)
 
-        elif norm_mode is NormalizationType.MIN_MAX:
+        elif norm_mode == NormalizationType.MIN_MAX:
             min_ = buffer["min"]
             max_ = buffer["max"]
             check_inf(min_, "min")
@@ -190,7 +196,7 @@ class FeatureNormalizeTransform(nn.Module):
 
             shape = ft.shape if ft.shape is not None else ()
 
-            if ft.ftype is FeatureType.VISUAL:
+            if ft.ftype == FeatureType.VISUAL:
                 # sanity checks
                 visual_feature_len = 3
                 if len(shape) != visual_feature_len:
@@ -209,13 +215,19 @@ class FeatureNormalizeTransform(nn.Module):
             # downstream by `stats` or `policy.load_state_dict`, as expected. During forward,
             # we assert they are not infinity anymore.
 
-            def get_torch_tensor(arr: np.ndarray | torch.Tensor | Integral, shape: tuple[int, ...]) -> torch.Tensor:
+            def get_torch_tensor(
+                arr: np.ndarray | torch.Tensor | Integral | list,
+                shape: tuple[int, ...],
+            ) -> torch.Tensor:
                 if isinstance(arr, np.ndarray):
                     return torch.from_numpy(arr).to(dtype=torch.float32).view(shape)
                 if isinstance(arr, torch.Tensor):
                     return arr.clone().to(dtype=torch.float32).view(shape)
                 if isinstance(arr, Integral):
                     return torch.tensor(arr, dtype=torch.float32).view(shape)
+                if isinstance(arr, list):
+                    return torch.tensor(arr, dtype=torch.float32).view(shape)
+
                 type_ = type(arr)
                 msg = f"np.ndarray or torch.Tensor expected, but type is '{type_}' instead."
                 raise TypeError(msg)

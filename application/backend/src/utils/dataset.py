@@ -1,5 +1,6 @@
 import os
 import uuid
+from json.decoder import JSONDecodeError
 from os import listdir, path, stat
 from pathlib import Path
 
@@ -7,36 +8,44 @@ import torch
 from huggingface_hub.errors import RepositoryNotFoundError
 from lerobot.constants import HF_LEROBOT_HOME
 from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
+from lerobot.datasets.utils import get_episode_data_index
 
-from schemas import CameraConfig, Dataset, Episode, EpisodeInfo, LeRobotDatasetInfo, ProjectConfig
+from schemas import CameraConfig, Dataset, Episode, LeRobotDatasetInfo, ProjectConfig
+from storage.storage import GETI_ACTION_DATASETS
 
 
 def get_dataset_episodes(repo_id: str, root: str | None) -> list[Episode]:
     """Load dataset from LeRobot cache and get info"""
-    dataset = LeRobotDataset(repo_id, root)
-    metadata = dataset.meta
-    episodes = metadata.episodes
-    result = []
-    for episode_index in episodes:
-        full_path = path.join(metadata.root, metadata.get_data_file_path(episode_index))
-        stat_result = stat(full_path)
-        result.append(
-            Episode(
-                actions=get_episode_actions(dataset, episodes[episode_index]),
-                fps=metadata.fps,
-                modification_timestamp=stat_result.st_mtime_ns // 1e6,
-                **episodes[episode_index],
+    if root and not check_repository_exists(Path(root)):
+        return []
+    try:
+        dataset = LeRobotDataset(repo_id, root)
+        metadata = dataset.meta
+        episodes = metadata.episodes
+        result = []
+        for episode_index in episodes:
+            full_path = path.join(metadata.root, metadata.get_data_file_path(episode_index))
+            stat_result = stat(full_path)
+            result.append(
+                Episode(
+                    actions=get_episode_actions(dataset, episodes[episode_index]).tolist(),
+                    fps=metadata.fps,
+                    modification_timestamp=stat_result.st_mtime_ns // 1e6,
+                    **episodes[episode_index],
+                )
             )
-        )
 
-    return result
+        return result
+    except Exception:
+        return []
 
 
-def get_episode_actions(dataset: LeRobotDataset, episode: EpisodeInfo) -> torch.Tensor:
+def get_episode_actions(dataset: LeRobotDataset, episode: dict) -> torch.Tensor:
     """Get episode actions tensor from specific episode."""
     episode_index = episode["episode_index"]
-    from_idx = dataset.episode_data_index["from"][episode_index].item()
-    to_idx = dataset.episode_data_index["to"][episode_index].item()
+    episode_data_index = get_episode_data_index(dataset.meta.episodes)
+    from_idx = episode_data_index["from"][episode_index].item()
+    to_idx = episode_data_index["to"][episode_index].item()
     actions = dataset.hf_dataset["action"][from_idx:to_idx]
     return torch.stack(actions)
 
@@ -44,9 +53,10 @@ def get_episode_actions(dataset: LeRobotDataset, episode: EpisodeInfo) -> torch.
 def list_directories(folder: Path) -> list[str]:
     """Get list of directories from folder."""
     res = []
-    for candidate in listdir(folder):
-        if os.path.isdir(folder / candidate):
-            res.append(candidate)
+    if os.path.isdir(folder):
+        for candidate in listdir(folder):
+            if os.path.isdir(folder / candidate):
+                res.append(candidate)
     return res
 
 
@@ -67,6 +77,18 @@ def get_local_repository_ids(home: str | Path | None = None) -> list[str]:
     return repo_ids
 
 
+def get_geti_action_datasets(home: str | Path | None = None) -> list[tuple[str, Path]]:
+    """Get all local repository ids."""
+    home = Path(home) if home is not None else GETI_ACTION_DATASETS
+
+    repo_ids: list[tuple[str, Path]] = []
+    for repo in list_directories(home):
+        if os.path.isdir(home / repo):
+            repo_ids.append((repo, home / repo))
+
+    return repo_ids
+
+
 def get_local_repositories(
     home: str | Path | None = None,
 ) -> list[LeRobotDatasetMetadata]:
@@ -80,6 +102,8 @@ def get_local_repositories(
             result.append(metadata)
         except RepositoryNotFoundError:
             print(f"Could not find local repository online: {repo_id}")
+        except JSONDecodeError:
+            print(f"Could not parse local repository: {repo_id}")
 
     return result
 
@@ -115,6 +139,11 @@ def build_project_config_from_dataset(dataset: LeRobotDatasetInfo) -> ProjectCon
     )
 
 
-def build_dataset_from_lerobot_dataset(dataset: LeRobotDatasetInfo) -> Dataset:
+def build_dataset_from_lerobot_dataset(dataset: LeRobotDatasetInfo, project_id: uuid.UUID) -> Dataset:
     """Build dataset from LeRobotDatasetInfo."""
-    return Dataset(name=dataset.repo_id, path=dataset.root, id=uuid.uuid4())
+    return Dataset(name=dataset.repo_id, path=dataset.root, id=uuid.uuid4(), project_id=project_id)
+
+
+def check_repository_exists(path: Path) -> bool:
+    """Check if repository path contains info and therefor exists."""
+    return (path / Path("meta/info.json")).is_file()
