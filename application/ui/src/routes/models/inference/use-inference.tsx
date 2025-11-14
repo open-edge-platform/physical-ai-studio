@@ -19,7 +19,8 @@ interface RecordApiJsonResponse {
 
 export interface Observation {
     timestamp: number;
-    actions: { [key: string]: number };
+    state: { [key: string]: number }; // robot state
+    actions: { [key: string]: number }; // actions suggested by inference
     cameras: { [key: string]: string };
 }
 
@@ -44,10 +45,9 @@ export const useInference = (setup: SchemaInferenceConfig) => {
             onMessage: (event: WebSocketEventMap['message']) => onMessage(event),
             onOpen: () => init.mutate(),
             onClose: () => setState(createInferenceState()),
+            onError: console.error,
         }
     );
-
-    console.log(lastJsonMessage);
 
     const init = useMutation({
         mutationFn: async () => await sendJsonMessageAndWait(

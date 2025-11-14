@@ -105,7 +105,6 @@ class InferenceWorker(BaseThreadWorker):
         self.is_running = False
 
         start_episode_t = time.perf_counter()
-        frame_index = 0
         action_queue = []
         while not self.should_stop() and not self.events["disconnect"].is_set():
             start_loop_t = time.perf_counter()
@@ -116,7 +115,6 @@ class InferenceWorker(BaseThreadWorker):
                 busy_wait(0.3)  # TODO check if neccesary
                 self.is_running = True
                 start_episode_t = time.perf_counter()
-                frame_index = 0
                 self._report_state()
 
             if self.events["stop"].is_set():
@@ -130,15 +128,14 @@ class InferenceWorker(BaseThreadWorker):
                 logger.info("calculate_trajectory")
                 self.events["calculate_trajectory"].clear()
                 lerobot_obs = self.robot.get_observation()
-                observation = self._build_geti_action_observation(lerobot_obs, 0, 0)
+                observation = self._build_geti_action_observation(lerobot_obs)
                 logger.info(observation.keys())
                 self._report_trajectory(self.model(observation.to_dict())[0].tolist())
 
+            lerobot_obs = self.robot.get_observation()
+            timestamp = time.perf_counter() - start_episode_t
             if self.is_running:
-
-                timestamp = time.perf_counter() - start_episode_t
-                lerobot_obs = self.robot.get_observation()
-                observation = self._build_geti_action_observation(lerobot_obs, timestamp, frame_index)
+                observation = self._build_geti_action_observation(lerobot_obs)
                 if not action_queue:
                     action_queue = self.model(observation.to_dict())[0].tolist()
                 action = action_queue.pop(0)
@@ -146,9 +143,10 @@ class InferenceWorker(BaseThreadWorker):
                 #print(observation)
                 #actions = self.policy.select_action(observation)
                 formatted_actions = dict(zip(self.action_keys, action))
-                self._report_action(formatted_actions, lerobot_obs, timestamp)
                 self.robot.send_action(formatted_actions)
-                frame_index += 1
+                self._report_action(formatted_actions, lerobot_obs, timestamp)
+            else:
+                self._report_action({}, lerobot_obs, timestamp)
 
             dt_s = time.perf_counter() - start_loop_t
             wait_time = 1 / self.config.fps - dt_s
@@ -184,8 +182,9 @@ class InferenceWorker(BaseThreadWorker):
                 "event": "observations",
                 "data": {
                     "actions": actions,
+                    "state": {key: observation.get(key, 0) for key in self.action_keys},
                     "cameras": {
-                        key: self._base_64_encode_observation(observation.get(key))
+                        key: self._base_64_encode_observation(cv2.cvtColor(observation[key], cv2.COLOR_RGB2BGR))
                         for key in self.camera_keys
                         if key in observation
                     },
@@ -194,7 +193,7 @@ class InferenceWorker(BaseThreadWorker):
             }
         )
 
-    def _build_geti_action_observation(self, robot_observation: dict, timestamp: float, frame_index: int):
+    def _build_geti_action_observation(self, robot_observation: dict):
         state = torch.tensor([value for key, value in robot_observation.items() if key in self.action_keys ]).unsqueeze(0)
         images: dict = {}
         for name in self.camera_keys:

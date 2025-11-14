@@ -7,68 +7,7 @@ import { RobotViewer } from '../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 import { Observation, useTeleoperation } from './record/use-teleoperation';
 import { useRecording } from './recording-provider';
-
-import classes from './episode-viewer.module.scss';
-
-function useInterval(callback: () => void, delay: number) {
-    const savedCallback = useRef<() => void>(callback);
-
-    useEffect(() => {
-        savedCallback.current = callback;
-    }, [callback]);
-
-    useEffect(() => {
-        function tick() {
-            savedCallback.current();
-        }
-        if (delay !== null) {
-            const id = setInterval(tick, delay);
-            return () => clearInterval(id);
-        }
-    }, [delay]);
-}
-
-interface CameraViewProps {
-    observation: RefObject<Observation | undefined>;
-    camera: SchemaCameraConfigOutput;
-}
-
-const CameraView = ({ camera, observation }: CameraViewProps) => {
-    const [img, setImg] = useState<string>();
-
-    useInterval(() => {
-        if (observation.current?.cameras[camera.name]) {
-            setImg(observation.current.cameras[camera.name]);
-        }
-    }, 1000 / camera.fps);
-
-    const aspectRatio = camera.width / camera.height;
-
-    return (
-        <Flex UNSAFE_style={{ aspectRatio }}>
-            <Well flex UNSAFE_style={{ position: 'relative' }}>
-                <View height={'100%'} position={'relative'}>
-                    {img === undefined ? (
-                        <Flex width='100%' height='100%' justifyContent={'center'} alignItems={'center'}>
-                            <ProgressCircle isIndeterminate />
-                        </Flex>
-                    ) : (
-                        <img
-                            alt={`Camera frame of ${camera.name}`}
-                            src={`data:image/jpg;base64,${img}`}
-                            style={{
-                                objectFit: 'contain',
-                                height: '100%',
-                                width: '100%',
-                            }}
-                        />
-                    )}
-                </View>
-                <div className={classes.cameraTag}> {camera.name} </div>
-            </Well>
-        </Flex>
-    );
-};
+import { CameraView } from './camera-view';
 
 interface RecordingViewerProps {
     recordingConfig: SchemaTeleoperationConfig;

@@ -1,4 +1,4 @@
-import { Button, View, Flex, Slider } from "@geti/ui"
+import { Button, ButtonGroup, Flex, Link, Heading, ProgressCircle } from "@geti/ui"
 import { useParams } from "react-router"
 import { useInference } from "./use-inference";
 import { $api } from "../../../api/client";
@@ -8,9 +8,27 @@ import { RobotViewer } from "../../../features/robots/controller/robot-viewer";
 import { RobotModelsProvider } from "../../../features/robots/robot-models-context";
 import { useState } from "react";
 import { TELEOPERATION_CONFIG_CACHE_KEY } from "../../datasets/record/utils";
+import { CameraView } from "../../datasets/camera-view";
+import { Back, Play, StepBackward } from '@geti/ui/icons';
+import { paths } from "../../../router";
+
+const useInferenceParams = () => {
+    const { project_id, model_id } = useParams();
+
+    if (project_id === undefined) {
+        throw new Error('Unknown project_id parameter');
+    }
+
+    if (model_id === undefined) {
+        throw new Error('Unknown model_id parameter');
+    }
+
+    return { project_id, model_id };
+}
 
 export const Index = () => {
-    const { project_id, model_id } = useParams();
+    const { project_id, model_id } = useInferenceParams();
+
     const { data: model } = $api.useSuspenseQuery("get", "/api/models/{model_id}", { params: { query: { uuid: model_id! } } })
 
     const project = useProject();
@@ -31,7 +49,7 @@ export const Index = () => {
         return jointNames.map((name) => actions[`${name}.pos`]);
     };
 
-    let actions = observation.current === undefined ? undefined : formatActionDictToArray(observation.current.actions)
+    let actions = observation.current === undefined ? undefined : formatActionDictToArray(observation.current.state)
 
     if (calculateTrajectory.data !== undefined) {
         const i = index ?? 0;
@@ -40,19 +58,44 @@ export const Index = () => {
         }
     }
 
+    if (!state.initialized) {
+        <Flex width='100%' height={'100%'} alignItems={'center'} justifyContent={'center'}>
+            <Heading>Initializing</Heading>
+            <ProgressCircle isIndeterminate />
+        </Flex>;
+    }
+
     return (
         <RobotModelsProvider>
-            <Flex height="100%" flex direction={'column'}>
-                <Flex flex>
-                    <Button onPress={() => startTask(0)}>StartTask</Button>
-                    <Button onPress={stop}>Pause</Button>
-                    <Button onPress={disconnect}>Disconnect</Button>
-                    <Button onPress={() => calculateTrajectory.mutate()}>Calculate a Trajectory</Button>
-                    {calculateTrajectory.data && <Slider maxValue={calculateTrajectory.data?.length} value={index} onChange={setIndex} />}
+            <Flex flex direction={'column'} height={'100%'} position={'relative'}>
+                <Flex alignItems={'center'} gap='size-100' height="size-400" margin="size-200">
+                    <Link aria-label='Rewind' href={paths.project.models.index({ project_id })}>
+                        <Back fill='white' />
+                    </Link>
+                    <Heading flex>Model Run {model.name}</Heading>
+                    <ButtonGroup>
+                        <Button variant='primary'>
+                            <StepBackward fill='white'/>
+                            Restart
+                        </Button>
+                        <Button variant='primary' onPress={() => startTask(0)}>
+                            <Play fill='white' />
+                            Play
+                        </Button>
+                        <Button variant="negative">
+                            Start Recording
+                        </Button>
+                    </ButtonGroup>
                 </Flex>
-
-                <Flex flex={3} minWidth={0}>
-                    <RobotViewer jointValues={actions}/>
+                <Flex direction={'row'} flex gap={'size-100'}>
+                    <Flex direction={'column'} alignContent={'start'} flex gap={'size-30'}>
+                        {config.cameras.map((camera) => (
+                            <CameraView key={camera.id} camera={camera} observation={observation} />
+                        ))}
+                    </Flex>
+                    <Flex flex={3} minWidth={0}>
+                        <RobotViewer jointValues={actions} />
+                    </Flex>
                 </Flex>
             </Flex>
         </RobotModelsProvider>
