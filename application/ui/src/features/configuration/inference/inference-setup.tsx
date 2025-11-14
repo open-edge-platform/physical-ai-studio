@@ -51,8 +51,14 @@ export const InferenceSetup = ({model_id, onDone}: InferenceSetupProps) => {
         model,
         task_index: 0,
         fps: project.config!.fps,
-        cameras: cachedConfig.cameras,
-        robot: cachedConfig.follower,
+        cameras: cachedConfig.cameras ?? project.config!.cameras,
+        robot: cachedConfig.follower ?? {
+            id: '',
+            robot_type: project.config?.robot_type ?? '',
+            serial_id: '',
+            port: '',
+            type: 'follower',
+        },
       }
     );
 
