@@ -19,6 +19,11 @@ class XPUAccelerator(Accelerator):
 
     accelerator_name = "xpu"
 
+    @property
+    def name(self) -> str:
+        """Return the name of the accelerator."""
+        return self.accelerator_name
+
     def setup_device(self, device: torch.device) -> None:  # noqa: PLR6301
         """Set up the XPU device for computation.
 
