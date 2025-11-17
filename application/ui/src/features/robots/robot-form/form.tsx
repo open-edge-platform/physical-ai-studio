@@ -3,6 +3,9 @@ import { Suspense } from 'react';
 import {
     ActionButton,
     Button,
+    Content,
+    Dialog,
+    DialogTrigger,
     Divider,
     Flex,
     Form,
@@ -15,15 +18,24 @@ import {
     TextField,
     View,
 } from '@geti/ui';
-import { ChevronLeft, Close, Refresh } from '@geti/ui/icons';
+import { Adjustments, ChevronLeft, Close, Refresh } from '@geti/ui/icons';
 
 import { $api } from '../../../api/client';
+import { SchemaRobotCamera } from '../../../api/openapi-spec';
 import { useProjectId } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
 import { useRobotForm, useSetRobotForm } from './provider';
 import { SubmitNewRobotButton } from './submit-new-robot-button';
 
 import classes from './form.module.scss';
+
+const INITIAL_CAMERA_CONFIGURATION = {
+    name: '',
+    fingerprint: '',
+    resolution_fps: 30,
+    resolution_width: 480,
+    resolution_height: 360,
+};
 
 const RobotType = () => {
     const setRobotForm = useSetRobotForm();
@@ -48,17 +60,103 @@ const RobotType = () => {
     );
 };
 
-type CameraType = {
-    name: string;
-    fingerprint: string | null;
+const CameraResolutionDialog = ({
+    camera,
+    updateCamera,
+}: {
+    camera: SchemaRobotCamera;
+    updateCamera: (camera: Partial<SchemaRobotCamera>) => void;
+}) => {
+    // TODO: based on the selected available camera, get the camera profile
+    // then restrict the resolutions based on its profile
+    // const availableCamerasQuery = $api.useSuspenseQuery('get', '/api/hardware/cameras');
+    const SUPPORTED_FPS = [24, 25, 30, 60, 120];
+    const SUPPORTED_RESOLUTION = [
+        { key: '360p', width: 480, height: 360 },
+        { key: '480p', width: 640, height: 480 },
+        { key: '720p', width: 1280, height: 720 },
+        { key: '1080p', width: 1920, height: 1080 },
+        { key: '2160p', width: 3160, height: 2160 },
+    ];
+
+    const selectedResolutionKey = SUPPORTED_RESOLUTION.find(
+        ({ width, height }) => width === camera.resolution_width && height === camera.resolution_height
+    )?.key;
+
+    return (
+        <Dialog>
+            <Heading>Configure camera profile</Heading>
+            <Divider />
+            <Content>
+                <Flex gap='size-200' direction='column'>
+                    <Picker
+                        label='Resolution'
+                        width='100%'
+                        selectedKey={selectedResolutionKey}
+                        onSelectionChange={(resolution) => {
+                            const selectedResolution = SUPPORTED_RESOLUTION.find(({ key }) => key === resolution);
+                            if (selectedResolution === undefined) {
+                                return;
+                            }
+
+                            updateCamera({
+                                resolution_width: selectedResolution.width,
+                                resolution_height: selectedResolution.height,
+                            });
+                        }}
+                    >
+                        {SUPPORTED_RESOLUTION.map(({ key, width, height }) => {
+                            return <Item key={key}>{`${width} x ${height}`}</Item>;
+                        })}
+                    </Picker>
+
+                    <Picker
+                        label='Frames per second (FPS)'
+                        width='100%'
+                        selectedKey={String(camera.resolution_fps)}
+                        onSelectionChange={(fps) => {
+                            if (fps === null) {
+                                return;
+                            }
+
+                            updateCamera({ resolution_fps: Number(fps) });
+                        }}
+                    >
+                        {SUPPORTED_FPS.map((fps) => (
+                            <Item key={fps}>{`${fps}`}</Item>
+                        ))}
+                    </Picker>
+                </Flex>
+            </Content>
+        </Dialog>
+    );
 };
 
-const Camera = ({ idx, camera, onRemove }: { onRemove: () => void; camera: CameraType; idx: number }) => {
+const Camera = ({ idx, camera, onRemove }: { onRemove: () => void; camera: SchemaRobotCamera; idx: number }) => {
     const availableCamerasQuery = $api.useSuspenseQuery('get', '/api/hardware/cameras');
     const setRobotForm = useSetRobotForm();
 
+    const updateCamera = (newCamera: Partial<SchemaRobotCamera>) => {
+        setRobotForm((oldForm) => {
+            const cameras = oldForm.cameras.map((oldCamera, oldIdx) => {
+                return idx === oldIdx ? { ...oldCamera, ...newCamera } : oldCamera;
+            });
+
+            return { ...oldForm, cameras };
+        });
+    };
+
     return (
         <Flex gap='size-100' alignItems='end'>
+            <TextField
+                isRequired
+                label='name'
+                width='100%'
+                onChange={(name) => {
+                    updateCamera({ name });
+                }}
+                value={camera.name}
+            />
             <Picker
                 label='Camera'
                 width='100%'
@@ -71,16 +169,7 @@ const Camera = ({ idx, camera, onRemove }: { onRemove: () => void; camera: Camer
                     if (!selected) {
                         return;
                     }
-
-                    setRobotForm((oldForm) => {
-                        const cameras = oldForm.cameras.map((oldCamera, oldIdx) => {
-                            return idx === oldIdx
-                                ? { ...oldCamera, fingerprint: selected.port_or_device_id }
-                                : oldCamera;
-                        });
-
-                        return { ...oldForm, cameras };
-                    });
+                    updateCamera({ fingerprint: selected.port_or_device_id });
                 }}
             >
                 {availableCamerasQuery.data.map((availableCamera) => {
@@ -95,21 +184,14 @@ const Camera = ({ idx, camera, onRemove }: { onRemove: () => void; camera: Camer
                     );
                 })}
             </Picker>
-            <TextField
-                isRequired
-                label='name'
-                width='100%'
-                onChange={(name) => {
-                    setRobotForm((oldForm) => {
-                        const cameras = oldForm.cameras.map((oldCamera, oldIdx) => {
-                            return idx === oldIdx ? { ...oldCamera, name } : oldCamera;
-                        });
-
-                        return { ...oldForm, cameras };
-                    });
-                }}
-                value={camera.name}
-            />
+            <DialogTrigger type='popover'>
+                <ActionButton UNSAFE_className={classes.actionButton}>
+                    <Icon>
+                        <Adjustments />
+                    </Icon>
+                </ActionButton>
+                <CameraResolutionDialog camera={camera} updateCamera={updateCamera} />
+            </DialogTrigger>
             <ActionButton onPress={onRemove} UNSAFE_className={classes.actionButton}>
                 <Icon>
                     <Close />
@@ -169,7 +251,7 @@ const CameraFormFields = () => {
     const addCamera = () => {
         setRobotForm((oldForm) => ({
             ...oldForm,
-            cameras: [...oldForm.cameras, { name: '', fingerprint: '' }],
+            cameras: [...oldForm.cameras, INITIAL_CAMERA_CONFIGURATION],
         }));
     };
     const removeCamera = (idxToRemove: number) => {
