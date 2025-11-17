@@ -60,7 +60,7 @@ const Camera = ({ idx, camera, onRemove }: { onRemove: () => void; camera: Camer
     return (
         <Flex gap='size-100' alignItems='end'>
             <Picker
-                label='Camera type'
+                label='Camera'
                 width='100%'
                 selectedKey={camera.fingerprint}
                 onSelectionChange={(key) => {
@@ -97,7 +97,7 @@ const Camera = ({ idx, camera, onRemove }: { onRemove: () => void; camera: Camer
             </Picker>
             <TextField
                 isRequired
-                label='Camera name'
+                label='name'
                 width='100%'
                 onChange={(name) => {
                     setRobotForm((oldForm) => {
