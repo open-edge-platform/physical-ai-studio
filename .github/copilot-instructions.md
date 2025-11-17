@@ -4,7 +4,7 @@
 This is the Geti Action project, a full-stack application with:
 - **Backend**: Python-based FastAPI application (`application/backend/`)
 - **Frontend**: React/TypeScript UI (`application/ui/`)
-- **Library**: Core Python library for action recognition (`library/`)
+- **Library**: Core Python library for vision-language-action policies (`library/`)
 
 ## Coding Standards
 
@@ -21,6 +21,8 @@ This is the Geti Action project, a full-stack application with:
 - Use type hints for all function signatures
 - Prefer `pathlib.Path` over string paths
 - Use `ruff` for linting and formatting
+- **Address all ruff warnings in generated code**:
+
 - Write docstrings in Google style format:
   ```python
   def function_name(param1: str, param2: int) -> bool:
@@ -35,6 +37,27 @@ This is the Geti Action project, a full-stack application with:
 
       Raises:
           ValueError: Description of when this is raised
+
+      Examples:
+          >>> # Example with interactive prompt marker
+          >>> result = function_name("test", 42)
+          >>> print(result)
+          True
+
+          Regular code example without marker (for longer blocks):
+
+          from module import function_name
+
+          # This is a comment
+          result = function_name("test", 42)
+          if result:
+              print("Success")
+
+      Note:
+          - Use `>>>` for single-line executable examples
+          - Use plain code blocks for multi-line examples or non-executable code
+          - Do NOT use `>>>` for blank lines within examples
+          - Imports should be shown without `>>>` unless demonstrating interactive use
       """
   ```
 - Use `logging` instead of `print()` statements
