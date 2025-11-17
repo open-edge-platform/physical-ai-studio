@@ -28,16 +28,10 @@ class RobotType(StrEnum):
 
 class RobotCamera(BaseModel):
     name: str = Field(..., description="Camera identifier name")
-    fingerprint: str = Field(
-        ..., description="Camera fingerprint used to find the camera"
-    )
+    fingerprint: str = Field(..., description="Camera fingerprint used to find the camera")
 
-    resolution_width: int = Field(
-        default=480, description="Preferred width of the camera"
-    )
-    resolution_height: int = Field(
-        default=360, description="Preferred height of the camera"
-    )
+    resolution_width: int = Field(default=480, description="Preferred width of the camera")
+    resolution_height: int = Field(default=360, description="Preferred height of the camera")
     resolution_fps: int = Field(default=30, description="Preferred fps of the camera")
 
     model_config = ConfigDict(
@@ -62,9 +56,7 @@ class Robot(ABC, BaseModel):
     name: str = Field(..., description="Human-readable robot name")
     serial_id: str = Field(..., description="Unique serial identifier for the robot")
     type: RobotType = Field(..., description="Type of robot configuration")
-    cameras: list[RobotCamera] = Field(
-        default_factory=list, description="List of cameras attached to this robot"
-    )
+    cameras: list[RobotCamera] = Field(default_factory=list, description="List of cameras attached to this robot")
 
     model_config = ConfigDict(
         json_schema_extra={
