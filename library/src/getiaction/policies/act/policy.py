@@ -98,7 +98,6 @@ class ACT(Export, Policy):
         """
         # Move batch to device (observations from gym are on CPU)
         batch = batch.to(self.device)
-        print(batch.to_dict())
         chunk = self.model.predict_action_chunk(batch.to_dict())
 
         # select only first action from the predicted chunk to unify output with other policies

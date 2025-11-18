@@ -274,6 +274,7 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
         """
         if self._model.training:
             batch = self._input_normalizer(batch)
+
             actions_hat, (mu_hat, log_sigma_x2_hat) = self._model(batch)
 
             l1_loss = (
