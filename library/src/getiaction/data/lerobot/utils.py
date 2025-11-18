@@ -52,7 +52,7 @@ def recode_torch_codec_video(video_path: Path | str) -> None:
     output_folder = Path(str(Path(video_path).with_suffix("")) + "_tmp")
     Path.mkdir(output_folder, parents=True)
 
-    frame = None
+    frame = decoder[0]
     for fr_idx in range(len(decoder)):
         output_frame = output_folder / f"frame_{fr_idx:06d}.png"
         with contextlib.suppress(Exception):
