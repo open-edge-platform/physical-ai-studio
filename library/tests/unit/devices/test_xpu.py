@@ -5,7 +5,7 @@
 
 
 from getiaction.devices.xpu import XPUAccelerator, SingleXPUStrategy
-from getiaction.devices import is_xpu_available
+import torch
 
 
 class TestXPUAccelerator:
@@ -13,7 +13,7 @@ class TestXPUAccelerator:
 
     def test_is_available_returns_true_when_xpu_available(self):
         """Test is_available returns True when XPU is available."""
-        assert XPUAccelerator.is_available() == is_xpu_available()
+        assert XPUAccelerator.is_available() == torch.xpu.is_available()
 
 
 class TestSingleXPUStrategy:

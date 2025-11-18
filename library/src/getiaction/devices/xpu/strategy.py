@@ -7,11 +7,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import torch
 from lightning.pytorch.strategies import StrategyRegistry
 from lightning.pytorch.strategies.single_device import SingleDeviceStrategy
 from lightning.pytorch.utilities.exceptions import MisconfigurationException
-
-from getiaction.devices import is_xpu_available
 
 if TYPE_CHECKING:
     from lightning.fabric.plugins import CheckpointIO
@@ -46,7 +45,7 @@ class SingleXPUStrategy(SingleDeviceStrategy):
         Raises:
             MisconfigurationException: If XPU devices are not available on the system.
         """
-        if not is_xpu_available():
+        if not torch.xpu.is_available():
             msg = "`SingleXPUStrategy` requires XPU devices to run"
             raise MisconfigurationException(msg)
         super().__init__(

@@ -11,8 +11,6 @@ import torch
 from lightning.pytorch.accelerators import AcceleratorRegistry
 from lightning.pytorch.accelerators.accelerator import Accelerator
 
-from getiaction.devices import is_xpu_available
-
 
 class XPUAccelerator(Accelerator):
     """Support for a XPU, optimized for large-scale machine learning."""
@@ -94,7 +92,7 @@ class XPUAccelerator(Accelerator):
             bool: True if XPU devices are available and can be used for computation,
                   False otherwise.
         """
-        return is_xpu_available()
+        return torch.xpu.is_available()
 
     def get_device_stats(self, device: str | torch.device) -> dict[str, Any]:  # noqa: PLR6301
         """Returns XPU devices stats."""

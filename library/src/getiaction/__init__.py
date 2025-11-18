@@ -3,8 +3,8 @@
 
 """getiaction package."""
 
-from .devices import is_xpu_available  # register XPU accelerator
+from .devices import SingleXPUStrategy, XPUAccelerator  # register the xpu utils
 from .train import Trainer
 
-__all__ = ["Trainer", "is_xpu_available"]
+__all__ = ["SingleXPUStrategy", "Trainer", "XPUAccelerator"]
 __version__ = "0.1.0"

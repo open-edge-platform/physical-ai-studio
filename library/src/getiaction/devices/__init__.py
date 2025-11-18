@@ -3,8 +3,7 @@
 
 """Devices managing utilities for getiaction."""
 
-from .utils import is_xpu_available
 from .xpu.accelerator import XPUAccelerator
 from .xpu.strategy import SingleXPUStrategy
 
-__all__ = ["SingleXPUStrategy", "XPUAccelerator", "is_xpu_available"]
+__all__ = ["SingleXPUStrategy", "XPUAccelerator"]
