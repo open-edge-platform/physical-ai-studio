@@ -31,14 +31,7 @@ export const useRobotFormBody = (robot_id: string): SchemaRobot | null => {
         name: robotForm.name,
         type: robotForm.type,
         serial_id: robotForm.serial_id,
-        cameras: robotForm.cameras
-            .filter(({ fingerprint }) => fingerprint !== '')
-            .map((camera) => {
-                return {
-                    fingerprint: camera.fingerprint,
-                    name: camera.name,
-                };
-            }),
+        cameras: robotForm.cameras.filter(({ fingerprint }) => fingerprint !== ''),
     };
 };
 
@@ -47,14 +40,7 @@ export const RobotFormProvider = ({ children, robot }: { children: ReactNode; ro
         name: robot?.name ?? '',
         type: robot?.type ?? null,
         serial_id: robot?.serial_id ?? null,
-
-        cameras:
-            robot?.cameras?.map((camera) => {
-                return {
-                    name: camera.name,
-                    fingerprint: camera.fingerprint ?? '',
-                };
-            }) ?? [],
+        cameras: robot?.cameras ?? [],
     });
 
     return (
