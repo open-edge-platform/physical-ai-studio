@@ -26,6 +26,13 @@ class ACT(Export, Policy):
         >>> policy = ACT(model)
         >>> actions = policy.select_action(batch)
         >>> loss_dict = policy.training_step(batch, batch_idx=0)
+
+        Export examples:
+        >>> policy = ACT(model)
+        >>> # Export to OpenVINO (recommended for Intel platforms)
+        >>> policy.export("./exports", backend="openvino")
+        >>> # Export to ONNX (cross-platform)
+        >>> policy.export("./exports", backend="onnx")
     """
 
     def __init__(

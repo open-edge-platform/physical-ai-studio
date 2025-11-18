@@ -107,15 +107,17 @@ class FeatureNormalizeTransform(nn.Module):
         inverse: bool,
     ) -> None:
         def check_inf(t: torch.Tensor, name: str = "") -> None:
+            # Skip check during tracing/scripting/export to avoid data-dependent branching
             is_tracing = torch.jit.is_scripting() or torch.jit.is_tracing()
-            if not is_tracing and torch.isinf(t).any():
+            # torch.compiler.is_compiling() detects torch.compile and torch.export (PyTorch 2.0+)
+            is_compiling = torch.compiler.is_compiling()
+
+            if not is_tracing and not is_compiling and torch.isinf(t).any():
                 msg = (
                     f"Normalization buffer '{name}' is infinity. You should either initialize "
                     "model with correct features stats, or use a pretrained model."
                 )
-                raise ValueError(
-                    msg,
-                )
+                raise ValueError(msg)
 
         # Skip normalization if the value is None (e.g., during gym rollouts where action is not available)
         if batch[key] is None:
