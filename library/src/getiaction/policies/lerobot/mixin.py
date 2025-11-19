@@ -260,7 +260,9 @@ class LeRobotFromConfig(FromConfig):
         # Set required attributes
         wrapper._is_pretrained = True  # noqa: SLF001
         wrapper._framework = "lerobot"  # noqa: SLF001
-        wrapper.learning_rate = kwargs.get("learning_rate", 1e-4)
+        # Use learning_rate from kwargs, or fall back to config's optimizer_lr
+        # Config from pretrained models should have this; if not, user must provide it for training
+        wrapper.learning_rate = kwargs.get("learning_rate", getattr(config, "optimizer_lr", None))
 
         # For LeRobotPolicy (universal wrapper), set policy_name
         if cls.__name__ == "LeRobotPolicy":
