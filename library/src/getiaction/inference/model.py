@@ -205,6 +205,9 @@ class InferenceModel:
 
         Returns:
             Dictionary mapping input names to numpy arrays
+
+        Raises:
+            ValueError: If required model inputs are missing from observation
         """
         import numpy as np  # noqa: PLC0415
 
@@ -247,6 +250,16 @@ class InferenceModel:
                 # Handle nested structures if needed
                 inputs[model_key] = np.array(value)
 
+        # Validate all expected inputs are present
+        missing_inputs = expected_inputs - set(inputs.keys())
+        if missing_inputs:
+            available_fields = list(obs_dict.keys())
+            msg = (
+                f"Missing required model inputs: {missing_inputs}. "
+                f"Available observation fields: {available_fields}"
+            )
+            raise ValueError(msg)
+
         return inputs
 
     @staticmethod
@@ -263,6 +276,14 @@ class InferenceModel:
             Dictionary mapping observation keys to model input names
         """
         mapping = {}
+
+        # Dummy matching for exact matches
+        for key in expected_inputs:
+            if key in obs_dict:
+                mapping[key] = key
+
+        if len(mapping) == len(expected_inputs):
+            return mapping
 
         # Common observation fields with their possible model input names
         # Supports both first-party (e.g., "state") and LeRobot (e.g., "observation.state") conventions
