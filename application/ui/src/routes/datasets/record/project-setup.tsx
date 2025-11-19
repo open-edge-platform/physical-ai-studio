@@ -5,6 +5,8 @@ import {
     Button,
     ButtonGroup,
     Content,
+    Dialog,
+    Divider,
     Flex,
     Heading,
     Item,
@@ -17,13 +19,11 @@ import {
     Well,
 } from '@geti/ui';
 import { Close } from '@geti/ui/icons';
-import { useNavigate } from 'react-router';
 import { v4 as uuidv4 } from 'uuid';
 
 import { $api } from '../../../api/client';
 import { SchemaCameraConfigInput, SchemaProjectConfigInput } from '../../../api/openapi-spec';
 import { useProjectId } from '../../../features/projects/use-project';
-import { paths } from '../../../router';
 
 interface CameraSetupProps {
     camera: SchemaCameraConfigInput;
@@ -79,9 +79,11 @@ const emptyCamera = (): SchemaCameraConfigInput => {
     };
 };
 
-export const ProjectSetup = () => {
-    const navigate = useNavigate();
+interface ProjectSetupProps {
+    onDone: (config?: SchemaProjectConfigInput) => void;
+}
 
+const ProjectSetup = ({ onDone }: ProjectSetupProps) => {
     const { project_id } = useProjectId();
     const [activeTab, setActiveTab] = useState<string>('robot');
     const [config, setConfig] = useState<SchemaProjectConfigInput>({
@@ -115,20 +117,21 @@ export const ProjectSetup = () => {
         }));
     };
 
-    const onSave = () => {
-        saveMutation.mutate({
+    const onSave = async () => {
+        await saveMutation.mutateAsync({
             params: {
                 path: { project_id },
             },
             body: config,
         });
+        onDone();
     };
 
     const onBack = () => {
         if (activeTab === 'cameras') {
             setActiveTab('robot');
         } else {
-            navigate(paths.project.datasets.index({ project_id }));
+            onDone();
         }
     };
 
@@ -206,5 +209,17 @@ export const ProjectSetup = () => {
                 </View>
             </View>
         </Flex>
+    );
+};
+
+export const ProjectSetupModal = (close: (config?: SchemaProjectConfigInput) => void) => {
+    return (
+        <Dialog>
+            <Heading>Teleoperate Setup</Heading>
+            <Divider />
+            <Content>
+                <ProjectSetup onDone={close} />
+            </Content>
+        </Dialog>
     );
 };

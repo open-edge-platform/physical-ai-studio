@@ -40,12 +40,12 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           # FIXME: needed for tj-actions/changed-files to gather changed files, once repository becomes public this should be set to false
           persist-credentials: true
       - name: Run Zizmor scan
-        uses: open-edge-platform/geti-ci/actions/zizmor@4ec90fb54c7be053e40b9e3ecdf399cf501596ca
+        uses: open-edge-platform/geti-ci/actions/zizmor@6e7e8393869d05112f727d235acb644ed362c58f
         with:
           scan-scope: "changed"
           severity-level: "MEDIUM"
@@ -59,12 +59,12 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           # FIXME: needed for tj-actions/changed-files to gather changed files, once repository becomes public this should be set to false
           persist-credentials: true
       - name: Run Bandit scan
-        uses: open-edge-platform/geti-ci/actions/bandit@4ec90fb54c7be053e40b9e3ecdf399cf501596ca
+        uses: open-edge-platform/geti-ci/actions/bandit@6e7e8393869d05112f727d235acb644ed362c58f
         with:
           scan-scope: "changed"
           severity-level: "MEDIUM"
@@ -79,12 +79,12 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
       - name: Run Semgrep scan
-        uses: open-edge-platform/geti-ci/actions/semgrep@4ec90fb54c7be053e40b9e3ecdf399cf501596ca
+        uses: open-edge-platform/geti-ci/actions/semgrep@6e7e8393869d05112f727d235acb644ed362c58f
         with:
           scan-scope: "changed"
           severity: "HIGH"

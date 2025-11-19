@@ -67,17 +67,23 @@ def policy(request: pytest.FixtureRequest) -> Policy:
 
 
 @pytest.fixture
-def trainer() -> Trainer:
+def trainer(device) -> Trainer:
     """Create trainer with fast development configuration.
 
     Returns:
         Trainer: Configured trainer instance for fast testing.
     """
+
+    trainer_kwargs = {"accelerator": device}
+    if device == "xpu":
+        trainer_kwargs["strategy"] = "xpu_single"
+
     return Trainer(
         fast_dev_run=1,  # Run 1 training batch and 1 validation batch
         enable_checkpointing=False,
         logger=False,
         enable_progress_bar=False,
+        **trainer_kwargs,
     )
 
 

@@ -88,7 +88,6 @@ class TestACTolicy:
         """Test sample_input generation."""
         sample_input = policy.model.sample_input
 
-        print(sample_input.keys())
         assert isinstance(sample_input, dict)
         assert "state" in sample_input
         assert "images" in sample_input

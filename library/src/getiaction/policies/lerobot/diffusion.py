@@ -52,8 +52,13 @@ class Diffusion(LeRobotExport, Policy, LeRobotFromConfig):  # type: ignore[misc]
         lerobot_policy: The underlying LeRobot DiffusionPolicy instance.
             Created during setup() and used for forward passes.
 
-    Example:
-        Basic usage with Python API:
+    Examples:
+        Load pretrained model from HuggingFace Hub:
+
+        >>> from getiaction.policies.lerobot import Diffusion
+        >>> policy = Diffusion.from_pretrained("lerobot/diffusion_pusht")
+
+        Train from scratch with Python API:
 
         >>> from getiaction.policies.lerobot import Diffusion
         >>> from getiaction.data.lerobot import LeRobotDataModule

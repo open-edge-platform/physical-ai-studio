@@ -5,7 +5,6 @@
 
 import dataclasses
 import inspect
-import json
 from enum import Enum, StrEnum
 from os import PathLike
 from pathlib import Path
@@ -15,6 +14,8 @@ import numpy as np
 import openvino
 import torch
 import yaml
+
+from getiaction import __version__
 
 CONFIG_KEY = "model_config"
 
@@ -48,6 +49,7 @@ class Export:
         """
         # Build metadata
         metadata = {
+            "getiaction_version": __version__,
             "policy_class": f"{self.__class__.__module__}.{self.__class__.__name__}",
             "backend": str(backend),
             **metadata_kwargs,
@@ -62,11 +64,6 @@ class Export:
         yaml_path = export_dir / "metadata.yaml"
         with yaml_path.open("w") as f:
             yaml.dump(metadata, f, default_flow_style=False)
-
-        # Also save as JSON for compatibility
-        json_path = export_dir / "metadata.json"
-        with json_path.open("w") as f:
-            json.dump(metadata, f, indent=2)
 
     def _prepare_export_path(self, output_path: PathLike | str, extension: str) -> Path:
         """Prepare export path, handling both directory and file paths.

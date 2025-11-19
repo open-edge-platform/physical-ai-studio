@@ -29,6 +29,20 @@ Note:
     For more information, see: https://github.com/huggingface/lerobot
 
 Examples:
+    Loading pretrained models from HuggingFace Hub:
+
+        >>> from getiaction.policies.lerobot import ACT, Diffusion
+
+        >>> # Load pretrained ACT model
+        >>> act_policy = ACT.from_pretrained(
+        ...     "lerobot/act_aloha_sim_transfer_cube_human"
+        ... )
+
+        >>> # Load pretrained Diffusion model
+        >>> diffusion_policy = Diffusion.from_pretrained(
+        ...     "lerobot/diffusion_pusht"
+        ... )
+
     Using the explicit ACT wrapper with full type safety and autocomplete:
 
         >>> from getiaction.policies.lerobot import ACT

@@ -24,18 +24,19 @@ from getiaction.policies.base import Policy
 from getiaction.policies.lerobot.mixin import LeRobotFromConfig
 
 if TYPE_CHECKING:
-    from lerobot.configs.policies import PreTrainedConfig
     from lerobot.configs.types import PolicyFeature
     from lerobot.policies.pretrained import PreTrainedPolicy
 
     from getiaction.gyms import Gym
 
 if TYPE_CHECKING or module_available("lerobot"):
+    from lerobot.configs.policies import PreTrainedConfig
     from lerobot.datasets.utils import dataset_to_policy_features
     from lerobot.policies.factory import get_policy_class, make_policy_config
 
     LEROBOT_AVAILABLE = True
 else:
+    PreTrainedConfig = None
     dataset_to_policy_features = None
     get_policy_class = None
     make_policy_config = None
@@ -64,7 +65,12 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         - smolvla: Small Vision-Language-Action
 
     Example:
-        >>> # Option 1: Pass config as dict
+        >>> # Option 1: Load pretrained model
+        >>> policy = LeRobotPolicy.from_pretrained(
+        ...     "lerobot/diffusion_pusht"
+        ... )
+
+        >>> # Option 2: Pass config as dict
         >>> policy = LeRobotPolicy(
         ...     policy_name="diffusion",
         ...     input_features=features,
@@ -550,11 +556,21 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         Returns:
             String summarizing the policy instance.
         """
+        # Get policy_name from either attribute or config
+        policy_name = getattr(self, "policy_name", None)
+        if policy_name is None and hasattr(self, "lerobot_policy"):
+            policy_name = self.lerobot_policy.config.type
+
+        # Get stats info
+        stats_info = "None"
+        if hasattr(self, "lerobot_policy") and hasattr(self.lerobot_policy, "dataset_stats"):
+            stats_info = "provided" if self.lerobot_policy.dataset_stats is not None else "None"
+
         return (
             f"{self.__class__.__name__}(\n"
-            f"  policy_name={self.policy_name!r},\n"
+            f"  policy_name={policy_name!r},\n"
             f"  policy_class={self.lerobot_policy.__class__.__name__},\n"
             f"  learning_rate={self.learning_rate},\n"
-            f"  stats={'provided' if self.stats is not None else 'None'}\n"
+            f"  stats={stats_info}\n"
             f")"
         )

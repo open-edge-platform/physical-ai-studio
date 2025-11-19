@@ -1,33 +1,25 @@
-# GitHub Copilot Instructions for Geti Action
+# Geti Action - AI Assistant Rules
 
-> **Note**: This file is synchronized with `.cursorrules`. Both Cursor and VS Code (GitHub Copilot) use these same standards.
+> **Note**: This file is synchronized with `.github/copilot-instructions.md`. Both Cursor and VS Code (GitHub Copilot) use these same standards.
 
 ## Table of Contents
-
-- [GitHub Copilot Instructions for Geti Action](#github-copilot-instructions-for-geti-action)
-  - [Table of Contents](#table-of-contents)
-  - [Project Overview](#project-overview)
-  - [Coding Standards](#coding-standards)
-    - [Python Environment Management](#python-environment-management)
-    - [Python Code](#python-code)
-    - [TypeScript/React Code](#typescriptreact-code)
-    - [General Principles](#general-principles)
-  - [Writing Style](#writing-style)
-  - [Documentation Standards](#documentation-standards)
-  - [Testing Guidelines](#testing-guidelines)
-  - [File Organization](#file-organization)
-  - [Git Commit Messages](#git-commit-messages)
-  - [Pull Request Guidelines](#pull-request-guidelines)
-  - [Performance Considerations](#performance-considerations)
-  - [Security Best Practices](#security-best-practices)
-  - [AI/ML Specific Guidelines](#aiml-specific-guidelines)
-  - [Questions to Consider Before Coding](#questions-to-consider-before-coding)
-  - [When Suggesting Code Changes](#when-suggesting-code-changes)
+- [Project Overview](#project-overview)
+- [Coding Standards](#coding-standards)
+  - [Python Environment](#python-environment-management)
+  - [Python Code](#python-code)
+  - [TypeScript/React](#typescriptreact-code)
+  - [General Principles](#general-principles)
+- [Writing Style](#writing-style)
+- [Documentation Standards](#documentation-standards)
+- [Testing](#testing-guidelines)
+- [File Organization](#file-organization)
+- [Git & PRs](#git-commit-messages)
+- [Performance & Security](#performance-considerations)
+- [AI/ML Guidelines](#aiml-specific-guidelines)
 
 ## Project Overview
 
 Full-stack application with:
-
 - **Backend**: Python FastAPI (`application/backend/`)
 - **Frontend**: React/TypeScript (`application/ui/`)
 - **Library**: Vision-language-action policies (`library/`)
@@ -35,7 +27,6 @@ Full-stack application with:
 ## Coding Standards
 
 ### Python Environment Management
-
 - **Always use `uv`** for package management and virtual environments
 - Use `uv` generated virtual environments (`.venv`)
 - Install with `uv pip install` or `uv sync`
@@ -44,7 +35,6 @@ Full-stack application with:
 - Ensure `.venv` is in `.gitignore`
 
 ### Python Code
-
 - Follow PEP 8
 - Use type hints for all functions
 - Prefer `pathlib.Path` over string paths
@@ -52,7 +42,6 @@ Full-stack application with:
 - Address all ruff warnings
 
 **Docstrings** - Google style format:
-
 ```python
 def function_name(param1: str, param2: int) -> bool:
     """Brief description of function.
@@ -87,7 +76,6 @@ def function_name(param1: str, param2: int) -> bool:
 - Use context managers for resource management
 
 ### TypeScript/React Code
-
 - Use functional components with hooks
 - Prefer named exports over default exports
 - Use TypeScript strict mode with explicit types
@@ -97,7 +85,6 @@ def function_name(param1: str, param2: int) -> bool:
 - Use React Query for data fetching
 
 ### General Principles
-
 - **DRY**: Extract common logic
 - **Single Responsibility**: One clear purpose per function/class
 - **Error Handling**: Handle errors with informative messages
@@ -110,26 +97,22 @@ def function_name(param1: str, param2: int) -> bool:
 Apply to code comments, documentation, commit messages, and PR descriptions:
 
 **Be Concise**
-
 - Remove unnecessary words
 - Avoid repeating ideas
 - Use 10 words instead of 20
 - Prefer short sentences
 
 **Be Direct**
-
 - State the point immediately
 - Use active voice
 - Remove hedging language ("may", "might", "could potentially")
 
 **Use Simple Language**
-
 - Choose simple words over complex ones
 - Avoid jargon unless necessary
 - Break complex sentences into shorter ones
 
 **Sound Natural**
-
 - Write as if explaining to a colleague
 - Avoid formulaic transitions ("Furthermore", "Moreover", "Additionally")
 - Don't use numbered lists when a paragraph works
@@ -137,7 +120,6 @@ Apply to code comments, documentation, commit messages, and PR descriptions:
 - Vary sentence length naturally
 
 **Academic But Accessible**
-
 - Use technical terms when needed, explain domain-specific ones
 - Prefer clarity over impressive vocabulary
 
@@ -154,24 +136,20 @@ Apply to code comments, documentation, commit messages, and PR descriptions:
 ## Documentation Standards
 
 **Code Comments**
-
 - Write self-documenting code
 - Add comments only for the "why", not the "what"
 - Update comments when code changes
 
 **README Files**
-
 - Each major component needs a README.md
 - Include: purpose, installation, usage examples, configuration, troubleshooting
 
 **API Documentation**
-
 - Document endpoints with OpenAPI/Swagger
 - Include request/response examples
 - Document error responses and status codes
 
 **Inline Documentation**
-
 - Use JSDoc for TypeScript/JavaScript
 - Use docstrings for Python
 - Document parameters, return values, exceptions
@@ -180,7 +158,6 @@ Apply to code comments, documentation, commit messages, and PR descriptions:
 ## Testing Guidelines
 
 **Python Tests**
-
 - Use `pytest` with `uv` (e.g., `uv run pytest`)
 - Place in `tests/unit/` and `tests/integration/`
 - Name files: `test_<module_name>.py`
@@ -190,7 +167,6 @@ Apply to code comments, documentation, commit messages, and PR descriptions:
 - Mock external dependencies
 
 **TypeScript Tests**
-
 - Use Vitest for unit tests
 - Use Playwright for E2E tests
 - Name files: `<component>.test.ts(x)`
@@ -200,7 +176,6 @@ Apply to code comments, documentation, commit messages, and PR descriptions:
 ## File Organization
 
 **Backend**
-
 ```
 application/backend/src/
 ├── api/          # API routes and endpoints
@@ -213,7 +188,6 @@ application/backend/src/
 ```
 
 **Frontend**
-
 ```
 application/ui/src/
 ├── api/          # API client and hooks
@@ -224,7 +198,6 @@ application/ui/src/
 ```
 
 **Library**
-
 ```
 library/src/getiaction/
 ├── configs/      # Configuration management
@@ -235,9 +208,7 @@ library/src/getiaction/
 ```
 
 ## Git Commit Messages
-
 Use conventional commits:
-
 - `feat:` - new features
 - `fix:` - bug fixes
 - `docs:` - documentation changes
@@ -248,7 +219,6 @@ Use conventional commits:
 Write clear, concise messages. Reference issue numbers.
 
 ## Pull Request Guidelines
-
 - Use the PR template (`.github/pull_request_template.md`)
 - Fill out: Description, Type of Change, Related Issues, Changes Made, Examples, Breaking Changes
 - Provide usage examples and before/after comparisons
@@ -256,7 +226,6 @@ Write clear, concise messages. Reference issue numbers.
 - **Tip**: Draft PRs in `tmp_PR_TEMPLATE_<branch-name>.md` for preview
 
 ## Performance Considerations
-
 - Lazy load heavy dependencies
 - Use async/await for I/O
 - Implement caching
@@ -265,7 +234,6 @@ Write clear, concise messages. Reference issue numbers.
 - Consider memory usage for ML models
 
 ## Security Best Practices
-
 - Validate and sanitize inputs
 - Use parameterized queries
 - Implement authentication and authorization
@@ -274,7 +242,6 @@ Write clear, concise messages. Reference issue numbers.
 - Follow OWASP guidelines
 
 ## AI/ML Specific Guidelines
-
 - Document model architectures and hyperparameters
 - Version control training configurations
 - Log training metrics and artifacts
@@ -283,7 +250,6 @@ Write clear, concise messages. Reference issue numbers.
 - Document model limitations and assumptions
 
 ## Questions to Consider Before Coding
-
 1. Does this align with project architecture?
 2. Can I reuse existing utilities/components?
 3. How will this be tested?
@@ -293,7 +259,6 @@ Write clear, concise messages. Reference issue numbers.
 7. Security considerations?
 
 ## When Suggesting Code Changes
-
 - Explain reasoning
 - Consider backward compatibility
 - Highlight breaking changes
