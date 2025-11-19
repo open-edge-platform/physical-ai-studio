@@ -12,6 +12,7 @@ from getiaction.data.observation import Observation
 
 if TYPE_CHECKING:
     import torch
+    from lerobot.configs.policies import PreTrainedConfig
 
 
 class DataFormat(StrEnum):
@@ -253,6 +254,58 @@ def _adjust_action_is_pad(
     return action_is_pad[:, :expected_horizon]
 
 
+def _apply_policy_adjustments(
+    result: dict[str, Any],
+    policy_config: PreTrainedConfig,
+) -> dict[str, Any]:
+    """Apply policy-specific adjustments to the result dictionary.
+
+    Handles:
+    - Temporal dimension for observation.state
+    - Action horizon adjustment
+    - Action padding mask adjustment
+
+    Args:
+        result: Dictionary in LeRobot format
+        policy_config: Policy configuration for dimension adjustments
+
+    Returns:
+        Adjusted dictionary matching policy expectations
+    """
+    import torch  # noqa: PLC0415
+
+    # Handle temporal dimension for observation.state
+    # LeRobot expects (batch, n_obs_steps, state_dim)
+    if "observation.state" in result:
+        state = result["observation.state"]
+        if isinstance(state, torch.Tensor) and state.ndim == 2:  # noqa: PLR2004
+            # Add temporal dimension: (batch, state_dim) -> (batch, n_obs_steps, state_dim)
+            # For n_obs_steps=1, shape becomes (batch, 1, state_dim)
+            state = state.unsqueeze(1)
+            result["observation.state"] = state
+
+    # Handle action horizon adjustment
+    if "action" in result and hasattr(policy_config, "horizon"):
+        action = result["action"]
+        if isinstance(action, torch.Tensor) and action.ndim == 3:  # noqa: PLR2004
+            batch_size, action_horizon, _action_dim = action.shape
+            expected_horizon = policy_config.horizon  # type: ignore[attr-defined]
+
+            if action_horizon != expected_horizon:
+                # Adjust action horizon
+                result["action"] = _adjust_action_horizon(action, expected_horizon)
+
+                # Adjust action_is_pad if it exists
+                if "action_is_pad" in result:
+                    result["action_is_pad"] = _adjust_action_is_pad(
+                        result["action_is_pad"],
+                        expected_horizon,
+                        batch_size,
+                    )
+
+    return result
+
+
 def _flatten_collated_dict_to_lerobot(collated_dict: dict[str, Any]) -> dict[str, Any]:  # noqa: C901, PLR0912
     """Flatten a collated dict (from _collate_observations) to LeRobot format.
 
@@ -362,7 +415,7 @@ class FormatConverter:
     @staticmethod
     def to_lerobot_dict(
         batch: dict[str, Any] | Observation,
-        policy_config: Any | None = None,
+        policy_config: PreTrainedConfig | None = None,
     ) -> dict[str, Any]:
         """Convert batch to LeRobot dictionary format.
 
@@ -395,8 +448,6 @@ class FormatConverter:
             >>> # With policy config (handles temporal dims and horizons)
             >>> lerobot_dict = FormatConverter.to_lerobot_dict(obs, policy_config=policy.config)
         """
-        import torch  # noqa: PLC0415
-
         # Step 1: Convert to base LeRobot dict format
         if isinstance(batch, Observation):
             result = _convert_observation_to_lerobot_dict(batch)
@@ -414,34 +465,7 @@ class FormatConverter:
 
         # Step 2: Apply policy-specific adjustments if config provided
         if policy_config is not None and isinstance(result, dict):
-            # Handle temporal dimension for observation.state
-            # LeRobot expects (batch, n_obs_steps, state_dim)
-            if "observation.state" in result:
-                state = result["observation.state"]
-                if isinstance(state, torch.Tensor) and state.ndim == 2:  # noqa: PLR2004
-                    # Add temporal dimension: (batch, state_dim) -> (batch, n_obs_steps, state_dim)
-                    # For n_obs_steps=1, shape becomes (batch, 1, state_dim)
-                    state = state.unsqueeze(1)
-                    result["observation.state"] = state
-
-            # Handle action horizon adjustment
-            if "action" in result and hasattr(policy_config, "horizon"):
-                action = result["action"]
-                if isinstance(action, torch.Tensor) and action.ndim == 3:  # noqa: PLR2004
-                    batch_size, action_horizon, action_dim = action.shape
-                    expected_horizon = policy_config.horizon
-
-                    if action_horizon != expected_horizon:
-                        # Adjust action horizon
-                        result["action"] = _adjust_action_horizon(action, expected_horizon)
-
-                        # Adjust action_is_pad if it exists
-                        if "action_is_pad" in result:
-                            result["action_is_pad"] = _adjust_action_is_pad(
-                                result["action_is_pad"],
-                                expected_horizon,
-                                batch_size,
-                            )
+            result = _apply_policy_adjustments(result, policy_config)
 
         return result
 
