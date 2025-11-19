@@ -20,8 +20,6 @@ from getiaction.policies.base import Policy
 from getiaction.policies.lerobot.mixin import LeRobotExport, LeRobotFromConfig
 
 if TYPE_CHECKING:
-    from torch import nn
-
     from getiaction.gyms import Gym
 
 if TYPE_CHECKING or module_available("lerobot"):

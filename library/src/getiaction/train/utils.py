@@ -55,11 +55,11 @@ def reformat_dataset_to_match_policy(policy: Policy, datamodule: DataModule) -> 
     if isinstance(datamodule.train_dataset, _LeRobotDatasetAdapter):
         delta_timestamps = {}
         lerobot_dataset = datamodule.train_dataset
-       
+
         # Get the LeRobot policy model for delta indices
         # For policies with lerobot_policy attribute, use that; otherwise use policy.model
         lerobot_model = getattr(policy, "lerobot_policy", None) or policy.model
-        
+
         for key in lerobot_dataset.raw_features:
             reward_delta_indices = _get_delta_indices(lerobot_model, "reward_delta_indices")
             if key == "next.reward" and reward_delta_indices is not None:

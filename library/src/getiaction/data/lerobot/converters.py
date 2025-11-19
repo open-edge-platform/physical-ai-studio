@@ -351,7 +351,7 @@ class FormatConverter:
 
         >>> # Convert with policy config for horizon/temporal handling
         >>> lerobot_batch = FormatConverter.to_lerobot_dict(
-        ...     observation, 
+        ...     observation,
         ...     policy_config=policy.config
         ... )
 
