@@ -149,7 +149,7 @@ class Observation:
         if f"_{field}_keys" in data:
             return data[f"_{field}_keys"]
 
-        return [d for d in data if d.startswith(f"{field}.")]
+        return [key for key in data if key.startswith(f"{field}.")]
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Observation:
