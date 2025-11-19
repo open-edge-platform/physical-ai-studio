@@ -203,7 +203,8 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
                     depending on the number of image features configured.
 
         Note:
-            The batch dimension (first dimension) is set to 1 for both tensors.
+            The batch dimension (first dimension) is set to 1 for all tensors.
+            The tensors are created on the same device as the model's parameters.
 
         Raises:
             RuntimeError: If input features are not configured.
@@ -214,14 +215,16 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
             msg = "Robot state feature is not defined in the model configuration."
             raise RuntimeError(msg)
 
-        sample_input = {STATE: torch.randn(1, *state_feature.shape)}
+        device = next(self._model.parameters()).device
+
+        sample_input = {STATE: torch.randn(1, *state_feature.shape, device=device)}
 
         if len(self._config.image_features) == 1:
             visual_feature = next(iter(self._config.image_features.values()))
-            sample_input[IMAGES] = torch.randn(1, *visual_feature.shape)
+            sample_input[IMAGES] = torch.randn(1, *visual_feature.shape, device=device)
         else:
             for key, visual_feature in self._config.image_features.items():
-                sample_input[IMAGES + "." + key] = torch.randn(1, *visual_feature.shape)
+                sample_input[IMAGES + "." + key] = torch.randn(1, *visual_feature.shape, device=device)
 
         return sample_input
 

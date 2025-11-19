@@ -124,6 +124,17 @@ class TestObservationToDict:
         for k in Observation.get_flattened_keys(obs_dict, field=IMAGES):
             assert k in obs_dict
 
+    def test_get_flattened_keys_fallback(self):
+        data = {
+            "images.top": torch.rand(3, 224, 224),
+            "images.wrist": torch.rand(3, 224, 224),
+        }
+
+        keys = Observation.get_flattened_keys(data, field="images")
+
+        assert "images.top" in keys
+        assert "images.wrist" in keys
+
     def test_to_dict_includes_none_fields(self):
         """Test to_dict includes None fields."""
         obs = Observation(action=torch.tensor([1.0]))

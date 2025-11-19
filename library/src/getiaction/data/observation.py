@@ -122,9 +122,10 @@ class Observation:
     def get_flattened_keys(data: dict[str, Any], field: Observation.FieldName | str) -> list[str]:
         """Retrieve all keys associated with a specific component from the data dictionary.
 
-        This method checks for component keys in two ways:
+        This method checks for component keys in the following ways:
         1. Directly if the component exists as a key in the data dictionary
         2. Through a cached list of keys stored with the pattern "_{component}_keys"
+        3. As a fallback, by searching for keys that start with "{component}."
         Args:
             data: Dictionary containing observation data and component keys
             field: The field identifier to search for, either as an
@@ -148,7 +149,7 @@ class Observation:
         if f"_{field}_keys" in data:
             return data[f"_{field}_keys"]
 
-        return []
+        return [key for key in data if key.startswith(f"{field}.")]
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Observation:
