@@ -6,9 +6,8 @@ from pathlib import Path
 
 import torch
 from huggingface_hub.errors import RepositoryNotFoundError
-from lerobot.constants import HF_LEROBOT_HOME
 from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
-from lerobot.datasets.utils import get_episode_data_index
+from lerobot.utils.constants import HF_LEROBOT_HOME
 
 from schemas import CameraConfig, Dataset, Episode, LeRobotDatasetInfo, ProjectConfig
 from storage.storage import GETI_ACTION_DATASETS
@@ -42,10 +41,8 @@ def get_dataset_episodes(repo_id: str, root: str | None) -> list[Episode]:
 
 def get_episode_actions(dataset: LeRobotDataset, episode: dict) -> torch.Tensor:
     """Get episode actions tensor from specific episode."""
-    episode_index = episode["episode_index"]
-    episode_data_index = get_episode_data_index(dataset.meta.episodes)
-    from_idx = episode_data_index["from"][episode_index].item()
-    to_idx = episode_data_index["to"][episode_index].item()
+    from_idx = episode["dataset_from_index"]
+    to_idx = episode["dataset_to_index"]
     actions = dataset.hf_dataset["action"][from_idx:to_idx]
     return torch.stack(actions)
 
