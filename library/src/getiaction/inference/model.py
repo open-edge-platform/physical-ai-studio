@@ -278,8 +278,8 @@ class InferenceModel:
         mapping = {}
 
         # Dummy matching for exact matches
-        for key in expected_inputs:
-            if key in obs_dict:
+        for key in obs_dict:
+            if key in expected_inputs:
                 mapping[key] = key
 
         if len(mapping) == len(expected_inputs):
