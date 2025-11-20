@@ -563,6 +563,256 @@ class TestObservationDeviceTransfer:
         assert obs is not obs_moved
 
 
+class TestObservationNumpyTensorConversion:
+    """Test Observation.to_numpy() and to_torch() conversion methods."""
+
+    def test_to_numpy_single_tensor(self):
+        """Test converting single torch tensor to numpy."""
+        obs = Observation(action=torch.tensor([1.0, 2.0]))
+        obs_np = obs.to_numpy()
+
+        assert isinstance(obs_np.action, np.ndarray)
+        assert np.array_equal(obs_np.action, np.array([1.0, 2.0]))
+
+    def test_to_numpy_multiple_tensors(self):
+        """Test converting multiple torch tensors to numpy."""
+        obs = Observation(
+            action=torch.tensor([1.0, 2.0]),
+            state=torch.tensor([0.5, 0.6]),
+        )
+        obs_np = obs.to_numpy()
+
+        assert isinstance(obs_np.action, np.ndarray)
+        assert isinstance(obs_np.state, np.ndarray)
+        assert np.allclose(obs_np.action, np.array([1.0, 2.0]))
+        assert np.allclose(obs_np.state, np.array([0.5, 0.6]))
+
+    def test_to_numpy_nested_dict(self):
+        """Test converting nested dict of tensors to numpy."""
+        obs = Observation(
+            action=torch.tensor([1.0]),
+            images={"top": torch.rand(3, 64, 64), "wrist": torch.rand(3, 32, 32)},
+        )
+        obs_np = obs.to_numpy()
+
+        assert isinstance(obs_np.images["top"], np.ndarray)
+        assert isinstance(obs_np.images["wrist"], np.ndarray)
+        assert obs_np.images["top"].shape == (3, 64, 64)
+        assert obs_np.images["wrist"].shape == (3, 32, 32)
+
+    def test_to_numpy_preserves_existing_numpy(self):
+        """Test that existing numpy arrays are preserved."""
+        obs = Observation(
+            action=torch.tensor([1.0, 2.0]),
+            state=np.array([0.5, 0.6]),
+        )
+        obs_np = obs.to_numpy()
+
+        assert isinstance(obs_np.action, np.ndarray)
+        assert isinstance(obs_np.state, np.ndarray)
+        # Both should be numpy now
+        assert np.array_equal(obs_np.state, np.array([0.5, 0.6]))
+
+    def test_to_numpy_preserves_none(self):
+        """Test that None fields remain None."""
+        obs = Observation(action=torch.tensor([1.0]), state=None, images=None)
+        obs_np = obs.to_numpy()
+
+        assert isinstance(obs_np.action, np.ndarray)
+        assert obs_np.state is None
+        assert obs_np.images is None
+
+    def test_to_numpy_preserves_shapes(self):
+        """Test that shapes are preserved during conversion."""
+        action_shape = (8, 2)
+        state_shape = (8, 10)
+
+        obs = Observation(
+            action=torch.randn(action_shape),
+            state=torch.randn(state_shape),
+        )
+        obs_np = obs.to_numpy()
+
+        assert obs_np.action.shape == action_shape
+        assert obs_np.state.shape == state_shape
+
+    def test_to_numpy_immutability(self):
+        """Test that original observation is not modified."""
+        obs = Observation(action=torch.tensor([1.0, 2.0]))
+        obs_np = obs.to_numpy()
+
+        assert isinstance(obs.action, torch.Tensor)
+        assert isinstance(obs_np.action, np.ndarray)
+        assert obs is not obs_np
+
+    def test_to_torch_single_array(self):
+        """Test converting single numpy array to torch."""
+        obs = Observation(action=np.array([1.0, 2.0]))
+        obs_torch = obs.to_torch()
+
+        assert isinstance(obs_torch.action, torch.Tensor)
+        assert torch.equal(obs_torch.action, torch.tensor([1.0, 2.0]))
+
+    def test_to_torch_multiple_arrays(self):
+        """Test converting multiple numpy arrays to torch."""
+        obs = Observation(
+            action=np.array([1.0, 2.0]),
+            state=np.array([0.5, 0.6]),
+        )
+        obs_torch = obs.to_torch()
+
+        assert isinstance(obs_torch.action, torch.Tensor)
+        assert isinstance(obs_torch.state, torch.Tensor)
+        assert torch.allclose(obs_torch.action, torch.tensor([1.0, 2.0], dtype=obs_torch.action.dtype))
+        assert torch.allclose(obs_torch.state, torch.tensor([0.5, 0.6], dtype=obs_torch.state.dtype))
+
+    def test_to_torch_nested_dict(self):
+        """Test converting nested dict of arrays to torch."""
+        obs = Observation(
+            action=np.array([1.0]),
+            images={"top": np.random.rand(3, 64, 64), "wrist": np.random.rand(3, 32, 32)},
+        )
+        obs_torch = obs.to_torch()
+
+        assert isinstance(obs_torch.images["top"], torch.Tensor)
+        assert isinstance(obs_torch.images["wrist"], torch.Tensor)
+        assert obs_torch.images["top"].shape == (3, 64, 64)
+        assert obs_torch.images["wrist"].shape == (3, 32, 32)
+
+    def test_to_torch_preserves_existing_torch(self):
+        """Test that existing torch tensors are preserved."""
+        obs = Observation(
+            action=np.array([1.0, 2.0]),
+            state=torch.tensor([0.5, 0.6]),
+        )
+        obs_torch = obs.to_torch()
+
+        assert isinstance(obs_torch.action, torch.Tensor)
+        assert isinstance(obs_torch.state, torch.Tensor)
+        # Both should be torch now
+        assert torch.equal(obs_torch.state, torch.tensor([0.5, 0.6]))
+
+    def test_to_torch_preserves_none(self):
+        """Test that None fields remain None."""
+        obs = Observation(action=np.array([1.0]), state=None, images=None)
+        obs_torch = obs.to_torch()
+
+        assert isinstance(obs_torch.action, torch.Tensor)
+        assert obs_torch.state is None
+        assert obs_torch.images is None
+
+    def test_to_torch_preserves_shapes(self):
+        """Test that shapes are preserved during conversion."""
+        action_shape = (8, 2)
+        state_shape = (8, 10)
+
+        obs = Observation(
+            action=np.random.randn(*action_shape),
+            state=np.random.randn(*state_shape),
+        )
+        obs_torch = obs.to_torch()
+
+        assert obs_torch.action.shape == action_shape
+        assert obs_torch.state.shape == state_shape
+
+    def test_to_torch_immutability(self):
+        """Test that original observation is not modified."""
+        obs = Observation(action=np.array([1.0, 2.0]))
+        obs_torch = obs.to_torch()
+
+        assert isinstance(obs.action, np.ndarray)
+        assert isinstance(obs_torch.action, torch.Tensor)
+        assert obs is not obs_torch
+
+    def test_roundtrip_torch_numpy_torch(self):
+        """Test torch → numpy → torch roundtrip."""
+        original = Observation(
+            action=torch.tensor([1.0, 2.0]),
+            state=torch.tensor([0.5, 0.6]),
+            images={"top": torch.rand(3, 64, 64)},
+        )
+
+        # Convert to numpy and back
+        obs_np = original.to_numpy()
+        obs_back = obs_np.to_torch()
+
+        # Verify types
+        assert isinstance(obs_np.action, np.ndarray)
+        assert isinstance(obs_back.action, torch.Tensor)
+
+        # Verify values (approximately equal for floating point)
+        assert torch.allclose(obs_back.action, original.action)
+        assert torch.allclose(obs_back.state, original.state)
+        assert torch.allclose(obs_back.images["top"], original.images["top"])
+
+    def test_roundtrip_numpy_torch_numpy(self):
+        """Test numpy → torch → numpy roundtrip."""
+        original = Observation(
+            action=np.array([1.0, 2.0]),
+            state=np.array([0.5, 0.6]),
+            images={"top": np.random.rand(3, 64, 64)},
+        )
+
+        # Convert to torch and back
+        obs_torch = original.to_torch()
+        obs_back = obs_torch.to_numpy()
+
+        # Verify types
+        assert isinstance(obs_torch.action, torch.Tensor)
+        assert isinstance(obs_back.action, np.ndarray)
+
+        # Verify values
+        assert np.allclose(obs_back.action, original.action)
+        assert np.allclose(obs_back.state, original.state)
+        assert np.allclose(obs_back.images["top"], original.images["top"])
+
+    def test_to_numpy_with_batched_observation(self):
+        """Test to_numpy with batched observations."""
+        batch_size = 8
+        obs = Observation(
+            action=torch.randn(batch_size, 2),
+            state=torch.randn(batch_size, 10),
+            images={"top": torch.rand(batch_size, 3, 224, 224)},
+        )
+        obs_np = obs.to_numpy()
+
+        assert obs_np.action.shape == (batch_size, 2)
+        assert obs_np.state.shape == (batch_size, 10)
+        assert obs_np.images["top"].shape == (batch_size, 3, 224, 224)
+
+    def test_to_torch_with_batched_observation(self):
+        """Test to_torch with batched observations."""
+        batch_size = 8
+        obs = Observation(
+            action=np.random.randn(batch_size, 2),
+            state=np.random.randn(batch_size, 10),
+            images={"top": np.random.rand(batch_size, 3, 224, 224)},
+        )
+        obs_torch = obs.to_torch()
+
+        assert obs_torch.action.shape == (batch_size, 2)
+        assert obs_torch.state.shape == (batch_size, 10)
+        assert obs_torch.images["top"].shape == (batch_size, 3, 224, 224)
+
+    def test_conversion_preserves_non_tensor_fields(self):
+        """Test that non-tensor/array fields are preserved during conversion."""
+        obs = Observation(
+            action=torch.tensor([1.0]),
+            next_success=True,
+            info={"key": "value"},
+        )
+
+        # To numpy
+        obs_np = obs.to_numpy()
+        assert obs_np.next_success is True
+        assert obs_np.info["key"] == "value"
+
+        # To torch
+        obs_torch = obs_np.to_torch()
+        assert obs_torch.next_success is True
+        assert obs_torch.info["key"] == "value"
+
+
 class TestGymInValidation:
     """Tests for Gym usage in validation (no wrapper needed)."""
 
