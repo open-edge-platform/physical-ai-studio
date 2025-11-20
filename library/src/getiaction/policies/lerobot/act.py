@@ -318,8 +318,8 @@ class ACT(LeRobotExport, Policy, LeRobotFromConfig):  # type: ignore[misc]
         policy = _LeRobotACTPolicy(lerobot_config)
         self.add_module("_lerobot_policy", policy)
 
-        # LeRobot ACT policy itself is an nn.Module, use it directly as model
-        self.model = self._lerobot_policy
+        # Note: self.model property in LeRobotExport mixin returns self._lerobot_policy
+        # No need to set it explicitly here
 
         # Create preprocessor/postprocessor for normalization
         self._preprocessor, self._postprocessor = make_pre_post_processors(lerobot_config, dataset_stats=dataset_stats)
