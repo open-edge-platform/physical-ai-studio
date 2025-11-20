@@ -20,6 +20,8 @@ from getiaction.policies.base import Policy
 from getiaction.policies.lerobot.mixin import LeRobotExport, LeRobotFromConfig
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from getiaction.gyms import Gym
 
 if TYPE_CHECKING or module_available("lerobot"):
@@ -297,7 +299,7 @@ class Diffusion(LeRobotExport, Policy, LeRobotFromConfig):  # type: ignore[misc]
         if hasattr(self, "_lerobot_policy") and self._lerobot_policy is not None:
             return  # Already initialized
 
-        datamodule = self.trainer.datamodule
+        datamodule = self.trainer.datamodule  # type: ignore[attr-defined]
         train_dataset = datamodule.train_dataset
 
         # Get the underlying LeRobot dataset - handle both adapter and raw dataset
@@ -329,37 +331,6 @@ class Diffusion(LeRobotExport, Policy, LeRobotFromConfig):  # type: ignore[misc]
         # Create preprocessor/postprocessor for normalization
         self._preprocessor, self._postprocessor = make_pre_post_processors(lerobot_config, dataset_stats=dataset_stats)
 
-    def forward(
-        self,
-        batch: Observation | dict[str, torch.Tensor],
-    ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        """Forward pass for LeRobot Diffusion policy.
-
-        The return value depends on the model's training mode:
-        - In training mode: Returns (loss, loss_dict) from LeRobot's forward method
-        - In evaluation mode: Returns action predictions via select_action method
-
-        Args:
-            batch (Observation | dict[str, torch.Tensor]): Input batch of observations.
-
-        Returns:
-            torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]: In training mode,
-                returns tuple of (loss, loss_dict). In eval mode, returns selected actions tensor.
-        """
-        # Convert to LeRobot dict format if needed
-        batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
-
-        # Apply preprocessing
-        batch_dict = self._preprocessor(batch_dict)
-
-        if self.training:
-            # During training, return loss information for backpropagation
-            loss, loss_dict = self.lerobot_policy(batch_dict)
-            return loss, loss_dict or {}
-
-        # During evaluation, return action predictions
-        return self.select_action(batch)
-
     def configure_optimizers(self) -> torch.optim.Optimizer:
         """Configure optimizer using LeRobot's parameters.
 
@@ -368,21 +339,69 @@ class Diffusion(LeRobotExport, Policy, LeRobotFromConfig):  # type: ignore[misc]
         """
         return torch.optim.Adam(self.lerobot_policy.get_optim_params(), lr=self.learning_rate)
 
-    def training_step(self, batch: Observation | dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
-        """Training step uses LeRobot's loss computation.
+    def forward(  # type: ignore[override]
+        self,
+        batch: dict[str, torch.Tensor],
+    ) -> torch.Tensor | tuple[torch.Tensor, None]:
+        """Forward pass for Diffusion policy.
+
+        Handles both training and inference modes:
+        - Training: Returns (loss, None) for backpropagation
+        - Inference: Returns denormalized actions for prediction/export
 
         Args:
-            batch (Observation | dict[str, torch.Tensor]): Input batch of observations.
-            batch_idx (int): Index of the batch.
+            batch: Input batch.
+                - Training: LeRobot format with "action" key
+                - Inference: Observations with temporal dimension
+                    - observation.state: (batch, n_obs_steps, state_dim)
+                    - observation.image: (batch, n_obs_steps, C, H, W)
 
         Returns:
-            The total loss for the batch.
+            - Training mode: Tuple of (loss, None)
+            - Inference mode: Denormalized action tensor (batch, n_action_steps, action_dim)
         """
-        del batch_idx  # Unused argument
+        if self.training:
+            # Training mode: Use LeRobot policy's forward() which computes loss
+            # Batch must be in LeRobot format (set data_format="lerobot" in datamodule)
+            # Diffusion returns (loss, None) unlike ACT which returns (loss, loss_dict)
+            total_loss, loss_dict = self.lerobot_policy(batch)
+            return total_loss, loss_dict
 
-        total_loss, loss_dict = self(batch)
-        for key, value in loss_dict.items():
-            self.log(f"train/{key}", value, prog_bar=False)
+        # Inference mode: Generate actions
+        # Step 1: Normalize inputs
+        normalized_batch = self._preprocessor(batch)
+
+        # Step 2: Stack images if policy uses multiple camera views
+        # Diffusion expects observation.images key with shape (B, n_obs_steps, num_cameras, C, H, W)
+        if self._lerobot_policy.config.image_features:
+            normalized_batch = dict(normalized_batch)  # shallow copy
+            image_tensors = [normalized_batch[key] for key in self._lerobot_policy.config.image_features]
+            # Stack along camera dimension: (B, n_obs_steps, C, H, W) -> (B, n_obs_steps, num_cameras, C, H, W)
+            normalized_batch["observation.images"] = torch.stack(image_tensors, dim=2)
+
+        # Step 3: Get predictions directly from diffusion model (bypass queue mechanism)
+        normalized_actions = self._lerobot_policy.diffusion.generate_actions(normalized_batch)
+
+        # Step 4: Denormalize and return
+        return self._postprocessor(normalized_actions)
+
+    def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+        """Execute one training step.
+
+        Args:
+            batch: Training batch (dict with keys like "observation.images.top", "action").
+                   Must be in LeRobot format - configure with data_format="lerobot" in datamodule.
+            batch_idx: Index of the current batch.
+
+        Returns:
+            Total loss for this batch.
+        """
+        del batch_idx
+
+        # Forward pass computes loss in training mode
+        total_loss, _loss_dict = self(batch)
+
+        # Log loss
         self.log("train/loss", total_loss, prog_bar=True)
         return total_loss
 
@@ -443,3 +462,49 @@ class Diffusion(LeRobotExport, Policy, LeRobotFromConfig):  # type: ignore[misc]
     def reset(self) -> None:
         """Reset the policy state."""
         self.lerobot_policy.reset()
+
+    def to_onnx(  # type: ignore[override]
+        self,
+        output_path: Path,
+        input_sample: dict[str, torch.Tensor] | None = None,
+        **export_kwargs: dict[str, Any],
+    ) -> None:
+        """Export to ONNX with fast tracing and proper device handling.
+
+        Override to:
+        1. Temporarily set num_inference_steps=1 for faster tracing
+        2. Move diffusion scheduler tensors to CPU (they're not nn.Parameters)
+
+        Args:
+            output_path: Directory to save the exported model.
+            input_sample: Sample input (unused, generated automatically).
+            **export_kwargs: Additional export arguments.
+        """
+        # Temporarily reduce inference steps for fast export tracing
+        original_num_inference_steps = self._lerobot_policy.diffusion.num_inference_steps
+        self._lerobot_policy.diffusion.num_inference_steps = 1
+
+        # Move scheduler tensors to CPU explicitly (they're not nn.Parameters)
+        # Do this BEFORE calling super() to avoid device mismatch during tracing
+        scheduler = self._lerobot_policy.diffusion.noise_scheduler
+        scheduler_tensor_attrs = {}
+        for attr_name in dir(scheduler):
+            if not attr_name.startswith("_"):
+                attr = getattr(scheduler, attr_name, None)
+                if isinstance(attr, torch.Tensor):
+                    scheduler_tensor_attrs[attr_name] = attr.device
+                    # Move to CPU immediately
+                    if attr.device.type != "cpu":
+                        setattr(scheduler, attr_name, attr.cpu())
+
+        try:
+            # Call parent to_onnx (will move model to CPU)
+            super().to_onnx(output_path, input_sample, **export_kwargs)
+        finally:
+            # Restore original settings
+            self._lerobot_policy.diffusion.num_inference_steps = original_num_inference_steps
+            # Restore scheduler tensor devices
+            for attr_name, original_device in scheduler_tensor_attrs.items():
+                attr = getattr(scheduler, attr_name)
+                if attr.device != original_device:
+                    setattr(scheduler, attr_name, attr.to(original_device))
