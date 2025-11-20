@@ -17,10 +17,13 @@ from typing import TYPE_CHECKING, Any, Self
 
 import openvino
 import torch
+import yaml
 
+from getiaction import __version__
 from getiaction.config.mixin import FromConfig
+from getiaction.data.transforms import replace_center_crop_with_onnx_compatible
 from getiaction.export import Export, ExportBackend
-from getiaction.export.mixin_export import _postprocess_openvino_model
+from getiaction.export.mixin_export import _postprocess_openvino_model, _serialize_model_config
 
 if TYPE_CHECKING:
     from os import PathLike
@@ -437,11 +440,58 @@ class LeRobotExport(Export):
     if TYPE_CHECKING:
         # Tell type checkers that self will have these attributes/methods from the host class
         lerobot_policy: Any
+        _preprocessor: Any  # PolicyProcessorPipeline for normalization
+        _postprocessor: Any  # PolicyProcessorPipeline for denormalization
+        training: bool  # PyTorch training flag
         eval: Any  # Callable[[], Self]
         _prepare_export_path: Any  # Callable[[PathLike | str, str], Path]
         _get_export_extra_args: Any  # Callable[[ExportBackend], dict[str, Any]]
         _get_forward_arg_name: Any  # Callable[[], str]
-        _create_metadata: Any  # Callable[[Path, ExportBackend, ...], None]
+
+    def forward(  # type: ignore[override]
+        self,
+        batch: dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        """Generic forward for export/inference (eval mode only).
+
+        This method provides self-contained export behavior:
+        1. Accepts un-normalized inputs (raw observations)
+        2. Normalizes using preprocessor pipeline
+        3. Calls lerobot_policy.predict_action_chunk() for predictions
+        4. Denormalizes using postprocessor pipeline
+        5. Returns ready-to-use actions
+
+        Override this method in child classes if the policy needs custom export logic
+        (e.g., Diffusion bypasses queue mechanism).
+
+        Args:
+            batch: Input batch in LeRobot dict format with un-normalized values.
+                Keys like "observation.state", "observation.image".
+
+        Returns:
+            Denormalized action tensor ready for direct use.
+                Shape: (batch, chunk_size, action_dim) for chunked policies
+                       (batch, action_dim) for non-chunked policies
+
+        Raises:
+            RuntimeError: If called in training mode. Use training_step() instead.
+
+        Note:
+            This is the entry point for ONNX/OpenVINO/TorchScript export.
+            The full pipeline (preprocess → predict → postprocess) is self-contained.
+        """
+        if self.training:
+            msg = "forward() should not be called in training mode. Use training_step() instead."
+            raise RuntimeError(msg)
+
+        # Step 1: Normalize inputs
+        normalized_batch = self._preprocessor(batch)
+
+        # Step 2: Get predictions from LeRobot policy
+        normalized_actions = self.lerobot_policy.predict_action_chunk(normalized_batch)
+
+        # Step 3: Denormalize and return
+        return self._postprocessor(normalized_actions)
 
     @property
     def metadata_extra(self) -> dict[str, Any]:
@@ -459,35 +509,189 @@ class LeRobotExport(Export):
     def sample_input(self) -> dict[str, torch.Tensor]:
         """Generate sample input for model export.
 
-        Creates sample tensors matching the format expected by LeRobot policies.
-        For policies with n_obs_steps > 1, includes temporal dimension.
+        Creates un-normalized sample tensors matching the format expected by LeRobot policies.
+        The forward() method will handle normalization internally, making the exported model
+        self-contained and able to accept raw (un-normalized) inputs from InferenceModel.
+
+        This ensures:
+        1. Exported models are standalone (no external normalization needed)
+        2. InferenceModel can provide raw observations
+        3. Forward() handles all preprocessing during export
 
         Override this method if your policy requires custom input format.
 
         Returns:
-            Dictionary containing sample tensors for model tracing/export.
+            Dictionary containing raw (un-normalized) sample tensors for model tracing/export.
+            Keys follow LeRobot convention (e.g., "observation.state", "observation.images.camera1").
         """
         config = self.lerobot_policy.config
         batch_size = 1
+        device = torch.device("cpu")
 
-        # Create sample inputs based on policy configuration
+        # Determine if temporal dimension is needed
+        n_obs_steps = getattr(config, "n_obs_steps", 1)
+        use_temporal = n_obs_steps > 1
+
         sample = {}
 
         # Add observation.state if robot state is used
-        # Match LeRobot's expected format: no temporal dim for n_obs_steps==1
         if config.robot_state_feature and "observation.state" in config.input_features:
             state_dim = config.input_features["observation.state"].shape[0]
-            sample["observation.state"] = torch.randn(batch_size, state_dim)
+            shape = (batch_size, n_obs_steps, state_dim) if use_temporal else (batch_size, state_dim)
+            sample["observation.state"] = torch.randn(*shape, device=device)
 
         # Add observation.images if image features are used
-        # Match LeRobot's expected format: no temporal dim for n_obs_steps==1
         if config.image_features:
             for img_key in config.image_features:
                 if img_key in config.input_features:
                     img_shape = config.input_features[img_key].shape  # (C, H, W)
-                    sample[img_key] = torch.randn(batch_size, *img_shape)
+                    shape = (batch_size, n_obs_steps, *img_shape) if use_temporal else (batch_size, *img_shape)
+                    sample[img_key] = torch.randn(*shape, device=device)
 
         return sample
+
+    @property
+    def model(self) -> Any:  # noqa: ANN401
+        """Alias for self._lerobot_policy for compatibility with base Export mixin.
+
+        The base Export mixin expects self.model, but LeRobot policies use self._lerobot_policy.
+        This property provides the mapping for methods like _get_export_extra_args.
+
+        Returns:
+            The underlying LeRobot policy instance.
+        """
+        return self._lerobot_policy  # type: ignore[attr-defined,return-value]
+
+    def _create_metadata(
+        self,
+        export_dir: Path,
+        backend: ExportBackend,
+        **metadata_kwargs: dict,
+    ) -> None:
+        """Create metadata files for exported LeRobot model.
+
+        Overrides base implementation to use self._lerobot_policy instead of self.model.
+
+        Args:
+            export_dir: Directory containing exported model
+            backend: Export backend used
+            **metadata_kwargs: Additional metadata to include
+        """
+        # Build metadata
+        metadata = {
+            "getiaction_version": __version__,
+            "policy_class": f"{self.__class__.__module__}.{self.__class__.__name__}",
+            "backend": str(backend),
+            **metadata_kwargs,
+        }
+
+        # Add model config if available - use _lerobot_policy instead of self.model
+        if hasattr(self, "_lerobot_policy") and hasattr(self._lerobot_policy, "config"):  # type: ignore[attr-defined]
+            config_dict = _serialize_model_config(self._lerobot_policy.config)  # type: ignore[attr-defined]
+            metadata["config"] = config_dict
+
+        # Save as YAML (preferred)
+        yaml_path = export_dir / "metadata.yaml"
+        with yaml_path.open("w") as f:
+            yaml.dump(metadata, f, default_flow_style=False)
+
+    def _move_processor_steps_to_device(
+        self,
+        device: torch.device | str,
+    ) -> tuple[list[torch.device | str | None], list[torch.device | str | None]]:
+        """Move preprocessor and postprocessor steps to specified device.
+
+        Why this complexity is necessary:
+        1. LeRobot's NormalizerProcessorStep auto-adapts to input tensor device during forward().
+           Simply calling .to() before export isn't enough - we need to force device assignment.
+        2. Not all processor steps have .to() method - some only expose .device attribute.
+        3. Some steps have additional .tensor_device attribute that must be set separately.
+        4. Different steps may be on different devices (though rare in practice).
+        5. Per-step tracking is required to correctly restore original device placement.
+
+        The fallback logic (.to() → .device + .tensor_device) ensures all steps are moved,
+        preventing device mismatches during ONNX tracing when model is on CPU but processor
+        stats auto-adapt to CUDA inputs.
+
+        Args:
+            device: Target device ("cpu" or "cuda").
+
+        Returns:
+            Tuple of (original_preprocessor_devices, original_postprocessor_devices).
+            Each list contains original device for each step (or None if step has no device).
+        """
+        original_preprocessor_devices = []
+        for step in self._preprocessor.steps:  # type: ignore[attr-defined]
+            if hasattr(step, "device"):
+                original_preprocessor_devices.append(step.device)
+                if hasattr(step, "to"):
+                    step.to(device)
+                else:
+                    # Fallback: directly set device attribute
+                    step.device = device
+                    if hasattr(step, "tensor_device"):
+                        step.tensor_device = torch.device(device) if isinstance(device, str) else device
+            else:
+                original_preprocessor_devices.append(None)
+
+        original_postprocessor_devices = []
+        for step in self._postprocessor.steps:  # type: ignore[attr-defined]
+            if hasattr(step, "device"):
+                original_postprocessor_devices.append(step.device)
+                if hasattr(step, "to"):
+                    step.to(device)
+                else:
+                    # Fallback: directly set device attribute
+                    step.device = device
+                    if hasattr(step, "tensor_device"):
+                        step.tensor_device = torch.device(device) if isinstance(device, str) else device
+            else:
+                original_postprocessor_devices.append(None)
+
+        return original_preprocessor_devices, original_postprocessor_devices
+
+    def _restore_processor_devices(
+        self,
+        original_preprocessor_devices: list[torch.device | str | None],
+        original_postprocessor_devices: list[torch.device | str | None],
+    ) -> None:
+        """Restore preprocessor and postprocessor steps to original devices.
+
+        Mirrors the logic in _move_processor_steps_to_device() to ensure each step is
+        restored to its exact original device. Uses the same fallback mechanism:
+        - Try .to() method first (preferred, handles internal state)
+        - Fall back to direct .device and .tensor_device attribute assignment
+
+        This granular per-step restoration is necessary because:
+        1. Steps may have been on different devices before export
+        2. Some steps only support direct attribute assignment
+        3. Ensures processor state is identical to pre-export state
+
+        Args:
+            original_preprocessor_devices: Original device for each preprocessor step.
+            original_postprocessor_devices: Original device for each postprocessor step.
+        """
+        for i, step in enumerate(self._preprocessor.steps):  # type: ignore[attr-defined]
+            if i < len(original_preprocessor_devices) and original_preprocessor_devices[i] is not None:
+                orig_device = original_preprocessor_devices[i]
+                if hasattr(step, "to"):
+                    step.to(orig_device)
+                elif hasattr(step, "device"):
+                    # Fallback: directly set device attribute
+                    step.device = orig_device
+                    if hasattr(step, "tensor_device"):
+                        step.tensor_device = torch.device(orig_device) if isinstance(orig_device, str) else orig_device
+
+        for i, step in enumerate(self._postprocessor.steps):  # type: ignore[attr-defined]
+            if i < len(original_postprocessor_devices) and original_postprocessor_devices[i] is not None:
+                orig_device = original_postprocessor_devices[i]
+                if hasattr(step, "to"):
+                    step.to(orig_device)
+                elif hasattr(step, "device"):
+                    # Fallback: directly set device attribute
+                    step.device = orig_device
+                    if hasattr(step, "tensor_device"):
+                        step.tensor_device = torch.device(orig_device) if isinstance(orig_device, str) else orig_device
 
     def to_onnx(
         self,
@@ -517,20 +721,33 @@ class LeRobotExport(Export):
         arg_name = self._get_forward_arg_name()
 
         # Convert dots to underscores in input names for ONNX compatibility
-        # Python identifiers cannot contain dots, so ONNX will convert them anyway
-        # We do it explicitly to maintain consistency with model expectations
         input_names_normalized = [name.replace(".", "_") for name in input_sample]
 
-        # Export the wrapper (self) instead of self.model to use wrapper's forward()
+        # Move everything to CPU for ONNX export compatibility
+        original_device = next(self.lerobot_policy.parameters()).device  # type: ignore[union-attr]
+        self.cpu()  # type: ignore[attr-defined]
+        input_sample_cpu = {k: v.cpu() for k, v in input_sample.items()}
+
+        # Move preprocessor/postprocessor steps to CPU
+        orig_prep_devices, orig_post_devices = self._move_processor_steps_to_device("cpu")
+
+        # Replace non-ONNX-compatible transforms (must be after moving to CPU)
+        replace_center_crop_with_onnx_compatible(self._lerobot_policy)  # type: ignore[attr-defined]
+
+        # Export
         self.eval()
         torch.onnx.export(
-            self,  # type: ignore[arg-type]  # Export wrapper, not self.model
+            self,  # type: ignore[arg-type]
             args=(),
-            kwargs={arg_name: input_sample},
+            kwargs={arg_name: input_sample_cpu},
             f=str(model_path),
             input_names=input_names_normalized,
             **extra_model_args,
         )
+
+        # Restore original devices
+        self.to(original_device)  # type: ignore[attr-defined]
+        self._restore_processor_devices(orig_prep_devices, orig_post_devices)
 
         # Create metadata files with policy-specific info
         self._create_metadata(export_dir, ExportBackend.ONNX, **self.metadata_extra)
