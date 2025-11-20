@@ -5,141 +5,101 @@
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
+
 from typing import TYPE_CHECKING, Any
 
 import gymnasium as gym
 
 if TYPE_CHECKING:
-    from gymnasium.core import ActType, ObsType
-
     from getiaction.data import Observation
+    import torch
 
 
-class Gym:
-    """Base class for Gym environments.
+class Gym(ABC):
+    """Abstract interface for Gymnasium-style environments.
 
-    This class wraps a Gym environment and provides standard methods
-    like `reset`, `step`, `render`, and `close`. It also exposes
-    properties for `num_rollouts` and `max_episode_steps`.
+    This class defines a unified environment API used across different
+    simulators, without assuming a specific backend (e.g., Gymnasium, DMC,
+    IsaacGym, custom robotics simulators).
 
-    Each environment must implement the `to_observation` method to convert
-    its raw observation format to our standardized Observation dataclass.
+    We make no assumption of underlying env capabilities.
     """
 
-    def __init__(
-        self,
-        gym_id: str,
-        **extra_gym_kwargs,  # noqa: ANN003
-    ) -> None:
-        """Initializes the base Gym environment wrapper.
-
-        Args:
-            gym_id (str): The identifier for the Gymnasium environment.
-            extra_gym_kwargs (Any): Any extra arguments required for the environment
-        """
-        self._gym_id = gym_id
-
-        # create wrapped environment
-        self.env = gym.make(
-            self._gym_id,
-            **extra_gym_kwargs,
-        )
-
-        # Assign the observation and action spaces from the wrapped environment
-        self.observation_space = self.env.observation_space
-        self.action_space = self.env.action_space
-
+    @abstractmethod
     def reset(
         self,
         *,
         seed: int | None = None,
-        options: dict[str, Any] | None = None,
-    ) -> tuple[ObsType, dict[str, Any]]:
-        """Resets the environment to its initial state.
+        **reset_kwargs: Any | None,
+    ) -> tuple[Observation, dict[str, Any]]:
+        """Resets the environment.
 
         Args:
-            seed (int, optional): The seed for the environment's random number generator.
-                Defaults to None.
-            options (dict, optional): Additional options for the reset.
-                Defaults to None.
+            seed: Optional random seed for resetting the environment.
+            **reset_kwargs: Additional backend-specific reset arguments.
 
         Returns:
-            tuple[ObsType, dict[str, Any]]: A tuple containing the initial observation
-                and an info dictionary.
+            tuple[Observation, dict[str, Any]]:
+                - Observation: Environment observation after reset.
+                - dict[str, Any]: Additional info dictionary.
         """
-        return self.env.reset(seed=seed, options=options)
 
+    @abstractmethod
     def step(
         self,
-        action: ActType,
-    ) -> tuple[ObsType, float, bool, bool, dict[str, Any]]:
-        """Takes a step in the environment with the given action.
+        action: torch.Tensor,
+    ) -> tuple[Observation, float, bool, bool, dict[str, Any]]:
+        """Steps the environment by one action.
 
         Args:
-            action (ActType): The action to perform.
+            action: Action as a torch tensor, already preprocessed for the backend.
 
         Returns:
-            tuple[ObsType, float, bool, bool, dict[str, Any]]: A tuple containing the
-                observation, reward, termination, truncation, and info dictionary.
+            tuple[Observation, float, bool, bool, dict[str, Any]]:
+                - Observation: Next environment observation.
+                - float: Reward for this transition.
+                - bool: Whether the episode terminated.
+                - bool: Whether the episode was truncated (e.g., time limit).
+                - dict[str, Any]: Additional environment info.
         """
-        return self.env.step(action)
 
-    def render(self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
-        """Renders the environment for visualization.
+    def render(self, *args: Any, **kwargs: Any) -> Any:
+        """Renders the environment if supported.
 
         Args:
-            *args: Additional positional arguments.
-            **kwargs: Additional keyword arguments.
+            *args: Backend-specific render args.
+            **kwargs: Backend-specific render kwargs.
 
         Returns:
-            Any: The rendered environment.
+            Any: Rendered output, or None if unsupported.
         """
-        return self.env.render(*args, **kwargs)
+        return None
 
+    @abstractmethod
     def close(self) -> None:
         """Closes the environment and releases resources."""
-        return self.env.close()
 
-    def sample_action(self) -> Any:  # noqa: ANN401
-        """Samples a random action in the environment.
-
-        Returns:
-            Any: A random action from the environment's action space.
-        """
-        return self.env.action_space.sample()
-
-    def get_max_episode_steps(self) -> int | None:
-        """Returns the maximum number of steps for the underlying environment.
+    @abstractmethod
+    def sample_action(self) -> torch.Tensor:
+        """Samples a valid action.
 
         Returns:
-            int | None: The maximum number of steps for the underlying environment.
+            torch.Tensor: An action in the correct format for `step()`.
         """
-        try:
-            return self.env.get_wrapper_attr("max_episode_steps")
-        except AttributeError:
-            return None
 
+    @abstractmethod
     def to_observation(
         self,
-        raw_obs: dict[str, Any],
+        raw_obs: Any,
         camera_keys: list[str] | None = None,
     ) -> Observation:
-        """Convert raw gym observation to Observation dataclass.
-
-        Each gym environment must implement this method to handle its specific
-        observation format and convert it to our standardized Observation dataclass.
+        """Converts a raw backend observation to a unified Observation.
 
         Args:
-            raw_obs: Raw observation dictionary from gym environment.
-            camera_keys: Optional list of camera names for multi-camera setups.
-                Can be None for environments that don't use multiple cameras.
+            raw_obs: Raw observation object from the simulator backend.
+            camera_keys: Optional list of camera names to extract image data.
 
-        Raises:
-            NotImplementedError: If not implemented by subclass.
-
-        Note:
-            This method should be overridden by subclasses. See concrete implementations such as
-            :class:`~getiaction.gyms.PushTGym` for specific examples and usage patterns.
+        Returns:
+            Observation: Standardized Observation dataclass representation.
         """
-        msg = f"Subclass {self.__class__.__name__} must implement to_observation method"
-        raise NotImplementedError(msg)
