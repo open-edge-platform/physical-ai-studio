@@ -7,12 +7,10 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, fields
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
+import numpy as np
 import torch
-
-if TYPE_CHECKING:
-    import numpy as np
 
 
 @dataclass(frozen=True)
@@ -122,9 +120,10 @@ class Observation:
     def get_flattened_keys(data: dict[str, Any], field: Observation.FieldName | str) -> list[str]:
         """Retrieve all keys associated with a specific component from the data dictionary.
 
-        This method checks for component keys in two ways:
+        This method checks for component keys in the following ways:
         1. Directly if the component exists as a key in the data dictionary
         2. Through a cached list of keys stored with the pattern "_{component}_keys"
+        3. As a fallback, by searching for keys that start with "{component}."
         Args:
             data: Dictionary containing observation data and component keys
             field: The field identifier to search for, either as an
@@ -148,7 +147,7 @@ class Observation:
         if f"_{field}_keys" in data:
             return data[f"_{field}_keys"]
 
-        return []
+        return [key for key in data if key.startswith(f"{field}.")]
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Observation:
@@ -218,48 +217,149 @@ class Observation:
         return [(f.name, getattr(self, f.name)) for f in fields(self)]
 
     def to(self, device: str | torch.device) -> Observation:
-        """Move all tensors in the observation to the specified device.
+        """Move torch tensors to specified device.
 
-        This method creates a new Observation instance with all tensor fields moved
-        to the specified device. Works with both single tensors and nested dictionaries
-        of tensors. Non-tensor fields are copied as-is.
+        This method moves all torch.Tensor fields to the target device (e.g., CPU, CUDA).
+        NumPy arrays and other field types are left unchanged. Works recursively with
+        nested dictionaries (e.g., multi-camera images).
 
         Args:
-            device: Target device (e.g., "cpu", "cuda", "cuda:0", torch.device("cuda"))
+            device: Target device for torch tensors (e.g., "cpu", "cuda", "cuda:0").
+                Accepts anything that torch.Tensor.to() accepts.
 
         Returns:
-            Observation: New Observation instance with tensors on the target device.
+            Observation: New Observation instance with tensors moved to target device.
 
         Examples:
             >>> obs = Observation(
             ...     action=torch.tensor([1.0, 2.0]),
             ...     images={"top": torch.rand(3, 224, 224)}
             ... )
-            >>> obs_cuda = obs.to("cuda")  # Move to GPU
-            >>> obs_cpu = obs_cuda.to("cpu")  # Move back to CPU
 
-            >>> # Works with batched observations too
+            >>> # Move to CUDA
+            >>> obs_cuda = obs.to(device="cuda")
+            >>> obs_cuda = obs.to("cuda")  # equivalent
+
+            >>> # Move back to CPU
+            >>> obs_cpu = obs_cuda.to(device="cpu")
+
+            >>> # Works with batched observations
             >>> batch = Observation(action=torch.randn(8, 2))
             >>> batch_gpu = batch.to("cuda")
         """
 
-        def _move_to_device(
-            value: torch.Tensor | np.ndarray | dict | bool | None,  # noqa: FBT001
-        ) -> torch.Tensor | np.ndarray | dict | bool | None:
-            """Recursively move tensors to device.
+        def _move_to_device(value: dict | torch.Tensor | np.ndarray | None) -> dict | torch.Tensor | np.ndarray | None:
+            """Recursively move torch tensors to device.
 
             Returns:
-                The value moved to device if it's a tensor, otherwise unchanged.
+                Value with torch tensors moved to the specified device.
             """
-            if isinstance(value, torch.Tensor):
-                return value.to(device)
             if isinstance(value, dict):
                 return {k: _move_to_device(v) for k, v in value.items()}
-            # For non-tensor types (None, bool, numpy arrays, etc.), return as-is
+            if isinstance(value, torch.Tensor):
+                return value.to(device)
+            # Non-tensor types (None, bool, numpy arrays, etc.) pass through
             return value
 
-        # Create new instance with all fields moved to device
+        # Create new instance with all fields moved
         new_dict = {k: _move_to_device(v) for k, v in self.items()}
+        return Observation.from_dict(new_dict)
+
+    def to_numpy(self) -> Observation:
+        """Convert all torch tensors to numpy arrays.
+
+        This method creates a new Observation instance with all torch.Tensor fields
+        converted to numpy arrays. Works recursively with nested dictionaries (e.g.,
+        multi-camera images). Non-tensor fields and existing numpy arrays pass through unchanged.
+
+        Useful for inference pipelines where models expect numpy inputs (e.g., ONNX, OpenVINO).
+
+        Returns:
+            Observation: New Observation instance with numpy arrays instead of torch tensors.
+
+        Examples:
+            >>> obs = Observation(
+            ...     action=torch.tensor([1.0, 2.0]),
+            ...     state=torch.tensor([0.5]),
+            ...     images={"top": torch.rand(3, 224, 224)}
+            ... )
+            >>> obs_np = obs.to_numpy()
+            >>> isinstance(obs_np.action, np.ndarray)  # True
+            >>> isinstance(obs_np.images["top"], np.ndarray)  # True
+
+        See Also:
+            :meth:`to` - Move tensors to different devices (CPU/GPU)
+            :meth:`to_torch` - Convert numpy arrays to torch tensors
+        """
+
+        def _to_numpy(value: dict | torch.Tensor | np.ndarray | None) -> dict | np.ndarray | None:
+            """Recursively convert torch tensors to numpy arrays.
+
+            Returns:
+                Value with torch tensors converted to numpy arrays.
+            """
+            if isinstance(value, dict):
+                return {k: _to_numpy(v) for k, v in value.items()}
+            if isinstance(value, torch.Tensor):
+                return value.cpu().numpy()
+            # Non-tensor types (None, bool, numpy arrays, etc.) pass through
+            return value
+
+        # Create new instance with all fields converted
+        new_dict = {k: _to_numpy(v) for k, v in self.items()}
+        return Observation.from_dict(new_dict)
+
+    def to_torch(self, device: str | torch.device = "cpu") -> Observation:
+        """Convert all numpy arrays to torch tensors on specified device.
+
+        This method creates a new Observation instance with all numpy array fields
+        converted to torch tensors. Works recursively with nested dictionaries (e.g.,
+        multi-camera images). Non-array fields and existing torch tensors pass through unchanged.
+
+        Useful for converting inference inputs back to torch format for training or
+        when transitioning between numpy-based and torch-based pipelines.
+
+        Args:
+            device: Target device for created tensors (default: "cpu").
+                Accepts anything that torch.Tensor.to() accepts.
+
+        Returns:
+            Observation: New Observation instance with torch tensors instead of numpy arrays.
+
+        Examples:
+            >>> import numpy as np
+            >>> obs = Observation(
+            ...     action=np.array([1.0, 2.0]),
+            ...     state=np.array([0.5]),
+            ...     images={"top": np.random.rand(3, 224, 224)}
+            ... )
+            >>> obs_torch = obs.to_torch()
+            >>> isinstance(obs_torch.action, torch.Tensor)  # True
+            >>> isinstance(obs_torch.images["top"], torch.Tensor)  # True
+
+            >>> # Create tensors directly on GPU
+            >>> obs_cuda = obs.to_torch(device="cuda")
+
+        See Also:
+            :meth:`to` - Move tensors to different devices (CPU/GPU)
+            :meth:`to_numpy` - Convert torch tensors to numpy arrays
+        """
+
+        def _to_torch(value: dict | torch.Tensor | np.ndarray | None) -> dict | torch.Tensor | None:
+            """Recursively convert numpy arrays to torch tensors.
+
+            Returns:
+                Value with numpy arrays converted to torch tensors.
+            """
+            if isinstance(value, dict):
+                return {k: _to_torch(v) for k, v in value.items()}
+            if isinstance(value, np.ndarray):
+                return torch.from_numpy(value).to(device)
+            # Non-array types (None, bool, torch tensors, etc.) pass through
+            return value
+
+        # Create new instance with all fields converted
+        new_dict = {k: _to_torch(v) for k, v in self.items()}
         return Observation.from_dict(new_dict)
 
 
