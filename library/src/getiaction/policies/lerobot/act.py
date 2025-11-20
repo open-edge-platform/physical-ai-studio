@@ -336,62 +336,6 @@ class ACT(LeRobotExport, Policy, LeRobotFromConfig):  # type: ignore[misc]
             "use_action_queue": True,
         }
 
-    def forward(
-        self,
-        batch: Observation | dict[str, torch.Tensor],
-    ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        """Forward pass for LeRobot ACT policy.
-
-        The return value depends on the model's training mode:
-        - In training mode: Returns (loss, loss_dict) from LeRobot's forward method
-        - In evaluation mode: Returns action predictions
-
-        For torch.export compatibility, this calls the underlying transformer model directly
-        instead of select_action() which contains mode-changing calls that break tracing.
-
-        Args:
-            batch: Input batch - can be Observation object (during training/inference)
-                or dict[str, Tensor] (during export)
-
-        Returns:
-            torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]: In training mode,
-                returns tuple of (loss, loss_dict). In eval mode, returns action predictions.
-        """
-        # Convert to LeRobot dict format if needed
-        batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
-
-        # Apply preprocessing
-        batch_dict = self._preprocessor(batch_dict)
-
-        if self.training:
-            # During training, return loss information for backpropagation
-            return self.lerobot_policy(batch_dict)
-
-        # During evaluation/export, replicate predict_action_chunk logic inline
-        # to avoid LeRobot's internal tensor shape bug and self.eval() call issues
-
-        # Normalize inputs (same as LeRobot's predict_action_chunk)
-        batch_dict = self.lerobot_policy.normalize_inputs(batch_dict)
-
-        # Squeeze singleton temporal dimensions for n_obs_steps==1
-        # This prevents shape mismatches in LeRobot's internal model
-        if self.lerobot_policy.config.n_obs_steps == 1:
-            batch_dict = {
-                k: v.squeeze(1) if torch.is_tensor(v) and v.ndim > 1 and v.shape[1] == 1 else v
-                for k, v in batch_dict.items()
-            }
-
-        # Prepare batch for model (add observation.images key if needed)
-        if self.lerobot_policy.config.image_features:
-            batch_dict = dict(batch_dict)  # shallow copy
-            batch_dict["observation.images"] = [batch_dict[key] for key in self.lerobot_policy.config.image_features]
-
-        # Call model directly to get actions
-        actions = self.lerobot_policy.model(batch_dict)[0]
-
-        # Unnormalize outputs (same as LeRobot's predict_action_chunk)
-        return self.lerobot_policy.unnormalize_outputs({"action": actions})["action"]
-
     def configure_optimizers(self) -> torch.optim.Optimizer:
         """Configure optimizer using LeRobot's custom parameter groups.
 
@@ -400,22 +344,27 @@ class ACT(LeRobotExport, Policy, LeRobotFromConfig):  # type: ignore[misc]
         """
         return torch.optim.AdamW(self.lerobot_policy.get_optim_params(), lr=self.learning_rate)
 
-    def training_step(self, batch: Observation | dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
-        """Training step uses LeRobot's loss computation.
+    def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+        """Execute one training step.
 
         Args:
-            batch (Observation | dict[str, torch.Tensor]): Input batch of observations.
-            batch_idx: Index of the batch.
+            batch: Training batch (dict with keys like "observation.images.top", "action").
+                   Must be in LeRobot format - configure with data_format="lerobot" in datamodule.
+            batch_idx: Index of the current batch.
 
         Returns:
-            The total loss for the batch.
+            Total loss for this batch.
         """
-        del batch_idx  # Unused argument
+        del batch_idx
 
-        total_loss, loss_dict = self(batch)
+        # Batch must be in LeRobot format (set data_format="lerobot" when creating datamodule)
+        total_loss, loss_dict = self.lerobot_policy(batch)
+
+        # Log losses
         for key, value in loss_dict.items():
             self.log(f"train/{key}", value, prog_bar=False)
         self.log("train/loss", total_loss, prog_bar=True)
+
         return total_loss
 
     def validation_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
@@ -451,8 +400,11 @@ class ACT(LeRobotExport, Policy, LeRobotFromConfig):  # type: ignore[misc]
     def select_action(self, batch: Observation | dict[str, torch.Tensor]) -> torch.Tensor:
         """Select action (inference mode) through LeRobot.
 
-        Converts the Observation to LeRobot dict format, applies preprocessing,
-        gets action prediction, and applies postprocessing (denormalization).
+        Handles full preprocessing and postprocessing pipeline:
+        1. Convert Observation to LeRobot dict format
+        2. Apply preprocessing (normalization, transforms)
+        3. Get action prediction from model
+        4. Apply postprocessing (denormalization)
 
         For ACT (chunked policy), this returns the full action chunk.
         The InferenceModel handles extracting individual actions when needed.
@@ -461,18 +413,20 @@ class ACT(LeRobotExport, Policy, LeRobotFromConfig):  # type: ignore[misc]
             batch: Input batch of observations (raw, from gym).
 
         Returns:
-            The action tensor - full chunk for chunked policies.
+            The action tensor - full chunk for chunked policies with shape
+            (batch, chunk_size, action_dim) or (batch, action_dim) for non-chunked.
         """
-        # Convert to LeRobot format if needed
+        # Step 1: Convert to LeRobot format if needed
         batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
 
-        # Apply preprocessing
+        # Step 2: Apply preprocessing (normalization, etc.)
         batch_dict = self._preprocessor(batch_dict)
 
-        # Get action from policy
+        # Step 3: Get action from LeRobot policy
+        # This uses LeRobot's select_action which handles action queue and temporal ensemble
         action = self.lerobot_policy.select_action(batch_dict)
 
-        # Apply postprocessing
+        # Step 4: Apply postprocessing (denormalization)
         return self._postprocessor(action)
 
     def reset(self) -> None:
