@@ -349,40 +349,6 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         # Initialize policy now
         self._initialize_policy(features, features, self._provided_config, stats)
 
-    def forward(
-        self,
-        batch: Observation | dict[str, torch.Tensor],
-    ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        """Forward pass through the LeRobot policy.
-
-        The return value depends on the model's training mode:
-        - In training mode: Returns loss information from LeRobot's forward method
-        - In evaluation mode: Returns action predictions via select_action method
-
-        Args:
-            batch (Observation | dict[str, torch.Tensor]): Input batch of observations.
-
-        Returns:
-            torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]: In training mode,
-                returns loss information. In eval mode, returns selected actions tensor.
-        """
-        # Convert to LeRobot dict format if needed
-        batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
-
-        # Apply preprocessing
-        batch_dict = self._preprocessor(batch_dict)
-
-        if self.training:
-            # During training, return loss information for backpropagation
-            result = self.lerobot_policy(batch_dict)
-            if isinstance(result, tuple):
-                loss, loss_dict = result
-                return loss, loss_dict or {}
-            return result
-
-        # During evaluation, return action predictions
-        return self.select_action(batch)
-
     def _process_loss_output(
         self,
         output: torch.Tensor | tuple[torch.Tensor, dict | None] | dict,
@@ -479,7 +445,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         """
         del batch_idx  # Unused argument
 
-        total_loss, loss_dict = self(batch)
+        total_loss, loss_dict = self.lerobot_policy(batch)
         for key, value in loss_dict.items():
             self.log(f"train/{key}", value, prog_bar=False)
         self.log("train/loss", total_loss, prog_bar=True)
