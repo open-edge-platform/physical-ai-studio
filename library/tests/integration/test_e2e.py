@@ -96,15 +96,21 @@ class BaseE2ETests:
 
         sample_batch = next(iter(datamodule.train_dataloader()))
 
-        inference_input_dict: dict[str, np.ndarray | Any] = {}
-        for key, value in sample_batch.to_dict().items():
-            if key in {"state", "images", "image"}:
-                if torch.is_tensor(value):
-                    inference_input_dict[key] = value[0:1].cpu().numpy()
-                else:
-                    inference_input_dict[key] = value
+        # Convert to Observation format using FormatConverter (handles both dict and Observation)
+        from getiaction.data.lerobot import FormatConverter
+        import numpy as np
+        batch_observation = FormatConverter.to_observation(sample_batch)
 
-        inference_input: Observation = Observation.from_dict(inference_input_dict)
+        # Take first sample and convert to numpy for inference
+        state_np = batch_observation.state[0:1].cpu().numpy() if batch_observation.state is not None and torch.is_tensor(batch_observation.state) else None
+        images_np = None
+        if batch_observation.images is not None:
+            if isinstance(batch_observation.images, dict):
+                images_np = {k: v[0:1].cpu().numpy() if torch.is_tensor(v) else v for k, v in batch_observation.images.items()}
+            elif torch.is_tensor(batch_observation.images):
+                images_np = batch_observation.images[0:1].cpu().numpy()
+
+        inference_input = Observation(state=state_np, images=images_np)
         inference_output: torch.Tensor = inference_model.select_action(inference_input)
 
         assert inference_output.shape[-1] == 2
@@ -120,13 +126,9 @@ class BaseE2ETests:
     ) -> None:
         """Test numerical consistency between training and inference outputs."""
         export_dir = tmp_path / f"{trained_policy.__class__.__name__.lower()}_{backend}"
-        export_kwargs = {}
 
-        if trained_policy.__class__.__name__.lower() == "diffusion":
-            pytest.mark.slow(lambda: None)()
-            export_kwargs["num_inference_steps"] = 100
-
-        trained_policy.export(export_dir, backend, **export_kwargs)
+        # Export (num_inference_steps is a runtime parameter, not export parameter)
+        trained_policy.export(export_dir, backend)
 
         inference_model = InferenceModel.load(export_dir)
         sample_batch = next(iter(datamodule.train_dataloader()))
@@ -135,26 +137,38 @@ class BaseE2ETests:
         with torch.no_grad():
             train_output: torch.Tensor = trained_policy.select_action(sample_batch)
 
-        inference_input_dict: dict[str, np.ndarray | Any] = {}
-        for key, value in sample_batch.to_dict().items():
-            if key in {"state", "images", "image"}:
-                if torch.is_tensor(value):
-                    inference_input_dict[key] = value[0:1].cpu().numpy()
-                else:
-                    inference_input_dict[key] = value
+        # Convert to Observation format using FormatConverter (handles both dict and Observation)
+        from getiaction.data.lerobot import FormatConverter
+        import numpy as np
+        batch_observation = FormatConverter.to_observation(sample_batch)
 
-        inference_input: Observation = Observation.from_dict(inference_input_dict)
+        # Take first sample and convert to numpy for inference
+        state_np = batch_observation.state[0:1].cpu().numpy() if batch_observation.state is not None and torch.is_tensor(batch_observation.state) else None
+        images_np = None
+        if batch_observation.images is not None:
+            if isinstance(batch_observation.images, dict):
+                images_np = {k: v[0:1].cpu().numpy() if torch.is_tensor(v) else v for k, v in batch_observation.images.items()}
+            elif torch.is_tensor(batch_observation.images):
+                images_np = batch_observation.images[0:1].cpu().numpy()
+
+        inference_input = Observation(state=state_np, images=images_np)
         inference_output: torch.Tensor = inference_model.select_action(inference_input)
 
-        train_action: torch.Tensor = train_output[0].cpu()
+        # Extract first action from batch and handle chunked outputs
+        train_action: torch.Tensor = train_output[0].cpu()  # [chunk_size, action_dim] or [action_dim]
 
+        # For chunked policies, take first action from chunk
         if len(train_action.shape) > 1:
-            train_action = train_action[0]
+            train_action = train_action[0]  # [action_dim]
 
+        # Convert inference output to tensor if needed
         if not isinstance(inference_output, torch.Tensor):
             inference_output = torch.from_numpy(inference_output)
 
+        # Squeeze batch dimension and handle chunked inference output
         inference_output_cpu: torch.Tensor = inference_output.cpu().squeeze(0)
+        if len(inference_output_cpu.shape) > 1:
+            inference_output_cpu = inference_output_cpu[0]  # [action_dim]
 
         torch.testing.assert_close(
             inference_output_cpu,
