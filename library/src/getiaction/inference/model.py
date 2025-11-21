@@ -211,8 +211,11 @@ class InferenceModel:
         """
         import numpy as np  # noqa: PLC0415
 
+        # Convert observation to numpy arrays using unified .to() API
+        obs_numpy = observation.to_numpy()
+
         # Convert observation to dict format
-        obs_dict = observation.to_dict()
+        obs_dict = obs_numpy.to_dict()
 
         # Get model input names from adapter
         expected_inputs = set(self.adapter.input_names)
@@ -223,7 +226,7 @@ class InferenceModel:
         # - LeRobot: "state", "images" -> "observation.state", "observation.image"
         field_mapping = self._build_field_mapping(obs_dict, expected_inputs)
 
-        # Convert torch tensors to numpy using the mapping
+        # Build inputs using the mapping
         inputs = {}
         for obs_key, model_key in field_mapping.items():
             value = obs_dict[obs_key]
@@ -241,10 +244,8 @@ class InferenceModel:
                 else:
                     continue
 
-            # Convert to numpy
-            if isinstance(value, torch.Tensor):
-                inputs[model_key] = value.cpu().numpy()
-            elif isinstance(value, np.ndarray):
+            # Add to inputs (already numpy arrays after to_numpy())
+            if isinstance(value, np.ndarray):
                 inputs[model_key] = value
             else:
                 # Handle nested structures if needed
