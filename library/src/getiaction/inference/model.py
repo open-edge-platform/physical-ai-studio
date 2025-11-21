@@ -255,10 +255,7 @@ class InferenceModel:
         missing_inputs = expected_inputs - set(inputs.keys())
         if missing_inputs:
             available_fields = list(obs_dict.keys())
-            msg = (
-                f"Missing required model inputs: {missing_inputs}. "
-                f"Available observation fields: {available_fields}"
-            )
+            msg = f"Missing required model inputs: {missing_inputs}. Available observation fields: {available_fields}"
             raise ValueError(msg)
 
         return inputs
@@ -279,9 +276,7 @@ class InferenceModel:
         mapping = {}
 
         # Dummy matching for exact matches
-        for key in obs_dict:
-            if key in expected_inputs:
-                mapping[key] = key
+        mapping = {key: key for key in obs_dict if key in expected_inputs}
 
         if len(mapping) == len(expected_inputs):
             return mapping
