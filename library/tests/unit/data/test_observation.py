@@ -813,6 +813,173 @@ class TestObservationNumpyTensorConversion:
         assert obs_torch.info["key"] == "value"
 
 
+class TestObservationIndexing:
+    """Test Observation.__getitem__() method for indexing batched observations."""
+
+    def test_integer_indexing(self):
+        """Test integer indexing extracts single sample."""
+        batch = Observation(
+            action=torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]),
+            state=torch.tensor([[0.1], [0.2], [0.3]]),
+            images={"top": torch.rand(3, 3, 64, 64)},
+        )
+
+        sample = batch[1]
+
+        assert isinstance(sample, Observation)
+        assert sample.action.shape == (2,)
+        assert torch.equal(sample.action, torch.tensor([3.0, 4.0]))
+        assert sample.state.shape == (1,)
+        assert sample.images["top"].shape == (3, 64, 64)
+
+    def test_negative_indexing(self):
+        """Test negative indexing works correctly."""
+        batch = Observation(action=torch.tensor([[1.0], [2.0], [3.0]]))
+
+        assert torch.equal(batch[-1].action, torch.tensor([3.0]))
+        assert torch.equal(batch[-2].action, torch.tensor([2.0]))
+
+    def test_slice_indexing(self):
+        """Test slice indexing extracts sub-batch."""
+        batch = Observation(
+            action=torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0]]),
+            state=torch.randn(4, 5),
+        )
+
+        sub_batch = batch[1:3]
+
+        assert sub_batch.action.shape == (2, 2)
+        assert torch.equal(sub_batch.action, torch.tensor([[3.0, 4.0], [5.0, 6.0]]))
+        assert sub_batch.state.shape == (2, 5)
+
+    def test_slice_preserves_batch_dimension(self):
+        """Test slice can preserve batch dimension."""
+        batch = Observation(action=torch.randn(8, 2))
+
+        sample = batch[0:1]
+
+        assert sample.action.shape == (1, 2)
+        assert sample.action.ndim == 2
+
+    def test_slice_with_step(self):
+        """Test slice indexing with step parameter."""
+        batch = Observation(action=torch.tensor([[1.0], [2.0], [3.0], [4.0], [5.0], [6.0]]))
+
+        sub_batch = batch[::2]
+
+        assert torch.equal(sub_batch.action, torch.tensor([[1.0], [3.0], [5.0]]))
+
+    def test_nested_dict_indexing(self):
+        """Test indexing with nested dictionaries."""
+        batch = Observation(
+            action={"gripper": torch.randn(4, 1), "arm": torch.randn(4, 6)},
+            images={"cam1": torch.rand(4, 3, 64, 64), "cam2": torch.rand(4, 3, 32, 32)},
+        )
+
+        sample = batch[2]
+
+        assert sample.action["gripper"].shape == (1,)
+        assert sample.action["arm"].shape == (6,)
+        assert sample.images["cam1"].shape == (3, 64, 64)
+        assert sample.images["cam2"].shape == (3, 32, 32)
+
+    def test_preserves_none_fields(self):
+        """Test None fields remain None after indexing."""
+        batch = Observation(action=torch.randn(5, 2), state=None, images=None)
+
+        sample = batch[0]
+
+        assert sample.state is None
+        assert sample.images is None
+
+    def test_preserves_non_indexable_fields(self):
+        """Test non-indexable fields pass through unchanged."""
+        batch = Observation(
+            action=torch.randn(3, 2),
+            next_success=True,
+            info={"key": "value"},
+            extra={"custom": 123},
+        )
+
+        sample = batch[0]
+
+        assert sample.next_success is True
+        assert sample.info["key"] == "value"
+        assert sample.extra["custom"] == 123
+
+    def test_numpy_array_indexing(self):
+        """Test indexing works with numpy arrays."""
+        batch = Observation(
+            action=np.array([[1.0, 2.0], [3.0, 4.0]]),
+            state=np.array([[0.1], [0.2]]),
+        )
+
+        sample = batch[1]
+
+        assert isinstance(sample.action, np.ndarray)
+        assert np.array_equal(sample.action, np.array([3.0, 4.0]))
+        assert np.array_equal(sample.state, np.array([0.2]))
+
+    def test_mixed_tensor_array_types(self):
+        """Test indexing with mixed torch and numpy types."""
+        batch = Observation(
+            action=torch.tensor([[1.0, 2.0], [3.0, 4.0]]),
+            state=np.array([[0.1], [0.2]]),
+        )
+
+        sample = batch[0]
+
+        assert isinstance(sample.action, torch.Tensor)
+        assert isinstance(sample.state, np.ndarray)
+
+    def test_indexing_immutability(self):
+        """Test indexing creates new instance without modifying original."""
+        batch = Observation(action=torch.tensor([[1.0, 2.0], [3.0, 4.0]]))
+        original_shape = batch.action.shape
+
+        sample = batch[0]
+
+        assert batch.action.shape == original_shape
+        assert batch is not sample
+
+    def test_metadata_fields_indexed(self):
+        """Test metadata fields are properly indexed."""
+        batch = Observation(
+            action=torch.randn(3, 2),
+            episode_index=torch.tensor([0, 0, 1]),
+            frame_index=torch.tensor([10, 11, 12]),
+            timestamp=torch.tensor([1.0, 2.0, 3.0]),
+        )
+
+        sample = batch[1]
+
+        assert sample.episode_index.item() == 0
+        assert sample.frame_index.item() == 11
+        assert sample.timestamp.item() == 2.0
+
+    def test_out_of_bounds_raises(self):
+        """Test out of bounds index raises IndexError."""
+        batch = Observation(action=torch.randn(3, 2))
+
+        with pytest.raises(IndexError):
+            _ = batch[10]
+
+    def test_dataloader_usage_pattern(self):
+        """Test typical DataLoader batch manipulation."""
+        batch = Observation(
+            action=torch.randn(16, 2),
+            images={"top": torch.rand(16, 3, 224, 224)},
+        )
+
+        # Extract mini-batch
+        mini_batch = batch[0:8]
+        assert mini_batch.action.shape == (8, 2)
+
+        # Extract single sample
+        single = mini_batch[0]
+        assert single.action.shape == (2,)
+
+
 class TestGymInValidation:
     """Tests for Gym usage in validation (no wrapper needed)."""
 
