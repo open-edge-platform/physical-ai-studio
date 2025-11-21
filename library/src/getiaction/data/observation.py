@@ -362,6 +362,62 @@ class Observation:
         new_dict = {k: _to_torch(v) for k, v in self.items()}
         return Observation.from_dict(new_dict)
 
+    def __getitem__(self, idx: int | slice) -> Observation:
+        """Index into batched observation to extract sample(s).
+
+        Supports both integer indexing (single sample) and slice indexing (sub-batch).
+        Works recursively with nested dictionaries (e.g., multi-camera images).
+
+        Args:
+            idx: Integer index or slice to extract. Use slice(0, 1) or 0:1 to
+                preserve batch dimension when extracting first sample.
+
+        Returns:
+            Observation: New Observation with indexed data. Preserves structure
+                and field types (torch.Tensor or np.ndarray).
+
+        Examples:
+            >>> # Batch of 8 observations
+            >>> batch = Observation(
+            ...     action=torch.randn(8, 2),
+            ...     images={"top": torch.rand(8, 3, 224, 224)}
+            ... )
+
+            >>> # Get first sample (squeeze batch dimension)
+            >>> sample = batch[0]
+            >>> sample.action.shape  # torch.Size([2])
+
+            >>> # Get first sample (preserve batch dimension)
+            >>> sample = batch[0:1]
+            >>> sample.action.shape  # torch.Size([1, 2])
+
+            >>> # Get sub-batch
+            >>> sub_batch = batch[0:4]
+            >>> sub_batch.action.shape  # torch.Size([4, 2])
+        """
+
+        def _index(value: dict | torch.Tensor | np.ndarray | None) -> dict | torch.Tensor | np.ndarray | None:
+            """Recursively index into value.
+
+            Args:
+                value: Value to index into.
+
+            Returns:
+                Indexed value.
+            """
+            if value is None:
+                return None
+            if isinstance(value, dict):
+                return {k: _index(v) for k, v in value.items()}
+            if isinstance(value, (torch.Tensor, np.ndarray)):
+                return value[idx]
+            # Non-indexable types (bool, scalars, etc.) pass through
+            return value
+
+        # Create new instance with all fields indexed
+        new_dict = {k: _index(v) for k, v in self.items()}
+        return Observation.from_dict(new_dict)
+
 
 class FeatureType(StrEnum):
     """Enum for feature types."""
