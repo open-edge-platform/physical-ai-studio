@@ -377,11 +377,12 @@ class TestInputPreparation:
         with patch("getiaction.inference.model.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
 
-            obs = Observation(state=torch.randn(1, 4), images=None)
+            obs = Observation(state=torch.randn(1, 4), images=torch.randn(1, 3, 224, 224), action=None)
             inputs = model._prepare_inputs(obs)
 
             assert "state" in inputs
-            assert "images" not in inputs
+            assert "images" in inputs
+            assert "action" not in inputs
 
     def test_prepare_inputs_numpy_passthrough(
         self,
