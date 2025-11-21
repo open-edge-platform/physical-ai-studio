@@ -948,14 +948,14 @@ class TestObservationIndexing:
             action=torch.randn(3, 2),
             episode_index=torch.tensor([0, 0, 1]),
             frame_index=torch.tensor([10, 11, 12]),
-            timestamp=torch.tensor([1.0, 1.1, 2.0]),
+            timestamp=torch.tensor([1.0, 2.0, 3.0]),
         )
 
         sample = batch[1]
 
         assert sample.episode_index.item() == 0
         assert sample.frame_index.item() == 11
-        assert sample.timestamp.item() == 1.1
+        assert sample.timestamp.item() == 2.0
 
     def test_out_of_bounds_raises(self):
         """Test out of bounds index raises IndexError."""
