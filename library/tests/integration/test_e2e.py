@@ -277,7 +277,7 @@ class TestLeRobotPolicies(E2ETests):
         from getiaction.data.lerobot import FormatConverter
         sample_batch = next(iter(datamodule.train_dataloader()))
         batch_observation = FormatConverter.to_observation(sample_batch)
-        
+
         # For PyTorch inference: remove temporal dimension (take last frame)
         # For ONNX inference: keep temporal dimension (model was exported with it)
         single_obs_pytorch = self._extract_single_observation_from_batch(batch_observation, keep_temporal=False)
@@ -290,7 +290,7 @@ class TestLeRobotPolicies(E2ETests):
         # Don't restore - export() expects them to already be on CPU
         if hasattr(trained_policy, "_move_processor_steps_to_device"):
             trained_policy._move_processor_steps_to_device("cpu")  # type: ignore[attr-defined]
-        
+
         # For Diffusion, also move scheduler tensors to CPU
         if policy_name == "diffusion" and hasattr(trained_policy, "_lerobot_policy"):
             scheduler = trained_policy._lerobot_policy.diffusion.noise_scheduler  # type: ignore[attr-defined]
@@ -299,14 +299,14 @@ class TestLeRobotPolicies(E2ETests):
                     attr = getattr(scheduler, attr_name, None)
                     if isinstance(attr, torch.Tensor) and attr.device.type != "cpu":
                         setattr(scheduler, attr_name, attr.cpu())
-        
+
         # Get training output (use observation without temporal dim for policies with n_obs_steps)
         torch.manual_seed(42)
         trained_policy.eval()
         trained_policy.reset()
         with torch.no_grad():
             train_output: torch.Tensor = trained_policy.select_action(single_obs_pytorch)
-        
+
         # Export (policy's to_onnx already moved everything to CPU, no need to do it again)
         trained_policy.export(export_dir, backend)
 
@@ -336,7 +336,7 @@ class TestLeRobotPolicies(E2ETests):
             assert not torch.isinf(train_action).any(), f"Diffusion training output contains Inf: {train_action}"
         else:
             torch.testing.assert_close(inference_action, train_action, rtol=0.2, atol=0.2)
-        
+
         # Cleanup: delete inference model and clear CUDA cache to prevent state leakage
         del inference_model
         torch.cuda.empty_cache()    # Override trained_policy with function scope for numerical consistency tests
