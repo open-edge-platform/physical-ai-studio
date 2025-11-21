@@ -1,36 +1,29 @@
 # FromConfig Mixin
 
-The `FromConfig` mixin class provides a standardized way to add
-configuration loading capabilities to any class.
+Add configuration loading to any class.
 
-## Class Structure
+## Interface
 
-```mermaid
-classDiagram
-    class FromConfig {
-        <<mixin>>
-        +from_dict(config: dict, key: str|None) Self
-        +from_pydantic(config: BaseModel, key: str|None) Self
-        +from_dataclass(config: object, key: str|None) Self
-        +from_config(config: dict|BaseModel|object, key: str|None) Self
-    }
+```python
+class FromConfig:
+    @classmethod
+    def from_dict(cls, config: dict, key: str | None = None) -> Self:
+        """Create from dictionary."""
 
-    class Policy {
-        +__init__(model, optimizer)
-    }
+    @classmethod
+    def from_pydantic(cls, config: BaseModel, key: str | None = None) -> Self:
+        """Create from Pydantic model."""
 
-    class MyPolicy {
-        +__init__(hidden_size: int)
-    }
+    @classmethod
+    def from_dataclass(cls, config: object, key: str | None = None) -> Self:
+        """Create from dataclass."""
 
-    Policy --|> FromConfig : inherits
-    MyPolicy --|> FromConfig : inherits
+    @classmethod
+    def from_config(cls, config, key: str | None = None) -> Self:
+        """Create from any config (auto-detects type)."""
 ```
 
-## Design Pattern
-
-The `FromConfig` mixin implements the **Factory Method** pattern,
-providing multiple factory methods for different configuration sources.
+## Usage
 
 ```python
 class MyModel(nn.Module, FromConfig):
@@ -39,10 +32,9 @@ class MyModel(nn.Module, FromConfig):
         self.hidden_size = hidden_size
         self.num_layers = num_layers
 
-# Now MyModel supports all configuration patterns
 model = MyModel.from_dict({"hidden_size": 256})
-model = MyModel.from_pydantic(PydanticConfig(...))
-model = MyModel.from_dataclass(DataclassConfig(...))
+model = MyModel.from_pydantic(config)
+model = MyModel.from_dataclass(config)
 model = MyModel.from_config(any_config)  # Auto-detects
 ```
 

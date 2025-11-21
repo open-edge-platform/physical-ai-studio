@@ -1,27 +1,17 @@
 # Export System
 
-This section describes the design for the `getiaction.export` module,
-which provides standardized methods for exporting trained models to various formats.
+Export trained models to multiple formats.
 
-## Overview
+## Backends
 
-The export system provides a consistent interface for:
+- **PyTorch** - Save checkpoint with config
+- **ONNX** - Cross-platform deployment
+- **OpenVINO** - Intel hardware optimization
+- **Torch Export IR** - Edge/mobile deployment
 
-1. **PyTorch Checkpoints** - Save model state with configuration
-2. **ONNX Export** - Convert models to ONNX format for deployment
-3. **OpenVINO** - Convert models to OpenVINO IR format for deployment
-4. **Torch Export IR** - Convert models to Torch Export IR format for deployment
+## Export Mixin
 
-## Design Goals
-
-- **Consistency**: Unified API across all model types
-- **Flexibility**: Support multiple export formats
-
-## Key Components
-
-### Export Mixin
-
-The `Export` mixin class adds export capabilities to policy classes:
+Add export capabilities to policy classes:
 
 ```python
 from getiaction.export import Export
@@ -31,17 +21,9 @@ class MyPolicy(Export, Policy):
     pass
 
 policy = MyPolicy()
-
-# Export to PyTorch checkpoint
 policy.to_torch("model.pt")
-
-# Export to ONNX
 policy.to_onnx("model.onnx")
-
-# Export to OpenVINO
 policy.to_openvino("model.xml")
-
-# Export to Torch IR
 policy.to_torch_export_ir("model.ptir")
 ```
 

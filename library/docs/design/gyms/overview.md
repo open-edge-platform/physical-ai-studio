@@ -1,22 +1,17 @@
-# Gyms
+# Gym Environments
 
-Gym environments play a crucial role in evaluating using simulation data.
+Simulation environments for policy evaluation.
 
-```mermaid
-graph TD
-    A["action_trainer"]
-    A --> B["gyms/ <br/> Gyms"]
-    B --> C["__init__.py"]
-    B --> D["base.py"]
-    B --> E["pusht.py"]
-```
+## Components
 
-This section describes the design for the action_trainer.data module.
+- `base.py` - Base gym interface
+- `pusht.py` - PushT environment implementation
+
+## Structure
 
 ```bash
-action_trainer
-├── gyms/  # Gyms
-│   ├── __init__.py
-│   ├── base.py
-│   ├── pusht.py
+gyms/
+├── __init__.py
+├── base.py
+└── pusht.py
 ```

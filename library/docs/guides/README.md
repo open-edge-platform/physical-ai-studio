@@ -1,100 +1,23 @@
-# GetiAction User Guides
+# User Guides
 
-Welcome to the GetiAction user guides! This section provides practical,
-user-facing documentation for working with GetiAction.
+Practical documentation for training and deploying policies.
 
-## Available Guides
+## Guides
 
-### [CLI Guide](cli.md)
-
-Comprehensive guide to using the GetiAction command-line interface.
-
-**Topics Covered:**
-
-- Installation and setup
-- Basic CLI commands
-- Configuration patterns
-- Training workflows
-- Advanced features
-- Tips and troubleshooting
-
-**Audience:** Users who want to train policies and run experiments
-
-### [Export & Inference Guide](export_inference.md)
-
-Complete guide for exporting trained policies and deploying to production.
-
-**Topics Covered:**
-
-- Training to production workflow
-- Export to multiple backends (OpenVINO, ONNX, Torch Export IR)
-- Inference deployment
-- Backend selection and optimization
-- Performance tuning
-- Troubleshooting
-
-**Audience:** Users deploying models to production environments
-
----
-
-## Guide vs Design Documentation
-
-### 📖 User Guides (You Are Here)
-
-**Purpose:** Practical, how-to documentation for using GetiAction
-
-**Audience:**
-
-- Data scientists training models
-- Researchers running experiments
-- Users configuring policies
-
-**Content:**
-
-- Step-by-step instructions
-- Usage examples
-- Configuration guides
-- Best practices for users
-- Troubleshooting
-
-### 🏗️ [Design Documentation](../design/)
-
-**Purpose:** Technical documentation for developers
-
-**Audience:**
-
-- Developers contributing to GetiAction
-- Engineers implementing new features
-- Maintainers understanding architecture
-
-**Content:**
-
-- Architecture diagrams
-- Design decisions
-- Implementation details
-- API documentation
-- Code patterns
-
----
+- **[CLI Guide](cli.md)** - Train policies from the command line
+- **[Export & Inference](export_inference.md)** - Deploy models to production
 
 ## Quick Start
 
-New to GetiAction? Start here:
+1. Install GetiAction: `uv pip install getiaction`
+2. Train a policy: `python -m getiaction fit --config configs/train.yaml`
+3. Export for deployment: See [Export & Inference](export_inference.md)
 
-1. **[CLI Guide](cli.md)** - Learn how to use the command-line interface
-2. **[Configuration Examples](../../../configs/)** - See example YAML configs
-3. **[Design Docs](../design/)** - Understand the architecture (for developers)
+## Resources
 
-## Related Documentation
-
-- **[Main README](../../../README.md)** - Project overview and quick start
-- **[Configuration Examples](../../../configs/)** - Example YAML files
-- **[Design Documentation](../design/)** - Developer documentation
-- **[API Reference](../api/)** - API documentation (if available)
-
-## Contributing
-
-Found an issue with the guides or want to add more? See our [Contributing Guide](../../../CONTRIBUTING.md).
+- [Configuration Examples](../../../configs/) - Example YAML files
+- [Design Documentation](../design/) - For contributors
+- [Main README](../../../README.md) - Project overview
 
 ---
 
