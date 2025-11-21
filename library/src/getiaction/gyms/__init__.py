@@ -4,6 +4,24 @@
 """Action trainer gym simulation environments."""
 
 from .base import Gym
-from .pusht import PushTGym
+from .gymnasium_wrapper import GymnasiumWrapper
 
-__all__ = ["Gym", "PushTGym"]
+
+class PushTGym(GymnasiumWrapper):
+    """Convenience wrapper for popularly used gym."""
+    def __init__(
+        self,
+        gym_id="gym_pusht/PushT-v0",
+        obs_type="pixels_agent_pos",
+        device="cpu",
+        **kwargs
+    ):
+        super().__init__(
+            gym_id=gym_id,
+            obs_type=obs_type,
+            device=device,
+            **kwargs,
+        )
+
+
+__all__ = ["Gym", "GymnasiumWrapper", "PushTGym"]

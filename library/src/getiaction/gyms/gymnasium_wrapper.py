@@ -44,6 +44,10 @@ class GymnasiumWrapper(Gym):
             kwargs["render_mode"] = render_mode
         self._env: gym.Env = gym.make(gym_id, **kwargs)
         self.device = torch.device(device)
+
+        # vectorized environments
+        self.num_envs = getattr(self._env, "num_envs", 1)
+        self.is_vectorized = self.num_envs > 1
     
     @property
     def render_mode(self) -> str | None:
@@ -106,6 +110,23 @@ class GymnasiumWrapper(Gym):
         space = self.action_space
         if space is None:
             raise ActionValidationError("Environment has no action_space defined.")
+        
+        if not self.is_vectorized:
+            # allow either shape [dim] or [1, dim]
+            if action.ndim == 2 and action.shape[0] == 1:
+                # will squeeze later
+                return
+            if action.ndim != 1:
+                raise ActionValidationError(
+                    f"Single-env expects [dim] or [1,dim], got {action.shape}"
+                )
+        else:
+            # vectorized requires [num_envs, dim]
+            if action.ndim != 2 or action.shape[0] != self.num_envs:
+                raise ActionValidationError(
+                    f"Vectorized env expects [num_envs, dim] = "
+                    f"[{self.num_envs}, ...], got {action.shape}"
+                )
 
         if isinstance(space, gym.spaces.Discrete):
             if action.ndim != 0:
@@ -161,6 +182,12 @@ class GymnasiumWrapper(Gym):
             Tuple of (Observation, reward, terminated, truncated, info).
         """
         self.validate_action(action)
+
+        # Single env: allow [dim] or [1,dim], but squeeze before .step()
+        if not self.is_vectorized:
+            if action.ndim == 2 and action.shape[0] == 1:
+                action = action[0]
+
         raw_action = action.detach().cpu().numpy()
         raw_obs, reward, terminated, truncated, info = self._env.step(raw_action)
         obs = self.to_observation(raw_obs)

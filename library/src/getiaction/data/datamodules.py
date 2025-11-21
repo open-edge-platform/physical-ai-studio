@@ -11,13 +11,13 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
-from gymnasium.wrappers import TimeLimit
 from lightning.pytorch import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
 from getiaction.data.gym import GymDataset
 from getiaction.data.observation import Observation
 from getiaction.gyms import Gym
+from getiaction.gyms.wrappers import StepLimit
 
 if TYPE_CHECKING:
     from getiaction.data import Dataset
@@ -145,26 +145,26 @@ class DataModule(LightningDataModule):
         # setup time limit if max_episode steps
         if (self.max_episode_steps is not None) and self.val_gyms is not None:
             if isinstance(self.val_gyms, Gym):
-                self.val_gyms.env = TimeLimit(
-                    env=self.val_gyms.env,
-                    max_episode_steps=self.max_episode_steps,
+                self.val_gyms = StepLimit(
+                    env=self.val_gyms,
+                    max_steps=self.max_episode_steps,
                 )
             elif isinstance(self.val_gyms, list):
                 for val_gym in self.val_gyms:
-                    val_gym.env = TimeLimit(
-                        env=val_gym.env,
-                        max_episode_steps=self.max_episode_steps,
+                    val_gym = StepLimit(
+                        env=val_gym,
+                        max_steps=self.max_episode_steps,
                     )
         if (self.max_episode_steps is not None) and self.test_gyms is not None:
             if isinstance(self.test_gyms, Gym):
-                self.test_gyms.env = TimeLimit(
-                    env=self.test_gyms.env,
+                self.test_gyms = StepLimit(
+                    env=self.test_gyms,
                     max_episode_steps=self.max_episode_steps,
                 )
             elif isinstance(self.test_gyms, list):
                 for test_gym in self.test_gyms:
-                    test_gym.env = TimeLimit(
-                        env=test_gym.env,
+                    test_gym = StepLimit(
+                        env=test_gym,
                         max_episode_steps=self.max_episode_steps,
                     )
 
