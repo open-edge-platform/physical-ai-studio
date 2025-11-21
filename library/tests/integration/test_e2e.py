@@ -219,6 +219,35 @@ class TestLeRobotPolicies(E2ETests):
         """Override to skip torch_export_ir (no export = no inference test)."""
         return super().test_inference_with_exported_model(trained_policy, backend, datamodule, tmp_path)
 
+    @staticmethod
+    def _extract_single_observation_from_batch(batch_observation: Observation) -> Observation:
+        """Extract first observation from batch, handling temporal dimensions.
+
+        LeRobot policies may have temporal observations [B, T, ...] where T is n_obs_steps.
+        For inference, we take the last temporal frame [1, ...] from the first batch item.
+        """
+        def extract_last_temporal(tensor: torch.Tensor) -> torch.Tensor:
+            """Extract last temporal frame from first batch item."""
+            if tensor.ndim == 3:  # [batch, n_obs_steps, feature_dim]
+                return tensor[0:1, -1, ...]  # [1, feature_dim]
+            elif tensor.ndim == 5:  # [batch, n_obs_steps, C, H, W]
+                return tensor[0:1, -1, ...]  # [1, C, H, W]
+            else:
+                return tensor[0:1]  # [1, ...]
+
+        state_single = None
+        if batch_observation.state is not None:
+            state_single = extract_last_temporal(batch_observation.state) if torch.is_tensor(batch_observation.state) else batch_observation.state
+
+        images_single = None
+        if batch_observation.images is not None:
+            if isinstance(batch_observation.images, dict):
+                images_single = {k: extract_last_temporal(v) for k, v in batch_observation.images.items()}
+            else:
+                images_single = extract_last_temporal(batch_observation.images)
+
+        return Observation(state=state_single, images=images_single)
+
     @pytest.mark.parametrize("backend", ["openvino", "onnx"])
     def test_numerical_consistency_training_vs_inference(
         self,
@@ -227,68 +256,32 @@ class TestLeRobotPolicies(E2ETests):
         datamodule: LeRobotDataModule,
         tmp_path: Path,
     ) -> None:
-        """Override with LeRobot-specific handling: temporal dimensions, preprocessor/postprocessor, scheduler."""
+        """Test numerical consistency between training and inference.
+
+        LeRobot-specific: Handles temporal dimension extraction for policies with n_obs_steps.
+        All export logic (CPU movement, preprocessors, scheduler) is handled by the policy itself.
+        """
         policy_name = trained_policy.__class__.__name__.lower()
 
-        # Skip Diffusion policies for ONNX/OpenVINO (random noise baked into exported graph)
-        if policy_name == "diffusion" and backend in {"openvino", "onnx"}:
+        # Skip Diffusion for ONNX/OpenVINO (random noise baked into graph at trace time)
+        if policy_name == "diffusion":
             pytest.skip(f"Diffusion numerical consistency not supported for {backend}: random noise baked into graph")
 
         export_dir = tmp_path / f"{policy_name}_{backend}"
 
-        # Get batch and convert to Observation
+        # Get batch and extract single observation (handles LeRobot temporal dimensions)
         from getiaction.data.lerobot import FormatConverter
         sample_batch = next(iter(datamodule.train_dataloader()))
-        batch_observation = FormatConverter.to_observation(sample_batch).to("cpu")
+        batch_observation = FormatConverter.to_observation(sample_batch)
+        single_observation = self._extract_single_observation_from_batch(batch_observation)
 
-        # Extract first sample, handling temporal dimension for LeRobot policies
-        # LeRobot Diffusion: observation shape [B, T, ...], need [1, T, ...] not [1, ...]
-        state_single = None
-        if batch_observation.state is not None and torch.is_tensor(batch_observation.state):
-            if batch_observation.state.ndim == 3:  # [batch, n_obs_steps, state_dim]
-                state_single = batch_observation.state[0:1, -1, ...]  # [1, state_dim]
-            else:
-                state_single = batch_observation.state[0:1]
-        else:
-            state_single = batch_observation.state
-
-        images_single = None
-        if batch_observation.images is not None:
-            if isinstance(batch_observation.images, dict):
-                images_single = {}
-                for k, v in batch_observation.images.items():
-                    if v.ndim == 5:  # [batch, n_obs_steps, C, H, W]
-                        images_single[k] = v[0:1, -1, ...]  # [1, C, H, W]
-                    else:
-                        images_single[k] = v[0:1]
-            else:
-                if batch_observation.images.ndim == 5:
-                    images_single = batch_observation.images[0:1, -1, ...]
-                else:
-                    images_single = batch_observation.images[0:1]
-
-        single_observation = Observation(state=state_single, images=images_single)
-
-        # Move preprocessor/postprocessor to CPU (LeRobot requirement)
+        # Prepare policy for CPU inference (model + preprocessors)
+        # Move model to CPU
+        trained_policy.cpu()
+        # Move preprocessors to CPU (LeRobot requirement for consistent device state)
+        # Don't restore - export() expects them to already be on CPU
         if hasattr(trained_policy, "_move_processor_steps_to_device"):
             trained_policy._move_processor_steps_to_device("cpu")  # type: ignore[attr-defined]
-
-        # Move model to CPU for export
-        trained_policy = trained_policy.cpu()
-
-        # For Diffusion: move scheduler to CPU and set num_inference_steps=1 to match export
-        original_num_inference_steps = None
-        if hasattr(trained_policy, "_lerobot_policy") and hasattr(trained_policy._lerobot_policy, "diffusion"):  # type: ignore[attr-defined]
-            original_num_inference_steps = trained_policy._lerobot_policy.diffusion.num_inference_steps  # type: ignore[attr-defined]
-            trained_policy._lerobot_policy.diffusion.num_inference_steps = 1  # type: ignore[attr-defined]
-
-            # Move scheduler tensors to CPU
-            scheduler = trained_policy._lerobot_policy.diffusion.noise_scheduler  # type: ignore[attr-defined]
-            for attr_name in dir(scheduler):
-                if not attr_name.startswith("_"):
-                    attr = getattr(scheduler, attr_name, None)
-                    if isinstance(attr, torch.Tensor):
-                        setattr(scheduler, attr_name, attr.cpu())
 
         # Get training output
         torch.manual_seed(42)
@@ -297,71 +290,46 @@ class TestLeRobotPolicies(E2ETests):
         with torch.no_grad():
             train_output: torch.Tensor = trained_policy.select_action(single_observation)
 
-        # Restore num_inference_steps if changed
-        if original_num_inference_steps is not None:
-            trained_policy._lerobot_policy.diffusion.num_inference_steps = original_num_inference_steps  # type: ignore[attr-defined]
-
-        # Export model
+        # Export (policy's to_onnx already moved everything to CPU, no need to do it again)
         trained_policy.export(export_dir, backend)
 
         # Load exported model and run inference
         inference_model = InferenceModel.load(export_dir)
-        inference_input = single_observation.to_numpy()
-
-        # Debug OpenVINO inputs/outputs
-        import numpy as np  # noqa: PLC0415
-        if backend == "openvino":
-            print(f"\n=== DEBUG: OpenVINO Inference (policy={policy_name}) ===")
-            if hasattr(inference_input, "state") and inference_input.state is not None:
-                state_val = inference_input.state
-                if isinstance(state_val, np.ndarray):
-                    print(f"state: shape={state_val.shape}, min={np.min(state_val):.3f}, max={np.max(state_val):.3f}")
-            if hasattr(inference_input, "images") and inference_input.images is not None:
-                if isinstance(inference_input.images, dict):
-                    for k, v in inference_input.images.items():
-                        if isinstance(v, np.ndarray):
-                            print(f"images[{k}]: shape={v.shape}, min={np.min(v):.3f}, max={np.max(v):.3f}")
-
         torch.manual_seed(42)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(42)
-
         inference_model.reset()
-        inference_output: torch.Tensor = inference_model.select_action(inference_input)
 
-        if backend == "openvino":
-            print(f"inference_output: shape={inference_output.shape}")
-            if isinstance(inference_output, np.ndarray) and np.isnan(inference_output).any():
-                print(f"  WARNING: Output contains {np.isnan(inference_output).sum()} NaN values!")
-            elif torch.is_tensor(inference_output) and torch.isnan(inference_output).any():
-                print(f"  WARNING: Output contains {torch.isnan(inference_output).sum()} NaN values!")
+        # Run inference (input is already on CPU)
+        inference_output: torch.Tensor = inference_model.select_action(single_observation.to_numpy())
 
-        # Extract first action and handle chunked outputs
-        train_action: torch.Tensor = train_output[0].cpu()
-        if len(train_action.shape) > 1:
-            train_action = train_action[0]  # [action_dim]
+        # Extract first action from both outputs
+        train_action = train_output[0].cpu()
+        if train_action.ndim > 1:
+            train_action = train_action[0]  # Extract from chunk
 
-        # Convert inference output to tensor if needed
-        if not isinstance(inference_output, torch.Tensor):
-            inference_output = torch.from_numpy(inference_output)
+        inference_action = torch.as_tensor(inference_output).cpu().squeeze(0)
+        if inference_action.ndim > 1:
+            inference_action = inference_action[0]
 
-        # Squeeze batch dimension and handle chunked inference output
-        inference_output_cpu: torch.Tensor = inference_output.cpu().squeeze(0)
-        if len(inference_output_cpu.shape) > 1:
-            inference_output_cpu = inference_output_cpu[0]  # [action_dim]
+        torch.testing.assert_close(inference_action, train_action, rtol=0.2, atol=0.2)
 
-        torch.testing.assert_close(
-            inference_output_cpu,
-            train_action,
-            rtol=0.2,
-            atol=0.2,
-        )
+        # Cleanup: delete inference model and clear CUDA cache to prevent state leakage
+        del inference_model
+        torch.cuda.empty_cache()
 
     # Override trained_policy with function scope for numerical consistency tests
     # This avoids fixture corruption when modifying policy device/state
     @pytest.fixture(scope="function")
-    def trained_policy(self, policy: Policy, datamodule: LeRobotDataModule, trainer: Trainer) -> Policy:
+    def trained_policy(self, policy_name: str, datamodule: LeRobotDataModule, trainer: Trainer) -> Policy:
         """Train a fresh policy for each test (function-scoped for numerical consistency)."""
+        # Create a NEW policy instance for each test to avoid state pollution
+        from getiaction.policies import get_policy
+
+        # Fast config for integration tests
+        policy_kwargs = {}
+        if policy_name == "diffusion":
+            policy_kwargs = {"num_inference_steps": 1}
+
+        policy = get_policy(policy_name, source="lerobot", **policy_kwargs)
         trainer.fit(policy, datamodule=datamodule)
         return policy
 
@@ -370,7 +338,7 @@ class TestLeRobotPolicies(E2ETests):
         """Extract policy name from parametrize."""
         return request.param
 
-    @pytest.fixture(scope="class")
+    @pytest.fixture(scope="function")  # Function scope to avoid state pollution
     def datamodule(self, policy_name: str) -> LeRobotDataModule:
         """Create datamodule for LeRobot policies (lerobot format with delta timestamps)."""
         repo_id = "lerobot/pusht"
@@ -412,7 +380,7 @@ class TestLeRobotPolicies(E2ETests):
 
         return LeRobotDataModule(**config)  # type: ignore[arg-type]
 
-    @pytest.fixture(scope="class")
+    @pytest.fixture(scope="function")  # Function scope to avoid state pollution between tests
     def policy(self, policy_name: str) -> Policy:
         """Create LeRobot policy instance."""
         # Fast config for integration tests
