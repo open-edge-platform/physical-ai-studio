@@ -429,6 +429,33 @@ class TestFieldMapping:
         mapping = InferenceModel._build_field_mapping(obs_fields, model_inputs)
         assert mapping == expected
 
+    def test_exact_match_first_party(self) -> None:
+        """Test exact matches for first-party naming convention."""
+        obs_dict = {
+            "state": np.array([1.0, 2.0]),
+            "images": [np.random.randn(3, 224, 224)],
+        }
+        expected_inputs = {"state", "images"}
+
+        mapping = InferenceModel._build_field_mapping(obs_dict, expected_inputs)
+
+        assert mapping == {"state": "state", "images": "images"}
+
+    def test_exact_match_lerobot(self) -> None:
+        """Test exact matches for LeRobot naming convention."""
+        obs_dict = {
+            "state": np.array([1.0, 2.0]),
+            "images": [np.random.randn(3, 224, 224)],
+        }
+        expected_inputs = {"observation.state", "observation.image"}
+
+        mapping = InferenceModel._build_field_mapping(obs_dict, expected_inputs)
+
+        assert mapping == {
+            "state": "observation.state",
+            "images": "observation.image",
+        }
+
 
 class TestActionOutputKey:
     """Test action output key detection."""
