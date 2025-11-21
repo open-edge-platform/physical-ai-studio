@@ -1,28 +1,21 @@
-<!-- markdownlint-disable MD013 -->
-
 # Trainer
 
-This is the implemenation of a `Lightning` trainer,
-with a callback for policy / datamodule interaction:
+Lightning trainer wrapper with policy-datamodule interaction callback.
 
-```mermaid
-classDiagram
-    class L.Trainer
-    class PolicyDatasetInteraction
-    class TrainerModule
-    class DataModule
+## Interface
 
-    class Trainer {
-        - L.Trainer backend
-        + __init__(num_sanity_val_steps: int = 0, callbacks: list|bool|None = None, **trainer_kwargs)
-        + fit(model: TrainerModule, datamodule: DataModule, **kwargs)
-        + test(*args, **kwargs) NotImplementedError
-        + predict(*args, **kwargs) NotImplementedError
-        + validate(*args, **kwargs) NotImplementedError
-    }
+```python
+class Trainer:
+    def __init__(self, num_sanity_val_steps: int = 0, callbacks: list | None = None, **kwargs):
+        """Wrap Lightning trainer."""
 
-    Trainer --> L.Trainer
-    Trainer --> PolicyDatasetInteraction
-    Trainer --> TrainerModule
-    Trainer --> DataModule
+    def fit(self, model: TrainerModule, datamodule: DataModule, **kwargs):
+        """Train the model."""
 ```
+
+## Components
+
+- `L.Trainer` - PyTorch Lightning trainer backend
+- `PolicyDatasetInteraction` - Callback for policy-data coordination
+- `TrainerModule` - Lightning module interface
+- `DataModule` - Lightning data module interface

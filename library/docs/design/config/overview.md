@@ -1,82 +1,47 @@
 # Configuration System
 
-```mermaid
-graph TD
-    A["getiaction"]
-    A --> B["config/ <br/> Configuration System"]
-    B --> C["__init__.py"]
-    B --> D["instantiate.py"]
-    B --> E["mixin.py"]
-```
+Flexible configuration loading supporting dataclasses, Pydantic, and YAML.
 
-This section describes the design for the `getiaction.config` module,
-which provides flexible configuration loading and object instantiation.
+## Components
 
-## Overview
-
-The configuration system enables multiple patterns for defining and loading configurations:
-
-1. **Dataclasses** - Type-safe, compile-time validation
-2. **Pydantic Models** - Runtime validation with custom validators
-3. **Dictionaries/YAML** - Dynamic configuration with `class_path` pattern
-
-## Design Goals
-
-- **Flexibility**: Support multiple configuration patterns
-- **Type Safety**: Leverage Python type hints for validation
-- **Validation**: Runtime validation with clear error messages
-- **Backward Compatibility**: Work with existing config-based code
-- **jsonargparse Integration**: Seamless CLI integration
-
-## Key Components
-
-### instantiate.py
-
-Provides functions for object instantiation from various config sources:
+**instantiate.py** - Object instantiation from various sources:
 
 ```python
-instantiate_obj(config)                    # Universal instantiator
-instantiate_obj_from_dict(config)          # From dict/YAML
-instantiate_obj_from_pydantic(config)      # From Pydantic models
-instantiate_obj_from_dataclass(config)     # From dataclasses
-instantiate_obj_from_file(path)            # From YAML/JSON files
+instantiate_obj(config)                # Universal
+instantiate_obj_from_dict(config)      # From dict/YAML
+instantiate_obj_from_pydantic(config)  # From Pydantic
+instantiate_obj_from_dataclass(config) # From dataclass
+instantiate_obj_from_file(path)        # From file
 ```
 
-### mixin.py
-
-Provides `FromConfig` mixin class for adding configuration loading to any class:
+**mixin.py** - `FromConfig` mixin for classes:
 
 ```python
 class MyModel(nn.Module, FromConfig):
     pass
 
-# Multiple loading methods
-model = MyModel.from_config(config)        # Universal
-model = MyModel.from_pydantic(config)      # From Pydantic
-model = MyModel.from_dataclass(config)     # From dataclass
-model = MyModel.from_dict(config)          # From dict
+model = MyModel.from_config(config)  # Auto-detects type
 ```
 
 ## Architecture
 
 ```mermaid
 graph TB
-    A[Configuration Sources] --> B[Instantiation Layer]
-    B --> C[Object Creation]
+    A[Config Sources] --> B[Instantiation]
+    B --> C[Objects]
 
-    A1[YAML/JSON Files] --> A
+    A1[YAML/JSON] --> A
     A2[Dataclasses] --> A
-    A3[Pydantic Models] --> A
-    A4[Python Dicts] --> A
+    A3[Pydantic] --> A
+    A4[Dicts] --> A
 
-    B --> B1[Type Validation]
-    B --> B2[Class Import]
-    B --> B3[Parameter Resolution]
+    B --> B1[Validation]
+    B --> B2[Import]
+    B --> B3[Resolution]
 
     C --> C1[Policy]
     C --> C2[Model]
     C --> C3[Optimizer]
-    C --> C4[DataModule]
 ```
 
 ## Configuration Patterns
@@ -182,10 +147,9 @@ model:
         lr: 0.001
 ```
 
-The system automatically handles nested instantiation, creating the model and
-optimizer before passing them to the policy.
+The system handles nested instantiation automatically.
 
-### With FromConfig Mixin
+### FromConfig Mixin
 
 ```python
 class Dummy(Policy, FromConfig):
@@ -194,71 +158,33 @@ class Dummy(Policy, FromConfig):
         self.model = model
         self.optimizer = optimizer
 
-# All these work automatically:
+# All work automatically:
 policy = Dummy.from_dict(dict_config)
 policy = Dummy.from_pydantic(pydantic_config)
 policy = Dummy.from_dataclass(dataclass_config)
-policy = Dummy.from_config(any_config)  # Auto-detects type
+policy = Dummy.from_config(any_config)  # Auto-detects
 ```
 
 ## Type Validation
 
-The system performs automatic type validation:
+Types are validated automatically from type hints:
 
 ```python
 class Model:
     def __init__(self, hidden_size: int, dropout: float = 0.1):
         pass
 
-# Valid
 config = {"class_path": "Model", "init_args": {"hidden_size": 128}}
-model = instantiate_obj_from_dict(config)  # ✅
+model = instantiate_obj_from_dict(config)  # Valid
 
-# Invalid - type error
 config = {"class_path": "Model", "init_args": {"hidden_size": "128"}}
-model = instantiate_obj_from_dict(config)  # ❌ TypeError
-```
-
-## Error Handling
-
-Clear error messages for common issues:
-
-```python
-# Missing class_path
-config = {"init_args": {"hidden_size": 128}}
-# Error: Configuration must contain 'class_path' key
-
-# Invalid class path
-config = {"class_path": "nonexistent.Module"}
-# Error: Cannot import 'nonexistent.Module': No module named 'nonexistent'
-
-# Invalid dataclass
-config = "not a dataclass"
-# Error: Expected dataclass instance, got <class 'str'>
-```
-
-## Integration with CLI
-
-The configuration system integrates seamlessly with the CLI through jsonargparse:
-
-```bash
-# jsonargparse automatically uses the config system
-getiaction fit --config train.yaml
-
-# Validates types from class signatures
-getiaction fit --model.hidden_size 256  # ✅
-getiaction fit --model.hidden_size abc  # ❌ Type error
+model = instantiate_obj_from_dict(config)  # TypeError
 ```
 
 ## Best Practices
 
-1. **Use Dataclasses for Static Configs**: When configuration is known at
-   development time
-2. **Use Pydantic for User Configs**: When validating user-provided YAML/JSON files
-3. **Use class_path for Experiments**: When trying different models/components
-4. **Add Type Hints**: Enable automatic validation
-5. **Provide Defaults**: Use Field() or dataclass defaults
-6. **Document Constraints**: Use Pydantic validators for complex constraints
-
-This design provides flexibility while maintaining type safety and clear
-error messages.
+- Use dataclasses for static configs
+- Use Pydantic for user-provided configs
+- Use `class_path` for experiments
+- Add type hints for validation
+- Provide defaults using `Field()` or dataclass defaults

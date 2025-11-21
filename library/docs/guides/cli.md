@@ -1,34 +1,13 @@
-# CLI Usage Guide
+# CLI Guide
 
-GetiAction provides a powerful command-line interface built on PyTorch
-Lightning CLI and jsonargparse. This CLI supports multiple configuration
-patterns and provides full flexibility for training policies.
+Train policies using the command-line interface built on PyTorch Lightning and jsonargparse.
 
 ## Features
 
-✅ **Multiple Config Patterns**
-
-- Dataclass/Pydantic configs (type-safe)
-- jsonargparse `class_path` pattern (dynamic)
-- Mixed approach
-
-✅ **Full jsonargparse Support**
-
-- YAML/JSON config files
-- Command-line argument overrides
-- Config composition and inheritance
-
-✅ **PyTorch Lightning Integration**
-
-- All Lightning Trainer features
-- Callbacks, loggers, and plugins
-- Distributed training support
-
-✅ **Type Safety**
-
-- Automatic type validation from type hints
-- Dataclass support
-- Pydantic model support
+- YAML/JSON config files with CLI overrides
+- Type-safe configuration (dataclasses, Pydantic)
+- Dynamic class loading (`class_path` pattern)
+- Full PyTorch Lightning features (callbacks, loggers, distributed training)
 
 ## Installation
 
@@ -171,24 +150,21 @@ python -m getiaction fit \
 
 ### Validation
 
+Validate config before full training:
+
 ```bash
-# Validate config without training
-python -m getiaction fit \
-    --config configs/train.yaml \
-    --trainer.fast_dev_run=true
+python -m getiaction fit --config configs/train.yaml --trainer.fast_dev_run=true
 ```
 
 ## Examples
 
-### Example 1: Quick Start
+### Quick Start
 
 ```bash
-# Train Dummy policy on PushT dataset
-python -m getiaction fit \
-    --config configs/train_dummy_class_path.yaml
+python -m getiaction fit --config configs/train_dummy_class_path.yaml
 ```
 
-### Example 2: GPU Training with Mixed Precision
+### GPU Training
 
 ```yaml
 trainer:
@@ -198,18 +174,13 @@ trainer:
   max_epochs: 200
 ```
 
-### Example 3: Distributed Training
+### Multi-GPU Training
 
 ```bash
-# Multi-GPU training
-python -m getiaction fit \
-    --config configs/train.yaml \
-    --trainer.accelerator=gpu \
-    --trainer.devices=4 \
-    --trainer.strategy=ddp
+python -m getiaction fit --config configs/train.yaml --trainer.strategy=ddp --trainer.devices=4
 ```
 
-### Example 4: Custom Callbacks
+### Custom Callbacks
 
 ```yaml
 trainer:
@@ -218,14 +189,9 @@ trainer:
       init_args:
         patience: 10
         monitor: train/loss
-
-    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
-      init_args:
-        save_top_k: 3
-        monitor: train/loss
 ```
 
-### Example 5: Custom Optimizer and Scheduler
+### Custom Optimizer
 
 ```yaml
 model:
@@ -235,88 +201,45 @@ model:
       init_args:
         lr: 0.001
         weight_decay: 0.00001
-
-lr_scheduler:
-  class_path: torch.optim.lr_scheduler.CosineAnnealingLR
-  init_args:
-    T_max: 200
-    eta_min: 0.00001
 ```
 
-## CLI Commands
-
-### fit
-
-Train a model:
+## Commands
 
 ```bash
+# Train
 python -m getiaction fit --config CONFIG_PATH
+
+# Validate
+python -m getiaction validate --config CONFIG_PATH --ckpt_path CHECKPOINT
+
+# Test
+python -m getiaction test --config CONFIG_PATH --ckpt_path CHECKPOINT
+
+# Predict
+python -m getiaction predict --config CONFIG_PATH --ckpt_path CHECKPOINT
 ```
 
-### validate
+## Tips
 
-Run validation only:
-
-```bash
-python -m getiaction validate \
-    --config CONFIG_PATH \
-    --ckpt_path CHECKPOINT_PATH
-```
-
-### test
-
-Run testing:
-
-```bash
-python -m getiaction test \
-    --config CONFIG_PATH \
-    --ckpt_path CHECKPOINT_PATH
-```
-
-### predict
-
-Run predictions:
-
-```bash
-python -m getiaction predict \
-    --config CONFIG_PATH \
-    --ckpt_path CHECKPOINT_PATH
-```
-
-## Tips and Best Practices
-
-1. **Start with example configs**: Use provided configs as templates
-2. **Use `--print_config`**: Generate full config with all defaults
-3. **Validate first**: Use `fast_dev_run` to catch errors quickly
-4. **Version control configs**: Keep configs in git for reproducibility
-5. **Use type hints**: jsonargparse automatically validates types
-6. **Leverage inheritance**: Create base configs and extend them
+- Use example configs as templates
+- Run `--print_config` to see all defaults
+- Validate with `fast_dev_run` before full training
+- Version control your configs
 
 ## Troubleshooting
 
-### Config Validation Errors
+### Config errors
+
+Run `--print_config` to see parsed values
+
+### Import errors
+
+Test imports manually:
 
 ```bash
-# Check config structure
-python -m getiaction fit --config CONFIG_PATH --parser.error_handler=ignore
-
-# Print parsed config
-python -m getiaction fit --config CONFIG_PATH --print_config
-```
-
-### Import Errors
-
-Ensure all classes are importable:
-
-```python
-# Test imports
 python -c "from getiaction.policies.dummy.policy import Dummy"
 ```
 
-### Type Validation
+### Type errors
 
-jsonargparse validates types automatically. If you get type errors:
-
-1. Check your config matches the class signature
-2. Use `--parser.default_meta=false` to disable strict validation
-3. Check type hints in your classes
+Check config matches class signature

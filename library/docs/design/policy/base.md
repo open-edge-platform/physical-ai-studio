@@ -1,20 +1,20 @@
 # TrainerModule
 
-Base class for `Lighting Modules`.
+Base class for Lightning training modules.
 
-```mermaid
-classDiagram
-    class LightningModule
-    class nn_Module
+## Interface
 
-    class TrainerModule {
-        +__init__()
-        +forward(batch: dict[str, torch.Tensor], *args, **kwargs) torch.Tensor
-        <<abstract>> +select_action(batch: dict[str, torch.Tensor]) torch.Tensor
-        -model: nn.Module
-    }
+```python
+class PolicyModule(LightningModule):
+    def __init__(self):
+        """Initialize module."""
 
-    ActionTrainerModule --|> LightningModule : inherits
-    ActionTrainerModule --> nn_Module : uses
+    def forward(self, batch: dict[str, Tensor], *args, **kwargs) -> Tensor:
+        """Training forward pass."""
 
+    @abstractmethod
+    def select_action(self, batch: dict[str, Tensor]) -> Tensor:
+        """Action selection (inference)."""
+
+    model: nn.Module  # PyTorch model
 ```
