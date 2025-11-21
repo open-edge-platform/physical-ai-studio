@@ -1,6 +1,7 @@
 # Policy Design
 
-Policies are action models consisting of a Lightning module wrapper and a PyTorch model.
+Policies are action models consisting of a Lightning module wrapper and a
+PyTorch model.
 
 ## Structure
 

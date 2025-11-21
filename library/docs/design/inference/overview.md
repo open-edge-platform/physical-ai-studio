@@ -19,16 +19,18 @@ class RuntimeAdapter(ABC):
     def load(self, model_path: Path) -> None: ...
 
     @abstractmethod
-    def predict(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]: ...
+    def predict(
+        self, inputs: dict[str, np.ndarray]
+    ) -> dict[str, np.ndarray]: ...
 ```
 
 ## Adapters
 
-| Adapter                | Hardware        | Features                    |
-| ---------------------- | --------------- | --------------------------- |
-| **OpenVINOAdapter**    | Intel CPU/GPU   | Hardware opts, quantization |
-| **ONNXAdapter**        | Cross-platform  | CUDA/TensorRT               |
-| **TorchExportAdapter** | Edge/mobile     | PyTorch export              |
+| Adapter                | Hardware       | Features                    |
+| ---------------------- | -------------- | --------------------------- |
+| **OpenVINOAdapter**    | Intel CPU/GPU  | Hardware opts, quantization |
+| **ONNXAdapter**        | Cross-platform | CUDA/TensorRT               |
+| **TorchExportAdapter** | Edge/mobile    | PyTorch export              |
 
 ## InferenceModel
 
@@ -202,7 +204,8 @@ Common errors: `ImportError` (backend not installed), `ValueError`
 ## Extension Points
 
 - **Custom Adapters**: Implement `RuntimeAdapter` for new backends
-- **Custom Preprocessing**: Override `_preprocess_observation()` in `InferenceModel`
+- **Custom Preprocessing**: Override `_preprocess_observation()` in
+  `InferenceModel`
 
 ## Future Work
 
