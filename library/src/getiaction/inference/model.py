@@ -267,9 +267,17 @@ class InferenceModel:
 
         # Common observation fields with their possible model input names
         # Supports both first-party (e.g., "state") and LeRobot (e.g., "observation.state") conventions
+        # NOTE: ONNX converts dots to underscores in input names
         obs_fields = {
-            STATE: [STATE, f"observation.{STATE}"],
-            IMAGES: [IMAGES, "image", "observation.image", f"observation.{IMAGES}"],
+            STATE: [STATE, f"observation.{STATE}", f"observation_{STATE}"],
+            IMAGES: [
+                IMAGES,
+                "image",
+                "observation.image",
+                f"observation.{IMAGES}",
+                "observation_image",
+                f"observation_{IMAGES}",
+            ],
             ACTION: [ACTION],
         }
 
