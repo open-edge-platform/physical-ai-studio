@@ -9,12 +9,13 @@ from .gymnasium_wrapper import GymnasiumWrapper
 
 class PushTGym(GymnasiumWrapper):
     """Convenience wrapper for popularly used gym."""
+
     def __init__(
         self,
         gym_id="gym_pusht/PushT-v0",
         obs_type="pixels_agent_pos",
         device="cpu",
-        **kwargs
+        **kwargs,
     ):
         super().__init__(
             gym_id=gym_id,

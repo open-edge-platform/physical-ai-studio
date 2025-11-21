@@ -6,14 +6,12 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-
 from typing import TYPE_CHECKING, Any
 
-import gymnasium as gym
-
 if TYPE_CHECKING:
-    from getiaction.data import Observation
     import torch
+
+    from getiaction.data import Observation
 
 
 class Gym(ABC):
@@ -31,7 +29,7 @@ class Gym(ABC):
         self,
         *,
         seed: int | None = None,
-        **reset_kwargs: Any | None,
+        **reset_kwargs: Any,  # noqa: ANN401
     ) -> tuple[Observation, dict[str, Any]]:
         """Resets the environment.
 
@@ -64,7 +62,7 @@ class Gym(ABC):
                 - dict[str, Any]: Additional environment info.
         """
 
-    def render(self, *args: Any, **kwargs: Any) -> Any:
+    def render(self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401, ARG002, PLR6301
         """Renders the environment if supported.
 
         Args:
@@ -91,7 +89,7 @@ class Gym(ABC):
     @abstractmethod
     def to_observation(
         self,
-        raw_obs: Any,
+        raw_obs: Any,  # noqa: ANN401
         camera_keys: list[str] | None = None,
     ) -> Observation:
         """Converts a raw backend observation to a unified Observation.

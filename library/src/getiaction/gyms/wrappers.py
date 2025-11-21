@@ -1,13 +1,16 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Helpful Wrappers """
+"""Helpful Wrappers for Gym environment."""
 
-from typing import Any, Tuple
-from getiaction.data import Observation
+from typing import TYPE_CHECKING, Any
+
 import torch
 
 from .base import Gym
+
+if TYPE_CHECKING:
+    from getiaction.data.observation import Observation
 
 
 class GymWrapper(Gym):
@@ -28,7 +31,7 @@ class GymWrapper(Gym):
         """
         self.env = env
 
-    def reset(self, *args: Any, **kwargs: Any) -> tuple[Observation, dict[str, Any]]:
+    def reset(self, *args: Any, **kwargs: Any) -> tuple["Observation", dict[str, Any]]:
         """Reset the environment.
 
         Args:
@@ -42,7 +45,7 @@ class GymWrapper(Gym):
         """
         return self.env.reset(*args, **kwargs)
 
-    def step(self, *args: Any, **kwargs: Any) -> tuple[Observation, float, bool, bool, dict[str, Any]]:
+    def step(self, *args: Any, **kwargs: Any) -> tuple["Observation", float, bool, bool, dict[str, Any]]:  # noqa: ANN401
         """Perform a step in the environment.
 
         Args:
@@ -56,7 +59,7 @@ class GymWrapper(Gym):
         """
         return self.env.step(*args, **kwargs)
 
-    def render(self, *args: Any, **kwargs: Any) -> Any:
+    def render(self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
         """Render the environment.
 
         Args:
@@ -80,7 +83,7 @@ class GymWrapper(Gym):
         """
         return self.env.sample_action()
 
-    def to_observation(self, *args: Any, **kwargs: Any) -> Observation:
+    def to_observation(self, *args: Any, **kwargs: Any) -> "Observation":  # noqa: ANN401
         """Convert environment output to an observation.
 
         Args:
@@ -115,7 +118,7 @@ class StepLimit(GymWrapper):
         self.max_steps = max_steps
         self.step_count = 0
 
-    def reset(self, *args: Any, **kwargs: Any) -> tuple[Observation, dict[str, Any]]: 
+    def reset(self, *args: Any, **kwargs: Any) -> tuple["Observation", dict[str, Any]]:  # noqa: ANN401
         """Reset the environment and step counter.
 
         Args:
@@ -132,14 +135,12 @@ class StepLimit(GymWrapper):
 
     def step(
         self,
-        action: Any,
-        *args: Any,
-        **kwargs: Any,
-    ) -> Tuple[Observation, float, bool, bool, dict]:
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> tuple[Observation, float, bool, bool, dict]:
         """Perform a step and enforce the step limit.
 
         Args:
-            action (Any): The action to take.
             *args: Additional positional arguments.
             **kwargs: Additional keyword arguments.
 
@@ -150,7 +151,8 @@ class StepLimit(GymWrapper):
         self.step_count += 1
 
         obs, reward, terminated, truncated, info = super().step(
-            action, *args, **kwargs
+            *args,
+            **kwargs,
         )
 
         if self.step_count >= self.max_steps:

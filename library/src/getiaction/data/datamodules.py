@@ -159,13 +159,13 @@ class DataModule(LightningDataModule):
             if isinstance(self.test_gyms, Gym):
                 self.test_gyms = StepLimit(
                     env=self.test_gyms,
-                    max_episode_steps=self.max_episode_steps,
+                    max_steps=self.max_episode_steps,
                 )
             elif isinstance(self.test_gyms, list):
                 for test_gym in self.test_gyms:
                     test_gym = StepLimit(
                         env=test_gym,
-                        max_episode_steps=self.max_episode_steps,
+                        max_steps=self.max_episode_steps,
                     )
 
     def setup(self, stage: str) -> None:
