@@ -23,6 +23,9 @@ if TYPE_CHECKING:
     from getiaction.data import Dataset
 
 
+type GymOrList = Gym | list[Gym]
+
+
 def _collate_gym(batch: list[Any]) -> Gym:
     """Collate a batch of environments into a single Gym environment.
 
@@ -110,9 +113,9 @@ class DataModule(LightningDataModule):
         self,
         train_dataset: Dataset,
         train_batch_size: int = 16,
-        val_gyms: Gym | list[Gym] | None = None,
+        val_gyms: GymOrList | None = None,
         num_rollouts_val: int = 10,
-        test_gyms: Gym | list[Gym] | None = None,
+        test_gyms: GymOrList | None = None,
         num_rollouts_test: int = 10,
         max_episode_steps: int | None = 300,
     ) -> None:
@@ -121,9 +124,9 @@ class DataModule(LightningDataModule):
         Args:
             train_dataset (ActionDataset): Dataset for training.
             train_batch_size (int): Batch size for training DataLoader.
-            val_gyms (Gym, list[Gym], None]): Validation environments.
+            val_gyms (GymOrList, None): Validation environments.
             num_rollouts_val (int): Number of rollouts to run for validation environments.
-            test_gyms (Gym, list[Gym], None]): Test environments.
+            test_gyms (GymOrList, None): Test environments.
             num_rollouts_test (int): Number of rollouts to run for test environments.
             max_episode_steps (int, None): Maximum steps allowed per episode. If None, no time limit.
         """
@@ -134,39 +137,38 @@ class DataModule(LightningDataModule):
         self.train_batch_size: int = train_batch_size
 
         # gym environments
-        self.val_gyms: Gym | list[Gym] | None = val_gyms
+        self.val_gyms: GymOrList | None = val_gyms
         self.val_dataset: Dataset | None = None
         self.num_rollouts_val: int = num_rollouts_val
-        self.test_gyms: Gym | list[Gym] | None = test_gyms
+        self.test_gyms: GymOrList | None = test_gyms
         self.test_dataset: Dataset | None = None
         self.num_rollouts_test: int = num_rollouts_test
         self.max_episode_steps = max_episode_steps
 
         # setup time limit if max_episode steps
-        if (self.max_episode_steps is not None) and self.val_gyms is not None:
-            if isinstance(self.val_gyms, Gym):
-                self.val_gyms = StepLimit(
-                    env=self.val_gyms,
-                    max_steps=self.max_episode_steps,
-                )
-            elif isinstance(self.val_gyms, list):
-                for val_gym in self.val_gyms:
-                    val_gym = StepLimit(
-                        env=val_gym,
-                        max_steps=self.max_episode_steps,
-                    )
-        if (self.max_episode_steps is not None) and self.test_gyms is not None:
-            if isinstance(self.test_gyms, Gym):
-                self.test_gyms = StepLimit(
-                    env=self.test_gyms,
-                    max_steps=self.max_episode_steps,
-                )
-            elif isinstance(self.test_gyms, list):
-                for test_gym in self.test_gyms:
-                    test_gym = StepLimit(
-                        env=test_gym,
-                        max_steps=self.max_episode_steps,
-                    )
+        def _wrap_step_limit(
+            env_or_list: GymOrList | None,
+            max_steps: int,
+        ) -> GymOrList | None:
+            """Simple private function to wrap StepLimit around gym.
+
+            Returns:
+                env_or_list: A list of StepLimits or just one.
+            """
+            if env_or_list is None:
+                return None
+
+            if isinstance(env_or_list, Gym):
+                return StepLimit(env=env_or_list, max_steps=max_steps)
+
+            if isinstance(env_or_list, list):
+                return [StepLimit(env=g, max_steps=max_steps) for g in env_or_list]
+
+            return env_or_list
+
+        if self.max_episode_steps is not None:
+            self.val_gyms = _wrap_step_limit(self.val_gyms, max_steps=self.max_episode_steps)
+            self.test_gyms = _wrap_step_limit(self.test_gyms, max_steps=self.max_episode_steps)
 
     def setup(self, stage: str) -> None:
         """Set up datasets depending on the stage (fit or test).

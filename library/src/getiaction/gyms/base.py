@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    import numpy as np
     import torch
 
     from getiaction.data import Observation
@@ -89,15 +90,27 @@ class Gym(ABC):
     @abstractmethod
     def to_observation(
         self,
-        raw_obs: Any,  # noqa: ANN401
-        camera_keys: list[str] | None = None,
+        raw_obs: Any,  # noqa: ANN401, some Gyms may implmenet non-numpy
     ) -> Observation:
         """Converts a raw backend observation to a unified Observation.
 
         Args:
             raw_obs: Raw observation object from the simulator backend.
-            camera_keys: Optional list of camera names to extract image data.
 
         Returns:
             Observation: Standardized Observation dataclass representation.
+        """
+
+    @staticmethod
+    @abstractmethod
+    def convert_raw_to_observation(
+        raw_obs: np.ndarray | dict[str, Any],
+    ) -> Observation:
+        """Helper function to convert output of Gym to observation without instance.
+
+        Args:
+            raw_obs: Raw observation object from the simulator.
+
+        Returns:
+            Observation: Standardized Observation dataclass.
         """

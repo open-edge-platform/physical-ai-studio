@@ -3,10 +3,13 @@
 
 """GymnasiumWrapper: adapts any Gymnasium environment to the abstract Gym interface.
 
-Note: if you want a GPU optimized gym, please implement your own.
-We assume that this is numpy style gymnasium.
+Note:
+    If you want a GPU-optimized gym, please implement your own. This wrapper
+    assumes NumPy-style Gymnasium environments.
 """
 
+import logging
+from collections.abc import Callable
 from typing import Any
 
 import gymnasium as gym
@@ -18,9 +21,11 @@ from getiaction.data.observation import Observation
 
 from .base import Gym
 
+logger = logging.getLogger(__name__)
+
 
 class ActionValidationError(ValueError):
-    """Invalid actions will raise a custom ValueErorr."""
+    """Error raised when an invalid action is provided."""
 
 
 class GymnasiumWrapper(Gym):
@@ -34,14 +39,16 @@ class GymnasiumWrapper(Gym):
         render_mode: str | None = "rgb_array",
         **gym_kwargs: Any,  # noqa: ANN401
     ) -> None:
-        """Initializes the Gymnasium environment.
+        """Initialize a GymnasiumWrapper.
 
         Args:
-            gym_id: Environment ID.
-            vector_env: Preconstructed SyncVectorEnv or AsyncVectorEnv.
-            device: Torch device for tensors.
-            render_mode: Render mode passed to gym.make.
-            **gym_kwargs: Additional arguments for gym.make.
+            gym_id (str | None): The environment ID passed to ``gym.make``.
+                Required if ``vector_env`` is not provided.
+            vector_env (gym.Env | None): A preconstructed vectorized environment,
+                typically ``SyncVectorEnv`` or ``AsyncVectorEnv``.
+            device (str | torch.device): Torch device used for returned tensors.
+            render_mode (str | None): Rendering mode passed to ``gym.make``.
+            **gym_kwargs (Any): Additional keyword arguments forwarded to ``gym.make``.
         """
         if vector_env is not None:
             self._env = vector_env
@@ -50,53 +57,55 @@ class GymnasiumWrapper(Gym):
                 gym_kwargs["render_mode"] = render_mode
             self._env = gym.make(gym_id, **gym_kwargs)
 
-        self.device = torch.device(device)
+        self._device = torch.device(device)
 
-        # vectorized environments
         self.num_envs = getattr(self._env, "num_envs", 1)
-        self.is_vectorized = self.num_envs > 1
+        self._is_vectorized = self.num_envs > 1
+
+    @property
+    def device(self) -> torch.device:
+        """Return the device Gym expects to return on.
+
+        Returns:
+            torch.device: The device
+        """
+        return self._device
+
+    @property
+    def is_vectorized(self) -> bool:
+        """Returns whether the Gym is vectorized.
+
+        Returns:
+            bool: Whether the env is vectorized.
+        """
+        return self._is_vectorized
 
     @property
     def render_mode(self) -> str | None:
-        """Returns the render mode.
+        """Return the underlying environment's render mode.
 
         Returns:
-            str or None
+            str | None: The render mode if available.
         """
         return getattr(self._env, "render_mode", None)
 
     @property
     def observation_space(self) -> gym.Space | None:
-        """Returns the underlying observation space.
+        """Return the observation space of the environment.
 
         Returns:
-            gym.Space or None.
+            gym.Space | None: The observation space.
         """
         return getattr(self._env, "observation_space", None)
 
     @property
     def action_space(self) -> gym.Space | None:
-        """Returns the underlying action space.
+        """Return the action space of the environment.
 
         Returns:
-            gym.Space or None.
+            gym.Space | None: The action space.
         """
         return getattr(self._env, "action_space", None)
-
-    @staticmethod
-    def vectorized(
-        gym_id: str,
-        num_envs: int,
-        *,
-        async_mode: bool = False,
-        render_mode: str | None = "rgb_array",
-        **kwargs: Any,
-    ) -> "GymnasiumWrapper":
-        if async_mode:
-            vec = make_async_vector_env(gym_id, num_envs, render_mode=render_mode, **kwargs)
-        else:
-            vec = make_sync_vector_env(gym_id, num_envs, render_mode=render_mode, **kwargs)
-        return GymnasiumWrapper(vector_env=vec)
 
     def reset(
         self,
@@ -104,125 +113,39 @@ class GymnasiumWrapper(Gym):
         seed: int | None = None,
         **reset_kwargs: Any,  # noqa: ANN401
     ) -> tuple[Observation, dict[str, Any]]:
-        """Resets the environment.
+        """Reset the environment.
 
         Args:
-            seed: Optional random seed.
-            **reset_kwargs: Extra reset parameters.
+            seed (int | None): Optional random seed for resetting the environment.
+            **reset_kwargs (Any): Additional arguments forwarded to ``env.reset``.
 
         Returns:
-            Tuple of (Observation, info dict).
+            tuple[Observation, dict[str, Any]]: A tuple containing the initial
+            observation and info dictionary.
         """
         raw_obs, info = self._env.reset(seed=seed, **reset_kwargs)
         obs = self.to_observation(raw_obs)
         return obs, info
 
-    def validate_action(self, action: torch.Tensor) -> None:
-        """Validates an action tensor against the action space.
-
-        Args:
-            action: Torch tensor action.
-
-        Raises:
-            ActionValidationError: If the action is invalid.
-        """
-        if not isinstance(action, torch.Tensor):
-            msg = f"Action must be torch.Tensor, got {type(action)}"
-            raise ActionValidationError(msg)
-
-        space = self.action_space
-        if space is None:
-            msg = "Environment has no action_space defined."
-            raise ActionValidationError(msg)
-
-        if not self.is_vectorized:
-            # allow either shape [dim] or [1, dim]
-            if action.ndim == 2 and action.shape[0] == 1:
-                # will squeeze later
-                return
-            if action.ndim != 1:
-                msg = f"Single-env expects [dim] or [1,dim], got {action.shape}"
-                raise ActionValidationError(
-                    msg,
-                )
-        # vectorized requires [num_envs, dim]
-        elif action.ndim != 2 or action.shape[0] != self.num_envs:
-            msg = f"Vectorized env expects [num_envs, dim] = [{self.num_envs}, ...], got {action.shape}"
-            raise ActionValidationError(
-                msg,
-            )
-
-        if isinstance(space, gym.spaces.Discrete):
-            if action.ndim != 0:
-                msg = f"Discrete action must be scalar, got {action.shape}"
-                raise ActionValidationError(msg)
-            if action.dtype not in {torch.int64, torch.int32, torch.int16, torch.int8}:
-                msg = f"Discrete action dtype must be integer, got {action.dtype}"
-                raise ActionValidationError(msg)
-            v = int(action.item())
-            if not (0 <= v < space.n):
-                msg = f"Discrete action {v} out of range [0, {space.n - 1}]"
-                raise ActionValidationError(msg)
-            return
-
-        if isinstance(space, gym.spaces.MultiDiscrete):
-            if action.shape != space.nvec.shape:
-                msg = f"MultiDiscrete shape mismatch: expected {space.nvec.shape}, got {action.shape}"
-                raise ActionValidationError(
-                    msg,
-                )
-            if action.dtype not in {torch.int64, torch.int32, torch.int16, torch.int8}:
-                msg = f"MultiDiscrete requires integer dtype, got {action.dtype}"
-                raise ActionValidationError(msg)
-            if (action < 0).any() or (action >= torch.as_tensor(space.nvec)).any():
-                msg = f"MultiDiscrete action values exceed ranges {space.nvec}"
-                raise ActionValidationError(msg)
-            return
-
-        if isinstance(space, gym.spaces.MultiBinary):
-            if action.shape != (space.n,):
-                msg = f"MultiBinary shape mismatch: expected {(space.n,)}, got {action.shape}"
-                raise ActionValidationError(msg)
-            if action.dtype not in {torch.int8, torch.int16, torch.int32, torch.int64, torch.bool}:
-                msg = f"MultiBinary requires int/bool dtype, got {action.dtype}"
-                raise ActionValidationError(msg)
-            if not (((action == 0) | (action == 1)).all()):
-                msg = "MultiBinary must contain only 0/1 values"
-                raise ActionValidationError(msg)
-            return
-
-        if isinstance(space, gym.spaces.Box):
-            if action.shape != space.shape:
-                msg = f"Box shape mismatch: expected {space.shape}, got {action.shape}"
-                raise ActionValidationError(msg)
-            if action.dtype not in {torch.float32, torch.float64, torch.float16}:
-                msg = f"Box requires floating dtype, got {action.dtype}"
-                raise ActionValidationError(msg)
-            return
-
-        if isinstance(space, gym.spaces.Tuple):
-            msg = "Tuple action spaces require structured actions."
-            raise ActionValidationError(msg)
-
-        if isinstance(space, gym.spaces.Dict):
-            msg = "Dict action spaces require dict-of-tensors."
-            raise ActionValidationError(msg)
-
     def step(
         self,
         action: torch.Tensor,
     ) -> tuple[Observation, float, bool, bool, dict[str, Any]]:
-        """Performs one environment step.
+        """Perform a single step in the environment.
 
         Args:
-            action: Torch tensor action.
+            action (torch.Tensor): The action to apply. May be unbatched or batched
+                (shape ``[B, ...]``). If unvectorized, a leading batch dimension of
+                size 1 is removed.
 
         Returns:
-            Tuple of (Observation, reward, terminated, truncated, info).
+            tuple[Observation, float, bool, bool, dict[str, Any]]: A tuple containing:
+                - the next observation
+                - reward
+                - terminated flag
+                - truncated flag
+                - info dictionary
         """
-        self.validate_action(action)
-
-        # Single env allow [dim] or [1,dim], but squeeze before .step()
         if not self.is_vectorized and action.ndim == 2 and action.shape[0] == 1:  # noqa: PLR2004
             action = action[0]
 
@@ -231,185 +154,168 @@ class GymnasiumWrapper(Gym):
         obs = self.to_observation(raw_obs)
         return obs, reward, terminated, truncated, info
 
-    def render(self, *args: Any, **kwargs: Any) -> Any:
-        """Renders the environment.
+    def render(self, *render_args: Any, **render_kwargs: Any) -> Any:  # noqa: ANN401
+        """Render the environment.
+
+        Args:
+            *render_args (Any): Positional arguments forwarded to the environment's
+                render function.
+            **render_kwargs (Any): Keyword arguments forwarded to the environment's
+                render function.
 
         Returns:
-            Rendered output or None.
+            Any: The rendered output, if the environment supports rendering.
         """
         if hasattr(self._env, "render"):
-            return self._env.render(*args, **kwargs)
+            return self._env.render(*render_args, **render_kwargs)
         return None
 
     def close(self) -> None:
-        """Closes the environment."""
+        """Close the environment."""
         self._env.close()
 
     def sample_action(self) -> torch.Tensor:
-        """Samples a valid action.
+        """Sample a valid action from the action space.
 
         Returns:
-            Torch tensor containing a sampled action.
+            torch.Tensor: A sampled action converted to a torch tensor on the
+                configured device.
         """
         a = self._env.action_space.sample()
         return torch.as_tensor(a, device=self.device)
 
     def get_max_episode_steps(self) -> int | None:
-        """Returns the environment time limit if available.
+        """Return the maximum allowed episode length, if available.
 
         Returns:
-            Maximum number of episode steps or None.
+            int | None: The maximum episode step count, or ``None`` if the
+            environment does not specify a limit.
         """
         if hasattr(self._env, "get_wrapper_attr"):
             try:
                 return self._env.get_wrapper_attr("max_episode_steps")
-            except Exception:
-                pass
-        if hasattr(self._env, "max_episode_steps"):
-            v = self._env.max_episode_steps
-            return v() if callable(v) else v
+            except AttributeError:
+                logger.debug(
+                    "get_wrapper_attr('max_episode_steps') not found on %r",
+                    self._env,
+                )
         return None
 
     def to_observation(
         self,
-        raw_obs: Any,
-        camera_keys: list[str] | None = None,
+        raw_obs: np.ndarray | dict[str, Any],
     ) -> Observation:
-        """Converts raw observations to unified Observation using instance settings.
+        """Convert raw environment observations into an ``Observation`` instance.
 
         Args:
-            raw_obs: Raw environment observation.
-            camera_keys: Optional camera names.
+            raw_obs (np.ndarray | dict[str, Any]): Raw observation returned by
+                Gymnasium.
 
         Returns:
-            Observation.
+            Observation: A processed ``Observation`` object on the correct device.
         """
-        return GymnasiumWrapper.convert_raw_to_observation(
-            raw_obs=raw_obs,
-            observation_space=self.observation_space,
-            device=self.device,
-            camera_keys=camera_keys,
-            is_vectorized=self.is_vectorized,
-        )
+        return self.convert_raw_to_observation(raw_obs=raw_obs).to_torch(device=self.device)
 
     @staticmethod
     def convert_raw_to_observation(
-        raw_obs: Any,
-        observation_space: gym.Space | None,
-        device: torch.device,
-        camera_keys: list[str] | None = None,
-        is_vectorized: bool = False,
-    ):
-        """Converts raw observations into structured Observation objects.
-        Handles both single and vectorized environments.
+        raw_obs: np.ndarray | dict[str, Any],
+    ) -> Observation:
+        """Convert a Gymnasium observation to an ``Observation`` dataclass instance.
+
+        Conversion rules:
+            * If the observation is not a dict, it is treated as a ``state`` entry.
+            * If the dict already appears to match Observation fields, it is passed
+              directly to ``Observation.from_dict``.
+            * Otherwise, keys are routed to ``images``, ``state``, or ``extra`` fields
+              based on naming conventions.
+
+        Args:
+            raw_obs (np.ndarray | dict[str, Any]): Raw Gymnasium observation.
+
+        Returns:
+            Observation: A populated ``Observation`` instance.
         """
-        if camera_keys is None:
-            camera_keys = ["top"]
+        if not isinstance(raw_obs, dict):
+            return Observation(state=raw_obs).to_torch()
 
-        def to_tensor(x):
-            if isinstance(x, torch.Tensor):
-                return x.to(device)
-            return torch.as_tensor(np.asarray(x), dtype=torch.float32, device=device)
+        obs_fields = {
+            "action",
+            "task",
+            "state",
+            "images",
+        }
 
-        # ---------------------------------------------------------
-        # Image detection based on vectorization
-        # ---------------------------------------------------------
-        def is_image_tensor(t: torch.Tensor):
-            shape = t.shape
+        if any(k in raw_obs for k in obs_fields):
+            return Observation.from_dict(raw_obs)
 
-            # non-vectorized: (H,W,C) or (C,H,W)
-            if not is_vectorized:
-                if len(shape) == 3:
-                    return shape[0] in {1, 3, 4} or shape[-1] in {1, 3, 4}
-                return False
+        images = {}
+        state = {}
+        extra = {}
 
-            # vectorized: (B,H,W,C) or (B,C,H,W)
-            if len(shape) == 4:
-                return shape[1] in {1, 3, 4} or shape[-1] in {1, 3, 4}
-            return False
+        for key, value in raw_obs.items():
+            key_lower = key.lower()
 
-        # ---------------------------------------------------------
-        # 1. DICT ENV CASE
-        # ---------------------------------------------------------
-        if isinstance(raw_obs, dict):
-            tdict = {k: to_tensor(v) for k, v in raw_obs.items()}
-            image_dict, state_dict = {}, {}
+            if any(tok in key_lower for tok in ("pixel", "pixels", "image", "rgb", "camera")):
+                arr = value
+                if isinstance(arr, np.ndarray):
+                    if arr.ndim == 3 and arr.shape[-1] in {1, 3, 4}:  # noqa: PLR2004
+                        arr = np.transpose(arr, (2, 0, 1))
+                    elif arr.ndim == 4 and arr.shape[-1] in {1, 3, 4}:  # noqa: PLR2004
+                        arr = np.transpose(arr, (0, 3, 1, 2))
+                images[key] = arr
+                continue
 
-            for k, v in tdict.items():
-                if is_image_tensor(v):
-                    # Normalize uint8
-                    if v.dtype == torch.uint8:
-                        v = v.float() / 255.0
+            if any(tok in key_lower for tok in ("pos", "agent_pos", "state", "obs", "feature")):
+                state[key] = value
+                continue
 
-                    # Non-vectorized: HWC → CHW
-                    if not is_vectorized:
-                        if v.ndim == 3 and v.shape[-1] in {1, 3, 4}:
-                            v = v.permute(2, 0, 1)
+            extra[key] = value
 
-                        # Add batch dim
-                        if v.ndim == 3:
-                            v = v.unsqueeze(0)
+        if not images and not state:
+            state = dict(raw_obs.items())
 
-                    # Vectorized: BHWC → BCHW
-                    elif v.ndim == 4 and v.shape[-1] in {1, 3, 4}:
-                        v = v.permute(0, 3, 1, 2)
+        return Observation(
+            images=images or None,
+            state=state or None,
+            extra=extra or None,
+        ).to_torch()
 
-                    image_dict[k] = v
+    @staticmethod
+    def vectorize(
+        gym_id: str,
+        num_envs: int,
+        *,
+        async_mode: bool = False,
+        render_mode: str | None = "rgb_array",
+        **gym_kwargs: Any,  # noqa: ANN401
+    ) -> "GymnasiumWrapper":
+        """Create a vectorized GymnasiumWrapper.
 
-                else:
-                    # State handling
-                    if v.ndim == 1 and not is_vectorized:
-                        v = v.unsqueeze(0)
-                    state_dict[k] = v
+        Args:
+            gym_id (str): Environment ID used for ``gym.make``.
+            num_envs (int): Number of parallel environments.
+            async_mode (bool): Whether to create an asynchronous vector environment.
+            render_mode (str | None): Rendering mode.
+            **gym_kwargs (Any): Extra arguments passed to ``gym.make``.
 
-            # build output
-            images = image_dict or None
-
-            if len(state_dict) == 1:
-                state = list(state_dict.values())[0]
-            else:
-                state = state_dict or None
-
-            return Observation(images=images, state=state)
-
-        # ---------------------------------------------------------
-        # 2. BOX SPACE (single obs)
-        # ---------------------------------------------------------
-        if isinstance(observation_space, gym.spaces.Box):
-            v = to_tensor(raw_obs)
-
-            if is_image_tensor(v):
-                # Normalize
-                if v.dtype == torch.uint8:
-                    v = v.float() / 255.0
-
-                # NON-VEC: HWC → CHW + batch
-                if not is_vectorized:
-                    if v.ndim == 3 and v.shape[-1] in {1, 3, 4}:
-                        v = v.permute(2, 0, 1)
-                    if v.ndim == 3:
-                        v = v.unsqueeze(0)
-
-                # VEC: BHWC → BCHW (no unsqueeze)
-                elif v.ndim == 4 and v.shape[-1] in {1, 3, 4}:
-                    v = v.permute(0, 3, 1, 2)
-
-                return Observation(images={"default": v})
-
-            # Otherwise a state
-            if v.ndim == 1 and not is_vectorized:
-                v = v.unsqueeze(0)
-
-            return Observation(state=v)
-
-        # ---------------------------------------------------------
-        # 3. FALLBACK (scalar, etc.)
-        # ---------------------------------------------------------
-        v = to_tensor(raw_obs)
-        if v.ndim == 0:
-            v = v.unsqueeze(0).unsqueeze(0)
-
-        return Observation(state=v)
+        Returns:
+            GymnasiumWrapper: A wrapper around the constructed vector environment.
+        """
+        if async_mode:
+            vec = make_async_vector_env(
+                gym_id,
+                num_envs,
+                render_mode=render_mode,
+                **gym_kwargs,
+            )
+        else:
+            vec = make_sync_vector_env(
+                gym_id,
+                num_envs,
+                render_mode=render_mode,
+                **gym_kwargs,
+            )
+        return GymnasiumWrapper(vector_env=vec)
 
 
 def make_sync_vector_env(
@@ -417,13 +323,23 @@ def make_sync_vector_env(
     num_envs: int,
     *,
     render_mode: str | None = None,
-    **kwargs: Any,  # noqa: ANN401
+    **gym_kwargs: Any,  # noqa: ANN401
 ) -> SyncVectorEnv:
-    """Creates a vectorized synchronous environment."""
+    """Create a synchronous vectorized environment.
 
-    def make_thunk():
-        def _thunk():
-            return gym.make(gym_id, render_mode=render_mode, **kwargs)
+    Args:
+        gym_id (str): Environment ID.
+        num_envs (int): Number of parallel synchronized environments.
+        render_mode (str | None): Rendering mode.
+        **gym_kwargs (Any): Additional arguments passed to ``gym.make``.
+
+    Returns:
+        SyncVectorEnv: A synchronized vector environment.
+    """
+
+    def make_thunk() -> Callable[[], gym.Env]:
+        def _thunk() -> gym.Env:
+            return gym.make(gym_id, render_mode=render_mode, **gym_kwargs)
 
         return _thunk
 
@@ -435,13 +351,23 @@ def make_async_vector_env(
     num_envs: int,
     *,
     render_mode: str | None = None,
-    **kwargs: Any,  # noqa: ANN401
+    **gym_kwargs: Any,  # noqa: ANN401
 ) -> AsyncVectorEnv:
-    """Creates a vectorized asynchronous environment."""
+    """Create an asynchronous vectorized environment.
 
-    def make_thunk():
-        def _thunk():
-            return gym.make(gym_id, render_mode=render_mode, **kwargs)
+    Args:
+        gym_id (str): Environment ID.
+        num_envs (int): Number of parallel async environments.
+        render_mode (str | None): Rendering mode.
+        **gym_kwargs (Any): Additional arguments passed to ``gym.make``.
+
+    Returns:
+        AsyncVectorEnv: An asynchronous vector environment.
+    """
+
+    def make_thunk() -> Callable[[], gym.Env]:
+        def _thunk() -> gym.Env:
+            return gym.make(gym_id, render_mode=render_mode, **gym_kwargs)
 
         return _thunk
 
