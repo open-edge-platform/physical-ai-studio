@@ -43,7 +43,7 @@ class TestPushTGym(BaseTestGym):
             "agent_pos": np.array([0.5, 0.3], dtype=np.float32),
         }
 
-        obs = PushTGym.convert_raw_observation(raw_obs)
+        obs = PushTGym.convert_raw_to_observation(raw_obs)
 
         assert isinstance(obs, Observation)
         assert obs.images is not None
@@ -63,7 +63,7 @@ class TestPushTGym(BaseTestGym):
         }
 
         # Both methods should produce same result
-        static_result = PushTGym.convert_raw_observation(raw_obs)
+        static_result = PushTGym.convert_raw_to_observation(raw_obs)
         instance_result = self.env.to_observation(raw_obs)
 
         assert isinstance(static_result, Observation)
