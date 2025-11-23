@@ -63,12 +63,14 @@ class FeatureNormalizeTransform(nn.Module):
         """
         super().__init__()
         self._features = features
-        self._norm_map = norm_map
+        self._norm_map = {str(k): v for k, v in norm_map.items()}
         self._inverse = inverse
 
+        self.buffers_lookup = {}
         buffers = self._create_stats_buffers(features, norm_map)
         for key, buffer in buffers.items():
             setattr(self, "buffer_" + key.replace(".", "_"), buffer)
+            self.buffers_lookup[key] = buffer
 
     def forward(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         """Apply normalization to features in the input batch.
@@ -89,10 +91,8 @@ class FeatureNormalizeTransform(nn.Module):
         for raw_name, ft in self._features.items():
             for batch_key in batch:
                 if batch_key.endswith("." + raw_name) or batch_key == raw_name:
-                    norm_mode = self._norm_map.get(cast("FeatureType", ft.ftype), NormalizationType.IDENTITY)
-                    if norm_mode == NormalizationType.IDENTITY:
-                        continue
-                    buffer = getattr(self, "buffer_" + raw_name.replace(".", "_"))
+                    norm_mode = self._norm_map[str(ft.ftype)]
+                    buffer = self.buffers_lookup.get(raw_name, nn.ParameterDict())
                     self._apply_normalization(batch, batch_key, norm_mode, buffer, inverse=self._inverse)
 
         return batch
@@ -102,7 +102,7 @@ class FeatureNormalizeTransform(nn.Module):
         batch: dict,
         key: str,
         norm_mode: NormalizationType,
-        buffer: dict,
+        buffer: nn.ParameterDict,
         *,
         inverse: bool,
     ) -> None:

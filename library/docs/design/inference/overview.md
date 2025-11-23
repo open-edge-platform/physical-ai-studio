@@ -1,64 +1,46 @@
 # Inference System
 
-Design documentation for the `getiaction.inference` module - production-ready
-inference with multiple optimized backends.
+Production inference with multiple backends.
 
-## Overview
+## Features
 
-The inference system provides a unified API for deploying trained policies:
+- Unified API matching training policies
+- Multiple backends (OpenVINO, ONNX, Torch Export)
+- Auto-detection of backend and device
+- Action queuing for chunked policies
 
-- **Runtime Adapters** - Backend abstraction (OpenVINO, ONNX, Torch Export IR)
-- **InferenceModel** - Unified interface matching training policy API
-- **Auto-detection** - Automatic backend and device selection
-- **Action Queuing** - Manages chunked policy outputs
+## RuntimeAdapter
 
-## Design Goals
-
-- Same interface as training policies for seamless transition
-- Support multiple inference backends with single API
-- Intelligent auto-detection of backend and device
-- Optimized for production performance
-
-## Key Components
-
-### RuntimeAdapter Interface
-
-Common interface for all inference backends:
+Common interface for backends:
 
 ```python
 class RuntimeAdapter(ABC):
     @abstractmethod
-    def load(self, model_path: Path) -> None:
-        ...
+    def load(self, model_path: Path) -> None: ...
 
     @abstractmethod
-    def predict(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-        ...
+    def predict(
+        self, inputs: dict[str, np.ndarray]
+    ) -> dict[str, np.ndarray]: ...
 ```
 
-### Concrete Adapters
+## Adapters
 
-| Adapter                | Hardware            | Key Features                |
-| ---------------------- | ------------------- | --------------------------- |
-| **OpenVINOAdapter**    | Intel CPU/GPU/NPU   | Hardware opts, quantization |
-| **ONNXAdapter**        | Cross-platform      | CUDA/TensorRT, optimization |
-| **TorchExportAdapter** | Edge/mobile devices | Torch Export IR, PyTorch    |
+| Adapter                | Hardware       | Features                    |
+| ---------------------- | -------------- | --------------------------- |
+| **OpenVINOAdapter**    | Intel CPU/GPU  | Hardware opts, quantization |
+| **ONNXAdapter**        | Cross-platform | CUDA/TensorRT               |
+| **TorchExportAdapter** | Edge/mobile    | PyTorch export              |
 
-**Note:** TorchExportAdapter will be fully validated with real policy
-exports in PR #2 (First-Party ACT Export).
+## InferenceModel
 
-### InferenceModel
-
-High-level interface matching training policy API:
+High-level interface:
 
 ```python
-policy = InferenceModel.load("./exports")  # Auto-detect backend
+policy = InferenceModel.load("./exports")  # Auto-detects backend
 policy.reset()
 action = policy.select_action(observation)
 ```
-
-**Key Features:** Auto-detection, metadata-driven config, action queuing,
-device selection
 
 ## Architecture
 
@@ -222,7 +204,8 @@ Common errors: `ImportError` (backend not installed), `ValueError`
 ## Extension Points
 
 - **Custom Adapters**: Implement `RuntimeAdapter` for new backends
-- **Custom Preprocessing**: Override `_preprocess_observation()` in `InferenceModel`
+- **Custom Preprocessing**: Override `_preprocess_observation()` in
+  `InferenceModel`
 
 ## Future Work
 

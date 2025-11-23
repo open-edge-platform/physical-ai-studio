@@ -1,70 +1,36 @@
-# Geti action trainer design
+# Design Documentation
 
-Welcome to the `action_trainer` package.
+Architecture and implementation details for GetiAction.
+
+## Modules
+
+**[CLI](cli/overview.md)** - Command-line interface using PyTorch Lightning CLI
+
+**[Config](config/overview.md)** - Configuration system (dataclasses, Pydantic, YAML)
+
+**[Data](data/overview.md)** - Dataset management and data loading
+
+**[Gyms](gyms/overview.md)** - Simulation environments for training
+
+**[Policy](policy/overview.md)** - Policy implementations and base classes
+
+**[Train](trainer/overview.md)** - Training infrastructure and metrics
+
+**[Export](export/overview.md)** - Model export (OpenVINO, ONNX, Torch Export)
+
+**[Inference](inference/overview.md)** - Production deployment
+
+## Architecture
 
 ```mermaid
 graph TD
     A["getiaction"]
-    A --> B["cli/ <br/> Command Line Interface"]
-    A --> C["config/ <br/> Configuration System"]
-    A --> D["data/ <br/> Dataset management"]
-    A --> E["gyms/ <br/> Simulated gym environments"]
-    A --> F["policy/ <br/> Policies"]
-    A --> G["train/ <br/> Trainers and Metrics"]
-    A --> H["export/ <br/> Model Export"]
-    A --> I["inference/ <br/> Production Inference"]
+    A --> B["cli/"]
+    A --> C["config/"]
+    A --> D["data/"]
+    A --> E["gyms/"]
+    A --> F["policy/"]
+    A --> G["train/"]
+    A --> H["export/"]
+    A --> I["inference/"]
 ```
-
-## Core Modules
-
-### CLI
-
-Command-line interface built on PyTorch Lightning CLI and jsonargparse.
-Provides flexible training configuration through YAML files and CLI
-arguments.
-
-[📖 CLI Documentation](cli/overview.md)
-
-### Config
-
-Configuration system supporting multiple patterns: dataclasses, Pydantic
-models, and dynamic class instantiation. Enables type-safe, validated
-configuration loading.
-
-[📖 Config Documentation](config/overview.md)
-
-### Data
-
-Dataset management and data loading infrastructure for robot learning tasks.
-
-[📖 Data Documentation](data/overview.md)
-
-### Gyms
-
-Simulated gym environments for policy training and evaluation.
-
-[📖 Gyms Documentation](gyms/overview.md)
-
-### Policy
-
-Policy implementations and base classes for robot learning algorithms.
-
-[📖 Policy Documentation](policy/overview.md)
-
-### Train
-
-Training infrastructure, metrics, and logging.
-
-[📖 Train Documentation](trainer/overview.md)
-
-### Export
-
-Model export system supporting multiple backends (OpenVINO, ONNX, Torch Export IR).
-
-[📖 Export Documentation](export/overview.md)
-
-### Inference
-
-Production inference infrastructure with unified API across backends.
-
-[📖 Inference Documentation](inference/overview.md)
