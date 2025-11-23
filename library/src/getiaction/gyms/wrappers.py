@@ -11,7 +11,7 @@ from getiaction.data.observation import Observation
 from getiaction.gyms.base import Gym
 
 
-class WrapperBase(Gym):
+class GymWrapper(Gym):
     """A compositional wrapper that forwards all interface calls to an inner Gym.
 
     This wrapper allows stacking multiple environment wrappers without relying
@@ -147,7 +147,7 @@ class WrapperBase(Gym):
             ) from None
 
 
-class StepLimit(WrapperBase):
+class StepLimit(GymWrapper):
     """Wrapper enforcing a maximum number of steps per episode."""
 
     def __init__(self, env: Gym, max_steps: int) -> None:

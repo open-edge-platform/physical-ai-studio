@@ -39,7 +39,7 @@ class PushTGym(GymnasiumWrapper):
         )
 
     @staticmethod
-    def convert_raw_observation(
+    def convert_raw_to_observation(
         raw_obs: dict[str, Any],
         camera_keys: list[str] | None = None,
     ) -> Observation:
