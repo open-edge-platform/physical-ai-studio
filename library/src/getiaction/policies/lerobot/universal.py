@@ -481,6 +481,39 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         """
         return self.evaluate_gym(batch, batch_idx, stage="test")
 
+    def forward(  # type: ignore[override]
+        self,
+        batch: Observation | dict[str, torch.Tensor],
+    ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor] | None]:
+        """Forward pass for universal LeRobot policy.
+
+        Handles both training and inference modes:
+        - Training: Returns (loss, loss_dict) for backpropagation
+        - Inference: Returns denormalized actions for prediction/export
+
+        Args:
+            batch: Input batch (Observation or LeRobot dict).
+
+        Returns:
+            - Training mode: Tuple of (loss, loss_dict or None)
+            - Inference mode: Action tensor
+        """
+        if self.training:
+            # Training mode: Use LeRobot policy's forward() which computes loss
+            # Convert to LeRobot format if needed
+            batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
+
+            # Call underlying policy forward
+            output = self.lerobot_policy(batch_dict)
+
+            # Handle different return formats (some policies return tuple, some just loss)
+            if isinstance(output, tuple):
+                return output
+            return output, None
+
+        # Inference mode: Generate actions via select_action
+        return self.select_action(batch)
+
     def select_action(self, batch: Observation | dict[str, torch.Tensor]) -> torch.Tensor:
         """Select action (inference mode) through LeRobot.
 
