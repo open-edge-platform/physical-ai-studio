@@ -12,7 +12,6 @@ from getiaction.data.observation import Observation
 
 if TYPE_CHECKING:
     import torch
-    from lerobot.configs.policies import PreTrainedConfig
 
 
 class DataFormat(StrEnum):
@@ -200,112 +199,6 @@ def _convert_observation_to_lerobot_dict(observation: Observation) -> dict[str, 
     return batch
 
 
-def _adjust_action_horizon(action: torch.Tensor, expected_horizon: int) -> torch.Tensor:
-    """Adjust action tensor to match expected horizon.
-
-    Args:
-        action: Action tensor of shape (batch, action_horizon, action_dim)
-        expected_horizon: Target horizon size
-
-    Returns:
-        Adjusted action tensor of shape (batch, expected_horizon, action_dim)
-    """
-    import torch  # noqa: PLC0415
-
-    current_horizon = action.shape[1]
-    if current_horizon < expected_horizon:
-        # Pad with zeros
-        pad_size = expected_horizon - current_horizon
-        pad_shape = (action.shape[0], pad_size, action.shape[2])
-        pad_values = torch.zeros(pad_shape, dtype=action.dtype, device=action.device)
-        return torch.cat([action, pad_values], dim=1)
-    # Trim to expected horizon
-    return action[:, :expected_horizon, :]
-
-
-def _adjust_action_is_pad(
-    action_is_pad: torch.Tensor,
-    expected_horizon: int,
-    batch_size: int,
-) -> torch.Tensor:
-    """Adjust action_is_pad tensor to match expected horizon.
-
-    Args:
-        action_is_pad: Boolean tensor of shape (batch, action_horizon)
-        expected_horizon: Target horizon size
-        batch_size: Batch size for creating padding
-
-    Returns:
-        Adjusted action_is_pad tensor of shape (batch, expected_horizon)
-    """
-    import torch  # noqa: PLC0415
-
-    current_horizon = action_is_pad.shape[1]
-    if current_horizon < expected_horizon:
-        # Pad with True (indicating these are padded actions)
-        pad_size = expected_horizon - current_horizon
-        pad_values = torch.ones(
-            (batch_size, pad_size),
-            dtype=torch.bool,
-            device=action_is_pad.device,
-        )
-        return torch.cat([action_is_pad, pad_values], dim=1)
-    # Trim to expected horizon
-    return action_is_pad[:, :expected_horizon]
-
-
-def _apply_policy_adjustments(
-    result: dict[str, Any],
-    policy_config: PreTrainedConfig,
-) -> dict[str, Any]:
-    """Apply policy-specific adjustments to the result dictionary.
-
-    Handles:
-    - Temporal dimension for observation.state
-    - Action horizon adjustment
-    - Action padding mask adjustment
-
-    Args:
-        result: Dictionary in LeRobot format
-        policy_config: Policy configuration for dimension adjustments
-
-    Returns:
-        Adjusted dictionary matching policy expectations
-    """
-    import torch  # noqa: PLC0415
-
-    # Handle temporal dimension for observation.state
-    # LeRobot expects (batch, n_obs_steps, state_dim)
-    if "observation.state" in result:
-        state = result["observation.state"]
-        if isinstance(state, torch.Tensor) and state.ndim == 2:  # noqa: PLR2004
-            # Add temporal dimension: (batch, state_dim) -> (batch, n_obs_steps, state_dim)
-            # For n_obs_steps=1, shape becomes (batch, 1, state_dim)
-            state = state.unsqueeze(1)
-            result["observation.state"] = state
-
-    # Handle action horizon adjustment
-    if "action" in result and hasattr(policy_config, "horizon"):
-        action = result["action"]
-        if isinstance(action, torch.Tensor) and action.ndim == 3:  # noqa: PLR2004
-            batch_size, action_horizon, _action_dim = action.shape
-            expected_horizon = policy_config.horizon  # type: ignore[attr-defined]
-
-            if action_horizon != expected_horizon:
-                # Adjust action horizon
-                result["action"] = _adjust_action_horizon(action, expected_horizon)
-
-                # Adjust action_is_pad if it exists
-                if "action_is_pad" in result:
-                    result["action_is_pad"] = _adjust_action_is_pad(
-                        result["action_is_pad"],
-                        expected_horizon,
-                        batch_size,
-                    )
-
-    return result
-
-
 def _flatten_collated_dict_to_lerobot(collated_dict: dict[str, Any]) -> dict[str, Any]:  # noqa: C901, PLR0912
     """Flatten a collated dict (from _collate_observations) to LeRobot format.
 
@@ -413,10 +306,7 @@ class FormatConverter:
     """
 
     @staticmethod
-    def to_lerobot_dict(
-        batch: dict[str, Any] | Observation,
-        policy_config: PreTrainedConfig | None = None,
-    ) -> dict[str, Any]:
+    def to_lerobot_dict(batch: dict[str, Any] | Observation) -> dict[str, Any]:
         """Convert batch to LeRobot dictionary format.
 
         This method handles conversion from either:
@@ -424,50 +314,26 @@ class FormatConverter:
         2. Collated dicts from datamodule -> LeRobot dict (flatten nested structure)
         3. Already-formatted LeRobot dicts -> pass through unchanged
 
-        Additionally handles policy-specific requirements if policy_config is provided:
-        - Temporal dimension adjustment (n_obs_steps)
-        - Action horizon adjustment
-        - Action padding mask adjustment
-
         Args:
             batch: Either an Observation object, a collated dict, or a dictionary in LeRobot format.
-            policy_config: Optional policy configuration for dimension adjustments.
-                If provided, ensures tensors match policy expectations:
-                - observation.state temporal dimension
-                - action horizon length
-                - action_is_pad mask length
 
         Returns:
             Dictionary in LeRobot format with flattened keys like "observation.images.top".
 
         Example:
-            >>> # Basic conversion
             >>> obs = Observation(images={"top": top_img}, state=state, action=action)
             >>> lerobot_dict = FormatConverter.to_lerobot_dict(obs)
-
-            >>> # With policy config (handles temporal dims and horizons)
-            >>> lerobot_dict = FormatConverter.to_lerobot_dict(obs, policy_config=policy.config)
         """
-        # Step 1: Convert to base LeRobot dict format
         if isinstance(batch, Observation):
-            result = _convert_observation_to_lerobot_dict(batch)
-        elif isinstance(batch, dict):
+            return _convert_observation_to_lerobot_dict(batch)
+        if isinstance(batch, dict):
             # Check if already in LeRobot format
             if any(key.startswith("observation.") for key in batch):
-                result = batch
+                return batch
             # Check if it's a collated dict
-            elif "images" in batch or "state" in batch:
-                result = _flatten_collated_dict_to_lerobot(batch)
-            else:
-                result = batch
-        else:
-            result = batch
-
-        # Step 2: Apply policy-specific adjustments if config provided
-        if policy_config is not None and isinstance(result, dict):
-            result = _apply_policy_adjustments(result, policy_config)
-
-        return result
+            if "images" in batch or "state" in batch:
+                return _flatten_collated_dict_to_lerobot(batch)
+        return batch
 
     @staticmethod
     def to_observation(batch: dict[str, Any] | Observation) -> Observation:
