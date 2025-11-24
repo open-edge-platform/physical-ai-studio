@@ -21,8 +21,6 @@ class Gym(ABC):
     This class defines a unified environment API used across different
     simulators, without assuming a specific backend (e.g., Gymnasium, DMC,
     IsaacGym, custom robotics simulators).
-
-    We make no assumption of underlying env capabilities.
     """
 
     @abstractmethod

@@ -150,6 +150,7 @@ class GymnasiumWrapper(Gym):
             action = action[0]
 
         raw_action = action.detach().cpu().numpy()
+        input(raw_action.shape)
         raw_obs, reward, terminated, truncated, info = self._env.step(raw_action)
         obs = self.to_observation(raw_obs)
         return obs, reward, terminated, truncated, info
@@ -238,13 +239,8 @@ class GymnasiumWrapper(Gym):
         if not isinstance(raw_obs, dict):
             return Observation(state=raw_obs).to_torch()
 
-        obs_fields = {
-            "action",
-            "task",
-            "state",
-            "images",
-        }
-
+        # if it looks like an Observation already, pass-through
+        obs_fields = {"action", "task", "state", "images"}
         if any(k in raw_obs for k in obs_fields):
             return Observation.from_dict(raw_obs)
 
@@ -255,22 +251,37 @@ class GymnasiumWrapper(Gym):
         for key, value in raw_obs.items():
             key_lower = key.lower()
 
-            if any(tok in key_lower for tok in ("pixel", "pixels", "image", "rgb", "camera")):
-                arr = value
-                if isinstance(arr, np.ndarray):
-                    if arr.ndim == 3 and arr.shape[-1] in {1, 3, 4}:  # noqa: PLR2004
-                        arr = np.transpose(arr, (2, 0, 1))
-                    elif arr.ndim == 4 and arr.shape[-1] in {1, 3, 4}:  # noqa: PLR2004
-                        arr = np.transpose(arr, (0, 3, 1, 2))
+            # normalize into numpy
+            arr = value
+            if isinstance(arr, list):
+                arr = np.asarray(arr)
+
+            # image check
+            is_img_name = any(tok in key_lower for tok in ("pixel", "image", "rgb", "camera"))
+            is_image_like = (
+                isinstance(arr, np.ndarray) and arr.ndim >= 3 and arr.shape[-1] in {1, 3, 4}  # noqa: PLR2004
+            )
+
+            # put image in key
+            if is_img_name:
+                # manipulate if looks reasonable
+                if is_image_like:
+                    if arr.ndim == 3:  # HWC  # noqa: PLR2004
+                        arr = np.transpose(arr, (2, 0, 1))  # CHW
+                    elif arr.ndim == 4:  # BHWC  # noqa: PLR2004
+                        arr = np.transpose(arr, (0, 3, 1, 2))  # BCHW
                 images[key] = arr
                 continue
 
+            # if it looks like a state
             if any(tok in key_lower for tok in ("pos", "agent_pos", "state", "obs", "feature")):
                 state[key] = value
                 continue
 
+            # extra keys
             extra[key] = value
 
+        # if nothing fits assumptions, the entire state  dict as is a state
         if not images and not state:
             state = dict(raw_obs.items())
 

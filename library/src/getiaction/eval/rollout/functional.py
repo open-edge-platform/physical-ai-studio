@@ -58,6 +58,20 @@ def _convert_observation_to_dict(observation: Any) -> dict[str, Any]:  # noqa: A
     return {"observation": observation}
 
 
+def _prepare_action_for_env(action: Tensor | np.ndarray) -> np.ndarray:
+    """Convert action to numpy array suitable for environment step.
+
+    Args:
+        action: Action tensor or array from policy.
+
+    Returns:
+        1D numpy array ready for environment.
+    """
+    action_numpy = action.detach().cpu().numpy() if isinstance(action, Tensor) else np.asarray(action)
+    # Ensure action is 1D for single environment
+    return action_numpy.squeeze(0) if action_numpy.ndim > 1 else action_numpy
+
+
 def _stack_observations(all_observations: list[dict[str, Any]]) -> dict[str, Tensor]:
     """Stack observation dictionaries into tensors.
 
@@ -151,13 +165,13 @@ def rollout(
         The policy's `reset()` method is called before starting the rollout to
         clear any internal state (action queues, observation history, etc.).
     """
-    # Determine max steps and reset policy/environment, for safety
+    # Determine max steps and reset policy/environment
     max_steps = _get_max_steps(env, max_steps)
 
     if hasattr(policy, "reset") and callable(policy.reset):
         policy.reset()
 
-    observation, _info = env.reset(seed=seed)
+    raw_observation, _info = env.reset(seed=seed)
 
     if render_callback is not None:
         render_callback(env)
@@ -170,15 +184,21 @@ def rollout(
     while not done and step < max_steps:
         # Store raw gym observation if requested
         if return_observations:
-            episode_data.observations.append(_convert_observation_to_dict(observation))
+            episode_data.observations.append(_convert_observation_to_dict(raw_observation))
+
+        # Convert raw gym observation to Observation dataclass
+        observation = env.to_observation(raw_observation)
 
         # Get action from policy (receives Observation dataclass)
         with torch.inference_mode():
             policy.eval()
             action = policy(observation)
 
+        # Convert action to numpy for environment
+        action_numpy = _prepare_action_for_env(action)
+
         # Step environment
-        observation, reward, terminated, truncated, info = env.step(action)
+        raw_observation, reward, terminated, truncated, info = env.step(action_numpy)
 
         if render_callback is not None:
             render_callback(env)
@@ -188,7 +208,7 @@ def rollout(
         done = terminated or truncated
 
         # Store step data
-        episode_data.actions.append(action)
+        episode_data.actions.append(torch.from_numpy(action_numpy))
         episode_data.rewards.append(torch.tensor(reward, dtype=torch.float32))
         episode_data.successes.append(torch.tensor(is_success, dtype=torch.bool))
         episode_data.dones.append(torch.tensor(done, dtype=torch.bool))
@@ -197,7 +217,7 @@ def rollout(
 
     # Store final raw observation if requested
     if return_observations:
-        episode_data.observations.append(_convert_observation_to_dict(observation))
+        episode_data.observations.append(_convert_observation_to_dict(raw_observation))
 
     # Build result dictionary
     ret = {

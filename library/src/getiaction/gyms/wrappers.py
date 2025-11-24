@@ -12,10 +12,9 @@ from getiaction.gyms.base import Gym
 
 
 class GymWrapper(Gym):
-    """A compositional wrapper that forwards all interface calls to an inner Gym.
+    """A wrapper that forwards all interface calls to an inner Gym.
 
-    This wrapper allows stacking multiple environment wrappers without relying
-    on inheritance. Subclasses may override selected methods while all other
+    Subclasses may override selected methods while all other
     method and attribute access is transparently forwarded to the wrapped env.
     """
 
@@ -47,7 +46,7 @@ class GymWrapper(Gym):
 
     def step(
         self,
-        action: Any,  # noqa: ANN401
+        action: torch.Tensor,
         *args: Any,  # noqa: ANN401
         **kwargs: Any,  # noqa: ANN401
     ) -> tuple["Observation", float, bool, bool, dict[str, Any]]:
