@@ -321,8 +321,18 @@ class FormatConverter:
             Dictionary in LeRobot format with flattened keys like "observation.images.top".
 
         Example:
+            >>> # From Observation
             >>> obs = Observation(images={"top": top_img}, state=state, action=action)
             >>> lerobot_dict = FormatConverter.to_lerobot_dict(obs)
+            >>> # lerobot_dict = {"observation.images.top": top_img, "observation.state": state, "action": action}
+
+            >>> # From collated dict
+            >>> collated = {"images": {"top": top_img}, "state": state, "action": action}
+            >>> lerobot_dict = FormatConverter.to_lerobot_dict(collated)
+            >>> # lerobot_dict = {"observation.images.top": top_img, "observation.state": state, "action": action}
+
+            >>> # Already in correct format - returns unchanged
+            >>> lerobot_dict = FormatConverter.to_lerobot_dict(lerobot_dict)
         """
         if isinstance(batch, Observation):
             return _convert_observation_to_lerobot_dict(batch)
