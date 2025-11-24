@@ -217,8 +217,17 @@ class InferenceModel:
         # Convert observation to dict format
         obs_dict = obs_numpy.to_dict()
 
-        # Get model input names from adapter
-        expected_inputs = set(self.adapter.input_names)
+        # Get model input names - prefer metadata over adapter when available
+        # Metadata contains semantic names (e.g., "observation_state")
+        # Adapter may return internal node names for some backends (e.g., OpenVINO Cast nodes)
+        if "input_names" in self.metadata:
+            expected_input_names = self.metadata["input_names"]
+            adapter_input_names = list(self.adapter.input_names)
+        else:
+            expected_input_names = list(self.adapter.input_names)
+            adapter_input_names = expected_input_names
+
+        expected_inputs = set(expected_input_names)
 
         # Build mapping from observation fields to expected input names
         # This handles different naming conventions:
@@ -257,6 +266,11 @@ class InferenceModel:
             available_fields = list(obs_dict.keys())
             msg = f"Missing required model inputs: {missing_inputs}. Available observation fields: {available_fields}"
             raise ValueError(msg)
+
+        # If adapter uses different names (e.g., OpenVINO Cast nodes), map by position
+        if expected_input_names != adapter_input_names:
+            # Reorder inputs to match expected order, then use adapter input names (indices)
+            return {adapter_input_names[i]: inputs[expected_input_names[i]] for i in range(len(expected_input_names))}
 
         return inputs
 
