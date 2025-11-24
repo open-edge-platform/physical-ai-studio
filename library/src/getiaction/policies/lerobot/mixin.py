@@ -749,8 +749,9 @@ class LeRobotExport(Export):
         self.to(original_device)  # type: ignore[attr-defined]
         self._restore_processor_devices(orig_prep_devices, orig_post_devices)
 
-        # Create metadata files with policy-specific info
-        self._create_metadata(export_dir, ExportBackend.ONNX, **self.metadata_extra)
+        # Create metadata files with policy-specific info, including input names
+        metadata_extra = {**self.metadata_extra, "input_names": input_names_normalized}
+        self._create_metadata(export_dir, ExportBackend.ONNX, **metadata_extra)
 
     def to_openvino(
         self,
@@ -774,6 +775,9 @@ class LeRobotExport(Export):
         model_path = self._prepare_export_path(output_path, ".xml")
         export_dir = model_path.parent
 
+        # Normalize input names (dots to underscores for ONNX compatibility)
+        input_names_normalized = [name.replace(".", "_") for name in input_sample]
+
         # First export to ONNX in a temporary location
         with tempfile.TemporaryDirectory() as tmp_dir:
             onnx_path = Path(tmp_dir) / "model.onnx"
@@ -790,8 +794,12 @@ class LeRobotExport(Export):
         # Save OpenVINO model
         openvino.save_model(ov_model, str(model_path))
 
+        # Store ONNX input names in metadata for correct inference mapping
+        # OpenVINO may expose intermediate Cast nodes as inputs, but we need the semantic names
+        metadata_extra = {**self.metadata_extra, "input_names": input_names_normalized}
+
         # Create metadata files with policy-specific info
-        self._create_metadata(export_dir, ExportBackend.OPENVINO, **self.metadata_extra)
+        self._create_metadata(export_dir, ExportBackend.OPENVINO, **metadata_extra)
 
     def to_torch_export_ir(
         self,
