@@ -206,10 +206,11 @@ class TestFirstPartyPolicies(E2ETests):
 class TestLeRobotPolicies(E2ETests):
     """E2E tests for LeRobot policies."""
 
-    # Skip torch_export_ir: LeRobot calls .eval() during forward pass, unsupported by torch.export
+    # Skip torch_export_ir: LeRobot's preprocessor/postprocessor uses dynamic Python features
+    # (functools.singledispatch, device adaptation) incompatible with torch.export tracing
     @pytest.mark.parametrize("backend", ["openvino", "onnx", "torch"])
     def test_export_to_backend(self, trained_policy: Policy, backend: str, tmp_path: Path) -> None:
-        """Override to skip torch_export_ir (LeRobot calls .eval() in forward, incompatible with torch.export)."""
+        """Override to skip torch_export_ir (LeRobot preprocessor incompatible with torch.export)."""
         return super().test_export_to_backend(trained_policy, backend, tmp_path)
 
     @pytest.mark.parametrize("backend", ["openvino", "onnx"])
