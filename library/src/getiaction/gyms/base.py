@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 
     from getiaction.data import Observation
 
+    from .types import ScalarVec
+
 
 class Gym(ABC):
     """Abstract interface for Gymnasium-style environments.
@@ -29,7 +31,7 @@ class Gym(ABC):
         *,
         seed: int | None = None,
         **reset_kwargs: Any,  # noqa: ANN401
-    ) -> tuple[Observation, dict[str, Any]]:
+    ) -> tuple[Observation, dict[str, Any] | list[dict[str, Any]]]:
         """Resets the environment.
 
         Args:
@@ -37,16 +39,16 @@ class Gym(ABC):
             **reset_kwargs: Additional backend-specific reset arguments.
 
         Returns:
-            tuple[Observation, dict[str, Any]]:
+            tuple[Observation, dict[str, Any] | list[dict[str, Any]]]:
                 - Observation: Environment observation after reset.
-                - dict[str, Any]: Additional info dictionary.
+                - dict[str, Any] | list[dict[str, Any]]: Additional info dictionary.
         """
 
     @abstractmethod
     def step(
         self,
         action: torch.Tensor,
-    ) -> tuple[Observation, float, bool, bool, dict[str, Any]]:
+    ) -> tuple[Observation, ScalarVec[float], ScalarVec[bool], ScalarVec[bool], dict[str, Any] | list[dict[str, Any]]]:
         """Steps the environment by one action.
 
         Args:
@@ -55,10 +57,10 @@ class Gym(ABC):
         Returns:
             tuple[Observation, float, bool, bool, dict[str, Any]]:
                 - Observation: Next environment observation.
-                - float: Reward for this transition.
-                - bool: Whether the episode terminated.
-                - bool: Whether the episode was truncated (e.g., time limit).
-                - dict[str, Any]: Additional environment info.
+                - ScalarVec[float]: Reward for this transition.
+                - ScalarVec[bool]: Whether the episode terminated.
+                - ScalarVec[bool]: Whether the episode was truncated (e.g., time limit).
+                - dict[str, Any] | list[dict[str, Any]]: Additional environment info.
         """
 
     def render(self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401, ARG002, PLR6301

@@ -14,7 +14,7 @@ from .gymnasium_wrapper import GymnasiumWrapper
 
 
 class PushTGym(GymnasiumWrapper):
-    """Convenience wrapper for popularly used gym."""
+    """Convenience wrapper for the PushT Gym environment."""
 
     def __init__(
         self,
@@ -26,10 +26,10 @@ class PushTGym(GymnasiumWrapper):
         """Initialize the PushT Gym environment.
 
         Args:
-            gym_id (str): The identifier for the environment.
-            obs_type (str): The type of observation to use (e.g., pixels, state).
-            device (str | torch.device): device to move back to.
-            gym_kwargs (Any): Other Gym args to be passed to PushT Gym.
+            gym_id: Environment ID for ``gym.make``.
+            obs_type: Requested observation type.
+            device: Torch device.
+            **gym_kwargs: Additional gym keyword arguments.
         """
         super().__init__(
             gym_id=gym_id,
@@ -43,30 +43,17 @@ class PushTGym(GymnasiumWrapper):
         raw_obs: dict[str, Any],
         camera_keys: list[str] | None = None,
     ) -> Observation:
-        """Convert PushT gym observation to Observation dataclass.
-
-        Static method for converting raw PushT observations without needing a gym instance.
-
-        PushT environments provide observations with "pixels" (RGB image) and
-        "agent_pos" (2D position) keys.
+        """Convert PushT observations into the standardized Observation format.
 
         Args:
-            raw_obs: Raw observation dictionary from PushT gym environment.
-                    Expected keys: "pixels" (numpy.ndarray), "agent_pos" (numpy.ndarray)
-            camera_keys: Camera names for multi-camera setups (defaults to ["top"])
+            raw_obs: Normalized (batched) observation dict from GymnasiumWrapper.
+                     Expected keys include:
+                       - "pixels": np.ndarray[B,H,W,C]
+                       - "agent_pos": np.ndarray[B,2]
+            camera_keys: Optional camera identifiers.
 
         Returns:
-            Standardized Observation dataclass
-
-        Examples:
-            >>> # Use as static method (no gym instance needed)
-            >>> raw_obs = {
-            ...     "pixels": np.zeros((320, 512, 3), dtype=np.uint8),
-            ...     "agent_pos": np.array([0.1, 0.2], dtype=np.float32)
-            ... }
-            >>> obs = PushTGym.convert_raw_observation(raw_obs)
-            >>> # obs.images.shape = torch.Size([1, 3, 320, 512])  # Batched, CHW
-            >>> # obs.state.shape = torch.Size([1, 2])  # Batched agent position
+            Observation: With images in BCHW format and state in [B,dim].
         """
         if camera_keys is None:
             camera_keys = ["top"]
@@ -74,51 +61,35 @@ class PushTGym(GymnasiumWrapper):
         images: dict[str, torch.Tensor] | torch.Tensor | None = None
         state: torch.Tensor | None = None
 
-        # Handle image observations
+        # Images: pixels[B,H,W,C] → [B,C,H,W], float32
         if "pixels" in raw_obs:
             pixels = raw_obs["pixels"]
 
-            # Convert to torch tensor
             if not isinstance(pixels, torch.Tensor):
                 pixels = torch.from_numpy(pixels)
 
-            pixels_torch_type = pixels.dtype
-            # Ensure float32 (gym often returns float64 or uint8)
             if pixels.dtype not in {torch.float32, torch.float16}:
+                original_dtype = pixels.dtype
                 pixels = pixels.float()
+                if original_dtype == torch.uint8:
+                    pixels /= 255.0
 
-                if pixels_torch_type == torch.uint8:
-                    pixels /= 255.0  # Normalize uint8 to [0, 1]
+            if pixels.ndim == 4 and pixels.shape[-1] in {1, 3, 4}:  # noqa: PLR2004
+                pixels = pixels.permute(0, 3, 1, 2)
 
-            # Convert HWC → CHW if needed
-            if pixels.ndim == 3 and pixels.shape[-1] in {1, 3, 4}:  # noqa: PLR2004
-                pixels = pixels.permute(2, 0, 1)  # (H, W, C) → (C, H, W)
-
-            # Add batch dimension
-            if pixels.ndim == 3:  # noqa: PLR2004
-                pixels = pixels.unsqueeze(0)  # (C, H, W) → (1, C, H, W)
-
-            # For single camera: direct tensor for compatibility with existing models
-            # For multiple cameras: dict with camera names
             images = pixels if len(camera_keys) == 1 else {camera_keys[0]: pixels}
 
-        # Handle state observations (PushT uses "agent_pos")
-        state_keys = ["agent_pos", "state"]  # Common gym state keys
+        # State agent_pos[B,2]
+        state_keys = ["agent_pos", "state"]
         for key in state_keys:
             if key in raw_obs:
                 state_data = raw_obs[key]
 
-                # Convert to torch tensor
                 if not isinstance(state_data, torch.Tensor):
                     state_data = torch.from_numpy(state_data)
 
-                # Ensure float32
                 if state_data.dtype != torch.float32:
                     state_data = state_data.float()
-
-                # Add batch dimension
-                if state_data.ndim == 1:
-                    state_data = state_data.unsqueeze(0)  # (D,) → (1, D)
 
                 state = state_data
                 break

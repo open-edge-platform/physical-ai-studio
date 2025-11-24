@@ -8,7 +8,10 @@ from typing import Any
 import torch
 
 from getiaction.data.observation import Observation
-from getiaction.gyms.base import Gym
+from getiaction.data.utils import infer_batch_size
+
+from .base import Gym
+from .types import ScalarVec
 
 
 class GymWrapper(Gym):
@@ -31,7 +34,7 @@ class GymWrapper(Gym):
         *args: Any,  # noqa: ANN401
         seed: int | None = None,
         **kwargs: Any,  # noqa: ANN401
-    ) -> tuple["Observation", dict[str, Any]]:
+    ) -> tuple[Observation, dict[str, Any] | list[dict[str, Any]]]:
         """Reset the environment.
 
         Args:
@@ -49,7 +52,7 @@ class GymWrapper(Gym):
         action: torch.Tensor,
         *args: Any,  # noqa: ANN401
         **kwargs: Any,  # noqa: ANN401
-    ) -> tuple["Observation", float, bool, bool, dict[str, Any]]:
+    ) -> tuple[Observation, ScalarVec[float], ScalarVec[bool], ScalarVec[bool], dict[str, Any] | list[dict[str, Any]]]:
         """Advance the environment by one step.
 
         Args:
@@ -165,7 +168,7 @@ class StepLimit(GymWrapper):
         *args: Any,  # noqa: ANN401
         seed: int | None = None,
         **kwargs: Any,  # noqa: ANN401
-    ) -> tuple["Observation", dict[str, Any]]:
+    ) -> tuple[Observation, dict[str, Any] | list[dict[str, Any]]]:
         """Reset the environment and reset the step counter.
 
         Args:
@@ -184,7 +187,7 @@ class StepLimit(GymWrapper):
         action: Any,  # noqa: ANN401
         *args: Any,  # noqa: ANN401
         **kwargs: Any,  # noqa: ANN401
-    ) -> tuple["Observation", float, bool, bool, dict[str, Any]]:
+    ) -> tuple[Observation, ScalarVec[float], ScalarVec[bool], ScalarVec[bool], dict[str, Any] | list[dict[str, Any]]]:
         """Step the environment and apply the step limit.
 
         Args:
@@ -199,8 +202,15 @@ class StepLimit(GymWrapper):
         obs, reward, terminated, truncated, info = self.env.step(action, *args, **kwargs)
 
         if self.step_count >= self.max_steps:
-            truncated = True
-            info = dict(info)
-            info["TimeLimit.truncated"] = True
+            batch_size = infer_batch_size(obs)
+            truncated = True if batch_size == 1 else [True] * batch_size
+            # if info is a dict, attach the Timilimit truncation
+            if isinstance(info, dict):
+                info = dict(info)
+                info["TimeLimit.truncated"] = True
+            else:
+                info = [dict(d) for d in info]
+                for d in info:
+                    d["TimeLimit.truncated"] = True
 
         return obs, reward, terminated, truncated, info

@@ -24,6 +24,8 @@ import numpy as np
 import torch
 from torch import Tensor
 
+from getiaction.data.utils import infer_batch_size
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -58,20 +60,6 @@ def _convert_observation_to_dict(observation: Any) -> dict[str, Any]:  # noqa: A
     return {"observation": observation}
 
 
-def _prepare_action_for_env(action: Tensor | np.ndarray) -> np.ndarray:
-    """Convert action to numpy array suitable for environment step.
-
-    Args:
-        action: Action tensor or array from policy.
-
-    Returns:
-        1D numpy array ready for environment.
-    """
-    action_numpy = action.detach().cpu().numpy() if isinstance(action, Tensor) else np.asarray(action)
-    # Ensure action is 1D for single environment
-    return action_numpy.squeeze(0) if action_numpy.ndim > 1 else action_numpy
-
-
 def _stack_observations(all_observations: list[dict[str, Any]]) -> dict[str, Tensor]:
     """Stack observation dictionaries into tensors.
 
@@ -96,25 +84,25 @@ def _stack_observations(all_observations: list[dict[str, Any]]) -> dict[str, Ten
 
 
 def _get_max_steps(env: Gym, max_steps: int | None) -> int:
-    """Determine maximum steps from environment or argument.
+    """Get maximum steps if available from Gym env.
 
     Args:
-        env: The gym environment.
-        max_steps: User-provided max steps (or None).
+        env (Gym): the Gym environment to call.
+        max_steps (int | None, optional): return these max_steps instead.
 
     Returns:
-        Maximum number of steps for the rollout.
+        max_steps (int): maximum number of steps for episode.
     """
     if max_steps is not None:
         return max_steps
-    if hasattr(env, "get_max_episode_steps"):
-        env_max = env.get_max_episode_steps()
+    if hasattr(env, "max_steps"):
+        env_max = int(env.max_steps)
         if env_max is not None:
             return env_max
     return 1000  # Default fallback
 
 
-def rollout(
+def rollout(  # noqa: PLR0914
     env: Gym,
     policy: Policy,
     *,
@@ -123,115 +111,97 @@ def rollout(
     return_observations: bool = False,
     render_callback: Callable[[Gym], None] | None = None,
 ) -> dict[str, Any]:
-    """Run a complete policy rollout in a gym environment.
-
-    Executes the policy in the environment until termination, truncation, or
-    reaching max_steps. Collects actions, rewards, success flags, and optionally
-    observations throughout the episode.
+    """Runs a policy in an environment for a single episode.
 
     Args:
-        env: The gym environment to run the rollout in.
-        policy: The policy to use for action selection. Must have a `select_action`
-            method that takes an Observation and returns an action tensor.
-        seed: Random seed for environment reset. If None, no seed is set.
-        max_steps: Maximum number of steps to run. If None, runs until done.
-            If the environment has a built-in max_episode_steps, that takes precedence.
-        return_observations: Whether to include observations in the returned data.
-            This increases memory usage but enables advanced analysis.
-        render_callback: Optional callback function called after reset and each step,
-            useful for rendering or recording videos. Receives the environment as input.
+        env (Gym): Environment to interact with.
+        policy (Policy): Policy used to select actions.
+        seed (int | None, optional): RNG seed for the environment. Defaults to None.
+        max_steps (int | None, optional): Maximum number of steps before termination.
+            If None, runs until the episode ends. Defaults to None.
+        return_observations (bool, optional): Whether to include the observation
+            sequence in the output. Defaults to False.
+        render_callback (Callable[[Gym], None] | None, optional): Optional callback
+            invoked each step for rendering. Defaults to None.
 
     Returns:
-        Dictionary containing:
-            - "action": (sequence, action_dim) tensor of actions taken
-            - "reward": (sequence,) tensor of rewards received
-            - "success": (sequence,) tensor of success flags (True only at termination)
-            - "done": (sequence,) tensor of cumulative done flags
-            - "observation": (optional) Dictionary of (sequence + 1, *) observation tensors
-            - "episode_length": Integer number of steps in the episode
-            - "sum_reward": Float sum of all rewards
-            - "max_reward": Float maximum reward in the episode
-            - "is_success": Boolean whether the episode succeeded
-
-    Example:
-        >>> from getiaction.gyms import PushTGym
-        >>> from getiaction.policies.lerobot import ACT
-        >>> policy = ACT.from_pretrained("path/to/checkpoint")
-        >>> env = PushTGym()
-        >>> result = rollout(env, policy, seed=42, max_steps=300)
-        >>> print(f"Success: {result['is_success']}, Reward: {result['sum_reward']:.2f}")
-
-    Note:
-        The policy's `reset()` method is called before starting the rollout to
-        clear any internal state (action queues, observation history, etc.).
+        dict[str, Any]: Episode information, including rewards, actions, and optionally
+        observations.
     """
-    # Determine max steps and reset policy/environment
     max_steps = _get_max_steps(env, max_steps)
 
+    # Reset environment → batched observation
+    observation, _ = env.reset(seed=seed)
+    batch_size = infer_batch_size(observation)
+
+    # Reset policy if needed
     if hasattr(policy, "reset") and callable(policy.reset):
         policy.reset()
-
-    raw_observation, _info = env.reset(seed=seed)
 
     if render_callback is not None:
         render_callback(env)
 
-    # Storage for episode data
     episode_data = _EpisodeData()
     step = 0
-    done = False
 
-    while not done and step < max_steps:
-        # Store raw gym observation if requested
+    # Track per-env done
+    done_mask = torch.zeros(batch_size, dtype=torch.bool)
+
+    # run loop for max steps or until all done
+    while step < max_steps and not torch.all(done_mask):
+        # Store observations if requested
         if return_observations:
-            episode_data.observations.append(_convert_observation_to_dict(raw_observation))
+            episode_data.observations.append(_convert_observation_to_dict(observation))
 
-        # Convert raw gym observation to Observation dataclass
-        observation = env.to_observation(raw_observation)
-
-        # Get action from policy (receives Observation dataclass)
+        # Policy forward (already batched)
         with torch.inference_mode():
             policy.eval()
-            action = policy(observation)
+            action = policy(observation)  # shape: (B, action_dim)
 
-        # Convert action to numpy for environment
-        action_numpy = _prepare_action_for_env(action)
-
-        # Step environment
-        raw_observation, reward, terminated, truncated, info = env.step(action_numpy)
+        # Step environment (env expects batched action)
+        observation, reward, terminated, truncated, _info = env.step(action)
 
         if render_callback is not None:
             render_callback(env)
 
-        # Check for success and update done flag
-        is_success = info.get("is_success", False) if (terminated or truncated) else False
-        done = terminated or truncated
+        # Convert arrays -> tensors
+        reward_t = torch.as_tensor(reward, dtype=torch.float32).reshape(batch_size)
+        terminated_t = torch.as_tensor(terminated, dtype=torch.bool).reshape(batch_size)
+        truncated_t = torch.as_tensor(truncated, dtype=torch.bool).reshape(batch_size)
+
+        # Per-env step done
+        done = torch.logical_or(terminated_t, truncated_t)
+        done_mask = torch.logical_or(done_mask, done)
 
         # Store step data
-        episode_data.actions.append(torch.from_numpy(action_numpy))
-        episode_data.rewards.append(torch.tensor(reward, dtype=torch.float32))
-        episode_data.successes.append(torch.tensor(is_success, dtype=torch.bool))
-        episode_data.dones.append(torch.tensor(done, dtype=torch.bool))
+        episode_data.actions.append(action)
+        episode_data.rewards.append(reward_t)
+        episode_data.dones.append(done_mask.clone())
 
         step += 1
 
-    # Store final raw observation if requested
+    # Store final observation
     if return_observations:
-        episode_data.observations.append(_convert_observation_to_dict(raw_observation))
+        episode_data.observations.append(_convert_observation_to_dict(observation))
 
-    # Build result dictionary
+    # Stack (T, B, ..)
+    actions = torch.stack(episode_data.actions, dim=0)
+    rewards = torch.stack(episode_data.rewards, dim=0)
+    dones = torch.stack(episode_data.dones, dim=0)
+
+    # Episode-level stats per env
+    sum_reward = rewards.sum(dim=0)  # (B,)
+    max_reward = rewards.max(dim=0).values  # (B,)
+
     ret = {
-        "action": torch.stack(episode_data.actions, dim=0),
-        "reward": torch.stack(episode_data.rewards, dim=0),
-        "success": torch.stack(episode_data.successes, dim=0),
-        "done": torch.stack(episode_data.dones, dim=0),
+        "action": actions,
+        "reward": rewards,
+        "done": dones,
         "episode_length": step,
-        "sum_reward": torch.stack(episode_data.rewards).sum().item(),
-        "max_reward": torch.stack(episode_data.rewards).max().item() if episode_data.rewards else 0.0,
-        "is_success": any(s.item() for s in episode_data.successes),
+        "sum_reward": sum_reward,
+        "max_reward": max_reward,
     }
 
-    # Add stacked observations if requested
     if return_observations:
         ret["observation"] = _stack_observations(episode_data.observations)
 
@@ -247,46 +217,33 @@ def evaluate_policy(
     max_steps: int | None = None,
     return_episode_data: bool = False,
 ) -> dict[str, Any]:
-    """Evaluate a policy over multiple episodes in a gym environment.
-
-    Runs the policy for n_episodes, collecting success rates, rewards,
-    and episode lengths. Useful for benchmarking policy performance.
+    """Evaluates a policy over multiple episodes.
 
     Args:
-        env: The gym environment to evaluate in.
-        policy: The policy to evaluate.
-        n_episodes: Number of episodes to run.
-        start_seed: Starting seed for episodes. Each episode uses seed + episode_idx.
-            If None, episodes are not seeded.
-        max_steps: Maximum steps per episode. If None, uses environment default.
-        return_episode_data: Whether to return detailed per-episode data including
-            observations and actions. Increases memory usage significantly.
+        env (Gym): Environment used for evaluation.
+        policy (Policy): Policy to evaluate.
+        n_episodes (int): Number of episodes to run.
+        start_seed (int | None, optional): Initial seed; incremented per episode
+            if provided. Defaults to None.
+        max_steps (int | None, optional): Maximum steps per episode. Defaults to None.
+        return_episode_data (bool, optional): Whether to include per-episode rollout
+            data in the result. Defaults to False.
 
     Returns:
-        Dictionary containing:
-            - "per_episode": List of dicts with per-episode metrics (sum_reward,
-              max_reward, success, episode_length, seed)
-            - "aggregated": Dict with aggregate metrics:
-                * "avg_sum_reward": Mean cumulative reward
-                * "avg_max_reward": Mean maximum reward
-                * "pc_success": Success rate as percentage
-                * "avg_episode_length": Mean episode length
-            - "episodes": (optional) List of full episode data if return_episode_data=True
-
-    Example:
-        >>> results = evaluate_policy(env, policy, n_episodes=50, start_seed=1000)
-        >>> print(f"Success rate: {results['aggregated']['pc_success']:.1f}%")
-        >>> print(f"Avg reward: {results['aggregated']['avg_sum_reward']:.2f}")
+        dict[str, Any]: Aggregate evaluation results, including mean reward and
+        optionally episode-level data.
     """
-    # Collect metrics
     per_episode = []
     episode_data_list: list[dict[str, Any]] | None = [] if return_episode_data else None
 
-    for episode_idx in range(n_episodes):
-        # Set seed if provided
-        seed = None if start_seed is None else start_seed + episode_idx
+    episodes_collected = 0
+    rollout_idx = 0
 
-        # Run rollout
+    while episodes_collected < n_episodes:
+        # Seed per rollout
+        seed = None if start_seed is None else start_seed + rollout_idx
+        rollout_idx += 1
+
         rollout_result = rollout(
             env,
             policy,
@@ -295,30 +252,37 @@ def evaluate_policy(
             return_observations=return_episode_data,
         )
 
-        # Store per-episode metrics
-        per_episode.append({
-            "episode_idx": episode_idx,
-            "sum_reward": rollout_result["sum_reward"],
-            "max_reward": rollout_result["max_reward"],
-            "success": rollout_result["is_success"],
-            "episode_length": rollout_result["episode_length"],
-            "seed": seed,
-        })
+        # Extract batch size
+        batch_size = rollout_result["sum_reward"].shape[0]
 
-        # Store full episode data if requested
+        # How many episodes still needed?
+        # Could be vectorized hence the take
+        remaining = n_episodes - episodes_collected
+        take = min(batch_size, remaining)
+
+        # Record per-env results
+        for env_i in range(take):
+            per_episode.append({
+                "episode_idx": episodes_collected,
+                "sum_reward": float(rollout_result["sum_reward"][env_i]),
+                "max_reward": float(rollout_result["max_reward"][env_i]),
+                "episode_length": rollout_result["episode_length"],
+                "seed": seed,
+            })
+            episodes_collected += 1
+
+        # Store full rollout if requested
         if return_episode_data and episode_data_list is not None:
             episode_data_list.append(rollout_result)
 
-    # Compute aggregate metrics
+    # Aggregate metrics
     sum_rewards = [ep["sum_reward"] for ep in per_episode]
     max_rewards = [ep["max_reward"] for ep in per_episode]
-    successes = [ep["success"] for ep in per_episode]
     episode_lengths = [ep["episode_length"] for ep in per_episode]
 
     aggregated = {
         "avg_sum_reward": float(np.mean(sum_rewards)),
         "avg_max_reward": float(np.mean(max_rewards)),
-        "pc_success": float(np.mean(successes) * 100),
         "avg_episode_length": float(np.mean(episode_lengths)),
         "n_episodes": n_episodes,
     }

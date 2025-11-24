@@ -4,7 +4,7 @@
 """GymnasiumWrapper: adapts any Gymnasium environment to the abstract Gym interface.
 
 Note:
-    If you want a GPU-optimized gym, please implement your own. This wrapper
+    If you want a GPU-optimized gymnasium, please implement your own. This wrapper
     assumes NumPy-style Gymnasium environments.
 """
 
@@ -20,6 +20,7 @@ from gymnasium.vector import AsyncVectorEnv, SyncVectorEnv
 from getiaction.data.observation import Observation
 
 from .base import Gym
+from .types import ScalarVec
 
 logger = logging.getLogger(__name__)
 
@@ -39,16 +40,14 @@ class GymnasiumWrapper(Gym):
         render_mode: str | None = "rgb_array",
         **gym_kwargs: Any,  # noqa: ANN401
     ) -> None:
-        """Initialize a GymnasiumWrapper.
+        """Initialize a Gymnasium environment.
 
         Args:
-            gym_id (str | None): The environment ID passed to ``gym.make``.
-                Required if ``vector_env`` is not provided.
-            vector_env (gym.Env | None): A preconstructed vectorized environment,
-                typically ``SyncVectorEnv`` or ``AsyncVectorEnv``.
-            device (str | torch.device): Torch device used for returned tensors.
-            render_mode (str | None): Rendering mode passed to ``gym.make``.
-            **gym_kwargs (Any): Additional keyword arguments forwarded to ``gym.make``.
+            gym_id: The environment ID given to ``gym.make``.
+            vector_env: A preconstructed vectorized environment.
+            device: Torch device used for returned tensors.
+            render_mode: Rendering mode passed to ``gym.make``.
+            **gym_kwargs: Additional arguments forwarded to ``gym.make``.
         """
         if vector_env is not None:
             self._env = vector_env
@@ -58,114 +57,170 @@ class GymnasiumWrapper(Gym):
             self._env = gym.make(gym_id, **gym_kwargs)
 
         self._device = torch.device(device)
-
         self.num_envs = getattr(self._env, "num_envs", 1)
         self._is_vectorized = self.num_envs > 1
 
     @property
     def device(self) -> torch.device:
-        """Return the device Gym expects to return on.
-
-        Returns:
-            torch.device: The device
-        """
+        """Return the configured torch device."""
         return self._device
 
     @property
     def is_vectorized(self) -> bool:
-        """Returns whether the Gym is vectorized.
-
-        Returns:
-            bool: Whether the env is vectorized.
-        """
+        """Return whether the environment is vectorized."""
         return self._is_vectorized
 
     @property
     def render_mode(self) -> str | None:
-        """Return the underlying environment's render mode.
-
-        Returns:
-            str | None: The render mode if available.
-        """
+        """Return the underlying render mode."""
         return getattr(self._env, "render_mode", None)
 
     @property
     def observation_space(self) -> gym.Space | None:
-        """Return the observation space of the environment.
-
-        Returns:
-            gym.Space | None: The observation space.
-        """
+        """Return the observation space."""
         return getattr(self._env, "observation_space", None)
 
     @property
     def action_space(self) -> gym.Space | None:
-        """Return the action space of the environment.
+        """Return the action space."""
+        return getattr(self._env, "action_space", None)
+
+    def _normalize_raw_obs(
+        self,
+        raw_obs: np.ndarray | dict[str, Any],
+    ) -> np.ndarray | dict[str, Any]:
+        """Normalize raw observations into consistent batch format.
+
+        Args:
+            raw_obs: Observation from Gym.
+            is_vectorized: Whether the environment is vectorized.
 
         Returns:
-            gym.Space | None: The action space.
+            Batched observation where array data follows:
+            * unvectorized → shape [1, ...]
+            * vectorized scalar → shape [B, 1]
         """
-        return getattr(self._env, "action_space", None)
+        if not self.is_vectorized:
+            if isinstance(raw_obs, dict):
+                return {k: np.expand_dims(v, 0) for k, v in raw_obs.items()}
+            return np.expand_dims(raw_obs, 0)
+
+        if isinstance(raw_obs, dict):
+            out: dict[str, Any] = {}
+            for k, v in raw_obs.items():
+                if isinstance(v, np.ndarray) and v.ndim == 1:
+                    out[k] = np.expand_dims(v, 1)
+                else:
+                    out[k] = v
+            return out
+
+        if isinstance(raw_obs, np.ndarray) and raw_obs.ndim == 1:
+            return np.expand_dims(raw_obs, 1)
+
+        return raw_obs
+
+    def _normalize_action_for_env(
+        self,
+        action: torch.Tensor,
+    ) -> torch.Tensor:
+        """Normalize user-provided actions for passing to the environment.
+
+        Args:
+            action: Batched user action tensor.
+            is_vectorized: Whether the environment is vectorized.
+
+        Returns:
+            Action tensor in the format expected by Gym:
+            * unvectorized: [dim]
+            * vectorized: [B] or [B, dim]
+        """
+        if not self.is_vectorized:
+            if action.ndim == 2 and action.shape[0] == 1:  # noqa: PLR2004
+                return action[0]
+            return action
+
+        if action.ndim == 2 and action.shape[1] == 1:  # noqa: PLR2004
+            return action.squeeze(1)
+        return action
+
+    def _normalize_action_for_user(
+        self,
+        action: torch.Tensor,
+    ) -> torch.Tensor:
+        """Normalize actions returned to the user.
+
+        Args:
+            action: Raw sampled action.
+            is_vectorized: Whether the environment is vectorized.
+
+        Returns:
+            Batched actions with shape:
+            * unvectorized: [1, dim]
+            * vectorized: [B, dim] or [B, 1]
+        """
+        if not self.is_vectorized:
+            if action.ndim == 0:
+                return action.unsqueeze(0).unsqueeze(0)
+            if action.ndim == 1:
+                return action.unsqueeze(0)
+            return action
+
+        if action.ndim == 1:
+            return action.unsqueeze(1)
+        return action
 
     def reset(
         self,
         *,
         seed: int | None = None,
         **reset_kwargs: Any,  # noqa: ANN401
-    ) -> tuple[Observation, dict[str, Any]]:
+    ) -> tuple[Observation, dict[str, Any] | list[dict[str, Any]]]:
         """Reset the environment.
 
         Args:
-            seed (int | None): Optional random seed for resetting the environment.
-            **reset_kwargs (Any): Additional arguments forwarded to ``env.reset``.
+            seed: Optional seed.
+            **reset_kwargs: Additional reset arguments.
 
         Returns:
-            tuple[Observation, dict[str, Any]]: A tuple containing the initial
-            observation and info dictionary.
+            A tuple ``(Observation, info)``.
         """
         raw_obs, info = self._env.reset(seed=seed, **reset_kwargs)
+        raw_obs = self._normalize_raw_obs(raw_obs)
         obs = self.to_observation(raw_obs)
         return obs, info
 
     def step(
         self,
         action: torch.Tensor,
-    ) -> tuple[Observation, float, bool, bool, dict[str, Any]]:
-        """Perform a single step in the environment.
+    ) -> tuple[Observation, ScalarVec[float], ScalarVec[bool], ScalarVec[bool], dict[str, Any] | list[dict[str, Any]]]:
+        """Step the environment.
 
         Args:
-            action (torch.Tensor): The action to apply. May be unbatched or batched
-                (shape ``[B, ...]``). If unvectorized, a leading batch dimension of
-                size 1 is removed.
+            action: Batched action tensor with shape ``[1, dim]`` or ``[B, dim]``.
 
         Returns:
-            tuple[Observation, float, bool, bool, dict[str, Any]]: A tuple containing:
-                - the next observation
-                - reward
-                - terminated flag
-                - truncated flag
-                - info dictionary
+            A tuple ``(Observation, reward, terminated, truncated, info)``.
         """
-        if not self.is_vectorized and action.ndim == 2 and action.shape[0] == 1:  # noqa: PLR2004
-            action = action[0]
+        action_for_env = self._normalize_action_for_env(action)
+        raw_action = action_for_env.detach().cpu().numpy()
 
-        raw_action = action.detach().cpu().numpy()
-        input(raw_action.shape)
         raw_obs, reward, terminated, truncated, info = self._env.step(raw_action)
+        raw_obs = self._normalize_raw_obs(raw_obs)
         obs = self.to_observation(raw_obs)
+
         return obs, reward, terminated, truncated, info
 
     def render(self, *render_args: Any, **render_kwargs: Any) -> Any:  # noqa: ANN401
-        """Render the environment.
+        """Renders the environment.
 
         Args:
-            *render_args (Any): Positional arguments forwarded to the environment's
-                render function.
-            **render_kwargs (Any): Keyword arguments forwarded to the environment's
-                render function.
+            *render_args (Any): Positional arguments forwarded to the underlying
+                render implementation.
+            **render_kwargs (Any): Keyword arguments forwarded to the render
+                implementation.
 
         Returns:
-            Any: The rendered output, if the environment supports rendering.
+            Any: The render output, if provided by the environment.
         """
         if hasattr(self._env, "render"):
             return self._env.render(*render_args, **render_kwargs)
@@ -176,44 +231,36 @@ class GymnasiumWrapper(Gym):
         self._env.close()
 
     def sample_action(self) -> torch.Tensor:
-        """Sample a valid action from the action space.
+        """Sample a valid action in normalized batched format.
 
         Returns:
-            torch.Tensor: A sampled action converted to a torch tensor on the
-                configured device.
+            A tensor with shape ``[1, dim]`` or ``[B, dim]``.
         """
         a = self._env.action_space.sample()
-        return torch.as_tensor(a, device=self.device)
+        t = torch.as_tensor(a, device=self.device)
+        return self._normalize_action_for_user(t)
 
     def get_max_episode_steps(self) -> int | None:
-        """Return the maximum allowed episode length, if available.
-
-        Returns:
-            int | None: The maximum episode step count, or ``None`` if the
-            environment does not specify a limit.
-        """
+        """Return the max episode steps if available."""
         if hasattr(self._env, "get_wrapper_attr"):
             try:
                 return self._env.get_wrapper_attr("max_episode_steps")
             except AttributeError:
-                logger.debug(
-                    "get_wrapper_attr('max_episode_steps') not found on %r",
-                    self._env,
-                )
+                logger.debug("get_wrapper_attr('max_episode_steps') not found on %r", self._env)
         return None
 
     def to_observation(
         self,
         raw_obs: np.ndarray | dict[str, Any],
     ) -> Observation:
-        """Convert raw environment observations into an ``Observation`` instance.
+        """Converts a raw environment observation into an `Observation` instance.
 
         Args:
-            raw_obs (np.ndarray | dict[str, Any]): Raw observation returned by
-                Gymnasium.
+            raw_obs (np.ndarray | dict[str, Any]): The unprocessed observation from
+                the environment.
 
         Returns:
-            Observation: A processed ``Observation`` object on the correct device.
+            Observation: The parsed and structured observation.
         """
         return self.convert_raw_to_observation(raw_obs=raw_obs).to_torch(device=self.device)
 
@@ -221,67 +268,57 @@ class GymnasiumWrapper(Gym):
     def convert_raw_to_observation(
         raw_obs: np.ndarray | dict[str, Any],
     ) -> Observation:
-        """Convert a Gymnasium observation to an ``Observation`` dataclass instance.
-
-        Conversion rules:
-            * If the observation is not a dict, it is treated as a ``state`` entry.
-            * If the dict already appears to match Observation fields, it is passed
-              directly to ``Observation.from_dict``.
-            * Otherwise, keys are routed to ``images``, ``state``, or ``extra`` fields
-              based on naming conventions.
+        """Converts a Gymnasium raw observation into an `Observation` instance.
 
         Args:
-            raw_obs (np.ndarray | dict[str, Any]): Raw Gymnasium observation.
+            raw_obs (np.ndarray | dict[str, Any]): Raw observation, either a
+                NumPy array or a dict.
 
         Returns:
-            Observation: A populated ``Observation`` instance.
+            Observation: The normalized observation.
+
+        Notes:
+            * Non-dict inputs are treated as the `state` field.
+            * Dicts matching `Observation` fields are passed directly to
+              `Observation.from_dict`.
+            * Other dicts are split into `images`, `state`, and `extra` based on
+              key naming conventions.
         """
         if not isinstance(raw_obs, dict):
             return Observation(state=raw_obs).to_torch()
 
-        # if it looks like an Observation already, pass-through
         obs_fields = {"action", "task", "state", "images"}
         if any(k in raw_obs for k in obs_fields):
             return Observation.from_dict(raw_obs)
 
-        images = {}
-        state = {}
-        extra = {}
+        images: dict[str, Any] = {}
+        state: dict[str, Any] = {}
+        extra: dict[str, Any] = {}
 
         for key, value in raw_obs.items():
             key_lower = key.lower()
 
-            # normalize into numpy
             arr = value
             if isinstance(arr, list):
                 arr = np.asarray(arr)
+            is_img_name = any(tok in key_lower for tok in ("pixel", "pixels", "image", "rgb", "camera"))
+            is_image_like = isinstance(arr, np.ndarray) and arr.ndim >= 3 and arr.shape[-1] in {1, 3, 4}  # noqa: PLR2004
 
-            # image check
-            is_img_name = any(tok in key_lower for tok in ("pixel", "image", "rgb", "camera"))
-            is_image_like = (
-                isinstance(arr, np.ndarray) and arr.ndim >= 3 and arr.shape[-1] in {1, 3, 4}  # noqa: PLR2004
-            )
-
-            # put image in key
             if is_img_name:
-                # manipulate if looks reasonable
                 if is_image_like:
-                    if arr.ndim == 3:  # HWC  # noqa: PLR2004
-                        arr = np.transpose(arr, (2, 0, 1))  # CHW
-                    elif arr.ndim == 4:  # BHWC  # noqa: PLR2004
-                        arr = np.transpose(arr, (0, 3, 1, 2))  # BCHW
+                    if arr.ndim == 3:  # noqa: PLR2004
+                        arr = np.transpose(arr, (2, 0, 1))
+                    elif arr.ndim == 4:  # noqa: PLR2004
+                        arr = np.transpose(arr, (0, 3, 1, 2))
                 images[key] = arr
                 continue
 
-            # if it looks like a state
             if any(tok in key_lower for tok in ("pos", "agent_pos", "state", "obs", "feature")):
                 state[key] = value
                 continue
 
-            # extra keys
             extra[key] = value
 
-        # if nothing fits assumptions, the entire state  dict as is a state
         if not images and not state:
             state = dict(raw_obs.items())
 
@@ -300,17 +337,19 @@ class GymnasiumWrapper(Gym):
         render_mode: str | None = "rgb_array",
         **gym_kwargs: Any,  # noqa: ANN401
     ) -> "GymnasiumWrapper":
-        """Create a vectorized GymnasiumWrapper.
+        """Creates a vectorized `GymnasiumWrapper` for parallel environments.
 
         Args:
-            gym_id (str): Environment ID used for ``gym.make``.
-            num_envs (int): Number of parallel environments.
-            async_mode (bool): Whether to create an asynchronous vector environment.
-            render_mode (str | None): Rendering mode.
-            **gym_kwargs (Any): Extra arguments passed to ``gym.make``.
+            gym_id (str): Gymnasium environment ID.
+            num_envs (int): Number of environments to create.
+            async_mode (bool, optional): Whether to run environments asynchronously.
+                Defaults to False.
+            render_mode (str | None, optional): Render mode for the environment.
+                Defaults to `"rgb_array"`.
+            **gym_kwargs (Any): Additional arguments passed to `gym.make`.
 
         Returns:
-            GymnasiumWrapper: A wrapper around the constructed vector environment.
+            GymnasiumWrapper: A vectorized environment wrapper.
         """
         if async_mode:
             vec = make_async_vector_env(
