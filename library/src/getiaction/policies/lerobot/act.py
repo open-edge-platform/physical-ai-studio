@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 from lightning_utilities.core.imports import module_available
 
+from getiaction.data import Observation
 from getiaction.data.lerobot import FormatConverter
 from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 from getiaction.policies.base import Policy
@@ -21,7 +22,6 @@ from getiaction.policies.lerobot.mixin import LeRobotFromConfig
 if TYPE_CHECKING:
     from torch import nn
 
-    from getiaction.data import Observation
     from getiaction.gyms import Gym
 
 if TYPE_CHECKING or module_available("lerobot"):
@@ -29,6 +29,7 @@ if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.utils import dataset_to_policy_features
     from lerobot.policies.act.configuration_act import ACTConfig as _LeRobotACTConfig
     from lerobot.policies.act.modeling_act import ACTPolicy as _LeRobotACTPolicy
+    from lerobot.policies.factory import make_pre_post_processors
 
     LEROBOT_AVAILABLE = True
 else:
@@ -36,6 +37,7 @@ else:
     dataset_to_policy_features = None
     _LeRobotACTConfig = None
     _LeRobotACTPolicy = None
+    make_pre_post_processors = None
     LEROBOT_AVAILABLE = False
 
 
@@ -293,7 +295,7 @@ class ACT(Policy, LeRobotFromConfig):
             )
             raise TypeError(msg)
         features = dataset_to_policy_features(lerobot_dataset.meta.features)
-        stats = lerobot_dataset.meta.stats
+        dataset_stats = lerobot_dataset.meta.stats
 
         # Create or update LeRobot ACT configuration based on what user provided
         if self._config_object is not None:
@@ -310,11 +312,17 @@ class ACT(Policy, LeRobotFromConfig):
             )
 
         # Initialize the policy
-        policy = _LeRobotACTPolicy(lerobot_config, dataset_stats=stats)  # type: ignore[arg-type,misc]
+        policy = _LeRobotACTPolicy(lerobot_config)
         self.add_module("_lerobot_policy", policy)
         self.model = self._lerobot_policy.model
 
-    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
+        # Create preprocessor/postprocessor for normalization
+        self._preprocessor, self._postprocessor = make_pre_post_processors(lerobot_config, dataset_stats=dataset_stats)
+
+    def forward(
+        self,
+        batch: Observation | dict[str, torch.Tensor],
+    ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """Forward pass for LeRobot ACT policy.
 
         The return value depends on the model's training mode:
@@ -322,14 +330,17 @@ class ACT(Policy, LeRobotFromConfig):
         - In evaluation mode: Returns action predictions via select_action method
 
         Args:
-            batch (Observation): Input batch of observations
+            batch (Observation | dict[str, torch.Tensor]): Input batch of observations.
 
         Returns:
             torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]: In training mode,
                 returns tuple of (loss, loss_dict). In eval mode, returns selected actions tensor.
         """
-        # Convert to LeRobot format for internal processing
-        batch_dict = FormatConverter.to_lerobot_dict(batch)
+        # Convert to LeRobot dict format if needed
+        batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
+
+        # Apply preprocessing
+        batch_dict = self._preprocessor(batch_dict)
 
         if self.training:
             # During training, return loss information for backpropagation
@@ -346,11 +357,11 @@ class ACT(Policy, LeRobotFromConfig):
         """
         return torch.optim.AdamW(self.lerobot_policy.get_optim_params(), lr=self.learning_rate)
 
-    def training_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
+    def training_step(self, batch: Observation | dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
         """Training step uses LeRobot's loss computation.
 
         Args:
-            batch: A batch of data containing observations and actions.
+            batch (Observation | dict[str, torch.Tensor]): Input batch of observations.
             batch_idx: Index of the batch.
 
         Returns:
@@ -358,10 +369,7 @@ class ACT(Policy, LeRobotFromConfig):
         """
         del batch_idx  # Unused argument
 
-        # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch_dict = FormatConverter.to_lerobot_dict(batch)
-
-        total_loss, loss_dict = self.lerobot_policy(batch_dict)
+        total_loss, loss_dict = self(batch)
         for key, value in loss_dict.items():
             self.log(f"train/{key}", value, prog_bar=False)
         self.log("train/loss", total_loss, prog_bar=True)
@@ -397,25 +405,29 @@ class ACT(Policy, LeRobotFromConfig):
         """
         return self.evaluate_gym(batch, batch_idx, stage="test")
 
-    def select_action(self, batch: Observation) -> torch.Tensor:
+    def select_action(self, batch: Observation | dict[str, torch.Tensor]) -> torch.Tensor:
         """Select action (inference mode) through LeRobot.
 
-        Converts the Observation to LeRobot dict format and passes it to the
-        underlying LeRobot policy for action prediction.
+        Converts the Observation to LeRobot dict format, applies preprocessing,
+        gets action prediction, and applies postprocessing (denormalization).
 
         Args:
-            batch: Input batch of observations.
+            batch: Input batch of observations (raw, from gym).
 
         Returns:
-            The selected action tensor.
+            The selected action tensor (denormalized).
         """
-        # Move batch to device (observations from gym are on CPU)
-        batch = batch.to(self.device)
+        # Convert to LeRobot format if needed
+        batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
 
-        # Convert to LeRobot format
-        batch_dict = FormatConverter.to_lerobot_dict(batch)
+        # Apply preprocessing
+        batch_dict = self._preprocessor(batch_dict)
 
-        return self.lerobot_policy.select_action(batch_dict)
+        # Get action from policy
+        action = self.lerobot_policy.select_action(batch_dict)
+
+        # Apply postprocessing
+        return self._postprocessor(action)
 
     def reset(self) -> None:
         """Reset the policy state."""
