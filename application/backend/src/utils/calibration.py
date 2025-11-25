@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from typing import Literal
 
-from lerobot.constants import HF_LEROBOT_CALIBRATION, ROBOTS, TELEOPERATORS
+from lerobot.utils.constants import HF_LEROBOT_CALIBRATION, ROBOTS, TELEOPERATORS
 
 from schemas import CalibrationConfig
 

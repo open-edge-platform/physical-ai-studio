@@ -3,14 +3,18 @@ import uuid
 from json.decoder import JSONDecodeError
 from os import listdir, path, stat
 from pathlib import Path
+from loguru import logger
+
+import traceback
 
 import torch
 from huggingface_hub.errors import RepositoryNotFoundError
-from lerobot.constants import HF_LEROBOT_HOME
+from lerobot.utils.constants import HF_LEROBOT_HOME
 from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
-from lerobot.datasets.utils import get_episode_data_index
+from datasets.exceptions import DatasetGenerationError
 
-from schemas import CameraConfig, Dataset, Episode, LeRobotDatasetInfo, ProjectConfig
+from exceptions import ResourceInUseError, ResourceType
+from schemas import CameraConfig, Dataset, Episode, EpisodeVideo, LeRobotDatasetInfo, ProjectConfig
 from storage.storage import GETI_ACTION_DATASETS
 
 
@@ -23,29 +27,39 @@ def get_dataset_episodes(repo_id: str, root: str | None) -> list[Episode]:
         metadata = dataset.meta
         episodes = metadata.episodes
         result = []
-        for episode_index in episodes:
-            full_path = path.join(metadata.root, metadata.get_data_file_path(episode_index))
+        for episode in episodes:
+            full_path = path.join(metadata.root, metadata.get_data_file_path(episode["episode_index"]))
             stat_result = stat(full_path)
             result.append(
                 Episode(
-                    actions=get_episode_actions(dataset, episodes[episode_index]).tolist(),
+                    actions=get_episode_actions(dataset, episode).tolist(),
                     fps=metadata.fps,
                     modification_timestamp=stat_result.st_mtime_ns // 1e6,
-                    **episodes[episode_index],
+                    videos= {video_key: build_episode_video_from_lerobot_episode_dict(episode, video_key) for video_key in dataset.meta.video_keys},
+                    **episode,
                 )
             )
 
         return result
-    except Exception:
+    except DatasetGenerationError as e:
+        raise ResourceInUseError(ResourceType.DATASET, str(e))
+    except Exception as e:
+        logger.error(e)
+        logger.error(traceback.format_exc())
         return []
+
+def build_episode_video_from_lerobot_episode_dict(episode: dict, video_key: str) -> EpisodeVideo:
+    """Build episode video data for specific episode."""
+    return EpisodeVideo(
+        start=episode[f"videos/{video_key}/from_timestamp"],
+        end=episode[f"videos/{video_key}/to_timestamp"],
+    )
 
 
 def get_episode_actions(dataset: LeRobotDataset, episode: dict) -> torch.Tensor:
     """Get episode actions tensor from specific episode."""
-    episode_index = episode["episode_index"]
-    episode_data_index = get_episode_data_index(dataset.meta.episodes)
-    from_idx = episode_data_index["from"][episode_index].item()
-    to_idx = episode_data_index["to"][episode_index].item()
+    from_idx = episode["dataset_from_index"]
+    to_idx = episode["dataset_to_index"]
     actions = dataset.hf_dataset["action"][from_idx:to_idx]
     return torch.stack(actions)
 
