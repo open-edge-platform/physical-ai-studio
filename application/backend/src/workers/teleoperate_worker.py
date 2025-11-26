@@ -91,7 +91,6 @@ class TeleoperateWorker(BaseThreadWorker):
             ),
         )
 
-
         # After setting up the robot, instantiate the FrameSource using a bridge
         # This can be done directly once switched over to LeRobotDataset V3.
         # We do need to first instantiate using the lerobot dict because a follower requires cameras.
@@ -265,7 +264,6 @@ class TeleoperateWorker(BaseThreadWorker):
             videos=video_timestamps,
             modification_timestamp=int(time.time()),
         )
-
 
     def _build_episode_data_from_buffer(self) -> dict | None:
         """Build episode data from the buffer.

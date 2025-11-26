@@ -11,6 +11,7 @@ class EpisodeInfo(BaseModel):
     tasks: list[str]
     length: int
 
+
 class EpisodeVideo(BaseModel):
     start: float
     end: float
