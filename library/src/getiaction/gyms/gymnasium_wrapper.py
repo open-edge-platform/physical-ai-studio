@@ -4,8 +4,10 @@
 """GymnasiumWrapper: adapts any Gymnasium environment to the abstract Gym interface.
 
 Note:
-    If you want a GPU-optimized gymnasium, please implement your own. This wrapper
-    assumes NumPy-style Gymnasium environments.
+    This wrapper assumes NumPy Gymnasium environments.
+    This wrapper is intended to work nicely with gymnasium supported by https://gymnasium.farama.org/.
+    If you want a GPU-optimized gymnasium or have a custom gymnasium style environment,
+    please implement your own.
 """
 
 import logging
@@ -20,7 +22,7 @@ from gymnasium.vector import AsyncVectorEnv, SyncVectorEnv
 from getiaction.data.observation import Observation
 
 from .base import Gym
-from .types import ScalarVec
+from .types import SingleOrBatch
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +31,7 @@ class ActionValidationError(ValueError):
     """Error raised when an invalid action is provided."""
 
 
-class GymnasiumWrapper(Gym):
+class GymnasiumGym(Gym):
     """Adapter that makes a Gymnasium environment conform to the unified Gym API."""
 
     def __init__(
@@ -131,15 +133,20 @@ class GymnasiumWrapper(Gym):
 
         Returns:
             Action tensor in the format expected by Gym:
-            * unvectorized: [dim]
+            * unvectorized: dim
             * vectorized: [B] or [B, dim]
         """
         if not self.is_vectorized:
+            # when we are not vectorized we assume [1, dim]
+            # environment prefers dim, squeeze to match.
             if action.ndim == 2 and action.shape[0] == 1:  # noqa: PLR2004
                 return action[0]
             return action
 
         if action.ndim == 2 and action.shape[1] == 1:  # noqa: PLR2004
+            # when we are vectorized, we may have [B, 1] where we only have 1 action.
+            # in this case we just want B,. Example is cartpole with action dimension of 1.
+            # This is MultiDiscrete Action space.
             return action.squeeze(1)
         return action
 
@@ -159,12 +166,17 @@ class GymnasiumWrapper(Gym):
             * vectorized: [B, dim] or [B, 1]
         """
         if not self.is_vectorized:
+            # if we are not vectorized, we havae to unsqueeze to meet [B, dim]
             if action.ndim == 0:
+                # if scalar we need to unsqueze twice, [1, 1]
                 return action.unsqueeze(0).unsqueeze(0)
             if action.ndim == 1:
+                # if [dim], need [1, 1]
                 return action.unsqueeze(0)
             return action
 
+        # if vectorized and only one action dim i.e [B]
+        # convert to [B, 1] for clarity.
         if action.ndim == 1:
             return action.unsqueeze(1)
         return action
@@ -192,7 +204,13 @@ class GymnasiumWrapper(Gym):
     def step(
         self,
         action: torch.Tensor,
-    ) -> tuple[Observation, ScalarVec[float], ScalarVec[bool], ScalarVec[bool], dict[str, Any] | list[dict[str, Any]]]:
+    ) -> tuple[
+        Observation,
+        SingleOrBatch[float],
+        SingleOrBatch[bool],
+        SingleOrBatch[bool],
+        dict[str, Any] | list[dict[str, Any]],
+    ]:
         """Step the environment.
 
         Args:
@@ -336,7 +354,7 @@ class GymnasiumWrapper(Gym):
         async_mode: bool = False,
         render_mode: str | None = "rgb_array",
         **gym_kwargs: Any,  # noqa: ANN401
-    ) -> "GymnasiumWrapper":
+    ) -> "GymnasiumGym":
         """Creates a vectorized `GymnasiumWrapper` for parallel environments.
 
         Args:
@@ -365,7 +383,7 @@ class GymnasiumWrapper(Gym):
                 render_mode=render_mode,
                 **gym_kwargs,
             )
-        return GymnasiumWrapper(vector_env=vec)
+        return GymnasiumGym(vector_env=vec)
 
 
 def make_sync_vector_env(

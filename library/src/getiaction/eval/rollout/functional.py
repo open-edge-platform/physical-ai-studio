@@ -24,8 +24,6 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from getiaction.data.utils import infer_batch_size
-
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -132,7 +130,7 @@ def rollout(  # noqa: PLR0914
 
     # Reset environment → batched observation
     observation, _ = env.reset(seed=seed)
-    batch_size = infer_batch_size(observation)
+    batch_size = observation.batch_size
 
     # Reset policy if needed
     if hasattr(policy, "reset") and callable(policy.reset):

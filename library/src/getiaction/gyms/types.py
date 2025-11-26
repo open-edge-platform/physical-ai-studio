@@ -5,4 +5,4 @@
 
 import numpy as np
 
-type ScalarVec[T] = T | list[T] | np.ndarray
+type SingleOrBatch[T] = T | list[T] | np.ndarray

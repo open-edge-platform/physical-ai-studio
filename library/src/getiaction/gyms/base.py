@@ -9,12 +9,11 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    import numpy as np
     import torch
 
     from getiaction.data import Observation
 
-    from .types import ScalarVec
+    from .types import SingleOrBatch
 
 
 class Gym(ABC):
@@ -48,7 +47,13 @@ class Gym(ABC):
     def step(
         self,
         action: torch.Tensor,
-    ) -> tuple[Observation, ScalarVec[float], ScalarVec[bool], ScalarVec[bool], dict[str, Any] | list[dict[str, Any]]]:
+    ) -> tuple[
+        Observation,
+        SingleOrBatch[float],
+        SingleOrBatch[bool],
+        SingleOrBatch[bool],
+        dict[str, Any] | list[dict[str, Any]],
+    ]:
         """Steps the environment by one action.
 
         Args:
@@ -57,9 +62,9 @@ class Gym(ABC):
         Returns:
             tuple[Observation, float, bool, bool, dict[str, Any]]:
                 - Observation: Next environment observation.
-                - ScalarVec[float]: Reward for this transition.
-                - ScalarVec[bool]: Whether the episode terminated.
-                - ScalarVec[bool]: Whether the episode was truncated (e.g., time limit).
+                - SingleOrBatch[float]: Reward for this transition.
+                - SingleOrBatch[bool]: Whether the episode terminated.
+                - SingleOrBatch[bool]: Whether the episode was truncated (e.g., time limit).
                 - dict[str, Any] | list[dict[str, Any]]: Additional environment info.
         """
 
@@ -90,7 +95,7 @@ class Gym(ABC):
     @abstractmethod
     def to_observation(
         self,
-        raw_obs: Any,  # noqa: ANN401, some Gyms may implmenet non-numpy
+        raw_obs: Any,  # noqa: ANN401, some Gyms may implement non-numpy
     ) -> Observation:
         """Converts a raw backend observation to a unified Observation.
 
@@ -99,18 +104,4 @@ class Gym(ABC):
 
         Returns:
             Observation: Standardized Observation dataclass representation.
-        """
-
-    @staticmethod
-    @abstractmethod
-    def convert_raw_to_observation(
-        raw_obs: np.ndarray | dict[str, Any],
-    ) -> Observation:
-        """Helper function to convert output of Gym to observation without instance.
-
-        Args:
-            raw_obs: Raw observation object from the simulator.
-
-        Returns:
-            Observation: Standardized Observation dataclass.
         """

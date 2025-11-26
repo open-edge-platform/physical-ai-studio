@@ -12,18 +12,15 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import torch
 from lightning.pytorch import LightningDataModule
-from torch.utils.data import ConcatDataset, DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset
 
 from getiaction.data.gym import GymDataset
 from getiaction.data.observation import Observation
-from getiaction.gyms import Gym
-from getiaction.gyms.wrappers import StepLimit
+from getiaction.gyms.step_limit import with_step_limit
 
 if TYPE_CHECKING:
     from getiaction.data import Dataset
-
-
-type GymOrList = Gym | list[Gym]
+    from getiaction.gyms import Gym
 
 
 def _collate_gym(batch: list[Any]) -> Gym:
@@ -113,9 +110,9 @@ class DataModule(LightningDataModule):
         self,
         train_dataset: Dataset,
         train_batch_size: int = 16,
-        val_gyms: GymOrList | None = None,
+        val_gym: Gym | None = None,
         num_rollouts_val: int = 10,
-        test_gyms: GymOrList | None = None,
+        test_gym: Gym | None = None,
         num_rollouts_test: int = 10,
         max_episode_steps: int | None = 300,
     ) -> None:
@@ -124,9 +121,9 @@ class DataModule(LightningDataModule):
         Args:
             train_dataset (ActionDataset): Dataset for training.
             train_batch_size (int): Batch size for training DataLoader.
-            val_gyms (GymOrList, None): Validation environments.
+            val_gym (Gym | list[Gym], None): Validation environment.
             num_rollouts_val (int): Number of rollouts to run for validation environments.
-            test_gyms (GymOrList, None): Test environments.
+            test_gym (Gym | list[Gym], None): Test environment.
             num_rollouts_test (int): Number of rollouts to run for test environments.
             max_episode_steps (int, None): Maximum steps allowed per episode. If None, no time limit.
         """
@@ -137,38 +134,18 @@ class DataModule(LightningDataModule):
         self.train_batch_size: int = train_batch_size
 
         # gym environments
-        self.val_gyms: GymOrList | None = val_gyms
+        self.val_gym: Gym | None = val_gym
         self.val_dataset: Dataset | None = None
         self.num_rollouts_val: int = num_rollouts_val
-        self.test_gyms: GymOrList | None = test_gyms
+        self.test_gym: Gym | None = test_gym
         self.test_dataset: Dataset | None = None
         self.num_rollouts_test: int = num_rollouts_test
         self.max_episode_steps = max_episode_steps
 
         # setup time limit if max_episode steps
-        def _wrap_step_limit(
-            env_or_list: GymOrList | None,
-            max_steps: int,
-        ) -> GymOrList | None:
-            """Simple private function to wrap StepLimit around gym.
-
-            Returns:
-                env_or_list: A list of StepLimits or just one.
-            """
-            if env_or_list is None:
-                return None
-
-            if isinstance(env_or_list, Gym):
-                return StepLimit(env=env_or_list, max_steps=max_steps)
-
-            if isinstance(env_or_list, list):
-                return [StepLimit(env=g, max_steps=max_steps) for g in env_or_list]
-
-            return env_or_list
-
-        if self.max_episode_steps is not None:
-            self.val_gyms = _wrap_step_limit(self.val_gyms, max_steps=self.max_episode_steps)
-            self.test_gyms = _wrap_step_limit(self.test_gyms, max_steps=self.max_episode_steps)
+        if self.max_episode_steps:
+            self.val_gym = with_step_limit(self.val_gym, max_steps=self.max_episode_steps) if self.val_gym else None
+            self.test_gym = with_step_limit(self.test_gym, max_steps=self.max_episode_steps) if self.test_gym else None
 
     def setup(self, stage: str) -> None:
         """Set up datasets depending on the stage (fit or test).
@@ -176,25 +153,11 @@ class DataModule(LightningDataModule):
         Args:
             stage (str): Stage of training ('fit', 'test', etc.).
         """
-        if stage == "fit" and self.val_gyms:
-            if isinstance(self.val_gyms, list):
-                # TODO(alfie-roddan-intel): https://github.com/open-edge-platform/geti-action/issues/33  # noqa: FIX002
-                # ensure metrics are seperable between two different gyms
-                self.val_dataset = ConcatDataset([
-                    GymDataset(env=gym, num_rollouts=self.num_rollouts_val) for gym in self.val_gyms
-                ])
-            else:
-                self.val_dataset = GymDataset(env=self.val_gyms, num_rollouts=self.num_rollouts_val)
+        if stage == "fit" and self.val_gym:
+            self.val_datasets = GymDataset(env=self.val_gym, num_rollouts=self.num_rollouts_val)
 
-        if stage == "test" and self.test_gyms:
-            if isinstance(self.test_gyms, list):
-                # TODO(alfie-roddan-intel): https://github.com/open-edge-platform/geti-action/issues/33  # noqa: FIX002
-                # ensure metrics are seperable between two different gyms
-                self.test_dataset = ConcatDataset([
-                    GymDataset(env=gym, num_rollouts=self.num_rollouts_test) for gym in self.test_gyms
-                ])
-            else:
-                self.test_dataset = GymDataset(env=self.test_gyms, num_rollouts=self.num_rollouts_test)
+            if stage == "test" and self.test_gym:
+                self.test_datasets = GymDataset(env=self.test_gym, num_rollouts=self.num_rollouts_test)
 
     def train_dataloader(self) -> DataLoader[Any]:
         """Return the DataLoader for training.
@@ -221,17 +184,20 @@ class DataModule(LightningDataModule):
             DataLoader[Any]: Validation DataLoader with collate function for Gym environments,
                            or empty DataLoader if no validation dataset is configured.
         """
-        if self.val_dataset is None:
+        if not hasattr(self, "val_datasets") or len(self.val_datasets) == 0:
             # Return empty dataloader when no validation dataset
             # This allows training to proceed without validation
             return DataLoader([], batch_size=1)
 
-        return DataLoader(
-            self.val_dataset,
-            batch_size=1,
-            collate_fn=_collate_gym,  # type: ignore[arg-type]
-            shuffle=False,
-        )
+        return [
+            DataLoader(
+                ds,
+                batch_size=1,
+                collate_fn=_collate_gym,
+                shuffle=False,
+            )
+            for ds in self.val_datasets
+        ]
 
     def test_dataloader(self) -> DataLoader[Any]:
         """Return the DataLoader for testing.
@@ -243,17 +209,20 @@ class DataModule(LightningDataModule):
             DataLoader[Any]: Test DataLoader with collate function for Gym environments,
                            or empty DataLoader if no test dataset is configured.
         """
-        if self.test_dataset is None:
+        if not hasattr(self, "test_datasets") or len(self.test_datasets) == 0:
             # Return empty dataloader when no test dataset
             # This allows training to proceed without testing
             return DataLoader([], batch_size=1)
 
-        return DataLoader(
-            self.test_dataset,
-            batch_size=1,
-            collate_fn=_collate_gym,  # type: ignore[arg-type]
-            shuffle=False,
-        )
+        return [
+            DataLoader(
+                ds,
+                batch_size=1,
+                collate_fn=_collate_gym,
+                shuffle=False,
+            )
+            for ds in self.test_datasets
+        ]
 
     def predict_dataloader(self) -> DataLoader[Any]:
         """Predict DataLoader is not implemented.

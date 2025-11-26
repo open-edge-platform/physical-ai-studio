@@ -87,9 +87,9 @@ class LeRobotDataModule(DataModule):
         batch_encoding_size: int = 1,
         data_format: Literal["getiaction", "lerobot"] | DataFormat = "getiaction",
         # Base DataModule parameters (val/test gyms)
-        val_gyms: Gym | list[Gym] | None = None,
+        val_gym: Gym | None = None,
         num_rollouts_val: int = 10,
-        test_gyms: Gym | list[Gym] | None = None,
+        test_gym: Gym | None = None,
         num_rollouts_test: int = 10,
         max_episode_steps: int | None = 300,
     ) -> None:
@@ -128,11 +128,11 @@ class LeRobotDataModule(DataModule):
                 Output format for the data. Use "getiaction" for the native `Observation` format,
                 or "lerobot" for LeRobot's original dict format.
                 Defaults to "getiaction".
-            val_gyms (Gym | list[Gym] | None, optional): Validation gym environments.
+            val_gym (Gym | None, optional): Validation gym environment.
                 Defaults to `None`.
             num_rollouts_val (int, optional): Number of rollouts for validation.
                 Defaults to 10.
-            test_gyms (Gym | list[Gym] | None, optional): Test gym environments.
+            test_gym (Gym | None, optional): Test gym environment.
                 Defaults to `None`.
             num_rollouts_test (int, optional): Number of rollouts for testing.
                 Defaults to `10`.
@@ -205,9 +205,9 @@ class LeRobotDataModule(DataModule):
         super().__init__(
             train_dataset=train_dataset,
             train_batch_size=train_batch_size,
-            val_gyms=val_gyms,
+            val_gym=val_gym,
             num_rollouts_val=num_rollouts_val,
-            test_gyms=test_gyms,
+            test_gym=test_gym,
             num_rollouts_test=num_rollouts_test,
             max_episode_steps=max_episode_steps,
         )

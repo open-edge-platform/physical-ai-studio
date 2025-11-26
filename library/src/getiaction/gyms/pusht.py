@@ -10,10 +10,10 @@ import torch
 
 from getiaction.data.observation import Observation
 
-from .gymnasium_wrapper import GymnasiumWrapper
+from .gymnasium_wrapper import GymnasiumGym
 
 
-class PushTGym(GymnasiumWrapper):
+class PushTGym(GymnasiumGym):
     """Convenience wrapper for the PushT Gym environment."""
 
     def __init__(

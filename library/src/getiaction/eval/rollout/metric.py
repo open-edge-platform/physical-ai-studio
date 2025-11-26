@@ -128,7 +128,7 @@ class Rollout(Metric):
         sum_reward = result["sum_reward"]  # (batch_size,)
         max_reward = result["max_reward"]  # (batch_size,)
         batch_size = sum_reward.shape[0]
-        ep_len = torch.tensor(result["episode_length"], dtype=torch.float32, device=self.device)
+        episode_length = torch.tensor(result["episode_length"], dtype=torch.float32, device=self.device)
 
         # Aggregate (sum over batch)
         # Promote to this device
@@ -137,18 +137,18 @@ class Rollout(Metric):
 
         self.sum_rewards += sum_reward.sum()
         self.max_rewards += max_reward.sum()
-        self.episode_lengths += ep_len * batch_size
+        self.episode_lengths += episode_length * batch_size
         self.num_episodes += batch_size
 
         # Store individual per-episode data
         self.all_sum_rewards.extend(sum_reward)  # list of tensors
         self.all_max_rewards.extend(max_reward)
-        self.all_episode_lengths.extend([ep_len] * batch_size)
+        self.all_episode_lengths.extend([episode_length] * batch_size)
 
         return {
             "sum_reward": sum_reward.mean(),  # averaged just for convenience
             "max_reward": max_reward.mean(),
-            "episode_length": ep_len,
+            "episode_length": episode_length,
         }
 
     # averages across all episodes
