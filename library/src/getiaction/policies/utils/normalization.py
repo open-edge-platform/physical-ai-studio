@@ -95,19 +95,6 @@ class FeatureNormalizeTransform(nn.Module):
                     buffer = getattr(self, "buffer_" + raw_name.replace(".", "_"))
                     self._apply_normalization(batch, batch_key, norm_mode, buffer, inverse=self._inverse)
 
-            """
-                for item in batch.values():
-                    if isinstance(item, dict) and ft.name in item:
-                        root_dict = item
-                        break
-            if root_dict:
-                key = raw_name
-                norm_mode = self._norm_map.get(cast("FeatureType", ft.ftype), NormalizationType.IDENTITY)
-                if norm_mode == NormalizationType.IDENTITY:
-                    continue
-                buffer = getattr(self, "buffer_" + key.replace(".", "_"))
-                self._apply_normalization(root_dict, key, norm_mode, buffer, inverse=self._inverse)
-            """
         return batch
 
     @staticmethod
@@ -120,15 +107,17 @@ class FeatureNormalizeTransform(nn.Module):
         inverse: bool,
     ) -> None:
         def check_inf(t: torch.Tensor, name: str = "") -> None:
+            # Skip check during tracing/scripting/export to avoid data-dependent branching
             is_tracing = torch.jit.is_scripting() or torch.jit.is_tracing()
-            if not is_tracing and torch.isinf(t).any():
+            # torch.compiler.is_compiling() detects torch.compile and torch.export (PyTorch 2.0+)
+            is_compiling = torch.compiler.is_compiling()
+
+            if not is_tracing and not is_compiling and torch.isinf(t).any():
                 msg = (
                     f"Normalization buffer '{name}' is infinity. You should either initialize "
                     "model with correct features stats, or use a pretrained model."
                 )
-                raise ValueError(
-                    msg,
-                )
+                raise ValueError(msg)
 
         # Skip normalization if the value is None (e.g., during gym rollouts where action is not available)
         if batch[key] is None:

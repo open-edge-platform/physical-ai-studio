@@ -11,6 +11,10 @@ class EpisodeInfo(BaseModel):
     tasks: list[str]
     length: int
 
+class EpisodeVideo(BaseModel):
+    start: float
+    end: float
+
 
 class Episode(BaseModel):
     episode_index: int
@@ -18,6 +22,7 @@ class Episode(BaseModel):
     fps: int
     tasks: list[str]
     actions: list[list[float]]
+    videos: dict[str, EpisodeVideo]
     modification_timestamp: int
 
 

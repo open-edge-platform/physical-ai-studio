@@ -55,10 +55,15 @@ class TorchExportAdapter(RuntimeAdapter):
             self._program = program
             self._module = program.module()
 
-            # Extract input/output names from the graph signature
-            graph_signature = program.graph_signature
-            self._input_names = [str(name) for name in graph_signature.user_inputs]
-            self._output_names = [str(name) for name in graph_signature.user_outputs]
+            # Extract input/output names from the export program
+            # Use call_spec.in_spec to get original input dict keys (e.g., "state", "images")
+            # instead of graph_signature.user_inputs which may have renamed keys (e.g., "batch_state")
+            in_spec = program.call_spec.in_spec
+            # Navigate: in_spec -> args[0] -> input_dict to get the dict keys
+            dict_spec = in_spec.children_specs[0].children_specs[0]
+
+            self._input_names = list(dict_spec.context) if hasattr(dict_spec, "context") else []
+            self._output_names = [str(name) for name in program.graph_signature.user_outputs]
 
         except Exception as e:
             msg = f"Failed to load Torch Export IR model from {model_path}: {e}"
