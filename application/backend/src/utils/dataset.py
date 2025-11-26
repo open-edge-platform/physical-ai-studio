@@ -1,17 +1,16 @@
 import os
+import traceback
 import uuid
 from json.decoder import JSONDecodeError
 from os import listdir, path, stat
 from pathlib import Path
-from loguru import logger
-
-import traceback
 
 import torch
-from huggingface_hub.errors import RepositoryNotFoundError
-from lerobot.utils.constants import HF_LEROBOT_HOME
-from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
 from datasets.exceptions import DatasetGenerationError
+from huggingface_hub.errors import RepositoryNotFoundError
+from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
+from lerobot.utils.constants import HF_LEROBOT_HOME
+from loguru import logger
 
 from exceptions import ResourceInUseError, ResourceType
 from schemas import CameraConfig, Dataset, Episode, EpisodeVideo, LeRobotDatasetInfo, ProjectConfig
@@ -35,7 +34,10 @@ def get_dataset_episodes(repo_id: str, root: str | None) -> list[Episode]:
                     actions=get_episode_actions(dataset, episode).tolist(),
                     fps=metadata.fps,
                     modification_timestamp=stat_result.st_mtime_ns // 1e6,
-                    videos= {video_key: build_episode_video_from_lerobot_episode_dict(episode, video_key) for video_key in dataset.meta.video_keys},
+                    videos={
+                        video_key: build_episode_video_from_lerobot_episode_dict(episode, video_key)
+                        for video_key in dataset.meta.video_keys
+                    },
                     **episode,
                 )
             )

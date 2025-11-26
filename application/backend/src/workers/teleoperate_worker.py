@@ -1,25 +1,25 @@
 import base64
+import copy
 import shutil
 import time
-import copy
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
 
 import cv2
 import numpy as np
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
-from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features, combine_feature_dicts
+from lerobot.datasets.pipeline_features import aggregate_pipeline_dataset_features, create_initial_features
+from lerobot.datasets.utils import build_dataset_frame, combine_feature_dicts
+from lerobot.processor import make_default_processors
 from lerobot.robots.utils import make_robot_from_config
 from lerobot.teleoperators.utils import make_teleoperator_from_config
 from lerobot.utils.robot_utils import busy_wait
-from lerobot.processor import make_default_processors
-from lerobot.datasets.pipeline_features import aggregate_pipeline_dataset_features, create_initial_features
 from loguru import logger
 
 from schemas import TeleoperationConfig
 from schemas.dataset import Episode, EpisodeVideo
 from utils.camera import build_camera_config
-from utils.dataset import check_repository_exists, get_episode_actions
+from utils.dataset import check_repository_exists
 from utils.framesource_bridge import FrameSourceCameraBridge
 from utils.robot import make_lerobot_robot_config_from_robot, make_lerobot_teleoperator_config_from_robot
 
@@ -73,13 +73,15 @@ class TeleoperateWorker(BaseThreadWorker):
         self.robot = make_robot_from_config(follower_config)
         self.teleoperator = make_teleoperator_from_config(leader_config)
 
-        self.teleop_action_processor, self.robot_action_processor, self.robot_observation_processor = make_default_processors()
+        (
+            self.teleop_action_processor,
+            self.robot_action_processor,
+            self.robot_observation_processor,
+        ) = make_default_processors()
         self.dataset_features = combine_feature_dicts(
             aggregate_pipeline_dataset_features(
                 pipeline=self.teleop_action_processor,
-                initial_features=create_initial_features(
-                    action=self.robot.action_features
-                ),
+                initial_features=create_initial_features(action=self.robot.action_features),
                 use_videos=True,
             ),
             aggregate_pipeline_dataset_features(
@@ -279,7 +281,9 @@ class TeleoperateWorker(BaseThreadWorker):
             episode_tasks = list(set(tasks))
             episode_index = episode_buffer["episode_index"]
 
-            episode_buffer["index"] = np.arange(self.dataset.meta.total_frames, self.dataset.meta.total_frames + episode_length)
+            episode_buffer["index"] = np.arange(
+                self.dataset.meta.total_frames, self.dataset.meta.total_frames + episode_length
+            )
             episode_buffer["episode_index"] = np.full((episode_length,), episode_index)
 
             # Update tasks and task indices with new tasks if any
