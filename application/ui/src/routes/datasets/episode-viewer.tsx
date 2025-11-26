@@ -31,7 +31,7 @@ const VideoView = ({ cameraName, dataset_id, episodeIndex, aspectRatio, time, ep
         if (videoRef.current) {
             videoRef.current.currentTime = time + episodeVideo.start;
         }
-    }, [time]);
+    }, [time, episodeVideo.start]);
 
     /* eslint-disable jsx-a11y/media-has-caption */
     return (
