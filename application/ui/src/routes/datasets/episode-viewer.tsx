@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 
 import { Disclosure, DisclosurePanel, DisclosureTitle, Flex, View, Well } from '@geti/ui';
 
-import { SchemaEpisode } from '../../api/openapi-spec';
+import { SchemaEpisode, SchemaEpisodeVideo } from '../../api/openapi-spec';
 import EpisodeChart from '../../components/episode-chart/episode-chart';
 import { useProject } from '../../features/projects/use-project';
 import { RobotViewer } from '../../features/robots/controller/robot-viewer';
@@ -20,15 +20,16 @@ interface VideoView {
     cameraName: string;
     aspectRatio: number;
     time: number;
+    episodeVideo: SchemaEpisodeVideo;
 }
-const VideoView = ({ cameraName, dataset_id, episodeIndex, aspectRatio, time }: VideoView) => {
+const VideoView = ({ cameraName, dataset_id, episodeIndex, aspectRatio, time, episodeVideo }: VideoView) => {
     const url = `/api/dataset/${dataset_id}/${episodeIndex}/${cameraName}.mp4`;
 
     const videoRef = useRef<HTMLVideoElement>(null);
 
     useEffect(() => {
         if (videoRef.current) {
-            videoRef.current.currentTime = time;
+            videoRef.current.currentTime = time + episodeVideo.start;
         }
     }, [time]);
 
@@ -68,6 +69,7 @@ export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
                                 episodeIndex={episode.episode_index}
                                 dataset_id={dataset_id}
                                 time={player.time}
+                                episodeVideo={episode.videos[`observation.images.${camera.name}`]}
                             />
                         ))}
                     </Flex>
