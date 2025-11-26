@@ -298,3 +298,4 @@ class TeleoperateWorker(BaseThreadWorker):
                 episode_buffer[key] = np.stack(episode_buffer[key])
 
             return episode_buffer
+        return None
