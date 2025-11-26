@@ -1,45 +1,35 @@
 # DataModule
 
-The `DataModue` is a child class of the `LightningDataModule`.
+Lightning data module with support for gym environments.
 
-We in the future will support the use of `gymnasium` environments.
-For now we allow them as optional args,
-with the added feature of wrapping the `gym` with a `TimeLimit`.
+## Interface
 
-```mermaid
-classDiagram
-    class LightningDataModule {
-    }
+```python
+class DataModule(LightningDataModule):
+    def __init__(
+        self,
+        train_dataset: Dataset,
+        train_batch_size: int,
+        val_gyms: Gym | list[Gym] | None = None,
+        val_dataset: Dataset | None = None,
+        test_gyms: Gym | list[Gym] | None = None,
+        test_dataset: Dataset | None = None,
+        max_episode_steps: int | None = None,
+    ):
+        """Initialize data module."""
 
-    class DataModule {
-        - Dataset train_dataset
-        - int train_batch_size
-        - Gym|list~Gym~|None val_gyms
-        - Dataset val_dataset
-        - int num_rollouts_val
-        - Gym|list~Gym~|None test_gyms
-        - Dataset test_dataset
-        - int num_rollouts_test
-        - int|None max_episode_steps
-        + setup(stage: str) void
-        + train_dataloader() DataLoader
-        + val_dataloader() DataLoader
-        + test_dataloader() DataLoader
-        + predict_dataloader() DataLoader
-    }
+    def train_dataloader(self) -> DataLoader:
+        """Training data loader."""
 
-    class Dataset
-    class DataLoader
-    class Gym
-    class GymDataset
-    class ConcatDataset
-    class TimeLimit
+    def val_dataloader(self) -> DataLoader:
+        """Validation data loader (dataset + gym rollouts)."""
 
-    LightningDataModule <|-- DataModule
-    DataModule --> Dataset
-    DataModule --> DataLoader
-    DataModule --> Gym
-    DataModule --> GymDataset
-    DataModule --> ConcatDataset
-    DataModule --> TimeLimit
+    def test_dataloader(self) -> DataLoader:
+        """Test data loader (dataset + gym rollouts)."""
 ```
+
+## Features
+
+- Combines datasets and gym environments
+- Wraps gyms with `TimeLimit`
+- Configurable rollout counts for validation/test

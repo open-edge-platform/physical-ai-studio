@@ -83,7 +83,7 @@ class ComplexRoundTripConfig:
 
 
 # Test models
-class SimpleModel(torch.nn.Module):
+class SimpleModel(torch.nn.Module, FromCheckpoint):
     """Simple PyTorch model for testing."""
 
     def __init__(self, config: SimpleConfig):
@@ -94,19 +94,26 @@ class SimpleModel(torch.nn.Module):
     def forward(self, x):
         return self.linear(x)
 
+    @classmethod
+    def from_dataclass(cls, config: SimpleConfig):
+        """Create model from dataclass config."""
+        return cls(config)
 
-class ModelWithToTorch(Export):
+
+class ModelWithToTorch(Export, torch.nn.Module):
     """Model implementing ToTorch mixin."""
 
     def __init__(self, config: SimpleConfig):
+        super().__init__()
         self.config = config
         self.model = SimpleModel(config)
 
 
-class ModelWithFromCheckpoint(FromCheckpoint):
+class ModelWithFromCheckpoint(FromCheckpoint, torch.nn.Module):
     """Model implementing FromCheckpoint mixin."""
 
     def __init__(self, config: SimpleConfig):
+        super().__init__()
         self.config = config
         self.model = SimpleModel(config)
 
@@ -116,17 +123,12 @@ class ModelWithFromCheckpoint(FromCheckpoint):
         return cls(config)
 
 
-class ModelWithBothMixins(Export, FromCheckpoint):
+class SimplePolicy(Export, torch.nn.Module):
     """Model implementing both ToTorch and FromCheckpoint mixins."""
 
-    def __init__(self, config: SimpleConfig):
-        self.config = config
-        self.model = SimpleModel(config)
-
-    @classmethod
-    def from_dataclass(cls, config: SimpleConfig):
-        """Create model from dataclass config."""
-        return cls(config)
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
 
 
 class TestSerializeModelConfig:
@@ -299,7 +301,7 @@ class TestToTorch:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             checkpoint_path = Path(tmpdir) / "model.pt"
-            model.export(ExportBackend.TORCH, checkpoint_path)
+            model.export(checkpoint_path, ExportBackend.TORCH)
 
             # Should save successfully with empty config
             state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)  # nosemgrep
@@ -326,45 +328,47 @@ class TestFromCheckpoint:
     def test_from_snapshot_with_path(self):
         """Test loading from checkpoint file path."""
         config = SimpleConfig(hidden_size=128, num_layers=3)
-        model = ModelWithBothMixins(config)
+        policy = SimplePolicy(SimpleModel(config))
 
         with tempfile.TemporaryDirectory() as tmpdir:
             checkpoint_path = Path(tmpdir) / "model.pt"
-            model.to_torch(checkpoint_path)
+            policy.to_torch(checkpoint_path)
 
             # Load from path
-            loaded_model = ModelWithBothMixins.load_from_checkpoint(checkpoint_path)
+            loaded_model = SimpleModel.load_from_checkpoint(checkpoint_path)
+            loaded_policy = SimplePolicy(config)
+            loaded_policy.model = loaded_model
 
-            assert loaded_model.config.hidden_size == 128
-            assert loaded_model.config.num_layers == 3
-            assert loaded_model.config.activation == "relu"
+            assert loaded_policy.model.config.hidden_size == 128
+            assert loaded_policy.model.config.num_layers == 3
+            assert loaded_policy.model.config.activation == "relu"
 
     def test_from_snapshot_with_string_path(self):
         """Test loading from checkpoint with string path."""
         config = SimpleConfig(hidden_size=256)
-        model = ModelWithBothMixins(config)
+        policy = SimplePolicy(SimpleModel(config))
 
         with tempfile.TemporaryDirectory() as tmpdir:
             checkpoint_path = str(Path(tmpdir) / "model.pt")
-            model.to_torch(checkpoint_path)
+            policy.to_torch(checkpoint_path)
 
             # Load from string path
-            loaded_model = ModelWithBothMixins.load_from_checkpoint(checkpoint_path)
+            loaded_model = SimpleModel.load_from_checkpoint(checkpoint_path)
 
             assert loaded_model.config.hidden_size == 256
 
     def test_from_snapshot_with_dict(self):
         """Test loading from snapshot dictionary."""
         config = SimpleConfig(hidden_size=64)
-        model = ModelWithBothMixins(config)
+        policy = SimplePolicy(SimpleModel(config))
 
         # Create a fake state dict
-        state_dict = model.model.state_dict()
+        state_dict = policy.model.state_dict()
         config_dict = _serialize_model_config(config)
         state_dict[CONFIG_KEY] = yaml.dump(config_dict)
 
         # Load from dict
-        loaded_model = ModelWithBothMixins.load_from_checkpoint(state_dict)
+        loaded_model = SimpleModel.load_from_checkpoint(state_dict)
 
         assert loaded_model.config.hidden_size == 64
         assert loaded_model.config.num_layers == 3
@@ -372,13 +376,13 @@ class TestFromCheckpoint:
     def test_from_snapshot_preserves_config(self):
         """Test that all config parameters are preserved."""
         config = SimpleConfig(hidden_size=512, num_layers=6, activation="tanh")
-        model = ModelWithBothMixins(config)
+        policy = SimplePolicy(SimpleModel(config))
 
         with tempfile.TemporaryDirectory() as tmpdir:
             checkpoint_path = Path(tmpdir) / "model.pt"
-            model.to_torch(checkpoint_path)
+            policy.to_torch(checkpoint_path)
 
-            loaded_model = ModelWithBothMixins.load_from_checkpoint(checkpoint_path)
+            loaded_model = SimpleModel.load_from_checkpoint(checkpoint_path)
 
             assert loaded_model.config.hidden_size == config.hidden_size
             assert loaded_model.config.num_layers == config.num_layers
@@ -414,7 +418,7 @@ class TestFromCheckpoint:
         assert CONFIG_KEY in original_state_dict
 
         # Load model (uses copy internally, so original should not be modified)
-        ModelWithBothMixins.load_from_checkpoint(original_state_dict)
+        SimpleModel.load_from_checkpoint(original_state_dict)
 
         # Original dict should still have the config key (since from_snapshot uses copy)
         assert CONFIG_KEY in original_state_dict
@@ -426,37 +430,37 @@ class TestRoundTrip:
     def test_simple_round_trip(self):
         """Test saving and loading preserves model state."""
         config = SimpleConfig(hidden_size=64, num_layers=2)
-        original_model = ModelWithBothMixins(config)
+        original_policy = SimplePolicy(SimpleModel(config))
 
         # Set specific weights
         with torch.no_grad():
-            original_model.model.linear.weight.fill_(2.0)
-            original_model.model.linear.bias.fill_(0.1)
+            original_policy.model.linear.weight.fill_(2.0)
+            original_policy.model.linear.bias.fill_(0.1)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             checkpoint_path = Path(tmpdir) / "model.pt"
-            original_model.to_torch(checkpoint_path)
+            original_policy.to_torch(checkpoint_path)
 
             # Load model
-            loaded_model = ModelWithBothMixins.load_from_checkpoint(checkpoint_path)
+            loaded_model = SimpleModel.load_from_checkpoint(checkpoint_path)
 
             # Load weights manually to verify
             state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)  # nosemgrep
             state_dict.pop(CONFIG_KEY)
-            loaded_model.model.load_state_dict(state_dict)
+            loaded_model.load_state_dict(state_dict)
 
             # Verify config
-            assert loaded_model.config.hidden_size == original_model.config.hidden_size
-            assert loaded_model.config.num_layers == original_model.config.num_layers
+            assert loaded_model.config.hidden_size == original_policy.model.config.hidden_size
+            assert loaded_model.config.num_layers == original_policy.model.config.num_layers
 
             # Verify weights
-            assert torch.all(loaded_model.model.linear.weight == 2.0)
-            assert torch.all(loaded_model.model.linear.bias == 0.1)
+            assert torch.all(loaded_model.linear.weight == 2.0)
+            assert torch.all(loaded_model.linear.bias == 0.1)
 
     def test_complex_config_round_trip(self):
         """Test round-trip with complex configuration."""
 
-        class ComplexTestModel(torch.nn.Module):
+        class ComplexTestModel(torch.nn.Module, FromCheckpoint):
             def __init__(self, config: ComplexRoundTripConfig):
                 super().__init__()
                 self.config = config
@@ -465,7 +469,13 @@ class TestRoundTrip:
             def forward(self, x):
                 return self.linear(x)
 
-        class ComplexModel(Export, FromCheckpoint):
+            @classmethod
+            def from_dataclass(cls, config: ComplexRoundTripConfig):
+                """Create model from dataclass config."""
+                return cls(config)
+
+
+        class ComplexModel(Export):
             def __init__(self, config: ComplexRoundTripConfig):
                 self.config = config
                 self.model = ComplexTestModel(config)
@@ -474,9 +484,9 @@ class TestRoundTrip:
             def from_dataclass(cls, config: ComplexRoundTripConfig):
                 return cls(config)
 
-        simple = SimpleConfig(hidden_size=256)
+        config = SimpleConfig(hidden_size=256)
         config = ComplexRoundTripConfig(
-            simple=simple,
+            simple=config,
             activation=ActivationType.GELU,
             layers=(64, 128, 256),
             metadata={"version": "1.0"},
@@ -488,7 +498,7 @@ class TestRoundTrip:
             checkpoint_path = Path(tmpdir) / "model.pt"
             original_model.to_torch(checkpoint_path)
 
-            loaded_model = ComplexModel.load_from_checkpoint(checkpoint_path)
+            loaded_model = ComplexTestModel.load_from_checkpoint(checkpoint_path)
 
             assert loaded_model.config.simple.hidden_size == 256
             assert loaded_model.config.activation == "gelu"  # StrEnum converted to str
@@ -498,13 +508,13 @@ class TestRoundTrip:
     def test_multiple_round_trips(self):
         """Test multiple save/load cycles preserve model state."""
         config = SimpleConfig(hidden_size=32)
-        model = ModelWithBothMixins(config)
+        policy = SimplePolicy(SimpleModel(config))
 
         with tempfile.TemporaryDirectory() as tmpdir:
             for i in range(3):
                 checkpoint_path = Path(tmpdir) / f"model_{i}.pt"
-                model.to_torch(checkpoint_path)
-                model = ModelWithBothMixins.load_from_checkpoint(checkpoint_path)
+                policy.to_torch(checkpoint_path)
+                model = SimpleModel.load_from_checkpoint(checkpoint_path)
 
                 # Config should remain consistent
                 assert model.config.hidden_size == 32

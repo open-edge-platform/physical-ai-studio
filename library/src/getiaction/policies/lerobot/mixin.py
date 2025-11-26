@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING, Any, Self
 from getiaction.config.mixin import FromConfig
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from lerobot.configs.policies import PreTrainedConfig
 
 
@@ -148,6 +150,139 @@ class LeRobotFromConfig(FromConfig):
         except TypeError as e:
             msg = f"{cls.__name__} does not support LeRobot config instantiation. Original error: {e}"
             raise TypeError(msg) from e
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        pretrained_name_or_path: str | Path,
+        *,
+        force_download: bool = False,
+        resume_download: bool | None = None,
+        proxies: dict | None = None,
+        token: str | bool | None = None,
+        cache_dir: str | Path | None = None,
+        local_files_only: bool = False,
+        revision: str | None = None,
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Self:
+        """Load a pretrained policy from HuggingFace Hub or local path.
+
+        This method delegates to LeRobot's from_pretrained implementation and wraps
+        the loaded policy in the appropriate getiaction wrapper. The policy is loaded
+        with its trained weights and configuration.
+
+        Args:
+            pretrained_name_or_path: Model ID on HuggingFace Hub (e.g.,
+                "lerobot/act_aloha_sim_transfer_cube_human") or path to local directory.
+            force_download: Force download even if file exists in cache.
+            resume_download: Resume incomplete downloads.
+            proxies: Proxy configuration for downloads.
+            token: HuggingFace authentication token.
+            cache_dir: Directory to cache downloaded models.
+            local_files_only: Only use local files, no downloads.
+            revision: Model revision (branch, tag, or commit hash).
+            **kwargs: Additional wrapper-specific arguments (e.g., learning_rate).
+
+        Returns:
+            Initialized policy wrapper with pretrained weights loaded.
+
+        Raises:
+            ImportError: If LeRobot is not installed.
+
+        Examples:
+            Load ACT model:
+                >>> from getiaction.policies.lerobot import ACT
+                >>> policy = ACT.from_pretrained(
+                ...     "lerobot/act_aloha_sim_transfer_cube_human"
+                ... )
+
+            Load from local path:
+                >>> policy = ACT.from_pretrained("/path/to/saved/model")
+
+            Load with custom learning rate:
+                >>> policy = ACT.from_pretrained(
+                ...     "lerobot/act_aloha_sim_transfer_cube_human",
+                ...     learning_rate=1e-4,
+                ... )
+
+        Note:
+            The loaded policy is in eval mode by default. Use `policy.train()`
+            to switch to training mode for fine-tuning.
+        """
+        try:
+            from lerobot.configs.policies import PreTrainedConfig  # noqa: PLC0415
+            from lerobot.policies.factory import get_policy_class  # noqa: PLC0415
+        except ImportError as e:
+            msg = (
+                "LeRobot is required for from_pretrained functionality.\n\n"
+                "Install with:\n"
+                "    pip install lerobot\n\n"
+                "Or install getiaction with LeRobot support:\n"
+                "    pip install getiaction[lerobot]\n\n"
+                "For more information, see: https://github.com/huggingface/lerobot"
+            )
+            raise ImportError(msg) from e
+
+        # Load config to identify policy type
+        config = PreTrainedConfig.from_pretrained(
+            pretrained_name_or_path,
+            force_download=force_download,
+            resume_download=resume_download,
+            proxies=proxies,
+            token=token,
+            cache_dir=cache_dir,
+            local_files_only=local_files_only,
+            revision=revision,
+        )
+
+        # Get policy class and load pretrained weights
+        policy_cls = get_policy_class(config.type)
+        lerobot_policy = policy_cls.from_pretrained(
+            pretrained_name_or_path,
+            config=config,
+            force_download=force_download,
+            resume_download=resume_download,
+            proxies=proxies,
+            token=token,
+            cache_dir=cache_dir,
+            local_files_only=local_files_only,
+            revision=revision,
+        )
+
+        # Create wrapper instance without calling __init__
+        wrapper: Any = cls.__new__(cls)
+
+        # Initialize as PyTorch Module - we need to call the parent __init__
+        # since we bypassed it with __new__. PyTorch Module.__init__ sets up
+        # critical internal state (_modules, _parameters, etc.)
+        super(cls, wrapper).__init__()
+
+        # Set required attributes
+        wrapper._is_pretrained = True  # noqa: SLF001
+        wrapper._framework = "lerobot"  # noqa: SLF001
+        # Use learning_rate from kwargs, or fall back to config's optimizer_lr
+        # Config from pretrained models should have this; if not, user must provide it for training
+        wrapper.learning_rate = kwargs.get("learning_rate", getattr(config, "optimizer_lr", None))
+
+        # For LeRobotPolicy (universal wrapper), set policy_name
+        if cls.__name__ == "LeRobotPolicy":
+            wrapper.policy_name = config.type
+
+        # Register the loaded policy
+        wrapper.add_module("_lerobot_policy", lerobot_policy)
+
+        # Expose model attribute if available
+        if hasattr(lerobot_policy, "model"):
+            wrapper.model = lerobot_policy.model
+        elif hasattr(lerobot_policy, "diffusion"):
+            wrapper.model = lerobot_policy.diffusion
+        else:
+            wrapper.model = None
+
+        # Set to eval mode (LeRobot's from_pretrained sets policy to eval)
+        wrapper.eval()
+
+        return wrapper
 
     @classmethod
     def from_config(

@@ -160,8 +160,16 @@ class TestTorchExportAdapter:
         mock_module.return_value = {"output": torch.tensor([[1.0, 2.0]])}
         mock_program.module.return_value = mock_module
 
+        # Mock call_spec for input names
+        mock_dict_spec = Mock()
+        mock_dict_spec.context = ["input"]
+        mock_in_spec = Mock()
+        mock_in_spec.children_specs = [Mock(children_specs=[mock_dict_spec])]
+        mock_program.call_spec.in_spec = mock_in_spec
+
+        # Mock graph_signature for output names
         mock_sig = Mock()
-        mock_sig.user_inputs, mock_sig.user_outputs = ["input"], ["output"]
+        mock_sig.user_outputs = ["output"]
         mock_program.graph_signature = mock_sig
 
         with patch("torch.export.load", return_value=mock_program):
@@ -193,7 +201,16 @@ class TestTorchExportAdapter:
         # Test missing inputs
         mock_program = MagicMock()
         mock_program.module.return_value = MagicMock()
-        mock_program.graph_signature.user_inputs = ["input1", "input2"]
+
+        # Mock call_spec for input names
+        mock_dict_spec = Mock()
+        mock_dict_spec.context = ["input1", "input2"]
+        mock_in_spec = Mock()
+        mock_in_spec.children_specs = [Mock(children_specs=[mock_dict_spec])]
+        mock_program.call_spec.in_spec = mock_in_spec
+
+        # Mock graph_signature for output names
+        mock_program.graph_signature.user_outputs = ["output"]
 
         with patch("torch.export.load", return_value=mock_program):
             adapter.load(model_path)

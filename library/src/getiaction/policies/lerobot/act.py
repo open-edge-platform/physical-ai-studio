@@ -57,7 +57,13 @@ class ACT(Policy, LeRobotFromConfig):
     See ``LeRobotFromConfig`` for detailed configuration examples.
 
     Examples:
-        Basic usage with explicit arguments (recommended):
+        Load pretrained model from HuggingFace Hub:
+            >>> from getiaction.policies.lerobot import ACT
+            >>> policy = ACT.from_pretrained(
+            ...     "lerobot/act_aloha_sim_transfer_cube_human"
+            ... )
+
+        Train from scratch with explicit arguments (recommended):
             >>> from getiaction.policies.lerobot import ACT
             >>> from getiaction.data.lerobot import LeRobotDataModule
             >>> from getiaction.train import Trainer

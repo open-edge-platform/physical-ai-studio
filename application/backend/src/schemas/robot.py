@@ -30,7 +30,21 @@ class RobotCamera(BaseModel):
     name: str = Field(..., description="Camera identifier name")
     fingerprint: str = Field(..., description="Camera fingerprint used to find the camera")
 
-    model_config = ConfigDict(json_schema_extra={"example": {"name": "front_camera", "fingerprint": "/dev/video0"}})
+    resolution_width: int = Field(default=480, description="Preferred width of the camera")
+    resolution_height: int = Field(default=360, description="Preferred height of the camera")
+    resolution_fps: int = Field(default=30, description="Preferred fps of the camera")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "name": "front_camera",
+                "fingerprint": "/dev/video0",
+                "resolution_width": 480,
+                "resolution_height": 360,
+                "resolution_fps": 30,
+            }
+        }
+    )
 
 
 class Robot(ABC, BaseModel):
