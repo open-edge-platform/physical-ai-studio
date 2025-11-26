@@ -288,21 +288,16 @@ class FormatConverter:
     - Observation objects
     - Collated nested dicts
     - Already-formatted LeRobot dicts
-    - Temporal dimension adjustments (n_obs_steps)
-    - Action horizon adjustments (policy-specific)
 
     Example:
         >>> # Convert to LeRobot format
         >>> lerobot_batch = FormatConverter.to_lerobot_dict(observation)
 
-        >>> # Convert with policy config for horizon/temporal handling
-        >>> lerobot_batch = FormatConverter.to_lerobot_dict(
-        ...     observation,
-        ...     policy_config=policy.config
-        ... )
-
         >>> # Convert to Observation format
         >>> observation = FormatConverter.to_observation(lerobot_dict)
+
+        >>> # Auto-detect and convert (no-op if already in target format)
+        >>> lerobot_batch = FormatConverter.to_lerobot_dict(batch)  # Works with dict or Observation
     """
 
     @staticmethod
@@ -335,14 +330,24 @@ class FormatConverter:
             >>> lerobot_dict = FormatConverter.to_lerobot_dict(lerobot_dict)
         """
         if isinstance(batch, Observation):
+            # Convert Observation -> LeRobot dict with flattened keys
             return _convert_observation_to_lerobot_dict(batch)
+
         if isinstance(batch, dict):
-            # Check if already in LeRobot format
+            # Check if dict is already in LeRobot format (has "observation." prefixed keys)
             if any(key.startswith("observation.") for key in batch):
+                # Already in LeRobot format
                 return batch
-            # Check if it's a collated dict
+
+            # Check if it's a collated dict (has nested structure like {"images": {...}})
             if "images" in batch or "state" in batch:
+                # Convert collated dict -> LeRobot dict with flattened keys
                 return _flatten_collated_dict_to_lerobot(batch)
+
+            # Fallback: assume it's already in LeRobot format
+            return batch
+
+        # If not dict or Observation, return as-is
         return batch
 
     @staticmethod
