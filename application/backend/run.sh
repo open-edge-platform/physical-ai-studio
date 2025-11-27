@@ -31,8 +31,8 @@ export PYTHONPATH=.
 
 if [[ "$SEED_DB" == "true" ]]; then
   echo "Seeding the database..."
-  $UV_CMD application/cli.py init-db
-  $UV_CMD application/cli.py seed --with-model=True
+  $UV_CMD src/cli.py init-db
+  $UV_CMD src/cli.py seed --with-model=True
 fi
 
 echo "Starting FastAPI server..."

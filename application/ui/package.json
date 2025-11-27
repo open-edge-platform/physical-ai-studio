@@ -15,6 +15,7 @@
         "clone-so101": "npx tiged git@github.com:TheRobotStudio/SO-ARM100.git/Simulation/SO101 public/SO101 --force",
         "cyclic-deps-check": "npx madge --circular src/**/*.ts*",
         "start": "rsbuild dev",
+        "dev": "rsbuild dev",
         "format": "prettier --write .",
         "format:check": "prettier --check --cache \"./src/**/*.{js,ts,jsx,tsx,css,scss,sass}\"",
         "lint": "eslint \"src/**/*.ts*\" --max-warnings 0",
@@ -24,7 +25,8 @@
         "test:unit": "vitest --config vitest.config.ts",
         "test:unit:watch": "vitest --config vitest.config.ts --reporter=verbose --watch",
         "test:component": "npx playwright test --config=playwright.config.ts",
-        "type-check": "tsc --noEmit"
+        "type-check": "tsc --noEmit",
+        "tauri": "tauri"
     },
     "dependencies": {
         "@adobe/react-spectrum": "^3.41.0",
@@ -94,6 +96,7 @@
         "openapi-msw": "^1.2.0",
         "openapi-typescript": "^7.8.0",
         "prettier": "^3.5.3",
+        "@tauri-apps/cli": "^2.9.4",
         "typescript": "^5.8.3",
         "typescript-eslint": "^8.31.1",
         "vite": "^7.0.6",
