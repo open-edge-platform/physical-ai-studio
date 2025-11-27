@@ -7,7 +7,28 @@ on:
 permissions: {} # No permissions by default on workflow level
 
 jobs:
-  python-checks:
+  code-quality:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # to checkout code
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Run prek
+        uses: j178/prek-action@91fd7d7cf70ae1dee9f4f44e7dfa5d1073fe6623 # v1
+        with:
+          extra-args: --all-files
+          working-directory: application/backend
+
+  unit-tests:
     runs-on: ubuntu-latest
     permissions:
       contents: read # to checkout code
@@ -32,12 +53,6 @@ jobs:
         run: |
           uv lock --check
           uv sync --frozen --all-extras
-
-      - name: Check formatting with ruff
-        working-directory: application/backend
-        run: |
-          uv run ruff check --output-format=github .
-          uv run ruff format --check .
 
       - name: Check source code with mypy
         working-directory: application/backend
