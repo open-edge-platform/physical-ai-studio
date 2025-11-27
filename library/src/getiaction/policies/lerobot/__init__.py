@@ -101,6 +101,7 @@ from lightning_utilities.core.imports import module_available
 
 from getiaction.policies.lerobot.act import ACT
 from getiaction.policies.lerobot.diffusion import Diffusion
+from getiaction.policies.lerobot.groot import Groot
 from getiaction.policies.lerobot.universal import LeRobotPolicy
 
 LEROBOT_AVAILABLE = module_available("lerobot")
@@ -191,6 +192,7 @@ __all__ = [
     "SAC",
     "TDMPC",
     "Diffusion",
+    "Groot",
     "LeRobotPolicy",
     "PI0Fast",
     "SmolVLA",
@@ -232,12 +234,13 @@ def list_available_policies() -> list[str]:
             "ACT",
             "Diffusion",
             # Universal wrapper (all LeRobot policies)
-            "vqbet",
-            "tdmpc",
-            "sac",
+            "groot",
             "pi0",
             "pi05",
             "pi0fast",
+            "sac",
             "smolvla",
+            "tdmpc",
+            "vqbet",
         ]
     return []

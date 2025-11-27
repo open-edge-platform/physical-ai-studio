@@ -126,13 +126,14 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
     SUPPORTED_POLICIES: ClassVar[list[str]] = [
         "act",
         "diffusion",
-        "vqbet",
-        "tdmpc",
-        "sac",
+        "groot",
         "pi0",
         "pi05",
         "pi0fast",
+        "sac",
         "smolvla",
+        "tdmpc",
+        "vqbet",
     ]
 
     def __init__(
