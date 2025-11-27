@@ -1,9 +1,7 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-
-[tool.uv.workspace]
-members = ["library", "application/backend"]
-
-[tool.uv.sources]
-getiaction = { workspace = true }
+# NOTE: This is a minimal root pyproject.toml.
+# The library and application/backend directories have their own independent environments.
+# - ML engineers: work in library/ directory (uv sync from there)
+# - Backend engineers: work in application/backend/ directory (uv sync from there)

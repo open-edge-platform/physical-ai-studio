@@ -28,12 +28,11 @@ dependencies = [
 
 [tool.uv.sources]
 FrameSource = { git = "https://github.com/ArendJanKramer/FrameSource.git", rev = "1eec5b2df1c7af9c8a941ee90bfc5e617c5b4522" }
-getiaction = { workspace = true }
+getiaction = { path = "../../library", editable = true }
 
 [dependency-groups]
 dev = [
   "ruff~=0.11.2",
-  "pre-commit~=4.1",
 ]
 lint = [
   "ruff~=0.11.2",
@@ -41,7 +40,6 @@ lint = [
 ]
 all = [
   "ruff~=0.11.2",
-  "pre-commit~=4.1",
   "mypy~=1.17",
 ]
 
