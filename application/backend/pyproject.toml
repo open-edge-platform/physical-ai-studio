@@ -70,7 +70,16 @@ select = [
 
 ignore = [
     "N801", "N805", "N806", "N807", "N818", "COM812", "RET503", "SIM108",
-    "SIM105", "PLR2004", "RUF010", "TC001", "RUF012"
+    "SIM105", "PLR2004", "RUF010", "TC001", "RUF012",
+    # Additional ignores for backend patterns
+    "PLR6301",  # Method could be static (common in repos/schemas)
+    "PLR6201",  # Use set literal for membership
+    "PLC0415",  # Import at top level (conditional imports)
+    "RUF029",   # Async function doesn't await (FastAPI handlers)
+    "RUF100",   # Unused noqa directive
+    "UP046",    # Generic class uses Generic subclass
+    "PLW1514",  # open() without encoding
+    "I001",     # Import block unsorted (let formatter handle)
 ]
 
 fixable = ["ALL"]
