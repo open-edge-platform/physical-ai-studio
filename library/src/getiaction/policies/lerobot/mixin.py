@@ -761,8 +761,11 @@ class LeRobotExport(Export):
     ) -> None:
         """Export to OpenVINO format.
 
-        For LeRobot policies, this converts to ONNX first, then to OpenVINO.
-        This approach avoids TorchScript tracing issues with stateful models (action queue).
+        Note:
+            Unlike first-party policies that convert directly from PyTorch to OpenVINO,
+            LeRobot policies use a two-step conversion: PyTorch → ONNX → OpenVINO.
+            This indirect path avoids TorchScript tracing issues with stateful models
+            that use internal action queues.
 
         Args:
             output_path: Path to save the OpenVINO model.
