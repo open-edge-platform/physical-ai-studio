@@ -22,10 +22,10 @@ repos:
     hooks:
       # Run the linter with fixes (uses [tool.ruff] from pyproject.toml)
       - id: ruff
-        args: ["--config=pyproject.toml", "--fix"]
+        args: ["--config=application/backend/pyproject.toml", "--fix"]
       # Run the formatter (uses [tool.ruff] from pyproject.toml)
       - id: ruff-format
-        args: ["--config=pyproject.toml"]
+        args: ["--config=application/backend/pyproject.toml"]
 
   # ========================================================================== #
   # PYTHON TYPE CHECKING                                                       #
@@ -35,7 +35,7 @@ repos:
     hooks:
       - id: mypy
         # Uses [tool.mypy] from pyproject.toml
-        args: ["--config-file=pyproject.toml"]
+        args: ["--config-file=application/backend/pyproject.toml"]
         additional_dependencies:
           - types-PyYAML
           - types-setuptools
