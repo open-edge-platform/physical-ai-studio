@@ -262,7 +262,8 @@ class GymnasiumGym(Gym):
                 return self._env.get_wrapper_attr("max_episode_steps")
             except AttributeError:
                 logger.debug(
-                    "get_wrapper_attr('max_episode_steps') not found on %r", self._env
+                    "get_wrapper_attr('max_episode_steps') not found on %r",
+                    self._env,
                 )
         return None
 
@@ -280,7 +281,7 @@ class GymnasiumGym(Gym):
             Observation: The parsed and structured observation.
         """
         return self.convert_raw_to_observation(raw_obs=raw_obs).to_torch(
-            device=self.device
+            device=self.device,
         )
 
     @staticmethod
@@ -320,15 +321,10 @@ class GymnasiumGym(Gym):
             arr = value
             if isinstance(arr, list):
                 arr = np.asarray(arr)
-            is_img_name = any(
-                tok in key_lower
-                for tok in ("pixel", "pixels", "image", "rgb", "camera")
-            )
-            is_image_like = (
-                isinstance(arr, np.ndarray)
-                and arr.ndim >= 3
-                and arr.shape[-1] in {1, 3, 4}
-            )  # noqa: PLR2004
+            # here we look for keys that represent images tht are commonly used in gymnasium
+            is_img_name = any(tok in key_lower for tok in ("pixel", "pixels", "image", "rgb", "camera"))
+            # we test for whether the image looks like a image array. RGB, RGBA, Greyscale
+            is_image_like = isinstance(arr, np.ndarray) and arr.ndim >= 3 and arr.shape[-1] in {1, 3, 4}  # noqa: PLR2004
 
             if is_img_name:
                 if is_image_like:
@@ -339,10 +335,7 @@ class GymnasiumGym(Gym):
                 images[key] = arr
                 continue
 
-            if any(
-                tok in key_lower
-                for tok in ("pos", "agent_pos", "state", "obs", "feature")
-            ):
+            if any(tok in key_lower for tok in ("pos", "agent_pos", "state", "obs", "feature")):
                 state[key] = value
                 continue
 

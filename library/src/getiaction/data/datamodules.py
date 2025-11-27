@@ -67,10 +67,7 @@ def _collate_observations(batch: list[Observation]) -> Observation:
         # Handle tensors and NumPy arrays
         if isinstance(first_non_none, (torch.Tensor, np.ndarray)):
             # Convert NumPy arrays to PyTorch tensors before stacking
-            tensors_to_stack = [
-                torch.from_numpy(v) if isinstance(v, np.ndarray) else v
-                for v in non_none_values
-            ]
+            tensors_to_stack = [torch.from_numpy(v) if isinstance(v, np.ndarray) else v for v in non_none_values]
             collated_data[key] = torch.stack(tensors_to_stack, dim=0)
 
         # Handle nested dictionaries, such as the `images` field
@@ -83,11 +80,11 @@ def _collate_observations(batch: list[Observation]) -> Observation:
                     # Only stack if the values are tensors or arrays
                     if isinstance(first_inner_value, (torch.Tensor, np.ndarray)):
                         tensors_to_stack = [
-                            torch.from_numpy(v) if isinstance(v, np.ndarray) else v
-                            for v in inner_values
+                            torch.from_numpy(v) if isinstance(v, np.ndarray) else v for v in inner_values
                         ]
                         collated_inner_dict[inner_key] = torch.stack(
-                            tensors_to_stack, dim=0
+                            tensors_to_stack,
+                            dim=0,
                         )
                     else:
                         # For non-tensor values (like strings), just keep them as a list
@@ -150,16 +147,8 @@ class DataModule(LightningDataModule):
 
         # setup time limit if max_episode steps (0 or None will fail)
         if self.max_episode_steps:
-            self.val_gym = (
-                with_step_limit(self.val_gym, max_steps=self.max_episode_steps)
-                if self.val_gym
-                else None
-            )
-            self.test_gym = (
-                with_step_limit(self.test_gym, max_steps=self.max_episode_steps)
-                if self.test_gym
-                else None
-            )
+            self.val_gym = with_step_limit(self.val_gym, max_steps=self.max_episode_steps) if self.val_gym else None
+            self.test_gym = with_step_limit(self.test_gym, max_steps=self.max_episode_steps) if self.test_gym else None
 
     def setup(self, stage: str) -> None:
         """Set up datasets depending on the stage (fit or test).
@@ -169,12 +158,14 @@ class DataModule(LightningDataModule):
         """
         if stage == "fit" and self.val_gym:
             self.val_dataset = GymDataset(
-                env=self.val_gym, num_rollouts=self.num_rollouts_val
+                env=self.val_gym,
+                num_rollouts=self.num_rollouts_val,
             )
 
         if stage == "test" and self.test_gym:
             self.test_dataset = GymDataset(
-                env=self.test_gym, num_rollouts=self.num_rollouts_test
+                env=self.test_gym,
+                num_rollouts=self.num_rollouts_test,
             )
 
     def train_dataloader(self) -> DataLoader[Any]:
