@@ -242,6 +242,15 @@ class TestObservationBatching:
         assert type(single) is type(batch)
         assert isinstance(single, Observation)
         assert isinstance(batch, Observation)
+    
+    def test_observation_infer_batch_size(self):
+        """Test we can infer batch size."""
+        batch_1 = Observation(action=torch.tensor([[1, 1], [1, 2]]))
+        assert batch_1.batch_size == 2
+        batch_2= Observation(info={"meta": "data"}, images={"top": torch.zeros((2, 3, 10, 10))})
+        assert batch_2.batch_size == 2
+        batch_3= Observation(info={"meta": "data"}, images={"top": torch.zeros((1, 3, 10, 10))}, action=torch.tensor([[1, 1]]))
+        assert batch_3.batch_size == 1
 
 
 class TestObservationFormatConversion:
