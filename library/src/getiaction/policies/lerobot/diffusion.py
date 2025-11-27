@@ -467,22 +467,33 @@ class Diffusion(LeRobotExport, LeRobotFromConfig, Policy):  # type: ignore[misc]
         self,
         output_path: Path,
         input_sample: dict[str, torch.Tensor] | None = None,
+        num_inference_steps: int | None = None,
         **export_kwargs: dict[str, Any],
     ) -> None:
-        """Export to ONNX with fast tracing and proper device handling.
+        """Export to ONNX with proper device handling for diffusion models.
 
         Override to:
-        1. Temporarily set num_inference_steps=1 for faster tracing
+        1. Configure num_inference_steps for export (baked into ONNX graph)
         2. Move diffusion scheduler tensors to CPU (they're not nn.Parameters)
+
+        Note:
+            The `num_inference_steps` parameter controls the number of denoising steps
+            baked into the exported ONNX model. This is a quality vs speed trade-off:
+            - Higher values (e.g., 100): Better quality, slower inference
+            - Lower values (e.g., 10): Faster inference, potentially lower quality
+            Default uses the model's configured value.
 
         Args:
             output_path: Directory to save the exported model.
             input_sample: Sample input (unused, generated automatically).
+            num_inference_steps: Number of diffusion steps to bake into the model.
+                If None, uses the model's configured value (typically 100).
             **export_kwargs: Additional export arguments.
         """
-        # Temporarily reduce inference steps for fast export tracing
+        # Use specified steps or keep model's original value
         original_num_inference_steps = self._lerobot_policy.diffusion.num_inference_steps
-        self._lerobot_policy.diffusion.num_inference_steps = 1
+        if num_inference_steps is not None:
+            self._lerobot_policy.diffusion.num_inference_steps = num_inference_steps
 
         # Move scheduler tensors to CPU explicitly (they're not nn.Parameters)
         # Do this BEFORE calling super() to avoid device mismatch during tracing
