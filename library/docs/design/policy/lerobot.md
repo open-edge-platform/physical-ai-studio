@@ -464,11 +464,13 @@ For detailed information about data formats and conversion, see the dedicated
 ### Why This Works
 
 1. **Thin Delegation Pattern**:
+
    - Wrapper only adds Lightning interface
    - All computation delegated to LeRobot
    - Zero computational overhead
 
 2. **Weight Preservation**:
+
    - Direct attribute access to `lerobot_policy`
    - State dict operations pass through
    - Checkpointing works seamlessly

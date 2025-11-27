@@ -1,0 +1,81 @@
+name: Epic
+description: Large initiative spanning multiple tasks or sprints
+title: "[Epic]: "
+labels: ["epic"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Epics are large bodies of work broken down into smaller tasks.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: High-level overview of this epic
+      placeholder: |
+        One paragraph describing the goal and scope.
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: Why is this important? What value does it deliver?
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What's included and excluded?
+      placeholder: |
+        **In scope:**
+        - Item 1
+        - Item 2
+
+        **Out of scope:**
+        - Item 3
+    validations:
+      required: true
+
+  - type: textarea
+    id: tasks
+    attributes:
+      label: Tasks
+      description: Break down into smaller issues (link them as they're created)
+      placeholder: |
+        - [ ] #123 Task 1
+        - [ ] #124 Task 2
+        - [ ] Task 3 (to be created)
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: How do we know this epic is complete?
+      placeholder: |
+        - [ ] Criterion 1
+        - [ ] Criterion 2
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Other epics, external dependencies, or blockers
+    validations:
+      required: false
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks and Open Questions
+      description: Known risks or questions to resolve
+    validations:
+      required: false
