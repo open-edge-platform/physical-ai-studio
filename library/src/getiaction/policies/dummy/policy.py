@@ -163,10 +163,7 @@ class Dummy(Export, Policy):
             torch.Tensor: Selected actions.
         """
         # Get action from model
-        action = self.model.select_action(batch.to_dict())  # type: ignore[attr-defined]
-
-        # Remove batch dim if present (rollout expects unbatched)
-        return action.squeeze(0) if action.ndim > 1 and action.shape[0] == 1 else action
+        return self.model.select_action(batch.to_dict())  # type: ignore[attr-defined]
 
     def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
         """Perform forward pass of the Dummy policy.

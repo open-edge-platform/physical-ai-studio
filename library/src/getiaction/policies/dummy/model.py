@@ -180,8 +180,10 @@ class Dummy(nn.Module, FromConfig, FromCheckpoint):
 
         # Handle action queue logic
         if len(self._action_queue) == 0:
-            actions = self.predict_action_chunk(batch)[:, : self.n_action_steps]
-            self._action_queue.extend(actions.transpose(0, 1))
+            # chunk gets [B, n, dim]
+            actions = self.predict_action_chunk(batch)
+            for t in range(self.n_action_steps):
+                self._action_queue.append(actions[:, t])  # queue [B, dim]
         return self._action_queue.popleft()
 
     @staticmethod
@@ -293,4 +295,4 @@ class Dummy(nn.Module, FromConfig, FromCheckpoint):
             target = torch.zeros_like(pred)
             loss = F.mse_loss(pred, target)
             return loss, {"loss_mse": loss}
-        return self.predict_action_chunk(batch)
+        return self.select_action(batch)

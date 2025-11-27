@@ -131,22 +131,29 @@ class GymnasiumGym(Gym):
 
         Returns:
             Action tensor in the format expected by Gym:
-            * unvectorized: dim
+            * unvectorized: dim (scalar allowed)
             * vectorized: [B] or [B, dim]
         """
-        # Single environment -> [1,Dim] → Dim
+        # Single-environment cases
         if not self.is_vectorized:
-            # [1, 1] -> ()   scalar action after numpy
-            if action.ndim == 2 and action.shape == (1, 1):  # noqa: PLR2004
-                return action[0, 0]
-            # [1, Dim] → (Dim,)
+            # (1,) discrete → scalar
+            if action.ndim == 1 and action.numel() == 1:
+                return action.squeeze()
+
+            # (1,1) discrete → scalar
+            if action.ndim == 2 and action.numel() == 1:  # noqa: PLR2004
+                return action.squeeze()
+
+            # (1,Dim) continuous → (Dim,)
             if action.ndim == 2 and action.shape[0] == 1:  # noqa: PLR2004
-                return action[0]
+                return action.squeeze(0)
+
             return action
 
-        # Vectorized discrete -> [B,1] → [B]
+        # Vectorized discrete → [B]
         if action.ndim == 2 and action.shape[1] == 1:  # noqa: PLR2004
-            return action[:, 0]
+            return action.squeeze(1)
+
         return action
 
     def _normalize_action_for_user(
