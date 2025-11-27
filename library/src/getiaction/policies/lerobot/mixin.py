@@ -21,9 +21,9 @@ import yaml
 
 from getiaction import __version__
 from getiaction.config.mixin import FromConfig
-from getiaction.data.transforms import replace_center_crop_with_onnx_compatible
 from getiaction.export import Export, ExportBackend
 from getiaction.export.mixin_export import _postprocess_openvino_model, _serialize_model_config
+from getiaction.transforms import replace_center_crop_with_onnx_compatible
 
 if TYPE_CHECKING:
     from os import PathLike

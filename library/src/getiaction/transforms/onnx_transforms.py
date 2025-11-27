@@ -41,7 +41,9 @@ def _compute_center_crop_coordinates(
     return crop_top, crop_left
 
 
-def center_crop_image(image: torch.Tensor, output_size: list[int] | tuple[int, int]) -> torch.Tensor:
+def center_crop_image(
+    image: torch.Tensor, output_size: list[int] | tuple[int, int]
+) -> torch.Tensor:
     """Apply center-cropping to an input image tensor.
 
     This function uses integer division for computing crop coordinates,
@@ -63,7 +65,11 @@ def center_crop_image(image: torch.Tensor, output_size: list[int] | tuple[int, i
         >>> output.shape
         torch.Size([3, 224, 224])
     """
-    crop_height, crop_width = output_size if isinstance(output_size, (list, tuple)) else (output_size, output_size)
+    crop_height, crop_width = (
+        output_size
+        if isinstance(output_size, (list, tuple))
+        else (output_size, output_size)
+    )
     original_ndim = image.ndim
 
     # Normalize to 4D or 5D for processing
@@ -207,7 +213,11 @@ def replace_center_crop_with_onnx_compatible(model: nn.Module) -> None:
         if isinstance(module, torchvision.transforms.CenterCrop):
             # Replace with ONNX-compatible version
             # Extract size from the CenterCrop module - type annotation removed due to torchvision internals
-            crop_size = module.size if hasattr(module, "size") else (module.crop_height, module.crop_width)
+            crop_size = (
+                module.size
+                if hasattr(module, "size")
+                else (module.crop_height, module.crop_width)
+            )
             setattr(model, name, CenterCrop(crop_size))  # type: ignore[arg-type]
         else:
             # Recursively process child modules
