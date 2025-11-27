@@ -32,7 +32,9 @@ jobs:
         with:
           node-version: 24
       - name: Install prek
-        uses: j178/setup-prek@c31b26f29f8d34bd8df1a29fa67f27f0a0c4ecc5 # v1.0.1
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/j178/prek/main/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
       - name: Run prek checks on library
         run: |
           prek run --all-files library/
