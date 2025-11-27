@@ -189,15 +189,12 @@ class DataModule(LightningDataModule):
             # This allows training to proceed without validation
             return DataLoader([], batch_size=1)
 
-        return [
-            DataLoader(
-                ds,
-                batch_size=1,
-                collate_fn=_collate_gym,
-                shuffle=False,
-            )
-            for ds in self.val_datasets
-        ]
+        return DataLoader(
+            self.val_dataset,
+            batch_size=1,
+            collate_fn=_collate_gym,  # type: ignore[arg-type]
+            shuffle=False,
+        )
 
     def test_dataloader(self) -> DataLoader[Any]:
         """Return the DataLoader for testing.
@@ -214,15 +211,12 @@ class DataModule(LightningDataModule):
             # This allows training to proceed without testing
             return DataLoader([], batch_size=1)
 
-        return [
-            DataLoader(
-                ds,
-                batch_size=1,
-                collate_fn=_collate_gym,
-                shuffle=False,
-            )
-            for ds in self.test_datasets
-        ]
+        return DataLoader(
+            self.test_dataset,
+            batch_size=1,
+            collate_fn=_collate_gym,  # type: ignore[arg-type]
+            shuffle=False,
+        )
 
     def predict_dataloader(self) -> DataLoader[Any]:
         """Predict DataLoader is not implemented.
