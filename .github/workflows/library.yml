@@ -27,17 +27,11 @@ jobs:
         uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
         with:
           python-version-file: "./library/.python-version"
-      - name: Set up Node.js
-        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+      - name: Run prek
+        uses: j178/prek-action@5e98cae797e00a0f95dcff850cb7e16b84cddd38 # v1
         with:
-          node-version: 24
-      - name: Install prek
-        run: |
-          curl -fsSL https://raw.githubusercontent.com/j178/prek/main/install.sh | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-      - name: Run prek checks on library
-        run: |
-          prek run --all-files library/
+          extra-args: --all-files
+          working-directory: library
   unit-tests:
     runs-on: ubuntu-24.04
     permissions:
