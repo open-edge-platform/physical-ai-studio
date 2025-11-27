@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+         xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+         xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+         xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities">
+
+    <Identity Name="Intel.GetiAction" Publisher="CN=Intel" Version="1.0.0.0"/>
+
+    <Properties>
+        <DisplayName>Intel Geti Action</DisplayName>
+        <PublisherDisplayName>Intel</PublisherDisplayName>
+        <Description>Geti Action by Intel</Description>
+        <Logo>Assets\logo.png</Logo>
+    </Properties>
+
+    <Resources>
+        <Resource Language="en-us"/>
+    </Resources>
+
+    <Dependencies>
+        <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.15063.0" MaxVersionTested="10.0.19045.0"/>
+    </Dependencies>
+
+    <Applications>
+        <Application Id="GetiAction" Executable="geti_action_ui.exe" EntryPoint="Windows.FullTrustApplication">
+            <uap:VisualElements BackgroundColor="transparent" DisplayName="Intel Geti Action"
+                                Square150x150Logo="Assets\logo.png" Square44x44Logo="Assets\logo.png"
+                                Description="Geti Action by Intel">
+                <uap:DefaultTile Wide310x150Logo="Assets\logo.png"/>
+                <uap:SplashScreen Image="Assets\logo.png"/>
+            </uap:VisualElements>
+            <Extensions>
+                <desktop:Extension Category="windows.fullTrustProcess">
+                    <desktop:FullTrustProcess/>
+                </desktop:Extension>
+            </Extensions>
+        </Application>
+    </Applications>
+
+
+    <Capabilities>
+        <rescap:Capability Name="runFullTrust"/>
+    </Capabilities>
+
+</Package>

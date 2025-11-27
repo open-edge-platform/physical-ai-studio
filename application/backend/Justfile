@@ -1,0 +1,92 @@
+#!/usr/bin/env just --justfile
+import "../Justfile"
+
+set shell := ["bash", "-cu"]
+
+py_path := "tests:app"
+# Ensure version in GHA workflow matches uv version here
+uv_version := "0.9.7"
+
+default:
+    @just --list
+
+# OpenAPI generation
+gen-openapi: venv
+    PYTHONPATH=app uv run --no-sync openapi.py .build
+
+# -------------------------------------------------------------------------------------------------
+#  Run FastAPI development server with auto-reload
+# -------------------------------------------------------------------------------------------------
+dev:
+    PYTHONPATH=app uv run uvicorn main:app --reload --host localhost --port 9100
+
+
+# -------------------------------------------------------------------------------------------------
+# Environment
+# -------------------------------------------------------------------------------------------------
+pre-venv:
+    if ! uv self version | grep {{uv_version}} >/dev/null; then \
+        curl --proto '=https' --tlsv1.2 -LsSf "https://github.com/astral-sh/uv/releases/download/{{uv_version}}/uv-installer.sh" | sh; \
+    fi
+
+venv: pre-venv
+    uv lock --check
+    uv sync --extra {{ai-device}} --frozen --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org
+
+venv-lock: pre-venv
+    uv lock
+
+# -------------------------------------------------------------------------------------------------
+# Tests
+# -------------------------------------------------------------------------------------------------
+test-unit: venv
+    if [ -d "./tests/unit" ]; then \
+        PYTHONPATH={{py_path}} uv run pytest ./tests/unit -v; \
+    else \
+        echo "./tests/unit directory not found - skipping unit tests"; \
+    fi
+
+test-integration: venv
+    if [ -d "./tests/integration" ]; then \
+        PYTHONPATH={{py_path}} uv run pytest ./tests/integration -v; \
+    else \
+        echo "./tests/integration directory not found - skipping integration tests"; \
+    fi
+
+tests: test-unit test-integration
+
+# -------------------------------------------------------------------------------------------------
+# Static analysis / style
+# -------------------------------------------------------------------------------------------------
+
+style-fix: venv
+    uv run ruff check --config pyproject.toml --fix
+    uv run ruff format --config pyproject.toml
+
+lint: venv _ruff _mypy
+
+_ruff:
+    uv run ruff check --config pyproject.toml --output-format=github .
+    uv run ruff format --check --config pyproject.toml .
+
+_mypy:
+    uv run mypy . --config-file=pyproject.toml
+
+# -------------------------------------------------------------------------------------------------
+# Installer
+# -------------------------------------------------------------------------------------------------
+
+[windows]
+pyinstaller: venv
+    uv sync --extra installer --extra {{ai-device}} --extra windows-installer --frozen --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org
+    uv run pyinstaller --noconfirm geti-action.spec
+
+[linux]
+pyinstaller: venv
+    uv sync --extra installer --extra {{ai-device}} --frozen --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org
+    uv run pyinstaller --noconfirm geti-action.spec
+
+[macos]
+pyinstaller: venv
+    uv sync --extra installer --extra {{ai-device}} --frozen --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org
+    uv run pyinstaller --noconfirm geti-action.spec

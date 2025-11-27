@@ -24,6 +24,7 @@ dependencies = [
   "loguru>=0.7.3",
   "getiaction",
   "greenlet>=3.2.4",
+    "genicam==1.5.0"
 ]
 
 [tool.uv.sources]
@@ -42,6 +43,11 @@ all = [
   "ruff~=0.11.2",
   "mypy~=1.17",
 ]
+
+[project.optional-dependencies]
+cpu = ["getiaction"]
+installer = ["pyinstaller~=6.16.0"]
+windows-installer = ["winrt-Windows.Storage==3.2.1"]
 
 [tool.uv]
 default-groups = ["all"]
