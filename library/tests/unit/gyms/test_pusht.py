@@ -75,3 +75,19 @@ class TestPushTGym(BaseTestGym):
         assert isinstance(instance_result, Observation)
         assert static_result.images.shape == instance_result.images.shape  # type: ignore[attr-defined]
         assert static_result.state.shape == instance_result.state.shape  # type: ignore[attr-defined]
+    
+def test_state_only_obs():
+    """Test we can convert with only position."""
+    raw_obs = {"agent_pos": np.array([[0.4,0.7]],dtype=np.float32)}
+    obs = PushTGym.convert_raw_to_observation(raw_obs)
+
+    assert obs.images is None
+    assert obs.state.shape == (1,2)
+    
+def test_pixels_only_obs():
+    """Test that we can convert only pixels"""
+    raw_obs = {"pixels": np.random.rand(1,32,32,3).astype(np.float32)}
+    obs = PushTGym.convert_raw_to_observation(raw_obs)
+
+    assert obs.images.shape == (1,3,32,32)
+    assert obs.state is None

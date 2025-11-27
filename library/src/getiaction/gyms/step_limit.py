@@ -85,10 +85,6 @@ class StepLimit(Gym):
             if isinstance(info, dict):
                 info = dict(info)
                 info["TimeLimit.truncated"] = True
-            else:
-                info = [dict(d) for d in info]
-                for d in info:
-                    d["TimeLimit.truncated"] = True
 
         return obs, reward, terminated, truncated, info
 
