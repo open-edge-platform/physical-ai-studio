@@ -33,14 +33,16 @@ jobs:
           node-version: 24
       - name: Install uv
         uses: astral-sh/setup-uv@1e862dfacbd1d6d858c55d9b792c756523627244 # v7.1.4
-      - name: Generate lock file
-        run: uv lock
+      - name: Verify lock file
+        working-directory: library
+        run: uv lock --check
       - name: Install dependencies
+        working-directory: library
         run: |
-          uv sync --locked --all-extras
+          uv sync --frozen --all-extras
       - name: Run pre-commit checks
+        working-directory: library
         run: |
-          cd library
           uv run pre-commit run --all-files
   unit-tests:
     runs-on: ubuntu-24.04
@@ -57,12 +59,14 @@ jobs:
           python-version-file: "./library/.python-version"
       - name: Install uv
         uses: astral-sh/setup-uv@1e862dfacbd1d6d858c55d9b792c756523627244 # v7.1.4
-      - name: Generate lock file
-        run: uv lock
+      - name: Verify lock file
+        working-directory: library
+        run: uv lock --check
       - name: Install dependencies
+        working-directory: library
         run: |
-          uv sync --locked --all-extras
+          uv sync --frozen --all-extras
       - name: Run python unit tests
+        working-directory: library
         run: |
-          cd library
           uv run pytest tests/unit
