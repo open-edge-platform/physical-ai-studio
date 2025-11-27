@@ -1,4 +1,4 @@
-name: Geti Action server checks
+name: Backend
 on:
   push:
     branches: ["main"]

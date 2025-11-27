@@ -57,14 +57,17 @@ classDiagram
 ### Observation Data
 
 - **`action`**: Robot actions (joint positions, velocities, gripper commands)
+
   - Can be single tensor or dict of action components
   - Shape: `[action_dim]` (single) or `[B, action_dim]` (batch)
 
 - **`state`**: Robot state (proprioceptive information)
+
   - Joint positions, velocities, end-effector pose, etc.
   - Shape: `[state_dim]` (single) or `[B, state_dim]` (batch)
 
 - **`images`**: Visual observations
+
   - Can be single tensor or dict of camera views
   - Shape: `[C, H, W]` (single) or `[B, C, H, W]` (batch)
   - Example: `{"top": tensor, "wrist": tensor}`
