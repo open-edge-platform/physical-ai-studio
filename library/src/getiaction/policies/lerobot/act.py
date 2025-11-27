@@ -360,7 +360,6 @@ class ACT(LeRobotExport, LeRobotFromConfig, Policy):  # type: ignore[misc]
         # Batch must be in LeRobot format (set data_format="lerobot" when creating datamodule)
         total_loss, loss_dict = self.lerobot_policy(batch)
 
-        # Log losses
         for key, value in loss_dict.items():
             self.log(f"train/{key}", value, prog_bar=False)
         self.log("train/loss", total_loss, prog_bar=True)
