@@ -17,7 +17,12 @@ def dummy_dataset():
     without requiring any external data files.
     """
     from getiaction.data import Dataset
-    from getiaction.data.observation import Feature, FeatureType, NormalizationParameters, Observation
+    from getiaction.data.observation import (
+        Feature,
+        FeatureType,
+        NormalizationParameters,
+        Observation,
+    )
 
     class DummyDataset(Dataset):
         """Simple in-memory dataset for testing.
@@ -26,7 +31,9 @@ def dummy_dataset():
         including all required properties (raw_features, fps, tolerance_s, delta_indices).
         """
 
-        def __init__(self, num_samples: int = 10, state_dim: int = 4, action_dim: int = 2):
+        def __init__(
+            self, num_samples: int = 10, state_dim: int = 4, action_dim: int = 2
+        ):
             self.num_samples = num_samples
             self.state_dim = state_dim
             self.action_dim = action_dim
@@ -40,14 +47,20 @@ def dummy_dataset():
             num_action_steps = len(self._delta_indices.get("action", [0]))
 
             # Return action chunks if delta_indices specifies multiple steps
-            action_shape = (num_action_steps, self.action_dim) if num_action_steps > 1 else (self.action_dim,)
+            action_shape = (
+                (num_action_steps, self.action_dim)
+                if num_action_steps > 1
+                else (self.action_dim,)
+            )
 
             # Create extra dict with action_is_pad if using action chunks
             extra = None
             if num_action_steps > 1:
                 # For dummy dataset, no padding - all actions are valid (False = not padded)
                 extra = {
-                    "action_is_pad": torch.full((num_action_steps,), fill_value=False, dtype=torch.bool)
+                    "action_is_pad": torch.full(
+                        (num_action_steps,), fill_value=False, dtype=torch.bool
+                    )
                 }
 
             return Observation(
@@ -171,7 +184,11 @@ def dummy_lerobot_dataset():
             features_dict = {
                 "observation.state": {"shape": (4,), "dtype": "float32"},
                 "observation.images.top": {
-                    "shape": (96, 96, 3),  # (H, W, C) format - will be converted to (C, H, W) by dataset_to_policy_features
+                    "shape": (
+                        96,
+                        96,
+                        3,
+                    ),  # (H, W, C) format - will be converted to (C, H, W) by dataset_to_policy_features
                     "dtype": "video",
                     "names": ["height", "width", "channels"],
                 },
@@ -192,7 +209,9 @@ def dummy_lerobot_dataset():
                     "max": torch.full((4,), 1.0),
                 },
                 "observation.images.top": {
-                    "mean": torch.zeros(3, 1, 1),  # (C, 1, 1) for channel-wise normalization
+                    "mean": torch.zeros(
+                        3, 1, 1
+                    ),  # (C, 1, 1) for channel-wise normalization
                     "std": torch.ones(3, 1, 1),
                     "min": torch.zeros(3, 1, 1),
                     "max": torch.full((3, 1, 1), 255.0),
@@ -272,7 +291,7 @@ def dummy_datamodule(dummy_dataset):
     datamodule = DataModule(
         train_dataset=train_dataset,
         train_batch_size=4,
-        val_gyms=gym,
+        val_gym=gym,
         num_rollouts_val=2,
     )
 
@@ -304,7 +323,7 @@ def dummy_lerobot_datamodule(dummy_lerobot_dataset):
     datamodule = DataModule(
         train_dataset=train_dataset,
         train_batch_size=8,
-        val_gyms=gym,
+        val_gym=gym,
         num_rollouts_val=2,
     )
 

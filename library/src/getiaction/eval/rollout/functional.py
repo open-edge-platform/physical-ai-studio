@@ -92,7 +92,11 @@ def _stack_observations(all_observations: list[dict[str, Any]]) -> dict[str, Ten
     for key in keys:
         values = [obs.get(key) for obs in all_observations if obs.get(key) is not None]
         if values and isinstance(values[0], (Tensor, np.ndarray)):
-            tensors = [torch.from_numpy(v) if isinstance(v, np.ndarray) else v for v in values if v is not None]
+            tensors = [
+                torch.from_numpy(v) if isinstance(v, np.ndarray) else v
+                for v in values
+                if v is not None
+            ]
             if tensors:
                 stacked_obs[key] = torch.stack(tensors, dim=0)  # type: ignore[arg-type]
     return stacked_obs
@@ -117,7 +121,9 @@ def _get_max_steps(env: Gym, max_steps: int | None) -> int:
     return 1000  # Default fallback
 
 
-def setup_rollout(env: Gym, policy: Policy, seed: int | None, max_steps: int | None) -> tuple[Observation, int]:
+def setup_rollout(
+    env: Gym, policy: Policy, seed: int | None, max_steps: int | None
+) -> tuple[Observation, int]:
     """Set up rollout by attaching max_steps, seed, resetting policy and providing first observation.
 
     Args:
@@ -198,10 +204,6 @@ def run_rollout_loop(
         done = torch.logical_or(terminated_t, truncated_t)
         done_mask = torch.logical_or(done_mask, done)
 
-        # zero out actions for gyms which have finished.
-        if done.any():
-            action = action.masked_fill(done_mask.unsqueeze(-1), 0)
-
         # Store step data
         episode_data.add_step(
             action=action,
@@ -218,7 +220,9 @@ def run_rollout_loop(
     return episode_data, step
 
 
-def finalize_rollout(episode_data: _EpisodeData, step: int) -> dict[str, torch.Tensor | float]:
+def finalize_rollout(
+    episode_data: _EpisodeData, step: int
+) -> dict[str, torch.Tensor | float]:
     """Stack metrics from episode_data for final metric dict.
 
     Args:
@@ -348,13 +352,15 @@ def evaluate_policy(
 
         # Record per-env results
         for env_i in range(take):
-            per_episode.append({
-                "episode_idx": episodes_collected,
-                "sum_reward": float(rollout_result["sum_reward"][env_i]),
-                "max_reward": float(rollout_result["max_reward"][env_i]),
-                "episode_length": rollout_result["episode_length"],
-                "seed": seed,
-            })
+            per_episode.append(
+                {
+                    "episode_idx": episodes_collected,
+                    "sum_reward": float(rollout_result["sum_reward"][env_i]),
+                    "max_reward": float(rollout_result["max_reward"][env_i]),
+                    "episode_length": rollout_result["episode_length"],
+                    "seed": seed,
+                }
+            )
             episodes_collected += 1
 
         # Store full rollout if requested

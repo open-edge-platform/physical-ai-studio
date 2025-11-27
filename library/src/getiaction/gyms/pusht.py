@@ -10,7 +10,7 @@ import torch
 
 from getiaction.data.observation import Observation
 
-from .gymnasium_wrapper import GymnasiumGym
+from .gymnasium_gym import GymnasiumGym
 
 
 class PushTGym(GymnasiumGym):

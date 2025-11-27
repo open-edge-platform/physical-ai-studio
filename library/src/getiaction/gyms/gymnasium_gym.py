@@ -1,7 +1,7 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""GymnasiumWrapper: adapts any Gymnasium environment to the abstract Gym interface.
+"""GymnasiumGym: adapts any Gymnasium environment to the abstract Gym interface.
 
 Note:
     This wrapper assumes NumPy Gymnasium environments.
@@ -95,7 +95,6 @@ class GymnasiumGym(Gym):
 
         Args:
             raw_obs: Observation from Gym.
-            is_vectorized: Whether the environment is vectorized.
 
         Returns:
             Batched observation where array data follows:
@@ -129,7 +128,6 @@ class GymnasiumGym(Gym):
 
         Args:
             action: Batched user action tensor.
-            is_vectorized: Whether the environment is vectorized.
 
         Returns:
             Action tensor in the format expected by Gym:
@@ -158,7 +156,6 @@ class GymnasiumGym(Gym):
 
         Args:
             action: Raw sampled action.
-            is_vectorized: Whether the environment is vectorized.
 
         Returns:
             Batched actions with shape:
@@ -264,7 +261,9 @@ class GymnasiumGym(Gym):
             try:
                 return self._env.get_wrapper_attr("max_episode_steps")
             except AttributeError:
-                logger.debug("get_wrapper_attr('max_episode_steps') not found on %r", self._env)
+                logger.debug(
+                    "get_wrapper_attr('max_episode_steps') not found on %r", self._env
+                )
         return None
 
     def to_observation(
@@ -280,7 +279,9 @@ class GymnasiumGym(Gym):
         Returns:
             Observation: The parsed and structured observation.
         """
-        return self.convert_raw_to_observation(raw_obs=raw_obs).to_torch(device=self.device)
+        return self.convert_raw_to_observation(raw_obs=raw_obs).to_torch(
+            device=self.device
+        )
 
     @staticmethod
     def convert_raw_to_observation(
@@ -319,8 +320,15 @@ class GymnasiumGym(Gym):
             arr = value
             if isinstance(arr, list):
                 arr = np.asarray(arr)
-            is_img_name = any(tok in key_lower for tok in ("pixel", "pixels", "image", "rgb", "camera"))
-            is_image_like = isinstance(arr, np.ndarray) and arr.ndim >= 3 and arr.shape[-1] in {1, 3, 4}  # noqa: PLR2004
+            is_img_name = any(
+                tok in key_lower
+                for tok in ("pixel", "pixels", "image", "rgb", "camera")
+            )
+            is_image_like = (
+                isinstance(arr, np.ndarray)
+                and arr.ndim >= 3
+                and arr.shape[-1] in {1, 3, 4}
+            )  # noqa: PLR2004
 
             if is_img_name:
                 if is_image_like:
@@ -331,7 +339,10 @@ class GymnasiumGym(Gym):
                 images[key] = arr
                 continue
 
-            if any(tok in key_lower for tok in ("pos", "agent_pos", "state", "obs", "feature")):
+            if any(
+                tok in key_lower
+                for tok in ("pos", "agent_pos", "state", "obs", "feature")
+            ):
                 state[key] = value
                 continue
 

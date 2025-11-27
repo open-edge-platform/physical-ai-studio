@@ -214,7 +214,7 @@ class TestObservationBatching:
         """Test shapes for unbatched observation."""
         obs = Observation(
             action=torch.tensor([1.0, 2.0]),  # [action_dim]
-            state=torch.tensor([0.5, 0.6]),    # [state_dim]
+            state=torch.tensor([0.5, 0.6]),  # [state_dim]
             images={"top": torch.rand(3, 64, 64)},  # [C, H, W]
         )
 
@@ -226,7 +226,7 @@ class TestObservationBatching:
         """Test shapes for batched observation."""
         obs = Observation(
             action=torch.tensor([[1.0, 2.0], [3.0, 4.0]]),  # [B, action_dim]
-            state=torch.tensor([[0.5, 0.6], [0.7, 0.8]]),   # [B, state_dim]
+            state=torch.tensor([[0.5, 0.6], [0.7, 0.8]]),  # [B, state_dim]
             images={"top": torch.rand(2, 3, 64, 64)},  # [B, C, H, W]
         )
 
@@ -239,7 +239,7 @@ class TestObservationBatching:
         single = Observation(action=torch.tensor([1.0, 2.0]))
         batch = Observation(action=torch.tensor([[1.0, 2.0], [3.0, 4.0]]))
 
-        assert type(single) == type(batch)
+        assert type(single) is type(batch)
         assert isinstance(single, Observation)
         assert isinstance(batch, Observation)
 
@@ -663,14 +663,21 @@ class TestObservationNumpyTensorConversion:
 
         assert isinstance(obs_torch.action, torch.Tensor)
         assert isinstance(obs_torch.state, torch.Tensor)
-        assert torch.allclose(obs_torch.action, torch.tensor([1.0, 2.0], dtype=obs_torch.action.dtype))
-        assert torch.allclose(obs_torch.state, torch.tensor([0.5, 0.6], dtype=obs_torch.state.dtype))
+        assert torch.allclose(
+            obs_torch.action, torch.tensor([1.0, 2.0], dtype=obs_torch.action.dtype)
+        )
+        assert torch.allclose(
+            obs_torch.state, torch.tensor([0.5, 0.6], dtype=obs_torch.state.dtype)
+        )
 
     def test_to_torch_nested_dict(self):
         """Test converting nested dict of arrays to torch."""
         obs = Observation(
             action=np.array([1.0]),
-            images={"top": np.random.rand(3, 64, 64), "wrist": np.random.rand(3, 32, 32)},
+            images={
+                "top": np.random.rand(3, 64, 64),
+                "wrist": np.random.rand(3, 32, 32),
+            },
         )
         obs_torch = obs.to_torch()
 
@@ -863,7 +870,9 @@ class TestObservationIndexing:
 
     def test_slice_with_step(self):
         """Test slice indexing with step parameter."""
-        batch = Observation(action=torch.tensor([[1.0], [2.0], [3.0], [4.0], [5.0], [6.0]]))
+        batch = Observation(
+            action=torch.tensor([[1.0], [2.0], [3.0], [4.0], [5.0], [6.0]])
+        )
 
         sub_batch = batch[::2]
 
@@ -1000,12 +1009,12 @@ class TestGymInValidation:
         gym = PushTGym()
         observation, info = gym.reset(seed=42)
 
-        assert isinstance(observation, dict)
-        assert "pixels" in observation or "state" in observation
+        assert isinstance(observation, Observation)
+        assert observation.images is not None or observation.state is not None
 
     def test_gym_step_returns_observation(self):
         """Test that Gym.step() returns observation dict."""
-        import numpy as np
+        import torch
 
         from getiaction.gyms import PushTGym
 
@@ -1014,8 +1023,8 @@ class TestGymInValidation:
 
         action_shape = gym.action_space.shape
         assert action_shape is not None
-        action = np.zeros(action_shape)
+        action = torch.zeros(action_shape)
         observation, reward, terminated, truncated, info = gym.step(action)
 
-        assert isinstance(observation, dict)
+        assert isinstance(observation, Observation)
         assert isinstance(reward, (int, float, np.number))

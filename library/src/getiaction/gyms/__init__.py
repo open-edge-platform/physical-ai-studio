@@ -4,7 +4,7 @@
 """Action trainer gym simulation environments."""
 
 from .base import Gym
-from .gymnasium_wrapper import GymnasiumGym
+from .gymnasium_gym import GymnasiumGym
 from .pusht import PushTGym
 
 __all__ = ["Gym", "GymnasiumGym", "PushTGym"]

@@ -25,9 +25,9 @@ class Dummy(nn.Module, FromConfig, FromCheckpoint):
     def __init__(
         self,
         action_shape: list | tuple,
-        action_dtype: torch.dtype | str,
-        action_min: float | None,
-        action_max: float | None,
+        action_dtype: torch.dtype | str = torch.float32,
+        action_min: float | None = None,
+        action_max: float | None = None,
         n_action_steps: int = 1,
         temporal_ensemble_coeff: float | None = None,
         n_obs_steps: int = 1,
@@ -284,7 +284,10 @@ class Dummy(nn.Module, FromConfig, FromCheckpoint):
             batch_size = infer_batch_size(batch)
             # pred now depends on a parameter so it has grad_fn
             pred = (
-                torch.randn((batch_size, self.n_action_steps, *self.action_shape), device=self.dummy_param.device)
+                torch.randn(
+                    (batch_size, self.n_action_steps, *self.action_shape),
+                    device=self.dummy_param.device,
+                )
                 + self.dummy_param
             )
             target = torch.zeros_like(pred)

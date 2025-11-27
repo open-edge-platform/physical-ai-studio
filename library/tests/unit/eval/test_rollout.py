@@ -5,8 +5,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 
 class TestRollout:
     """Tests for the rollout function."""
@@ -33,13 +31,13 @@ class TestRollout:
         assert "episode_length" in result
         assert "sum_reward" in result
         assert "max_reward" in result
-        assert "is_success" in result
 
     def test_rollout_return_types(self):
         """Test that rollout returns correct types."""
         from getiaction.eval import rollout
         from getiaction.gyms import PushTGym
         from getiaction.policies.dummy import Dummy, DummyConfig
+        import torch
 
         config = DummyConfig(action_shape=(2,))
         policy = Dummy(config=config)
@@ -55,8 +53,7 @@ class TestRollout:
 
         # Verify types
         assert isinstance(result["episode_length"], int)
-        assert isinstance(result["sum_reward"], float)
-        assert isinstance(result["is_success"], bool)
+        assert isinstance(result["sum_reward"], (torch.Tensor, float))
 
     def test_rollout_with_seed_reproducibility(self):
         """Test that rollout is reproducible with same seed."""
@@ -69,8 +66,12 @@ class TestRollout:
         gym1 = PushTGym()
         gym2 = PushTGym()
 
-        result1 = rollout(env=gym1, policy=policy, seed=42, max_steps=5, return_observations=False)
-        result2 = rollout(env=gym2, policy=policy, seed=42, max_steps=5, return_observations=False)
+        result1 = rollout(
+            env=gym1, policy=policy, seed=42, max_steps=5, return_observations=False
+        )
+        result2 = rollout(
+            env=gym2, policy=policy, seed=42, max_steps=5, return_observations=False
+        )
 
         # Same seed should give same results
         assert result1["episode_length"] == result2["episode_length"]

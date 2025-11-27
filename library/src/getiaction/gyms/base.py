@@ -52,7 +52,7 @@ class Gym(ABC):
         SingleOrBatch[float],
         SingleOrBatch[bool],
         SingleOrBatch[bool],
-        dict[str, Any] | list[dict[str, Any]],
+        SingleOrBatch[dict[str, Any]],
     ]:
         """Steps the environment by one action.
 

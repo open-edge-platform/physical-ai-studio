@@ -3,11 +3,10 @@
 
 import pytest
 import torch
-from torch import nn
-from collections import deque
 from getiaction.data import Observation
 from getiaction.policies import Dummy, DummyConfig
 from getiaction.policies.dummy.model import Dummy as DummyModel
+
 
 class TestDummyPolicy:
     """Tests for DummyPolicy and DummyModel."""
@@ -135,7 +134,7 @@ class TestDummyPolicyValidation:
         metrics = policy.validation_step(gym, batch_idx=0)
 
         # Check for expected keys
-        expected_keys = ["val/gym/episode_length", "val/gym/sum_reward", "val/gym/success"]
+        expected_keys = ["val/gym/episode_length", "val/gym/sum_reward"]
 
         for key in expected_keys:
             assert key in metrics, f"Missing expected metric: {key}"
