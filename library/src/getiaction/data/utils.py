@@ -16,7 +16,6 @@ def infer_batch_size(batch: dict[str, Any] | Observation) -> int:
     This function scans the values of the input batch dictionary and returns
     the size of the first dimension of the first `torch.Tensor` it finds. It
     assumes that all tensors in the batch have the same batch dimension.
-    # TODO(alfie-roddan-intel): This should be a property of Observation.
 
     Args:
         batch (dict[str, Any] | Observation): A dictionary where values may include tensors.

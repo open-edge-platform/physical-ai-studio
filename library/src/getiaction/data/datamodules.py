@@ -142,7 +142,7 @@ class DataModule(LightningDataModule):
         self.num_rollouts_test: int = num_rollouts_test
         self.max_episode_steps = max_episode_steps
 
-        # setup time limit if max_episode steps
+        # setup time limit if max_episode steps (0 or None will fail)
         if self.max_episode_steps:
             self.val_gym = with_step_limit(self.val_gym, max_steps=self.max_episode_steps) if self.val_gym else None
             self.test_gym = with_step_limit(self.test_gym, max_steps=self.max_episode_steps) if self.test_gym else None

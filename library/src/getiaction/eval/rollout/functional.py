@@ -27,6 +27,7 @@ from torch import Tensor
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from getiaction.data import Observation
     from getiaction.gyms import Gym
     from getiaction.policies.base import Policy
 
@@ -40,6 +41,22 @@ class _EpisodeData:
     rewards: list[Tensor] = field(default_factory=list)
     successes: list[Tensor] = field(default_factory=list)
     dones: list[Tensor] = field(default_factory=list)
+
+    def add_step(
+        self,
+        action: Tensor,
+        reward: Tensor,
+        done_mask: Tensor,
+        success: Tensor | None = None,
+    ) -> None:
+        self.actions.append(action)
+        self.rewards.append(reward)
+        self.dones.append(done_mask.clone())
+        if success is not None:
+            self.successes.append(success)
+
+    def add_observation(self, obs: Observation) -> None:
+        self.observations.append(_convert_observation_to_dict(obs))
 
 
 def _convert_observation_to_dict(observation: Any) -> dict[str, Any]:  # noqa: ANN401
@@ -100,7 +117,137 @@ def _get_max_steps(env: Gym, max_steps: int | None) -> int:
     return 1000  # Default fallback
 
 
-def rollout(  # noqa: PLR0914
+def setup_rollout(env: Gym, policy: Policy, seed: int | None, max_steps: int | None) -> tuple[Observation, int]:
+    """Set up rollout by attaching max_steps, seed, resetting policy and providing first observation.
+
+    Args:
+        env (Gym): environment to probe max_steps and init.
+        policy (Policy): policy to reset if it has attribute.
+        seed (int | None): seed to init reset.
+        max_steps (int | None): maximum number of steps
+
+    Returns:
+        tuple[Observation, int]: First Observation and maximum number of steps of rollout
+    """
+    max_steps = _get_max_steps(env, max_steps)
+
+    # Reset environment → batched observation
+    observation, _ = env.reset(seed=seed)
+
+    # Reset policy if needed
+    if hasattr(policy, "reset") and callable(policy.reset):
+        policy.reset()
+
+    return observation, max_steps
+
+
+def run_rollout_loop(
+    env: Gym,
+    policy: Policy,
+    initial_observation: Observation,
+    max_steps: int,
+    *,
+    render_callback: Callable[[Gym], None] | None,
+    return_observations: bool = False,
+) -> tuple[_EpisodeData, int]:
+    """Run a full rollout loop.
+
+    Args:
+        env (Gym): Gym environment the policy interacts with.
+        policy (Policy): The policy to interact with the environment.
+        initial_observation (Observation): First inital observation of the environmnet
+        max_steps (int): Truncate rollout if maximum number of steps is reached.
+        render_callback (Callable[[Gym], None] | None, optional): Optional callback for gym to render.
+        return_observations (bool, optional): Optional save observations and return after rollout.
+
+    Returns:
+        tuple[_EpisodeData, int]: The data collected through the rollout and the step terminated on.
+    """
+    # set initial observation to re-usable variable name
+    observation = initial_observation
+    # Episode recorder
+    episode_data = _EpisodeData()
+    # Track per-env done
+    batch_size = observation.batch_size
+    done_mask = torch.zeros(batch_size, dtype=torch.bool)
+
+    # run loop for max steps or until all done
+    step = 0
+    while step < max_steps and not torch.all(done_mask):
+        # Store observations if requested
+        if return_observations:
+            episode_data.add_observation(observation)
+
+        # Policy forward (already batched)
+        with torch.inference_mode():
+            policy.eval()
+            action = policy(observation)  # shape: (B, action_dim)
+
+        # Step environment (env expects batched action)
+        observation, reward, terminated, truncated, _info = env.step(action)
+
+        if render_callback is not None:
+            render_callback(env)
+
+        # Convert arrays -> tensors
+        reward_t = torch.as_tensor(reward, dtype=torch.float32).reshape(batch_size)
+        terminated_t = torch.as_tensor(terminated, dtype=torch.bool).reshape(batch_size)
+        truncated_t = torch.as_tensor(truncated, dtype=torch.bool).reshape(batch_size)
+
+        # Per-env step done
+        done = torch.logical_or(terminated_t, truncated_t)
+        done_mask = torch.logical_or(done_mask, done)
+
+        # zero out actions for gyms which have finished.
+        if done.any():
+            action = action.masked_fill(done_mask.unsqueeze(-1), 0)
+
+        # Store step data
+        episode_data.add_step(
+            action=action,
+            reward=reward_t,
+            done_mask=done,
+        )
+
+        step += 1
+
+    # Store final observation
+    if return_observations:
+        episode_data.observations.append(_convert_observation_to_dict(observation))
+
+    return episode_data, step
+
+
+def finalize_rollout(episode_data: _EpisodeData, step: int) -> dict[str, torch.Tensor | float]:
+    """Stack metrics from episode_data for final metric dict.
+
+    Args:
+        episode_data (_EpisodeData): Full episode data after rollout.
+        step (int): Number of steps in environment before termination.
+
+    Returns:
+        dict[str, torch.Tensor | float]: _description_
+    """
+    actions = torch.stack(episode_data.actions, dim=0)
+    rewards = torch.stack(episode_data.rewards, dim=0)
+    dones = torch.stack(episode_data.dones, dim=0)
+
+    result = {
+        "action": actions,
+        "reward": rewards,
+        "done": dones,
+        "episode_length": step,
+        "sum_reward": rewards.sum(dim=0),
+        "max_reward": rewards.max(dim=0).values,
+    }
+
+    if episode_data.observations is not None:
+        result["observation"] = _stack_observations(episode_data.observations)
+
+    return result
+
+
+def rollout(
     env: Gym,
     policy: Policy,
     *,
@@ -126,84 +273,25 @@ def rollout(  # noqa: PLR0914
         dict[str, Any]: Episode information, including rewards, actions, and optionally
         observations.
     """
-    max_steps = _get_max_steps(env, max_steps)
+    # init rollout and policy
+    initial_observation, max_steps = setup_rollout(env, policy, seed, max_steps)
 
-    # Reset environment → batched observation
-    observation, _ = env.reset(seed=seed)
-    batch_size = observation.batch_size
-
-    # Reset policy if needed
-    if hasattr(policy, "reset") and callable(policy.reset):
-        policy.reset()
-
-    if render_callback is not None:
+    # if render callback, call for first observation
+    if render_callback:
         render_callback(env)
 
-    episode_data = _EpisodeData()
-    step = 0
+    # run episode loops
+    recorder, step = run_rollout_loop(
+        env=env,
+        policy=policy,
+        initial_observation=initial_observation,
+        max_steps=max_steps,
+        render_callback=render_callback,
+        return_observations=return_observations,
+    )
 
-    # Track per-env done
-    done_mask = torch.zeros(batch_size, dtype=torch.bool)
-
-    # run loop for max steps or until all done
-    while step < max_steps and not torch.all(done_mask):
-        # Store observations if requested
-        if return_observations:
-            episode_data.observations.append(_convert_observation_to_dict(observation))
-
-        # Policy forward (already batched)
-        with torch.inference_mode():
-            policy.eval()
-            action = policy(observation)  # shape: (B, action_dim)
-
-        # Step environment (env expects batched action)
-        observation, reward, terminated, truncated, _info = env.step(action)
-
-        if render_callback is not None:
-            render_callback(env)
-
-        # Convert arrays -> tensors
-        reward_t = torch.as_tensor(reward, dtype=torch.float32).reshape(batch_size)
-        terminated_t = torch.as_tensor(terminated, dtype=torch.bool).reshape(batch_size)
-        truncated_t = torch.as_tensor(truncated, dtype=torch.bool).reshape(batch_size)
-
-        # Per-env step done
-        done = torch.logical_or(terminated_t, truncated_t)
-        done_mask = torch.logical_or(done_mask, done)
-
-        # Store step data
-        episode_data.actions.append(action)
-        episode_data.rewards.append(reward_t)
-        episode_data.dones.append(done_mask.clone())
-
-        step += 1
-
-    # Store final observation
-    if return_observations:
-        episode_data.observations.append(_convert_observation_to_dict(observation))
-
-    # Stack (T, B, ..)
-    actions = torch.stack(episode_data.actions, dim=0)
-    rewards = torch.stack(episode_data.rewards, dim=0)
-    dones = torch.stack(episode_data.dones, dim=0)
-
-    # Episode-level stats per env
-    sum_reward = rewards.sum(dim=0)  # (B,)
-    max_reward = rewards.max(dim=0).values  # (B,)
-
-    ret = {
-        "action": actions,
-        "reward": rewards,
-        "done": dones,
-        "episode_length": step,
-        "sum_reward": sum_reward,
-        "max_reward": max_reward,
-    }
-
-    if return_observations:
-        ret["observation"] = _stack_observations(episode_data.observations)
-
-    return ret
+    # finalize
+    return finalize_rollout(recorder, step)
 
 
 def evaluate_policy(
