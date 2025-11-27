@@ -134,18 +134,19 @@ class GymnasiumGym(Gym):
             * unvectorized: dim
             * vectorized: [B] or [B, dim]
         """
+        # Single environment -> [1,Dim] → Dim
         if not self.is_vectorized:
-            # when we are not vectorized we assume [1, dim]
-            # environment prefers dim, squeeze to match.
+            # [1, 1] -> ()   scalar action after numpy
+            if action.ndim == 2 and action.shape == (1, 1):  # noqa: PLR2004
+                return action[0, 0]
+            # [1, Dim] → (Dim,)
             if action.ndim == 2 and action.shape[0] == 1:  # noqa: PLR2004
                 return action[0]
             return action
 
+        # Vectorized discrete -> [B,1] → [B]
         if action.ndim == 2 and action.shape[1] == 1:  # noqa: PLR2004
-            # when we are vectorized, we may have [B, 1] where we only have 1 action.
-            # in this case we just want B,. Example is cartpole with action dimension of 1.
-            # This is MultiDiscrete Action space.
-            return action.squeeze(1)
+            return action[:, 0]
         return action
 
     def _normalize_action_for_user(
@@ -162,20 +163,17 @@ class GymnasiumGym(Gym):
             * unvectorized: [1, dim]
             * vectorized: [B, dim] or [B, 1]
         """
-        if not self.is_vectorized:
-            # if we are not vectorized, we havae to unsqueeze to meet [B, dim]
-            if action.ndim == 0:
-                # if scalar we need to unsqueze twice, [1, 1]
-                return action.unsqueeze(0).unsqueeze(0)
-            if action.ndim == 1:
-                # if [dim], need [1, 1]
-                return action.unsqueeze(0)
-            return action
+        # 0D -> [[x]]
+        if action.ndim == 0:
+            return action.unsqueeze(0).unsqueeze(0)
 
-        # if vectorized and only one action dim i.e [B]
-        # convert to [B, 1] for clarity.
+        # 1D → ambiguous case:
+        # - single env     [Dim] → [1,Dim]
+        # - vectorized     [B]   → [B,1]
         if action.ndim == 1:
-            return action.unsqueeze(1)
+            return action.unsqueeze(1) if self.is_vectorized else action.unsqueeze(0)
+
+        # already is -> [B, dim]
         return action
 
     def reset(
@@ -218,7 +216,6 @@ class GymnasiumGym(Gym):
         """
         action_for_env = self._normalize_action_for_env(action)
         raw_action = action_for_env.detach().cpu().numpy()
-
         raw_obs, reward, terminated, truncated, info = self._env.step(raw_action)
         raw_obs = self._normalize_raw_obs(raw_obs)
         obs = self.to_observation(raw_obs)
