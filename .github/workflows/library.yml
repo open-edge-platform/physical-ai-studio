@@ -1,4 +1,4 @@
-name: Geti Action training
+name: Library
 permissions: {} # No permissions by default on workflow level
 
 on:
@@ -31,19 +31,11 @@ jobs:
         uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
           node-version: 24
-      - name: Install uv
-        uses: astral-sh/setup-uv@1e862dfacbd1d6d858c55d9b792c756523627244 # v7.1.4
-      - name: Verify lock file
-        working-directory: library
-        run: uv lock --check
-      - name: Install dependencies
-        working-directory: library
+      - name: Install prek
+        uses: j178/setup-prek@c31b26f29f8d34bd8df1a29fa67f27f0a0c4ecc5 # v1.0.1
+      - name: Run prek checks on library
         run: |
-          uv sync --frozen --all-extras
-      - name: Run pre-commit checks
-        working-directory: library
-        run: |
-          uv run pre-commit run --all-files
+          prek run --all-files library/
   unit-tests:
     runs-on: ubuntu-24.04
     permissions:
