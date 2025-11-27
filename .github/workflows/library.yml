@@ -28,7 +28,7 @@ jobs:
         with:
           python-version-file: "./library/.python-version"
       - name: Run prek
-        uses: j178/prek-action@5e98cae797e00a0f95dcff850cb7e16b84cddd38 # v1
+        uses: j178/prek-action@91fd7d7cf70ae1dee9f4f44e7dfa5d1073fe6623 # v1
         with:
           extra-args: --all-files
           working-directory: library
