@@ -1,55 +1,34 @@
 # Pull Request
 
-## Title
-<!-- Provide a clear, concise title following conventional commits format (e.g., "feat: Add new feature", "fix: Resolve bug") -->
-```
-<type>: <short description>
-```
-
 ## Description
-<!-- Provide a brief description of the changes in this PR -->
+
+<!-- What does this PR do? Why is it needed? -->
 
 ## Type of Change
-<!-- Mark the relevant option with an 'x' -->
-- [ ] ✨ feat: A new feature
-- [ ] 🐞 fix: A bug fix
-- [ ] 📚 docs: Documentation only changes
-- [ ] 🎨 style: Changes that do not affect the meaning of the code (white-space, formatting, missing semi-colons, etc)
-- [ ] ♻️ refactor: A code change that neither fixes a bug nor adds a feature
-- [ ] ⚡ perf: A code change that improves performance
-- [ ] 🧪 test: Adding missing tests or correcting existing tests
-- [ ] 📦 build: Changes that affect the build system or external dependencies
-- [ ] 👷 ci: Changes to our CI configuration files and scripts
-- [ ] 🔧 chore: Other changes that don't modify src or test files
-- [ ] ⏪ revert: Reverts a previous commit
+
+- [ ] ✨ `feat` - New feature
+- [ ] 🐞 `fix` - Bug fix
+- [ ] 📚 `docs` - Documentation
+- [ ] ♻️ `refactor` - Code refactoring
+- [ ] 🧪 `test` - Tests
+- [ ] 🔧 `chore` - Maintenance
 
 ## Related Issues
-<!-- Link to any related issues -->
-Fixes #(issue number)
-Relates to #(issue number)
 
-## Changes Made
-<!-- List the main changes made in this PR -->
--
--
--
-
-## Examples
-<!-- Demonstrate the changes with high-level code, pseudo-code, or before/after comparisons -->
-
-```
-# Add examples here: usage examples, pseudo-code, or before/after comparisons
-
-```
-
-## Screenshots/Videos
-<!-- If applicable, add screenshots or videos to help explain your changes -->
-
-## Additional Notes
-<!-- Add any additional notes, concerns, or considerations for reviewers -->
+<!-- Link issues: Fixes #123, Relates to #456 -->
 
 ## Breaking Changes
-<!-- If this is a breaking change, describe what users need to do to adapt -->
 
-## Deployment Notes
-<!-- Any special considerations for deployment -->
+<!-- Describe if this breaks existing functionality -->
+
+---
+
+<!-- Optional sections below - delete if not needed -->
+
+## Examples
+
+<!-- Pseudo-code, usage examples, or before/after comparisons -->
+
+## Screenshots
+
+<!-- UI changes or visual demos -->
