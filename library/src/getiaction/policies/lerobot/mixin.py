@@ -414,12 +414,12 @@ class LeRobotExport(Export):
             >>> from getiaction.policies.base import Policy
             >>> from getiaction.policies.lerobot.mixin import LeRobotFromConfig, LeRobotExport
 
-            >>> class MyLeRobotPolicy(Export, Policy, LeRobotFromConfig, LeRobotExport):
+            >>> class MyLeRobotPolicy(LeRobotFromConfig, LeRobotExport, Policy):
             ...     # Policy implementation...
             ...     pass
 
         With custom metadata:
-            >>> class ACT(Export, Policy, LeRobotFromConfig, LeRobotExport):
+            >>> class ACT(LeRobotFromConfig, LeRobotExport, Policy):
             ...     @property
             ...     def metadata_extra(self) -> dict[str, Any]:
             ...         '''Add ACT-specific metadata.'''
@@ -429,7 +429,7 @@ class LeRobotExport(Export):
             ...         }
 
         With custom sample input generation:
-            >>> class CustomPolicy(Export, Policy, LeRobotFromConfig, LeRobotExport):
+            >>> class CustomPolicy(LeRobotFromConfig, LeRobotExport, Policy):
             ...     @property
             ...     def sample_input(self) -> dict[str, torch.Tensor]:
             ...         '''Generate custom sample input.'''
