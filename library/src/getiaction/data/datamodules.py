@@ -154,10 +154,10 @@ class DataModule(LightningDataModule):
             stage (str): Stage of training ('fit', 'test', etc.).
         """
         if stage == "fit" and self.val_gym:
-            self.val_datasets = GymDataset(env=self.val_gym, num_rollouts=self.num_rollouts_val)
+            self.val_dataset = GymDataset(env=self.val_gym, num_rollouts=self.num_rollouts_val)
 
-            if stage == "test" and self.test_gym:
-                self.test_datasets = GymDataset(env=self.test_gym, num_rollouts=self.num_rollouts_test)
+        if stage == "test" and self.test_gym:
+            self.test_dataset = GymDataset(env=self.test_gym, num_rollouts=self.num_rollouts_test)
 
     def train_dataloader(self) -> DataLoader[Any]:
         """Return the DataLoader for training.
@@ -184,7 +184,7 @@ class DataModule(LightningDataModule):
             DataLoader[Any]: Validation DataLoader with collate function for Gym environments,
                            or empty DataLoader if no validation dataset is configured.
         """
-        if not hasattr(self, "val_datasets") or len(self.val_datasets) == 0:
+        if self.val_dataset is None:
             # Return empty dataloader when no validation dataset
             # This allows training to proceed without validation
             return DataLoader([], batch_size=1)
@@ -206,7 +206,7 @@ class DataModule(LightningDataModule):
             DataLoader[Any]: Test DataLoader with collate function for Gym environments,
                            or empty DataLoader if no test dataset is configured.
         """
-        if not hasattr(self, "test_datasets") or len(self.test_datasets) == 0:
+        if self.test_dataset is None:
             # Return empty dataloader when no test dataset
             # This allows training to proceed without testing
             return DataLoader([], batch_size=1)
