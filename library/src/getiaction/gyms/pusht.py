@@ -14,7 +14,24 @@ from .gymnasium_gym import GymnasiumGym
 
 
 class PushTGym(GymnasiumGym):
-    """Convenience wrapper for the PushT Gym environment."""
+    """Convenience wrapper for the PushT Gym environment.
+
+    Examples:
+        >>> env = PushTGym()
+        >>> obs, info = env.reset()
+        >>> action = env.sample_action()
+        >>> obs, reward, terminated, truncated, info = env.step(action=action)
+
+    Convert to observation:
+        >>> env = PushTGym()
+        >>> raw_obs = {
+        ...     "pixels": np.random.rand(64,64,3).astype(np.float32),
+        ...     "agent_pos": np.array([0.1,0.2], dtype=np.float32),
+        ... }
+        >>> obs = PushTGym.convert_raw_to_observation(raw_obs)
+        or
+        >>> obs = env.to_observation(raw_obs)
+    """
 
     def __init__(
         self,

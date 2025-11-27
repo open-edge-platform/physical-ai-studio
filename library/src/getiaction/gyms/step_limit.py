@@ -21,6 +21,20 @@ class StepLimit(Gym):
     the configured limit is reached. This allows environments that may not
     terminate naturally to be capped at a controlled horizon, which is useful
     for training, evaluation, or preventing infinite rollouts.
+
+    Example Usage:
+        >>> from getiaction.gyms import GymnasiumGym
+        >>> from getiaction.gyms.step_limit import with_step_limit
+        >>> env = with_step_limit(GymnasiumGym("CartPole-v1"), max_steps=3)
+
+    Example Truncation:
+        >>> env = with_step_limit(GymnasiumGym("CartPole-v1"), max_steps=3)
+        >>> obs, _ = env.reset()
+        >>> a = env.sample_action()
+        >>> _, _, _, t1, _ = env.step(a)  # step 1
+        >>> _, _, _, t2, _ = env.step(a)  # step 2
+        >>> _, _, _, t3, info = env.step(a)  # step 3 triggers truncation
+        >>> # (t1, t2, t3) is (False, False, True)
     """
 
     def __init__(self, gym: Gym, max_steps: int) -> None:

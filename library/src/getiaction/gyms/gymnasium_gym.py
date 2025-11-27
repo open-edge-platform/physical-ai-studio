@@ -32,7 +32,19 @@ class ActionValidationError(ValueError):
 
 
 class GymnasiumGym(Gym):
-    """Adapter that makes a Gymnasium environment conform to the unified Gym API."""
+    """Adapter that makes a Gymnasium environment conform to the unified Gym API.
+
+    Examples:
+        >>> env = GymnasiumGym(gym_id="CartPole-v1", render_mode=None)
+        >>> a = env.sample_action()
+        >>> obs, info = env.reset()
+        >>> obs.batch_size  # 1, must always be batched
+    Vectorized gym:
+        >>> env = GymnasiumGym(gym_id="CartPole-v1", render_mode=None)
+        >>> a = env.sample_action()
+        >>> env = GymnasiumGym.vectorize("CartPole-v1", num_envs=2)
+        >>> obs, info = env.reset()
+    """
 
     def __init__(
         self,
