@@ -3,6 +3,9 @@
 #
 # This config demonstrates how to use the universal LeRobotPolicy wrapper
 # to instantiate a Diffusion Policy without an explicit wrapper.
+#
+# Usage:
+#   getiaction fit --config configs/lerobot/diffusion.yaml
 
 model:
   class_path: getiaction.policies.lerobot.LeRobotPolicy

@@ -2,10 +2,10 @@
 # Train Action Chunking Transformer using LeRobot's implementation
 #
 # Usage:
-#   getiaction fit --config configs/lerobot_act.yaml
+#   getiaction fit --config configs/lerobot/act.yaml
 #
 # Override parameters:
-#   getiaction fit --config configs/lerobot_act.yaml --model.dim_model 1024
+#   getiaction fit --config configs/lerobot/act.yaml --model.dim_model 1024
 
 model:
   class_path: getiaction.policies.lerobot.ACT
