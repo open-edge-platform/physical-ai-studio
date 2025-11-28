@@ -46,18 +46,18 @@ trainer.fit(policy, datamodule)
 
 ### Supported Policies
 
-| Policy | Type | Description |
-|--------|------|-------------|
-| `act` | Explicit | Action Chunking Transformer |
-| `diffusion` | Explicit | Diffusion Policy |
-| `groot` | Explicit | NVIDIA GR00T-N1 VLA Foundation Model |
-| `vqbet` | Universal | VQ-BeT (VQ-VAE Behavior Transformer) |
-| `tdmpc` | Universal | TD-MPC (Temporal Difference MPC) |
-| `sac` | Universal | Soft Actor-Critic |
-| `pi0` | Universal | Vision-Language Policy |
-| `pi05` | Universal | PI0.5 (Improved PI0) |
-| `pi0fast` | Universal | Fast Inference PI0 |
-| `smolvla` | Universal | Small Vision-Language-Action |
+| Policy      | Type      | Description                          |
+| ----------- | --------- | ------------------------------------ |
+| `act`       | Explicit  | Action Chunking Transformer          |
+| `diffusion` | Explicit  | Diffusion Policy                     |
+| `groot`     | Explicit  | NVIDIA GR00T-N1 VLA Foundation Model |
+| `vqbet`     | Universal | VQ-BeT (VQ-VAE Behavior Transformer) |
+| `tdmpc`     | Universal | TD-MPC (Temporal Difference MPC)     |
+| `sac`       | Universal | Soft Actor-Critic                    |
+| `pi0`       | Universal | Vision-Language Policy               |
+| `pi05`      | Universal | PI0.5 (Improved PI0)                 |
+| `pi0fast`   | Universal | Fast Inference PI0                   |
+| `smolvla`   | Universal | Small Vision-Language-Action         |
 
 ## Features
 
