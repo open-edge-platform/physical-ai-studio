@@ -28,7 +28,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=['pyinstaller/runtime-hook.py','pyinstaller/hook-setenv.py'],
-    excludes=['torch.utils.benchmark'],
+    excludes=['torch.utils.benchmark','onnx.reference', 'onnx.reference.ops', 'onnx'],
     noarchive=False,
     optimize=0,
 )
