@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from . import lerobot
 from .act import ACT, ACTConfig, ACTModel
 from .dummy import Dummy, DummyConfig
+from .lerobot import get_lerobot_policy
 
 if TYPE_CHECKING:
     from .base import Policy
@@ -77,5 +78,9 @@ def get_policy(policy_name: str, *, source: str = "getiaction", **kwargs) -> Pol
         msg = f"Unknown getiaction policy: {policy_name}. Supported policies: act"
         raise ValueError(msg)
 
-    msg = f"Unknown source: {source}. Supported sources: getiaction"
+    if source == "lerobot":
+        # LeRobot policies via wrapper
+        return get_lerobot_policy(policy_name, **kwargs)
+
+    msg = f"Unknown source: {source}. Supported sources: getiaction, lerobot"
     raise ValueError(msg)
