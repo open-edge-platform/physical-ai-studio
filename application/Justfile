@@ -1,0 +1,57 @@
+#!/usr/bin/env just --justfile
+
+# -------------------------------------------------------------------------------------------------
+# Runtime variables
+# -------------------------------------------------------------------------------------------------
+
+container-port := "9100"
+host-port := container-port
+webcam-device := "/dev/video0"
+docker-volume := ""
+host := "0.0.0.0"
+
+# -------------------------------------------------------------------------------------------------
+# Common variables used in the Justfile
+# -------------------------------------------------------------------------------------------------
+
+ai-device := "cpu"  # options: cpu, gpu
+component-name := "geti-action"
+images-registry := 'localhost:5000/open-edge-platform'
+version := trim(read(`git rev-parse --show-toplevel 2>/dev/null` / "VERSION"))
+docker-image := images-registry / component-name + ":" + version + "-" + ai-device
+
+# -------------------------------------------------------------------------------------------------
+# Variables used in the Justfile to build in Docker image for Geti Action
+# -------------------------------------------------------------------------------------------------
+
+docker-build-context := ""
+workdir-path := "/geti_action"
+asset-prefix := "/html"
+data-dir := "/data"
+static-files-dir := workdir-path + asset-prefix
+db-data-dir := workdir-path + data-dir
+logs-dir := workdir-path + "/logs"
+target-stage := component-name + "-" + ai-device
+
+# -------------------------------------------------------------------------------------------------
+# Proxy settings
+# -------------------------------------------------------------------------------------------------
+
+http-proxy-build-arg := if env("http_proxy", "") != "" { " --build-arg http_proxy=" + env("http_proxy") } else { "" }
+https-proxy-build-arg := if env("https_proxy", "") != "" { " --build-arg https_proxy=" + env("https_proxy") } else { "" }
+no-proxy-build-arg := if env("no_proxy", "") != "" { " --build-arg no_proxy=" + env("no_proxy") } else { "" }
+HTTP-PROXY-build-arg := if env("HTTP_PROXY", "") != "" { " --build-arg HTTP_PROXY=" + env("HTTP_PROXY") } else { "" }
+HTTPS-PROXY-build-arg := if env("HTTPS_PROXY", "") != "" { " --build-arg HTTPS_PROXY=" + env("HTTPS_PROXY") } else { "" }
+NO-PROXY-build-arg := if env("NO_PROXY", "") != "" { " --build-arg NO_PROXY=" + env("NO_PROXY") } else { "" }
+docker-extra-args := http-proxy-build-arg + https-proxy-build-arg + no-proxy-build-arg + HTTP-PROXY-build-arg + HTTPS-PROXY-build-arg + NO-PROXY-build-arg
+
+# -------------------------------------------------------------------------------------------------
+# Justfile recipes
+# -------------------------------------------------------------------------------------------------
+check-proxy:
+    #!/usr/bin/env bash
+    if [ -z ${https_proxy+x} ]; then
+      echo "Error: https_proxy is unset";
+    else
+      echo "https_proxy is set to '$https_proxy'";
+    fi
