@@ -1056,24 +1056,46 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "decord", marker = "(platform_machine == 'AMD64' and extra == 'all') or (platform_machine == 'x86_64' and extra == 'all')", specifier = ">=0.6.0,<1.0.0" },
+    { name = "decord", marker = "(platform_machine == 'AMD64' and extra == 'groot') or (platform_machine == 'x86_64' and extra == 'groot')", specifier = ">=0.6.0,<1.0.0" },
+    { name = "dm-tree", marker = "extra == 'all'", specifier = ">=0.1.8,<1.0.0" },
+    { name = "dm-tree", marker = "extra == 'groot'", specifier = ">=0.1.8,<1.0.0" },
+    { name = "flash-attn", marker = "sys_platform != 'darwin' and extra == 'all'", specifier = ">=2.5.9,<3.0.0" },
+    { name = "flash-attn", marker = "sys_platform != 'darwin' and extra == 'groot'", specifier = ">=2.5.9,<3.0.0" },
     { name = "gym-pusht", specifier = ">=0.1.5" },
     { name = "gymnasium", specifier = ">=0.29.1" },
+    { name = "httpx", marker = "extra == 'all'" },
     { name = "httpx", marker = "extra == 'tests'" },
     { name = "jsonargparse", extras = ["signatures"], specifier = ">=4.27.0" },
     { name = "lerobot", specifier = ">=0.4.1" },
     { name = "lightning" },
     { name = "lightning-utilities" },
+    { name = "mypy", marker = "extra == 'all'" },
     { name = "mypy", marker = "extra == 'tests'" },
+    { name = "ninja", marker = "extra == 'all'", specifier = ">=1.11.1,<2.0.0" },
+    { name = "ninja", marker = "extra == 'groot'", specifier = ">=1.11.1,<2.0.0" },
     { name = "onnx" },
     { name = "onnxruntime" },
     { name = "openvino", specifier = ">=2025.0" },
+    { name = "peft", marker = "extra == 'all'", specifier = ">=0.13.0,<1.0.0" },
+    { name = "peft", marker = "extra == 'groot'", specifier = ">=0.13.0,<1.0.0" },
     { name = "pillow" },
+    { name = "pillow", marker = "extra == 'all'", specifier = ">=10.0.0,<13.0.0" },
+    { name = "pillow", marker = "extra == 'groot'", specifier = ">=10.0.0,<13.0.0" },
     { name = "pydantic" },
     { name = "pymunk", specifier = ">=6.6.0,<7.0.0" },
+    { name = "pytest", marker = "extra == 'all'" },
     { name = "pytest", marker = "extra == 'tests'" },
+    { name = "pytest-mock", marker = "extra == 'all'" },
     { name = "pytest-mock", marker = "extra == 'tests'" },
+    { name = "safetensors", marker = "extra == 'all'", specifier = ">=0.4.3,<1.0.0" },
+    { name = "safetensors", marker = "extra == 'groot'", specifier = ">=0.4.3,<1.0.0" },
+    { name = "timm", marker = "extra == 'all'", specifier = ">=1.0.0,<1.1.0" },
+    { name = "timm", marker = "extra == 'groot'", specifier = ">=1.0.0,<1.1.0" },
+    { name = "transformers", marker = "extra == 'all'", specifier = ">=4.53.0,<5.0.0" },
+    { name = "transformers", marker = "extra == 'groot'", specifier = ">=4.53.0,<5.0.0" },
 ]
-provides-extras = ["tests"]
+provides-extras = ["all", "groot", "tests"]
 
 [[package]]
 name = "gitdb"
