@@ -12,7 +12,7 @@ class DataModule(LightningDataModule):
         train_batch_size: int,
         val_gym: Gym | None = None,
         val_dataset: Dataset | None = None,
-        test_gyms: Gym | None = None,
+        test_gym: Gym | None = None,
         test_dataset: Dataset | None = None,
         max_episode_steps: int | None = None,
     ):
