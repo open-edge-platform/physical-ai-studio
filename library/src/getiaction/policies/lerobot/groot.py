@@ -1,10 +1,82 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Groot (GR00T-N1) policy wrapper.
+"""Groot (GR00T-N1) policy wrapper for NVIDIA's foundation model.
 
 This module provides a Lightning-compatible wrapper around LeRobot's Groot implementation,
-NVIDIA's foundation model for generalist humanoid robots.
+NVIDIA's GR00T-N1.5-3B foundation model for generalist humanoid robots.
+
+## Quick Start
+
+Train Groot using the provided YAML config:
+
+```bash
+# Install dependencies
+pip install getiaction[groot]
+
+# Train with default config
+getiaction fit --config configs/lerobot/groot.yaml
+
+# Override parameters
+getiaction fit --config configs/lerobot/groot.yaml \
+    --model.learning_rate 1e-5 \
+    --data.train_batch_size 2
+```
+
+## Requirements
+
+- **GPU Memory**: 24GB+ VRAM recommended (RTX 3090/4090, A100, etc.)
+- **Dependencies**: `pip install getiaction[groot]` installs flash-attn, transformers, peft
+- **Device**: CUDA only (uses `flash-attn` package which has no XPU kernel)
+
+Note: While PyTorch 2.9+ has FlexAttention for XPU, Groot requires the external
+`flash-attn` package (Dao-AILab) which only supports CUDA GPUs.
+
+## Fine-tuning Strategies
+
+Groot supports selective fine-tuning to reduce memory usage:
+
+1. **Projector + Diffusion** (default, ~20GB):
+   `tune_projector=True, tune_diffusion_model=True`
+
+2. **LoRA fine-tuning** (~16GB):
+   `lora_rank=16, tune_llm=True`
+
+3. **Full fine-tuning** (requires 80GB+ A100):
+   `tune_llm=True, tune_visual=True, tune_projector=True, tune_diffusion_model=True`
+
+## Example
+
+```python
+from getiaction.policies.lerobot import Groot
+from getiaction.data.lerobot import LeRobotDataModule
+from getiaction.train import Trainer
+
+# Create policy
+policy = Groot(
+    chunk_size=50,
+    tune_projector=True,
+    tune_diffusion_model=True,
+)
+
+# Create datamodule
+datamodule = LeRobotDataModule(
+    repo_id="lerobot/aloha_sim_transfer_cube_human",
+    train_batch_size=4,
+    data_format="lerobot",
+)
+
+# Train
+trainer = Trainer(max_epochs=100, precision="bf16-mixed")
+trainer.fit(policy, datamodule)
+```
+
+## See Also
+
+- `getiaction.data.lerobot.LeRobotDataModule`: Data loading
+- `configs/lerobot/groot.yaml`: Default training configuration
+- [LeRobot Groot](https://github.com/huggingface/lerobot): Upstream implementation
+- [NVIDIA GR00T](https://developer.nvidia.com/isaac/groot): Model documentation
 """
 
 from __future__ import annotations
@@ -21,8 +93,6 @@ from getiaction.policies.base import Policy
 from getiaction.policies.lerobot.mixin import LeRobotFromConfig
 
 if TYPE_CHECKING:
-    from torch import nn
-
     from getiaction.gyms import Gym
 
 if TYPE_CHECKING or module_available("lerobot"):
@@ -42,91 +112,116 @@ else:
     LEROBOT_AVAILABLE = False
 
 
-class Groot(Policy, LeRobotFromConfig):
+class Groot(LeRobotFromConfig, Policy):
     """Groot (GR00T-N1) policy from LeRobot/NVIDIA.
 
     PyTorch Lightning wrapper around LeRobot's Groot implementation, NVIDIA's
-    GR00T-N1 foundation model for generalist humanoid robots. The policy
-    supports lazy initialization, where the LeRobot policy is created during
-    setup() after dataset features are loaded.
+    GR00T-N1.5-3B foundation model (2.4B parameters) for generalist humanoid robots.
 
     Groot is a vision-language-action (VLA) model that uses a diffusion-based
     action head on top of a multimodal foundation model (Eagle2). It supports
     fine-tuning with LoRA and selective component freezing.
 
-    The wrapper supports multiple configuration methods through the ``LeRobotFromConfig`` mixin.
-    See ``LeRobotFromConfig`` for detailed configuration examples.
+    ## Quick Start
 
-    Examples:
-        Train from scratch with explicit arguments (recommended):
-            >>> from getiaction.policies.lerobot import Groot
-            >>> from getiaction.data.lerobot import LeRobotDataModule
-            >>> from getiaction.train import Trainer
+    Train using the CLI with the provided config:
 
-            >>> # Create policy with explicit parameters
-            >>> policy = Groot(
-            ...     chunk_size=50,
-            ...     n_action_steps=50,
-            ...     tune_projector=True,
-            ...     tune_diffusion_model=True,
-            ... )
+    ```bash
+    getiaction fit --config configs/lerobot/groot.yaml
+    ```
 
-            >>> # Create datamodule
-            >>> datamodule = LeRobotDataModule(
-            ...     repo_id="lerobot/pusht",
-            ...     train_batch_size=8,
-            ... )
+    Or with custom parameters:
 
-            >>> # Train
-            >>> trainer = Trainer(max_epochs=100)
-            >>> trainer.fit(policy, datamodule)
+    ```bash
+    getiaction fit --config configs/lerobot/groot.yaml \
+        --model.learning_rate 1e-5 \
+        --data.train_batch_size 2
+    ```
 
-        Fine-tuning with LoRA:
-            >>> policy = Groot(
-            ...     lora_rank=16,
-            ...     lora_alpha=32,
-            ...     tune_llm=True,
-            ...     learning_rate=1e-4,
-            ... )
+    **Why XPU is not supported:**
 
-        YAML configuration with LightningCLI:
+    While PyTorch 2.9+ includes FlexAttention support for Intel XPU, Groot depends
+    on the external `flash-attn` package (Dao-AILab), which only has CUDA kernels.
+    The LeRobot Groot implementation requires this package and cannot use PyTorch's
+    native attention mechanisms as a fallback. XPU support would require upstream
+    changes to either `flash-attn` or LeRobot's Groot implementation.
 
-            ```yaml
-            # config.yaml
-            model:
-              class_path: getiaction.policies.lerobot.Groot
-              init_args:
-                chunk_size: 50
-                n_action_steps: 50
-                tune_projector: true
-                tune_diffusion_model: true
-            data:
-              class_path: getiaction.data.lerobot.LeRobotDataModule
-              init_args:
-                repo_id: lerobot/pusht
-                train_batch_size: 8
-            ```
+    ## Export Limitations
 
-            Command line usage:
+    Groot cannot be exported to ONNX/OpenVINO/TorchExportIR because the `flash-attn`
+    package uses custom CUDA kernels that cannot be traced by torch.export or ONNX.
+    For deployment, use PyTorch Lightning directly for inference.
 
-            ```bash
-            getiaction fit --config config.yaml
-            ```
+    ## Memory Requirements
+
+    | Configuration | VRAM Required |
+    |---------------|---------------|
+    | Projector + Diffusion (default) | ~20GB |
+    | LoRA fine-tuning | ~16GB |
+    | Full fine-tuning | ~80GB (A100) |
+
+    ## Examples
+
+    **CLI Training (Recommended)**
+
+    ```bash
+    # Basic training
+    getiaction fit --config configs/lerobot/groot.yaml
+
+    # Custom dataset
+    getiaction fit --config configs/lerobot/groot.yaml \
+        --data.repo_id your-hf-username/your-dataset
+
+    # LoRA fine-tuning (lower memory)
+    getiaction fit --config configs/lerobot/groot.yaml \
+        --model.lora_rank 16 --model.tune_llm true
+    ```
+
+    **Python API**
+
+    ```python
+    from getiaction.policies.lerobot import Groot
+    from getiaction.data.lerobot import LeRobotDataModule
+    from getiaction.train import Trainer
+
+    policy = Groot(
+        chunk_size=50,
+        tune_projector=True,
+        tune_diffusion_model=True,
+    )
+
+    datamodule = LeRobotDataModule(
+        repo_id="lerobot/aloha_sim_transfer_cube_human",
+        train_batch_size=4,
+        data_format="lerobot",
+    )
+
+    trainer = Trainer(max_epochs=100, precision="bf16-mixed")
+    trainer.fit(policy, datamodule)
+    ```
+
+    **Inference**
+
+    ```python
+    # Load trained checkpoint
+    policy = Groot.load_from_checkpoint("path/to/checkpoint.ckpt")
+    policy.eval()
+
+    # Run inference
+    observation = env.reset()
+    action = policy.select_action(observation)
+    env.step(action)
+    ```
 
     Note:
-        The policy is initialized lazily during the setup() phase. During setup,
-        input/output features are extracted from the dataset and used to configure
-        the underlying LeRobot policy.
+        The policy is initialized lazily during setup(). Input/output features
+        are extracted from the dataset and used to configure the model.
 
-    Note:
-        Groot requires significant GPU memory due to the large foundation model.
-        Consider using bf16 (enabled by default) and gradient checkpointing for
-        efficient training.
+    ## See Also
 
-    See Also:
-        - LeRobotDataModule: For loading LeRobot datasets
-        - LeRobotFromConfig: Configuration mixin with detailed examples
-        - lerobot.policies.groot.modeling_groot.GrootPolicy: Underlying LeRobot implementation
+    - `getiaction.data.lerobot.LeRobotDataModule`: Data loading
+    - `getiaction.policies.lerobot.mixin.LeRobotFromConfig`: Config mixin
+    - `configs/lerobot/groot.yaml`: Default training configuration
     """
 
     def __init__(  # noqa: PLR0913
@@ -245,7 +340,6 @@ class Groot(Policy, LeRobotFromConfig):
 
         # Policy will be initialized in setup()
         self._lerobot_policy: _LeRobotGrootPolicy
-        self.model: nn.Module | None = None
 
         self.save_hyperparameters()
 
@@ -263,6 +357,38 @@ class Groot(Policy, LeRobotFromConfig):
             msg = "Policy not initialized. Call setup() first."
             raise RuntimeError(msg)
         return self._lerobot_policy
+
+    def configure_optimizers(self) -> torch.optim.Optimizer:
+        """Configure optimizer using LeRobot's parameters.
+
+        Returns:
+            The configured optimizer instance.
+        """
+        return torch.optim.AdamW(
+            self.lerobot_policy.get_optim_params(),
+            lr=self.learning_rate,
+            betas=self._config_kwargs.get("optimizer_betas", (0.95, 0.999)),
+            eps=self._config_kwargs.get("optimizer_eps", 1e-8),
+            weight_decay=self._config_kwargs.get("optimizer_weight_decay", 1e-5),
+        )
+
+    def forward(self, batch: Observation | dict[str, torch.Tensor]) -> torch.Tensor:
+        """Forward pass for inference.
+
+        In evaluation mode, selects actions from observations.
+        This method is required by the base Policy class.
+
+        Note:
+            Groot does not support export to ONNX/OpenVINO due to Flash Attention.
+            Use select_action() directly for inference.
+
+        Args:
+            batch: Input observations.
+
+        Returns:
+            Action tensor from select_action.
+        """
+        return self.select_action(batch)
 
     def setup(self, stage: str) -> None:
         """Set up the policy from datamodule if not already initialized.
@@ -319,7 +445,6 @@ class Groot(Policy, LeRobotFromConfig):
         # Initialize the policy
         policy = _LeRobotGrootPolicy(lerobot_config)
         self.add_module("_lerobot_policy", policy)
-        self.model = self._lerobot_policy._groot_model  # noqa: SLF001
 
         # Create preprocessor/postprocessor for normalization
         self._preprocessor, self._postprocessor = make_pre_post_processors(
@@ -327,56 +452,12 @@ class Groot(Policy, LeRobotFromConfig):
             dataset_stats=dataset_stats,
         )
 
-    def forward(
-        self,
-        batch: Observation | dict[str, torch.Tensor],
-    ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        """Forward pass for LeRobot Groot policy.
-
-        The return value depends on the model's training mode:
-        - In training mode: Returns (loss, loss_dict) from LeRobot's forward method
-        - In evaluation mode: Returns action predictions via select_action method
-
-        Args:
-            batch: Input batch of observations.
-
-        Returns:
-            In training mode, returns tuple of (loss, loss_dict).
-            In eval mode, returns selected actions tensor.
-        """
-        # Convert to LeRobot dict format if needed
-        batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
-
-        # Apply preprocessing
-        batch_dict = self._preprocessor(batch_dict)
-
-        if self.training:
-            # During training, return loss information for backpropagation
-            loss, loss_dict = self.lerobot_policy(batch_dict)
-            return loss, loss_dict or {}
-
-        # During evaluation, return action predictions
-        return self.select_action(batch)
-
-    def configure_optimizers(self) -> torch.optim.Optimizer:
-        """Configure optimizer using LeRobot's parameters.
-
-        Returns:
-            The configured optimizer instance.
-        """
-        return torch.optim.AdamW(
-            self.lerobot_policy.get_optim_params(),
-            lr=self.learning_rate,
-            betas=self._config_kwargs.get("optimizer_betas", (0.95, 0.999)),
-            eps=self._config_kwargs.get("optimizer_eps", 1e-8),
-            weight_decay=self._config_kwargs.get("optimizer_weight_decay", 1e-5),
-        )
-
-    def training_step(self, batch: Observation | dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+    def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
         """Training step uses LeRobot's loss computation.
 
         Args:
-            batch: Input batch of observations.
+            batch: Input batch in LeRobot dict format with keys like
+                "observation.state", "observation.images.*", "action".
             batch_idx: Index of the batch.
 
         Returns:
@@ -384,7 +465,11 @@ class Groot(Policy, LeRobotFromConfig):
         """
         del batch_idx  # Unused argument
 
-        total_loss, loss_dict = self(batch)
+        # Apply preprocessing (normalization, image transforms, etc.)
+        batch = self._preprocessor(batch)
+
+        # Run forward through LeRobot policy
+        total_loss, loss_dict = self.lerobot_policy(batch)
         # Log individual loss components (skip 'loss' since we log total_loss as train/loss)
         for key, value in loss_dict.items():
             if key != "loss":
