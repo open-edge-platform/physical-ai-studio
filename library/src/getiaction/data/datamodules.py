@@ -82,10 +82,7 @@ def _collate_observations(batch: list[Observation]) -> Observation:
                         tensors_to_stack = [
                             torch.from_numpy(v) if isinstance(v, np.ndarray) else v for v in inner_values
                         ]
-                        collated_inner_dict[inner_key] = torch.stack(
-                            tensors_to_stack,
-                            dim=0,
-                        )
+                        collated_inner_dict[inner_key] = torch.stack(tensors_to_stack, dim=0)
                     else:
                         # For non-tensor values (like strings), just keep them as a list
                         collated_inner_dict[inner_key] = inner_values
