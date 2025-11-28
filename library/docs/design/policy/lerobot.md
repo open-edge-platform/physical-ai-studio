@@ -278,11 +278,11 @@ policy = LeRobotPolicy(
 
 ```bash
 # Train with config
-getiaction fit --config configs/lerobot_act.yaml
+getiaction fit --config configs/lerobot/act.yaml
 
 # Override parameters
 getiaction fit \
-  --config configs/lerobot_act.yaml \
+  --config configs/lerobot/act.yaml \
   --model.dim_model 1024 \
   --trainer.max_epochs 200
 ```
@@ -444,7 +444,7 @@ policy = ACT.from_lerobot_config(
 
 ### Configuration Tips
 
-1. **Start with simple configs**: Use `lerobot_act.yaml` for quick testing
+1. **Start with simple configs**: Use `lerobot/act.yaml` for quick testing
 2. **Choose data format wisely**: See [Data Integration](../data/lerobot.md)
    for format details
 3. **Copy from LeRobot examples**: Most configs can be adapted directly

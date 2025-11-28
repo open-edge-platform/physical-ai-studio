@@ -85,11 +85,11 @@ def cli() -> None:
 
     Examples:
         # Use getiaction.train.Trainer with all its features
-        getiaction fit --config configs/act.yaml
+        getiaction fit --config configs/getiaction/act.yaml
 
         # Override trainer parameters from CLI
         getiaction fit \
-          --config configs/act.yaml \
+          --config configs/getiaction/act.yaml \
           --trainer.experiment_name my_experiment \
           --trainer.max_epochs 200
 
