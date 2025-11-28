@@ -53,7 +53,8 @@ jobs:
       - name: Install dependencies
         working-directory: library
         run: |
-          uv sync --frozen --all-extras
+          # Note: We only install 'tests' extra, not 'groot' which requires CUDA/flash-attn
+          uv sync --frozen --extra tests
       - name: Run python unit tests
         working-directory: library
         run: |

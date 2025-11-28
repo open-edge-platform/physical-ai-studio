@@ -91,6 +91,14 @@ Repository = "https://github.com/open-edge-platform/geti-action.git"
 
 
 # ============================================================================ #
+# UV CONFIGURATION                                                             #
+# ============================================================================ #
+# flash-attn requires torch during build but doesn't declare it as a build dependency
+[tool.uv]
+extra-build-dependencies = { flash-attn = ["torch"] }
+
+
+# ============================================================================ #
 # MYPY CONFIGURATION                                                           #
 # ============================================================================ #
 # Inherits from root pyproject.toml, add library-specific overrides here
