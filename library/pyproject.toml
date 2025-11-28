@@ -12,6 +12,9 @@ build-backend = "hatchling.build"
 [tool.hatch.version]
 path = "src/getiaction/__init__.py"
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/getiaction"]
 
@@ -61,6 +64,19 @@ tests = [
 # VLA Policy dependencies - these are heavy models with specific requirements
 # Install with: pip install getiaction[groot]
 
+# Physical Intelligence Pi0/Pi05 foundation models
+# Requires ~40GB+ GPU memory for training (A100/H100 recommended)
+# TODO(PyPI): The pi extra uses a git URL which is NOT PyPI compatible.
+# This means `getiaction[pi]` cannot be published to PyPI until transformers
+# merges the fix. Track upstream status at:
+# - Branch: https://github.com/huggingface/transformers/tree/fix/lerobot_openpi
+# - PR #42238 was closed (not merged)
+# LeRobot has the same limitation: https://pypi.org/project/lerobot/
+# Once merged and released (transformers>=4.54.0?), replace with version constraint.
+pi = [
+    "transformers @ git+https://github.com/huggingface/transformers.git@fix/lerobot_openpi",
+]
+
 # NVIDIA GR00T-N1 foundation model
 # Requires ~24GB+ GPU memory for training, supports LoRA fine-tuning
 groot = [
@@ -76,6 +92,7 @@ groot = [
 ]
 
 # All optional dependencies
+# NOTE: pi extra excluded from all due to PyPI git URL limitation
 all = [
     "getiaction[tests]",
     "getiaction[groot]",
