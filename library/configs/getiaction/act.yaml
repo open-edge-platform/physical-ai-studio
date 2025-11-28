@@ -1,9 +1,8 @@
 # ACT Policy Training Configuration
-# Train Action Chunking Transformer
+# Train Action Chunking Transformer (native getiaction implementation)
 #
 # Usage:
-#   getiaction fit --config configs/act.yaml
-#
+#   getiaction fit --config configs/getiaction/act.yaml
 
 model:
   class_path: getiaction.policies.ACT
@@ -31,8 +30,7 @@ data:
 
 trainer:
   max_epochs: 100
-  accelerator: xpu
-  strategy: xpu_single
+  accelerator: gpu
   devices: 1
   precision: 32
   log_every_n_steps: 100
