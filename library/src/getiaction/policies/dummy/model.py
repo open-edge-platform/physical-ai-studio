@@ -295,4 +295,4 @@ class Dummy(nn.Module, FromConfig, FromCheckpoint):
             target = torch.zeros_like(pred)
             loss = F.mse_loss(pred, target)
             return loss, {"loss_mse": loss}
-        return self.select_action(batch)
+        return self.predict_action_chunk(batch)
