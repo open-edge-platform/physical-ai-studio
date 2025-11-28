@@ -1,0 +1,93 @@
+# Pi0.5 (Physical Intelligence) Policy Training Configuration
+# Train Physical Intelligence's improved model with adaRMS conditioning.
+#
+# Usage:
+#   getiaction fit --config configs/lerobot/pi05.yaml
+#   getiaction fit --config configs/lerobot/pi05.yaml --model.learning_rate 1e-5
+#
+# ──────────────────────────────────────────────────────────────────────────────
+# MEMORY REQUIREMENTS
+# ──────────────────────────────────────────────────────────────────────────────
+#   Mode          VRAM      Hardware
+#   ─────────────────────────────────────────
+#   Inference     ~13GB     RTX 3090/4090
+#   Training      ~40GB+    A100, H100
+#
+# ──────────────────────────────────────────────────────────────────────────────
+# HARDWARE SUPPORT
+# ──────────────────────────────────────────────────────────────────────────────
+#   Device     Supported   Notes
+#   ─────────────────────────────────────────────────────────────────
+#   CUDA       ✓           Full support
+#   XPU        ✓           Intel Arc/Data Center GPUs
+#   CPU        ✓           Slow, for testing only
+#   Export     ✗           Iterative denoising not traceable
+#
+# ──────────────────────────────────────────────────────────────────────────────
+# PI0.5 VS PI0
+# ──────────────────────────────────────────────────────────────────────────────
+#   Pi0.5 uses adaptive RMS normalization (adaRMS) conditioning for better
+#   action generation quality through scale conditioning.
+#
+# ──────────────────────────────────────────────────────────────────────────────
+# DEPENDENCIES
+# ──────────────────────────────────────────────────────────────────────────────
+#   - pip install lerobot
+#   - Patched transformers (until fix is released to PyPI):
+#       pip install git+https://github.com/huggingface/transformers.git@fix/lerobot_openpi
+
+model:
+  class_path: getiaction.policies.lerobot.Pi05
+  init_args:
+    # Model architecture
+    paligemma_variant: "gemma_2b" # Options: gemma_2b, gemma_300m
+    action_expert_variant: "gemma_300m" # Options: gemma_2b, gemma_300m
+    dtype: "float32" # Options: float32, bfloat16
+
+    # Basic policy settings
+    n_obs_steps: 1
+    chunk_size: 50
+    n_action_steps: 50
+
+    # Dimension limits
+    max_state_dim: 32
+    max_action_dim: 32
+
+    # Flow matching parameters
+    num_inference_steps: 10 # Number of denoising steps during inference
+
+    # Image settings
+    image_resolution: [224, 224]
+    empty_cameras: 0
+
+    # Training efficiency
+    gradient_checkpointing: false # Enable to reduce memory (still requires 40GB+ for training)
+
+    # Optimization
+    learning_rate: 2.5e-5
+    optimizer_betas: [0.9, 0.95]
+    optimizer_eps: 1.0e-8
+    optimizer_weight_decay: 0.01
+    optimizer_grad_clip_norm: 1.0
+
+    # Scheduler
+    scheduler_warmup_steps: 1000
+    scheduler_decay_steps: 30000
+    scheduler_decay_lr: 2.5e-6
+
+data:
+  class_path: getiaction.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: "lerobot/aloha_sim_transfer_cube_human"
+    train_batch_size: 4 # Reduced for memory efficiency
+    data_format: "lerobot"
+    # delta_timestamps is auto-computed from policy's chunk_size (50 action frames)
+    # No need to specify manually - the PolicyDatasetInteraction callback handles this
+
+trainer:
+  max_epochs: 100
+  accelerator: gpu
+  devices: 1
+  precision: bf16-mixed # Use mixed precision for efficiency
+  log_every_n_steps: 10
+  check_val_every_n_epoch: 1
