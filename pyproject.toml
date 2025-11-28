@@ -5,3 +5,86 @@
 # The library and application/backend directories have their own independent environments.
 # - ML engineers: work in library/ directory (uv sync from there)
 # - Backend engineers: work in application/backend/ directory (uv sync from there)
+#
+# SHARED TOOL CONFIGURATION:
+# The [tool.*] sections below define shared settings inherited by workspaces.
+# Each workspace extends these via `extend = "../pyproject.toml"` (or similar).
+
+
+# ============================================================================ #
+# SHARED MYPY CONFIGURATION                                                    #
+# ============================================================================ #
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+show_error_codes = true
+
+
+# ============================================================================ #
+# SHARED RUFF CONFIGURATION                                                    #
+# ============================================================================ #
+[tool.ruff]
+# Python version
+target-version = "py312"
+
+# Line length (same as Black)
+line-length = 120
+
+# Enable preview features
+preview = true
+
+# Exclude common directories
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+]
+
+[tool.ruff.lint]
+# Enable ALL available ruff rules (workspaces can override)
+select = ["ALL"]
+ignore = []
+
+# Allow autofix for all enabled rules
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.ruff.lint.pylint]
+max-args = 15
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.flake8-copyright]
+notice-rgx = """
+# Copyright \\(C\\) (\\d{4}(-\\d{4})?) Intel Corporation
+# SPDX-License-Identifier: Apache-2\\.0
+"""
+
+
+# ============================================================================ #
+# SHARED BANDIT CONFIGURATION                                                  #
+# ============================================================================ #
+[tool.bandit]
+skips = ["B101"]
+exclude_dirs = ["tests"]

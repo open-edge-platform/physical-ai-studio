@@ -59,10 +59,24 @@ class TorchExportAdapter(RuntimeAdapter):
             # Use call_spec.in_spec to get original input dict keys (e.g., "state", "images")
             # instead of graph_signature.user_inputs which may have renamed keys (e.g., "batch_state")
             in_spec = program.call_spec.in_spec
-            # Navigate: in_spec -> args[0] -> input_dict to get the dict keys
-            dict_spec = in_spec.children_specs[0].children_specs[0]
+            # in_spec structure: TreeSpec(tuple, None, [args_spec, kwargs_spec])
+            # We need to navigate to the actual input dict
 
-            self._input_names = list(dict_spec.context) if hasattr(dict_spec, "context") else []
+            # Check if args are used (args_spec has children) or kwargs (second element)
+            args_spec = in_spec.children_specs[0]  # First element is args tuple
+            kwargs_spec = in_spec.children_specs[1] if len(in_spec.children_specs) > 1 else None
+
+            if args_spec.children_specs:  # Args used (positional arguments)
+                # Navigate: args[0] -> input_dict
+                dict_spec = args_spec.children_specs[0]
+            elif kwargs_spec and kwargs_spec.children_specs:  # Kwargs used
+                # Navigate: kwargs['batch'] -> input_dict
+                # kwargs_spec is dict with context=['batch'], children_specs has the actual dict
+                dict_spec = kwargs_spec.children_specs[0]
+            else:
+                dict_spec = None
+
+            self._input_names = list(dict_spec.context) if dict_spec and hasattr(dict_spec, "context") else []
             self._output_names = [str(name) for name in program.graph_signature.user_outputs]
 
         except Exception as e:
@@ -96,9 +110,20 @@ class TorchExportAdapter(RuntimeAdapter):
             # Convert numpy arrays to torch tensors
             torch_inputs = {k: torch.from_numpy(v) for k, v in inputs.items()}
 
-            # Run inference - module expects dict input
+            # Run inference
+            # Check if model was exported with kwargs (has 'batch' wrapper) or args
             with torch.no_grad():
-                torch_outputs = self._module(torch_inputs)
+                # Try to determine if model expects kwargs from the in_spec structure
+                in_spec = self._program.call_spec.in_spec
+                kwargs_spec = in_spec.children_specs[1] if len(in_spec.children_specs) > 1 else None
+
+                if kwargs_spec and kwargs_spec.context:
+                    # Model expects kwargs, wrap inputs with the expected key name
+                    kwarg_name = kwargs_spec.context[0]  # e.g., 'batch'
+                    torch_outputs = self._module(**{kwarg_name: torch_inputs})
+                else:
+                    # Model expects positional args
+                    torch_outputs = self._module(torch_inputs)
 
             # Handle different output formats
             return self._convert_outputs_to_numpy(torch_outputs)

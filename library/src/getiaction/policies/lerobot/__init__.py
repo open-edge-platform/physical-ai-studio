@@ -195,7 +195,82 @@ __all__ = [
     "PI0Fast",
     "SmolVLA",
     "VQBeT",
+    "get_lerobot_policy",
 ]
+
+
+def get_lerobot_policy(policy_name: str, **kwargs) -> LeRobotPolicy:  # noqa: ANN003
+    """Factory function to create LeRobot policy instances by name.
+
+    This function provides a convenient way to instantiate LeRobot policies dynamically
+    based on a string name, making it ideal for configuration-driven workflows, testing,
+    and CLI applications.
+
+    Args:
+        policy_name: Name of the LeRobot policy to create. Supported values:
+            - Explicit wrappers: "act", "diffusion"
+            - Universal wrapper: "vqbet", "tdmpc", "sac", "pi0", "pi05", "pi0fast", "smolvla"
+        **kwargs: Additional keyword arguments passed to the policy constructor.
+
+    Returns:
+        LeRobotPolicy: Instance of the requested LeRobot policy.
+
+    Raises:
+        ImportError: If LeRobot is not installed.
+        ValueError: If the policy name is unknown.
+
+    Examples:
+        Create ACT policy using explicit wrapper:
+
+            >>> from getiaction.policies.lerobot import get_lerobot_policy
+            >>> policy = get_lerobot_policy("act", dim_model=512, chunk_size=10)
+
+        Create Diffusion policy:
+
+            >>> policy = get_lerobot_policy("diffusion", n_obs_steps=2, learning_rate=1e-4)
+
+        Create policy via universal wrapper:
+
+            >>> policy = get_lerobot_policy("vqbet", learning_rate=1e-4)
+
+        Use in configuration:
+
+            >>> config = {"policy_name": "act", "dim_model": 512}
+            >>> policy = get_lerobot_policy(**config)
+    """
+    if not LEROBOT_AVAILABLE:
+        msg = (
+            "LeRobot is not installed. Please install it with:\n"
+            "  uv pip install lerobot\n"
+            "or install getiaction with LeRobot support:\n"
+            "  uv pip install getiaction[lerobot]"
+        )
+        raise ImportError(msg)
+
+    policy_name_lower = policy_name.lower()
+
+    # Map policy names to their classes
+    policy_map = {
+        # Explicit wrappers
+        "act": ACT,
+        "diffusion": Diffusion,
+        # Universal wrapper classes
+        "vqbet": VQBeT,
+        "tdmpc": TDMPC,
+        "sac": SAC,
+        "pi0": PI0,
+        "pi05": PI05,
+        "pi0fast": PI0Fast,
+        "smolvla": SmolVLA,
+    }
+
+    if policy_name_lower in policy_map:
+        return policy_map[policy_name_lower](**kwargs)
+
+    # List available policies for error message
+    available = ", ".join(sorted(policy_map.keys()))
+    msg = f"Unknown LeRobot policy: {policy_name}. Available policies: {available}"
+    raise ValueError(msg)
 
 
 def is_available() -> bool:
