@@ -5,7 +5,7 @@
 
 import dataclasses
 import inspect
-from enum import StrEnum
+from enum import Enum, StrEnum
 from os import PathLike
 from pathlib import Path
 from typing import Any
@@ -443,11 +443,15 @@ def _serialize_model_config(config: Any) -> dict:  # noqa: ANN401
                 target_dk = str(dk) if isinstance(dk, StrEnum) else dk
                 if dataclasses.is_dataclass(dv):
                     updated_inner_dict[target_dk] = _serialize_model_config(dv)
+                elif isinstance(dv, Enum):
+                    # Convert enum to its value (handles both StrEnum and regular Enum)
+                    updated_inner_dict[target_dk] = dv.value
                 else:
                     updated_inner_dict[target_dk] = dv
             updated_args[target_k] = updated_inner_dict
-        elif isinstance(v, StrEnum):
-            updated_args[target_k] = str(v)
+        elif isinstance(v, Enum):
+            # Convert enum to its value (handles both StrEnum and regular Enum)
+            updated_args[target_k] = v.value
         elif isinstance(v, np.ndarray):
             updated_args[target_k] = v.tolist()
         elif isinstance(v, tuple):

@@ -284,10 +284,8 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         policy = policy_cls(config)
         self.add_module("_lerobot_policy", policy)
 
-        # Expose the underlying model for Lightning compatibility (if available)
-        # Some policies (like Diffusion) don't have a .model attribute
-        if hasattr(self._lerobot_policy, "model"):
-            self.model = self._lerobot_policy.model
+        # Use LeRobot policy directly as model (it's already an nn.Module)
+        self.model = self._lerobot_policy
 
         # Create preprocessor/postprocessor for normalization
         self._preprocessor, self._postprocessor = make_pre_post_processors(config, dataset_stats=dataset_stats)
@@ -351,40 +349,6 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
 
         # Initialize policy now
         self._initialize_policy(features, features, self._provided_config, stats)
-
-    def forward(
-        self,
-        batch: Observation | dict[str, torch.Tensor],
-    ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        """Forward pass through the LeRobot policy.
-
-        The return value depends on the model's training mode:
-        - In training mode: Returns loss information from LeRobot's forward method
-        - In evaluation mode: Returns action predictions via select_action method
-
-        Args:
-            batch (Observation | dict[str, torch.Tensor]): Input batch of observations.
-
-        Returns:
-            torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]: In training mode,
-                returns loss information. In eval mode, returns selected actions tensor.
-        """
-        # Convert to LeRobot dict format if needed
-        batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
-
-        # Apply preprocessing
-        batch_dict = self._preprocessor(batch_dict)
-
-        if self.training:
-            # During training, return loss information for backpropagation
-            result = self.lerobot_policy(batch_dict)
-            if isinstance(result, tuple):
-                loss, loss_dict = result
-                return loss, loss_dict or {}
-            return result
-
-        # During evaluation, return action predictions
-        return self.select_action(batch)
 
     def _process_loss_output(
         self,
@@ -482,7 +446,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         """
         del batch_idx  # Unused argument
 
-        total_loss, loss_dict = self(batch)
+        total_loss, loss_dict = self.lerobot_policy(batch)
         for key, value in loss_dict.items():
             self.log(f"train/{key}", value, prog_bar=False)
         self.log("train/loss", total_loss, prog_bar=True)
@@ -517,6 +481,39 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             Metrics dict from gym rollout evaluation.
         """
         return self.evaluate_gym(batch, batch_idx, stage="test")
+
+    def forward(  # type: ignore[override]
+        self,
+        batch: Observation | dict[str, torch.Tensor],
+    ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor] | None]:
+        """Forward pass for universal LeRobot policy.
+
+        Handles both training and inference modes:
+        - Training: Returns (loss, loss_dict) for backpropagation
+        - Inference: Returns denormalized actions for prediction/export
+
+        Args:
+            batch: Input batch (Observation or LeRobot dict).
+
+        Returns:
+            - Training mode: Tuple of (loss, loss_dict or None)
+            - Inference mode: Action tensor
+        """
+        if self.training:
+            # Training mode: Use LeRobot policy's forward() which computes loss
+            # Convert to LeRobot format if needed
+            batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
+
+            # Call underlying policy forward
+            output = self.lerobot_policy(batch_dict)
+
+            # Handle different return formats (some policies return tuple, some just loss)
+            if isinstance(output, tuple):
+                return output
+            return output, None
+
+        # Inference mode: Generate actions via select_action
+        return self.select_action(batch)
 
     def select_action(self, batch: Observation | dict[str, torch.Tensor]) -> torch.Tensor:
         """Select action (inference mode) through LeRobot.

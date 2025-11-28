@@ -1,90 +1,186 @@
 # Developer Guide: Working with the geti-action Monorepo
 
-This repository is a monorepo containing the `geti-action` project, which is structured as a `uv` workspace. It includes a core `library` and an `application` that consumes it. This guide outlines the recommended workflows for developers.
+This repository is a monorepo containing the `geti-action` project. The `library` contains the Vision-Language-Action (VLA) framework for training and inference, while the `application` is the studio application with backend and UI components. Each project has its own independent virtual environment and tooling configuration.
 
 ## Project Structure
 
--   **/application**: Contains the main application, split into a Python `backend` and a `ui`.
--   **/library**: Contains the core, reusable Python library.
--   **pyproject.toml**: Defines the `uv` workspace, making `library` and `application/backend` its members.
--   **uv.lock**: The root lock file for the entire workspace, used for CI and integrated development.
+```
+geti-action/
+├── library/                    # VLA framework (ML engineers)
+│   ├── pyproject.toml
+│   ├── uv.lock
+│   ├── .python-version
+│   └── .pre-commit-config.yaml
+├── application/
+│   ├── backend/                # FastAPI server (Backend engineers)
+│   │   ├── pyproject.toml
+│   │   ├── uv.lock
+│   │   ├── .python-version
+│   │   └── .pre-commit-config.yaml
+│   └── ui/                     # React/TypeScript frontend
+├── .pre-commit-config.yaml     # Root pre-commit hooks (universal)
+└── pyproject.toml              # Root configuration (minimal)
+```
+
+Each project directory contains its own:
+
+- `pyproject.toml`: Dependencies and tool configurations (`[tool.ruff]`, `[tool.mypy]`, etc.)
+- `uv.lock`: Lock file for reproducible environments
+- `.python-version`: Python version specification
+- `.pre-commit-config.yaml`: Project-specific pre-commit hooks (used by prek)
 
 ## Development Workflows
 
-This project supports two primary development workflows, designed to accommodate different teams and use cases.
+### Library Development (ML Engineers)
+
+1. **Navigate to the library directory:**
+
+   ```bash
+   cd library
+   ```
+
+2. **Install dependencies:**
+
+   ```bash
+   uv sync
+   ```
+
+3. **Activate the virtual environment:**
+
+   ```bash
+   source .venv/bin/activate
+   ```
+
+4. **Run tests:**
+
+   ```bash
+   uv run pytest tests/unit
+   ```
+
+5. **Manage dependencies:**
+
+   ```bash
+   # Add a new dependency
+   uv add <package-name>
+
+   # Update lock file
+   uv lock
+   ```
 
 ---
 
-### 1. Standalone Package Development (Recommended for Library/Backend Teams)
+### Backend Development (Backend Engineers)
 
-If you are working exclusively on the `library` or the `application/backend`, you can treat it as a standalone project. This workflow is ideal for focused development without needing to manage the entire workspace.
+1. **Navigate to the backend directory:**
 
-**Instructions:**
+   ```bash
+   cd application/backend
+   ```
 
-1.  **Navigate to your project directory:**
-    ```bash
-    # For the library team
-    cd library
+2. **Install dependencies:**
 
-    # Or for the backend team
-    cd application/backend
-    ```
+   ```bash
+   uv sync
+   ```
 
-2.  **Install dependencies:** Use the local `uv.lock` to create a virtual environment with all necessary packages.
-    ```bash
-    uv sync
-    ```
+3. **Activate the virtual environment:**
 
-3.  **Activate the virtual environment (optional but recommended):**
-    ```bash
-    source .venv/bin/activate
-    ```
+   ```bash
+   source .venv/bin/activate
+   ```
 
-4.  **Manage dependencies:** When adding or updating packages, `uv` will automatically update your local `pyproject.toml` and `uv.lock`.
-    ```bash
-    # Add a new dependency
-    uv pip install <some-package>
+4. **Run the server:**
 
-    # Sync your environment after changes
-    uv sync
-    ```
-    > **Note**: You do not need to worry about the root `uv.lock` file. The CI system will automatically update it when you push your changes.
+   ```bash
+   ./run.sh
+   ```
+
+5. **Manage dependencies:**
+
+   ```bash
+   # Add a new dependency
+   uv add <package-name>
+
+   # Update lock file
+   uv lock
+   ```
+
+> **Note**: The backend includes `getiaction` (the library) as an editable dependency, so changes to the library are immediately available in the backend environment.
 
 ---
 
-### 2. Integrated Workspace Development (For Full-Stack and CI)
+## Code Quality with prek
 
-If you need to work on both the `library` and the `application` simultaneously, you should work from the project root. This gives you a single, unified environment.
+This project uses [prek](https://prek.j178.dev/) for pre-commit hooks. Prek is a fast, Rust-based reimplementation of pre-commit with built-in monorepo support.
 
-**Instructions:**
+### Workspace Structure
 
-1.  **Stay at the project root.**
+```
+geti-action/
+├── .pre-commit-config.yaml     # Root: universal hooks
+├── library/
+│   └── .pre-commit-config.yaml # Library-specific hooks
+└── application/
+    └── backend/
+        └── .pre-commit-config.yaml # Backend-specific hooks
+```
 
-2.  **Install all dependencies for the entire workspace:**
-    ```bash
-    uv sync
-    ```
+### Installing prek
 
-3.  **Activate the workspace virtual environment (optional):**
-    ```bash
-    source .venv/bin/activate
-    ```
+```bash
+# Using cargo
+cargo install prek
 
-4.  **Manage dependencies:** When adding a dependency, you must specify which package it belongs to using the `-p` or `--package` flag.
-    ```bash
-    # Add a dependency to the 'library' package
-    uv pip install -p library <some-package>
+# Or using the install script
+curl -fsSL https://prek.j178.dev/install.sh | sh
+```
 
-    # Add a dependency to the 'application/backend' package
-    uv pip install -p application/backend <another-package>
-    ```
+### Running Hooks
 
-5.  **Update the root lock file:** After modifying dependencies, regenerate the main `uv.lock`.
-    ```bash
-    uv lock
-    ```
+```bash
+# Run all hooks on all files
+prek run --all-files
 
-6.  **Sync your environment** with the new lock file.
-    ```bash
-    uv sync
-    ```
+# Run only library hooks
+prek run --all-files library/
+
+# Run only backend hooks
+prek run --all-files application/backend/
+
+# Run specific hook across all projects
+prek run ruff
+
+# Run on staged files only (default behavior)
+prek run
+```
+
+### Installing Git Hooks
+
+```bash
+# Install hooks to run automatically on git commit
+prek install
+```
+
+### Hook Configuration
+
+Each project's hooks use the `[tool.*]` configurations from their respective `pyproject.toml`:
+
+- **Library** (`library/pyproject.toml`): `[tool.ruff]`, `[tool.mypy]`, `[tool.bandit]`
+- **Backend** (`application/backend/pyproject.toml`): `[tool.ruff]`, `[tool.mypy]`
+
+---
+
+## CI/CD
+
+The GitHub Actions workflows are configured to:
+
+1. **Library** (`library.yml`):
+   - Run prek hooks on library files
+   - Run unit tests
+
+2. **Backend** (`backend.yml`):
+   - Run ruff and mypy
+   - Verify lock file integrity
+
+3. **UI** (`ui.yml`):
+   - Build and test the frontend

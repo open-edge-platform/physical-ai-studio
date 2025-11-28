@@ -28,12 +28,11 @@ dependencies = [
 
 [tool.uv.sources]
 FrameSource = { git = "https://github.com/ArendJanKramer/FrameSource.git", rev = "1eec5b2df1c7af9c8a941ee90bfc5e617c5b4522" }
-getiaction = { workspace = true }
+getiaction = { path = "../../library", editable = true }
 
 [dependency-groups]
 dev = [
   "ruff~=0.11.2",
-  "pre-commit~=4.1",
 ]
 lint = [
   "ruff~=0.11.2",
@@ -41,28 +40,41 @@ lint = [
 ]
 all = [
   "ruff~=0.11.2",
-  "pre-commit~=4.1",
   "mypy~=1.17",
 ]
 
 [tool.uv]
 default-groups = ["all"]
 
+
+# ============================================================================ #
+# RUFF CONFIGURATION                                                           #
+# ============================================================================ #
 [tool.ruff]
-target-version = "py312"
-line-length = 120
+# Extend shared configuration from root
+extend = "../../pyproject.toml"
 
-exclude = [".venv*"]
+# Disable preview mode for backend (inherited as true from root)
+preview = false
 
+# Backend-specific source directories
 src = ["src"]
 
+# Backend-specific excludes
+extend-exclude = [".venv*"]
+
 [tool.ruff.lint]
-select = ["ARG", "E", "F", "I", "N", "UP", "YTT", "ASYNC", "S", "COM", "C4", "FA", "PIE", "PYI", "Q", "RSE", "RET", "SIM",
-    "TID", "TC", "PL", "RUF", "C90", "D103", "ANN001", "ANN201", "ANN205", "FAST"]
+# Backend uses a subset of rules (different from library's ALL)
+select = [
+    "ARG", "E", "F", "I", "N", "UP", "YTT", "ASYNC", "S", "COM", "C4", "FA",
+    "PIE", "PYI", "Q", "RSE", "RET", "SIM", "TID", "TC", "PL", "RUF", "C90",
+    "D103", "ANN001", "ANN201", "ANN205", "FAST"
+]
 
-ignore = ["N801", "N805","N806","N807", "N818", "COM812", "RET503", "SIM108", "SIM105", "PLR2004",
-
-    "RUF010", "TC001",  "RUF012"]
+ignore = [
+    "N801", "N805", "N806", "N807", "N818", "COM812", "RET503", "SIM108",
+    "SIM105", "PLR2004", "RUF010", "TC001", "RUF012"
+]
 
 fixable = ["ALL"]
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
@@ -74,8 +86,12 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 split-on-trailing-comma = false
 
 [tool.ruff.lint.pylint]
-max-args=7
+max-args = 7
 
+
+# ============================================================================ #
+# MYPY CONFIGURATION                                                           #
+# ============================================================================ #
 [tool.mypy]
 python_version = "3.12"
 ignore_missing_imports = true

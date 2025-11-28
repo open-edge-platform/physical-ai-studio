@@ -52,7 +52,6 @@ dependencies = [
 [project.optional-dependencies]
 # Testing dependencies
 tests = [
-    "pre-commit",
     "httpx",
     "pytest",
     "pytest-mock",
@@ -94,6 +93,7 @@ Repository = "https://github.com/open-edge-platform/geti-action.git"
 # ============================================================================ #
 # MYPY CONFIGURATION                                                           #
 # ============================================================================ #
+# Inherits from root pyproject.toml, add library-specific overrides here
 [tool.mypy]
 ignore_missing_imports = true
 show_error_codes = true
@@ -103,69 +103,23 @@ show_error_codes = true
 # RUFF CONFIGURATION                                                           #
 # ============================================================================ #
 [tool.ruff]
-# Enable preview features
-preview = true
+# Extend shared configuration from root
+extend = "../pyproject.toml"
 
-# Enable ALL available ruff rules
-lint.select = ["ALL"]
-
-lint.ignore = []
-
-# Allow autofix for all enabled rules (when `--fix`) is provided.
-lint.fixable = ["ALL"]
-lint.unfixable = []
-
-# Exclude a variety of commonly ignored directories.
-exclude = [
-    ".bzr",
-    ".direnv",
-    ".eggs",
-    ".git",
-    ".hg",
-    ".mypy_cache",
-    ".nox",
-    ".pants.d",
-    ".pytype",
-    ".ruff_cache",
-    ".svn",
-    ".tox",
-    ".venv",
-    "__pypackages__",
-    "_build",
-    "buck-out",
-    "build",
-    "dist",
-    "docs",
-    "examples",
-    "node_modules",
-    "tests",
-    "venv",
-]
-
-# Same as Black.
-line-length = 120
-
-# Assume Python 3.12.
-target-version = "py312"
-
-# Allow imports relative to the "src" and "tests" directories.
+# Library-specific source directories
 src = ["src", "tests"]
 
-[tool.ruff.lint.mccabe]
-# Unlike Flake8, default to a complexity level of 10.
-max-complexity = 15
+# Library-specific excludes (in addition to root excludes)
+extend-exclude = [
+    "docs",
+    "examples",
+    "tests",
+]
 
-[tool.ruff.lint.pylint]
-max-args = 15
-
-[tool.ruff.lint.pydocstyle]
-convention = "google"
-
-[tool.ruff.lint.flake8-copyright]
-notice-rgx = """
-# Copyright \\(C\\) (\\d{4}(-\\d{4})?) Intel Corporation
-# SPDX-License-Identifier: Apache-2\\.0
-"""
+[tool.ruff.lint]
+# Library uses ALL rules from root config
+# Add any library-specific ignores here if needed
+ignore = []
 
 
 # ============================================================================ #

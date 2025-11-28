@@ -1,4 +1,4 @@
-name: Geti Action UI checks
+name: UI
 permissions: {} # No permissions by default on workflow level
 
 on:
