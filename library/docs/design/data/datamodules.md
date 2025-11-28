@@ -10,7 +10,7 @@ class DataModule(LightningDataModule):
         self,
         train_dataset: Dataset,
         train_batch_size: int,
-        val_gyms: Gym | None = None,
+        val_gym: Gym | None = None,
         val_dataset: Dataset | None = None,
         test_gyms: Gym | None = None,
         test_dataset: Dataset | None = None,
