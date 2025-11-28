@@ -17,7 +17,7 @@ host := "0.0.0.0"
 ai-device := "cpu"  # options: cpu, gpu
 component-name := "geti-action"
 images-registry := 'localhost:5000/open-edge-platform'
-version := trim(read(`git rev-parse --show-toplevel 2>/dev/null` / "VERSION"))
+version := trim(read(`git rev-parse --show-toplevel` / "VERSION"))
 docker-image := images-registry / component-name + ":" + version + "-" + ai-device
 
 # -------------------------------------------------------------------------------------------------
