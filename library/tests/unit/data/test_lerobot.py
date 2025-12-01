@@ -3,10 +3,12 @@
 
 """Test for lerobot dataset using a mock to avoid ffmpeg/network dependencies."""
 
+import numpy as np
+import pytest
+import torch
+
 from getiaction.data import Dataset, Observation
 from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
-import torch
-import pytest
 
 
 class FakeLeRobotDataset:
@@ -61,8 +63,18 @@ class FakeLeRobotDataset:
             @property
             def stats(self):
                 return {
-                    "observation.state": {},
-                    "observation.action": {},
+                    "observation.state": {
+                        "mean": np.zeros(8),
+                        "std": np.ones(8),
+                        "min": np.full(8, -1.0),
+                        "max": np.ones(8),
+                    },
+                    "observation.action": {
+                        "mean": np.zeros(7),
+                        "std": np.ones(7),
+                        "min": np.full(7, -1.0),
+                        "max": np.ones(7),
+                    },
                 }
 
         return MockMeta()
