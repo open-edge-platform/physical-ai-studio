@@ -442,10 +442,10 @@ class Feature:
 class NormalizationParameters:
     """Parameters for normalizing a tensor."""
 
-    mean: torch.Tensor | np.ndarray | None = None
-    std: torch.Tensor | np.ndarray | None = None
-    min: torch.Tensor | np.ndarray | None = None
-    max: torch.Tensor | np.ndarray | None = None
+    mean: list[float] | float | None = None
+    std: list[float] | float | None = None
+    min: list[float] | float | None = None
+    max: list[float] | float | None = None
 
 
 # Module-level constants for convenient dict access

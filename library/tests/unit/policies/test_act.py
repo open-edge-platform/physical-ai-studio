@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import copy
+import tempfile
 import pytest
 import torch
 import numpy as np
@@ -17,9 +18,9 @@ class TestACTolicy:
 
     @pytest.fixture
     def policy(self):
-        config = ACTConfig({"image": Feature(normalization_data=NormalizationParameters(mean=np.array([0]*3), std=np.array([1]*3)), shape=(3, 64, 64), ftype=FeatureType.VISUAL),
-                            "state": Feature(normalization_data=NormalizationParameters(mean=np.array([0]*3), std=np.array([1]*3)), shape=(3,), ftype=FeatureType.STATE)},
-                           {"action": Feature(normalization_data=NormalizationParameters(mean=np.array([0]*3), std=np.array([1]*3)), shape=(3,), ftype=FeatureType.ACTION)},
+        config = ACTConfig({"image": Feature(normalization_data=NormalizationParameters(mean=[0.0]*3, std=[1.0]*3), shape=(3, 64, 64), ftype=FeatureType.VISUAL),
+                            "state": Feature(normalization_data=NormalizationParameters(mean=[0.0]*3, std=[1.0]*3), shape=(3,), ftype=FeatureType.STATE)},
+                           {"action": Feature(normalization_data=NormalizationParameters(mean=[0.0]*3, std=[1.0]*3), shape=(3,), ftype=FeatureType.ACTION)},
                             chunk_size=100)
         model = ACTModel.from_config(config)
         return ACT(model)
@@ -91,3 +92,40 @@ class TestACTolicy:
         assert isinstance(sample_input, dict)
         assert "state" in sample_input
         assert "images" in sample_input
+
+    def test_load_from_checkpoint(self, policy):
+        """Test checkpoint save and load preserves model config and weights."""
+        # Save checkpoint manually (simulating Lightning checkpoint)
+        with tempfile.NamedTemporaryFile(suffix=".ckpt", delete=False) as f:
+            checkpoint_path = f.name
+
+        try:
+            checkpoint = {"state_dict": policy.state_dict()}
+            policy.on_save_checkpoint(checkpoint)
+            torch.save(checkpoint, checkpoint_path)
+
+            # Load from checkpoint
+            loaded_policy = ACT.load_from_checkpoint(checkpoint_path)
+
+            # Verify model type
+            assert isinstance(loaded_policy.model, ACTModel)
+
+            # Verify config is preserved
+            assert list(loaded_policy.model.config.input_features.keys()) == list(
+                policy.model.config.input_features.keys()
+            )
+            assert list(loaded_policy.model.config.output_features.keys()) == list(
+                policy.model.config.output_features.keys()
+            )
+            assert loaded_policy.model.config.chunk_size == policy.model.config.chunk_size
+
+            # Verify weights are loaded correctly
+            orig_params = list(policy.model.parameters())
+            loaded_params = list(loaded_policy.model.parameters())
+            assert len(orig_params) == len(loaded_params)
+            for orig, loaded in zip(orig_params, loaded_params, strict=True):
+                assert torch.allclose(orig, loaded), "Weights should match after loading"
+
+        finally:
+            import os
+            os.unlink(checkpoint_path)

@@ -3,7 +3,11 @@
 
 """Lightning module for ACT policy."""
 
+from pathlib import Path
+from typing import Any, Self
+
 import torch
+import yaml
 
 from getiaction.data import Dataset, Observation
 from getiaction.export import Export
@@ -12,8 +16,11 @@ from getiaction.policies.act.model import ACT as ACTModel  # noqa: N811
 from getiaction.policies.base import Policy
 from getiaction.train.utils import reformat_dataset_to_match_policy
 
+# Key for storing model config in checkpoint
+_MODEL_CONFIG_KEY = "model_config"
 
-class ACT(Export, Policy):
+
+class ACT(Export, Policy):  # type: ignore[misc]
     """Action Chunking with Transformers (ACT) policy implementation.
 
     This class implements the ACT policy for imitation learning, which uses a transformer-based
@@ -49,8 +56,151 @@ class ACT(Export, Policy):
         """
         super().__init__()
 
-        self.model = model
+        self.model = model  # type: ignore[assignment]
         self.optimizer = optimizer
+
+    @classmethod
+    def from_dataset(
+        cls,
+        dataset: Dataset,
+        config: dict[str, Any] | str | Path | None = None,
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Self:
+        """Create ACT policy from a dataset with eager initialization.
+
+        This factory method extracts features from the dataset and builds the model
+        immediately, making the policy ready for inference without a Trainer.
+
+        Args:
+            dataset: Dataset to extract features from. Must implement
+                `observation_features` and `action_features` properties.
+            config: Optional config dict or path to YAML file for ACTModel.
+                If None, uses default model parameters.
+            **kwargs: Additional keyword arguments to override config parameters.
+
+        Returns:
+            Fully initialized ACT policy ready for inference.
+
+        Examples:
+            Create policy with default parameters:
+
+                >>> from getiaction.policies import ACT
+                >>> policy = ACT.from_dataset(dataset)
+                >>> action = policy.select_action(observation)
+
+            Create policy with custom model parameters:
+
+                >>> policy = ACT.from_dataset(dataset, dim_model=256, chunk_size=50)
+
+            Create policy from YAML config file:
+
+                >>> policy = ACT.from_dataset(dataset, config="configs/act.yaml")
+
+            Create policy with config and overrides:
+
+                >>> policy = ACT.from_dataset(
+                ...     dataset,
+                ...     config="configs/act.yaml",
+                ...     chunk_size=100,  # Override config value
+                ... )
+        """
+        input_features = dataset.observation_features
+        output_features = dataset.action_features
+
+        # Load config if path provided
+        model_kwargs: dict[str, Any] = {}
+        if config is not None:
+            if isinstance(config, (str, Path)):
+                with Path(config).open("r", encoding="utf-8") as f:
+                    model_kwargs = yaml.safe_load(f)
+            else:
+                model_kwargs = dict(config)
+
+        # Merge with kwargs (kwargs override config)
+        model_kwargs.update(kwargs)
+
+        # Build the model
+        model = ACTModel(
+            input_features=input_features,
+            output_features=output_features,
+            **model_kwargs,
+        )
+
+        return cls(model=model)
+
+    @classmethod
+    def load_from_checkpoint(  # type: ignore[override]
+        cls,
+        checkpoint_path: str,
+        map_location: torch.device | str | None = None,
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Self:
+        """Load ACT policy from a Lightning checkpoint.
+
+        This method loads the checkpoint, reconstructs the ACTModel from the saved
+        config, and restores the model weights.
+
+        Args:
+            checkpoint_path: Path to the checkpoint file (.ckpt).
+            map_location: Device to map tensors to. If None, uses default device.
+            **kwargs: Additional arguments passed to the policy constructor.
+
+        Returns:
+            Loaded ACT policy with weights restored, ready for inference.
+
+        Raises:
+            KeyError: If checkpoint doesn't contain required model config.
+
+        Examples:
+            Load checkpoint for inference:
+
+                >>> from getiaction.policies import ACT
+                >>> policy = ACT.load_from_checkpoint("checkpoints/epoch=10.ckpt")
+                >>> action = policy.select_action(observation)
+
+            Load checkpoint to specific device:
+
+                >>> policy = ACT.load_from_checkpoint(
+                ...     "checkpoints/best.ckpt",
+                ...     map_location="cuda:0",
+                ... )
+
+            Load checkpoint to CPU:
+
+                >>> policy = ACT.load_from_checkpoint(
+                ...     "checkpoints/best.ckpt",
+                ...     map_location="cpu",
+                ... )
+        """
+        # Load checkpoint (weights_only=False needed for dataclass deserialization)
+        checkpoint = torch.load(checkpoint_path, map_location=map_location, weights_only=False)  # nosec B614 # nosemgrep
+
+        # Extract model config (stored directly as dataclass, no YAML conversion needed)
+        if _MODEL_CONFIG_KEY not in checkpoint:
+            msg = (
+                f"Checkpoint missing '{_MODEL_CONFIG_KEY}'. "
+                "This checkpoint may have been saved with an older version. "
+                "Please re-train and save a new checkpoint."
+            )
+            raise KeyError(msg)
+
+        config = checkpoint[_MODEL_CONFIG_KEY]
+
+        # Reconstruct model from config
+        model = ACTModel.from_config(config)
+
+        # Create policy instance
+        policy = cls(model=model, **kwargs)
+
+        # Load state dict (model weights + normalizer stats)
+        policy.load_state_dict(checkpoint["state_dict"])
+
+        return policy
+
+    def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        """Save model config to checkpoint for reconstruction."""
+        if self.model is not None and hasattr(self.model, "config"):
+            checkpoint[_MODEL_CONFIG_KEY] = self.model.config
 
     def setup(self, stage: str) -> None:
         """Set up the policy from datamodule if not already initialized.
@@ -70,7 +220,7 @@ class ACT(Export, Policy):
         if self.model is not None:
             return  # Already initialized
 
-        datamodule = self.trainer.datamodule
+        datamodule = self.trainer.datamodule  # type: ignore[union-attr]
         train_dataset = datamodule.train_dataset
 
         # Get the underlying LeRobot dataset - handle both data formats
