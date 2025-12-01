@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from . import lerobot
 from .act import ACT, ACTConfig, ACTModel
 from .dummy import Dummy, DummyConfig
+from .groot import Groot, GrootConfig, GrootModel
 from .lerobot import get_lerobot_policy
 
 if TYPE_CHECKING:
@@ -21,6 +22,9 @@ __all__ = [
     "ACTModel",
     "Dummy",
     "DummyConfig",
+    "Groot",
+    "GrootConfig",
+    "GrootModel",
     "get_getiaction_policy_class",
     "get_policy",
     "lerobot",
@@ -35,7 +39,7 @@ def get_policy(policy_name: str, *, source: str = "getiaction", **kwargs) -> Pol
 
     Args:
         policy_name: Name of the policy to create. Supported values depend on source:
-            - getiaction: "act", "dummy"
+            - getiaction: "act", "dummy", "groot"
             - lerobot: "act", "diffusion", "vqbet", "tdmpc", "sac", "pi0", etc.
         source: Where the policy implementation comes from. Options:
             - "getiaction": First-party implementations (default)
@@ -109,6 +113,8 @@ def get_getiaction_policy_class(policy_name: str) -> type[Policy]:
         return ACT
     if policy_name == "dummy":
         return Dummy
+    if policy_name == "groot":
+        return Groot
 
-    msg = f"Unknown getiaction policy: {policy_name}. Supported policies: act, dummy"
+    msg = f"Unknown getiaction policy: {policy_name}. Supported policies: act, dummy, groot"
     raise ValueError(msg)
