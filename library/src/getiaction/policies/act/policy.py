@@ -175,6 +175,7 @@ class ACT(Export, Policy):  # type: ignore[misc]
         """
         # Load checkpoint - config is stored as plain dict (not dataclass) so
         # default weights_only=True works without needing pickle
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         checkpoint = torch.load(checkpoint_path, map_location=map_location)  # nosec B614
 
         # Extract model config dict and reconstruct ACTConfig dataclass

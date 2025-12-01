@@ -102,6 +102,7 @@ class TestACTolicy:
         try:
             checkpoint = {"state_dict": policy.state_dict()}
             policy.on_save_checkpoint(checkpoint)
+            # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
             torch.save(checkpoint, checkpoint_path)
 
             # Load from checkpoint
