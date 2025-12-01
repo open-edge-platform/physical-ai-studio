@@ -1,15 +1,34 @@
 # Groot (GR00T-N1.5) Policy Training Configuration
-# Train NVIDIA's GR00T-N1.5-3B foundation model using LeRobot's implementation
+# Train NVIDIA's GR00T-N1.5-3B foundation model using LeRobot's implementation.
 #
 # Usage:
 #   getiaction fit --config configs/lerobot/groot.yaml
-#
-# Requirements:
-#   - pip install getiaction[groot]
-#   - Significant GPU memory (>24GB recommended with bf16)
-#
-# Override parameters:
 #   getiaction fit --config configs/lerobot/groot.yaml --model.learning_rate 1e-5
+#
+# ──────────────────────────────────────────────────────────────────────────────
+# MEMORY REQUIREMENTS
+# ──────────────────────────────────────────────────────────────────────────────
+#   Configuration                   VRAM      Hardware
+#   ─────────────────────────────────────────────────────
+#   Projector + Diffusion (default) ~20GB     RTX 3090/4090, A100
+#   LoRA fine-tuning                ~16GB     RTX 3090/4090
+#   Full fine-tuning                ~80GB+    A100-80GB, H100
+#
+# ──────────────────────────────────────────────────────────────────────────────
+# HARDWARE SUPPORT
+# ──────────────────────────────────────────────────────────────────────────────
+#   Device     Supported   Notes
+#   ─────────────────────────────────────────────────────────────
+#   CUDA       ✓           Full support (requires flash-attn)
+#   XPU        ✗           flash-attn has no XPU kernel
+#   CPU        ✗           flash-attn requires GPU
+#   Export     ✗           Custom CUDA kernels not traceable
+#
+# ──────────────────────────────────────────────────────────────────────────────
+# DEPENDENCIES
+# ──────────────────────────────────────────────────────────────────────────────
+#   pip install getiaction[groot]
+#   # This installs: flash-attn, transformers, peft, timm
 
 model:
   class_path: getiaction.policies.lerobot.Groot
