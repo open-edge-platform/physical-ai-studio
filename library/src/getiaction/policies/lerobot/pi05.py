@@ -129,15 +129,15 @@ if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     from lerobot.datasets.utils import dataset_to_policy_features
     from lerobot.policies.factory import make_pre_post_processors
-    from lerobot.policies.pi0.configuration_pi0 import PI0Config as _LeRobotPI0Config
-    from lerobot.policies.pi0.modeling_pi0 import PI0Policy as _LeRobotPI0Policy
+    from lerobot.policies.pi05.configuration_pi05 import PI05Config as _LeRobotPI05Config
+    from lerobot.policies.pi05.modeling_pi05 import PI05Policy as _LeRobotPI05Policy
 
     LEROBOT_AVAILABLE = True
 else:
     LeRobotDataset = None
     dataset_to_policy_features = None
-    _LeRobotPI0Config = None
-    _LeRobotPI0Policy = None
+    _LeRobotPI05Config = None
+    _LeRobotPI05Policy = None
     make_pre_post_processors = None
     LEROBOT_AVAILABLE = False
 
@@ -373,8 +373,6 @@ class Pi05(LeRobotFromConfig, Policy):
             "scheduler_warmup_steps": scheduler_warmup_steps,
             "scheduler_decay_steps": scheduler_decay_steps,
             "scheduler_decay_lr": scheduler_decay_lr,
-            # Pi0.5 specific: enable adaRMS conditioning
-            "use_ada_rms_conditioning": True,
             **kwargs,
         }
 
@@ -383,16 +381,16 @@ class Pi05(LeRobotFromConfig, Policy):
         self._framework = "lerobot"
 
         # Policy will be initialized in setup()
-        self._lerobot_policy: _LeRobotPI0Policy
+        self._lerobot_policy: _LeRobotPI05Policy
 
         self.save_hyperparameters()
 
     @property
-    def lerobot_policy(self) -> _LeRobotPI0Policy:
+    def lerobot_policy(self) -> _LeRobotPI05Policy:
         """Get the initialized LeRobot policy.
 
         Returns:
-            The initialized LeRobot Pi0 policy (with Pi0.5 configuration).
+            The initialized LeRobot Pi0.5 policy.
 
         Raises:
             RuntimeError: If the policy hasn't been initialized yet.
@@ -476,7 +474,7 @@ class Pi05(LeRobotFromConfig, Policy):
         features = dataset_to_policy_features(lerobot_dataset.meta.features)
         dataset_stats = lerobot_dataset.meta.stats
 
-        # Create or update LeRobot Pi0 configuration based on what user provided
+        # Create or update LeRobot Pi0.5 configuration based on what user provided
         if self._config_object is not None:
             # User provided a full config object - update input/output features
             lerobot_config = self._config_object
@@ -484,14 +482,14 @@ class Pi05(LeRobotFromConfig, Policy):
             lerobot_config.output_features = features
         else:
             # User provided dict or explicit args - create config
-            lerobot_config = _LeRobotPI0Config(  # type: ignore[misc]
+            lerobot_config = _LeRobotPI05Config(  # type: ignore[misc]
                 input_features=features,
                 output_features=features,
                 **self._config_kwargs,  # type: ignore[arg-type]
             )
 
         # Initialize the policy
-        policy = _LeRobotPI0Policy(lerobot_config)
+        policy = _LeRobotPI05Policy(lerobot_config)
         self.add_module("_lerobot_policy", policy)
 
         # Enable gradient checkpointing if requested

@@ -676,7 +676,6 @@ requires-dist = [
     { name = "timm", marker = "extra == 'all'", specifier = ">=1.0.0,<1.1.0" },
     { name = "timm", marker = "extra == 'groot'", specifier = ">=1.0.0,<1.1.0" },
     { name = "transformers", marker = "extra == 'all'", specifier = ">=4.53.0,<5.0.0" },
-    { name = "transformers", marker = "extra == 'all'", git = "https://github.com/huggingface/transformers.git?rev=fix%2Flerobot_openpi" },
     { name = "transformers", marker = "extra == 'groot'", specifier = ">=4.53.0,<5.0.0" },
     { name = "transformers", marker = "extra == 'pi'", git = "https://github.com/huggingface/transformers.git?rev=fix%2Flerobot_openpi" },
 ]
