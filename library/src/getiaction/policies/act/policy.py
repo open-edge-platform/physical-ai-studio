@@ -12,6 +12,7 @@ import yaml
 from getiaction.data import Dataset, Observation
 from getiaction.export import Export
 from getiaction.gyms import Gym
+from getiaction.policies.act.config import ACTConfig
 from getiaction.policies.act.model import ACT as ACTModel  # noqa: N811
 from getiaction.policies.base import Policy
 from getiaction.train.utils import reformat_dataset_to_match_policy
@@ -172,11 +173,11 @@ class ACT(Export, Policy):  # type: ignore[misc]
                 ...     map_location="cpu",
                 ... )
         """
-        # Load checkpoint (weights_only=False needed for dataclass deserialization)
-        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
-        checkpoint = torch.load(checkpoint_path, map_location=map_location, weights_only=False)  # nosec B614
+        # Load checkpoint - config is stored as plain dict (not dataclass) so
+        # default weights_only=True works without needing pickle
+        checkpoint = torch.load(checkpoint_path, map_location=map_location)  # nosec B614
 
-        # Extract model config (stored directly as dataclass, no YAML conversion needed)
+        # Extract model config dict and reconstruct ACTConfig dataclass
         if _MODEL_CONFIG_KEY not in checkpoint:
             msg = (
                 f"Checkpoint missing '{_MODEL_CONFIG_KEY}'. "
@@ -185,7 +186,8 @@ class ACT(Export, Policy):  # type: ignore[misc]
             )
             raise KeyError(msg)
 
-        config = checkpoint[_MODEL_CONFIG_KEY]
+        config_dict = checkpoint[_MODEL_CONFIG_KEY]
+        config = ACTConfig.from_dict(config_dict)
 
         # Reconstruct model from config
         model = ACTModel.from_config(config)
@@ -199,9 +201,13 @@ class ACT(Export, Policy):  # type: ignore[misc]
         return policy
 
     def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
-        """Save model config to checkpoint for reconstruction."""
+        """Save model config to checkpoint for reconstruction.
+
+        Converts ACTConfig dataclass to a plain dict for safe serialization.
+        This allows torch.load() to use weights_only=True for security.
+        """
         if self.model is not None and hasattr(self.model, "config"):
-            checkpoint[_MODEL_CONFIG_KEY] = self.model.config
+            checkpoint[_MODEL_CONFIG_KEY] = self.model.config.to_dict()
 
     def setup(self, stage: str) -> None:
         """Set up the policy from datamodule if not already initialized.

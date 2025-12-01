@@ -3,9 +3,13 @@
 
 """ACT policy config."""
 
-from dataclasses import dataclass, field
+from __future__ import annotations
 
-from getiaction.data import Feature
+import dataclasses
+from dataclasses import dataclass, field
+from typing import Any, Self
+
+from getiaction.data import Feature, FeatureType, NormalizationParameters
 
 
 @dataclass(frozen=True)
@@ -107,3 +111,91 @@ class ACTConfig:
     # Training and loss computation.
     dropout: float = 0.1
     kl_weight: float = 10.0
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert ACTConfig to a plain dict for safe serialization.
+
+        Uses dataclasses.asdict() which recursively converts all nested dataclasses
+        (Feature, NormalizationParameters) to dicts, making the result pickle-safe
+        and compatible with weights_only=True in torch.load().
+
+        Returns:
+            Dictionary representation of the config, safe for checkpoint serialization.
+        """
+        config_dict = dataclasses.asdict(self)
+        # Convert FeatureType enums to strings for serialization
+        for features_key in ("input_features", "output_features"):
+            for feature_dict in config_dict[features_key].values():
+                if feature_dict.get("ftype") is not None:
+                    feature_dict["ftype"] = str(feature_dict["ftype"])
+        return config_dict
+
+    @classmethod
+    def from_dict(cls, config_dict: dict[str, Any]) -> Self:
+        """Reconstruct ACTConfig from a plain dict.
+
+        Rebuilds the nested dataclass structure (Feature, NormalizationParameters)
+        from the dict representation saved in checkpoints.
+
+        Args:
+            config_dict: Dictionary representation of ACTConfig.
+
+        Returns:
+            Reconstructed ACTConfig instance.
+        """
+        # Reconstruct Feature objects for input_features
+        input_features = {}
+        for name, feat_dict in config_dict.get("input_features", {}).items():
+            norm_data = feat_dict.get("normalization_data")
+            if norm_data is not None:
+                norm_data = NormalizationParameters(**norm_data)
+            ftype = feat_dict.get("ftype")
+            if ftype is not None:
+                ftype = FeatureType(ftype)
+            input_features[name] = Feature(
+                normalization_data=norm_data,
+                ftype=ftype,
+                shape=tuple(feat_dict["shape"]) if feat_dict.get("shape") else None,
+                name=feat_dict.get("name"),
+            )
+
+        # Reconstruct Feature objects for output_features
+        output_features = {}
+        for name, feat_dict in config_dict.get("output_features", {}).items():
+            norm_data = feat_dict.get("normalization_data")
+            if norm_data is not None:
+                norm_data = NormalizationParameters(**norm_data)
+            ftype = feat_dict.get("ftype")
+            if ftype is not None:
+                ftype = FeatureType(ftype)
+            output_features[name] = Feature(
+                normalization_data=norm_data,
+                ftype=ftype,
+                shape=tuple(feat_dict["shape"]) if feat_dict.get("shape") else None,
+                name=feat_dict.get("name"),
+            )
+
+        # Build ACTConfig with reconstructed features
+        return cls(
+            input_features=input_features,
+            output_features=output_features,
+            n_obs_steps=config_dict.get("n_obs_steps", 1),
+            chunk_size=config_dict.get("chunk_size", 100),
+            n_action_steps=config_dict.get("n_action_steps", 100),
+            vision_backbone=config_dict.get("vision_backbone", "resnet18"),
+            pretrained_backbone_weights=config_dict.get("pretrained_backbone_weights"),
+            replace_final_stride_with_dilation=config_dict.get("replace_final_stride_with_dilation", False),
+            pre_norm=config_dict.get("pre_norm", False),
+            dim_model=config_dict.get("dim_model", 512),
+            n_heads=config_dict.get("n_heads", 8),
+            dim_feedforward=config_dict.get("dim_feedforward", 3200),
+            feedforward_activation=config_dict.get("feedforward_activation", "relu"),
+            n_encoder_layers=config_dict.get("n_encoder_layers", 4),
+            n_decoder_layers=config_dict.get("n_decoder_layers", 1),
+            use_vae=config_dict.get("use_vae", True),
+            latent_dim=config_dict.get("latent_dim", 32),
+            n_vae_encoder_layers=config_dict.get("n_vae_encoder_layers", 4),
+            temporal_ensemble_coeff=config_dict.get("temporal_ensemble_coeff"),
+            dropout=config_dict.get("dropout", 0.1),
+            kl_weight=config_dict.get("kl_weight", 10.0),
+        )
