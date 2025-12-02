@@ -1,0 +1,51 @@
+name: Documentation
+description: Improvements or additions to documentation
+title: "[Docs]: "
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Help us improve the documentation.
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Type
+      description: What kind of documentation change?
+      options:
+        - New documentation
+        - Update existing docs
+        - Fix incorrect information
+        - Improve clarity
+        - Add examples
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What documentation needs to change?
+      placeholder: |
+        Describe what's missing, incorrect, or unclear.
+    validations:
+      required: true
+
+  - type: input
+    id: location
+    attributes:
+      label: Location
+      description: File path or URL of the documentation
+      placeholder: "docs/developer_guide.md or README.md"
+    validations:
+      required: false
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested Changes
+      description: Your proposed content or improvements
+    validations:
+      required: false

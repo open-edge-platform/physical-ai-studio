@@ -1,0 +1,70 @@
+name: Task
+description: A specific piece of work to be done
+title: "[Task]: "
+labels: ["task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Tasks are concrete, actionable work items.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What needs to be done?
+      placeholder: |
+        Clear description of the task.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of the project does this affect?
+      options:
+        - Library (VLA framework)
+        - Backend (FastAPI server)
+        - UI (React frontend)
+        - CI/CD
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: How do we know this is done?
+      placeholder: |
+        - [ ] Criterion 1
+        - [ ] Criterion 2
+    validations:
+      required: true
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Implementation Notes
+      description: Technical details, approach, or files to modify
+    validations:
+      required: false
+
+  - type: input
+    id: parent
+    attributes:
+      label: Parent Epic
+      description: Link to parent epic if applicable
+      placeholder: "#123"
+    validations:
+      required: false
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Blocked by or blocks other tasks?
+    validations:
+      required: false
