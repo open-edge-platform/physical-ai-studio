@@ -1,9 +1,8 @@
-# ACT Policy Training Configuration
-# Train Action Chunking Transformer
+# ACT Policy Training Configuration (XPU)
+# Train Action Chunking Transformer on Intel XPU
 #
 # Usage:
-#   getiaction fit --config configs/act.yaml
-#
+#   getiaction fit --config configs/getiaction/act_xpu.yaml
 
 model:
   class_path: getiaction.policies.ACT
@@ -31,7 +30,8 @@ data:
 
 trainer:
   max_epochs: 100
-  accelerator: gpu
+  accelerator: xpu
+  strategy: xpu_single
   devices: 1
   precision: 32
   log_every_n_steps: 100

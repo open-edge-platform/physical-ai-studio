@@ -6,8 +6,18 @@ PyTorch Lightning wrappers for
 ## Installation
 
 ```bash
-uv pip install getiaction[lerobot]
+# Base installation (ACT, Diffusion, VQBeT, TDMPC, SAC)
+pip install getiaction
+
+# With Groot (NVIDIA GR00T-N1) support
+pip install getiaction[groot]
+
+# Everything
+pip install getiaction[all]
 ```
+
+> **Note**: Groot has heavy dependencies including transformers, flash-attn,
+> and peft. Only install if needed.
 
 ## Quick Start
 
@@ -22,17 +32,32 @@ trainer.fit(policy, datamodule)
 
 ## Available Policies
 
-### Explicit Wrappers
+### Explicit Wrappers (Full IDE Support)
 
-- **ACT** - Action Chunking Transformer (full IDE support)
-- **Diffusion** - Diffusion Policy (full IDE support)
+- **ACT** - Action Chunking Transformer
+- **Diffusion** - Diffusion Policy
+- **Groot** - NVIDIA GR00T-N1 Foundation Model
 
 ### Universal Wrapper
 
-- **LeRobotPolicy** - All 9 LeRobot policies via `policy_name`
-  parameter
+- **LeRobotPolicy** - All LeRobot policies via `policy_name` parameter
 - **Convenience Aliases**: `VQBeT()`, `TDMPC()`, `SAC()`, `PI0()`,
   `PI05()`, `PI0Fast()`, `SmolVLA()`
+
+### Supported Policies
+
+| Policy      | Type      | Description                          |
+| ----------- | --------- | ------------------------------------ |
+| `act`       | Explicit  | Action Chunking Transformer          |
+| `diffusion` | Explicit  | Diffusion Policy                     |
+| `groot`     | Explicit  | NVIDIA GR00T-N1 VLA Foundation Model |
+| `vqbet`     | Universal | VQ-BeT (VQ-VAE Behavior Transformer) |
+| `tdmpc`     | Universal | TD-MPC (Temporal Difference MPC)     |
+| `sac`       | Universal | Soft Actor-Critic                    |
+| `pi0`       | Universal | Vision-Language Policy               |
+| `pi05`      | Universal | PI0.5 (Improved PI0)                 |
+| `pi0fast`   | Universal | Fast Inference PI0                   |
+| `smolvla`   | Universal | Small Vision-Language-Action         |
 
 ## Features
 
@@ -40,6 +65,48 @@ trainer.fit(policy, datamodule)
 - ✅ Full PyTorch Lightning integration
 - ✅ Thin wrapper pattern (no reimplementation)
 - ✅ All LeRobot features accessible via `policy.lerobot_policy`
+- ✅ Support for VLA (Vision-Language-Action) models
+
+## Examples
+
+### Using Groot (VLA Foundation Model)
+
+```python
+from getiaction.policies.lerobot import Groot
+from getiaction.data.lerobot import LeRobotDataModule
+from getiaction.train import Trainer
+
+# Create Groot policy with fine-tuning settings
+policy = Groot(
+    chunk_size=50,
+    n_action_steps=50,
+    tune_projector=True,
+    tune_diffusion_model=True,
+    lora_rank=16,  # Enable LoRA fine-tuning
+)
+
+# Create datamodule
+datamodule = LeRobotDataModule(
+    repo_id="lerobot/pusht",
+    train_batch_size=8,
+)
+
+# Train
+trainer = Trainer(max_epochs=100)
+trainer.fit(policy, datamodule)
+```
+
+### Using Universal Wrapper
+
+```python
+from getiaction.policies.lerobot import LeRobotPolicy
+
+# Use any LeRobot policy by name
+policy = LeRobotPolicy(
+    policy_name="vqbet",
+    learning_rate=1e-4,
+)
+```
 
 ## Documentation
 

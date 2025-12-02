@@ -278,11 +278,11 @@ policy = LeRobotPolicy(
 
 ```bash
 # Train with config
-getiaction fit --config configs/lerobot_act.yaml
+getiaction fit --config configs/lerobot/act.yaml
 
 # Override parameters
 getiaction fit \
-  --config configs/lerobot_act.yaml \
+  --config configs/lerobot/act.yaml \
   --model.dim_model 1024 \
   --trainer.max_epochs 200
 ```
@@ -444,7 +444,7 @@ policy = ACT.from_lerobot_config(
 
 ### Configuration Tips
 
-1. **Start with simple configs**: Use `lerobot_act.yaml` for quick testing
+1. **Start with simple configs**: Use `lerobot/act.yaml` for quick testing
 2. **Choose data format wisely**: See [Data Integration](../data/lerobot.md)
    for format details
 3. **Copy from LeRobot examples**: Most configs can be adapted directly
@@ -464,11 +464,13 @@ For detailed information about data formats and conversion, see the dedicated
 ### Why This Works
 
 1. **Thin Delegation Pattern**:
+
    - Wrapper only adds Lightning interface
    - All computation delegated to LeRobot
    - Zero computational overhead
 
 2. **Weight Preservation**:
+
    - Direct attribute access to `lerobot_policy`
    - State dict operations pass through
    - Checkpointing works seamlessly

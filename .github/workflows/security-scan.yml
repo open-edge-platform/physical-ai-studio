@@ -48,7 +48,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Run Zizmor scan
-        uses: open-edge-platform/geti-ci/actions/zizmor@6e7e8393869d05112f727d235acb644ed362c58f
+        uses: open-edge-platform/geti-ci/actions/zizmor@829f7148f9f70bd4ffbb367f7374d78c32aef2a2
         with:
           scan-scope: "all"
           severity-level: "LOW"
@@ -66,7 +66,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Run Bandit scan
-        uses: open-edge-platform/geti-ci/actions/bandit@6e7e8393869d05112f727d235acb644ed362c58f
+        uses: open-edge-platform/geti-ci/actions/bandit@829f7148f9f70bd4ffbb367f7374d78c32aef2a2
         with:
           scan-scope: "all"
           severity-level: "LOW"
@@ -86,7 +86,7 @@ jobs:
           persist-credentials: false
       - name: Run Trivy scan
         id: trivy
-        uses: open-edge-platform/geti-ci/actions/trivy@6e7e8393869d05112f727d235acb644ed362c58f
+        uses: open-edge-platform/geti-ci/actions/trivy@829f7148f9f70bd4ffbb367f7374d78c32aef2a2
         with:
           scan_type: "fs"
           scan-scope: all
@@ -106,11 +106,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Run Semgrep scan
-        uses: open-edge-platform/geti-ci/actions/semgrep@6e7e8393869d05112f727d235acb644ed362c58f
+        uses: open-edge-platform/geti-ci/actions/semgrep@829f7148f9f70bd4ffbb367f7374d78c32aef2a2
         with:
           scan-scope: "all"
           severity: "LOW"
           fail-on-findings: false # reports only
-          config: "p/ci p/default p/cwe-top-25 p/trailofbits p/owasp-top-ten"
           output-format: "text" # Use plain text output format to omit uploading code scanning results to Security tab
-          exclude: "*.lock,uv.lock"

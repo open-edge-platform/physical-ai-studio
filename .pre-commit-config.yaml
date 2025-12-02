@@ -1,0 +1,38 @@
+# Copyright (C) 2025 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+# Root pre-commit configuration for prek workspace mode
+# This config contains universal hooks that apply to all files in the repository.
+# Project-specific hooks are defined in:
+#   - library/.pre-commit-config.yaml
+#   - application/backend/.pre-commit-config.yaml
+
+default_language_version:
+  node: 22.10.0
+
+repos:
+  # ========================================================================== #
+  # UNIVERSAL HOOKS (apply to all files)                                       #
+  # ========================================================================== #
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        exclude: uv\.lock$
+      - id: detect-private-key
+      - id: check-merge-conflict
+      - id: check-case-conflict
+
+  # ========================================================================== #
+  # DOCUMENTATION FORMATTING (root-level docs)                                 #
+  # ========================================================================== #
+  - repo: https://github.com/rbubley/mirrors-prettier
+    rev: v3.5.3
+    hooks:
+      - id: prettier
+        types_or: [markdown, yaml, json]
+        # Exclude project-specific files that are handled by their own configs
+        exclude: ^(library/|application/)
