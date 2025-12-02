@@ -205,14 +205,29 @@ class InferenceModel:
 
         Returns:
             Dictionary mapping input names to numpy arrays
+
+        Raises:
+            ValueError: If required model inputs are missing from observation
         """
         import numpy as np  # noqa: PLC0415
 
-        # Convert observation to dict format
-        obs_dict = observation.to_dict()
+        # Convert observation to numpy arrays using unified .to() API
+        obs_numpy = observation.to_numpy()
 
-        # Get model input names from adapter
-        expected_inputs = set(self.adapter.input_names)
+        # Convert observation to dict format
+        obs_dict = obs_numpy.to_dict()
+
+        # Get model input names - prefer metadata over adapter when available
+        # Metadata contains semantic names (e.g., "observation_state")
+        # Adapter may return internal node names for some backends (e.g., OpenVINO Cast nodes)
+        if "input_names" in self.metadata:
+            expected_input_names = self.metadata["input_names"]
+            adapter_input_names = list(self.adapter.input_names)
+        else:
+            expected_input_names = list(self.adapter.input_names)
+            adapter_input_names = expected_input_names
+
+        expected_inputs = set(expected_input_names)
 
         # Build mapping from observation fields to expected input names
         # This handles different naming conventions:
@@ -220,7 +235,7 @@ class InferenceModel:
         # - LeRobot: "state", "images" -> "observation.state", "observation.image"
         field_mapping = self._build_field_mapping(obs_dict, expected_inputs)
 
-        # Convert torch tensors to numpy using the mapping
+        # Build inputs using the mapping
         inputs = {}
         for obs_key, model_key in field_mapping.items():
             value = obs_dict[obs_key]
@@ -238,14 +253,24 @@ class InferenceModel:
                 else:
                     continue
 
-            # Convert to numpy
-            if isinstance(value, torch.Tensor):
-                inputs[model_key] = value.cpu().numpy()
-            elif isinstance(value, np.ndarray):
+            # Add to inputs (already numpy arrays after to_numpy())
+            if isinstance(value, np.ndarray):
                 inputs[model_key] = value
             else:
                 # Handle nested structures if needed
                 inputs[model_key] = np.array(value)
+
+        # Validate all expected inputs are present
+        missing_inputs = expected_inputs - set(inputs.keys())
+        if missing_inputs:
+            available_fields = list(obs_dict.keys())
+            msg = f"Missing required model inputs: {missing_inputs}. Available observation fields: {available_fields}"
+            raise ValueError(msg)
+
+        # If adapter uses different names (e.g., OpenVINO Cast nodes), map by position
+        if expected_input_names != adapter_input_names:
+            # Reorder inputs to match expected order, then use adapter input names (indices)
+            return {adapter_input_names[i]: inputs[expected_input_names[i]] for i in range(len(expected_input_names))}
 
         return inputs
 
@@ -264,11 +289,25 @@ class InferenceModel:
         """
         mapping = {}
 
+        # Dummy matching for exact matches
+        mapping = {key: key for key in obs_dict if key in expected_inputs}
+
+        if len(mapping) == len(expected_inputs):
+            return mapping
+
         # Common observation fields with their possible model input names
         # Supports both first-party (e.g., "state") and LeRobot (e.g., "observation.state") conventions
+        # NOTE: ONNX converts dots to underscores in input names
         obs_fields = {
-            STATE: [STATE, f"observation.{STATE}"],
-            IMAGES: [IMAGES, "image", "observation.image", f"observation.{IMAGES}"],
+            STATE: [STATE, f"observation.{STATE}", f"observation_{STATE}"],
+            IMAGES: [
+                IMAGES,
+                "image",
+                "observation.image",
+                f"observation.{IMAGES}",
+                "observation_image",
+                f"observation_{IMAGES}",
+            ],
             ACTION: [ACTION],
         }
 

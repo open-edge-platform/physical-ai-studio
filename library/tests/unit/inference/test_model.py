@@ -377,11 +377,12 @@ class TestInputPreparation:
         with patch("getiaction.inference.model.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
 
-            obs = Observation(state=torch.randn(1, 4), images=None)
+            obs = Observation(state=torch.randn(1, 4), images=torch.randn(1, 3, 224, 224), action=None)
             inputs = model._prepare_inputs(obs)
 
             assert "state" in inputs
-            assert "images" not in inputs
+            assert "images" in inputs
+            assert "action" not in inputs
 
     def test_prepare_inputs_numpy_passthrough(
         self,
@@ -428,6 +429,33 @@ class TestFieldMapping:
         """Test field mapping handles different naming conventions."""
         mapping = InferenceModel._build_field_mapping(obs_fields, model_inputs)
         assert mapping == expected
+
+    def test_exact_match_first_party(self) -> None:
+        """Test exact matches for first-party naming convention."""
+        obs_dict = {
+            "state": np.array([1.0, 2.0]),
+            "images": [np.random.randn(3, 224, 224)],
+        }
+        expected_inputs = {"state", "images"}
+
+        mapping = InferenceModel._build_field_mapping(obs_dict, expected_inputs)
+
+        assert mapping == {"state": "state", "images": "images"}
+
+    def test_exact_match_lerobot(self) -> None:
+        """Test exact matches for LeRobot naming convention."""
+        obs_dict = {
+            "state": np.array([1.0, 2.0]),
+            "images": [np.random.randn(3, 224, 224)],
+        }
+        expected_inputs = {"observation.state", "observation.image"}
+
+        mapping = InferenceModel._build_field_mapping(obs_dict, expected_inputs)
+
+        assert mapping == {
+            "state": "observation.state",
+            "images": "observation.image",
+        }
 
 
 class TestActionOutputKey:

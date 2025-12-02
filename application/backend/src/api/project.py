@@ -111,7 +111,7 @@ async def get_tasks_for_dataset(
     """Get all dataset tasks of a project."""
     project = await project_service.get_project_by_id(project_id)
     return {
-        dataset.name: list(LeRobotDatasetMetadata(dataset.name, dataset.path).tasks.values())
+        dataset.name: list(LeRobotDatasetMetadata(dataset.name, dataset.path).tasks.to_dict()["task_index"].keys())
         for dataset in project.datasets
         if check_repository_exists(Path(dataset.path))
     }

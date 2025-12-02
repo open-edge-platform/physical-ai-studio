@@ -40,18 +40,16 @@
   packageRules: [
     // Disable non-security upgrades for pypi, except lock file update
     {
-      matchDatasources: ["pypi"],
-
       enabled: false,
+      matchDatasources: ["pypi"],
     },
 
     // Python version in TOML is updated manually
     {
+      enabled: false,
       matchDatasources: ["python-version"],
       matchDepTypes: ["requires-python"],
       matchDepNames: ["python"],
-
-      enabled: false,
     },
 
     // Group GitHub Actions updates
@@ -61,6 +59,7 @@
       groupName: "GitHub Actions",
       matchManagers: ["github-actions"],
       matchPackagePatterns: ["*"],
+      schedule: ["* * 1,15 * *"], // twice a month
     },
 
     // uv version used in GitHub Actions is updated manually
@@ -79,24 +78,23 @@
       matchDepTypes: ["uses-with"],
     },
 
-    // Github Actions remove mcr.microsoft.com/playwright from update
+    // Disable mcr.microsoft.com/playwright image upgrades, except digital pinning,
     {
-      matchManagers: ["github-actions"],
-      matchDepNames: ["mcr.microsoft.com/playwright"],
-
       enabled: false,
+      matchManagers: ["github-actions"],
+      matchDepTypes: ["container"],
+      matchDepNames: ["mcr.microsoft.com/playwright"],
+      matchUpdateTypes: ["major", "minor", "patch"],
     },
 
-    // Group Docker base images updates
+    // Group container images updates
     {
-      groupName: "Docker base images",
-
-      matchManagers: ["dockerfile"],
-      matchDatasources: ["docker"],
-      // Group all base images into one PR
-      matchPackagePatterns: ["*"],
-
       enabled: true,
+      matchDatasources: ["docker"],
+      matchManagers: ["dockerfile"],
+      pinDigests: true,
+      groupName: "Container images",
+      schedule: ["* * * * 0"], // weekly
     },
 
     // Disable docker.io/astral/uv image upgrades, except digital pinning,
@@ -115,19 +113,18 @@
       matchUpdateTypes: ["major", "minor"],
     },
 
-    // Disable non-security upgrades for npm, except lock file update
+    // Disable non-security and lock file upgrades for npm
+    // Lock is updated manually
     {
-      matchDatasources: ["npm"],
-
       enabled: false,
+      matchManagers: ["npm"],
     },
 
     // NPM version in package.json is updated manually
     {
+      enabled: false,
       matchDatasources: ["node-version"],
       matchDepNames: ["node"],
-
-      enabled: false,
     },
   ],
 

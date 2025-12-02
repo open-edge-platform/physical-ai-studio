@@ -1,15 +1,11 @@
-# Data
+# Data Module
 
-```mermaid
-graph TD
-    A["action_trainer"]
-    A --> B["data/ <br/> Data"]
-    B --> C["__init__.py"]
-    B --> D["dataset.py"]
-    B --> E["observation.py"]
-    B --> F["datamodules.py"]
-    B --> G["gym.py"]
-    B --> H["lerobot.py"]
-```
+Dataset management and data loading for robot learning.
 
-This section describes the design for the action_trainer.data module.
+## Components
+
+- `dataset.py` - Dataset implementations
+- `observation.py` - Observation processing
+- `datamodules.py` - PyTorch Lightning data modules
+- `gym.py` - Gym environment data loading
+- `lerobot.py` - LeRobot dataset integration

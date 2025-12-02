@@ -1,111 +1,53 @@
-# Instantiation System
+# Instantiation
 
-The `instantiate.py` module provides the core functionality for creating
-objects from configurations.
+Core functions for creating objects from configurations.
 
-## Class Diagram
-
-```mermaid
-classDiagram
-    class instantiate_obj {
-        +instantiate_obj(config, key)
-        Returns object
-    }
-
-    class instantiate_obj_from_dict {
-        +instantiate_obj_from_dict(config, key)
-        Returns object
-    }
-
-    class instantiate_obj_from_pydantic {
-        +instantiate_obj_from_pydantic(config, key)
-        Returns object
-    }
-
-    class instantiate_obj_from_dataclass {
-        +instantiate_obj_from_dataclass(config, key)
-        Returns object
-    }
-
-    class instantiate_obj_from_file {
-        +instantiate_obj_from_file(path, key)
-        Returns object
-    }
-
-    class _import_class {
-        +_import_class(class_path)
-        Returns Type
-    }
-
-    instantiate_obj --> instantiate_obj_from_dict
-    instantiate_obj --> instantiate_obj_from_pydantic
-    instantiate_obj --> instantiate_obj_from_dataclass
-
-    instantiate_obj_from_dict --> _import_class
-    instantiate_obj_from_pydantic --> instantiate_obj_from_dict
-    instantiate_obj_from_dataclass --> instantiate_obj_from_dict
-    instantiate_obj_from_file --> instantiate_obj
-```
-
-## Core Functions
-
-### `_import_class(class_path: str) -> type`
-
-Internal function that imports a class from a dotted path string.
+## Functions
 
 ```python
-# Example
-cls = _import_class("torch.optim.Adam")
-# Returns: <class 'torch.optim.Adam'>
+def instantiate_obj(config, key: str | None = None) -> object:
+    """Universal instantiator (auto-detects config type)."""
+
+def instantiate_obj_from_dict(config: dict, key: str | None = None) -> object:
+    """Create from dictionary with class_path."""
+
+def instantiate_obj_from_pydantic(config: BaseModel, key: str | None = None) -> object:
+    """Create from Pydantic model."""
+
+def instantiate_obj_from_dataclass(config: object, key: str | None = None) -> object:
+    """Create from dataclass."""
+
+def instantiate_obj_from_file(path: Path, key: str | None = None) -> object:
+    """Create from YAML/JSON file."""
 ```
 
-**Error Handling:**
-
-- Raises `ImportError` if module or class doesn't exist
-- Provides clear error messages with the failing import path
-
-### `instantiate_obj_from_dict(config: dict, key: str | None = None) -> object`
-
-Creates objects from dictionary configurations using the `class_path` pattern.
+## Usage
 
 ```python
+# From dict
 config = {
     "class_path": "torch.optim.Adam",
-    "init_args": {
-        "lr": 0.001,
-        "betas": [0.9, 0.999]
-    }
+    "init_args": {"lr": 0.001}
 }
 optimizer = instantiate_obj_from_dict(config)
+
+# From file
+model = instantiate_obj_from_file("config.yaml")
+
+# Auto-detect
+obj = instantiate_obj(any_config)
 ```
 
-**Key Features:**
+## Features
 
-1. **Nested Instantiation**: Recursively instantiates nested objects
-2. **Key Extraction**: Can extract specific keys from config
-3. **Validation**: Checks for required `class_path` key
+- Nested instantiation (recursively creates nested objects)
+- Key extraction from nested configs
+- Type validation
+- Clear error messages
 
-**Flow Diagram:**
+## Examples
 
-```mermaid
-sequenceDiagram
-    participant Config
-    participant Function
-    participant Import
-    participant Class
-
-    Config->>Function: dict with class_path
-    Function->>Function: Extract key if specified
-    Function->>Function: Get class_path and init_args
-    Function->>Import: Import class
-    Import-->>Function: Class type
-    Function->>Function: Process init_args (recursive)
-    Function->>Class: Instantiate with args
-    Class-->>Function: Object instance
-    Function-->>Config: Return object
-```
-
-### `instantiate_obj_from_pydantic(config: BaseModel, key: str | None = None`
+### From Pydantic
 
 Creates objects from Pydantic model configurations.
 

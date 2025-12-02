@@ -1,31 +1,21 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+# Library-specific pre-commit configuration for prek workspace mode
+# This config applies only to files in library/
+
 default_language_version:
   node: 22.10.0
-  # python version will be determined by the environment
 
 repos:
   # ========================================================================== #
-  # UNIVERSAL HOOKS                                                            #
+  # PYTHON CHECKS                                                              #
   # ========================================================================== #
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
-      - id: trailing-whitespace
-        files: ^library/
-      - id: end-of-file-fixer
-        files: ^library/
-      - id: check-yaml
-        files: ^library/
-      - id: check-added-large-files
-        files: ^library/
       - id: debug-statements
-        files: ^library/.*\.py$
-      - id: detect-private-key
-        files: ^library/
       - id: check-ast
-        files: ^library/.*\.py$
 
   # ========================================================================== #
   # PYTHON LINTING & FORMATTING                                                #
@@ -33,13 +23,12 @@ repos:
   - repo: https://github.com/charliermarsh/ruff-pre-commit
     rev: "v0.12.11"
     hooks:
-      # Run the linter with fixes
+      # Run the linter with fixes (uses [tool.ruff] from pyproject.toml)
       - id: ruff
-        args: ["--fix"]
-        files: ^library/.*\.py$
-      # Run the formatter
+        args: ["--config=pyproject.toml", "--fix"]
+      # Run the formatter (uses [tool.ruff] from pyproject.toml)
       - id: ruff-format
-        files: ^library/.*\.py$
+        args: ["--config=pyproject.toml"]
 
   # ========================================================================== #
   # PYTHON TYPE CHECKING                                                       #
@@ -48,34 +37,31 @@ repos:
     rev: "v1.17.1"
     hooks:
       - id: mypy
+        # Uses [tool.mypy] from pyproject.toml
+        args: ["--config-file=pyproject.toml"]
         additional_dependencies: [types-PyYAML, types-setuptools]
-        files: ^library/.*\.py$
-        args: [--config-file=pyproject.toml, --ignore-missing-imports]
 
   # ========================================================================== #
-  # SECURITY LINTING (Configured for tests)                                    #
+  # SECURITY LINTING                                                           #
   # ========================================================================== #
   - repo: https://github.com/PyCQA/bandit
     rev: "1.8.0"
     hooks:
       - id: bandit
-        files: ^library/.*\.py$
-        # Use bandit config from pyproject.toml, skip assert warnings in tests
-        args: ["-c", "pyproject.toml", "-ll"]
+        # Uses [tool.bandit] from pyproject.toml
+        args: ["--configfile=pyproject.toml", "-ll"]
 
   # ========================================================================== #
   # DOCUMENTATION & FORMATTING                                                 #
   # ========================================================================== #
   - repo: https://github.com/rbubley/mirrors-prettier
-    rev: v3.6.2
+    rev: v3.5.3
     hooks:
       - id: prettier
         types_or: [markdown, yaml, json]
-        files: ^library/
 
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.45.0
     hooks:
       - id: markdownlint
         args: ["--fix"]
-        files: ^library/.*\.md$

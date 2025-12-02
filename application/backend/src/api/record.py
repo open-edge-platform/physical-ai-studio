@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/record")
 
 
 @router.websocket("/teleoperate/ws")
-async def teleoperate_websocket(  # noqa: C901
+async def teleoperate_websocket(
     websocket: WebSocket,
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
     scheduler: Annotated[Scheduler, Depends(get_scheduler_ws)],
@@ -83,7 +83,7 @@ async def teleoperate_websocket(  # noqa: C901
 
 
 @router.websocket("/inference/ws")
-async def inference_websocket(  # noqa: C901
+async def inference_websocket(
     websocket: WebSocket,
     scheduler: Annotated[Scheduler, Depends(get_scheduler_ws)],
 ) -> None:
