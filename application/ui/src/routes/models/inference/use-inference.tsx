@@ -19,8 +19,8 @@ interface InferenceApiJsonResponse<Object> {
 
 export interface Observation {
     timestamp: number;
-    state: { [key: string]: number }; // robot state
-    actions: { [key: string]: number }; // actions suggested by inference
+    state: { [joint: string]: number }; // robot joint state before inference
+    actions: { [joint: string]: number }; // joint actions suggested by inference
     cameras: { [key: string]: string };
 }
 

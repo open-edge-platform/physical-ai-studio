@@ -12,6 +12,8 @@ import { CameraView } from '../../datasets/camera-view';
 import { useInference } from './use-inference';
 import { useInferenceParams } from './use-inference-params';
 
+const SO_101_JOINT_NAMES = ['shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex', 'wrist_roll', 'gripper'];
+
 interface InferenceViewerProps {
     config: SchemaInferenceConfig;
 }
@@ -28,10 +30,8 @@ export const InferenceViewer = ({ config }: InferenceViewerProps) => {
 
     const { startTask, stop, state, observation } = useInference(config);
 
-    // TODO: Remove hardcoded joints for this robot
     const formatActionDictToArray = (actions: { [key: string]: number }): number[] => {
-        const jointNames = ['shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex', 'wrist_roll', 'gripper'];
-        return jointNames.map((name) => actions[`${name}.pos`]);
+        return SO_101_JOINT_NAMES.map((name) => actions[`${name}.pos`]);
     };
 
     const actions = observation.current === undefined ? undefined : formatActionDictToArray(observation.current.state);

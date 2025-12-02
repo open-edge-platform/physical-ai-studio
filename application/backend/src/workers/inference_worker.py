@@ -20,6 +20,15 @@ from utils.robot import make_lerobot_robot_config_from_robot
 
 from .base import BaseThreadWorker
 
+SO_101_REST_POSITION = {
+    "shoulder_pan.pos": -2,
+    "shoulder_lift.pos": -90,
+    "elbow_flex.pos": 100,
+    "wrist_flex.pos": 60,
+    "wrist_roll.pos": 0,
+    "gripper.pos": 25,
+}
+
 
 class InferenceWorker(BaseThreadWorker):
     ROLE: str = "InferenceWorker"
@@ -78,14 +87,6 @@ class InferenceWorker(BaseThreadWorker):
         # TODO: Define this somehow
         # LeRobot tends to return the robot arm to root position on reset.
         # This seems to work better for act when I change the environment mid inference
-        self.root_position_action = {
-            "shoulder_pan.pos": -2.271006813020435,
-            "shoulder_lift.pos": -98.08027923211169,
-            "elbow_flex.pos": 99.37527889335118,
-            "wrist_flex.pos": 67.34527687296418,
-            "wrist_roll.pos": -13.406593406593402,
-            "gripper.pos": 27.128953771289538,
-        }
 
         # After setting up the robot, instantiate the FrameSource using a bridge
         # This can be done directly once switched over to LeRobotDataset V3.
@@ -93,7 +94,7 @@ class InferenceWorker(BaseThreadWorker):
         self.robot.cameras = {camera.name: FrameSourceCameraBridge(camera) for camera in self.config.cameras}
         self.robot.connect()
 
-        self.robot.send_action(self.root_position_action)
+        self.robot.send_action(SO_101_REST_POSITION)
 
         self.action_keys = [f"{key}.pos" for key in self.robot.bus.sync_read("Present_Position")]
         self.camera_keys = [camera.name for camera in self.config.cameras]
@@ -117,7 +118,7 @@ class InferenceWorker(BaseThreadWorker):
             if self.events["start"].is_set():
                 logger.info("start")
                 self.events["start"].clear()
-                self.robot.send_action(self.root_position_action)
+                self.robot.send_action(SO_101_REST_POSITION)
                 busy_wait(0.3)  # TODO check if neccesary
                 self.is_running = True
                 start_episode_t = time.perf_counter()
@@ -203,6 +204,7 @@ class InferenceWorker(BaseThreadWorker):
         for name in self.camera_keys:
             frame = robot_observation[name]
 
+            # change image to 0..1 and swap R & B channels.
             images[name] = torch.from_numpy(frame)
             images[name] = images[name].float() / 255
             images[name] = images[name].permute(2, 0, 1).contiguous()
