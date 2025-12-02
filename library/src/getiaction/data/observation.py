@@ -187,6 +187,24 @@ class Observation:
         """
         return [f.name for f in fields(cls)]
 
+    @property
+    def batch_size(self) -> int:
+        """Infer the batch size from the first tensor in the observation.
+
+        Returns:
+            The inferred batch size.
+
+        Raises:
+            ValueError: If no tensor is found in the observation.
+        """
+        from .utils import infer_batch_size  # noqa: PLC0415
+
+        try:
+            return infer_batch_size(self)
+        except ValueError as e:
+            msg = f"Unable to infer batch size: {e}"
+            raise ValueError(msg) from e
+
     def values(self) -> list[Any]:
         """Return list of all field values (including None).
 

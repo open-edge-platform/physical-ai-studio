@@ -4,14 +4,19 @@ Simulation environments for policy evaluation.
 
 ## Components
 
-- `base.py` - Base gym interface
-- `pusht.py` - PushT environment implementation
+- base.py — abstract Gym API
+- gymnasium_gym.py — Gymnasium backend adapter
+- pusht.py — PushT environment wrapper
+- types.py — shared type aliases
+- step_limit.py — termination wrapper
 
 ## Structure
 
 ```bash
-gyms/
-├── __init__.py
+src/getiaction/gyms/
 ├── base.py
-└── pusht.py
+├── gymnasium_gym.py
+├── pusht.py
+├── step_limit.py
+└── types.py
 ```

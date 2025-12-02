@@ -31,9 +31,19 @@ class Dummy(Export, Policy):
         super().__init__()
         self.config = config
         self.action_shape = self._validate_action_shape(self.config.action_shape)
+        self.action_dtype = self._validate_dtype(self.config.action_dtype)
+        self.action_min, self.action_max = self._validate_min_max(
+            min_=self.config.action_min,
+            max_=self.config.action_max,
+        )
 
         # model
-        self.model = DummyModel(self.action_shape)
+        self.model = DummyModel(
+            action_shape=self.action_shape,
+            action_dtype=self.action_dtype,
+            action_min=self.action_min,
+            action_max=self.action_max,
+        )
 
     @staticmethod
     def _validate_action_shape(shape: list | tuple) -> list | tuple:
@@ -66,6 +76,83 @@ class Dummy(Export, Policy):
         msg = f"The 'action_shape' argument must be a list or tuple, but received type {type(shape).__name__}."
         raise TypeError(msg)
 
+    @staticmethod
+    def _validate_dtype(dtype: torch.dtype | str | None) -> torch.dtype:
+        """Validate and resolve dtype.
+
+        Args:
+            dtype: The dtype to validate. May be a ``torch.dtype`` instance,
+                a string representing a dtype (e.g., ``"float32"``,
+                ``"double"``, ``"int"``), or ``None``.
+
+        Returns:
+            torch.dtype: A fully-resolved PyTorch dtype.
+
+        Raises:
+            ValueError: If the provided string cannot be resolved to a valid
+                ``torch.dtype``.
+        """
+        # if None, assume float32
+        if dtype is None:
+            return torch.float32
+
+        # if already a dtype then return
+        if isinstance(dtype, torch.dtype):
+            return dtype
+
+        # ensure string and lower
+        key = str(dtype).lower()
+
+        # common aliases for dtypes
+        alias_map = {
+            "float": "float32",
+            "fp32": "float32",
+            "double": "float64",
+            "fp64": "float64",
+            "half": "float16",
+            "long": "int64",
+            "int": "int32",
+            "short": "int16",
+            "byte": "uint8",
+            "bf16": "bfloat16",
+        }
+        key = alias_map.get(key, key)
+
+        attr = getattr(torch, key, None)
+        if isinstance(attr, torch.dtype):
+            return attr
+
+        msg = f"Unknown dtype string: {dtype}"
+        raise ValueError(msg)
+
+    @staticmethod
+    def _validate_min_max(
+        min_: float | None = None,
+        max_: float | None = None,
+    ) -> tuple[float | None, float | None]:
+        """Validate range for action space.
+
+        Args:
+            min_: The lower bound of the range, or ``None``.
+            max_: The upper bound of the range, or ``None``.
+
+        Returns:
+            tuple[float | None, float | None]: A tuple ``(min_, max_)`` where
+                both values are either the validated inputs or ``(None, None)``
+                if the range is unspecified.
+
+        Raises:
+            ValueError: If both bounds are provided and ``max_`` is smaller
+                than ``min_``.
+        """
+        if (min_ is None) or (max_ is None):
+            return (min_, max_)
+        # only assumption is that min is smaller than max
+        if max_ < min_:
+            msg = f"Max cannot be smaller than min: {max_} < {min_}"
+            raise ValueError(msg)
+        return (min_, max_)
+
     def select_action(self, batch: Observation) -> torch.Tensor:
         """Select an action using the policy model.
 
@@ -76,10 +163,7 @@ class Dummy(Export, Policy):
             torch.Tensor: Selected actions.
         """
         # Get action from model
-        action = self.model.select_action(batch.to_dict())  # type: ignore[attr-defined]
-
-        # Remove batch dim if present (rollout expects unbatched)
-        return action.squeeze(0) if action.ndim > 1 and action.shape[0] == 1 else action
+        return self.model.select_action(batch.to_dict())  # type: ignore[attr-defined]
 
     def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
         """Perform forward pass of the Dummy policy.

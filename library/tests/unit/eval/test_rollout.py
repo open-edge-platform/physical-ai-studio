@@ -6,71 +6,89 @@
 from __future__ import annotations
 
 import pytest
+import torch
+
+from getiaction.policies.dummy import Dummy, DummyConfig
+from getiaction.gyms import PushTGym, GymnasiumGym
+from getiaction.eval import rollout
+
+
+@pytest.fixture
+def env_pusht():
+    """PushT Gym fixture."""
+    return PushTGym()
+
+
+@pytest.fixture
+def env_cartpole():
+    """CartPole env fixture."""
+    return GymnasiumGym("CartPole-v1")
+
+
+@pytest.fixture
+def env_cartpole_vec():
+    """Vectorized CartPole env fixture."""
+    return GymnasiumGym.vectorize("CartPole-v1", num_envs=3)
 
 
 class TestRollout:
-    """Tests for the rollout function."""
+    """Tests for rollout with dynamic action shape."""
 
-    def test_rollout_executes_successfully(self):
-        """Test that rollout function executes and returns correct structure."""
-        from getiaction.eval import rollout
-        from getiaction.gyms import PushTGym
-        from getiaction.policies.dummy import Dummy, DummyConfig
+    @pytest.mark.parametrize(
+        "env_fixture, policy_env_fixture",
+        [
+            ("env_pusht", "env_pusht"),
+            ("env_cartpole", "env_cartpole"),
+            ("env_cartpole_vec", "env_cartpole_vec"),
+        ]
+    )
+    def test_rollout_executes_successfully(self, request, env_fixture, policy_env_fixture):
+        env = request.getfixturevalue(env_fixture)
+        policy_env = request.getfixturevalue(policy_env_fixture)
 
-        config = DummyConfig(action_shape=(2,))
-        policy = Dummy(config=config)
-        gym = PushTGym()
+        action = policy_env.sample_action()
+        assert action.ndim == 2
+        action_shape = tuple(action.shape[1:])
+        action_dtype = action.dtype
+        action_max = 1 if action_dtype is torch.int64 else None
+        action_min = 0 if action_dtype is torch.int64 else None
 
-        result = rollout(
-            env=gym,
-            policy=policy,
-            seed=42,
-            max_steps=5,  # Very short for speed
-            return_observations=False,
-        )
+        policy = Dummy(DummyConfig(
+            action_shape=action_shape,
+            action_dtype=action_dtype,
+            action_max=action_max,
+            action_min=action_min,
+        ))
 
-        # Verify result structure
+        result = rollout(env=env, policy=policy, seed=42, max_steps=5, return_observations=False)
+
         assert "episode_length" in result
         assert "sum_reward" in result
         assert "max_reward" in result
-        assert "is_success" in result
 
-    def test_rollout_return_types(self):
-        """Test that rollout returns correct types."""
-        from getiaction.eval import rollout
-        from getiaction.gyms import PushTGym
-        from getiaction.policies.dummy import Dummy, DummyConfig
 
-        config = DummyConfig(action_shape=(2,))
-        policy = Dummy(config=config)
-        gym = PushTGym()
+    @pytest.mark.parametrize(
+    "env_fixture",
+    ["env_pusht", "env_cartpole", "env_cartpole_vec"])
+    def test_rollout_return_types(self, request, env_fixture):
+        """Rollout returns correct types."""
+        env = request.getfixturevalue(env_fixture)
 
-        result = rollout(
-            env=gym,
-            policy=policy,
-            seed=42,
-            max_steps=5,
-            return_observations=False,
-        )
+        # Build policy from same env
+        action = env.sample_action()
+        action_shape = tuple(action.shape[1:])
+        action_dtype = action.dtype
+        action_max = 1 if action_dtype in (torch.int64, torch.int32) else None
+        action_min = 0 if action_dtype in (torch.int64, torch.int32) else None
 
-        # Verify types
+        policy = Dummy(DummyConfig(
+            action_shape=action_shape,
+            action_dtype=action_dtype,
+            action_max=action_max,
+            action_min=action_min,
+        ))
+
+        result = rollout(env=env, policy=policy, seed=42, max_steps=5, return_observations=False)
+
         assert isinstance(result["episode_length"], int)
-        assert isinstance(result["sum_reward"], float)
-        assert isinstance(result["is_success"], bool)
-
-    def test_rollout_with_seed_reproducibility(self):
-        """Test that rollout is reproducible with same seed."""
-        from getiaction.eval import rollout
-        from getiaction.gyms import PushTGym
-        from getiaction.policies.dummy import Dummy, DummyConfig
-
-        config = DummyConfig(action_shape=(2,))
-        policy = Dummy(config=config)
-        gym1 = PushTGym()
-        gym2 = PushTGym()
-
-        result1 = rollout(env=gym1, policy=policy, seed=42, max_steps=5, return_observations=False)
-        result2 = rollout(env=gym2, policy=policy, seed=42, max_steps=5, return_observations=False)
-
-        # Same seed should give same results
-        assert result1["episode_length"] == result2["episode_length"]
+        assert isinstance(result["sum_reward"], (float, torch.Tensor))

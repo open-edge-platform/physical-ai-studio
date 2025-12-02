@@ -11,16 +11,16 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
-from gymnasium.wrappers import TimeLimit
 from lightning.pytorch import LightningDataModule
-from torch.utils.data import ConcatDataset, DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset
 
 from getiaction.data.gym import GymDataset
 from getiaction.data.observation import Observation
-from getiaction.gyms import Gym
+from getiaction.gyms.step_limit import with_step_limit
 
 if TYPE_CHECKING:
     from getiaction.data import Dataset
+    from getiaction.gyms import Gym
 
 
 def _collate_gym(batch: list[Any]) -> Gym:
@@ -110,9 +110,9 @@ class DataModule(LightningDataModule):
         self,
         train_dataset: Dataset,
         train_batch_size: int = 16,
-        val_gyms: Gym | list[Gym] | None = None,
+        val_gym: Gym | None = None,
         num_rollouts_val: int = 10,
-        test_gyms: Gym | list[Gym] | None = None,
+        test_gym: Gym | None = None,
         num_rollouts_test: int = 10,
         max_episode_steps: int | None = 300,
     ) -> None:
@@ -121,9 +121,9 @@ class DataModule(LightningDataModule):
         Args:
             train_dataset (ActionDataset): Dataset for training.
             train_batch_size (int): Batch size for training DataLoader.
-            val_gyms (Gym, list[Gym], None]): Validation environments.
+            val_gym (Gym | None): Validation environment.
             num_rollouts_val (int): Number of rollouts to run for validation environments.
-            test_gyms (Gym, list[Gym], None]): Test environments.
+            test_gym (Gym | None): Test environment.
             num_rollouts_test (int): Number of rollouts to run for test environments.
             max_episode_steps (int, None): Maximum steps allowed per episode. If None, no time limit.
         """
@@ -134,39 +134,18 @@ class DataModule(LightningDataModule):
         self.train_batch_size: int = train_batch_size
 
         # gym environments
-        self.val_gyms: Gym | list[Gym] | None = val_gyms
+        self.val_gym: Gym | None = val_gym
         self.val_dataset: Dataset | None = None
         self.num_rollouts_val: int = num_rollouts_val
-        self.test_gyms: Gym | list[Gym] | None = test_gyms
+        self.test_gym: Gym | None = test_gym
         self.test_dataset: Dataset | None = None
         self.num_rollouts_test: int = num_rollouts_test
         self.max_episode_steps = max_episode_steps
 
-        # setup time limit if max_episode steps
-        if (self.max_episode_steps is not None) and self.val_gyms is not None:
-            if isinstance(self.val_gyms, Gym):
-                self.val_gyms.env = TimeLimit(
-                    env=self.val_gyms.env,
-                    max_episode_steps=self.max_episode_steps,
-                )
-            elif isinstance(self.val_gyms, list):
-                for val_gym in self.val_gyms:
-                    val_gym.env = TimeLimit(
-                        env=val_gym.env,
-                        max_episode_steps=self.max_episode_steps,
-                    )
-        if (self.max_episode_steps is not None) and self.test_gyms is not None:
-            if isinstance(self.test_gyms, Gym):
-                self.test_gyms.env = TimeLimit(
-                    env=self.test_gyms.env,
-                    max_episode_steps=self.max_episode_steps,
-                )
-            elif isinstance(self.test_gyms, list):
-                for test_gym in self.test_gyms:
-                    test_gym.env = TimeLimit(
-                        env=test_gym.env,
-                        max_episode_steps=self.max_episode_steps,
-                    )
+        # setup time limit if max_episode steps (0 or None will fail)
+        if self.max_episode_steps:
+            self.val_gym = with_step_limit(self.val_gym, max_steps=self.max_episode_steps) if self.val_gym else None
+            self.test_gym = with_step_limit(self.test_gym, max_steps=self.max_episode_steps) if self.test_gym else None
 
     def setup(self, stage: str) -> None:
         """Set up datasets depending on the stage (fit or test).
@@ -174,25 +153,17 @@ class DataModule(LightningDataModule):
         Args:
             stage (str): Stage of training ('fit', 'test', etc.).
         """
-        if stage == "fit" and self.val_gyms:
-            if isinstance(self.val_gyms, list):
-                # TODO(alfie-roddan-intel): https://github.com/open-edge-platform/geti-action/issues/33  # noqa: FIX002
-                # ensure metrics are seperable between two different gyms
-                self.val_dataset = ConcatDataset([
-                    GymDataset(env=gym, num_rollouts=self.num_rollouts_val) for gym in self.val_gyms
-                ])
-            else:
-                self.val_dataset = GymDataset(env=self.val_gyms, num_rollouts=self.num_rollouts_val)
+        if stage == "fit" and self.val_gym:
+            self.val_dataset = GymDataset(
+                env=self.val_gym,
+                num_rollouts=self.num_rollouts_val,
+            )
 
-        if stage == "test" and self.test_gyms:
-            if isinstance(self.test_gyms, list):
-                # TODO(alfie-roddan-intel): https://github.com/open-edge-platform/geti-action/issues/33  # noqa: FIX002
-                # ensure metrics are seperable between two different gyms
-                self.test_dataset = ConcatDataset([
-                    GymDataset(env=gym, num_rollouts=self.num_rollouts_test) for gym in self.test_gyms
-                ])
-            else:
-                self.test_dataset = GymDataset(env=self.test_gyms, num_rollouts=self.num_rollouts_test)
+        if stage == "test" and self.test_gym:
+            self.test_dataset = GymDataset(
+                env=self.test_gym,
+                num_rollouts=self.num_rollouts_test,
+            )
 
     def train_dataloader(self) -> DataLoader[Any]:
         """Return the DataLoader for training.
