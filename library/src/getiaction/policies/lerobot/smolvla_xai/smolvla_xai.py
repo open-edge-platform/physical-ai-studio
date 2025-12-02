@@ -459,7 +459,7 @@ class SmolVLAxAI(LeRobotExport, LeRobotFromConfig, Policy):
         Returns:
             The action tensor - full chunk for chunked policies with shape
             (batch, chunk_size, action_dim) or (batch, action_dim) for non-chunked.
-            A heatmap image that can be overlayd
+            A heatmap image that can be used as an overlay.
         """
         # Step 1: Convert to LeRobot format if needed
         batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
