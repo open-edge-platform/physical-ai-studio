@@ -14,14 +14,14 @@ import torch
 from lerobot.configs.types import NormalizationMode
 from lightning_utilities.core.imports import module_available
 
+from getiaction.data import Observation
 from getiaction.data.lerobot import FormatConverter
 from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 from getiaction.policies.base import Policy
-from getiaction.policies.lerobot.mixin import LeRobotFromConfig, LeRobotExport
+from getiaction.policies.lerobot.mixin import LeRobotExport, LeRobotFromConfig
 from getiaction.policies.lerobot.smolvla_xai.model import SmolVLAPolicyWithXAI
 
 if TYPE_CHECKING:
-    from getiaction.data import Observation
     from getiaction.gyms import Gym
 
 if TYPE_CHECKING or module_available("lerobot"):
