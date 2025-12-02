@@ -16,7 +16,7 @@ from lightning_utilities.core.imports import module_available
 
 from getiaction.data import Observation
 from getiaction.data.lerobot import FormatConverter
-from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
+from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter  # noqa: PLC2701
 from getiaction.policies.base import Policy
 from getiaction.policies.lerobot.mixin import LeRobotExport, LeRobotFromConfig
 from getiaction.policies.lerobot.smolvla_xai.model import SmolVLAPolicyWithXAI
