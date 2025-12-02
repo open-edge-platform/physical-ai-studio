@@ -16,7 +16,7 @@ from lightning_utilities.core.imports import module_available
 
 from getiaction.data import Observation
 from getiaction.data.lerobot import FormatConverter
-from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter  # noqa: PLC2701
+from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 from getiaction.policies.base import Policy
 from getiaction.policies.lerobot.mixin import LeRobotExport, LeRobotFromConfig
 from getiaction.policies.lerobot.smolvla_xai.model import SmolVLAPolicyWithXAI
@@ -40,7 +40,7 @@ else:
     LEROBOT_AVAILABLE = False
 
 
-class SmolVLAxAI(LeRobotExport, LeRobotFromConfig, Policy):
+class SmolVLAxAI(LeRobotExport, LeRobotFromConfig, Policy):  # type: ignore[misc]
     """LeRobot's SmolVLA policy wrapper with explainability.
 
     PyTorch Lightning wrapper around LeRobot's SmolVLA implementation that provides
@@ -81,29 +81,23 @@ class SmolVLAxAI(LeRobotExport, LeRobotFromConfig, Policy):
         chunk_size: int = 50,
         n_action_steps: int = 50,
         normalization_mapping: dict[str, NormalizationMode] | None = None,
-
         # State dimensions
         max_state_dim: int = 32,
         max_action_dim: int = 32,
-
         # Image preprocessing
         resize_imgs_with_padding: tuple[int, int] = (512, 512),
-
         # Aloha specific parameters
         empty_cameras: int = 0,
         adapt_to_pi_aloha: bool = False,
         use_delta_joint_actions_aloha: bool = False,
-
         # Tokenizer and decoding
         tokenizer_max_length: int = 48,
         num_steps: int = 10,
         use_cache: bool = True,
-
         # Finetuning settings
         freeze_vision_encoder: bool = True,
         train_expert_only: bool = True,
         train_state_proj: bool = True,
-
         # Training presets
         optimizer_lr: float = 1e-4,
         optimizer_betas: tuple[float, float] = (0.9, 0.95),
@@ -113,7 +107,6 @@ class SmolVLAxAI(LeRobotExport, LeRobotFromConfig, Policy):
         scheduler_warmup_steps: int = 1_000,
         scheduler_decay_steps: int = 30_000,
         scheduler_decay_lr: float = 2.5e-6,
-
         # VLM/VLA model parameters
         vlm_model_name: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
         load_vlm_weights: bool = False,
@@ -125,15 +118,12 @@ class SmolVLAxAI(LeRobotExport, LeRobotFromConfig, Policy):
         num_vlm_layers: int = 16,
         self_attn_every_n_layers: int = 2,
         expert_width_multiplier: float = 0.75,
-
         # Positional encoding
         min_period: float = 4e-3,
         max_period: float = 4.0,
-
         # XAI
         layer_idx: int | None = -1,
         head_idx: int | None = None,
-
         # Additional parameters via kwargs
         **kwargs: Any,  # noqa: ANN401
     ) -> None:
@@ -204,11 +194,13 @@ class SmolVLAxAI(LeRobotExport, LeRobotFromConfig, Policy):
 
         # Create default value for normalization_mapping if it was not provided
         if normalization_mapping is None:
-            normalization_mapping: dict[str, NormalizationMode] = {
-                    "VISUAL": NormalizationMode.IDENTITY,
-                    "STATE": NormalizationMode.MEAN_STD,
-                    "ACTION": NormalizationMode.MEAN_STD,
+            normalization_mapping_param: dict[str, NormalizationMode] = {
+                "VISUAL": NormalizationMode.IDENTITY,
+                "STATE": NormalizationMode.MEAN_STD,
+                "ACTION": NormalizationMode.MEAN_STD,
             }
+        else:
+            normalization_mapping_param = normalization_mapping
 
         # Build config dict from explicit args
         self._config_object = None
@@ -216,7 +208,7 @@ class SmolVLAxAI(LeRobotExport, LeRobotFromConfig, Policy):
             "n_obs_steps": n_obs_steps,
             "chunk_size": chunk_size,
             "n_action_steps": n_action_steps,
-            "normalization_mapping": normalization_mapping,
+            "normalization_mapping": normalization_mapping_param,
             "max_state_dim": max_state_dim,
             "max_action_dim": max_action_dim,
             "resize_imgs_with_padding": resize_imgs_with_padding,
@@ -249,7 +241,7 @@ class SmolVLAxAI(LeRobotExport, LeRobotFromConfig, Policy):
             "expert_width_multiplier": expert_width_multiplier,
             "min_period": min_period,
             "max_period": max_period,
-            ** kwargs,
+            **kwargs,
         }
 
         self.learning_rate = optimizer_lr
@@ -329,9 +321,7 @@ class SmolVLAxAI(LeRobotExport, LeRobotFromConfig, Policy):
             )
 
         # Initialize the policy
-        policy = SmolVLAPolicyWithXAI(lerobot_config,
-                                      layer_idx=self.layer_idx,
-                                      head_idx=self.head_idx)  # type: ignore[arg-type,misc]
+        policy = SmolVLAPolicyWithXAI(lerobot_config, layer_idx=self.layer_idx, head_idx=self.head_idx)  # type: ignore[arg-type,misc]
         self.add_module("_smolvla_policy_with_xai", policy)
         self._preprocessor, self._postprocessor = make_pre_post_processors(lerobot_config, dataset_stats=dataset_stats)
 
@@ -440,8 +430,10 @@ class SmolVLAxAI(LeRobotExport, LeRobotFromConfig, Policy):
         # Step 4: Apply postprocessing (denormalization)
         return self._postprocessor(action)
 
-    def select_action_with_explain(self, batch: Observation | dict[str, torch.Tensor]) \
-            -> tuple[torch.Tensor, list[torch.Tensor]]:
+    def select_action_with_explain(
+        self,
+        batch: Observation | dict[str, torch.Tensor],
+    ) -> tuple[torch.Tensor, list[torch.Tensor]]:
         """Select action (inference mode) through LeRobot and also return explanation.
 
         Handles full preprocessing and postprocessing pipeline:
@@ -473,7 +465,6 @@ class SmolVLAxAI(LeRobotExport, LeRobotFromConfig, Policy):
 
         # Step 4: Apply postprocessing (denormalization)
         return self._postprocessor(action), [torch.from_numpy(arr) for arr in self.smolvla_policy_with_xai.explain()]
-
 
     def reset(self) -> None:
         """Reset the policy state."""

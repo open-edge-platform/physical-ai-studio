@@ -7,8 +7,7 @@ This module provides a descendent of LeRobot's SmolVLA policy with added explain
     code has been moved to this file.
 """
 
-
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import cv2
 import numpy as np
@@ -18,7 +17,10 @@ from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy, VLAFlowMatc
 from lerobot.policies.smolvla.smolvlm_with_expert import SmolVLMWithExpertModel, apply_rope
 from lerobot.policies.utils import populate_queues
 from lerobot.utils.constants import ACTION
-from torch import Tensor, nn
+from torch import nn
+
+if TYPE_CHECKING:
+    from collections import deque
 
 
 class SmolVLMWithExpertModelWithXAI(SmolVLMWithExpertModel):
@@ -49,18 +51,27 @@ class SmolVLMWithExpertModelWithXAI(SmolVLMWithExpertModel):
             self_attn_every_n_layers: Self attention per layer.
             expert_width_multiplier: Width modifier for teh expert model.
         """
-        super().__init__(model_id, load_vlm_weights, train_expert_only, freeze_vision_encoder, attention_mode,
-                         num_expert_layers, num_vlm_layers, self_attn_every_n_layers, expert_width_multiplier)
-        self.qk = {}
+        super().__init__(
+            model_id,
+            load_vlm_weights,
+            train_expert_only,
+            freeze_vision_encoder,
+            attention_mode,
+            num_expert_layers,
+            num_vlm_layers,
+            self_attn_every_n_layers,
+            expert_width_multiplier,
+        )
+        self.qk: dict[int, torch.Tensor] = {}
 
     def eager_attention_forward_with_qk(
-            self,
-            attention_mask: torch.Tensor,
-            batch_size: int,
-            head_dim: int,
-            query_states: torch.Tensor,
-            key_states: torch.Tensor,
-            value_states: torch.Tensor,
+        self,
+        attention_mask: torch.Tensor,
+        batch_size: int,
+        head_dim: int,
+        query_states: torch.Tensor,
+        key_states: torch.Tensor,
+        value_states: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Create an alternative for eager_attention_forward that also return attention probs (qk).
 
@@ -82,17 +93,31 @@ class SmolVLMWithExpertModelWithXAI(SmolVLMWithExpertModel):
         sequence_length = key_states.shape[1]
 
         key_states = key_states[:, :, :, None, :].expand(
-            batch_size, sequence_length, num_key_value_heads, num_key_value_groups, head_dim,
+            batch_size,
+            sequence_length,
+            num_key_value_heads,
+            num_key_value_groups,
+            head_dim,
         )
         key_states = key_states.reshape(
-            batch_size, sequence_length, num_key_value_heads * num_key_value_groups, head_dim,
+            batch_size,
+            sequence_length,
+            num_key_value_heads * num_key_value_groups,
+            head_dim,
         )
 
         value_states = value_states[:, :, :, None, :].expand(
-            batch_size, sequence_length, num_key_value_heads, num_key_value_groups, head_dim,
+            batch_size,
+            sequence_length,
+            num_key_value_heads,
+            num_key_value_groups,
+            head_dim,
         )
         value_states = value_states.reshape(
-            batch_size, sequence_length, num_key_value_heads * num_key_value_groups, head_dim,
+            batch_size,
+            sequence_length,
+            num_key_value_heads * num_key_value_groups,
+            head_dim,
         )
 
         query_states = query_states.to(dtype=torch.float32)
@@ -129,8 +154,8 @@ class SmolVLMWithExpertModelWithXAI(SmolVLMWithExpertModel):
         head_dim: int,
         use_cache: bool = True,  # noqa: FBT001, FBT002
         fill_kv_cache: bool = True,  # noqa: FBT001, FBT002
-        past_key_values: torch.Tensor | None = None,
-    ) -> tuple[list[Tensor], dict[Any, Any] | Any]:
+        past_key_values: dict[int, Any] | None = None,
+    ) -> tuple[list[torch.Tensor], dict[Any, Any] | Any]:
         """Override this method to store the qk for each attention layer.
 
         Args:
@@ -171,10 +196,10 @@ class SmolVLMWithExpertModelWithXAI(SmolVLMWithExpertModel):
 
         # B,L,H,D with L sequence length, H number of heads, D head dim
         # concatenate on the number of embeddings/tokens
-        query_states = torch.cat(query_states, dim=1)
-        key_states = torch.cat(key_states, dim=1)
-        value_states = torch.cat(value_states, dim=1)
-        seq_len = query_states.shape[1]
+        query_states_cat = torch.cat(query_states, dim=1)
+        key_states_cat = torch.cat(key_states, dim=1)
+        value_states_cat = torch.cat(value_states, dim=1)
+        seq_len = query_states_cat.shape[1]
         if seq_len < position_ids.shape[1]:
             _position_ids = position_ids[:, :seq_len]
             _attention_mask = attention_mask[:, :seq_len, :seq_len]
@@ -185,24 +210,29 @@ class SmolVLMWithExpertModelWithXAI(SmolVLMWithExpertModel):
         attention_mask_ = _attention_mask
         position_ids_ = _position_ids
 
-        query_states = apply_rope(query_states, position_ids_)
-        key_states = apply_rope(key_states, position_ids_)
+        query_states_cat = apply_rope(query_states_cat, position_ids_)
+        key_states_cat = apply_rope(key_states_cat, position_ids_)
 
         if use_cache and past_key_values is None:
             past_key_values = {}
 
-        if use_cache:
+        if use_cache and past_key_values is not None:
             if fill_kv_cache:
                 past_key_values[layer_idx] = {
-                    "key_states": key_states,
-                    "value_states": value_states,
+                    "key_states": key_states_cat,
+                    "value_states": value_states_cat,
                 }
             else:
-                key_states = torch.cat([past_key_values[layer_idx]["key_states"], key_states], dim=1)
-                value_states = torch.cat([past_key_values[layer_idx]["value_states"], value_states], dim=1)
+                key_states_cat = torch.cat([past_key_values[layer_idx]["key_states"], key_states_cat], dim=1)
+                value_states_cat = torch.cat([past_key_values[layer_idx]["value_states"], value_states_cat], dim=1)
 
         att_output, att_weights = self.eager_attention_forward_with_qk(
-            attention_mask_, batch_size, head_dim, query_states, key_states, value_states,
+            attention_mask_,
+            batch_size,
+            head_dim,
+            query_states_cat,
+            key_states_cat,
+            value_states_cat,
         )
 
         # store qk probs
@@ -237,23 +267,27 @@ class VLAFlowMatchingWithXAI(VLAFlowMatching):
             expert_width_multiplier=self.config.expert_width_multiplier,
         )
         self.state_proj = nn.Linear(
-            self.config.max_state_dim, self.vlm_with_expert.config.text_config.hidden_size,
+            self.config.max_state_dim,
+            self.vlm_with_expert.config.text_config.hidden_size,
         )
         self.action_in_proj = nn.Linear(self.config.max_action_dim, self.vlm_with_expert.expert_hidden_size)
         self.action_out_proj = nn.Linear(self.vlm_with_expert.expert_hidden_size, self.config.max_action_dim)
 
         self.action_time_mlp_in = nn.Linear(
-            self.vlm_with_expert.expert_hidden_size * 2, self.vlm_with_expert.expert_hidden_size,
+            self.vlm_with_expert.expert_hidden_size * 2,
+            self.vlm_with_expert.expert_hidden_size,
         )
         self.action_time_mlp_out = nn.Linear(
-            self.vlm_with_expert.expert_hidden_size, self.vlm_with_expert.expert_hidden_size,
+            self.vlm_with_expert.expert_hidden_size,
+            self.vlm_with_expert.expert_hidden_size,
         )
 
         self.set_requires_grad()
         self.fake_image_token = self.vlm_with_expert.processor.tokenizer.fake_image_token_id
         self.global_image_token = self.vlm_with_expert.processor.tokenizer.global_image_token_id
         self.global_image_start_token = torch.tensor(
-            [self.fake_image_token, self.global_image_token], dtype=torch.long,
+            [self.fake_image_token, self.global_image_token],
+            dtype=torch.long,
         )
 
         self.add_image_special_tokens = self.config.add_image_special_tokens
@@ -270,9 +304,8 @@ class SmolVLAPolicyWithXAI(SmolVLAPolicy):
     def __init__(
         self,
         config: SmolVLAConfig,
-
         # XAI parameters
-        layer_idx: int | None = -1,
+        layer_idx: int = -1,
         head_idx: int | None = None,
     ) -> None:
         """Descendent of SmolVLA which adds XAI capabilities.
@@ -280,7 +313,7 @@ class SmolVLAPolicyWithXAI(SmolVLAPolicy):
         Args:
             config: Policy configuration class instance or None, in which case the default instantiation of the
                 configuration class is used.
-            layer_idx: Which layer to display (None means average from all layers)
+            layer_idx: Which layer to display
             head_idx: Which head to display (None means average from all heads) -1 takes the max instead of mean.
         """
         super().__init__(config)
@@ -295,15 +328,17 @@ class SmolVLAPolicyWithXAI(SmolVLAPolicy):
         self.head_idx = head_idx
 
         self.image_shapes = {k: v.shape for k, v in self.model.config.image_features.items()}
-        self.image_resized_padded_shapes = dict.fromkeys(self.model.config.image_features.keys(),
-                                                         self.model.config.resize_imgs_with_padding)
+        self.image_resized_padded_shapes = dict.fromkeys(
+            self.model.config.image_features.keys(),
+            self.model.config.resize_imgs_with_padding,
+        )
         self.image_tile_shapes = {k: [8, 8] for k in self.model.config.image_features}
         self.num_text_tokens = self.model.config.tokenizer_max_length
         self.num_robot_tokens = 1
-        self.attention_modes = None
+        self.attention_modes: dict[str, Any] | None = None
 
     @torch.no_grad()
-    def select_action(self, batch: dict[str, Tensor], noise: Tensor | None = None) -> Tensor:
+    def select_action(self, batch: dict[str, torch.Tensor], noise: torch.Tensor | None = None) -> torch.Tensor:
         """Create an alternative for select_action that also returns the attention maps.
 
         Args:
@@ -315,15 +350,18 @@ class SmolVLAPolicyWithXAI(SmolVLAPolicy):
         """
         self.eval()
         batch = self._prepare_batch(batch)
-        self._queues = populate_queues(self._queues, batch, exclude_keys=[ACTION])
+        self._queues: dict[str, deque] = populate_queues(self._queues, batch, exclude_keys=[ACTION])
 
         if len(self._queues[ACTION]) == 0:
             actions = self._get_action_chunk(batch, noise)
             self._queues[ACTION].extend(actions.transpose(0, 1)[: self.config.n_action_steps])
 
         # Also get the weights and task
-        index = max(
-            self.policy.model.vlm_with_expert.qk.keys()) + self.layer_idx + 1 if self.layer_idx < 0 else self.layer_idx
+        index = (
+            max(self.policy.model.vlm_with_expert.qk.keys()) + self.layer_idx + 1
+            if self.layer_idx < 0
+            else self.layer_idx
+        )
         attention_maps = self.policy.model.vlm_with_expert.qk[index]
 
         self.attention_modes = self._map_attention(attention_maps)
@@ -337,6 +375,8 @@ class SmolVLAPolicyWithXAI(SmolVLAPolicy):
         Returns:
             An array of xAI output.
         """
+        if self.attention_modes is None:
+            return []
         visualizations = []
         for key, img in self.attention_modes["image_att"].items():
             # Scale pixel values to 0, 255 and permute channels
@@ -355,8 +395,11 @@ class SmolVLAPolicyWithXAI(SmolVLAPolicy):
 
             # blend images
             vis = cv2.addWeighted(
-                obs_image, 1 - 0.5,
-                heatmap, 0.5, 0,
+                obs_image,
+                1 - 0.5,
+                heatmap,
+                0.5,
+                0,
             )
 
             modalities_border: int = 20
@@ -371,7 +414,7 @@ class SmolVLAPolicyWithXAI(SmolVLAPolicy):
             arr = arr[:, (arr != 0)[0]]  # Filter zeros
             colors = cv2.applyColorMap(arr, cv2.COLORMAP_JET)
             colored = cv2.resize(colors, (w, modalities_border * 2))
-            vis[h - modalities_border * 2:h, 0:w] = colored
+            vis[h - modalities_border * 2 : h, 0:w] = colored
             self._draw_text(self.attention_modes["task"], vis, w, h, 5)
 
             visualizations.append(vis)
@@ -404,8 +447,16 @@ class SmolVLAPolicyWithXAI(SmolVLAPolicy):
         (text_width, text_height), _ = cv2.getTextSize(text, font, font_scale, thickness)
 
         # Draw text
-        cv2.putText(image, text, (margin, height - text_height), font, font_scale,
-                    (255, 255, 255), thickness, cv2.FILLED)
+        cv2.putText(
+            image,
+            text,
+            (margin, height - text_height),
+            font,
+            font_scale,
+            (255, 255, 255),
+            thickness,
+            cv2.FILLED,
+        )
 
     def _map_attention(self, attention: torch.Tensor) -> dict[str, np.ndarray]:
         """Maps the attention output to the space of the respective modality.
@@ -435,12 +486,14 @@ class SmolVLAPolicyWithXAI(SmolVLAPolicy):
 
         for key, (height, width) in self.image_tile_shapes.items():
             # Select the appropriate attention type display method
-            image_att = attention_heads_select[:, :, offset:offset + (height * width)].mean(dim=1)
+            image_att = attention_heads_select[:, :, offset : offset + (height * width)].mean(dim=1)
             # Reshape into tile size
             image_att = image_att.resize(image_att.shape[0], height, width)
             # Calculate min and max add to list
-            min_img_value, max_img_value = (min(torch.min(image_att).item(), min_img_value),
-                                            max(torch.max(image_att).item(), max_img_value))
+            min_img_value, max_img_value = (
+                min(torch.min(image_att).item(), min_img_value),
+                max(torch.max(image_att).item(), max_img_value),
+            )
             images_att[key] = image_att
             offset += height * width
 

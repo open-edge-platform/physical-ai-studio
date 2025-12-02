@@ -318,8 +318,7 @@ def list_available_policies() -> list[str]:
             "pi0fast",
             "sac",
             "smolvla",
-            "smolvla_xai"
-            "tdmpc",
+            "smolvla_xaitdmpc",
             "vqbet",
         ]
     return []
