@@ -59,7 +59,7 @@ def rollout(
     """Execute one episode, return results immediately."""
 ```
 
-Returns: `sum_reward`, `max_reward`, `episode_length`, `is_success`,
+Returns: `sum_reward`, `max_reward`, `episode_length`,
 optionally `observations`/`actions`/`rewards`
 
 ### `Rollout` - Metric Class
@@ -160,7 +160,6 @@ env = PushTGym()
 results = [rollout(env, policy, seed=i, max_steps=500) for i in range(50)]
 
 # Compute statistics
-success_rate = sum(r['is_success'] for r in results) / len(results)
 avg_reward = sum(r['sum_reward'] for r in results) / len(results)
 print(f"Success: {success_rate*100:.1f}%, Reward: {avg_reward:.2f}")
 ```
@@ -174,7 +173,7 @@ from getiaction.policies.act import ACT
 
 datamodule = DataModule(
     train_dataset=dataset,
-    val_gyms=PushTGym(),
+    val_gym=PushTGym(),
     num_rollouts_val=10,
     max_episode_steps=500,
 )
@@ -191,7 +190,6 @@ trainer.fit(policy, datamodule)
 # Metrics automatically logged:
 # - val/gym/episode/sum_reward (per episode)
 # - val/gym/avg_sum_reward (aggregated)
-# - val/gym/pc_success (aggregated)
 ```
 
 ### Example 3: Multi-GPU Training
@@ -254,7 +252,7 @@ for i, env in enumerate(test_envs):
         metric.update(env, policy, seed=seed)
 
     results = metric.compute()
-    print(f"Env {i}: {results['pc_success']:.1f}% success")
+    print(f"Env {i}: {results['max_reward']:.1f} highest reward")
 ```
 
 ## Extension

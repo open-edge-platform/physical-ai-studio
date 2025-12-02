@@ -28,7 +28,12 @@ class Settings(BaseSettings):
     debug: bool = Field(default=False, alias="DEBUG")
     environment: Literal["dev", "prod"] = "dev"
     data_dir: Path = Field(default=Path("data"), alias="DATA_DIR")
-    storage_dir: Path = Field(default=Path("~/.cache/geti_action"), alias="STORAGE_DIR")
+    storage_dir: Path = Field(default=Path("~/.cache/geti_action").expanduser(), alias="STORAGE_DIR")
+
+    @property
+    def datasets_dir(self) -> Path:
+        """Storage directory for datasets."""
+        return self.storage_dir / "datasets"
 
     @property
     def models_dir(self) -> Path:

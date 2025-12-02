@@ -65,7 +65,6 @@ class Rollout(Metric):
         >>> metric.reset()  # Prepare for next epoch
     """
 
-    # Set to True to indicate this is a metric that requires full synchronization
     full_state_update: bool | None = False
 
     def __init__(
@@ -86,23 +85,19 @@ class Rollout(Metric):
 
         self.max_steps = max_steps
 
-        # Add state for accumulation (automatically synced across GPUs)
-        # Using dist_reduce_fx="sum" for aggregating counts and sums
+        # Aggregate states (synced via sum)
         self.add_state("sum_rewards", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("max_rewards", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("episode_lengths", default=torch.tensor(0.0), dist_reduce_fx="sum")
-        self.add_state("num_successes", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("num_episodes", default=torch.tensor(0), dist_reduce_fx="sum")
 
-        # For detailed per-episode tracking (concatenated across processes)
-        # Using dist_reduce_fx="cat" to concatenate lists from all processes
+        # Per-episode tracking (concatenated)
         self.add_state("all_sum_rewards", default=[], dist_reduce_fx="cat")
         self.add_state("all_max_rewards", default=[], dist_reduce_fx="cat")
         self.add_state("all_episode_lengths", default=[], dist_reduce_fx="cat")
-        self.add_state("all_successes", default=[], dist_reduce_fx="cat")
 
     def update(self, env: Gym, policy: Policy, seed: int | None = None) -> dict[str, Tensor]:
-        """Run a single rollout and update metric state.
+        """Run a rollout and update metric state.
 
         This method executes one complete episode in the gym environment using
         the provided policy, then updates the internal state with the results.
@@ -121,7 +116,6 @@ class Rollout(Metric):
                 - episode_length: Number of steps taken
                 - is_success: Whether the episode succeeded
         """
-        # Run rollout using the existing implementation
         result = rollout(
             env=env,
             policy=policy,
@@ -130,32 +124,34 @@ class Rollout(Metric):
             return_observations=False,
         )
 
-        # Extract metrics and convert to tensors on the correct device
-        sum_reward = torch.tensor(result["sum_reward"], dtype=torch.float32, device=self.device)
-        max_reward = torch.tensor(result["max_reward"], dtype=torch.float32, device=self.device)
+        # (B,) tensors
+        sum_reward = result["sum_reward"]  # (batch_size,)
+        max_reward = result["max_reward"]  # (batch_size,)
+        batch_size = sum_reward.shape[0]
         episode_length = torch.tensor(result["episode_length"], dtype=torch.float32, device=self.device)
-        is_success = torch.tensor(float(result["is_success"]), dtype=torch.float32, device=self.device)
 
-        # Update aggregate states
-        self.sum_rewards += sum_reward
-        self.max_rewards += max_reward
-        self.episode_lengths += episode_length
-        self.num_successes += is_success
-        self.num_episodes += 1
+        # Aggregate (sum over batch)
+        # Promote to this device
+        sum_reward = sum_reward.to(self.device)
+        max_reward = max_reward.to(self.device)
 
-        # Store individual episode data for detailed analysis
-        self.all_sum_rewards.append(sum_reward)  # type: ignore[attr-defined]
-        self.all_max_rewards.append(max_reward)  # type: ignore[attr-defined]
-        self.all_episode_lengths.append(episode_length)  # type: ignore[attr-defined]
-        self.all_successes.append(is_success)  # type: ignore[attr-defined]
+        self.sum_rewards += sum_reward.sum()
+        self.max_rewards += max_reward.sum()
+        self.episode_lengths += episode_length * batch_size
+        self.num_episodes += batch_size
+
+        # Store individual per-episode data
+        self.all_sum_rewards.extend(sum_reward)  # list of tensors
+        self.all_max_rewards.extend(max_reward)
+        self.all_episode_lengths.extend([episode_length] * batch_size)
 
         return {
-            "sum_reward": sum_reward,
-            "max_reward": max_reward,
+            "sum_reward": sum_reward.mean(),  # averaged just for convenience
+            "max_reward": max_reward.mean(),
             "episode_length": episode_length,
-            "is_success": is_success,
         }
 
+    # averages across all episodes
     def compute(self) -> dict[str, Tensor]:
         """Compute aggregated metrics across all episodes.
 
@@ -181,22 +177,17 @@ class Rollout(Metric):
             return {
                 "avg_sum_reward": torch.tensor(0.0, device=self.device),
                 "avg_max_reward": torch.tensor(0.0, device=self.device),
-                "pc_success": torch.tensor(0.0, device=self.device),
                 "avg_episode_length": torch.tensor(0.0, device=self.device),
                 "n_episodes": torch.tensor(0, device=self.device),
             }
 
-        # Compute averages - matches evaluate_policy implementation
-        avg_sum_reward = self.sum_rewards / self.num_episodes  # type: ignore[operator]
-        avg_max_reward = self.max_rewards / self.num_episodes  # type: ignore[operator]
-        avg_episode_length = self.episode_lengths / self.num_episodes  # type: ignore[operator]
-        # Success rate as percentage (multiply by 100 to match evaluate_policy)
-        pc_success = (self.num_successes / self.num_episodes) * 100.0  # type: ignore[operator]
+        avg_sum_reward = self.sum_rewards / self.num_episodes
+        avg_max_reward = self.max_rewards / self.num_episodes
+        avg_episode_length = self.episode_lengths / self.num_episodes
 
         return {
             "avg_sum_reward": avg_sum_reward,
             "avg_max_reward": avg_max_reward,
-            "pc_success": pc_success,
             "avg_episode_length": avg_episode_length,
             "n_episodes": self.num_episodes,
         }
@@ -217,19 +208,16 @@ class Rollout(Metric):
         if not self.all_sum_rewards:
             return []
 
-        # Convert tensor lists to list of dicts
         return [
             {
-                "sum_reward": sum_r.item(),
-                "max_reward": max_r.item(),
-                "episode_length": int(ep_len.item()),
-                "success": bool(success.item()),
+                "sum_reward": float(sum_r.item()),
+                "max_reward": float(max_r.item()),
+                "episode_length": float(ep_len.item()),
             }
-            for sum_r, max_r, ep_len, success in zip(
-                self.all_sum_rewards,  # type: ignore[arg-type]
-                self.all_max_rewards,  # type: ignore[arg-type]
-                self.all_episode_lengths,  # type: ignore[arg-type]
-                self.all_successes,  # type: ignore[arg-type]
+            for sum_r, max_r, ep_len in zip(
+                self.all_sum_rewards,
+                self.all_max_rewards,
+                self.all_episode_lengths,
                 strict=True,
             )
         ]

@@ -139,7 +139,6 @@ class Policy(L.LightningModule, ABC):
             "sum_reward": metric.all_sum_rewards[-1].item(),  # type: ignore[index]
             "max_reward": metric.all_max_rewards[-1].item(),  # type: ignore[index]
             "episode_length": int(metric.all_episode_lengths[-1].item()),  # type: ignore[index]
-            "success": float(metric.all_successes[-1].item()),  # type: ignore[index]
         }
 
         # Log per-episode metrics (on_step=True for immediate feedback)
