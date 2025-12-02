@@ -13,7 +13,7 @@ from lerobot.datasets.utils import build_dataset_frame, combine_feature_dicts
 from lerobot.processor import make_default_processors
 from lerobot.robots.utils import make_robot_from_config
 from lerobot.teleoperators.utils import make_teleoperator_from_config
-from lerobot.utils.robot_utils import busy_wait
+from lerobot.utils.robot_utils import precise_sleep
 from loguru import logger
 
 from schemas import TeleoperationConfig
@@ -173,7 +173,7 @@ class TeleoperateWorker(BaseThreadWorker):
             if self.events["save"].is_set():
                 logger.info("save")
                 self.events["save"].clear()
-                busy_wait(0.3)  # TODO check if neccesary
+                precise_sleep(0.3)  # TODO check if neccesary
                 new_episode = self._build_episode_from_buffer(self.dataset.meta.latest_episode)
                 if new_episode is not None:
                     self._report_episode(new_episode)
@@ -184,7 +184,7 @@ class TeleoperateWorker(BaseThreadWorker):
             if self.events["reset"].is_set():
                 logger.info("reset")
                 self.events["reset"].clear()
-                busy_wait(0.3)  # TODO check if neccesary
+                precise_sleep(0.3)  # TODO check if neccesary
                 self.dataset.clear_episode_buffer()
                 self.is_recording = False
                 self._report_state()
@@ -213,7 +213,7 @@ class TeleoperateWorker(BaseThreadWorker):
             dt_s = time.perf_counter() - start_loop_t
             wait_time = 1 / self.config.fps - dt_s
 
-            busy_wait(wait_time)
+            precise_sleep(wait_time)
 
     def teardown(self) -> None:
         """Disconnect robots and close queue."""
