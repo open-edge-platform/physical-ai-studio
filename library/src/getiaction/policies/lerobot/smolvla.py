@@ -8,7 +8,6 @@ This module provides a Lightning-compatible wrapper around LeRobot's ACT impleme
 
 from __future__ import annotations
 
-from dataclasses import field
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -31,7 +30,6 @@ if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     from lerobot.datasets.utils import dataset_to_policy_features
     from lerobot.policies.smolvla.configuration_smolvla import SmolVLAConfig as _LeRobotSmolVLAConfig
-    from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy as _LeRobotSmolVLAPolicy
 
     LEROBOT_AVAILABLE = True
 else:
@@ -40,7 +38,6 @@ else:
     _LeRobotACTConfig = None
     _LeRobotACTPolicy = None
     LEROBOT_AVAILABLE = False
-
 
 
 class SmolVLA(Policy, LeRobotFromConfig):
@@ -248,6 +245,7 @@ class SmolVLA(Policy, LeRobotFromConfig):
             min_period: Sensitivity min for the timestep used in sine-cosine positional encoding.
             max_period: Sensitivity max for the timestep used in sine-cosine positional encoding.
             **kwargs: Additional SmolVLA parameters .
+
         Raises:
             ImportError: If LeRobot is not installed.
         """
@@ -304,7 +302,7 @@ class SmolVLA(Policy, LeRobotFromConfig):
             "expert_width_multiplier": expert_width_multiplier,
             "min_period": min_period,
             "max_period": max_period,
-            ** kwargs
+            ** kwargs,
         }
 
         self.learning_rate = optimizer_lr
@@ -370,7 +368,7 @@ class SmolVLA(Policy, LeRobotFromConfig):
         features = dataset_to_policy_features(lerobot_dataset.meta.features)
         stats = lerobot_dataset.meta.stats
 
-        # Create or update LeRobot ACT configuration based on what user provided
+        # Create or update LeRobot SmolVLA configuration based on what user provided
         if self._config_object is not None:
             # User provided a full config object - update input/output features
             lerobot_config = self._config_object
