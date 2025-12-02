@@ -12,12 +12,13 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 from lerobot.configs.types import NormalizationMode
+from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
 from lightning_utilities.core.imports import module_available
 
 from getiaction.data.lerobot import FormatConverter
 from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 from getiaction.policies.base import Policy
-from getiaction.policies.lerobot.mixin import LeRobotFromConfig
+from getiaction.policies.lerobot.mixin import LeRobotFromConfig, LeRobotExport
 from getiaction.policies.lerobot.smolvla_with_xai import SmolVLAPolicyWithXAI
 
 if TYPE_CHECKING:
@@ -30,6 +31,7 @@ if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     from lerobot.datasets.utils import dataset_to_policy_features
     from lerobot.policies.smolvla.configuration_smolvla import SmolVLAConfig as _LeRobotSmolVLAConfig
+    from lerobot.policies.factory import make_pre_post_processors
 
     LEROBOT_AVAILABLE = True
 else:
@@ -37,10 +39,11 @@ else:
     dataset_to_policy_features = None
     _LeRobotACTConfig = None
     _LeRobotACTPolicy = None
+    make_pre_post_processors = None
     LEROBOT_AVAILABLE = False
 
 
-class SmolVLA(Policy, LeRobotFromConfig):
+class SmolVLA(LeRobotExport, LeRobotFromConfig, Policy):
     """LeRobot's SmolVLA policy wrapper with explainability.
 
     PyTorch Lightning wrapper around LeRobot's SmolVLA implementation that provides
@@ -55,66 +58,6 @@ class SmolVLA(Policy, LeRobotFromConfig):
 
     The wrapper supports multiple configuration methods through the ``LeRobotFromConfig`` mixin.
     See ``LeRobotFromConfig`` for detailed configuration examples.
-
-    Examples:
-        Basic usage with explicit arguments (recommended):
-            >>> from getiaction.policies.lerobot import SmolVLA
-            >>> from getiaction.data.lerobot import LeRobotDataModule
-            >>> from getiaction.train import Trainer
-
-            >>> # Create policy with explicit parameters
-            >>> policy = SmolVLA()
-
-            >>> # Create datamodule
-            >>> datamodule = LeRobotDataModule(
-            ...     repo_id="lerobot/pusht",
-            ...     train_batch_size=8,
-            ... )
-
-            >>> # Train
-            >>> trainer = Trainer(max_epochs=100)
-            >>> trainer.fit(policy, datamodule)
-
-        Using configuration file (alternative):
-            >>> # From dict, YAML, Pydantic, or LeRobot config
-            >>> policy = SmolVLA.from_config("config.yaml")
-            >>> # or
-            >>> policy = SmolVLA.from_config({"dim_model": 512, "chunk_size": 100})
-
-        Using pre-configured LeRobot config (advanced):
-            >>> from lerobot.policies.smolvla.configuration_smolvla import SmolVLAConfig as LeRobotSmolVLAConfig
-            >>> lerobot_config = LeRobotSmolVLAConfig()
-            >>> policy = SmolVLA.from_config(lerobot_config)
-
-        YAML configuration with LightningCLI (explicit args):
-
-            ```yaml
-            # config.yaml
-            model:
-              class_path: getiaction.policies.lerobot.SmolVLA
-              init_args:
-                dim_model: 512
-                chunk_size: 100
-                n_action_steps: 100
-                use_vae: true
-            data:
-              class_path: getiaction.data.lerobot.LeRobotDataModule
-              init_args:
-                repo_id: lerobot/pusht
-                train_batch_size: 8
-            ```
-
-            Command line usage:
-
-            ```bash
-            getiaction fit --config config.yaml
-            ```
-
-        CLI overrides (with explicit args in YAML):
-
-            ```bash
-            getiaction fit --config config.yaml --model.dim_model 1024
-            ```
 
     Note:
         The policy is initialized lazily during the setup() phase, which is called
@@ -319,7 +262,6 @@ class SmolVLA(Policy, LeRobotFromConfig):
 
         # Policy will be initialized in setup()
         self._smolvla_policy_with_xai: SmolVLAPolicyWithXAI
-        self.model: nn.Module | None = None
 
         self.save_hyperparameters()
 
@@ -373,7 +315,7 @@ class SmolVLA(Policy, LeRobotFromConfig):
             )
             raise TypeError(msg)
         features = dataset_to_policy_features(lerobot_dataset.meta.features)
-        stats = lerobot_dataset.meta.stats
+        dataset_stats = lerobot_dataset.meta.stats
 
         # Create or update LeRobot SmolVLA configuration based on what user provided
         if self._config_object is not None:
@@ -391,35 +333,22 @@ class SmolVLA(Policy, LeRobotFromConfig):
 
         # Initialize the policy
         policy = SmolVLAPolicyWithXAI(lerobot_config,
-                                      dataset_stats=stats,
                                       layer_idx=self.layer_idx,
                                       head_idx=self.head_idx)  # type: ignore[arg-type,misc]
         self.add_module("_smolvla_policy_with_xai", policy)
-        self.model = policy.model
+        self._preprocessor, self._postprocessor = make_pre_post_processors(lerobot_config, dataset_stats=dataset_stats)
 
-    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        """Forward pass for the SmolVLA policy.
-
-        The return value depends on the model's training mode:
-        - In training mode: Returns (loss, loss_dict) from LeRobot's forward method
-        - In evaluation mode: Returns action predictions via select_action method
-
-        Args:
-            batch (Observation): Input batch of observations
+    @property
+    def metadata_extra(self) -> dict[str, Any]:
+        """Add SmolVLA-specific metadata for export.
 
         Returns:
-            torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]: In training mode,
-                returns tuple of (loss, loss_dict). In eval mode, returns selected actions tensor.
+            Dictionary containing SmolVLA-specific parameters for inference.
         """
-        # Convert to LeRobot format for internal processing
-        batch_dict = FormatConverter.to_lerobot_dict(batch)
-
-        if self.training:
-            # During training, return loss information for backpropagation
-            return self.smolvla_policy_with_xai(batch_dict)
-
-        # During evaluation, return action predictions
-        return self.select_action(batch)
+        return {
+            "chunk_size": self._smolvla_policy_with_xai.config.chunk_size,
+            "use_action_queue": True,
+        }
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
         """Configure optimizer using LeRobot's custom parameter groups.
@@ -441,10 +370,10 @@ class SmolVLA(Policy, LeRobotFromConfig):
         """
         del batch_idx  # Unused argument
 
-        # Convert to LeRobot format if needed (handles Observation or collated dict)
-        batch_dict = FormatConverter.to_lerobot_dict(batch)
+        # Batch must be in LeRobot format (set data_format="lerobot" when creating datamodule)
+        pp_batch = self._preprocessor(batch)
+        total_loss, loss_dict = self.smolvla_policy_with_xai(pp_batch)
 
-        total_loss, loss_dict = self.smolvla_policy_with_xai(batch_dict)
         for key, value in loss_dict.items():
             if key == "loss":
                 self.log(f"train/{key}", value, prog_bar=True)
@@ -482,25 +411,37 @@ class SmolVLA(Policy, LeRobotFromConfig):
         """
         return self.evaluate_gym(batch, batch_idx, stage="test")
 
-    def select_action(self, batch: Observation) -> torch.Tensor:
+    def select_action(self, batch: Observation | dict[str, torch.Tensor]) -> torch.Tensor:
         """Select action (inference mode) through LeRobot.
 
-        Converts the Observation to LeRobot dict format and passes it to the
-        underlying LeRobot policy for action prediction.
+        Handles full preprocessing and postprocessing pipeline:
+        1. Convert Observation to LeRobot dict format
+        2. Apply preprocessing (normalization, transforms)
+        3. Get action prediction from model
+        4. Apply postprocessing (denormalization)
+
+        For ACT (chunked policy), this returns the full action chunk.
+        The InferenceModel handles extracting individual actions when needed.
 
         Args:
-            batch: Input batch of observations.
+            batch: Input batch of observations (raw, from gym).
 
         Returns:
-            The selected action tensor.
+            The action tensor - full chunk for chunked policies with shape
+            (batch, chunk_size, action_dim) or (batch, action_dim) for non-chunked.
         """
-        # Move batch to device (observations from gym are on CPU)
-        batch = batch.to(self.device)
+        # Step 1: Convert to LeRobot format if needed
+        batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
 
-        # Convert to LeRobot format
-        batch_dict = FormatConverter.to_lerobot_dict(batch)
+        # Step 2: Apply preprocessing (normalization, etc.)
+        batch_dict = self._preprocessor(batch_dict)
 
-        return self.smolvla_policy_with_xai.select_action(batch_dict)
+        # Step 3: Get action from LeRobot policy
+        # This uses LeRobot's select_action which handles action queue and temporal ensemble
+        action = self.smolvla_policy_with_xai.select_action(batch_dict)
+
+        # Step 4: Apply postprocessing (denormalization)
+        return self._postprocessor(action)
 
     def reset(self) -> None:
         """Reset the policy state."""

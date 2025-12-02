@@ -13,16 +13,12 @@ from typing import Any
 import cv2
 import numpy as np
 import torch
-from lerobot.constants import ACTION
-from lerobot.policies.normalize import Normalize, Unnormalize
-from lerobot.policies.pretrained import PreTrainedPolicy
 from lerobot.policies.smolvla.configuration_smolvla import SmolVLAConfig
 from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy, VLAFlowMatching
 from lerobot.policies.smolvla.smolvlm_with_expert import SmolVLMWithExpertModel, apply_rope
 from lerobot.policies.utils import populate_queues
+from lerobot.utils.constants import ACTION
 from torch import Tensor, nn
-from transformers import AutoProcessor
-from transformers.models.llama.modeling_llama import LlamaDecoderLayer
 
 
 class SmolVLMWithExpertModelWithXAI(SmolVLMWithExpertModel):
@@ -124,7 +120,7 @@ class SmolVLMWithExpertModelWithXAI(SmolVLMWithExpertModel):
 
     def forward_attn_layer(  # noqa: PLR0914
         self,
-        model_layers: list[list[LlamaDecoderLayer]],
+        model_layers: list[list],
         inputs_embeds: list[torch.Tensor],
         layer_idx: int,
         position_ids: torch.Tensor,
@@ -266,12 +262,14 @@ class VLAFlowMatchingWithXAI(VLAFlowMatching):
 
 
 class SmolVLAPolicyWithXAI(SmolVLAPolicy):
-    """This replaces the original SmolVLA implementation."""
+    """This augments the original SmolVLAPolicy implementation."""
+
+    config_class = SmolVLAConfig
+    name = "smolvla"
 
     def __init__(
         self,
         config: SmolVLAConfig,
-        dataset_stats: dict[str, dict[str, Tensor]] | None = None,
 
         # XAI parameters
         layer_idx: int | None = -1,
@@ -282,23 +280,13 @@ class SmolVLAPolicyWithXAI(SmolVLAPolicy):
         Args:
             config: Policy configuration class instance or None, in which case the default instantiation of the
                 configuration class is used.
-            dataset_stats: Dataset statistics to be used for normalization. If not passed here, it is expected that
-                they will be passed with a call to `load_state_dict` before the policy is used.
             layer_idx: Which layer to display (None means average from all layers)
             head_idx: Which head to display (None means average from all heads) -1 takes the max instead of mean.
         """
-        PreTrainedPolicy.__init__(self, config)  # Call grandparent instead of parent to prevent redundant init.
+        super().__init__(config)
         config.validate_features()
         self.config = config
-        self.normalize_inputs = Normalize(config.input_features, config.normalization_mapping, dataset_stats)
-        self.normalize_targets = Normalize(
-            config.output_features, config.normalization_mapping, dataset_stats,
-        )
-        self.unnormalize_outputs = Unnormalize(
-            config.output_features, config.normalization_mapping, dataset_stats,
-        )
 
-        self.language_tokenizer = AutoProcessor.from_pretrained(self.config.vlm_model_name).tokenizer
         self.model = VLAFlowMatchingWithXAI(config)
         self.reset()
 
@@ -329,13 +317,8 @@ class SmolVLAPolicyWithXAI(SmolVLAPolicy):
         batch = self._prepare_batch(batch)
         self._queues = populate_queues(self._queues, batch, exclude_keys=[ACTION])
 
-        # Action queue logic for n_action_steps > 1. When the action_queue is depleted, populate it by
-        # querying the policy.
         if len(self._queues[ACTION]) == 0:
-            actions = self.get_action_chunk(batch, noise)
-
-            # `self.predict_action_chunk` returns a (batch_size, n_action_steps, action_dim) tensor, but the queue
-            # effectively has shape (n_action_steps, batch_size, *), hence the transpose.
+            actions = self._get_action_chunk(batch, noise)
             self._queues[ACTION].extend(actions.transpose(0, 1)[: self.config.n_action_steps])
 
         # Also get the weights and task
