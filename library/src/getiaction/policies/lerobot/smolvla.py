@@ -140,7 +140,7 @@ class SmolVLA(Policy, LeRobotFromConfig):
         n_obs_steps: int = 1,
         chunk_size: int = 50,
         n_action_steps: int = 50,
-        normalization_mapping: dict[str, NormalizationMode] = None,
+        normalization_mapping: dict[str, NormalizationMode] | None = None,
 
         # State dimensions
         max_state_dim: int = 32,
@@ -191,8 +191,8 @@ class SmolVLA(Policy, LeRobotFromConfig):
         max_period: float = 4.0,
 
         # XAI
-        layer_idx: int = -1,
-        head_idx: int = None,
+        layer_idx: int | None = -1,
+        head_idx: int | None = None,
 
         # Additional parameters via kwargs
         **kwargs: Any,  # noqa: ANN401
@@ -215,35 +215,42 @@ class SmolVLA(Policy, LeRobotFromConfig):
             max_state_dim: State token dimensionality. Shorter state and action vectors will be padded.
             max_action_dim: Action token dimensionality.
             resize_imgs_with_padding: Default input image size
-            empty_cameras: Add empty images. Used by smolvla_aloha_sim which adds the empty left and right wrist cameras in addition to the top camera.
-            adapt_to_pi_aloha: Converts the joint and gripper values from the standard Aloha space to the space used by the pi internal runtime which was used to train the base model.,
-            use_delta_joint_actions_aloha: Converts joint dimensions to deltas with respect to the current state before passing to the model. Gripper dimensions will remain in absolute values.
+            empty_cameras: Add empty images. Used by smolvla_aloha_sim which adds the empty left and right wrist cameras
+                in addition to the top camera.
+            adapt_to_pi_aloha: Converts the joint and gripper values from the standard Aloha space to the space used by
+                the pi internal runtime which was used to train the base model.,
+            use_delta_joint_actions_aloha: Converts joint dimensions to deltas with respect to the current state before
+                passing to the model. Gripper dimensions will remain in absolute values.
             tokenizer_max_length: Tokenizer.
             num_steps: Decoding.
             use_cache: Attention utils.
-            freeze_vision_encoder:
-            train_expert_only:
-            train_state_proj:
-            optimizer_lr:
-            optimizer_betas:
-            optimizer_eps:
-            optimizer_weight_decay:
-            optimizer_grad_clip_norm:
-            scheduler_warmup_steps:
-            scheduler_decay_steps:
-            scheduler_decay_lr:
+            freeze_vision_encoder: Freeze the encoder.
+            train_expert_only: Train only the expert part of the model.
+            train_state_proj: Train state projection.
+            optimizer_lr: Learning rate for the internal optimizer.
+            optimizer_betas: Betas for the internal optimizer.
+            optimizer_eps: Epsilon for the internal optimizer.
+            optimizer_weight_decay: Weight decay for the internal optimizer.
+            optimizer_grad_clip_norm: Gradient clipping for the internal optimizer.
+            scheduler_warmup_steps: Warmup steps for the internal scheduler.
+            scheduler_decay_steps: Decay steps for the internal scheduler.
+            scheduler_decay_lr: Learning rate decay for the internal scheduler.
             vlm_model_name: Select the VLM backbone.
-            load_vlm_weights: Set to True in case of training the expert from scratch. True when init from pretrained SmolVLA weights.
+            load_vlm_weights: Set to True in case of training the expert from scratch. True when init from pretrained
+                SmolVLA weights.
             add_image_special_tokens: Whether to use special image tokens around image features.
             attention_mode: Attention mode.
             prefix_length: Prefix length.
             pad_language_to: Padding.
-            num_expert_layers: Less or equal to 0 is the default where the action expert has the same number of layers of VLM. Otherwise the expert have less layers.
+            num_expert_layers: Less or equal to 0 is the default where the action expert has the same number of layers
+                of VLM. Otherwise, the expert has fewer layers.
             num_vlm_layers: Number of layers used in the VLM (first num_vlm_layers layers)
             self_attn_every_n_layers: Interleave SA layers each self_attn_every_n_layers.
             expert_width_multiplier: The action expert hidden size (wrt to the VLM)
             min_period: Sensitivity min for the timestep used in sine-cosine positional encoding.
             max_period: Sensitivity max for the timestep used in sine-cosine positional encoding.
+            layer_idx: Specifies which layer to use for XAI (set to none for average)
+            head_idx: Specifies which attention head to use for XAI (set to none for average or -1 for max)
             **kwargs: Additional SmolVLA parameters .
 
         Raises:
@@ -318,7 +325,7 @@ class SmolVLA(Policy, LeRobotFromConfig):
 
     @property
     def smolvla_policy_with_xai(self) -> SmolVLAPolicyWithXAI:
-        """Get the initialized wrapped policy
+        """Get the initialized wrapped policy.
 
         Returns:
             The initialized SmolVLAPolicyWithXAI
@@ -383,7 +390,10 @@ class SmolVLA(Policy, LeRobotFromConfig):
             )
 
         # Initialize the policy
-        policy = SmolVLAPolicyWithXAI(lerobot_config, dataset_stats=stats, layer_idx=self.layer_idx, head_idx=self.head_idx)  # type: ignore[arg-type,misc]
+        policy = SmolVLAPolicyWithXAI(lerobot_config,
+                                      dataset_stats=stats,
+                                      layer_idx=self.layer_idx,
+                                      head_idx=self.head_idx)  # type: ignore[arg-type,misc]
         self.add_module("_smolvla_policy_with_xai", policy)
         self.model = policy.model
 
