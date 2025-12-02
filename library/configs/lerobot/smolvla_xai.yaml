@@ -1,14 +1,14 @@
-# ACT Policy Training Configuration
-# Train Action Chunking Transformer using LeRobot's implementation
+# SmolVLAxAI Policy Training Configuration
+# Train SmolVLA using LeRobot's implementation
 #
 # Usage:
-#   getiaction fit --config configs/lerobot_act.yaml
+#   getiaction fit --config configs/lerobot/smolvla_xai.yaml
 #
 # Override parameters:
-#   getiaction fit --config configs/lerobot_act.yaml --model.dim_model 1024
+#   getiaction fit --config configs/lerobot/smolvla_xai.yaml --model.max_state_dim 64
 
 model:
-  class_path: getiaction.policies.lerobot.smolvla.SmolVLA
+  class_path: getiaction.policies.lerobot.SmolVLAxAI
   init_args:
         # Steps for input and output
         n_obs_steps: 1
@@ -70,7 +70,7 @@ model:
 data:
   class_path: getiaction.data.lerobot.LeRobotDataModule
   init_args:
-    repo_id: "lerobot/aloha_sim_transfer_cube_human"
+    repo_id: "lerobot/svla_so100_stacking"
     train_batch_size: 64
     data_format: "lerobot" # Output format: "lerobot" (flattened dict) or "getiaction" (Observation)
     delta_timestamps:
