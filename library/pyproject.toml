@@ -26,6 +26,7 @@ authors = [
   { name="Alfie Roddan", email="alfiex.roddan@intel.com" },
   { name="Vladislav Sovrsaov", email="vladislav.sovrasov@intel.com" },
   { name="Samet Akcay", email="samet.akcay@intel.com" },
+  { name="Klaas Dijkstra", email="klaas.dijkstra@intel.com" },
 ]
 description = "A package for training vision-action models"
 readme = "README.md"
