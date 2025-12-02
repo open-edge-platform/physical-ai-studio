@@ -14,7 +14,7 @@ from loguru import logger
 
 from exceptions import ResourceInUseError, ResourceType
 from schemas import CameraConfig, Dataset, Episode, EpisodeVideo, LeRobotDatasetInfo, ProjectConfig
-from storage.storage import GETI_ACTION_DATASETS
+from settings import get_settings
 
 
 def get_dataset_episodes(repo_id: str, root: str | None) -> list[Episode]:
@@ -96,7 +96,8 @@ def get_local_repository_ids(home: str | Path | None = None) -> list[str]:
 
 def get_geti_action_datasets(home: str | Path | None = None) -> list[tuple[str, Path]]:
     """Get all local repository ids."""
-    home = Path(home) if home is not None else GETI_ACTION_DATASETS
+    settings = get_settings()
+    home = Path(home) if home is not None else settings.datasets_dir
 
     repo_ids: list[tuple[str, Path]] = []
     for repo in list_directories(home):

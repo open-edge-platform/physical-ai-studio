@@ -25,18 +25,20 @@ export default function useWebSocketWithResponse(
         connect
     );
 
-    const sendJsonMessageAndWait = async (
+    const sendJsonMessageAndWait = <MessageType>(
         data: object,
-        matcher: (message: MessageEvent) => boolean,
+        matcher: (message: MessageType) => boolean,
         messageOptions?: { timeout: number }
-    ) => {
-        socket.sendJsonMessage(data);
+    ): Promise<MessageType> => {
         const requestId = uuidv4();
-        await new Promise((resolve, reject) => {
+        socket.sendJsonMessage(data);
+
+        return new Promise((resolve, reject) => {
             messagePromises.current.set(requestId, (message) => {
-                if (matcher(message)) {
+                const messageData = JSON.parse(message.data) as MessageType;
+                if (matcher(messageData)) {
                     messagePromises.current.delete(requestId);
-                    resolve(message);
+                    resolve(messageData);
                 }
             });
             if (messageOptions?.timeout)
