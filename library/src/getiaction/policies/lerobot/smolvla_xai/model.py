@@ -331,7 +331,7 @@ class SmolVLAPolicyWithXAI(SmolVLAPolicy):
 
         return self._queues[ACTION].popleft()
 
-    def get_xai(self) -> list[np.ndarray]:
+    def explain(self) -> list[np.ndarray]:
         """Get the XAI layer.
 
         Returns:

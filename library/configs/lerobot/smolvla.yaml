@@ -70,7 +70,7 @@ model:
 data:
   class_path: getiaction.data.lerobot.LeRobotDataModule
   init_args:
-    repo_id: "kdijkstr/place1"
+    repo_id: "lerobot/aloha_sim_transfer_cube_human"
     train_batch_size: 64
     data_format: "lerobot" # Output format: "lerobot" (flattened dict) or "getiaction" (Observation)
     delta_timestamps:
@@ -78,9 +78,9 @@ data:
 
 
 trainer:
-  max_epochs: 1
+  max_epochs: 200
   accelerator: gpu
   devices: 1
   precision: 32
-  log_every_n_steps: 1
-  check_val_every_n_epoch: 1
+  log_every_n_steps: 10
+  check_val_every_n_epoch: 10

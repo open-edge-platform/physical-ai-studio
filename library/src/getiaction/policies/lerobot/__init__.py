@@ -102,6 +102,7 @@ from lightning_utilities.core.imports import module_available
 from getiaction.policies.lerobot.act import ACT
 from getiaction.policies.lerobot.diffusion import Diffusion
 from getiaction.policies.lerobot.groot import Groot
+from getiaction.policies.lerobot.smolvla_xai.smolvla_xai import SmolVLAxAI
 from getiaction.policies.lerobot.universal import LeRobotPolicy
 
 LEROBOT_AVAILABLE = module_available("lerobot")
@@ -196,6 +197,7 @@ __all__ = [
     "LeRobotPolicy",
     "PI0Fast",
     "SmolVLA",
+    "SmolVLAxAI",
     "VQBeT",
     "get_lerobot_policy",
 ]
@@ -264,6 +266,7 @@ def get_lerobot_policy(policy_name: str, **kwargs) -> LeRobotPolicy:  # noqa: AN
         "pi05": PI05,
         "pi0fast": PI0Fast,
         "smolvla": SmolVLA,
+        "smolvla_xai": SmolVLAxAI,
     }
 
     if policy_name_lower in policy_map:
@@ -315,6 +318,7 @@ def list_available_policies() -> list[str]:
             "pi0fast",
             "sac",
             "smolvla",
+            "smolvla_xai"
             "tdmpc",
             "vqbet",
         ]

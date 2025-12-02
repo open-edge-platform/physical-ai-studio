@@ -12,26 +12,23 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 from lerobot.configs.types import NormalizationMode
-from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
 from lightning_utilities.core.imports import module_available
 
 from getiaction.data.lerobot import FormatConverter
 from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 from getiaction.policies.base import Policy
 from getiaction.policies.lerobot.mixin import LeRobotFromConfig, LeRobotExport
-from getiaction.policies.lerobot.smolvla_with_xai import SmolVLAPolicyWithXAI
+from getiaction.policies.lerobot.smolvla_xai.model import SmolVLAPolicyWithXAI
 
 if TYPE_CHECKING:
-    from torch import nn
-
     from getiaction.data import Observation
     from getiaction.gyms import Gym
 
 if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     from lerobot.datasets.utils import dataset_to_policy_features
-    from lerobot.policies.smolvla.configuration_smolvla import SmolVLAConfig as _LeRobotSmolVLAConfig
     from lerobot.policies.factory import make_pre_post_processors
+    from lerobot.policies.smolvla.configuration_smolvla import SmolVLAConfig as _LeRobotSmolVLAConfig
 
     LEROBOT_AVAILABLE = True
 else:
@@ -43,7 +40,7 @@ else:
     LEROBOT_AVAILABLE = False
 
 
-class SmolVLA(LeRobotExport, LeRobotFromConfig, Policy):
+class SmolVLAxAI(LeRobotExport, LeRobotFromConfig, Policy):
     """LeRobot's SmolVLA policy wrapper with explainability.
 
     PyTorch Lightning wrapper around LeRobot's SmolVLA implementation that provides
@@ -420,7 +417,7 @@ class SmolVLA(LeRobotExport, LeRobotFromConfig, Policy):
         3. Get action prediction from model
         4. Apply postprocessing (denormalization)
 
-        For ACT (chunked policy), this returns the full action chunk.
+        For SmolVLA (chunked policy), this returns the full action chunk.
         The InferenceModel handles extracting individual actions when needed.
 
         Args:
@@ -442,6 +439,41 @@ class SmolVLA(LeRobotExport, LeRobotFromConfig, Policy):
 
         # Step 4: Apply postprocessing (denormalization)
         return self._postprocessor(action)
+
+    def select_action_with_explain(self, batch: Observation | dict[str, torch.Tensor]) \
+            -> tuple[torch.Tensor, list[torch.Tensor]]:
+        """Select action (inference mode) through LeRobot and also return explanation.
+
+        Handles full preprocessing and postprocessing pipeline:
+        1. Convert Observation to LeRobot dict format
+        2. Apply preprocessing (normalization, transforms)
+        3. Get action prediction from model
+        4. Apply postprocessing (denormalization)
+
+        For SmolVLA (chunked policy), this returns the full action chunk.
+        The InferenceModel handles extracting individual actions when needed.
+
+        Args:
+            batch: Input batch of observations (raw, from gym).
+
+        Returns:
+            The action tensor - full chunk for chunked policies with shape
+            (batch, chunk_size, action_dim) or (batch, action_dim) for non-chunked.
+            A heatmap image that can be overlayd
+        """
+        # Step 1: Convert to LeRobot format if needed
+        batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
+
+        # Step 2: Apply preprocessing (normalization, etc.)
+        batch_dict = self._preprocessor(batch_dict)
+
+        # Step 3: Get action from LeRobot policy
+        # This uses LeRobot's select_action which handles action queue and temporal ensemble
+        action = self.smolvla_policy_with_xai.select_action(batch_dict)
+
+        # Step 4: Apply postprocessing (denormalization)
+        return self._postprocessor(action), [torch.from_numpy(arr) for arr in self.smolvla_policy_with_xai.explain()]
+
 
     def reset(self) -> None:
         """Reset the policy state."""
