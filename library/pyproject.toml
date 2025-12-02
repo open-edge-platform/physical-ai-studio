@@ -47,6 +47,8 @@ dependencies = [
     "openvino>=2025.0",
     "jsonargparse[signatures]>=4.27.0", # This could be extra
     "pydantic", # This could be extra
+    "transformers>=4.57.3",
+    "num2words>=0.5.14",
 ]
 
 [project.optional-dependencies]
