@@ -6,8 +6,8 @@ Welcome to the `geti-action` repository. This project provides an SDK and a stud
 
 This repository is a monorepo that contains two main components:
 
--   **`/library`**: A core Python library that contains Vision-Language-Action models to train, evaluate and deploy.
--   **`/application`**: Geti Action studio application to capture observations, episodes to train/deploy VLA models.
+- **`/library`**: A core Python library that contains Vision-Language-Action models to train, evaluate and deploy.
+- **`/application`**: Geti Action studio application to capture observations, episodes to train/deploy VLA models.
 
 ## Getting Started
 
