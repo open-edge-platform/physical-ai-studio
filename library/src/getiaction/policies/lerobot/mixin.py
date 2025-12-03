@@ -22,7 +22,7 @@ import yaml
 from getiaction import __version__
 from getiaction.config.mixin import FromConfig
 from getiaction.export import Export, ExportBackend
-from getiaction.export.mixin_export import _postprocess_openvino_model, _serialize_model_config
+from getiaction.export.mixin_export import _postprocess_openvino_model
 from getiaction.transforms import replace_center_crop_with_onnx_compatible
 
 if TYPE_CHECKING:
@@ -587,8 +587,15 @@ class LeRobotExport(Export):
 
         # Add model config if available - use _lerobot_policy instead of self.model
         if hasattr(self, "_lerobot_policy") and hasattr(self._lerobot_policy, "config"):  # type: ignore[attr-defined]
-            config_dict = _serialize_model_config(self._lerobot_policy.config)  # type: ignore[attr-defined]
-            metadata["config"] = config_dict
+            config = self._lerobot_policy.config  # type: ignore[attr-defined]
+            # LeRobot configs use PreTrainedConfig, not our Config class
+            init_args = (
+                dataclasses.asdict(config) if dataclasses.is_dataclass(config) and not isinstance(config, type) else {}
+            )
+            metadata["config"] = {
+                "class_path": f"{config.__class__.__module__}.{config.__class__.__qualname__}",
+                "init_args": init_args,
+            }
 
         # Save as YAML (preferred)
         yaml_path = export_dir / "metadata.yaml"

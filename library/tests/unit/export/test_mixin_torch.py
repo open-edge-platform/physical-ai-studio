@@ -3,24 +3,23 @@
 
 """Unit tests for mixin_torch module."""
 
-import dataclasses
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
-import numpy as np
 import pytest
 import torch
 import yaml
 
+from getiaction.config import Config
 from getiaction.export import (
     FromCheckpoint,
     Export,
 )
 
 from getiaction.export.mixin_torch import CONFIG_KEY
-from getiaction.export.mixin_export import ExportBackend, _serialize_model_config
+from getiaction.export.mixin_export import ExportBackend
 
 
 # Test enums
@@ -34,7 +33,7 @@ class ActivationType(StrEnum):
 
 # Test dataclasses
 @dataclass
-class SimpleConfig:
+class SimpleConfig(Config):
     """Simple configuration for testing."""
 
     hidden_size: int = 128
@@ -43,43 +42,13 @@ class SimpleConfig:
 
 
 @dataclass
-class NestedConfig:
-    """Nested configuration for testing."""
-
-    model_config: SimpleConfig
-    learning_rate: float = 0.001
-    batch_size: int = 32
-
-
-@dataclass
-class ComplexConfig:
-    """Complex configuration with various data types."""
-
-    name: str = "test_model"
-    hidden_size: int = 256
-    activation: ActivationType = ActivationType.RELU
-    layers: tuple = (64, 128, 256)
-    weights: np.ndarray = dataclasses.field(default_factory=lambda: np.array([1.0, 2.0, 3.0]))
-    nested: SimpleConfig = dataclasses.field(default_factory=SimpleConfig)
-    metadata: dict = dataclasses.field(default_factory=lambda: {"version": "1.0"})
-
-
-@dataclass
-class DictWithDataclassConfig:
-    """Configuration with dict containing dataclasses."""
-
-    name: str = "dict_test"
-    models: dict = dataclasses.field(default_factory=lambda: {"encoder": SimpleConfig(), "decoder": SimpleConfig()})
-
-
-@dataclass
-class ComplexRoundTripConfig:
+class ComplexRoundTripConfig(Config):
     """Complex configuration for round-trip testing."""
 
-    simple: SimpleConfig
-    activation: ActivationType
-    layers: tuple
-    metadata: dict
+    simple: SimpleConfig = field(default_factory=SimpleConfig)
+    activation: ActivationType = ActivationType.RELU
+    layers: tuple = (64, 128, 256)
+    metadata: dict = field(default_factory=lambda: {"version": "1.0"})
 
 
 # Test models
@@ -129,104 +98,6 @@ class SimplePolicy(Export, torch.nn.Module):
     def __init__(self, model):
         super().__init__()
         self.model = model
-
-
-class TestSerializeModelConfig:
-    """Tests for _serialize_model_config function."""
-
-    def test_simple_config(self):
-        """Test serialization of simple configuration."""
-        config = SimpleConfig(hidden_size=256, num_layers=5, activation="gelu")
-        result = _serialize_model_config(config)
-
-        assert "class_path" in result
-        assert "init_args" in result
-        assert result["class_path"] == f"{SimpleConfig.__module__}.{SimpleConfig.__qualname__}"
-        assert result["init_args"]["hidden_size"] == 256
-        assert result["init_args"]["num_layers"] == 5
-        assert result["init_args"]["activation"] == "gelu"
-
-    def test_nested_config(self):
-        """Test serialization of nested configuration."""
-        simple = SimpleConfig(hidden_size=128)
-        config = NestedConfig(model_config=simple, learning_rate=0.0001)
-        result = _serialize_model_config(config)
-
-        assert result["class_path"] == f"{NestedConfig.__module__}.{NestedConfig.__qualname__}"
-        assert "model_config" in result["init_args"]
-        assert isinstance(result["init_args"]["model_config"], dict)
-        assert "class_path" in result["init_args"]["model_config"]
-        assert result["init_args"]["model_config"]["init_args"]["hidden_size"] == 128
-        assert result["init_args"]["learning_rate"] == 0.0001
-
-    def test_str_enum_conversion(self):
-        """Test that StrEnum values are converted to strings."""
-        config = ComplexConfig(activation=ActivationType.GELU)
-        result = _serialize_model_config(config)
-
-        assert result["init_args"]["activation"] == "gelu"
-        assert isinstance(result["init_args"]["activation"], str)
-
-    def test_numpy_array_conversion(self):
-        """Test that numpy arrays are converted to lists."""
-        weights = np.array([[1.0, 2.0], [3.0, 4.0]])
-        config = ComplexConfig(weights=weights)
-        result = _serialize_model_config(config)
-
-        assert isinstance(result["init_args"]["weights"], list)
-        assert result["init_args"]["weights"] == [[1.0, 2.0], [3.0, 4.0]]
-
-    def test_tuple_conversion(self):
-        """Test that tuples are converted to lists."""
-        config = ComplexConfig(layers=(32, 64, 128))
-        result = _serialize_model_config(config)
-
-        assert isinstance(result["init_args"]["layers"], list)
-        assert result["init_args"]["layers"] == [32, 64, 128]
-
-    def test_dict_with_dataclass(self):
-        """Test serialization of dict containing dataclasses."""
-        encoder = SimpleConfig(hidden_size=256)
-        decoder = SimpleConfig(hidden_size=512)
-        config = DictWithDataclassConfig(models={"encoder": encoder, "decoder": decoder})
-        result = _serialize_model_config(config)
-
-        assert "models" in result["init_args"]
-        assert "encoder" in result["init_args"]["models"]
-        assert "decoder" in result["init_args"]["models"]
-        assert "class_path" in result["init_args"]["models"]["encoder"]
-        assert result["init_args"]["models"]["encoder"]["init_args"]["hidden_size"] == 256
-        assert result["init_args"]["models"]["decoder"]["init_args"]["hidden_size"] == 512
-
-    def test_dict_with_str_enum_keys(self):
-        """Test that StrEnum keys in dicts are converted to strings."""
-        config = ComplexConfig(metadata={ActivationType.RELU: "relu_config"})
-        result = _serialize_model_config(config)
-
-        assert "relu" in result["init_args"]["metadata"]
-        assert result["init_args"]["metadata"]["relu"] == "relu_config"
-
-    def test_complex_config_all_types(self):
-        """Test serialization of complex config with multiple data types."""
-        simple = SimpleConfig(hidden_size=128)
-        config = ComplexConfig(
-            name="complex_model",
-            hidden_size=512,
-            activation=ActivationType.TANH,
-            layers=(64, 128, 256, 512),
-            weights=np.array([0.1, 0.2, 0.3]),
-            nested=simple,
-            metadata={"version": "2.0", "author": "test"},
-        )
-        result = _serialize_model_config(config)
-
-        assert result["init_args"]["name"] == "complex_model"
-        assert result["init_args"]["hidden_size"] == 512
-        assert result["init_args"]["activation"] == "tanh"
-        assert result["init_args"]["layers"] == [64, 128, 256, 512]
-        assert result["init_args"]["weights"] == [0.1, 0.2, 0.3]
-        assert "class_path" in result["init_args"]["nested"]
-        assert result["init_args"]["metadata"] == {"version": "2.0", "author": "test"}
 
 
 class TestToTorch:
@@ -364,7 +235,7 @@ class TestFromCheckpoint:
 
         # Create a fake state dict
         state_dict = policy.model.state_dict()
-        config_dict = _serialize_model_config(config)
+        config_dict = config.to_jsonargparse()
         state_dict[CONFIG_KEY] = yaml.dump(config_dict)
 
         # Load from dict
@@ -397,7 +268,7 @@ class TestFromCheckpoint:
                 self.model = SimpleModel(config)
 
         config = SimpleConfig()
-        config_dict = _serialize_model_config(config)
+        config_dict = config.to_jsonargparse()
         state_dict = {CONFIG_KEY: yaml.dump(config_dict)}
 
         with pytest.raises(NotImplementedError, match="from_dataclass"):
@@ -411,7 +282,7 @@ class TestFromCheckpoint:
         original_state_dict = {
             "linear.weight": torch.randn(128, 128),
             "linear.bias": torch.randn(128),
-            CONFIG_KEY: yaml.dump(_serialize_model_config(config)),
+            CONFIG_KEY: yaml.dump(config.to_jsonargparse()),
         }
 
         # Verify config key is present
@@ -500,7 +371,9 @@ class TestRoundTrip:
 
             loaded_model = ComplexTestModel.load_from_checkpoint(checkpoint_path)
 
-            assert loaded_model.config.simple.hidden_size == 256
+            # Note: nested dataclasses are loaded as dicts since to_jsonargparse()
+            # only adds class_path at the top level. The init_args are plain dicts.
+            assert loaded_model.config.simple["hidden_size"] == 256
             assert loaded_model.config.activation == "gelu"  # StrEnum converted to str
             assert loaded_model.config.layers == [64, 128, 256]  # tuple converted to list
             assert loaded_model.config.metadata == {"version": "1.0"}
@@ -520,85 +393,3 @@ class TestRoundTrip:
                 assert model.config.hidden_size == 32
                 assert model.config.num_layers == 3
                 assert model.config.activation == "relu"
-
-
-class TestEdgeCases:
-    """Test edge cases and error handling."""
-
-    def test_empty_config(self):
-        """Test serialization with minimal config."""
-
-        @dataclass
-        class EmptyConfig:
-            pass
-
-        config = EmptyConfig()
-        result = _serialize_model_config(config)
-
-        assert "class_path" in result
-        assert "init_args" in result
-        assert result["init_args"] == {}
-
-    def test_config_with_none_values(self):
-        """Test serialization with None values."""
-
-        @dataclass
-        class ConfigWithNone:
-            value: int | None = None
-
-        config = ConfigWithNone(value=None)
-        result = _serialize_model_config(config)
-
-        assert result["init_args"]["value"] is None
-
-    def test_deeply_nested_config(self):
-        """Test serialization of deeply nested configurations."""
-
-        @dataclass
-        class Level3Config:
-            value: int = 3
-
-        @dataclass
-        class Level2Config:
-            level3: Level3Config = dataclasses.field(default_factory=Level3Config)
-            value: int = 2
-
-        @dataclass
-        class Level1Config:
-            level2: Level2Config = dataclasses.field(default_factory=Level2Config)
-            value: int = 1
-
-        config = Level1Config()
-        result = _serialize_model_config(config)
-
-        assert result["init_args"]["value"] == 1
-        assert result["init_args"]["level2"]["init_args"]["value"] == 2
-        assert result["init_args"]["level2"]["init_args"]["level3"]["init_args"]["value"] == 3
-
-    def test_numpy_scalar(self):
-        """Test serialization of numpy scalar values."""
-
-        @dataclass
-        class ConfigWithNumpyScalar:
-            value: float = 1.0
-
-        config = ConfigWithNumpyScalar(value=np.float32(3.14))
-        result = _serialize_model_config(config)
-
-        # Numpy scalars should be preserved as-is (not converted)
-        assert isinstance(result["init_args"]["value"], (float, np.floating))
-
-    def test_multidimensional_numpy_array(self):
-        """Test serialization of multi-dimensional numpy arrays."""
-
-        @dataclass
-        class ConfigWithMultiDimArray:
-            tensor: np.ndarray = dataclasses.field(default_factory=lambda: np.zeros((2, 3, 4)))
-
-        config = ConfigWithMultiDimArray(tensor=np.ones((2, 3, 4)))
-        result = _serialize_model_config(config)
-
-        assert isinstance(result["init_args"]["tensor"], list)
-        assert len(result["init_args"]["tensor"]) == 2
-        assert len(result["init_args"]["tensor"][0]) == 3
-        assert len(result["init_args"]["tensor"][0][0]) == 4

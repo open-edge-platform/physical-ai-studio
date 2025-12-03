@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from lightning_utilities import module_available
 
@@ -17,6 +17,7 @@ from .converters import FormatConverter
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
+    from typing import Any
 
     from getiaction.data import Observation
 
@@ -174,13 +175,14 @@ class _LeRobotDatasetAdapter(Dataset):
                 elif k == "observation.environment_state":
                     feature_type = FeatureType.ENV
 
+                stats = dataset_meta.stats[k]
                 observation_features[feature_name] = Feature(
                     ftype=feature_type,
                     normalization_data=NormalizationParameters(
-                        mean=dataset_meta.stats[k].get("mean", 0.0),
-                        std=dataset_meta.stats[k].get("std", 1.0),
-                        min=dataset_meta.stats[k].get("min", 0.0),
-                        max=dataset_meta.stats[k].get("max", 0.0),
+                        mean=stats["mean"].tolist(),
+                        std=stats["std"].tolist(),
+                        min=stats["min"].tolist(),
+                        max=stats["max"].tolist(),
                     ),
                     shape=feature_shape,
                     name=feature_name,
@@ -197,13 +199,14 @@ class _LeRobotDatasetAdapter(Dataset):
         action_features = {}
         for k in raw_act_features:
             if k in dataset_meta.features:
+                stats = dataset_meta.stats[k]
                 action_features[k] = Feature(
                     ftype=FeatureType.ACTION,
                     normalization_data=NormalizationParameters(
-                        mean=dataset_meta.stats[k].get("mean", 0.0),
-                        std=dataset_meta.stats[k].get("std", 1.0),
-                        min=dataset_meta.stats[k].get("min", 0.0),
-                        max=dataset_meta.stats[k].get("max", 0.0),
+                        mean=stats["mean"].tolist(),
+                        std=stats["std"].tolist(),
+                        min=stats["min"].tolist(),
+                        max=stats["max"].tolist(),
                     ),
                     shape=dataset_meta.features[k]["shape"],
                     name=k,

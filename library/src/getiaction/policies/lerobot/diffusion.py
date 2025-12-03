@@ -41,7 +41,7 @@ else:
     make_pre_post_processors = None
 
 
-class Diffusion(LeRobotExport, LeRobotFromConfig, Policy):  # type: ignore[misc]
+class Diffusion(LeRobotExport, LeRobotFromConfig, Policy):  # type: ignore[misc, override]
     """Diffusion Policy from LeRobot with lazy initialization.
 
     This class wraps LeRobot's Diffusion Policy implementation, providing a
