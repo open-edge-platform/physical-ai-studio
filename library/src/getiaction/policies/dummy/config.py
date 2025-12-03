@@ -5,9 +5,11 @@
 
 from dataclasses import dataclass
 
+from getiaction.config import Config
+
 
 @dataclass(frozen=True)
-class DummyConfig:
+class DummyConfig(Config):
     """Dummy policy config."""
 
     action_shape: list | tuple
