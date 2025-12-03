@@ -722,7 +722,7 @@ class _ACT(nn.Module):
             # When not using the VAE encoder, we set the latent to be all zeros.
             mu = log_sigma_x2 = None
             latent_sample = torch.zeros([batch_size, self.config.latent_dim], dtype=batch[STATE].dtype).to(
-                batch[STATE].device
+                batch[STATE].device,
             )
         # Prepare transformer encoder inputs.
         encoder_in_tokens = [self.encoder_latent_input_proj(latent_sample)]
