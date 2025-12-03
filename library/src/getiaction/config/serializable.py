@@ -7,14 +7,18 @@ Provides safe serialization/deserialization that works with torch.load(weights_o
 These utilities are used by the Config base class for policy configurations.
 """
 
+from __future__ import annotations
+
 import dataclasses
 import operator
 import types
-from collections.abc import Mapping
 from enum import Enum
 from functools import reduce
 from itertools import starmap
-from typing import Union, get_args, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Union, get_args, get_origin, get_type_hints
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 # Type argument counts for generic type reconstruction
 _MIN_DICT_TYPE_ARGS = 2  # dict[K, V] has 2 type args: key type and value type
@@ -27,10 +31,11 @@ def dataclass_to_dict(obj: object) -> object:
     """Recursively convert a dataclass (or nested structure) to a plain dict.
 
     Args:
-        obj: Object to convert (dataclass, dict, list, tuple, Enum, or primitive).
+        obj: Object to convert (dataclass, dict, list, tuple, Enum, ndarray, or primitive).
 
     Returns:
         Plain dict if obj is a dataclass, otherwise appropriately converted value.
+        NumPy arrays are converted to nested lists.
     """
     if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
         result = {}
@@ -40,7 +45,8 @@ def dataclass_to_dict(obj: object) -> object:
         return result
 
     if isinstance(obj, dict):
-        return {k: dataclass_to_dict(v) for k, v in obj.items()}
+        # Convert StrEnum keys to strings
+        return {(k.value if isinstance(k, Enum) else k): dataclass_to_dict(v) for k, v in obj.items()}
 
     if isinstance(obj, (list, tuple)):
         # Always return list for JSON compatibility
@@ -48,6 +54,10 @@ def dataclass_to_dict(obj: object) -> object:
 
     if isinstance(obj, Enum):
         return obj.value
+
+    # Handle numpy arrays (check by attribute to avoid import)
+    if hasattr(obj, "tolist") and hasattr(obj, "ndim"):
+        return obj.tolist()  # type: ignore[union-attr]
 
     return obj
 
