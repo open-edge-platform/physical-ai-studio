@@ -71,7 +71,7 @@ async def jobs_websocket(
             logger.info(f"Received websocket message: {data}")
 
     except WebSocketDisconnect:
-        print("Except: disconnected!")
+        logger.info("Except: disconnected!")
 
     event_processor.unsubscribe([EventType.JOB_UPDATE], send_data)
-    print("websocket handling done...")
+    logger.info("Jobs Websocket handling done...")

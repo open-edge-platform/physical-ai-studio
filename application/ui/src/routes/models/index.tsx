@@ -164,10 +164,15 @@ export const Index = () => {
     const [trainJob, setTrainJob] = useState<SchemaTrainJob>();
 
     const onMessage = ({ data }: WebSocketEventMap['message']) => {
-        const message = JSON.parse(data) as { event: string; data: SchemaJob };
-        if (message.event === 'JOB_UPDATE' && message.data.project_id === project_id) {
+        const message_data = JSON.parse(data)
+        if (message_data.event === 'JOB_UPDATE') {
+            const message = message_data as { event: string; data: SchemaJob };
+            if (message.data.project_id !== project_id) {
+                return;
+            }
+
             if (message.data.status === 'completed') {
-                client.invalidateQueries({ queryKey: ['get', '/api/models/{project_id}'] });
+                client.invalidateQueries({ queryKey: ['get', '/api/projects/{project_id}/models'] });
                 setTrainJob(undefined);
             } else if (message.data.status === 'running') {
                 setTrainJob(message.data as SchemaTrainJob);
