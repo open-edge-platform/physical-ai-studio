@@ -30,7 +30,7 @@ async def get_tasks_of_model(
     """Get availabe tasks for model."""
     model = await model_service.get_model_by_id(model_id)
     dataset = await dataset_service.get_dataset_by_id(model.dataset_id)
-    return list(LeRobotDatasetMetadata(dataset.name, dataset.path).tasks.values())
+    return list(LeRobotDatasetMetadata(dataset.name, dataset.path).tasks.to_dict()["task_index"].keys())
 
 
 @router.delete("")

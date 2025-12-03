@@ -10,7 +10,7 @@ import torch
 from getiaction.data import Observation
 from getiaction.policies import ACT, ACTModel
 from lerobot.robots.utils import make_robot_from_config
-from lerobot.utils.robot_utils import busy_wait
+from lerobot.utils.robot_utils import precise_sleep
 from loguru import logger
 
 from schemas import InferenceConfig
@@ -119,7 +119,7 @@ class InferenceWorker(BaseThreadWorker):
                 logger.info("start")
                 self.events["start"].clear()
                 self.robot.send_action(SO_101_REST_POSITION)
-                busy_wait(0.3)  # TODO check if neccesary
+                precise_sleep(0.3)  # TODO check if neccesary
                 self.is_running = True
                 start_episode_t = time.perf_counter()
                 self._report_state()
@@ -128,7 +128,7 @@ class InferenceWorker(BaseThreadWorker):
                 logger.info("stop")
                 self.events["stop"].clear()
                 action_queue.clear()
-                busy_wait(0.3)  # TODO check if neccesary
+                precise_sleep(0.3)  # TODO check if neccesary
                 self.is_running = False
                 self._report_state()
 
@@ -159,7 +159,7 @@ class InferenceWorker(BaseThreadWorker):
             dt_s = time.perf_counter() - start_loop_t
             wait_time = 1 / self.config.fps - dt_s
 
-            busy_wait(wait_time)
+            precise_sleep(wait_time)
 
     def teardown(self) -> None:
         """Disconnect robots and close queue."""

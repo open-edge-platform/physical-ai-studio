@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from lightning.pytorch.callbacks import ModelCheckpoint
+
 from settings import get_settings
 
 if TYPE_CHECKING:
@@ -49,7 +51,7 @@ class TrainingWorker(BaseProcessWorker):
                     id=id,
                     project_id=payload.project_id,
                     dataset_id=payload.dataset_id,
-                    path=str(settings.models_dir / str(id) / "model.ckpt"),
+                    path=str(settings.models_dir / str(id) / "model.pth"),
                     name=payload.model_name,
                     policy=payload.policy,
                     properties={},
@@ -79,6 +81,8 @@ class TrainingWorker(BaseProcessWorker):
         )
         try:
             dataset = await DatasetService.get_dataset_by_id(model.dataset_id)
+            path = Path(model.path)
+            path.parent.mkdir(parents=True)
 
             l_dm = LeRobotDataModule(
                 repo_id=dataset.name,
@@ -91,22 +95,29 @@ class TrainingWorker(BaseProcessWorker):
             )
 
             policy = ACT(model=lib_model)
-            path = Path(model.path)
+
+            checkpoint_callback = ModelCheckpoint(
+                dirpath=path.parent,
+                filename=path.stem,  # filename without suffix
+                save_top_k=1,
+                monitor="train/loss",
+                mode="min",
+            )
 
             trainer = Trainer(
                 callbacks=[
+                    checkpoint_callback,
                     TrainingTrackingCallback(
                         shutdown_event=self._stop_event,
                         interrupt_event=self.interrupt_event,
                         dispatcher=dispatcher,
                     ),
                 ],
-                max_steps=10000,
+                max_steps=10,
             )
 
             dispatcher.start()
             trainer.fit(model=policy, datamodule=l_dm)
-            path.parent.mkdir(parents=True)
             policy.to_torch(path)
 
             job = await JobService.update_job_status(
