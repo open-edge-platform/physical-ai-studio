@@ -91,3 +91,17 @@ class TestACTolicy:
         assert isinstance(sample_input, dict)
         assert "state" in sample_input
         assert "images" in sample_input
+
+    @pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+    def test_dtype_change(self, policy, batch, dtype):
+        """Test model behavior with different input dtypes."""
+        eval_policy = copy.deepcopy(policy)
+        eval_policy = eval_policy.to(dtype).eval()
+
+        input_batch = copy.deepcopy(batch).to_dict()
+        input_batch["images"] = input_batch["images"].to(dtype)
+        input_batch["state"] = input_batch["state"].to(dtype)
+
+        actions = eval_policy.model(input_batch)
+        assert isinstance(actions, torch.Tensor)
+        assert actions.dtype == dtype
