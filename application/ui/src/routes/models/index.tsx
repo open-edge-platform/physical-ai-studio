@@ -13,6 +13,7 @@ import {
     IllustratedMessage,
     Item,
     Key,
+    Link,
     Menu,
     MenuTrigger,
     ProgressBar,
@@ -32,6 +33,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { $api, API_BASE_URL } from '../../api/client';
 import { SchemaJob, SchemaModel } from '../../api/openapi-spec';
 import { useProjectId } from '../../features/projects/use-project';
+import { paths } from '../../router';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
 import { SchemaTrainJob, TrainModelModal } from './train-model';
 
@@ -65,7 +67,16 @@ const ModelList = ({ models }: { models: SchemaModel[] }) => {
                             <Cell>{model.name}</Cell>
                             <Cell>{new Date(model.created_at!).toLocaleString()}</Cell>
                             <Cell>{model.policy}</Cell>
-                            <Cell>Run model</Cell>
+                            <Cell>
+                                <Link
+                                    href={paths.project.models.inference({
+                                        project_id: model.project_id,
+                                        model_id: model.id!,
+                                    })}
+                                >
+                                    Run model
+                                </Link>
+                            </Cell>
                             <Cell>
                                 <MenuTrigger>
                                     <ActionButton

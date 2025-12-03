@@ -1,36 +1,20 @@
 # Gym
 
-The `Gym` serves as an interface to the gymnasium framework.
+Abstract interface for unified environment interaction.
 
-At a later date we plan to convert output `ObsType` to our internal representation.
+Gym defines the backend-agnostic API used across action environments.
+All environments must implement reset, step, sampling, and observation conversion.
 
 ```mermaid
 classDiagram
     class Gym {
-        + str _gym_id
-        + gym_env env
-        + Space observation_space
-        + Space action_space
-        --
-        + __init__(gym_id: str, **extra_gym_kwargs)
-        + reset(seed: int, options: dict) tuple~ObsType, dict~str, Any~~
-        + step(action: ActType) tuple~ObsType, float, bool, bool, dict~str, Any~~
+        <<abstract>>
+        + reset(seed: int | None, **reset_kwargs) Observation, dict|list[dict]
+        + step(action: torch.Tensor) Observation, float|list[float], bool|list[bool], bool|list[bool], dict|list[dict]
         + render(*args, **kwargs) Any
         + close() None
-        + sample_action() Any
-        + get_max_episode_steps() int | None
+        + sample_action() torch.Tensor
+        + to_observation(raw_obs: Any) Observation
     }
 
-    class gymnasium.Env {
-        + observation_space
-        + action_space
-        --
-        + make(id: str, **kwargs)
-        + reset()
-        + step(action)
-        + render()
-        + close()
-    }
-
-    Gym --> gymnasium.Env : wraps
 ```

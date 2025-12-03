@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { useMutation } from '@tanstack/react-query';
 
@@ -12,9 +12,9 @@ interface RobotState {
     cameras: string[];
 }
 
-interface RecordApiJsonResponse {
+interface RecordApiJsonResponse<Object> {
     event: string;
-    data: object;
+    data: Object;
 }
 
 function createRobotState(data: unknown | null = null) {
@@ -36,7 +36,7 @@ export interface Observation {
 
 export const useTeleoperation = (setup: SchemaTeleoperationConfig, onEpisode: (episode: SchemaEpisode) => void) => {
     const [state, setState] = useState<RobotState>(createRobotState());
-    const { sendJsonMessage, lastJsonMessage, readyState, sendJsonMessageAndWait } = useWebSocketWithResponse(
+    const { sendJsonMessage, readyState, sendJsonMessageAndWait } = useWebSocketWithResponse(
         `${API_BASE_URL}/api/record/teleoperate/ws`,
         {
             shouldReconnect: () => true,
@@ -49,21 +49,8 @@ export const useTeleoperation = (setup: SchemaTeleoperationConfig, onEpisode: (e
     const [numberOfRecordings, setNumberOfRecordings] = useState<number>(0);
     const observation = useRef<Observation | undefined>(undefined);
 
-    useEffect(() => {
-        if (lastJsonMessage) {
-            const message = lastJsonMessage as RecordApiJsonResponse;
-            switch (message.event) {
-                case 'state':
-                    setState(message.data as RobotState);
-                    break;
-                case 'actions':
-                    break;
-            }
-        }
-    }, [lastJsonMessage]);
-
     const onMessage = ({ data }: WebSocketEventMap['message']) => {
-        const message = JSON.parse(data) as RecordApiJsonResponse;
+        const message = JSON.parse(data) as RecordApiJsonResponse<object>;
         switch (message.event) {
             case 'state':
                 setState(message.data as RobotState);
@@ -78,12 +65,11 @@ export const useTeleoperation = (setup: SchemaTeleoperationConfig, onEpisode: (e
     };
 
     const init = useMutation({
-        mutationFn: async () => {
-            await sendJsonMessageAndWait(
+        mutationFn: async () =>
+            await sendJsonMessageAndWait<RecordApiJsonResponse<RobotState>>(
                 { event: 'initialize', data: setup },
-                ({ data }) => JSON.parse(data)['data']['initialized'] == true
-            );
-        },
+                (data) => data['data']['initialized'] == true
+            ),
     });
 
     const startEpisode = () => {
@@ -95,11 +81,12 @@ export const useTeleoperation = (setup: SchemaTeleoperationConfig, onEpisode: (e
 
     const saveEpisode = useMutation({
         mutationFn: async () => {
-            await sendJsonMessageAndWait(
+            const message = await sendJsonMessageAndWait<RecordApiJsonResponse<RobotState>>(
                 { event: 'save', data: {} },
-                ({ data }) => JSON.parse(data)['data']['is_recording'] == false
+                ({ data }) => data['is_recording'] == false
             );
             setNumberOfRecordings((n) => n + 1);
+            return message;
         },
     });
 

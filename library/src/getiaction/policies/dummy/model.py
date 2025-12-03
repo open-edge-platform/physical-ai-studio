@@ -4,38 +4,15 @@
 """Dummy policy for testing usage."""
 
 from collections import deque
-from typing import Any
 
 import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import nn
 
 from getiaction.config import FromConfig
+from getiaction.data.utils import infer_batch_size
 from getiaction.export import FromCheckpoint
 from getiaction.policies.dummy.config import DummyConfig
-
-
-def _infer_batch_size(batch: dict[str, Any]) -> int:
-    """Infer the batch size from the first tensor in the batch.
-
-    This function scans the values of the input batch dictionary and returns
-    the size of the first dimension of the first `torch.Tensor` it finds. It
-    assumes that all tensors in the batch have the same batch dimension.
-
-    Args:
-        batch (dict[str, Any]): A dictionary where values may include tensors.
-
-    Returns:
-        int: The inferred batch size.
-
-    Raises:
-        ValueError: If no tensor is found in the batch.
-    """
-    for v in batch.values():
-        if isinstance(v, torch.Tensor):
-            return v.shape[0]
-    msg = "Could not infer batch size from batch."
-    raise ValueError(msg)
 
 
 class Dummy(nn.Module, FromConfig, FromCheckpoint):
@@ -48,6 +25,9 @@ class Dummy(nn.Module, FromConfig, FromCheckpoint):
     def __init__(
         self,
         action_shape: list | tuple,
+        action_dtype: torch.dtype | str = torch.float32,
+        action_min: float | None = None,
+        action_max: float | None = None,
         n_action_steps: int = 1,
         temporal_ensemble_coeff: float | None = None,
         n_obs_steps: int = 1,
@@ -57,6 +37,9 @@ class Dummy(nn.Module, FromConfig, FromCheckpoint):
 
         Args:
             action_shape (list | tuple): The shape of a single action.
+            action_dtype (torch.dtype | str): The dtype to put the action in.
+            action_min (float | None): Minimum value of action given dtype.
+            action_max (float | None): Maximum value of action given dtype.
             n_action_steps (int, optional): Number of action steps per chunk.
                 Defaults to 1.
             temporal_ensemble_coeff (float | None, optional): Coefficient for
@@ -69,6 +52,9 @@ class Dummy(nn.Module, FromConfig, FromCheckpoint):
         """
         super().__init__()
         self.action_shape = action_shape
+        self.action_dtype = action_dtype
+        self.action_max = action_max
+        self.action_min = action_min
         self.n_action_steps = n_action_steps
         self.temporal_ensemble_coeff = temporal_ensemble_coeff
 
@@ -194,9 +180,73 @@ class Dummy(nn.Module, FromConfig, FromCheckpoint):
 
         # Handle action queue logic
         if len(self._action_queue) == 0:
-            actions = self.predict_action_chunk(batch)[:, : self.n_action_steps]
-            self._action_queue.extend(actions.transpose(0, 1))
+            # chunk gets [B, n, dim]
+            actions = self.predict_action_chunk(batch)
+            for t in range(self.n_action_steps):
+                self._action_queue.append(actions[:, t])  # queue [B, dim]
         return self._action_queue.popleft()
+
+    @staticmethod
+    def _sample(
+        action_shape: tuple[int, ...] | list[int],
+        dtype: torch.dtype | str,
+        min_: float | None,
+        max_: float | None,
+    ) -> torch.Tensor:
+        """Generate a random tensor for the given action shape.
+
+        Sampling behavior depends on the provided bounds:
+
+        - If both ``min_`` and ``max_`` are ``None``, a default random
+          distribution is used (``torch.rand`` for floating-point dtypes or
+          ``torch.randint`` across the full integer dtype range).
+
+        - If both ``min_`` and ``max_`` are provided, values are sampled
+          uniformly within the specified range.
+
+        - If exactly one of ``min_`` or ``max_`` is provided, the tensor is
+          first generated using the default distribution and then clamped to
+          the provided bound.
+
+        Args:
+            action_shape: Shape of the generated tensor.
+            dtype: Output dtype, given as a ``torch.dtype`` or string
+                identifier.
+            min_: Optional lower bound for values.
+            max_: Optional upper bound for values.
+
+        Returns:
+            torch.Tensor: A tensor of shape ``action_shape`` containing random
+            values sampled according to the rules above.
+        """
+        is_float = torch.is_floating_point(torch.tensor([], dtype=dtype))
+
+        # Neither bound given -> default distribution
+        if min_ is None and max_ is None:
+            if is_float:
+                return torch.rand(action_shape, dtype=dtype)
+            info = torch.iinfo(dtype)
+            return torch.randint(info.min, info.max, action_shape, dtype=dtype)
+
+        # Both bounds given -> sample within [min_, max_]
+        if min_ is not None and max_ is not None:
+            if is_float:
+                return min_ + (max_ - min_) * torch.rand(action_shape, dtype=dtype)
+            return torch.randint(min_, max_ + 1, action_shape, dtype=dtype)
+
+        # Only one bound given -> clamp
+        if is_float:
+            out = torch.rand(action_shape, dtype=dtype)
+        else:
+            info = torch.iinfo(dtype)
+            out = torch.randint(info.min, info.max, action_shape, dtype=dtype)
+
+        if min_ is not None:
+            out = out.clamp(min=min_)
+        if max_ is not None:
+            out = out.clamp(max=max_)
+
+        return out
 
     @torch.no_grad()
     def predict_action_chunk(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
@@ -209,8 +259,14 @@ class Dummy(nn.Module, FromConfig, FromCheckpoint):
             torch.Tensor: A tensor of shape
                 `(batch_size, n_action_steps, *action_shape)`.
         """
-        batch_size = _infer_batch_size(batch)
-        return torch.randn((batch_size, self.n_action_steps, *self.action_shape))
+        batch_size = infer_batch_size(batch)
+        full_shape = (batch_size, self.n_action_steps, *tuple(self.action_shape))
+        return self._sample(
+            action_shape=full_shape,
+            dtype=self.action_dtype,
+            min_=self.action_min,
+            max_=self.action_max,
+        )
 
     def forward(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict]:
         """Forward pass through the model.
@@ -227,10 +283,13 @@ class Dummy(nn.Module, FromConfig, FromCheckpoint):
                 - If evaluating: predicted actions tensor.
         """
         if self.training:
-            batch_size = _infer_batch_size(batch)
+            batch_size = infer_batch_size(batch)
             # pred now depends on a parameter so it has grad_fn
             pred = (
-                torch.randn((batch_size, self.n_action_steps, *self.action_shape), device=self.dummy_param.device)
+                torch.randn(
+                    (batch_size, self.n_action_steps, *self.action_shape),
+                    device=self.dummy_param.device,
+                )
                 + self.dummy_param
             )
             target = torch.zeros_like(pred)

@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from lightning.pytorch.callbacks import ModelCheckpoint
+
 from settings import get_settings
 
 if TYPE_CHECKING:
@@ -15,7 +17,6 @@ if TYPE_CHECKING:
 from getiaction.data import LeRobotDataModule
 from getiaction.policies import ACT, ACTModel
 from getiaction.train import Trainer
-from lightning.pytorch.callbacks import ModelCheckpoint
 from loguru import logger
 
 from schemas import Job, Model
@@ -50,7 +51,7 @@ class TrainingWorker(BaseProcessWorker):
                     id=id,
                     project_id=payload.project_id,
                     dataset_id=payload.dataset_id,
-                    path=str(settings.models_dir / str(id) / "model.ckpt"),
+                    path=str(settings.models_dir / str(id) / "model.pth"),
                     name=payload.model_name,
                     policy=payload.policy,
                     properties={},
@@ -80,6 +81,8 @@ class TrainingWorker(BaseProcessWorker):
         )
         try:
             dataset = await DatasetService.get_dataset_by_id(model.dataset_id)
+            path = Path(model.path)
+            path.parent.mkdir(parents=True)
 
             l_dm = LeRobotDataModule(
                 repo_id=dataset.name,
@@ -92,7 +95,6 @@ class TrainingWorker(BaseProcessWorker):
             )
 
             policy = ACT(model=lib_model)
-            path = Path(model.path)
 
             checkpoint_callback = ModelCheckpoint(
                 dirpath=path.parent,
@@ -111,11 +113,12 @@ class TrainingWorker(BaseProcessWorker):
                         dispatcher=dispatcher,
                     ),
                 ],
-                max_steps=100,
+                max_steps=10,
             )
 
             dispatcher.start()
             trainer.fit(model=policy, datamodule=l_dm)
+            policy.to_torch(path)
 
             job = await JobService.update_job_status(
                 job_id=job.id, status=JobStatus.COMPLETED, message="Training finished"

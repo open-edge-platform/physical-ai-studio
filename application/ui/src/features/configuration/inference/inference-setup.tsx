@@ -3,44 +3,37 @@ import { Suspense, useState } from 'react';
 import {
     Button,
     ButtonGroup,
-    ComboBox,
     Content,
     Dialog,
     Divider,
     Flex,
-    Form,
     Heading,
     Item,
     Key,
     Loading,
-    Section,
     TabList,
     TabPanels,
     Tabs,
-    TextField,
     View,
 } from '@geti/ui';
 
 import { $api } from '../../../api/client';
-import { SchemaRobotConfig, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
-import { useSettings } from '../../../components/settings/use-settings';
-import { useProject } from '../../../features/projects/use-project';
-import { CameraSetup } from './camera-setup';
-import { RobotSetup } from './robot-setup';
-import { initialTeleoperationConfig, makeNameSafeForPath, storeConfigToCache } from './utils';
+import { SchemaInferenceConfig, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
+import { TELEOPERATION_CONFIG_CACHE_KEY } from '../../../routes/datasets/record/utils';
+import { useProject } from '../../projects/use-project';
+import { CameraSetup } from '../shared/camera-setup';
+import { RobotSetup } from '../shared/robot-setup';
 
-interface HardwareSetupProps {
-    onDone: (config: SchemaTeleoperationConfig | undefined) => void;
-    dataset_id: string | undefined;
+interface InferenceSetupProps {
+    onDone: (config: SchemaInferenceConfig | undefined) => void;
+    model_id: string;
 }
 
-export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
+export const InferenceSetup = ({ model_id, onDone }: InferenceSetupProps) => {
     const [activeTab, setActiveTab] = useState<string>('cameras');
     const project = useProject();
-    const { data: projectTasks } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/tasks', {
-        params: {
-            path: { project_id: project.id! },
-        },
+    const { data: model } = $api.useSuspenseQuery('get', '/api/models/{model_id}', {
+        params: { query: { uuid: model_id } },
     });
     const { data: availableCameras, refetch: refreshCameras } = $api.useSuspenseQuery('get', '/api/hardware/cameras');
     const { data: foundRobots, refetch: refreshRobots } = $api.useSuspenseQuery('get', '/api/hardware/robots');
@@ -49,15 +42,24 @@ export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
         '/api/hardware/calibrations'
     );
 
-    const createDatasetMutation = $api.useMutation('post', '/api/dataset');
-    const { geti_action_dataset_path } = useSettings();
+    const cachedConfig = JSON.parse(
+        localStorage.getItem(TELEOPERATION_CONFIG_CACHE_KEY) ?? '{}'
+    ) as SchemaTeleoperationConfig;
 
-    const isNewDataset = !dataset_id;
-    const initialTask = Object.values(projectTasks).flat()[0];
-
-    const [config, setConfig] = useState<SchemaTeleoperationConfig>(
-        initialTeleoperationConfig(initialTask, project, dataset_id, foundRobots)
-    );
+    // TODO: make cached config better...
+    const [config, setConfig] = useState<SchemaInferenceConfig>({
+        model,
+        task_index: 0,
+        fps: project.config!.fps,
+        cameras: cachedConfig.cameras ?? project.config!.cameras,
+        robot: cachedConfig.follower ?? {
+            id: '',
+            robot_type: project.config?.robot_type ?? '',
+            serial_id: '',
+            port: '',
+            type: 'follower',
+        },
+    });
 
     const updateCamera = (name: string, id: string, oldId: string, driver: string, oldDriver: string) => {
         setConfig({
@@ -74,24 +76,6 @@ export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
         });
     };
 
-    const updateRobot = (type: 'leader' | 'follower', robot_config: SchemaRobotConfig) => {
-        setConfig((c) => ({
-            ...c,
-            [type]: robot_config,
-        }));
-    };
-
-    const updateDataset = (name: string) => {
-        setConfig((c) => ({
-            ...c,
-            dataset: {
-                ...c.dataset,
-                name,
-                path: `${geti_action_dataset_path}/${makeNameSafeForPath(name)}`,
-            },
-        }));
-    };
-
     const onTabSwitch = (key: Key) => {
         setActiveTab(key.toString());
     };
@@ -100,12 +84,13 @@ export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
         if (activeTab === 'cameras') {
             setActiveTab('robots');
         } else {
-            if (isNewDataset) {
-                await createDatasetMutation.mutateAsync({ body: config.dataset });
-            }
-            storeConfigToCache(config);
+            //storeConfigToCache(config);
             onDone(config);
         }
+    };
+
+    const isValid = () => {
+        return true;
     };
 
     const onBack = () => {
@@ -116,12 +101,6 @@ export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
         }
     };
 
-    const isValid = () => {
-        const datasetNameValid = config.dataset !== null;
-        const taskValid = config.task !== '';
-        return datasetNameValid && taskValid;
-    };
-
     const onRefresh = () => {
         refreshCameras();
         refreshRobots();
@@ -130,33 +109,6 @@ export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
 
     return (
         <View>
-            <Form>
-                <TextField
-                    validationState={config.dataset.name == '' ? 'invalid' : 'valid'}
-                    isRequired
-                    label='Dataset Name'
-                    width={'100%'}
-                    value={config.dataset.name}
-                    isDisabled={!isNewDataset}
-                    onChange={updateDataset}
-                />
-                <ComboBox
-                    validationState={config.task === '' ? 'invalid' : 'valid'}
-                    isRequired
-                    label='Task'
-                    allowsCustomValue
-                    inputValue={config.task}
-                    onInputChange={(task) => setConfig((c) => ({ ...c, task }))}
-                >
-                    {Object.keys(projectTasks).map((datasetName) => (
-                        <Section key={datasetName} title={datasetName}>
-                            {projectTasks[datasetName].map((task) => (
-                                <Item key={`${datasetName}-${task}`}>{task}</Item>
-                            ))}
-                        </Section>
-                    ))}
-                </ComboBox>
-            </Form>
             <View height={'330px'}>
                 <Tabs onSelectionChange={onTabSwitch} selectedKey={activeTab}>
                     <TabList>
@@ -168,7 +120,7 @@ export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
                             <Flex gap='40px'>
                                 {config.cameras.map((camera) => (
                                     <CameraSetup
-                                        key={`${camera.name}${camera.port_or_device_id}`}
+                                        key={camera.name}
                                         camera={camera}
                                         availableCameras={availableCameras ?? []}
                                         updateCamera={updateCamera}
@@ -179,18 +131,11 @@ export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
                         <Item key='robots'>
                             <Flex gap='40px'>
                                 <RobotSetup
-                                    key={'leader'}
-                                    config={config.leader}
+                                    key={'robot'}
+                                    config={config.robot}
                                     portInfos={foundRobots ?? []}
                                     calibrations={availableCalibrations ?? []}
-                                    setConfig={(c) => updateRobot('leader', c)}
-                                />
-                                <RobotSetup
-                                    key={'follower'}
-                                    config={config.follower}
-                                    portInfos={foundRobots ?? []}
-                                    calibrations={availableCalibrations ?? []}
-                                    setConfig={(c) => updateRobot('follower', c)}
+                                    setConfig={(robot) => setConfig((r) => ({ ...r, robot }))}
                                 />
                             </Flex>
                         </Item>
@@ -216,17 +161,14 @@ export const HardwareSetup = ({ onDone, dataset_id }: HardwareSetupProps) => {
     );
 };
 
-export const HardwareSetupModal = (
-    close: (config: SchemaTeleoperationConfig | undefined) => void,
-    dataset_id: string | undefined
-) => {
+export const InferenceSetupModal = (close: (config: SchemaInferenceConfig | undefined) => void, model_id: string) => {
     return (
         <Dialog>
-            <Heading>Teleoperate Setup</Heading>
+            <Heading>Inference Setup</Heading>
             <Divider />
             <Content>
                 <Suspense fallback={<Loading mode='overlay' />}>
-                    <HardwareSetup dataset_id={dataset_id} onDone={close} />
+                    <InferenceSetup model_id={model_id} onDone={close} />
                 </Suspense>
             </Content>
         </Dialog>
