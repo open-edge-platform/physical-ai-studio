@@ -131,13 +131,13 @@ class Config:
         self,
         path: str | Path,
         *,
-        output_format: Literal["jsonargparse", "dict"] = "jsonargparse",
+        format: Literal["jsonargparse", "dict"] = "jsonargparse",  # noqa: A002
     ) -> None:
         """Save config to a YAML file.
 
         Args:
             path: Path to save the config file (must have .yaml or .yml extension).
-            output_format: Output format. "jsonargparse" (default) includes class_path and
+            format: Output format. "jsonargparse" (default) includes class_path and
                 init_args for dynamic instantiation. "dict" saves the plain config
                 without class metadata.
 
@@ -150,14 +150,14 @@ class Config:
 
             # Save with class_path for dynamic instantiation
             config.save("config.yaml")
-            config.save("config.yaml", output_format="jsonargparse")
+            config.save("config.yaml", format="jsonargparse")
 
             # Save plain dict (no class metadata)
-            config.save("config.yaml", output_format="dict")
+            config.save("config.yaml", format="dict")
             ```
         """
         path = Path(path)
-        data = self.to_dict() if output_format == "dict" else self.to_jsonargparse()
+        data = self.to_dict() if format == "dict" else self.to_jsonargparse()
 
         if path.suffix not in {".yaml", ".yml"}:
             msg = f"Unsupported file extension: {path.suffix}. Use .yaml or .yml"
