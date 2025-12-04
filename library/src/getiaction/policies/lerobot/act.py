@@ -39,7 +39,7 @@ else:
     LEROBOT_AVAILABLE = False
 
 
-class ACT(LeRobotExport, LeRobotFromConfig, Policy):  # type: ignore[misc]
+class ACT(LeRobotExport, LeRobotFromConfig, Policy):  # type: ignore[misc, override]
     """Action Chunking Transformer (ACT) policy from LeRobot.
 
     PyTorch Lightning wrapper around LeRobot's ACT implementation that provides

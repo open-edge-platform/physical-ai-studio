@@ -7,9 +7,11 @@ from dataclasses import dataclass
 
 import torch
 
+from getiaction.config import Config
+
 
 @dataclass(frozen=True)
-class DummyConfig:
+class DummyConfig(Config):
     """Configuration for a dummy policy.
 
     Attributes:
