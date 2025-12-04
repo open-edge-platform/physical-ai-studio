@@ -3,13 +3,16 @@
 
 """ACT policy config."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 
-from getiaction.data import Feature
+from getiaction.config import Config
+from getiaction.data import Feature  # noqa: TC001 - Needed at runtime for type hint resolution
 
 
 @dataclass(frozen=True)
-class ACTConfig:
+class ACTConfig(Config):
     """Configuration class for the Action Chunking Transformers policy.
 
     Defaults are configured for training on bimanual Aloha tasks like "insertion" or "transfer".
