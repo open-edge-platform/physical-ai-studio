@@ -111,6 +111,28 @@ class DatasetDB(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+    snapshots: Mapped[list["SnapshotDB"]] = relationship(
+        "SnapshotDB",
+        back_populates="dataset",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+class SnapshotDB(Base):
+    __tablename__ = "snapshots"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=lambda: str(uuid4()))
+    path: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id"))
+    dataset: Mapped["DatasetDB"] = relationship("DatasetDB", back_populates="snapshots")
+    models: Mapped[list["ModelDB"]] = relationship(
+        "ModelDB",
+        back_populates="snapshot",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
 
 class ModelDB(Base):
@@ -125,8 +147,10 @@ class ModelDB(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id"))
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
+    snapshot_id: Mapped[str] = mapped_column(ForeignKey("snapshots.id"))
     project: Mapped["ProjectDB"] = relationship("ProjectDB", back_populates="models")
     dataset: Mapped["DatasetDB"] = relationship("DatasetDB", back_populates="models")
+    snapshot: Mapped["DatasetDB"] = relationship("SnapshotDB", back_populates="models")
 
 
 class JobDB(Base):

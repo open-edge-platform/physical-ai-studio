@@ -52,3 +52,17 @@ class Dataset(BaseIDModel):
             }
         }
     }
+
+class Snapshot(BaseIDModel):
+    path: str
+    dataset_id: Annotated[UUID, Field(description="Dataset Unique Identifier")]
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "id": "7b073838-99d3-42ff-9018-4e901eb047fc",
+                "dataset_id": "fec4a691-76ee-4f66-8dea-aad3110e16d6",
+                "path": "/some/path/to/snapshot",
+            }
+        }
+
+    }
