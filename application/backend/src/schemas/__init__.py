@@ -20,11 +20,11 @@ __all__ = [
     "Job",
     "LeRobotDatasetInfo",
     "Model",
-    "Snapshot",
     "Project",
     "ProjectConfig",
     "Robot",
     "RobotConfig",
     "RobotPortInfo",
+    "Snapshot",
     "TeleoperationConfig",
 ]

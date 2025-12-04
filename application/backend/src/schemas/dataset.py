@@ -53,6 +53,7 @@ class Dataset(BaseIDModel):
         }
     }
 
+
 class Snapshot(BaseIDModel):
     path: str
     dataset_id: Annotated[UUID, Field(description="Dataset Unique Identifier")]
@@ -64,5 +65,4 @@ class Snapshot(BaseIDModel):
                 "path": "/some/path/to/snapshot",
             }
         }
-
     }

@@ -118,6 +118,7 @@ class DatasetDB(Base):
         lazy="selectin",
     )
 
+
 class SnapshotDB(Base):
     __tablename__ = "snapshots"
 

@@ -1,16 +1,16 @@
 import time
-
 from pathlib import Path
-from schemas import Dataset, Snapshot
 from shutil import copytree
 
 from db.engine import get_async_db_session_ctx
 from exceptions import ResourceAlreadyExistsError
 from repositories.snapshot_repo import SnapshotRepository
+from schemas import Dataset, Snapshot
 
 
 class SnapshotService:
     """Allow for snapshotting of dataset to specific folder."""
+
     @staticmethod
     async def create_snapshot_for_dataset(dataset: Dataset, destination: Path) -> Snapshot:
         if destination.exists():

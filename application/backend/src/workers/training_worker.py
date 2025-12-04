@@ -8,8 +8,8 @@ from uuid import uuid4
 
 from lightning.pytorch.callbacks import ModelCheckpoint
 
-from settings import get_settings
 from services.snapshot_service import SnapshotService
+from settings import get_settings
 
 if TYPE_CHECKING:
     import multiprocessing as mp
@@ -20,7 +20,7 @@ from getiaction.policies import ACT, ACTModel
 from getiaction.train import Trainer
 from loguru import logger
 
-from schemas import Job, Model
+from schemas import Job, Model, Snapshot
 from schemas.job import JobStatus, TrainJobPayload
 from services import DatasetService, JobService, ModelService
 from services.event_processor import EventType
@@ -54,7 +54,6 @@ class TrainingWorker(BaseProcessWorker):
                 model_path.parent.mkdir(parents=True)
                 snapshot_dir = model_path.parent / SnapshotService.generate_snapshot_folder_name()
                 snapshot = await SnapshotService.create_snapshot_for_dataset(dataset, destination=snapshot_dir)
-
 
                 model = Model(
                     id=id,
@@ -93,7 +92,7 @@ class TrainingWorker(BaseProcessWorker):
             path = Path(model.path)
 
             l_dm = LeRobotDataModule(
-                repo_id="snapshot", # doesnt matter for loading the data.
+                repo_id="snapshot",  # doesnt matter for loading the data.
                 root=snapshot.path,
                 train_batch_size=8,
             )
