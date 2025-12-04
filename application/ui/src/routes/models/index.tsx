@@ -164,7 +164,7 @@ export const Index = () => {
     const [trainJob, setTrainJob] = useState<SchemaTrainJob>();
 
     const onMessage = ({ data }: WebSocketEventMap['message']) => {
-        const message_data = JSON.parse(data)
+        const message_data = JSON.parse(data);
         if (message_data.event === 'JOB_UPDATE') {
             const message = message_data as { event: string; data: SchemaJob };
             if (message.data.project_id !== project_id) {
