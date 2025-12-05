@@ -2,11 +2,13 @@
 
 A living document outlining upcoming features, improvements, architectural changes, and long-term vision for `getiaction`.
 
-1. Vision
+## Vision
 
-**Mission**->Provide a modular, reproducible toolkit for training imitation and reinforcement learning models and deploying them in real applications.
+### Mission
 
-Core Principles:
+Provide a modular, reproducible toolkit for training imitation and reinforcement learning models and deploying them in real applications.
+
+### Core Principles
 
 - Modularity
 
@@ -45,7 +47,7 @@ Out of scope:
 
 #### Mid-term
 
-- Tools for inspecting data, environments and policies from the command line
+- Tools for inspecting data, environments and policies from the command line.
 
 #### Long-term
 
@@ -108,23 +110,31 @@ flowchart LR
 
 Some example benchamrks to look at (as of 05/12/2025):
 
-| Name                    | Simulator        | Description (Short)                                                         | Link                                              |
-| ----------------------- | ---------------- | --------------------------------------------------------------------------- | ------------------------------------------------- |
-| #### LIBERO             | MuJoCo           | Lifelong learning benchmark; transfer of declarative/procedural knowledge.  | https://github.com/Lifelong-Robot-Learning/LIBERO |
-| #### MetaWorld          | MuJoCo           | 50-task meta-RL & multi-task manipulation benchmark.                        | https://github.com/Farama-Foundation/Metaworld    |
-| #### Robomimic          | MuJoCo, others   | Imitation & offline RL with datasets, algorithms, and env wrappers.         | https://robomimic.github.io/                      |
-| #### D3IL               | MuJoCo, PyBullet | 7 manipulation tasks (push, align, stack, insert, etc.) for robot learning. | https://github.com/ALRhub/d3il                    |
-| #### Gymnasium Robotics | MuJoCo           | Standardized manipulation tasks from Farama’s robotics suite.               | https://robotics.farama.org/envs/                 |
-| #### VLABench           | MuJoCo           | 100 task categories, strong randomization, 2000+ objects.                   | https://vlabench.github.io/                       |
-| #### EgoVLA             | IsaacLab         | Bimanual humanoid manipulation tasks with demos.                            | https://rchalyang.github.io/EgoVLA/               |
-| #### CALVIN             | TACTO            | Long-horizon manipulation tasks with rich multimodal sensor setups.         | https://github.com/mees/calvin                    |
-| #### ManiSkill v2/3     | SAPIEN           | Unified manipulation framework with large-scale simulated tasks.            | https://github.com/haosulab/ManiSkill             |
-| #### RLBench            | CoppeliaSim      | Vision-based multi-task manipulation benchmark; few-shot friendly.          | https://github.com/stepjam/RLBench                |
+| Name               | Simulator        | Description (Short)                                                         | Link                                              |
+| ------------------ | ---------------- | --------------------------------------------------------------------------- | ------------------------------------------------- |
+| LIBERO             | MuJoCo           | Lifelong learning benchmark; transfer of declarative/procedural knowledge.  | https://github.com/Lifelong-Robot-Learning/LIBERO |
+| MetaWorld          | MuJoCo           | 50-task meta-RL & multi-task manipulation benchmark.                        | https://github.com/Farama-Foundation/Metaworld    |
+| Robomimic          | MuJoCo, others   | Imitation & offline RL with datasets, algorithms, and env wrappers.         | https://robomimic.github.io/                      |
+| D3IL               | MuJoCo, PyBullet | 7 manipulation tasks (push, align, stack, insert, etc.) for robot learning. | https://github.com/ALRhub/d3il                    |
+| Gymnasium Robotics | MuJoCo           | Standardized manipulation tasks from Farama’s robotics suite.               | https://robotics.farama.org/envs/                 |
+| VLABench           | MuJoCo           | 100 task categories, strong randomization, 2000+ objects.                   | https://vlabench.github.io/                       |
+| EgoVLA             | IsaacLab         | Bimanual humanoid manipulation tasks with demos.                            | https://rchalyang.github.io/EgoVLA/               |
+| CALVIN             | TACTO            | Long-horizon manipulation tasks with rich multimodal sensor setups.         | https://github.com/mees/calvin                    |
+| ManiSkill v2/3     | SAPIEN           | Unified manipulation framework with large-scale simulated tasks.            | https://github.com/haosulab/ManiSkill             |
+| RLBench            | CoppeliaSim      | Vision-based multi-task manipulation benchmark; few-shot friendly.          | https://github.com/stepjam/RLBench                |
 
 #### Short-term
 
 - A standard API for wrapping external simulation environments.
 - A small suite of benchmark environments for consistent evaluation.
+
+```python
+from getiaction.policy import load_policy
+from getiaction.benchmarks import load_benchmark
+
+policy = load_policy("pick_up_cup_policy_v1")
+bench = load_benchmark("pick_up_cup")
+```
 
 #### Mid-term
 
@@ -162,6 +172,21 @@ Some example benchamrks to look at (as of 05/12/2025):
 #### Mid-term
 
 - Parameter sweep utilities (local or via external tools like wandb).
+
+```python
+from getiaction.train import sweeps
+
+sweep = sweeps.GridSearch(
+    params={
+        "benchmark": ["metaworld-1", "libero-1"]
+        "policy": ["diffusion", "smolva", "groot"]
+    },
+    train_script="train_bc.py",
+)
+
+sweep.run()  # Local or remote
+```
+
 - Expanded metrics, evaluation suites
 - Standardized reporting
 
@@ -174,6 +199,12 @@ Some example benchamrks to look at (as of 05/12/2025):
 #### Short-term
 
 - Deployment-ready bundles containing weights, configuration and metadata.
+
+```python
+export("checkpoints/pickup_bc", formats=["onnx", "torchscript"])
+# -> Generates portable bundle: weights + config + metadata
+```
+
 - Export paths for ONNX, TorchScript and OpenVINO.
 
 #### Mid-term
@@ -209,13 +240,81 @@ C --> D["Model Interface (Input Slots -> Model -> Output Slots)"]
 D --> E["Actuator Topology (DoF & RobotConfig)"]
 ```
 
+Psuedo example:
+
+```python
+from getiaction.sensors import SensorNode, SensorLayer
+from getiaction.data import Observation
+from getiaction.translate import TranslationGraph
+from getiaction.policy import PolicyInterface
+from getiaction.robot import ActuatorTopology
+
+# 1. Define Sensor Layer (raw inputs from robot/simulator)
+sensors = SensorLayer([
+    SensorNode(
+        name="rgb_front",
+        type="rgb",
+        shape=(720, 1280, 3),
+        rate=30,
+        metadata={"intrinsics": camera_K, "pose": cam_pose},
+        pre_transforms=lambda x: x.resize((256, 256))
+    ),
+    SensorNode(
+        name="joint_pos",
+        type="proprio",
+        shape=(7,),
+        rate=100,
+    ),
+])
+
+raw_obs = sensors.read()
+# raw_obs = {"rgb_front": np.array(...), "joint_pos": np.array(...)}
+
+
+# 2. Canonical Observation Layer (normalize + batch + dtype)
+canonical = ObservationLayer(schema={
+    "rgb_front": {"shape": (256, 256, 3), "dtype": "float32"},
+    "joint_pos": {"shape": (7,), "dtype": "float32"},
+})
+
+canon_obs = canonical.normalize(raw_obs)
+# canon_obs["rgb_front"] -> (256, 256, 3) float32
+# canon_obs["joint_pos"] -> (7,) float32
+
+
+# 3. Translation Graph (mapping + transforms → model slots)
+graph = TranslationGraph({
+    "vision_input":  ("rgb_front", lambda x: x.transpose(2, 0, 1) / 255.0),
+    "state_input":   ("joint_pos", None),
+})
+
+model_inputs = graph.to_model_inputs(canon_obs)
+# model_inputs["vision_input"] -> (3, 256, 256)
+# model_inputs["state_input"]  -> (7,)
+
+
+# 4. Model Interface (run the model)
+policy = PolicyInterface.load("policies/franka_pickup_v2")
+
+model_outputs = policy(model_inputs)
+# {"arm_target": ..., "gripper_target": ...}
+
+
+# 5. Actuator Topology (map model outputs → robot DoF)
+actuators = ActuatorTopology.load("robots/franka_panda")
+action = actuators.map(model_outputs)
+# -> Joint torques or target positions in robot's control format
+
+env.step(action)
+```
+
 #### Summary of the Concept
 
 - Sensors (SensorNodes)
   Formal descriptions of input streams such as RGB, depth, proprioception or language.
 
 - Canonical Observation Layer
-  Converts flexible user input into a strict internal format that all models can rely on.(B, C, H, W) or text basically.
+  Converts flexible user input into a strict internal format that all models can rely on. (B, C, H, W) or text basically.
 
 - Translation Graph
   A declarative mapping from raw observation keys to model input slots, including any required transformations.

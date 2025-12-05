@@ -37,4 +37,4 @@ graph TD
 
 ## Roadmap
 
-Please see our [roadmap](roadmap.md) for future features and design ideas
+Please see our [roadmap](roadmap.md) for future features and design ideas.
