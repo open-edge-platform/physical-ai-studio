@@ -28,7 +28,6 @@ from torchvision.ops.misc import FrozenBatchNorm2d
 from getiaction.config import FromConfig
 from getiaction.data import Feature, FeatureType
 from getiaction.data.observation import ACTION, EXTRA, IMAGES, STATE, Observation
-from getiaction.export import FromCheckpoint
 from getiaction.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
 
 from .config import ACTConfig
@@ -36,7 +35,7 @@ from .config import ACTConfig
 log = logging.getLogger(__name__)
 
 
-class ACT(nn.Module, FromConfig, FromCheckpoint):
+class ACT(nn.Module, FromConfig):
     """Action Chunking Transformer (ACT) model.
 
     Supports training and inference modes.

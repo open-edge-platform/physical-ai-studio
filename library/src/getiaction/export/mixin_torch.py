@@ -3,65 +3,85 @@
 
 """Mixin classes for handling PyTorch model checkpoints."""
 
-from copy import copy
-from os import PathLike
-from typing import Self
-
+from typing import Self, Any
 import torch
-import yaml
-
-from getiaction.config.instantiate import instantiate_obj_from_dict
 
 from .mixin_export import CONFIG_KEY
 
 
 class FromCheckpoint:
     """Mixin class for loading torch models from checkpoints."""
+    model_type: type
+    model_config_type: type
 
     @classmethod
-    def load_from_checkpoint(
+    def load_from_checkpoint(  # type: ignore[override]
         cls,
-        snapshot: dict | PathLike | str,
+        checkpoint_path: str,
+        map_location: torch.device | str | None = None,
+        **kwargs: Any,  # noqa: ANN401
     ) -> Self:
-        """Load model state from a snapshot dictionary or file.
+        """Load a policy from a Lightning checkpoint.
 
-        This class method reconstructs a model instance from a snapshot containing
-        the model's configuration and state dictionary. The snapshot can be provided
-        either as a dictionary or as a path to a saved snapshot file.
+        This method loads the checkpoint, reconstructs the underlying model from the saved
+        config, and restores the model weights.
 
         Args:
-            snapshot (dict | PathLike | str): Either a dictionary containing the model's
-                state_dict and configuration, or a path (string or PathLike object) to
-                a saved snapshot file. When provided as a path, the snapshot is loaded
-                using torch.load with CPU mapping and weights_only=True for security.
+            checkpoint_path: Path to the checkpoint file (.ckpt).
+            map_location: Device to map tensors to. If None, uses default device.
+            **kwargs: Additional arguments passed to the policy constructor.
 
         Returns:
-            Self: A new instance of the class initialized with the configuration from
-                the snapshot.
+            Loaded policy with weights restored, ready for inference.
 
         Raises:
-            NotImplementedError: If the class does not implement the `from_dataclass`
-                method, which is required for instantiation from the loaded configuration.
+            KeyError: If checkpoint doesn't contain required model config.
 
-        Note:
-            The snapshot must contain a configuration stored under the key defined by
-            GETIACTION_CONFIG_KEY. This configuration is parsed as YAML and used to
-            instantiate the appropriate dataclass configuration object, which is then
-            passed to the `from_dataclass` method to create the model instance.
+        Examples:
+            Load checkpoint for inference:
+
+                >>> from getiaction.policies import ACT
+                >>> policy = ACT.load_from_checkpoint("checkpoints/epoch=10.ckpt")
+                >>> action = policy.select_action(observation)
+
+            Load checkpoint to specific device:
+
+                >>> policy = ACT.load_from_checkpoint(
+                ...     "checkpoints/best.ckpt",
+                ...     map_location="cuda:0",
+                ... )
+
+            Load checkpoint to CPU:
+
+                >>> policy = ACT.load_from_checkpoint(
+                ...     "checkpoints/best.ckpt",
+                ...     map_location="cpu",
+                ... )
         """
-        state_dict = {}
-        if isinstance(snapshot, (str, PathLike)):
-            state_dict = torch.load(snapshot, map_location="cpu", weights_only=True)  # nosemgrep
-        else:
-            state_dict = copy(snapshot)
+        # Load checkpoint - config is stored as plain dict (not dataclass) so
+        # default weights_only=True works without needing pickle
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        checkpoint = torch.load(checkpoint_path, map_location=map_location)  # nosec B614
 
-        config = instantiate_obj_from_dict(yaml.safe_load(state_dict[CONFIG_KEY]))
-        state_dict.pop(CONFIG_KEY)
+        # Extract model config dict and reconstruct ACTConfig dataclass
+        if CONFIG_KEY not in checkpoint:
+            msg = (
+                f"Checkpoint missing '{CONFIG_KEY}'. "
+                "This checkpoint may have been saved with an older version. "
+                "Please re-train and save a new checkpoint."
+            )
+            raise KeyError(msg)
 
-        if hasattr(cls, "from_dataclass") and callable(cls.from_dataclass):  # type: ignore [attr-defined]
-            model: Self = cls.from_dataclass(config)  # type: ignore [attr-defined]
-            model.load_state_dict(state_dict)  # type: ignore [attr-defined]
-            return model
+        config_dict = checkpoint[CONFIG_KEY]
+        config = cls.model_config_type.from_dict(config_dict)
 
-        msg = "`FromCheckpoint` mixin requires the target class to implement `from_dataclass()` method."
-        raise NotImplementedError(msg)
+        # Reconstruct model from config
+        model = cls.model_type.from_config(config)
+
+        # Create policy instance
+        policy = cls(model=model, **kwargs)
+
+        # Load state dict (model weights + normalizer stats)
+        policy.load_state_dict(checkpoint["state_dict"])
+
+        return policy
