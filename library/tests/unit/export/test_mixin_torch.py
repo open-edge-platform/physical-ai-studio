@@ -77,7 +77,7 @@ class TestFromCheckpoint:
             CONFIG_KEY: model_config.to_dict(),
             "state_dict": policy.state_dict(),
         }
-
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         torch.save(checkpoint, checkpoint_file)
         return checkpoint_file
 
@@ -142,6 +142,7 @@ class TestFromCheckpoint:
         checkpoint = {
             "state_dict": DummyPolicy(model=model).state_dict(),
         }
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         torch.save(checkpoint, checkpoint_file)
 
         with pytest.raises(KeyError, match=f"Checkpoint missing '{CONFIG_KEY}'"):
