@@ -39,7 +39,6 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
 
-
     settings = get_settings()
     rmtree(settings.models_dir)
     op.drop_table("models")
@@ -69,6 +68,7 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
+
 
 def downgrade() -> None:
     """Downgrade schema."""
