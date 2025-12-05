@@ -11,14 +11,12 @@ import yaml
 
 from getiaction.data import Dataset, Observation
 from getiaction.export import Export
+from getiaction.export.mixin_export import CONFIG_KEY as _MODEL_CONFIG_KEY
 from getiaction.gyms import Gym
 from getiaction.policies.act.config import ACTConfig
 from getiaction.policies.act.model import ACT as ACTModel  # noqa: N811
 from getiaction.policies.base import Policy
 from getiaction.train.utils import reformat_dataset_to_match_policy
-
-# Key for storing model config in checkpoint
-_MODEL_CONFIG_KEY = "model_config"
 
 
 class ACT(Export, Policy):  # type: ignore[misc]
