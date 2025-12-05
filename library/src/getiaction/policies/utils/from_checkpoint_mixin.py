@@ -8,7 +8,6 @@ from typing import Any, Self
 import torch
 
 from getiaction.config import Config
-
 from getiaction.export.mixin_export import CONFIG_KEY
 
 

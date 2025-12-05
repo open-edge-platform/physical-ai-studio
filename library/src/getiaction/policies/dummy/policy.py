@@ -6,12 +6,12 @@
 import torch
 
 from getiaction.data import Observation
-from getiaction.policies.utils import FromCheckpoint
 from getiaction.export.mixin_export import Export
 from getiaction.gyms import Gym
 from getiaction.policies.base import Policy
 from getiaction.policies.dummy.config import DummyConfig
 from getiaction.policies.dummy.model import Dummy as DummyModel
+from getiaction.policies.utils import FromCheckpoint
 
 
 class Dummy(FromCheckpoint, Export, Policy):
