@@ -3,6 +3,7 @@
 
 """Lightning module for ACT policy."""
 
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any, Self
 
@@ -47,19 +48,20 @@ class ACT(FromCheckpoint, Export, Policy):  # type: ignore[misc]
     def __init__(
         self,
         model: ACTModel | None = None,
-        optimizer: torch.optim.Optimizer | None = None,
+        optimizer_fn: Callable[[Iterable[torch.nn.Parameter]], torch.optim.Optimizer] | None = None,
     ) -> None:
         """Initialize the ACT policy with a model and optional optimizer.
 
         Args:
             model (ACTModel): The ACT model to be used by this policy.
-            optimizer (torch.optim.Optimizer | None, optional): The optimizer for training.
-                If None, defaults to Adam optimizer with lr=1e-5 and weight_decay=1e-4.
+            optimizer_fn (Callable[[Iterable[torch.nn.Parameter]], torch.optim.Optimizer] | None, optional):
+              The optimizer factory function that takes model parameters and returns an optimizer instance.
+              If None, defaults to Adam optimizer with lr=1e-5 and weight_decay=1e-4.
         """
         super().__init__()
 
         self.model = model  # type: ignore[assignment]
-        self.optimizer = optimizer
+        self.optimizer_fn = optimizer_fn
 
     @classmethod
     def from_dataset(
@@ -241,8 +243,8 @@ class ACT(FromCheckpoint, Export, Policy):  # type: ignore[misc]
         Returns:
             torch.optim.Optimizer: Adam optimizer over the model parameters.
         """
-        if self.optimizer is not None:
-            return self.optimizer
+        if self.optimizer_fn is not None:
+            return self.optimizer_fn(self.model.parameters())
         return torch.optim.Adam(self.model.parameters(), lr=1e-5, weight_decay=1e-4)
 
     def evaluation_step(self, batch: Observation, stage: str) -> None:  # noqa: PLR6301
