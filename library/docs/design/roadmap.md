@@ -272,7 +272,7 @@ raw_obs = sensors.read()
 
 
 # 2. Canonical Observation Layer (normalize + batch + dtype)
-canonical = ObservationLayer(schema={
+canonical = Observation(schema={
     "rgb_front": {"shape": (256, 256, 3), "dtype": "float32"},
     "joint_pos": {"shape": (7,), "dtype": "float32"},
 })
