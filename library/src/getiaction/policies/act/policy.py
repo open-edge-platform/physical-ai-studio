@@ -40,6 +40,7 @@ class ACT(FromCheckpoint, Export, Policy):  # type: ignore[misc]
         >>> # Export to ONNX (cross-platform)
         >>> policy.export("./exports", backend="onnx")
     """
+
     model_type: type = ACTModel
     model_config_type: type = ACTConfig
 

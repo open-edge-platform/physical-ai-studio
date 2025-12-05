@@ -3,16 +3,20 @@
 
 """Mixin classes for handling PyTorch model checkpoints."""
 
-from typing import Self, Any
+from typing import Any, Self
+
 import torch
+
+from getiaction.config import Config
 
 from .mixin_export import CONFIG_KEY
 
 
 class FromCheckpoint:
     """Mixin class for loading torch models from checkpoints."""
-    model_type: type
-    model_config_type: type
+
+    model_type: type[torch.nn.Module]
+    model_config_type: type[Config]
 
     @classmethod
     def load_from_checkpoint(  # type: ignore[override]
@@ -79,9 +83,9 @@ class FromCheckpoint:
         model = cls.model_type.from_config(config)
 
         # Create policy instance
-        policy = cls(model=model, **kwargs)
+        policy = cls(model=model, **kwargs)  # type: ignore[call-arg]
 
         # Load state dict (model weights + normalizer stats)
-        policy.load_state_dict(checkpoint["state_dict"])
+        policy.load_state_dict(checkpoint["state_dict"])  # type: ignore[attr-defined]
 
         return policy

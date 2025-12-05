@@ -15,6 +15,7 @@ from getiaction.policies.dummy.model import Dummy as DummyModel
 
 class Dummy(FromCheckpoint, Export, Policy):
     """Dummy policy wrapper."""
+
     model_type: type = DummyModel
     model_config_type: type = DummyConfig
 
