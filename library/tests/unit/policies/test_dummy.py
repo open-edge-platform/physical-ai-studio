@@ -14,7 +14,7 @@ class TestDummyPolicy:
     @pytest.fixture
     def policy(self):
         config = DummyConfig(action_shape=(3,))
-        return Dummy(config)
+        return Dummy(DummyModel.from_config(config))
 
     @pytest.fixture
     def batch(self):
@@ -85,7 +85,7 @@ class TestDummyPolicyValidation:
         from getiaction.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
-        policy = Dummy(config=config)
+        policy = Dummy(DummyModel.from_config(config))
 
         assert hasattr(policy, "evaluate_gym")
         assert callable(policy.evaluate_gym)
@@ -96,7 +96,7 @@ class TestDummyPolicyValidation:
         from getiaction.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
-        policy = Dummy(config=config)
+        policy = Dummy(DummyModel.from_config(config))
         gym = PushTGym()
 
         # This should not raise TypeError
@@ -112,7 +112,7 @@ class TestDummyPolicyValidation:
         from getiaction.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
-        policy = Dummy(config=config)
+        policy = Dummy(DummyModel.from_config(config))
         gym = PushTGym()
 
         # This should not raise TypeError
@@ -128,7 +128,7 @@ class TestDummyPolicyValidation:
         from getiaction.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
-        policy = Dummy(config=config)
+        policy = Dummy(DummyModel.from_config(config))
         gym = PushTGym()
 
         metrics = policy.validation_step(gym, batch_idx=0)
@@ -145,7 +145,7 @@ class TestDummyPolicyValidation:
         from getiaction.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
-        policy = Dummy(config=config)
+        policy = Dummy(DummyModel.from_config(config))
         gym = PushTGym()
 
         metrics = policy.test_step(gym, batch_idx=0)
@@ -163,7 +163,7 @@ class TestDummyPolicyImportExport:
         from getiaction.policies.dummy.model import Dummy as DummyModel
 
         config = DummyConfig(action_shape=(2,))
-        policy = Dummy(config=config)
+        policy = Dummy(DummyModel.from_config(config))
 
         export_path = tmp_path / "dummy_policy.pth"
         policy.to_torch(export_path)
@@ -171,17 +171,17 @@ class TestDummyPolicyImportExport:
         assert export_path.exists()
 
         # Import the model back
-        loaded_model = DummyModel.load_from_checkpoint(export_path)
+        loaded_policy = Dummy.load_from_checkpoint(export_path)
 
-        assert isinstance(loaded_model, DummyModel)
-        assert loaded_model.action_shape == policy.model.action_shape
+        assert isinstance(loaded_policy, Dummy)
+        assert loaded_policy.model.action_shape == policy.model.action_shape
 
     def test_export_to_onnx(self, tmp_path):
         """Test exporting to ONNX format."""
         from getiaction.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
-        policy = Dummy(config=config)
+        policy = Dummy(DummyModel.from_config(config))
 
         export_path = tmp_path / "dummy_policy.onnx"
         policy.to_onnx(export_path)
@@ -193,7 +193,7 @@ class TestDummyPolicyImportExport:
         from getiaction.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
-        policy = Dummy(config=config)
+        policy = Dummy(DummyModel.from_config(config))
 
         export_path = tmp_path / "dummy_policy.xml"
         policy.to_openvino(export_path)
@@ -205,7 +205,7 @@ class TestDummyPolicyImportExport:
         from getiaction.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
-        policy = Dummy(config=config)
+        policy = Dummy(DummyModel.from_config(config))
 
         export_path = tmp_path / "dummy_policy_torch_ir.ptir"
         policy.to_torch_export_ir(export_path)
