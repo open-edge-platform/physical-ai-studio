@@ -3,6 +3,7 @@
 
 """Lightning module for ACT policy."""
 
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any, Self
 
@@ -10,18 +11,16 @@ import torch
 import yaml
 
 from getiaction.data import Dataset, Observation
-from getiaction.export import Export
+from getiaction.export import Export, FromCheckpoint
+from getiaction.export.mixin_export import CONFIG_KEY as _MODEL_CONFIG_KEY
 from getiaction.gyms import Gym
 from getiaction.policies.act.config import ACTConfig
 from getiaction.policies.act.model import ACT as ACTModel  # noqa: N811
 from getiaction.policies.base import Policy
 from getiaction.train.utils import reformat_dataset_to_match_policy
 
-# Key for storing model config in checkpoint
-_MODEL_CONFIG_KEY = "model_config"
 
-
-class ACT(Export, Policy):  # type: ignore[misc]
+class ACT(FromCheckpoint, Export, Policy):  # type: ignore[misc]
     """Action Chunking with Transformers (ACT) policy implementation.
 
     This class implements the ACT policy for imitation learning, which uses a transformer-based
@@ -43,22 +42,26 @@ class ACT(Export, Policy):  # type: ignore[misc]
         >>> policy.export("./exports", backend="onnx")
     """
 
+    model_type: type = ACTModel
+    model_config_type: type = ACTConfig
+
     def __init__(
         self,
         model: ACTModel | None = None,
-        optimizer: torch.optim.Optimizer | None = None,
+        optimizer_fn: Callable[[Iterable[torch.nn.Parameter]], torch.optim.Optimizer] | None = None,
     ) -> None:
         """Initialize the ACT policy with a model and optional optimizer.
 
         Args:
             model (ACTModel): The ACT model to be used by this policy.
-            optimizer (torch.optim.Optimizer | None, optional): The optimizer for training.
-                If None, defaults to Adam optimizer with lr=1e-5 and weight_decay=1e-4.
+            optimizer_fn (Callable[[Iterable[torch.nn.Parameter]], torch.optim.Optimizer] | None, optional):
+              The optimizer factory function that takes model parameters and returns an optimizer instance.
+              If None, defaults to Adam optimizer with lr=1e-5 and weight_decay=1e-4.
         """
         super().__init__()
 
         self.model = model  # type: ignore[assignment]
-        self.optimizer = optimizer
+        self.optimizer_fn = optimizer_fn
 
     @classmethod
     def from_dataset(
@@ -128,78 +131,6 @@ class ACT(Export, Policy):  # type: ignore[misc]
         )
 
         return cls(model=model)
-
-    @classmethod
-    def load_from_checkpoint(  # type: ignore[override]
-        cls,
-        checkpoint_path: str,
-        map_location: torch.device | str | None = None,
-        **kwargs: Any,  # noqa: ANN401
-    ) -> Self:
-        """Load ACT policy from a Lightning checkpoint.
-
-        This method loads the checkpoint, reconstructs the ACTModel from the saved
-        config, and restores the model weights.
-
-        Args:
-            checkpoint_path: Path to the checkpoint file (.ckpt).
-            map_location: Device to map tensors to. If None, uses default device.
-            **kwargs: Additional arguments passed to the policy constructor.
-
-        Returns:
-            Loaded ACT policy with weights restored, ready for inference.
-
-        Raises:
-            KeyError: If checkpoint doesn't contain required model config.
-
-        Examples:
-            Load checkpoint for inference:
-
-                >>> from getiaction.policies import ACT
-                >>> policy = ACT.load_from_checkpoint("checkpoints/epoch=10.ckpt")
-                >>> action = policy.select_action(observation)
-
-            Load checkpoint to specific device:
-
-                >>> policy = ACT.load_from_checkpoint(
-                ...     "checkpoints/best.ckpt",
-                ...     map_location="cuda:0",
-                ... )
-
-            Load checkpoint to CPU:
-
-                >>> policy = ACT.load_from_checkpoint(
-                ...     "checkpoints/best.ckpt",
-                ...     map_location="cpu",
-                ... )
-        """
-        # Load checkpoint - config is stored as plain dict (not dataclass) so
-        # default weights_only=True works without needing pickle
-        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
-        checkpoint = torch.load(checkpoint_path, map_location=map_location)  # nosec B614
-
-        # Extract model config dict and reconstruct ACTConfig dataclass
-        if _MODEL_CONFIG_KEY not in checkpoint:
-            msg = (
-                f"Checkpoint missing '{_MODEL_CONFIG_KEY}'. "
-                "This checkpoint may have been saved with an older version. "
-                "Please re-train and save a new checkpoint."
-            )
-            raise KeyError(msg)
-
-        config_dict = checkpoint[_MODEL_CONFIG_KEY]
-        config = ACTConfig.from_dict(config_dict)
-
-        # Reconstruct model from config
-        model = ACTModel.from_config(config)
-
-        # Create policy instance
-        policy = cls(model=model, **kwargs)
-
-        # Load state dict (model weights + normalizer stats)
-        policy.load_state_dict(checkpoint["state_dict"])
-
-        return policy
 
     def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
         """Save model config to checkpoint for reconstruction.
@@ -312,8 +243,8 @@ class ACT(Export, Policy):  # type: ignore[misc]
         Returns:
             torch.optim.Optimizer: Adam optimizer over the model parameters.
         """
-        if self.optimizer is not None:
-            return self.optimizer
+        if self.optimizer_fn is not None:
+            return self.optimizer_fn(self.model.parameters())
         return torch.optim.Adam(self.model.parameters(), lr=1e-5, weight_decay=1e-4)
 
     def evaluation_step(self, batch: Observation, stage: str) -> None:  # noqa: PLR6301

@@ -110,11 +110,13 @@ class Export:
         model_path = self._prepare_export_path(checkpoint_path, ".pt")
         export_dir = model_path.parent
 
-        state_dict = self.model.state_dict()
-        config_dict = self.model.config.to_jsonargparse() if hasattr(self.model, "config") else {}
-        state_dict[CONFIG_KEY] = yaml.dump(config_dict, default_flow_style=False)
+        checkpoint = {}
+        checkpoint["state_dict"] = self.state_dict() if hasattr(self, "state_dict") else {}
+        config_dict = self.model.config.to_dict() if hasattr(self.model, "config") else {}
+        checkpoint[CONFIG_KEY] = config_dict
 
-        torch.save(state_dict, str(model_path))  # nosec
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        torch.save(checkpoint, str(model_path))  # nosec B614
 
         # Create metadata files
         self._create_metadata(export_dir, ExportBackend.TORCH)

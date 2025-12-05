@@ -9,6 +9,7 @@ import pytest
 import torch
 
 from getiaction.policies.dummy import Dummy, DummyConfig
+from getiaction.policies.dummy.model import Dummy as DummyModel
 from getiaction.gyms import PushTGym, GymnasiumGym
 from getiaction.eval import rollout
 
@@ -53,12 +54,12 @@ class TestRollout:
         action_max = 1 if action_dtype is torch.int64 else None
         action_min = 0 if action_dtype is torch.int64 else None
 
-        policy = Dummy(DummyConfig(
+        policy = Dummy(DummyModel.from_config(DummyConfig(
             action_shape=action_shape,
             action_dtype=action_dtype,
             action_max=action_max,
             action_min=action_min,
-        ))
+        )))
 
         result = rollout(env=env, policy=policy, seed=42, max_steps=5, return_observations=False)
 
@@ -81,12 +82,12 @@ class TestRollout:
         action_max = 1 if action_dtype in (torch.int64, torch.int32) else None
         action_min = 0 if action_dtype in (torch.int64, torch.int32) else None
 
-        policy = Dummy(DummyConfig(
+        policy = Dummy(DummyModel.from_config(DummyConfig(
             action_shape=action_shape,
             action_dtype=action_dtype,
             action_max=action_max,
             action_min=action_min,
-        ))
+        )))
 
         result = rollout(env=env, policy=policy, seed=42, max_steps=5, return_observations=False)
 

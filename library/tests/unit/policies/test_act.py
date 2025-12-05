@@ -144,3 +144,31 @@ class TestACTolicy:
         finally:
             import os
             os.unlink(checkpoint_path)
+
+    def test_load_from_exported_checkpoint(self, policy):
+        """Test loading from an exported checkpoint."""
+        # Export the model
+        with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as f:
+            export_path = f.name
+
+        try:
+            policy.to_torch(export_path)
+
+            # Load from exported checkpoint
+            loaded_policy = ACT.load_from_checkpoint(export_path)
+
+            # Verify model type
+            assert isinstance(loaded_policy.model, ACTModel)
+
+            # Verify config is preserved
+            assert list(loaded_policy.model.config.input_features.keys()) == list(
+                policy.model.config.input_features.keys()
+            )
+            assert list(loaded_policy.model.config.output_features.keys()) == list(
+                policy.model.config.output_features.keys()
+            )
+            assert loaded_policy.model.config.chunk_size == policy.model.config.chunk_size
+
+        finally:
+            import os
+            os.unlink(export_path)
