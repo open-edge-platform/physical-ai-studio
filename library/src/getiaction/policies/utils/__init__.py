@@ -4,7 +4,10 @@
 """Utils for policies."""
 
 from .normalization import FeatureNormalizeTransform
+from .from_checkpoint_mixin import FromCheckpoint
+
 
 __all__ = [
     "FeatureNormalizeTransform",
+    "FromCheckpoint",
 ]

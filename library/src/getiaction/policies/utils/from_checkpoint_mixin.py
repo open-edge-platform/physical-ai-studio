@@ -9,7 +9,7 @@ import torch
 
 from getiaction.config import Config
 
-from .mixin_export import CONFIG_KEY
+from getiaction.export.mixin_export import CONFIG_KEY
 
 
 class FromCheckpoint:
@@ -19,7 +19,7 @@ class FromCheckpoint:
     model_config_type: type[Config]
 
     @classmethod
-    def load_from_checkpoint(  # type: ignore[override]
+    def load_from_checkpoint(
         cls,
         checkpoint_path: str,
         map_location: torch.device | str | None = None,

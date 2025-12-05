@@ -4,6 +4,5 @@
 """Export and import mixins module."""
 
 from .mixin_export import Export, ExportBackend
-from .mixin_torch import FromCheckpoint
 
-__all__ = ["Export", "ExportBackend", "FromCheckpoint"]
+__all__ = ["Export", "ExportBackend"]

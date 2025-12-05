@@ -12,11 +12,10 @@ from torch import nn
 
 from getiaction.config import FromConfig
 from getiaction.data.utils import infer_batch_size
-from getiaction.export import FromCheckpoint
 from getiaction.policies.dummy.config import DummyConfig
 
 
-class Dummy(nn.Module, FromConfig, FromCheckpoint):
+class Dummy(nn.Module, FromConfig):
     """A dummy model for testing training and evaluation loops.
 
     This model simulates behavior of an action-predicting model by returning

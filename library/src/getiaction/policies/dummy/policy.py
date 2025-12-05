@@ -6,7 +6,8 @@
 import torch
 
 from getiaction.data import Observation
-from getiaction.export import Export, FromCheckpoint
+from getiaction.policies.utils import FromCheckpoint
+from getiaction.export.mixin_export import Export
 from getiaction.gyms import Gym
 from getiaction.policies.base import Policy
 from getiaction.policies.dummy.config import DummyConfig
