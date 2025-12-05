@@ -4,6 +4,7 @@
 """Dummy policy for testing usage."""
 
 from collections import deque
+from collections.abc import Iterable
 
 import torch
 import torch.nn.functional as F  # noqa: N812
@@ -51,12 +52,15 @@ class Dummy(nn.Module, FromConfig, FromCheckpoint):
                 defaults to `n_action_steps`.
         """
         super().__init__()
-        self.action_shape = action_shape
-        self.action_dtype = action_dtype
-        self.action_max = action_max
-        self.action_min = action_min
+
         self.n_action_steps = n_action_steps
         self.temporal_ensemble_coeff = temporal_ensemble_coeff
+        self.action_shape = self._validate_action_shape(action_shape)
+        self.action_dtype = self._validate_dtype(action_dtype)
+        self.action_min, self.action_max = self._validate_min_max(
+            min_=action_min,
+            max_=action_max,
+        )
 
         # default horizon = number of action steps
         self.n_obs_steps = n_obs_steps
@@ -296,3 +300,111 @@ class Dummy(nn.Module, FromConfig, FromCheckpoint):
             loss = F.mse_loss(pred, target)
             return loss, {"loss_mse": loss}
         return self.predict_action_chunk(batch)
+
+    @staticmethod
+    def _validate_action_shape(shape: list | tuple) -> list | tuple:
+        """Validate and normalize the action shape.
+
+        Args:
+            shape (list | tuple): The input shape to validate.
+
+        Returns:
+            list | tuple: A validated list or tuple object.
+
+        Raises:
+            ValueError: If `shape` is `None`.
+            TypeError: If `shape` is not a valid type (e.g., string).
+        """
+        if shape is None:
+            msg = "Action is missing a 'shape' key in its features dictionary."
+            raise ValueError(msg)
+
+        if isinstance(shape, torch.Size):
+            return shape
+
+        if isinstance(shape, str):
+            msg = f"Shape for action '{shape}' must be a sequence of numbers, but received a string."
+            raise TypeError(msg)
+
+        if isinstance(shape, Iterable):
+            return list(shape)
+
+        msg = f"The 'action_shape' argument must be a list or tuple, but received type {type(shape).__name__}."
+        raise TypeError(msg)
+
+    @staticmethod
+    def _validate_dtype(dtype: torch.dtype | str | None) -> torch.dtype:
+        """Validate and resolve dtype.
+
+        Args:
+            dtype: The dtype to validate. May be a ``torch.dtype`` instance,
+                a string representing a dtype (e.g., ``"float32"``,
+                ``"double"``, ``"int"``), or ``None``.
+
+        Returns:
+            torch.dtype: A fully-resolved PyTorch dtype.
+
+        Raises:
+            ValueError: If the provided string cannot be resolved to a valid
+                ``torch.dtype``.
+        """
+        # if None, assume float32
+        if dtype is None:
+            return torch.float32
+
+        # if already a dtype then return
+        if isinstance(dtype, torch.dtype):
+            return dtype
+
+        # ensure string and lower
+        key = str(dtype).lower()
+
+        # common aliases for dtypes
+        alias_map = {
+            "float": "float32",
+            "fp32": "float32",
+            "double": "float64",
+            "fp64": "float64",
+            "half": "float16",
+            "long": "int64",
+            "int": "int32",
+            "short": "int16",
+            "byte": "uint8",
+            "bf16": "bfloat16",
+        }
+        key = alias_map.get(key, key)
+
+        attr = getattr(torch, key, None)
+        if isinstance(attr, torch.dtype):
+            return attr
+
+        msg = f"Unknown dtype string: {dtype}"
+        raise ValueError(msg)
+
+    @staticmethod
+    def _validate_min_max(
+        min_: float | None = None,
+        max_: float | None = None,
+    ) -> tuple[float | None, float | None]:
+        """Validate range for action space.
+
+        Args:
+            min_: The lower bound of the range, or ``None``.
+            max_: The upper bound of the range, or ``None``.
+
+        Returns:
+            tuple[float | None, float | None]: A tuple ``(min_, max_)`` where
+                both values are either the validated inputs or ``(None, None)``
+                if the range is unspecified.
+
+        Raises:
+            ValueError: If both bounds are provided and ``max_`` is smaller
+                than ``min_``.
+        """
+        if (min_ is None) or (max_ is None):
+            return (min_, max_)
+        # only assumption is that min is smaller than max
+        if max_ < min_:
+            msg = f"Max cannot be smaller than min: {max_} < {min_}"
+            raise ValueError(msg)
+        return (min_, max_)
