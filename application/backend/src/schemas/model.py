@@ -10,8 +10,9 @@ class Model(BaseIDModel):
     path: str
     policy: str
     properties: dict
-    project_id: Annotated[UUID, Field(description="Unique identifier")]
-    dataset_id: Annotated[UUID, Field(description="Unique identifier")]
+    project_id: Annotated[UUID, Field(description="Project Unique identifier")]
+    dataset_id: Annotated[UUID, Field(description="Dataset Unique identifier")]
+    snapshot_id: Annotated[UUID, Field(description="Snapshot Unique identifier")]
     created_at: datetime | None = Field(None)
 
     model_config = {
@@ -24,6 +25,7 @@ class Model(BaseIDModel):
                 "policy": "act",
                 "dataset_id": "",
                 "project_id": "",
+                "snapshot_id": "",
                 "created_at": "2021-06-29T16:24:30.928000+00:00",
             }
         }
