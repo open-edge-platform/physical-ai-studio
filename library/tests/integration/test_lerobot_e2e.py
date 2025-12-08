@@ -1,9 +1,12 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""End-to-end integration tests for LeRobot policies.
+"""End-to-end integration tests for LeRobot policies with explicit wrappers.
 
-This module validates the training pipeline for LeRobot policies:
+This module validates the training pipeline for LeRobot policies that have
+explicit wrappers (ACT, Diffusion, Groot) - not the universal LeRobotPolicy.
+
+Workflow:
     1. Train a policy using LeRobot ALOHA dataset
     2. Validate/test the trained policy
 
@@ -11,84 +14,28 @@ Note:
     LeRobot policies do not support export functionality.
     For export tests, see test_first_party_e2e.py.
 
-Supported Policies:
+Tested Policies (have explicit wrappers):
     Core (always run):
         - act: Action Chunking Transformer
         - diffusion: Diffusion Policy
 
-    Extended (marked @pytest.mark.slow):
-        - vqbet: Vector Quantized Behavior Transformer
-
-    VLA (marked @pytest.mark.slow, requires 24GB+ VRAM):
+    VLA (marked @pytest.mark.slow, requires flash_attn + 24GB+ VRAM):
         - groot: NVIDIA GR00T-N1.5-3B (trains projector + action head only)
-
-    Not tested (no explicit wrappers yet):
-        - pi0, pi05, smolvla, xvla, tdmpc, sac, reward_classifier
 """
 
 import pytest
 
 from getiaction.data import LeRobotDataModule
+from getiaction.data.lerobot import get_delta_timestamps_from_policy
 from getiaction.policies import get_policy
 from getiaction.policies.base.policy import Policy
 from getiaction.train import Trainer
 
-# Core policies - fast, no special dependencies
+# Core policies - fast, have explicit wrappers
 CORE_POLICIES = ["act", "diffusion"]
 
-# Extended policies - slower but still practical
-EXTENDED_POLICIES = ["vqbet"]
-
-# VLA policies - large models requiring 24GB+ VRAM
+# VLA policies - large models requiring flash_attn + 24GB+ VRAM
 VLA_POLICIES = ["groot"]
-
-
-def get_delta_timestamps_from_policy(policy_name: str, fps: int = 10) -> dict[str, list[float]]:
-    """Derive delta timestamps configuration from LeRobot policy config.
-
-    This extracts n_obs_steps and action chunk/horizon size from the policy's
-    default configuration to automatically compute the correct delta timestamps.
-
-    Args:
-        policy_name: Name of the LeRobot policy (e.g., "act", "diffusion").
-        fps: Frames per second of the dataset.
-
-    Returns:
-        Dictionary with delta timestamps for observation and action keys.
-    """
-    from lerobot.policies.factory import make_policy_config
-
-    config = make_policy_config(policy_name)
-
-    n_obs_steps = getattr(config, "n_obs_steps", 1)
-
-    # Get action sequence length - different policies use different attribute names
-    action_length = (
-        getattr(config, "chunk_size", None)
-        or getattr(config, "horizon", None)
-        or getattr(config, "action_chunk_size", None)
-        or getattr(config, "n_action_steps", 1)
-    )
-
-    delta_timestamps: dict[str, list[float]] = {}
-
-    # Observation timestamps: indices from -(n_obs_steps-1) to 0
-    if n_obs_steps > 1:
-        obs_indices = list(range(-(n_obs_steps - 1), 1))  # e.g., [-1, 0] for n_obs_steps=2
-        delta_timestamps["observation.images.top"] = [i / fps for i in obs_indices]
-        delta_timestamps["observation.state"] = [i / fps for i in obs_indices]
-
-    # Action timestamps: depends on policy type
-    if policy_name == "diffusion":
-        # Diffusion predicts horizon steps starting from -1
-        action_indices = list(range(-1, action_length - 1))
-    else:
-        # Other policies predict chunk_size steps starting from 0
-        action_indices = list(range(action_length))
-
-    delta_timestamps["action"] = [i / fps for i in action_indices]
-
-    return delta_timestamps
 
 
 class LeRobotE2ETestBase:
@@ -164,19 +111,6 @@ class TestLeRobotCorePolicies(LeRobotE2ETestBase):
     """E2E tests for core LeRobot policies (ACT, Diffusion).
 
     These tests run by default and cover the most commonly used policies.
-    """
-
-    pass
-
-
-@pytest.mark.slow
-@pytest.mark.parametrize("policy_name", EXTENDED_POLICIES, indirect=True)
-class TestLeRobotExtendedPolicies(LeRobotE2ETestBase):
-    """E2E tests for extended LeRobot policies (VQ-BeT).
-
-    These tests are slower and marked with @pytest.mark.slow.
-    Run with: pytest -m slow
-    Skip with: pytest -m "not slow"
     """
 
     pass
