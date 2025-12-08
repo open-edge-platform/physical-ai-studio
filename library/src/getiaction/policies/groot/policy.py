@@ -208,7 +208,6 @@ class Groot(Policy):
             env_action_dim=env_action_dim,
             stats=dataset_stats,
             eagle_processor_repo=self.hparams.tokenizer_assets_repo,
-            device=str(self.device),
         )
 
         self._is_setup_complete = True
@@ -403,6 +402,9 @@ class Groot(Policy):
 
         # Preprocess
         batch_dict = self._preprocessor(batch_dict)
+
+        # Move to model device for inference
+        batch_dict = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in batch_dict.items()}
 
         # Get action
         action = self.model.select_action(batch_dict)

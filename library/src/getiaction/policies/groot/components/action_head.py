@@ -67,7 +67,7 @@ class FlowMatchingActionHeadConfig:
     noise_beta_beta: float = 1.0
     noise_s: float = 0.999
     num_timestep_buckets: int = 1000
-    num_inference_timesteps: int | None = None
+    num_inference_timesteps: int = 10  # Denoising steps at inference
     max_num_embodiments: int = 32
     max_state_dim: int = 64
     tune_projector: bool = True

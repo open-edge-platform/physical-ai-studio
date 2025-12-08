@@ -106,6 +106,30 @@ def _ensure_eagle_cache_ready(cache_dir: Path, assets_repo: str) -> None:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("[Eagle] Failed to download %s: %s", fname, exc)
 
+    # Fix inconsistent class names in config.json
+    # NVIDIA's Eagle2-2B has a mismatch: config.json uses "Eagle2_5_VLConfig" but
+    # the Python files define "Eagle25VLConfig" (without underscore)
+    config_json = cache_dir / "config.json"
+    if config_json.exists():
+        import json  # noqa: PLC0415
+
+        try:
+            with config_json.open(encoding="utf-8") as f:
+                config_data = json.load(f)
+            if "auto_map" in config_data:
+                auto_map = config_data["auto_map"]
+                patched = False
+                for key, value in auto_map.items():
+                    if "Eagle2_5_VL" in value:
+                        auto_map[key] = value.replace("Eagle2_5_VL", "Eagle25VL")
+                        patched = True
+                if patched:
+                    with config_json.open("w", encoding="utf-8") as f:
+                        json.dump(config_data, f, indent=4)
+                    logger.info("[Eagle] Patched config.json class names")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[Eagle] Failed to patch config.json: %s", exc)
+
 
 def _import_huggingface_components() -> tuple[Any, ...]:
     """Import HuggingFace components for Eagle backbone.
@@ -223,9 +247,21 @@ class EagleBackbone(nn.Module):
             eagle_config.vision_config._attn_implementation = attn_implementation  # noqa: SLF001
             eagle_config.vision_config._attn_implementation_autoset = False  # noqa: SLF001
 
+        # NVIDIA's Eagle2 model code has a hardcoded assertion requiring flash_attention_2.
+        # We trick the model init by temporarily setting flash_attention_2, then restore SDPA.
+        # This is needed because the assertion is in their __init__ before any processing.
+        if hasattr(eagle_config, "text_config"):
+            eagle_config.text_config._attn_implementation = "flash_attention_2"  # noqa: SLF001
+
         self.eagle_model = auto_model_cls.from_config(
-            eagle_config, trust_remote_code=True, attn_implementation=attn_implementation
+            eagle_config,
+            trust_remote_code=True,
+            attn_implementation="flash_attention_2",
         )
+
+        # Now restore the actual attention implementation we want
+        if hasattr(eagle_config, "text_config"):
+            eagle_config.text_config._attn_implementation = attn_implementation  # noqa: SLF001
 
         # Force patch attention implementation on all submodules AFTER model creation
         # HuggingFace creates separate config instances during model init, so we need
@@ -235,10 +271,18 @@ class EagleBackbone(nn.Module):
         # Optional linear projection from Eagle hidden size (2048) to output dim
         # If project_to_dim is None, output raw 2048 hidden size (used by pretrained GR00T)
         self.project_to_dim = project_to_dim
-        self.eagle_linear: nn.Linear | None = None
         if project_to_dim is not None:
-            self.eagle_linear = nn.Linear(2048, project_to_dim)
+            self.eagle_linear: nn.Module = nn.Linear(2048, project_to_dim)
+        else:
+            self.eagle_linear = nn.Identity()
+
+        # Which hidden state layer to use (-1 = last)
         self.select_layer = -1
+
+        # Remove unused layers to save compute (matches Isaac-GR00T behavior)
+        # When select_layer=-1, we use the last layer so no pruning needed
+        # For other values, we'd prune: while len(layers) > select_layer: layers.pop(-1)
+        # Currently keeping all layers since select_layer=-1 uses last hidden state
 
         self._set_trainable_parameters()
 
@@ -288,18 +332,36 @@ class EagleBackbone(nn.Module):
         """
         self._set_frozen_modules_to_eval_mode()
 
-        # Extract eagle inputs
+        # Extract eagle inputs and move to model device
+        device = next(self.parameters()).device
         eagle_prefix = "eagle_"
-        eagle_input = {k.removeprefix(eagle_prefix): v for k, v in batch.items() if k.startswith(eagle_prefix)}
-        eagle_input.pop("image_sizes", None)
+        eagle_input = {}
+        for k, v in batch.items():
+            if k.startswith(eagle_prefix):
+                key = k.removeprefix(eagle_prefix)
+                if key != "image_sizes":  # Skip image_sizes
+                    eagle_input[key] = v.to(device) if isinstance(v, torch.Tensor) else v
 
         # Forward through Eagle
         eagle_output = self.eagle_model(**eagle_input, output_hidden_states=True, return_dict=True)
         eagle_features = eagle_output.hidden_states[self.select_layer]
 
-        # Apply optional projection
-        if self.eagle_linear is not None:
-            eagle_features = self.eagle_linear(eagle_features)
+        # Apply projection (either Linear or Identity)
+        eagle_features = self.eagle_linear(eagle_features)
+
+        # DDP compatibility hack: ensure all trainable vision parameters are used in forward pass
+        # This prevents DDP from complaining about unused parameters when tune_visual=True
+        if self.training and self.tune_visual:
+            dummy_term = torch.tensor(
+                0.0,
+                device=eagle_features.device,
+                dtype=eagle_features.dtype,
+                requires_grad=True,
+            )
+            for param in self.eagle_model.vision_model.parameters():
+                if param.requires_grad:
+                    dummy_term += 0.0 * param.sum()
+            eagle_features += dummy_term
 
         return {
             "backbone_features": eagle_features,
@@ -377,10 +439,13 @@ class EagleProcessor:
         # Monkey-patch missing method if needed (transformers version compatibility)
         # The vendored Eagle processor expects _prepare_image_like_inputs but
         # transformers 4.53.x uses _prepare_input_images
-        if not hasattr(BaseImageProcessorFast, "_prepare_image_like_inputs"):
-            if hasattr(BaseImageProcessorFast, "_prepare_input_images"):
-                BaseImageProcessorFast._prepare_image_like_inputs = BaseImageProcessorFast._prepare_input_images
-                logger.info("[EagleProcessor] Patched _prepare_image_like_inputs method")
+        if not hasattr(
+            BaseImageProcessorFast, "_prepare_image_like_inputs"
+        ) and hasattr(BaseImageProcessorFast, "_prepare_input_images"):
+            BaseImageProcessorFast._prepare_image_like_inputs = (  # noqa: SLF001
+                BaseImageProcessorFast._prepare_input_images  # noqa: SLF001
+            )
+            logger.info("[EagleProcessor] Patched _prepare_image_like_inputs method")
 
         # Prepare cache directory with all required Eagle assets
         cache_dir = HF_LEROBOT_HOME / self.processor_repo

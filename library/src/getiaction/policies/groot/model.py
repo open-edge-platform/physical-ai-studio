@@ -98,41 +98,6 @@ class GrootConfig:
     max_action_dim: int = field(default=32)
 
 
-def get_best_device() -> torch.device:
-    """Get the best available device for computation.
-
-    Returns:
-        torch.device: The best available device in order of preference:
-            1. CUDA (NVIDIA GPU)
-            2. XPU (Intel GPU)
-            3. CPU (fallback)
-
-    Examples:
-        >>> device = get_best_device()
-        >>> model = GrootModel.from_pretrained().to(device)
-    """
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    if hasattr(torch, "xpu") and torch.xpu.is_available():
-        return torch.device("xpu")
-    return torch.device("cpu")
-
-
-def is_xpu_available() -> bool:
-    """Check if Intel XPU is available.
-
-    Returns:
-        True if XPU is available, False otherwise.
-
-    Note:
-        XPU requires:
-        - PyTorch built with XPU support (from XPU wheel index)
-        - Intel Level Zero runtime installed
-        - User in 'render' group for device access
-    """
-    return hasattr(torch, "xpu") and torch.xpu.is_available()
-
-
 def _import_snapshot_download() -> tuple[Any, ...]:
     """Import snapshot_download and error classes from huggingface_hub.
 
@@ -374,8 +339,8 @@ class GrootModel(FromConfig, nn.Module):
             max_action_dim=max_action_dim,
             # Config from pretrained model
             backbone_embedding_dim=backbone_embedding_dim,
-            diffusion_model_cfg=diffusion_cfg if diffusion_cfg else None,
-            vl_self_attention_cfg=vl_cfg if vl_cfg else None,
+            diffusion_model_cfg=diffusion_cfg or None,
+            vl_self_attention_cfg=vl_cfg or None,
         )
 
         # Load pretrained weights
@@ -459,7 +424,6 @@ class GrootModel(FromConfig, nn.Module):
             backbone_outputs = self.backbone(groot_inputs)
             return self.action_head(backbone_outputs, groot_inputs)
 
-    @torch.no_grad()
     def get_action(self, batch: Mapping[str, torch.Tensor]) -> torch.Tensor:
         """Inference - predict actions.
 
@@ -480,7 +444,10 @@ class GrootModel(FromConfig, nn.Module):
         }
 
         device = next(self.parameters()).device
-        with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=self.use_bf16):
+        with (
+            torch.inference_mode(),
+            torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=self.use_bf16),
+        ):
             backbone_outputs = self.backbone(groot_inputs)
             action_head_outputs = self.action_head.get_action(backbone_outputs, groot_inputs)
 

@@ -82,7 +82,6 @@ class GrootPreprocessor:
     normalize_min_max: bool = True
     stats: dict[str, dict[str, Any]] | None = None
     eagle_processor_repo: str = "lerobot/eagle2hg-processor-groot-n1p5"
-    device: str = "cuda"
 
     # Internal cache for EagleProcessor
     _eagle_processor: Any = field(default=None, init=False, repr=False)
@@ -120,16 +119,15 @@ class GrootPreprocessor:
         result: dict[str, Any] = {}
 
         # Convert Observation to dict if needed
-        if isinstance(batch, Observation):
-            batch_dict = batch.to_dict(flatten=True)
-        else:
-            batch_dict = dict(batch)
+        batch_dict = batch.to_dict(flatten=True) if isinstance(batch, Observation) else dict(batch)
 
         # Infer batch size and device
         batch_size, device = self._infer_batch_info(batch_dict)
 
         # 1. Process state (support both "observation.state" and "state" keys)
-        state_tensor = batch_dict.get("observation.state") or batch_dict.get("state")
+        state_tensor = batch_dict.get("observation.state")
+        if state_tensor is None:
+            state_tensor = batch_dict.get("state")
         if state_tensor is not None:
             state, state_mask = self._process_state(state_tensor)
             result["state"] = state
@@ -149,8 +147,7 @@ class GrootPreprocessor:
         eagle_inputs = self._process_images(batch_dict)
         result.update(eagle_inputs)
 
-        # 5. Move to target device
-        return self._to_device(result)
+        return result
 
     @staticmethod
     def _infer_batch_info(batch: dict[str, Any]) -> tuple[int, torch.device]:
@@ -384,23 +381,6 @@ class GrootPreprocessor:
         batch_text = [task] * batch_size
         return self.eagle_processor.batch_encode(batch_images, batch_text)
 
-    def _to_device(self, batch: dict[str, Any]) -> dict[str, torch.Tensor]:
-        """Move batch to target device.
-
-        Args:
-            batch: Input batch.
-
-        Returns:
-            Batch with tensors on target device.
-        """
-        result = {}
-        for key, value in batch.items():
-            if isinstance(value, torch.Tensor):
-                result[key] = value.to(self.device)
-            else:
-                result[key] = value
-        return result
-
 
 @dataclass
 class GrootPostprocessor:
@@ -427,7 +407,6 @@ class GrootPostprocessor:
     env_action_dim: int = 0
     normalize_min_max: bool = True
     stats: dict[str, dict[str, Any]] | None = None
-    device: str = "cpu"
 
     def __call__(self, action: torch.Tensor) -> torch.Tensor:
         """Postprocess action output.
@@ -453,7 +432,7 @@ class GrootPostprocessor:
         if self.normalize_min_max:
             action = self._min_max_denormalize(action)
 
-        return action.to(self.device)
+        return action
 
     def _min_max_denormalize(self, action: torch.Tensor) -> torch.Tensor:
         """Denormalize action from [-1, 1] to original range.
@@ -505,7 +484,6 @@ def make_groot_preprocessors(
     env_action_dim: int = 0,
     stats: dict[str, dict[str, Any]] | None = None,
     eagle_processor_repo: str = "nvidia/Eagle2-2B",
-    device: str = "cuda",
 ) -> tuple[GrootPreprocessor, GrootPostprocessor]:
     """Create preprocessor and postprocessor for Groot policy.
 
@@ -519,7 +497,6 @@ def make_groot_preprocessors(
         env_action_dim: Original environment action dimension.
         stats: Dataset statistics for normalization.
         eagle_processor_repo: HuggingFace repo for Eagle processor.
-        device: Target device.
 
     Returns:
         Tuple of (preprocessor, postprocessor).
@@ -543,14 +520,12 @@ def make_groot_preprocessors(
         normalize_min_max=True,
         stats=stats,
         eagle_processor_repo=eagle_processor_repo,
-        device=device,
     )
 
     postprocessor = GrootPostprocessor(
         env_action_dim=env_action_dim,
         normalize_min_max=True,
         stats=stats,
-        device="cpu",
     )
 
     return preprocessor, postprocessor
