@@ -85,6 +85,15 @@ class TestACTolicy:
         assert explain.shape[2] > 1
         assert explain.shape[3] > 1
 
+    def test_select_action(self, policy, batch):
+        policy.eval()
+        actions = policy.select_action(batch)
+
+        assert isinstance(actions, torch.Tensor)
+        assert actions.shape[0] == batch.images.shape[0]
+        assert actions.shape[1] == policy.model._config.chunk_size
+        assert actions.shape[2] == batch.action.shape[2]
+
     def test_sample_input(self, policy):
         """Test sample_input generation."""
         sample_input = policy.model.sample_input
