@@ -4,7 +4,7 @@
 """End-to-end integration tests for LeRobot policies.
 
 This module validates the training pipeline for LeRobot policies:
-    1. Train a policy using LeRobot PushT dataset
+    1. Train a policy using LeRobot ALOHA dataset
     2. Validate/test the trained policy
 
 Note:
@@ -17,10 +17,13 @@ Supported Policies:
         - diffusion: Diffusion Policy
 
     Extended (marked @pytest.mark.slow):
-        - vqbet: VQ-BeT (Vector Quantized Behavior Transformer)
+        - vqbet: Vector Quantized Behavior Transformer
 
-    VLA (require special dependencies, not tested by default):
-        - pi0, pi05, smolvla, groot, xvla
+    VLA (marked @pytest.mark.slow, requires 24GB+ VRAM):
+        - groot: NVIDIA GR00T-N1.5-3B (trains projector + action head only)
+
+    Not tested (no explicit wrappers yet):
+        - pi0, pi05, smolvla, xvla, tdmpc, sac, reward_classifier
 """
 
 import pytest
@@ -33,11 +36,11 @@ from getiaction.train import Trainer
 # Core policies - fast, no special dependencies
 CORE_POLICIES = ["act", "diffusion"]
 
-# Extended policies - slower, requires more compute
+# Extended policies - slower but still practical
 EXTENDED_POLICIES = ["vqbet"]
 
-# VLA policies - require flash-attn/transformers (not tested by default)
-# VLA_POLICIES = ["pi0", "smolvla", "groot"]
+# VLA policies - large models requiring 24GB+ VRAM
+VLA_POLICIES = ["groot"]
 
 
 def get_delta_timestamps_from_policy(policy_name: str, fps: int = 10) -> dict[str, list[float]]:
@@ -72,7 +75,7 @@ def get_delta_timestamps_from_policy(policy_name: str, fps: int = 10) -> dict[st
     # Observation timestamps: indices from -(n_obs_steps-1) to 0
     if n_obs_steps > 1:
         obs_indices = list(range(-(n_obs_steps - 1), 1))  # e.g., [-1, 0] for n_obs_steps=2
-        delta_timestamps["observation.image"] = [i / fps for i in obs_indices]
+        delta_timestamps["observation.images.top"] = [i / fps for i in obs_indices]
         delta_timestamps["observation.state"] = [i / fps for i in obs_indices]
 
     # Action timestamps: depends on policy type
@@ -112,7 +115,7 @@ class LeRobotE2ETestBase:
         delta_timestamps = get_delta_timestamps_from_policy(policy_name)
 
         return LeRobotDataModule(
-            repo_id="lerobot/pusht",
+            repo_id="lerobot/aloha_sim_insertion_human",
             train_batch_size=8,
             episodes=list(range(10)),
             data_format="lerobot",
@@ -169,11 +172,38 @@ class TestLeRobotCorePolicies(LeRobotE2ETestBase):
 @pytest.mark.slow
 @pytest.mark.parametrize("policy_name", EXTENDED_POLICIES, indirect=True)
 class TestLeRobotExtendedPolicies(LeRobotE2ETestBase):
-    """E2E tests for extended LeRobot policies (VQ-BeT, etc.).
+    """E2E tests for extended LeRobot policies (VQ-BeT).
 
     These tests are slower and marked with @pytest.mark.slow.
     Run with: pytest -m slow
     Skip with: pytest -m "not slow"
     """
+
+    pass
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("policy_name", VLA_POLICIES, indirect=True)
+class TestLeRobotVLAPolicies(LeRobotE2ETestBase):
+    """E2E tests for Vision-Language-Action policies (groot).
+
+    These tests require:
+    - 24GB+ VRAM (48GB recommended)
+    - flash_attn package (CUDA only): pip install flash-attn
+    - peft package: pip install peft
+
+    By default, Groot freezes the backbone and only trains the projector + action head.
+
+    Run with: pytest -m slow
+    Skip with: pytest -m "not slow"
+    """
+
+    @pytest.fixture(scope="class", autouse=True)
+    def check_flash_attn(self) -> None:
+        """Skip if flash_attn is not available."""
+        try:
+            import flash_attn  # noqa: F401
+        except ImportError:
+            pytest.skip("Groot requires flash_attn: pip install flash-attn")
 
     pass

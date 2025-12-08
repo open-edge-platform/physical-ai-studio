@@ -407,13 +407,20 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         """
         del batch_idx  # Unused argument
 
-        # LeRobot policies return (loss, loss_dict) where loss_dict may be None (e.g., Diffusion)
-        total_loss, loss_dict = self.lerobot_policy(batch)
+        # Use forward() which applies preprocessing
+        total_loss, loss_dict = self(batch)
 
-        # Log individual loss components if available
+        # Log individual loss components if available (skip non-scalar values and 'loss' key)
         if loss_dict is not None:
             for key, value in loss_dict.items():
-                self.log(f"train/{key}", value, prog_bar=False)
+                # Skip 'loss' key (we log it separately as train/loss)
+                if key == "loss":
+                    continue
+                # Only log scalar values
+                if isinstance(value, (int, float, torch.Tensor)) and (
+                    not isinstance(value, torch.Tensor) or value.numel() == 1
+                ):
+                    self.log(f"train/{key}", value, prog_bar=False)
 
         self.log("train/loss", total_loss, prog_bar=True)
         return total_loss
@@ -465,12 +472,14 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             - Training mode: Tuple of (loss, loss_dict or None)
             - Inference mode: Action tensor
         """
+        # Convert to LeRobot format if needed
+        batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
+
+        # Apply preprocessing (tokenization, normalization, etc.)
+        batch_dict = self._preprocessor(batch_dict)
+
         if self.training:
             # Training mode: Use LeRobot policy's forward() which computes loss
-            # Convert to LeRobot format if needed
-            batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
-
-            # Call underlying policy forward
             output = self.lerobot_policy(batch_dict)
 
             # Handle different return formats (some policies return tuple, some just loss)
@@ -479,13 +488,14 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             return output, None
 
         # Inference mode: Generate actions via select_action
-        return self.select_action(batch)
+        action = self.lerobot_policy.select_action(batch_dict)
+        return self._postprocessor(action)
 
     def select_action(self, batch: Observation | dict[str, torch.Tensor]) -> torch.Tensor:
         """Select action (inference mode) through LeRobot.
 
-        Converts the Observation to LeRobot dict format, applies preprocessing,
-        gets action prediction, and applies postprocessing (denormalization).
+        Delegates to forward() in eval mode, which handles preprocessing,
+        action prediction, and postprocessing (denormalization).
 
         Args:
             batch: Input batch of observations (raw, from gym).
@@ -493,17 +503,13 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         Returns:
             Predicted actions (denormalized).
         """
-        # Convert to LeRobot format if needed
-        batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
-
-        # Apply preprocessing
-        batch_dict = self._preprocessor(batch_dict)
-
-        # Get action from policy
-        action = self.lerobot_policy.select_action(batch_dict)
-
-        # Apply postprocessing
-        return self._postprocessor(action)
+        was_training = self.training
+        self.eval()
+        try:
+            return self(batch)
+        finally:
+            if was_training:
+                self.train()
 
     def reset(self) -> None:
         """Reset the policy state for a new episode.
