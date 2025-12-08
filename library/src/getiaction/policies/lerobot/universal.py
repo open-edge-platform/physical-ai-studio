@@ -12,7 +12,7 @@ support, see the specific policy modules (e.g., ACT).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
 import torch
 from lightning_utilities import module_available
@@ -24,19 +24,25 @@ from getiaction.policies.base import Policy
 from getiaction.policies.lerobot.mixin import LeRobotFromConfig
 
 if TYPE_CHECKING:
-    from lerobot.configs.types import PolicyFeature
+    from lerobot.configs.types import FeatureType, PolicyFeature
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
     from lerobot.policies.pretrained import PreTrainedPolicy
 
     from getiaction.gyms import Gym
 
 if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.configs.policies import PreTrainedConfig
+    from lerobot.configs.types import FeatureType
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
     from lerobot.datasets.utils import dataset_to_policy_features
     from lerobot.policies.factory import get_policy_class, make_policy_config, make_pre_post_processors
 
     LEROBOT_AVAILABLE = True
 else:
     PreTrainedConfig = None
+    FeatureType = None
+    LeRobotDataset = None
+    LeRobotDatasetMetadata = None
     dataset_to_policy_features = None
     get_policy_class = None
     make_policy_config = None
@@ -54,87 +60,64 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
     For users who prefer explicit parameter definitions and full IDE support,
     use the specific policy wrappers (e.g., ACT, Diffusion).
 
-    Supported policies:
-        - act: Action Chunking Transformer
-        - diffusion: Diffusion Policy
-        - vqbet: VQ-BeT (VQ-VAE Behavior Transformer)
+    Supported policies (from LeRobot):
+        - act: Action Chunking Transformer for imitation learning
+        - diffusion: Diffusion Policy for behavior cloning
+        - vqbet: VQ-BeT (Vector Quantized Behavior Transformer)
         - tdmpc: TD-MPC (Temporal Difference Model Predictive Control)
-        - sac: Soft Actor-Critic
-        - pi0: Vision-Language Policy
-        - pi05: PI0.5 (Improved PI0)
-        - pi0fast: Fast Inference PI0
-        - smolvla: Small Vision-Language-Action
+        - sac: Soft Actor-Critic for reinforcement learning
+        - pi0: PI0 Vision-Language-Action policy
+        - pi05: PI0.5 (improved PI0 with better performance)
+        - smolvla: SmolVLA (Small Vision-Language-Action model)
+        - groot: GR00T policy for generalist robots
+        - xvla: XVLA (Cross-modal Vision-Language-Action)
+        - reward_classifier: Reward classifier for RL
 
     Example:
-        >>> # Option 1: Load pretrained model
-        >>> policy = LeRobotPolicy.from_pretrained(
-        ...     "lerobot/diffusion_pusht"
-        ... )
+        >>> # Option 1: Load pretrained from HuggingFace Hub
+        >>> policy = LeRobotPolicy.from_pretrained("lerobot/act_pusht")
 
-        >>> # Option 2: Pass config as dict
+        >>> # Option 2: Eager initialization from dataset/repo
+        >>> policy = LeRobotPolicy.from_dataset("act", "lerobot/pusht", optimizer_lr=1e-4)
+
+        >>> # Option 3: Lazy initialization (features extracted in setup())
+        >>> policy = LeRobotPolicy(policy_name="diffusion", num_inference_steps=100)
+
+        >>> # Option 4: Eager with explicit features
         >>> policy = LeRobotPolicy(
-        ...     policy_name="diffusion",
-        ...     input_features=features,
-        ...     output_features=features,
-        ...     num_steps=100,
-        ...     noise_scheduler="ddpm",
-        ...     stats=dataset.meta.stats,
+        ...     policy_name="act",
+        ...     input_features=input_features,
+        ...     output_features=output_features,
+        ...     dataset_stats=dataset.meta.stats,
+        ...     optimizer_lr=1e-4,  # Any LeRobot config param can be passed
         ... )
 
-        >>> # Option 2: Pass pre-built config
-        >>> from lerobot.policies import DiffusionConfig
-        >>> config = DiffusionConfig(
-        ...     input_features=features,
-        ...     output_features=features,
-        ...     num_steps=100,
-        ... )
-        >>> policy = LeRobotPolicy(
-        ...     policy_name="diffusion",
-        ...     config=config,
-        ...     stats=dataset.meta.stats,
-        ... )
-
-        >>> # Option 3: Use with LightningCLI
-        >>> # In config.yaml:
+        >>> # Option 5: Use with LightningCLI (lazy init)
         >>> # model:
         >>> #   class_path: getiaction.policies.lerobot.LeRobotPolicy
         >>> #   init_args:
-        >>> #     policy_name: vqbet
-        >>> #     num_clusters: 256
-        >>> #     embedding_dim: 64
+        >>> #     policy_name: act
+        >>> #     policy_config:
+        >>> #       optimizer_lr: 0.0001
 
     Args:
-        policy_name: Name of the LeRobot policy to instantiate. See SUPPORTED_POLICIES.
+        policy_name: Name of the LeRobot policy to instantiate (e.g., 'act', 'diffusion').
         input_features: Dictionary of input feature definitions (PolicyFeature objects).
         output_features: Dictionary of output feature definitions (PolicyFeature objects).
-        config: Pre-built LeRobot config object. If provided, other config kwargs are ignored.
-        stats: Dataset statistics for normalization. If provided, will be passed to
-               the LeRobot policy constructor.
-        learning_rate: Learning rate for optimizer (default: 1e-4).
-        **config_kwargs: Additional configuration parameters specific to the policy type.
-                        These are passed to the LeRobot config constructor.
+        config: Pre-built LeRobot config object. If provided, policy_config is ignored.
+        dataset_stats: Dataset statistics for normalization.
+        policy_config: Policy-specific parameters as a dict (for YAML configs).
+        **kwargs: Policy-specific parameters (for Python usage). Merged with policy_config;
+            kwargs take precedence if both specify the same key.
 
     Raises:
         ImportError: If LeRobot is not installed.
-        ValueError: If policy_name is not supported.
+        ValueError: If policy_name is not recognized by LeRobot.
 
     Note:
         This is the "universal wrapper" approach. For explicit parameter definitions
         and better IDE support, consider using specific wrappers (e.g., ACT).
     """
-
-    SUPPORTED_POLICIES: ClassVar[list[str]] = [
-        "act",
-        "diffusion",
-        "groot",
-        "pi0",
-        "pi05",
-        "pi0fast",
-        "sac",
-        "smolvla",
-        "tdmpc",
-        "vqbet",
-    ]
 
     def __init__(
         self,
@@ -143,9 +126,8 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         output_features: dict[str, PolicyFeature] | None = None,
         config: PreTrainedConfig | None = None,
         dataset_stats: dict[str, dict[str, torch.Tensor]] | None = None,
-        learning_rate: float = 1e-4,
-        config_kwargs: dict[str, Any] | None = None,
-        **extra_config_kwargs: Any,  # noqa: ANN401
+        policy_config: dict[str, Any] | None = None,
+        **kwargs: Any,  # noqa: ANN401
     ) -> None:
         """Initialize the universal LeRobot policy wrapper.
 
@@ -158,20 +140,13 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             output_features: Optional output feature definitions (lazy if None)
             config: Pre-built LeRobot config object (optional)
             dataset_stats: Dataset statistics for normalization (optional)
-            learning_rate: Learning rate for optimizer
-            config_kwargs: Policy-specific parameters as a dict (for YAML configs).
-                See LeRobot's policy config classes for available parameters.
-            **extra_config_kwargs: Policy-specific parameters as kwargs (for Python usage).
-                These are merged with config_kwargs.
+            policy_config: Policy-specific parameters as a dict (for YAML configs).
+            **kwargs: Policy-specific parameters (for Python usage). Merged with
+                policy_config; kwargs take precedence if both specify the same key.
 
         Raises:
             ImportError: If LeRobot is not installed.
-            ValueError: If policy_name is not supported.
-
-        Note:
-            When using Lightning CLI/YAML, use `config_kwargs` (nested dict) due to
-            CLI validation limitations. When using Python directly, you can use either
-            `config_kwargs={}` or pass parameters as **kwargs.
+            ValueError: If policy_name is not recognized by LeRobot.
         """
         if not LEROBOT_AVAILABLE:
             msg = (
@@ -184,32 +159,21 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             )
             raise ImportError(msg)
 
-        if policy_name not in self.SUPPORTED_POLICIES:
-            msg = (
-                f"Policy '{policy_name}' is not supported.\n\n"
-                f"Supported policies: {', '.join(self.SUPPORTED_POLICIES)}\n\n"
-                f"If you need a different policy, either:\n"
-                f"  1. Add it to SUPPORTED_POLICIES if it's in LeRobot\n"
-                f"  2. Create an explicit wrapper for better IDE support\n"
-                f"  3. Use the LeRobot policy directly"
-            )
-            raise ValueError(msg)
-
         super().__init__()
 
         # Store metadata
         self.policy_name = policy_name
-        self.learning_rate = learning_rate
 
-        # Merge config_kwargs (from YAML) with extra_config_kwargs (from Python **kwargs)
-        merged_config_kwargs = {**(config_kwargs or {}), **extra_config_kwargs}
+        # Merge policy_config (from YAML) with kwargs (from Python)
+        # kwargs take precedence for CLI override support
+        merged_policy_config = {**(policy_config or {}), **kwargs}
 
         # Store for lazy initialization
         self._input_features = input_features
         self._output_features = output_features
         self._provided_config = config
         self._dataset_stats = dataset_stats
-        self._config_kwargs = merged_config_kwargs
+        self._policy_config = merged_policy_config
 
         # Will be initialized in setup() if not provided
         self._lerobot_policy: PreTrainedPolicy
@@ -223,6 +187,70 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             self._initialize_policy(None, None, config, dataset_stats)
 
         self.save_hyperparameters()
+
+    @classmethod
+    def from_dataset(
+        cls,
+        policy_name: str,
+        dataset: LeRobotDataset | str,
+        **kwargs: Any,  # noqa: ANN401
+    ) -> "LeRobotPolicy":
+        """Create policy with eager initialization from a dataset or repo ID.
+
+        This factory method extracts features from the dataset and builds the policy
+        immediately, making it ready for inference without a Lightning Trainer.
+
+        Args:
+            policy_name: Name of the policy ('act', 'diffusion', 'vqbet', etc.)
+            dataset: Either a LeRobotDataset instance or a HuggingFace Hub repo ID string.
+                If a string is provided, only metadata is fetched (lightweight).
+            **kwargs: Additional policy configuration parameters.
+
+        Returns:
+            Fully initialized LeRobotPolicy ready for inference.
+
+        Examples:
+            Create from repo ID (lightweight, only fetches metadata):
+
+                >>> policy = LeRobotPolicy.from_dataset(
+                ...     "act",
+                ...     "lerobot/pusht",
+                ...     dim_model=512,
+                ... )
+
+            Create from an already loaded dataset:
+
+                >>> dataset = LeRobotDataset("lerobot/pusht")
+                >>> policy = LeRobotPolicy.from_dataset(
+                ...     "diffusion",
+                ...     dataset,
+                ...     num_inference_steps=100,
+                ... )
+        """
+        if not LEROBOT_AVAILABLE:
+            msg = "LeRobotPolicy.from_dataset requires LeRobot to be installed."
+            raise ImportError(msg)
+
+        # Get metadata from dataset or repo ID
+        if isinstance(dataset, str):
+            meta = LeRobotDatasetMetadata(dataset)
+        else:
+            meta = dataset.meta
+
+        # Convert dataset features to policy features
+        features = dataset_to_policy_features(meta.features)
+
+        # Split into input/output features
+        input_features = {k: f for k, f in features.items() if f.type != FeatureType.ACTION}
+        output_features = {k: f for k, f in features.items() if f.type == FeatureType.ACTION}
+
+        return cls(
+            policy_name=policy_name,
+            input_features=input_features,
+            output_features=output_features,
+            dataset_stats=meta.stats,
+            **kwargs,
+        )
 
     @property
     def lerobot_policy(self) -> PreTrainedPolicy:
@@ -265,16 +293,16 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
                 )
                 raise ValueError(msg)
 
-            # Remove dataset_stats from config_kwargs if present
+            # Remove dataset_stats from policy_config if present
             # (it should be passed to policy constructor, not config)
-            clean_config_kwargs = {k: v for k, v in self._config_kwargs.items() if k != "dataset_stats"}
+            clean_policy_config = {k: v for k, v in self._policy_config.items() if k != "dataset_stats"}
 
             # Create config dynamically using LeRobot's factory
             config = make_policy_config(
                 self.policy_name,
                 input_features=input_features,
                 output_features=output_features,
-                **clean_config_kwargs,
+                **clean_policy_config,
             )
 
         # Get the policy class dynamically
@@ -350,95 +378,28 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         # Initialize policy now
         self._initialize_policy(features, features, self._provided_config, stats)
 
-    def _process_loss_output(
-        self,
-        output: torch.Tensor | tuple[torch.Tensor, dict | None] | dict,
-        log_prefix: str,
-    ) -> torch.Tensor:
-        """Process and log loss output from LeRobot policy.
-
-        Handles the different output formats from LeRobot policies and logs losses appropriately.
-
-        Args:
-            output: Policy output, can be one of:
-                1. Tuple[Tensor, dict]: Standard format used by most policies (ACT, VQ-BeT, TDMPC, etc.)
-                   Returns (loss, loss_dict) where loss_dict contains individual loss components.
-                   Example: ACT returns (loss, {"l1_loss": ..., "kld_loss": ...})
-
-                2. Tuple[Tensor, None]: Used by policies without detailed loss breakdown (Diffusion).
-                   Returns (loss, None) where None indicates no additional loss components.
-
-                3. dict: Some policies may return only a dictionary of losses.
-                   The dictionary contains loss components that need to be summed.
-
-                4. Tensor: Direct loss tensor (legacy/simple policies).
-                   Returns just the scalar loss tensor.
-
-            log_prefix: Prefix for logging (e.g., "train" or "val")
-
-        Returns:
-            Total loss tensor
-
-        Raises:
-            ValueError: If loss dictionary is empty
-
-        Note:
-            See module docstring for detailed documentation of each output format.
-        """
-        if isinstance(output, tuple) and len(output) == 2:  # noqa: PLR2004
-            loss, loss_dict = output
-            if loss_dict is None:
-                # Case 2: Diffusion-style output with no loss breakdown
-                self.log(f"{log_prefix}/loss", loss, prog_bar=True)
-                return loss
-            # Case 1: Standard output with loss dict - continue processing below
-        elif isinstance(output, dict):
-            # Case 3: Dictionary of losses
-            loss_dict = output
-        else:
-            # Case 4: Direct loss tensor
-            return output
-
-        # Sum all loss components from loss_dict
-        if isinstance(loss_dict, dict):
-            if not loss_dict:
-                msg = "Loss dictionary is empty - policy returned no loss components"
-                raise ValueError(msg)
-            # Use torch.stack + sum to maintain tensor type (avoids int return from sum())
-            loss = torch.stack(list(loss_dict.values())).sum()
-            # Log individual loss components
-            for key, val in loss_dict.items():
-                self.log(f"{log_prefix}/{key}", val, prog_bar=True)
-        else:
-            loss = loss_dict
-
-        self.log(f"{log_prefix}/loss", loss, prog_bar=True)
-        return loss
-
     def configure_optimizers(self) -> torch.optim.Optimizer:
         """Configure optimizer for Lightning.
 
-        Uses LeRobot's parameter grouping if available (e.g., for backbone learning rates).
+        Uses LeRobot's get_optimizer_preset from config which includes proper
+        parameter grouping (e.g., different lr for backbone) and optimizer settings.
 
         Returns:
-            Configured optimizer.
+            Configured optimizer from LeRobot's preset.
         """
-        # Check if the policy has custom parameter grouping
-        if hasattr(self.lerobot_policy, "get_optim_params"):
-            param_groups = self.lerobot_policy.get_optim_params()
-            # If get_optim_params returns a list of dicts, use it directly
-            # Otherwise, wrap in a list
-            if isinstance(param_groups, list) and param_groups and isinstance(param_groups[0], dict):
-                return torch.optim.Adam(param_groups, lr=self.learning_rate)
-            return torch.optim.Adam(param_groups, lr=self.learning_rate)
-        # Default: optimize all parameters
-        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        # Use LeRobot's optimizer preset from config - this handles:
+        # - Proper optimizer type (Adam, AdamW, etc.)
+        # - Learning rate and weight decay from config
+        # - Parameter grouping via get_optim_params (e.g., backbone lr)
+        optimizer_config = self._config.get_optimizer_preset()
+        params = self.lerobot_policy.get_optim_params()
+        return optimizer_config.build(params)
 
     def training_step(self, batch: Observation | dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
         """Training step uses LeRobot's loss computation.
 
         Args:
-            batch (Observation | dict[str, torch.Tensor]): Input batch of observations.
+            batch: Input batch (Observation or LeRobot dict format).
             batch_idx: Index of the batch.
 
         Returns:
@@ -446,9 +407,14 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         """
         del batch_idx  # Unused argument
 
+        # LeRobot policies return (loss, loss_dict) where loss_dict may be None (e.g., Diffusion)
         total_loss, loss_dict = self.lerobot_policy(batch)
-        for key, value in loss_dict.items():
-            self.log(f"train/{key}", value, prog_bar=False)
+
+        # Log individual loss components if available
+        if loss_dict is not None:
+            for key, value in loss_dict.items():
+                self.log(f"train/{key}", value, prog_bar=False)
+
         self.log("train/loss", total_loss, prog_bar=True)
         return total_loss
 
@@ -565,19 +531,18 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         """
         # Get policy_name from either attribute or config
         policy_name = getattr(self, "policy_name", None)
-        if policy_name is None and hasattr(self, "lerobot_policy"):
-            policy_name = self.lerobot_policy.config.type
+        if policy_name is None and hasattr(self, "_lerobot_policy"):
+            policy_name = self._lerobot_policy.config.type
 
-        # Get stats info
-        stats_info = "None"
-        if hasattr(self, "lerobot_policy") and hasattr(self.lerobot_policy, "dataset_stats"):
-            stats_info = "provided" if self.lerobot_policy.dataset_stats is not None else "None"
+        # Get learning rate from config if available
+        lr_info = "N/A"
+        if hasattr(self, "_config") and self._config is not None:
+            optimizer_preset = self._config.get_optimizer_preset()
+            lr_info = f"{optimizer_preset.lr}"
 
         return (
             f"{self.__class__.__name__}(\n"
             f"  policy_name={policy_name!r},\n"
-            f"  policy_class={self.lerobot_policy.__class__.__name__},\n"
-            f"  learning_rate={self.learning_rate},\n"
-            f"  stats={stats_info}\n"
+            f"  lr={lr_info},\n"
             f")"
         )
