@@ -40,6 +40,54 @@ EXTENDED_POLICIES = ["vqbet"]
 # VLA_POLICIES = ["pi0", "smolvla", "groot"]
 
 
+def get_delta_timestamps_from_policy(policy_name: str, fps: int = 10) -> dict[str, list[float]]:
+    """Derive delta timestamps configuration from LeRobot policy config.
+
+    This extracts n_obs_steps and action chunk/horizon size from the policy's
+    default configuration to automatically compute the correct delta timestamps.
+
+    Args:
+        policy_name: Name of the LeRobot policy (e.g., "act", "diffusion").
+        fps: Frames per second of the dataset.
+
+    Returns:
+        Dictionary with delta timestamps for observation and action keys.
+    """
+    from lerobot.policies.factory import make_policy_config
+
+    config = make_policy_config(policy_name)
+
+    n_obs_steps = getattr(config, "n_obs_steps", 1)
+
+    # Get action sequence length - different policies use different attribute names
+    action_length = (
+        getattr(config, "chunk_size", None)
+        or getattr(config, "horizon", None)
+        or getattr(config, "action_chunk_size", None)
+        or getattr(config, "n_action_steps", 1)
+    )
+
+    delta_timestamps: dict[str, list[float]] = {}
+
+    # Observation timestamps: indices from -(n_obs_steps-1) to 0
+    if n_obs_steps > 1:
+        obs_indices = list(range(-(n_obs_steps - 1), 1))  # e.g., [-1, 0] for n_obs_steps=2
+        delta_timestamps["observation.image"] = [i / fps for i in obs_indices]
+        delta_timestamps["observation.state"] = [i / fps for i in obs_indices]
+
+    # Action timestamps: depends on policy type
+    if policy_name == "diffusion":
+        # Diffusion predicts horizon steps starting from -1
+        action_indices = list(range(-1, action_length - 1))
+    else:
+        # Other policies predict chunk_size steps starting from 0
+        action_indices = list(range(action_length))
+
+    delta_timestamps["action"] = [i / fps for i in action_indices]
+
+    return delta_timestamps
+
+
 class LeRobotE2ETestBase:
     """Base class with common fixtures and tests for LeRobot policies."""
 
@@ -60,49 +108,16 @@ class LeRobotE2ETestBase:
 
     @pytest.fixture(scope="class")
     def datamodule(self, policy_name: str) -> LeRobotDataModule:
-        """Create datamodule for LeRobot policies with delta timestamps."""
-        repo_id = "lerobot/pusht"
-        fps = 10
+        """Create datamodule for LeRobot policies with delta timestamps derived from policy config."""
+        delta_timestamps = get_delta_timestamps_from_policy(policy_name)
 
-        # Policy-specific configurations for delta timestamps
-        policy_configs = {
-            "act": {
-                "action_delta_indices": list(range(100)),  # chunk_size=100
-            },
-            "diffusion": {
-                "observation_delta_indices": [-1, 0],  # n_obs_steps=2
-                "action_delta_indices": list(range(-1, 15)),  # horizon=16
-            },
-            "vqbet": {
-                "observation_delta_indices": [-1, 0],  # n_obs_steps=2
-                "action_delta_indices": list(range(100)),  # chunk_size=100
-            },
-        }
-
-        config: dict = {
-            "repo_id": repo_id,
-            "train_batch_size": 8,
-            "episodes": list(range(10)),
-            "data_format": "lerobot",
-        }
-
-        # Add delta timestamps if configured for this policy
-        if policy_name in policy_configs:
-            policy_cfg = policy_configs[policy_name]
-            delta_timestamps = {}
-
-            if "observation_delta_indices" in policy_cfg:
-                obs_indices = policy_cfg["observation_delta_indices"]
-                delta_timestamps["observation.image"] = [i / fps for i in obs_indices]
-                delta_timestamps["observation.state"] = [i / fps for i in obs_indices]
-
-            if "action_delta_indices" in policy_cfg:
-                action_indices = policy_cfg["action_delta_indices"]
-                delta_timestamps["action"] = [i / fps for i in action_indices]
-
-            config["delta_timestamps"] = delta_timestamps
-
-        return LeRobotDataModule(**config)
+        return LeRobotDataModule(
+            repo_id="lerobot/pusht",
+            train_batch_size=8,
+            episodes=list(range(10)),
+            data_format="lerobot",
+            delta_timestamps=delta_timestamps if delta_timestamps else None,
+        )
 
     @pytest.fixture(scope="class")
     def policy(self, policy_name: str) -> Policy:
