@@ -1,0 +1,202 @@
+# =============================================================================
+# Groot (GR00T-N1.5-3B) Policy Training Configuration
+# First-party implementation with PyTorch native SDPA attention
+# =============================================================================
+#
+# Default settings optimized for 24GB GPUs (3090, 4090, Intel B580/B60).
+#
+# Usage:
+#   getiaction fit --config configs/getiaction/groot.yaml
+#
+# Override examples:
+#   # Intel XPU (Arc B580, Data Center Max)
+#   getiaction fit --config configs/getiaction/groot.yaml \
+#       --trainer.accelerator xpu
+#
+#   # Change dataset
+#   getiaction fit --config configs/getiaction/groot.yaml \
+#       --data.repo_id lerobot/pusht
+#
+#   # Use 48GB+ GPU settings (enables diffusion model tuning)
+#   getiaction fit --config configs/getiaction/groot.yaml \
+#       --model.tune_diffusion_model true \
+#       --data.train_batch_size 2 \
+#       --trainer.accumulate_grad_batches 8
+#
+# =============================================================================
+# MEMORY REQUIREMENTS (approximate)
+# =============================================================================
+#
+# | Configuration                    | Trainable Params | VRAM Required |
+# |----------------------------------|------------------|---------------|
+# | tune_projector only (default)    | ~518M            | 24GB          |
+# | tune_projector + tune_diffusion  | ~1.1B            | 48GB          |
+# | + tune_llm or tune_visual        | ~2.7B+           | 80GB+         |
+#
+# =============================================================================
+
+model:
+  class_path: getiaction.policies.groot.Groot
+  init_args:
+    # -------------------------------------------------------------------------
+    # Model Architecture
+    # -------------------------------------------------------------------------
+    chunk_size: 50      # Number of action predictions per forward pass
+    n_action_steps: 50  # Number of action steps to execute
+    max_state_dim: 64   # Maximum state dimension (shorter states zero-padded)
+    max_action_dim: 32  # Maximum action dimension (shorter actions zero-padded)
+
+    # -------------------------------------------------------------------------
+    # Model Source
+    # -------------------------------------------------------------------------
+    base_model_path: "nvidia/GR00T-N1.5-3B"
+    tokenizer_assets_repo: "lerobot/eagle2hg-processor-groot-n1p5"
+    embodiment_tag: "new_embodiment"
+
+    # -------------------------------------------------------------------------
+    # Attention Implementation
+    # -------------------------------------------------------------------------
+    # Options:
+    #   - "sdpa"            : PyTorch native SDPA (default, works on CUDA/XPU)
+    #   - "flash_attention_2": Requires flash-attn CUDA package
+    #   - "eager"           : Fallback Python implementation
+    attn_implementation: "sdpa"
+
+    # -------------------------------------------------------------------------
+    # Fine-tuning Control
+    # -------------------------------------------------------------------------
+    # These control which parts of the model are trainable.
+    # Freezing more components reduces memory usage.
+    #
+    # Recommended settings by GPU VRAM:
+    #
+    # 24GB (3090, 4090, Intel B580/B60) - DEFAULT:
+    #   tune_llm: false
+    #   tune_visual: false
+    #   tune_projector: true
+    #   tune_diffusion_model: false   # <-- Must be false for 24GB
+    #
+    # 48GB+ (A6000, A100):
+    #   tune_llm: false
+    #   tune_visual: false
+    #   tune_projector: true
+    #   tune_diffusion_model: true    # <-- Can enable with 48GB+
+    #
+    # 80GB+ (A100 80GB, H100):
+    #   tune_llm: true                # <-- Can enable with 80GB+
+    #   tune_visual: true             # <-- Can enable with 80GB+
+    #   tune_projector: true
+    #   tune_diffusion_model: true
+    #
+    tune_llm: false               # Fine-tune LLM backbone (~2B params)
+    tune_visual: false            # Fine-tune vision tower (~300M params)
+    tune_projector: true          # Fine-tune projector (~518M params)
+    tune_diffusion_model: false   # Fine-tune DiT action head (~550M params)
+                                  # Set to true for 48GB+ GPUs
+
+    # -------------------------------------------------------------------------
+    # Optimizer
+    # -------------------------------------------------------------------------
+    learning_rate: 1.0e-4
+    weight_decay: 1.0e-5
+
+    # -------------------------------------------------------------------------
+    # Precision
+    # -------------------------------------------------------------------------
+    use_bf16: true                # Use bfloat16 for memory efficiency
+
+data:
+  class_path: getiaction.data.lerobot.LeRobotDataModule
+  init_args:
+    # -------------------------------------------------------------------------
+    # Dataset
+    # -------------------------------------------------------------------------
+    repo_id: "lerobot/aloha_sim_transfer_cube_human"
+    data_format: "lerobot"
+
+    # -------------------------------------------------------------------------
+    # Batch Size
+    # -------------------------------------------------------------------------
+    # Recommended settings by GPU VRAM:
+    #   - 24GB (3090, 4090, Intel B580/B60): train_batch_size: 1 (DEFAULT)
+    #   - 48GB (A6000, A100):  train_batch_size: 2
+    #   - 80GB+ (H100):        train_batch_size: 4-8
+    #
+    # Use accumulate_grad_batches to achieve larger effective batch sizes
+    train_batch_size: 1
+
+trainer:
+  # ---------------------------------------------------------------------------
+  # Training Control
+  # ---------------------------------------------------------------------------
+  max_epochs: 100
+
+  # ---------------------------------------------------------------------------
+  # Gradient Accumulation
+  # ---------------------------------------------------------------------------
+  # Effective batch size = train_batch_size × accumulate_grad_batches
+  #
+  # Examples:
+  #   - batch_size=1, accumulate=16 → effective batch = 16 (for 24GB GPU, DEFAULT)
+  #   - batch_size=2, accumulate=8  → effective batch = 16 (for 48GB GPU)
+  #   - batch_size=4, accumulate=4  → effective batch = 16 (for 80GB GPU)
+  #
+  accumulate_grad_batches: 16
+  gradient_clip_val: 1.0
+
+  # ---------------------------------------------------------------------------
+  # Hardware
+  # ---------------------------------------------------------------------------
+  # accelerator options:
+  #   - "gpu"  : NVIDIA CUDA GPUs
+  #   - "xpu"  : Intel Arc/Data Center GPUs (requires Intel Extension for PyTorch)
+  #   - "cpu"  : CPU only (very slow, for debugging)
+  #   - "auto" : Auto-detect available accelerator
+  #
+  accelerator: gpu
+  devices: 1
+
+  # ---------------------------------------------------------------------------
+  # Precision
+  # ---------------------------------------------------------------------------
+  # Options:
+  #   - "bf16-mixed" : BFloat16 mixed precision (recommended for Ampere+)
+  #   - "16-mixed"   : Float16 mixed precision (for older GPUs)
+  #   - "32"         : Full precision (highest memory usage)
+  #
+  precision: bf16-mixed
+
+  # ---------------------------------------------------------------------------
+  # Logging & Checkpointing
+  # ---------------------------------------------------------------------------
+  log_every_n_steps: 10
+  check_val_every_n_epoch: 10
+  experiment_name: "groot_finetune"
+
+# =============================================================================
+# QUICK REFERENCE: GPU-SPECIFIC OVERRIDES
+# =============================================================================
+#
+# Default config is optimized for 24GB GPUs (3090, 4090, Intel B580/B60).
+# Just run directly:
+#
+#   getiaction fit --config configs/getiaction/groot.yaml
+#
+# -----------------------------------------------------------------------------
+# Intel XPU (Arc B580, Data Center Max):
+#   getiaction fit --config configs/getiaction/groot.yaml \
+#       --trainer.accelerator xpu
+#
+# 48GB GPU (A6000, L40) - enable DiT fine-tuning:
+#   getiaction fit --config configs/getiaction/groot.yaml \
+#       --model.tune_diffusion_model true \
+#       --data.train_batch_size 2 \
+#       --trainer.accumulate_grad_batches 8
+#
+# 80GB GPU (A100, H100) - larger batch and DiT:
+#   getiaction fit --config configs/getiaction/groot.yaml \
+#       --model.tune_diffusion_model true \
+#       --data.train_batch_size 4 \
+#       --trainer.accumulate_grad_batches 4
+#
+# =============================================================================
