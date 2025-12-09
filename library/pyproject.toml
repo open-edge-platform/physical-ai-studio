@@ -47,7 +47,6 @@ dependencies = [
     "openvino>=2025.0",
     "jsonargparse[signatures]>=4.27.0", # This could be extra
     "pydantic", # This could be extra
-    "mypy>=1.11",
 ]
 
 [project.optional-dependencies]
@@ -76,16 +75,10 @@ groot = [
     "flash-attn>=2.5.9,<3.0.0; sys_platform != 'darwin'",
 ]
 
-smolvla = [
-    "transformers>=4.57.0,<5.0.0",
-    "num2words>=0.5.14,<0.6.0",
-]
-
 # All optional dependencies
 all = [
     "getiaction[tests]",
     "getiaction[groot]",
-    "getiaction[smolvla]",
 ]
 
 [project.scripts]
