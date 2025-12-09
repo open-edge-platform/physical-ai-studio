@@ -175,12 +175,10 @@ Each project's hooks use the `[tool.*]` configurations from their respective `py
 The GitHub Actions workflows are configured to:
 
 1. **Library** (`library.yml`):
-
    - Run prek hooks on library files
    - Run unit tests
 
 2. **Backend** (`backend.yml`):
-
    - Run ruff and mypy
    - Verify lock file integrity
 

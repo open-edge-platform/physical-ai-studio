@@ -90,3 +90,4 @@ jobs:
           severity: "HIGH"
           fail-on-findings: true
           output-format: "text" # Use plain text output format to omit uploading code scanning results to Security tab
+
