@@ -57,6 +57,7 @@ class GrootConfig:
         tune_diffusion_model: Whether to fine-tune the diffusion model.
         chunk_size: Fallback action horizon if not in checkpoint.
         max_action_dim: Fallback action dimension if not in checkpoint.
+        revision: Git revision (branch, tag, or commit hash) to download from.
 
     Examples:
         Using with from_config:
@@ -94,6 +95,9 @@ class GrootConfig:
     tune_diffusion_model: bool = field(default=True)
     chunk_size: int = field(default=50)
     max_action_dim: int = field(default=32)
+
+    # HuggingFace args
+    revision: str | None = field(default=None)
 
 
 def _import_snapshot_download() -> tuple[Any, ...]:
@@ -253,6 +257,8 @@ class GrootModel(nn.Module):
         tune_diffusion_model: bool = True,
         chunk_size: int = 50,
         max_action_dim: int = 32,
+        # HuggingFace args
+        revision: str | None = None,
     ) -> GrootModel:
         """Load Groot model with pretrained weights.
 
@@ -271,6 +277,7 @@ class GrootModel(nn.Module):
             tune_diffusion_model: Whether to fine-tune the diffusion model.
             chunk_size: Fallback action horizon if not in checkpoint.
             max_action_dim: Fallback action dimension if not in checkpoint.
+            revision: Git revision (branch, tag, or commit hash) to download from.
 
         Returns:
             Initialized GrootModel with pretrained weights.
@@ -290,7 +297,11 @@ class GrootModel(nn.Module):
         logger.info("[GROOT] Using attention implementation: %s", attn_implementation)
 
         try:
-            local_model_path = snapshot_download(pretrained_model_name_or_path, repo_type="model")
+            local_model_path = snapshot_download(  # nosec B615 - revision param available
+                pretrained_model_name_or_path,
+                repo_type="model",
+                revision=revision,
+            )
         except (hf_hub_http_error, repository_not_found_error):
             logger.info("[GROOT] Model not found in HF hub, using local path: %s", pretrained_model_name_or_path)
             local_model_path = pretrained_model_name_or_path
@@ -346,12 +357,12 @@ class GrootModel(nn.Module):
 
         if backbone_weights.exists():
             model.backbone.load_state_dict(
-                torch.load(backbone_weights, map_location="cpu"),
+                torch.load(backbone_weights, map_location="cpu", weights_only=True),
                 strict=False,
             )
         if action_head_weights.exists():
             model.action_head.load_state_dict(
-                torch.load(action_head_weights, map_location="cpu"),
+                torch.load(action_head_weights, map_location="cpu", weights_only=True),
                 strict=False,
             )
 

@@ -44,7 +44,12 @@ HF_HOME = Path.home() / ".cache" / "huggingface" / "hub"
 HF_LEROBOT_HOME = Path.home() / ".cache" / "huggingface" / "lerobot"
 
 
-def _ensure_eagle_cache_ready(cache_dir: Path, assets_repo: str) -> None:
+def _ensure_eagle_cache_ready(
+    cache_dir: Path,
+    assets_repo: str,
+    *,
+    revision: str | None = None,
+) -> None:
     """Populate the Eagle processor directory in cache.
 
     First tries to copy vendored files from lerobot package, then downloads
@@ -53,6 +58,7 @@ def _ensure_eagle_cache_ready(cache_dir: Path, assets_repo: str) -> None:
     Args:
         cache_dir: Local cache directory for Eagle assets.
         assets_repo: HuggingFace repo ID for assets.
+        revision: Git revision (branch, tag, or commit hash) to download from.
     """
     from shutil import copytree  # noqa: PLC0415
 
@@ -97,11 +103,12 @@ def _ensure_eagle_cache_ready(cache_dir: Path, assets_repo: str) -> None:
         if not dst.exists():
             try:
                 logger.info("[Eagle] Fetching %s", fname)
-                hf_hub_download(
+                hf_hub_download(  # nosec B615 - revision param available for pinning
                     repo_id=assets_repo,
                     filename=fname,
                     repo_type="model",
                     local_dir=str(cache_dir),
+                    revision=revision,
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("[Eagle] Failed to download %s: %s", fname, exc)
@@ -397,6 +404,7 @@ class EagleProcessor:
     """
 
     processor_repo: str = DEFAULT_TOKENIZER_ASSETS_REPO
+    processor_revision: str | None = None
     min_dynamic_tiles: int = 1
     max_dynamic_tiles: int = 1
     use_thumbnail: bool = False
@@ -440,11 +448,12 @@ class EagleProcessor:
 
         # Prepare cache directory with all required Eagle assets
         cache_dir = HF_LEROBOT_HOME / self.processor_repo
-        _ensure_eagle_cache_ready(cache_dir, self.processor_repo)
+        _ensure_eagle_cache_ready(cache_dir, self.processor_repo, revision=self.processor_revision)
 
         logger.info("[EagleProcessor] Loading processor from %s", cache_dir)
 
-        processor = AutoProcessor.from_pretrained(
+        # Load from local cache (already downloaded with revision pinning above)
+        processor = AutoProcessor.from_pretrained(  # nosec B615
             str(cache_dir),
             trust_remote_code=True,
         )
