@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from lerobot.policies.factory import make_policy_config
+
 
 def get_delta_timestamps_from_policy(
     policy_name: str,
@@ -37,19 +39,18 @@ def get_delta_timestamps_from_policy(
         ...     delta_timestamps=delta_timestamps,
         ... )
     """
-    from lerobot.policies.factory import make_policy_config
-
     config = make_policy_config(policy_name)
 
-    n_obs_steps = getattr(config, "n_obs_steps", 1)
+    n_obs_steps: int = getattr(config, "n_obs_steps", 1)
 
     # Get action sequence length - different policies use different attribute names
-    action_length = (
+    action_length_raw = (
         getattr(config, "chunk_size", None)
         or getattr(config, "horizon", None)
         or getattr(config, "action_chunk_size", None)
-        or getattr(config, "n_action_steps", 1)
+        or getattr(config, "n_action_steps", None)
     )
+    action_length: int = int(action_length_raw) if action_length_raw is not None else 1
 
     delta_timestamps: dict[str, list[float]] = {}
 
@@ -59,13 +60,8 @@ def get_delta_timestamps_from_policy(
         delta_timestamps[obs_image_key] = [i / fps for i in obs_indices]
         delta_timestamps[obs_state_key] = [i / fps for i in obs_indices]
 
-    # Action timestamps: depends on policy type
-    if policy_name == "diffusion":
-        # Diffusion predicts horizon steps starting from -1
-        action_indices = list(range(-1, action_length - 1))
-    else:
-        # Other policies predict chunk_size steps starting from 0
-        action_indices = list(range(action_length))
+    # Action timestamps: depends on policy type (diffusion starts from -1)
+    action_indices = list(range(-1, action_length - 1)) if policy_name == "diffusion" else list(range(action_length))
 
     delta_timestamps["action"] = [i / fps for i in action_indices]
 

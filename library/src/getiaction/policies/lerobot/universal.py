@@ -146,7 +146,6 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
 
         Raises:
             ImportError: If LeRobot is not installed.
-            ValueError: If policy_name is not recognized by LeRobot.
         """
         if not LEROBOT_AVAILABLE:
             msg = (
@@ -194,7 +193,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         policy_name: str,
         dataset: LeRobotDataset | str,
         **kwargs: Any,  # noqa: ANN401
-    ) -> "LeRobotPolicy":
+    ) -> LeRobotPolicy:
         """Create policy with eager initialization from a dataset or repo ID.
 
         This factory method extracts features from the dataset and builds the policy
@@ -208,6 +207,9 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
 
         Returns:
             Fully initialized LeRobotPolicy ready for inference.
+
+        Raises:
+            ImportError: If LeRobot is not installed.
 
         Examples:
             Create from repo ID (lightweight, only fetches metadata):
@@ -232,10 +234,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             raise ImportError(msg)
 
         # Get metadata from dataset or repo ID
-        if isinstance(dataset, str):
-            meta = LeRobotDatasetMetadata(dataset)
-        else:
-            meta = dataset.meta
+        meta = LeRobotDatasetMetadata(dataset) if isinstance(dataset, str) else dataset.meta
 
         # Convert dataset features to policy features
         features = dataset_to_policy_features(meta.features)
@@ -386,11 +385,17 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
 
         Returns:
             Configured optimizer from LeRobot's preset.
+
+        Raises:
+            RuntimeError: If policy has not been initialized yet.
         """
         # Use LeRobot's optimizer preset from config - this handles:
         # - Proper optimizer type (Adam, AdamW, etc.)
         # - Learning rate and weight decay from config
         # - Parameter grouping via get_optim_params (e.g., backbone lr)
+        if self._config is None:
+            msg = "Policy must be initialized before configure_optimizers"
+            raise RuntimeError(msg)
         optimizer_config = self._config.get_optimizer_preset()
         params = self.lerobot_policy.get_optim_params()
         return optimizer_config.build(params)
@@ -546,9 +551,4 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             optimizer_preset = self._config.get_optimizer_preset()
             lr_info = f"{optimizer_preset.lr}"
 
-        return (
-            f"{self.__class__.__name__}(\n"
-            f"  policy_name={policy_name!r},\n"
-            f"  lr={lr_info},\n"
-            f")"
-        )
+        return f"{self.__class__.__name__}(\n  policy_name={policy_name!r},\n  lr={lr_info},\n)"

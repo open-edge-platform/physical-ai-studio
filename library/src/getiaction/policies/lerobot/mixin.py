@@ -11,12 +11,13 @@ from __future__ import annotations
 
 import dataclasses
 import inspect
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self
 
 from getiaction.config.mixin import FromConfig
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from lerobot.configs.policies import PreTrainedConfig
 
 

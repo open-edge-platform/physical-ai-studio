@@ -44,10 +44,7 @@ from getiaction.policies.lerobot.universal import LeRobotPolicy
 if TYPE_CHECKING:
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-if module_available("lerobot"):
-    LEROBOT_AVAILABLE = True
-else:
-    LEROBOT_AVAILABLE = False
+LEROBOT_AVAILABLE = bool(module_available("lerobot"))
 
 
 class Groot(LeRobotPolicy):
@@ -121,7 +118,7 @@ class Groot(LeRobotPolicy):
         - configs/lerobot/groot.yaml: Default training configuration
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         # Basic policy settings
@@ -155,7 +152,7 @@ class Groot(LeRobotPolicy):
         warmup_ratio: float = 0.05,
         use_bf16: bool = True,
         # Additional parameters via kwargs
-        **kwargs: Any,
+        **kwargs: Any,  # noqa: ANN401
     ) -> None:
         """Initialize Groot policy wrapper.
 
@@ -227,11 +224,11 @@ class Groot(LeRobotPolicy):
         )
 
     @classmethod
-    def from_dataset(
+    def from_dataset(  # type: ignore[override]
         cls,
         dataset: LeRobotDataset | str,
-        **kwargs: Any,
-    ) -> "Groot":
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Groot:
         """Create Groot policy with eager initialization from a dataset.
 
         Args:

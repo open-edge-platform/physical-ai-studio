@@ -18,10 +18,7 @@ from getiaction.policies.lerobot.universal import LeRobotPolicy
 if TYPE_CHECKING:
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-if module_available("lerobot"):
-    LEROBOT_AVAILABLE = True
-else:
-    LEROBOT_AVAILABLE = False
+LEROBOT_AVAILABLE = bool(module_available("lerobot"))
 
 
 class ACT(LeRobotPolicy):
@@ -91,7 +88,7 @@ class ACT(LeRobotPolicy):
         - LeRobotDataModule: For loading LeRobot datasets
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         # Architecture
@@ -124,7 +121,7 @@ class ACT(LeRobotPolicy):
         n_obs_steps: int = 1,
         temporal_ensemble_coeff: float | None = None,
         # Additional parameters via kwargs
-        **kwargs: Any,
+        **kwargs: Any,  # noqa: ANN401
     ) -> None:
         """Initialize ACT policy wrapper.
 
@@ -188,11 +185,11 @@ class ACT(LeRobotPolicy):
         )
 
     @classmethod
-    def from_dataset(
+    def from_dataset(  # type: ignore[override]
         cls,
         dataset: LeRobotDataset | str,
-        **kwargs: Any,
-    ) -> "ACT":
+        **kwargs: Any,  # noqa: ANN401
+    ) -> ACT:
         """Create ACT policy with eager initialization from a dataset.
 
         Args:

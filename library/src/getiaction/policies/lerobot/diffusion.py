@@ -18,10 +18,7 @@ from getiaction.policies.lerobot.universal import LeRobotPolicy
 if TYPE_CHECKING:
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-if module_available("lerobot"):
-    LEROBOT_AVAILABLE = True
-else:
-    LEROBOT_AVAILABLE = False
+LEROBOT_AVAILABLE = bool(module_available("lerobot"))
 
 
 class Diffusion(LeRobotPolicy):
@@ -89,7 +86,7 @@ class Diffusion(LeRobotPolicy):
         - LeRobotDataModule: For loading LeRobot datasets
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         # Input/output structure
@@ -133,7 +130,7 @@ class Diffusion(LeRobotPolicy):
         scheduler_name: str = "cosine",
         scheduler_warmup_steps: int = 500,
         # Additional parameters via kwargs
-        **kwargs: Any,
+        **kwargs: Any,  # noqa: ANN401
     ) -> None:
         """Initialize Diffusion policy wrapper.
 
@@ -217,11 +214,11 @@ class Diffusion(LeRobotPolicy):
         )
 
     @classmethod
-    def from_dataset(
+    def from_dataset(  # type: ignore[override]
         cls,
         dataset: LeRobotDataset | str,
-        **kwargs: Any,
-    ) -> "Diffusion":
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Diffusion:
         """Create Diffusion policy with eager initialization from a dataset.
 
         Args:
