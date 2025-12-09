@@ -3,14 +3,12 @@
 
 """Mixin classes for exporting PyTorch models."""
 
-import dataclasses
 import inspect
-from enum import Enum, StrEnum
+from enum import StrEnum
 from os import PathLike
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import openvino
 import torch
 import yaml
@@ -56,9 +54,8 @@ class Export:
         }
 
         # Add model config if available
-        if hasattr(self.model, "config"):
-            config_dict = _serialize_model_config(self.model.config)
-            metadata["config"] = config_dict
+        if hasattr(self.model, "config") and hasattr(self.model.config, "to_jsonargparse"):
+            metadata["config"] = self.model.config.to_jsonargparse()
 
         # Save as YAML (preferred)
         yaml_path = export_dir / "metadata.yaml"
@@ -113,11 +110,13 @@ class Export:
         model_path = self._prepare_export_path(checkpoint_path, ".pt")
         export_dir = model_path.parent
 
-        state_dict = self.model.state_dict()
-        config_dict = _serialize_model_config(self.model.config) if hasattr(self.model, "config") else {}
-        state_dict[CONFIG_KEY] = yaml.dump(config_dict, default_flow_style=False)
+        checkpoint = {}
+        checkpoint["state_dict"] = self.state_dict() if hasattr(self, "state_dict") else {}
+        config_dict = self.model.config.to_dict() if hasattr(self.model, "config") else {}
+        checkpoint[CONFIG_KEY] = config_dict
 
-        torch.save(state_dict, str(model_path))  # nosec
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        torch.save(checkpoint, str(model_path))  # nosec B614
 
         # Create metadata files
         self._create_metadata(export_dir, ExportBackend.TORCH)
@@ -400,66 +399,3 @@ def _postprocess_openvino_model(ov_model: openvino.Model, output_names: list[str
     if output_names is not None and len(ov_model.outputs) >= len(output_names):
         for i, name in enumerate(output_names):
             ov_model.outputs[i].tensor.set_names({name})
-
-
-def _serialize_model_config(config: Any) -> dict:  # noqa: ANN401
-    """Serialize a dataclass configuration object to a  yaml-friendly dictionary format.
-
-    This function recursively converts a dataclass configuration object into a dictionary
-    that can be serialized to JSON or other formats. It handles nested dataclasses,
-    dictionaries containing dataclasses, StrEnum values, numpy arrays, and tuples.
-
-    Args:
-        config (Any): A dataclass configuration object to be serialized.
-
-    Returns:
-        dict: A dictionary containing two keys at the top level:
-            - "class_path" (str): The fully qualified class name (module.classname).
-            - "init_args" (dict): A dictionary of field names and their serialized values.
-
-    Note:
-        The function performs the following conversions:
-        - Nested dataclasses are recursively serialized
-        - Dataclasses within dictionaries are recursively serialized
-        - StrEnum values are converted to strings
-        - NumPy arrays are converted to lists using numpy's tolist() semantics
-        - Tuples are converted to lists
-    """
-    config_dict: dict[str, Any] = {
-        "class_path": f"{config.__class__.__module__}.{config.__class__.__qualname__}",
-        "init_args": {field.name: getattr(config, field.name) for field in dataclasses.fields(config)},
-    }
-
-    updated_args: dict[Any, Any] = {}
-
-    for k, v in config_dict["init_args"].items():
-        target_k = str(k) if isinstance(k, StrEnum) else k
-
-        if dataclasses.is_dataclass(v):
-            updated_args[target_k] = _serialize_model_config(v)
-        elif isinstance(v, dict):
-            updated_inner_dict = {}
-            for dk, dv in v.items():
-                target_dk = str(dk) if isinstance(dk, StrEnum) else dk
-                if dataclasses.is_dataclass(dv):
-                    updated_inner_dict[target_dk] = _serialize_model_config(dv)
-                elif isinstance(dv, Enum):
-                    # Convert enum to its value (handles both StrEnum and regular Enum)
-                    updated_inner_dict[target_dk] = dv.value
-                else:
-                    updated_inner_dict[target_dk] = dv
-            updated_args[target_k] = updated_inner_dict
-        elif isinstance(v, Enum):
-            # Convert enum to its value (handles both StrEnum and regular Enum)
-            updated_args[target_k] = v.value
-        elif isinstance(v, np.ndarray):
-            updated_args[target_k] = v.tolist()
-        elif isinstance(v, tuple):
-            updated_args[target_k] = list(v)
-        else:
-            updated_args[target_k] = v
-
-    return {
-        "class_path": config_dict["class_path"],
-        "init_args": updated_args,
-    }

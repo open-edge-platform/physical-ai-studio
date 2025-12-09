@@ -15,8 +15,9 @@ from getiaction.eval import Rollout, evaluate_policy
 def dummy_policy():
     """Create a dummy policy for testing."""
     from getiaction.policies.dummy import Dummy, DummyConfig
+    from getiaction.policies.dummy.model import Dummy as DummyModel
 
-    return Dummy(config=DummyConfig(action_shape=(2,)))
+    return Dummy(DummyModel.from_config(DummyConfig(action_shape=(2,))))
 
 
 class TestRolloutNumericalEquivalence:
@@ -142,12 +143,10 @@ class TestRolloutBehavior:
 class TestRolloutIntegration:
     """Integration tests for Rollout with Lightning."""
 
-    def test_lightning_training_integration(self, dummy_dataset, pusht_gym):
+    def test_lightning_training_integration(self, dummy_dataset, pusht_gym, dummy_policy):
         """Verify Rollout works correctly in Lightning training loop."""
         from lightning.pytorch import Trainer
-
         from getiaction.data import DataModule
-        from getiaction.policies.dummy import Dummy, DummyConfig
 
         datamodule = DataModule(
             train_dataset=dummy_dataset(num_samples=8),
@@ -157,14 +156,13 @@ class TestRolloutIntegration:
             max_episode_steps=10,
         )
 
-        policy = Dummy(config=DummyConfig(action_shape=(2,)))
         trainer = Trainer(
             fast_dev_run=True,
             enable_checkpointing=False,
             logger=False,
             enable_progress_bar=False,
         )
-        trainer.fit(policy, datamodule=datamodule)
+        trainer.fit(dummy_policy, datamodule=datamodule)
 
         # Verify aggregated metrics were logged
         metric_keys = list(trainer.logged_metrics.keys())

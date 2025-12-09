@@ -92,10 +92,10 @@ def dummy_dataset():
                     shape=(self.action_dim,),
                     name="action",
                     normalization_data=NormalizationParameters(
-                        mean=torch.zeros(self.action_dim),
-                        std=torch.ones(self.action_dim),
-                        min=torch.full((self.action_dim,), -1.0),
-                        max=torch.full((self.action_dim,), 1.0),
+                        mean=[0.0] * self.action_dim,
+                        std=[1.0] * self.action_dim,
+                        min=[-1.0] * self.action_dim,
+                        max=[1.0] * self.action_dim,
                     ),
                 ),
             }
@@ -109,10 +109,10 @@ def dummy_dataset():
                     shape=(self.state_dim,),
                     name="state",
                     normalization_data=NormalizationParameters(
-                        mean=torch.zeros(self.state_dim),
-                        std=torch.ones(self.state_dim),
-                        min=torch.full((self.state_dim,), -1.0),
-                        max=torch.full((self.state_dim,), 1.0),
+                        mean=[0.0] * self.state_dim,
+                        std=[1.0] * self.state_dim,
+                        min=[-1.0] * self.state_dim,
+                        max=[1.0] * self.state_dim,
                     ),
                 ),
                 "camera": Feature(
@@ -120,10 +120,10 @@ def dummy_dataset():
                     shape=(3, 96, 96),
                     name="camera",
                     normalization_data=NormalizationParameters(
-                        mean=torch.tensor([0.485, 0.456, 0.406]).reshape(3, 1, 1),
-                        std=torch.tensor([0.229, 0.224, 0.225]).reshape(3, 1, 1),
-                        min=torch.zeros(3, 1, 1),
-                        max=torch.ones(3, 1, 1),
+                        mean=[0.485, 0.456, 0.406],
+                        std=[0.229, 0.224, 0.225],
+                        min=[0.0, 0.0, 0.0],
+                        max=[1.0, 1.0, 1.0],
                     ),
                 ),
             }

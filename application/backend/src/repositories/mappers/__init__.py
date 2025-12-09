@@ -3,6 +3,7 @@ from .job_mapper import JobMapper
 from .model_mapper import ModelMapper
 from .project_config_mapper import ProjectConfigMapper
 from .project_mapper import ProjectMapper
+from .snapshot_mapper import SnapshotMapper
 
 __all__ = [
     "DatasetMapper",
@@ -10,4 +11,5 @@ __all__ = [
     "ModelMapper",
     "ProjectConfigMapper",
     "ProjectMapper",
+    "SnapshotMapper",
 ]

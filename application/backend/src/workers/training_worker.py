@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from lightning.pytorch.callbacks import ModelCheckpoint
+
+from services.snapshot_service import SnapshotService
 from settings import get_settings
 
 if TYPE_CHECKING:
@@ -17,7 +20,7 @@ from getiaction.policies import ACT, ACTModel
 from getiaction.train import Trainer
 from loguru import logger
 
-from schemas import Job, Model
+from schemas import Job, Model, Snapshot
 from schemas.job import JobStatus, TrainJobPayload
 from services import DatasetService, JobService, ModelService
 from services.event_processor import EventType
@@ -45,19 +48,27 @@ class TrainingWorker(BaseProcessWorker):
             if job is not None:
                 payload = TrainJobPayload.model_validate(job.payload)
                 id = uuid4()
+
+                dataset = await DatasetService.get_dataset_by_id(payload.dataset_id)
+                model_path = Path(str(settings.models_dir / str(id) / "model.pth"))
+                model_path.parent.mkdir(parents=True)
+                snapshot_dir = model_path.parent / SnapshotService.generate_snapshot_folder_name()
+                snapshot = await SnapshotService.create_snapshot_for_dataset(dataset, destination=snapshot_dir)
+
                 model = Model(
                     id=id,
                     project_id=payload.project_id,
                     dataset_id=payload.dataset_id,
-                    path=str(settings.models_dir / str(id) / "model.ckpt"),
+                    path=str(model_path),
                     name=payload.model_name,
+                    snapshot_id=snapshot.id,
                     policy=payload.policy,
                     properties={},
                     created_at=None,
                 )
 
                 self.interrupt_event.clear()
-                await asyncio.create_task(self._train_model(job, model))
+                await asyncio.create_task(self._train_model(job, model, snapshot))
             await asyncio.sleep(0.5)
 
     def setup(self) -> None:
@@ -70,7 +81,7 @@ class TrainingWorker(BaseProcessWorker):
         with logger.contextualize(worker=self.__class__.__name__):
             asyncio.run(TrainingService.abort_orphan_jobs())
 
-    async def _train_model(self, job: Job, model: Model):
+    async def _train_model(self, job: Job, model: Model, snapshot: Snapshot):
         await JobService.update_job_status(job_id=job.id, status=JobStatus.RUNNING, message="Training started")
         dispatcher = TrainingTrackingDispatcher(
             job_id=job.id,
@@ -78,11 +89,11 @@ class TrainingWorker(BaseProcessWorker):
             interrupt_event=self.interrupt_event,
         )
         try:
-            dataset = await DatasetService.get_dataset_by_id(model.dataset_id)
+            path = Path(model.path)
 
             l_dm = LeRobotDataModule(
-                repo_id=dataset.name,
-                root=dataset.path,
+                repo_id="snapshot",  # doesnt matter for loading the data.
+                root=snapshot.path,
                 train_batch_size=8,
             )
             lib_model = ACTModel(
@@ -91,22 +102,29 @@ class TrainingWorker(BaseProcessWorker):
             )
 
             policy = ACT(model=lib_model)
-            path = Path(model.path)
+
+            checkpoint_callback = ModelCheckpoint(
+                dirpath=path.parent,
+                filename=path.stem,  # filename without suffix
+                save_top_k=1,
+                monitor="train/loss",
+                mode="min",
+            )
 
             trainer = Trainer(
                 callbacks=[
+                    checkpoint_callback,
                     TrainingTrackingCallback(
                         shutdown_event=self._stop_event,
                         interrupt_event=self.interrupt_event,
                         dispatcher=dispatcher,
                     ),
                 ],
-                max_steps=10000,
+                max_steps=10,
             )
 
             dispatcher.start()
             trainer.fit(model=policy, datamodule=l_dm)
-            path.parent.mkdir(parents=True)
             policy.to_torch(path)
 
             job = await JobService.update_job_status(

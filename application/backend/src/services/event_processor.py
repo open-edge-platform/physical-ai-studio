@@ -41,7 +41,11 @@ class EventProcessor:
                     logger.info(event)
                     for handler in self._event_handlers[event]:
                         if asyncio.iscoroutinefunction(handler):
-                            await asyncio.create_task(handler(event, payload))
+                            try:
+                                await asyncio.create_task(handler(event, payload))
+                            except Exception as e:
+                                logger.error(f"Error in event handler, unsubscribing: {e}")
+                                self.unsubscribe(event, handler)
                         else:
                             handler(event, payload)
                 except Empty:

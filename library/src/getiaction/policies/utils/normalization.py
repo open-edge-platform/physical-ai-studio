@@ -146,6 +146,11 @@ class FeatureNormalizeTransform(nn.Module):
                 batch[key] = (batch[key] - min_) / (max_ - min_ + 1e-8)
                 # normalize to [-1, 1]
                 batch[key] = batch[key] * 2 - 1
+
+        elif norm_mode == NormalizationType.IDENTITY:
+            # No transformation for identity normalization
+            pass
+
         else:
             raise ValueError(norm_mode)
 
@@ -218,7 +223,7 @@ class FeatureNormalizeTransform(nn.Module):
                     return torch.tensor(arr, dtype=torch.float32).view(shape)
 
                 type_ = type(arr)
-                msg = f"np.ndarray or torch.Tensor expected, but type is '{type_}' instead."
+                msg = f"list, int, np.ndarray, or torch.Tensor expected, but type is '{type_}' instead."
                 raise TypeError(msg)
 
             buffer = {}

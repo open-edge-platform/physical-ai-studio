@@ -20,17 +20,17 @@ class TestFeatureNormalizeTransform:
         """Sample features for testing."""
         return {
             "state": Feature(
-                normalization_data=NormalizationParameters(mean=np.array([1.0, 2.0]), std=np.array([0.5, 1.0])),
+                normalization_data=NormalizationParameters(mean=[1.0, 2.0], std=[0.5, 1.0]),
                 shape=(2,),
                 ftype=FeatureType.STATE
             ),
             "action": Feature(
-                normalization_data=NormalizationParameters(min=np.array([-1.0]), max=np.array([1.0])),
+                normalization_data=NormalizationParameters(min=[-1.0], max=[1.0]),
                 shape=(1,),
                 ftype=FeatureType.ACTION
             ),
             "image": Feature(
-                normalization_data=NormalizationParameters(mean=np.array([0.5, 0.5, 0.5]), std=np.array([0.2, 0.2, 0.2])),
+                normalization_data=NormalizationParameters(mean=[0.5, 0.5, 0.5], std=[0.2, 0.2, 0.2]),
                 shape=(3, 64, 64),
                 ftype=FeatureType.VISUAL
             )
@@ -240,13 +240,13 @@ class TestFeatureNormalizeTransform:
         with pytest.raises(ValueError, match="Normalization buffer 'mean' is infinity"):
             transform(batch)
 
-    def test_numpy_array_conversion(self):
-        """Test conversion of numpy arrays to torch tensors."""
+    def test_list_conversion(self):
+        """Test conversion of lists to torch tensors."""
         features = {
             "state": Feature(
                 normalization_data=NormalizationParameters(
-                    mean=np.array([1.0, 2.0]),
-                    std=np.array([0.5, 1.0])
+                    mean=[1.0, 2.0],
+                    std=[0.5, 1.0]
                 ),
                 shape=(2,),
                 ftype=FeatureType.STATE
@@ -256,7 +256,7 @@ class TestFeatureNormalizeTransform:
 
         transform = FeatureNormalizeTransform(features, norm_map)
 
-        # Check that numpy arrays were converted to torch tensors
+        # Check that lists were converted to torch tensors
         assert isinstance(transform.buffer_state["mean"], nn.Parameter)
         assert isinstance(transform.buffer_state["std"], nn.Parameter)
         assert transform.buffer_state["mean"].dtype == torch.float32
@@ -289,7 +289,7 @@ class TestFeatureNormalizeTransform:
         }
         norm_map = {FeatureType.STATE: NormalizationType.MEAN_STD}
 
-        with pytest.raises(TypeError, match="np.ndarray or torch.Tensor expected"):
+        with pytest.raises(TypeError, match="list, int, np.ndarray, or torch.Tensor expected"):
             FeatureNormalizeTransform(features, norm_map)
 
     def test_roundtrip_normalization(self, sample_features, norm_map, sample_batch):
