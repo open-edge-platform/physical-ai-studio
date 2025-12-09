@@ -9,7 +9,7 @@ This package provides integration with HuggingFace LeRobot datasets, including:
 - DataModule for PyTorch Lightning integration
 - Utilities for delta timestamps configuration
 
-Example:
+Examples:
     >>> from getiaction.data.lerobot import LeRobotDataModule, FormatConverter
 
     >>> # Create datamodule

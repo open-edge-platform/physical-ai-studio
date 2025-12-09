@@ -123,8 +123,6 @@ class TestLeRobotVLAPolicies(LeRobotE2ETestBase):
 
     These tests require:
     - 24GB+ VRAM (48GB recommended)
-    - flash_attn package (CUDA only): pip install flash-attn
-    - peft package: pip install peft
 
     By default, Groot freezes the backbone and only trains the projector + action head.
 
@@ -133,11 +131,15 @@ class TestLeRobotVLAPolicies(LeRobotE2ETestBase):
     """
 
     @pytest.fixture(scope="class", autouse=True)
-    def check_flash_attn(self) -> None:
-        """Skip if flash_attn is not available."""
-        try:
-            import flash_attn  # noqa: F401
-        except ImportError:
-            pytest.skip("Groot requires flash_attn: pip install flash-attn")
+    def check_groot_dependencies(self) -> None:
+        """Skip if lerobot[groot] dependencies are not available.
+
+        Groot requires: pip install 'lerobot[groot]'
+        This includes flash-attn (CUDA-only), peft, transformers, etc.
+        """
+        from lerobot.utils.import_utils import is_package_available
+
+        if not is_package_available("flash_attn"):
+            pytest.skip("Groot requires lerobot[groot]: uv pip install 'lerobot[groot]'")
 
     pass
