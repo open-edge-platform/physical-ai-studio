@@ -54,7 +54,7 @@ jobs:
         working-directory: library
         run: |
           # Note: We only install 'tests' extra, not 'groot' which requires CUDA/flash-attn
-          uv sync --frozen --extra tests smolvla
+          uv sync --frozen --extra tests --extra smolvla
       - name: Run python unit tests
         working-directory: library
         run: |
