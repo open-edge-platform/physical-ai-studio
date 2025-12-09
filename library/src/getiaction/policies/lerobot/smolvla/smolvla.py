@@ -283,6 +283,7 @@ class SmolVLA(LeRobotExport, LeRobotFromConfig, Policy):  # type: ignore[misc,ov
 
         Raises:
             TypeError: If the train_dataset is not a LeRobot dataset.
+            RuntimeError: If transformers and/or num2words packages are missing.
         """
         del stage  # Unused argument
 
@@ -324,9 +325,9 @@ class SmolVLA(LeRobotExport, LeRobotFromConfig, Policy):  # type: ignore[misc,ov
 
         # Initialize the policy
         if SmolVLAPolicyWithXAI is None:
-            raise RuntimeError("SmolVLAPolicyWithXAI not found. Make sure that the transformer and "
-                               "the num2words packages are installed. \nRun 'pip install transformers num2words' "
-                               "to install the missing packages. ")
+            msg = ("SmolVLAPolicyWithXAI not found."
+                   "\nRun 'pip install transformers num2words' to install the missing packages. ")
+            raise RuntimeError(msg)
         policy = SmolVLAPolicyWithXAI(lerobot_config, layer_idx=self.layer_idx, head_idx=self.head_idx)  # type: ignore[arg-type,misc]
         self.add_module("_smolvla_policy_with_xai", policy)
         self._preprocessor, self._postprocessor = make_pre_post_processors(lerobot_config, dataset_stats=dataset_stats)
