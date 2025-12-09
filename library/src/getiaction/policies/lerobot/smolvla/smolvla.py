@@ -19,7 +19,10 @@ from getiaction.data.lerobot import FormatConverter
 from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 from getiaction.policies.base import Policy
 from getiaction.policies.lerobot.mixin import LeRobotExport, LeRobotFromConfig
-from getiaction.policies.lerobot.smolvla_xai.model import SmolVLAPolicyWithXAI
+if TYPE_CHECKING or (module_available("transformers") and module_available("num2words")):
+    from getiaction.policies.lerobot.smolvla.model import SmolVLAPolicyWithXAI
+else:
+    SmolVLAPolicyWithXAI = None
 
 if TYPE_CHECKING:
     from getiaction.gyms import Gym
@@ -29,7 +32,6 @@ if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.utils import dataset_to_policy_features
     from lerobot.policies.factory import make_pre_post_processors
     from lerobot.policies.smolvla.configuration_smolvla import SmolVLAConfig as _LeRobotSmolVLAConfig
-
     LEROBOT_AVAILABLE = True
 else:
     LeRobotDataset = None
@@ -40,7 +42,7 @@ else:
     LEROBOT_AVAILABLE = False
 
 
-class SmolVLAxAI(LeRobotExport, LeRobotFromConfig, Policy):  # type: ignore[misc,override]
+class SmolVLA(LeRobotExport, LeRobotFromConfig, Policy):  # type: ignore[misc,override]
     """LeRobot's SmolVLA policy wrapper with explainability.
 
     PyTorch Lightning wrapper around LeRobot's SmolVLA implementation that provides
@@ -321,6 +323,10 @@ class SmolVLAxAI(LeRobotExport, LeRobotFromConfig, Policy):  # type: ignore[misc
             )
 
         # Initialize the policy
+        if SmolVLAPolicyWithXAI is None:
+            raise RuntimeError("SmolVLAPolicyWithXAI not found. Make sure that the transformer and "
+                               "the num2words packages are installed. \nRun 'pip install transformers num2words' "
+                               "to install the missing packages. ")
         policy = SmolVLAPolicyWithXAI(lerobot_config, layer_idx=self.layer_idx, head_idx=self.head_idx)  # type: ignore[arg-type,misc]
         self.add_module("_smolvla_policy_with_xai", policy)
         self._preprocessor, self._postprocessor = make_pre_post_processors(lerobot_config, dataset_stats=dataset_stats)

@@ -47,6 +47,7 @@ dependencies = [
     "openvino>=2025.0",
     "jsonargparse[signatures]>=4.27.0", # This could be extra
     "pydantic", # This could be extra
+    "mypy>=1.11",
 ]
 
 [project.optional-dependencies]
@@ -77,6 +78,7 @@ groot = [
 
 smolvla = [
     "transformers>=4.57.0,<5.0.0",
+    "num2words>=0.5.14,<0.6.0",
 ]
 
 # All optional dependencies
