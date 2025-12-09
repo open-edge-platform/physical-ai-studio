@@ -29,9 +29,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 from torch import nn
 
-from getiaction.config.mixin import FromConfig
-
-from .components import EagleBackbone, FlowMatchingActionHead, FlowMatchingActionHeadConfig
+from .components import EagleBackbone, FlowMatchingActionHead
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -121,7 +119,7 @@ DEFAULT_BASE_MODEL_PATH = "nvidia/GR00T-N1.5-3B"
 DEFAULT_TOKENIZER_ASSETS_REPO = "nvidia/Eagle2-2B"
 
 
-class GrootModel(FromConfig, nn.Module):
+class GrootModel(nn.Module):
     """GR00T-N1.5 Vision-Language-Action Model.
 
     Pure PyTorch nn.Module wrapping NVIDIA's GR00T-N1.5-3B foundation model.
@@ -222,15 +220,14 @@ class GrootModel(FromConfig, nn.Module):
             project_to_dim=None,  # No projection, use raw backbone dim
         )
 
-        # Initialize action head with pretrained config
-        action_head_cfg = FlowMatchingActionHeadConfig(
+        # Initialize action head
+        self.action_head = FlowMatchingActionHead(
             action_horizon=chunk_size,
             action_dim=max_action_dim,
             backbone_embedding_dim=backbone_embedding_dim,
             diffusion_model_cfg=diffusion_model_cfg,
             vl_self_attention_cfg=vl_self_attention_cfg,
         )
-        self.action_head = FlowMatchingActionHead(action_head_cfg)
         self.action_head.set_trainable_parameters(
             tune_projector=tune_projector,
             tune_diffusion_model=tune_diffusion_model,
@@ -239,7 +236,7 @@ class GrootModel(FromConfig, nn.Module):
         self._action_queue: deque[torch.Tensor] = deque(maxlen=n_action_steps)
 
     @classmethod
-    def from_pretrained(
+    def from_pretrained(  # noqa: PLR0914
         cls,
         pretrained_model_name_or_path: str = DEFAULT_BASE_MODEL_PATH,
         *,

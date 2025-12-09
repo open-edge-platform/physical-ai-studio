@@ -9,13 +9,15 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import nn
 from torch.distributions import Beta
+
+from getiaction.config.mixin import FromConfig
 
 from .nn import CategorySpecificMLP, MultiEmbodimentActionEncoder
 from .transformer import get_dit_class, get_self_attention_transformer_class
@@ -28,18 +30,19 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class FlowMatchingActionHeadConfig:
-    """Configuration for FlowMatchingActionHead.
+    """Configuration for FlowMatchingActionHead (for FromConfig mixin).
+
+    This dataclass mirrors the explicit constructor arguments for config-based
+    instantiation via the FromConfig mixin.
 
     Attributes:
+        action_dim: Action vector dimension.
+        action_horizon: Number of action steps to predict.
         add_pos_embed: Whether to add positional embedding.
-        model_dtype: Model data type string.
-        diffusion_model_cfg: DiT configuration dictionary.
         input_embedding_dim: Input embedding dimension.
         backbone_embedding_dim: Backbone (Eagle) embedding dimension.
         hidden_size: Hidden dimension for encoders/decoders.
         max_seq_len: Maximum sequence length.
-        action_dim: Action vector dimension.
-        action_horizon: Number of action steps to predict.
         noise_beta_alpha: Beta distribution alpha parameter.
         noise_beta_beta: Beta distribution beta parameter.
         noise_s: Flow matching noise scale.
@@ -50,126 +53,185 @@ class FlowMatchingActionHeadConfig:
         tune_projector: Whether to tune encoder/decoder projectors.
         tune_diffusion_model: Whether to tune the DiT model.
         use_vlln: Whether to use VL layer norm and self-attention.
-        vl_self_attention_cfg: Config for VL self-attention transformer.
         num_target_vision_tokens: Number of future vision tokens.
+        diffusion_model_cfg: DiT configuration dictionary.
+        vl_self_attention_cfg: Config for VL self-attention transformer.
     """
 
+    # Required
+    action_dim: int
+    action_horizon: int
+    # Core architecture
     add_pos_embed: bool = True
-    model_dtype: str = "float32"
-    diffusion_model_cfg: dict[str, Any] | None = None
     input_embedding_dim: int = 1536
     backbone_embedding_dim: int = 1536
     hidden_size: int = 1024
     max_seq_len: int = 1024
-    action_dim: int | None = None
-    action_horizon: int | None = None
+    # Flow matching
     noise_beta_alpha: float = 1.5
     noise_beta_beta: float = 1.0
     noise_s: float = 0.999
     num_timestep_buckets: int = 1000
-    num_inference_timesteps: int = 10  # Denoising steps at inference
+    num_inference_timesteps: int = 10
+    # Multi-embodiment
     max_num_embodiments: int = 32
     max_state_dim: int = 64
+    # Training
     tune_projector: bool = True
     tune_diffusion_model: bool = True
+    # VL processing
     use_vlln: bool = True
-    vl_self_attention_cfg: dict[str, Any] | None = None
     num_target_vision_tokens: int = 32
-    # Placeholder for compatibility
-    freeze_decode_layer: bool = field(default=False)
-    expand_batch: int | None = field(default=None)
+    # Nested configs (dicts for transformer modules)
+    diffusion_model_cfg: dict[str, Any] | None = None
+    vl_self_attention_cfg: dict[str, Any] | None = None
 
 
-class FlowMatchingActionHead(nn.Module):
+class FlowMatchingActionHead(nn.Module, FromConfig):
     """Flow Matching Action Head for diffusion-based action generation.
 
     Uses a Diffusion Transformer (DiT) conditioned on vision-language features
     to generate action trajectories via flow matching.
 
-    Args:
-        config: Configuration for the action head.
+    All constructor arguments are explicit for clarity and testability.
+    Supports config-based instantiation via the FromConfig mixin.
 
-    Example:
-        >>> config = FlowMatchingActionHeadConfig(
-        ...     action_dim=7,
+    Args:
+        action_dim: Action vector dimension.
+        action_horizon: Number of action steps to predict.
+        add_pos_embed: Whether to add positional embedding.
+        input_embedding_dim: Input embedding dimension.
+        backbone_embedding_dim: Backbone (Eagle) embedding dimension.
+        hidden_size: Hidden dimension for encoders/decoders.
+        max_seq_len: Maximum sequence length.
+        noise_beta_alpha: Beta distribution alpha parameter.
+        noise_beta_beta: Beta distribution beta parameter.
+        noise_s: Flow matching noise scale.
+        num_timestep_buckets: Number of timestep discretization buckets.
+        num_inference_timesteps: Number of denoising steps at inference.
+        max_num_embodiments: Maximum number of embodiment categories.
+        max_state_dim: Maximum state dimension.
+        tune_projector: Whether to tune encoder/decoder projectors.
+        tune_diffusion_model: Whether to tune the DiT model.
+        use_vlln: Whether to use VL layer norm and self-attention.
+        num_target_vision_tokens: Number of future vision tokens.
+        diffusion_model_cfg: DiT configuration dictionary.
+        vl_self_attention_cfg: Config for VL self-attention transformer.
+
+    Examples:
+        Direct instantiation with explicit args:
+
+        >>> action_head = FlowMatchingActionHead(
+        ...     action_dim=32,
         ...     action_horizon=50,
         ...     num_inference_timesteps=10,
         ... )
-        >>> action_head = FlowMatchingActionHead(config)
+
+        From config dataclass:
+
+        >>> config = FlowMatchingActionHeadConfig(action_dim=32, action_horizon=50)
+        >>> action_head = FlowMatchingActionHead.from_config(config)
     """
 
-    def __init__(self, config: FlowMatchingActionHeadConfig) -> None:
-        """Initialize FlowMatchingActionHead.
-
-        Args:
-            config: Configuration for the action head.
-        """
+    def __init__(  # noqa: PLR0913
+        self,
+        action_dim: int,
+        action_horizon: int,
+        *,
+        # Core architecture
+        add_pos_embed: bool = True,
+        input_embedding_dim: int = 1536,
+        backbone_embedding_dim: int = 1536,
+        hidden_size: int = 1024,
+        max_seq_len: int = 1024,
+        # Flow matching
+        noise_beta_alpha: float = 1.5,
+        noise_beta_beta: float = 1.0,
+        noise_s: float = 0.999,
+        num_timestep_buckets: int = 1000,
+        num_inference_timesteps: int = 10,
+        # Multi-embodiment
+        max_num_embodiments: int = 32,
+        max_state_dim: int = 64,
+        # Training
+        tune_projector: bool = True,
+        tune_diffusion_model: bool = True,
+        # VL processing
+        use_vlln: bool = True,
+        num_target_vision_tokens: int = 32,
+        # Nested configs (dicts for transformer modules)
+        diffusion_model_cfg: dict[str, Any] | None = None,
+        vl_self_attention_cfg: dict[str, Any] | None = None,
+    ) -> None:
+        """Initialize FlowMatchingActionHead with explicit arguments."""
         super().__init__()
-        self.config = config
-        self.hidden_size = config.hidden_size
-        self.input_embedding_dim = config.input_embedding_dim
-        self.action_dim = config.action_dim
-        self.action_horizon = config.action_horizon
-        self.num_inference_timesteps = config.num_inference_timesteps
+
+        # Store core dimensions
+        self.hidden_size = hidden_size
+        self.input_embedding_dim = input_embedding_dim
+        self.action_dim = action_dim
+        self.action_horizon = action_horizon
+        self.num_inference_timesteps = num_inference_timesteps
+        self.noise_s = noise_s
 
         # Get DiT class (lazy loaded)
         dit_cls = get_dit_class()
 
         # Initialize DiT model
-        diffusion_cfg = config.diffusion_model_cfg or {}
+        diffusion_cfg = diffusion_model_cfg or {}
         self.model = dit_cls(**diffusion_cfg)
 
         # State encoder: state -> embedding
         self.state_encoder = CategorySpecificMLP(
-            num_categories=config.max_num_embodiments,
-            input_dim=config.max_state_dim,
-            hidden_dim=self.hidden_size,
-            output_dim=self.input_embedding_dim,
+            num_categories=max_num_embodiments,
+            input_dim=max_state_dim,
+            hidden_dim=hidden_size,
+            output_dim=input_embedding_dim,
         )
 
         # Action encoder: noisy action + timestep -> embedding
         self.action_encoder = MultiEmbodimentActionEncoder(
-            action_dim=config.action_dim,
-            hidden_size=self.input_embedding_dim,
-            num_embodiments=config.max_num_embodiments,
+            action_dim=action_dim,
+            hidden_size=input_embedding_dim,
+            num_embodiments=max_num_embodiments,
         )
 
         # Action decoder: embedding -> action
         self.action_decoder = CategorySpecificMLP(
-            num_categories=config.max_num_embodiments,
-            input_dim=self.hidden_size,
-            hidden_dim=self.hidden_size,
-            output_dim=config.action_dim,
+            num_categories=max_num_embodiments,
+            input_dim=hidden_size,
+            hidden_dim=hidden_size,
+            output_dim=action_dim,
         )
 
         # Future tokens for conditioning
-        self.future_tokens = nn.Embedding(config.num_target_vision_tokens, self.input_embedding_dim)
+        self.future_tokens = nn.Embedding(num_target_vision_tokens, input_embedding_dim)
         nn.init.normal_(self.future_tokens.weight, mean=0.0, std=0.02)
 
         # VL processing
-        if config.use_vlln:
-            self.vlln = nn.LayerNorm(config.backbone_embedding_dim)
+        if use_vlln:
+            self.vlln = nn.LayerNorm(backbone_embedding_dim)
             self_attn_cls = get_self_attention_transformer_class()
-            vl_cfg = config.vl_self_attention_cfg or {}
+            vl_cfg = vl_self_attention_cfg or {}
             self.vl_self_attention = self_attn_cls(**vl_cfg)
         else:
             self.vlln = nn.Identity()
             self.vl_self_attention = nn.Identity()
 
         # Position embedding
-        if config.add_pos_embed:
-            self.position_embedding = nn.Embedding(config.max_seq_len, self.input_embedding_dim)
+        if add_pos_embed:
+            self.position_embedding = nn.Embedding(max_seq_len, input_embedding_dim)
             nn.init.normal_(self.position_embedding.weight, mean=0.0, std=0.02)
         else:
             self.position_embedding = None
 
         # Flow matching noise distribution
-        self.beta_dist = Beta(config.noise_beta_alpha, config.noise_beta_beta)
-        self.num_timestep_buckets = config.num_timestep_buckets
+        self.beta_dist = Beta(noise_beta_alpha, noise_beta_beta)
+        self.num_timestep_buckets = num_timestep_buckets
 
         # Set trainable parameters
-        self.tune_projector = config.tune_projector
-        self.tune_diffusion_model = config.tune_diffusion_model
+        self.tune_projector = tune_projector
+        self.tune_diffusion_model = tune_diffusion_model
         self._set_trainable_parameters()
 
     def _set_trainable_parameters(self) -> None:
@@ -230,7 +292,7 @@ class FlowMatchingActionHead(nn.Module):
             Sampled timesteps.
         """
         sample = self.beta_dist.sample([batch_size]).to(device, dtype=dtype)
-        return (self.config.noise_s - sample) / self.config.noise_s
+        return (self.noise_s - sample) / self.noise_s
 
     def _process_backbone_output(
         self,
