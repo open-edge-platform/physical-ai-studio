@@ -41,10 +41,10 @@ model:
     # -------------------------------------------------------------------------
     # Model Architecture
     # -------------------------------------------------------------------------
-    chunk_size: 50      # Number of action predictions per forward pass
-    n_action_steps: 50  # Number of action steps to execute
-    max_state_dim: 64   # Maximum state dimension (shorter states zero-padded)
-    max_action_dim: 32  # Maximum action dimension (shorter actions zero-padded)
+    chunk_size: 50 # Number of action predictions per forward pass
+    n_action_steps: 50 # Number of action steps to execute
+    max_state_dim: 64 # Maximum state dimension (shorter states zero-padded)
+    max_action_dim: 32 # Maximum action dimension (shorter actions zero-padded)
 
     # -------------------------------------------------------------------------
     # Model Source
@@ -88,11 +88,12 @@ model:
     #   tune_projector: true
     #   tune_diffusion_model: true
     #
-    tune_llm: false               # Fine-tune LLM backbone (~2B params)
-    tune_visual: false            # Fine-tune vision tower (~300M params)
-    tune_projector: true          # Fine-tune projector (~518M params)
-    tune_diffusion_model: false   # Fine-tune DiT action head (~550M params)
-                                  # Set to true for 48GB+ GPUs
+    tune_llm: false # Fine-tune LLM backbone (~2B params)
+    tune_visual: false # Fine-tune vision tower (~300M params)
+    tune_projector: true # Fine-tune projector (~518M params)
+    tune_diffusion_model:
+      false # Fine-tune DiT action head (~550M params)
+      # Set to true for 48GB+ GPUs
 
     # -------------------------------------------------------------------------
     # Optimizer
@@ -103,7 +104,7 @@ model:
     # -------------------------------------------------------------------------
     # Precision
     # -------------------------------------------------------------------------
-    use_bf16: true                # Use bfloat16 for memory efficiency
+    use_bf16: true # Use bfloat16 for memory efficiency
 
 data:
   class_path: getiaction.data.lerobot.LeRobotDataModule
@@ -172,7 +173,6 @@ trainer:
   log_every_n_steps: 10
   check_val_every_n_epoch: 10
   experiment_name: "groot_finetune"
-
 # =============================================================================
 # QUICK REFERENCE: GPU-SPECIFIC OVERRIDES
 # =============================================================================
