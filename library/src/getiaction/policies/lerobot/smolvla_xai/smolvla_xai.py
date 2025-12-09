@@ -40,7 +40,7 @@ else:
     LEROBOT_AVAILABLE = False
 
 
-class SmolVLAxAI(LeRobotExport, LeRobotFromConfig, Policy):  # type: ignore[misc]
+class SmolVLAxAI(LeRobotExport, LeRobotFromConfig, Policy):  # type: ignore[misc,override]
     """LeRobot's SmolVLA policy wrapper with explainability.
 
     PyTorch Lightning wrapper around LeRobot's SmolVLA implementation that provides
