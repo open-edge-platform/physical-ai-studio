@@ -41,15 +41,6 @@ class TestACTolicy:
         assert policy.model._input_normalizer is not None
         assert policy.model._output_denormalizer is not None
 
-    def test_select_action_returns_tensor(self, policy, batch):
-        """select_action returns a tensor of correct shape."""
-        policy.model.eval()
-        actions = policy.select_action(batch)
-
-        assert isinstance(actions, torch.Tensor)
-        assert len(actions.shape) == 2
-        assert actions.shape[1] == 3
-
     def test_forward_training_and_eval(self, policy, batch):
         """Forward pass works in training and eval modes."""
         # Training
@@ -84,6 +75,15 @@ class TestACTolicy:
         assert explain.shape[1] == 1
         assert explain.shape[2] > 1
         assert explain.shape[3] > 1
+
+    def test_select_action(self, policy, batch):
+        policy.eval()
+        actions = policy.select_action(batch)
+
+        assert isinstance(actions, torch.Tensor)
+        assert actions.shape[0] == batch.images.shape[0]
+        assert actions.shape[1] == policy.model._config.chunk_size
+        assert actions.shape[2] == batch.action.shape[2]
 
     def test_sample_input(self, policy):
         """Test sample_input generation."""

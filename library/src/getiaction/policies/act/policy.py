@@ -188,10 +188,7 @@ class ACT(FromCheckpoint, Export, Policy):  # type: ignore[misc]
         """
         # Move batch to device (observations from gym are on CPU)
         batch = batch.to(self.device)
-        chunk = self.model.predict_action_chunk(batch.to_dict())
-
-        # select only first action from the predicted chunk to unify output with other policies
-        return chunk[:, 1, :]
+        return self.model.predict_action_chunk(batch.to_dict())
 
     def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
         """Perform forward pass of the ACT policy.
