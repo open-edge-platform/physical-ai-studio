@@ -169,11 +169,6 @@ def _import_huggingface_components() -> tuple[Any, ...]:
     )
 
 
-# =============================================================================
-# EagleBackbone - nn.Module for the Eagle2 VLM
-# =============================================================================
-
-
 class EagleBackbone(nn.Module):
     """Eagle2 VLM backbone for vision-language encoding.
 
@@ -369,11 +364,6 @@ class EagleBackbone(nn.Module):
         }
 
 
-# =============================================================================
-# EagleProcessor - HuggingFace processor wrapper for image/text encoding
-# =============================================================================
-
-
 @dataclass
 class EagleProcessor:
     """Eagle VLM processor for image and text encoding.
@@ -439,9 +429,10 @@ class EagleProcessor:
         # Monkey-patch missing method if needed (transformers version compatibility)
         # The vendored Eagle processor expects _prepare_image_like_inputs but
         # transformers 4.53.x uses _prepare_input_images
-        if not hasattr(
-            BaseImageProcessorFast, "_prepare_image_like_inputs"
-        ) and hasattr(BaseImageProcessorFast, "_prepare_input_images"):
+        if not hasattr(BaseImageProcessorFast, "_prepare_image_like_inputs") and hasattr(
+            BaseImageProcessorFast,
+            "_prepare_input_images",
+        ):
             BaseImageProcessorFast._prepare_image_like_inputs = (  # noqa: SLF001
                 BaseImageProcessorFast._prepare_input_images  # noqa: SLF001
             )
