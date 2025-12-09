@@ -369,13 +369,17 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         # Convert LeRobot dataset features to policy features
         features = dataset_to_policy_features(lerobot_dataset.meta.features)
 
+        # Split into input/output features (same logic as from_dataset)
+        input_features = {k: f for k, f in features.items() if f.type != FeatureType.ACTION}
+        output_features = {k: f for k, f in features.items() if f.type == FeatureType.ACTION}
+
         # Get dataset statistics if not provided
         stats = self._dataset_stats
         if stats is None:
             stats = lerobot_dataset.meta.stats
 
         # Initialize policy now
-        self._initialize_policy(features, features, self._provided_config, stats)
+        self._initialize_policy(input_features, output_features, self._provided_config, stats)
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
         """Configure optimizer for Lightning.
@@ -480,11 +484,11 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         # Convert to LeRobot format if needed
         batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
 
-        # Apply preprocessing (tokenization, normalization, etc.)
+        # Apply preprocessor (normalizes, moves to device, adds batch dim if needed)
         batch_dict = self._preprocessor(batch_dict)
 
         if self.training:
-            # Training mode: Use LeRobot policy's forward() which computes loss
+            # Training mode: compute loss
             output = self.lerobot_policy(batch_dict)
 
             # Handle different return formats (some policies return tuple, some just loss)
