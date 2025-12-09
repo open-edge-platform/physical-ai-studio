@@ -19,6 +19,7 @@ from getiaction.data.lerobot import FormatConverter
 from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 from getiaction.policies.base import Policy
 from getiaction.policies.lerobot.mixin import LeRobotExport, LeRobotFromConfig
+
 if TYPE_CHECKING or (module_available("transformers") and module_available("num2words")):
     from getiaction.policies.lerobot.smolvla.model import SmolVLAPolicyWithXAI
 else:
@@ -32,6 +33,7 @@ if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.utils import dataset_to_policy_features
     from lerobot.policies.factory import make_pre_post_processors
     from lerobot.policies.smolvla.configuration_smolvla import SmolVLAConfig as _LeRobotSmolVLAConfig
+
     LEROBOT_AVAILABLE = True
 else:
     LeRobotDataset = None
@@ -325,8 +327,10 @@ class SmolVLA(LeRobotExport, LeRobotFromConfig, Policy):  # type: ignore[misc,ov
 
         # Initialize the policy
         if SmolVLAPolicyWithXAI is None:
-            msg = ("SmolVLAPolicyWithXAI not found."
-                   "\nRun 'pip install transformers num2words' to install the missing packages. ")
+            msg = (
+                "SmolVLAPolicyWithXAI not found."
+                "\nRun 'pip install transformers num2words' to install the missing packages. "
+            )
             raise RuntimeError(msg)
         policy = SmolVLAPolicyWithXAI(lerobot_config, layer_idx=self.layer_idx, head_idx=self.head_idx)  # type: ignore[arg-type,misc]
         self.add_module("_smolvla_policy_with_xai", policy)
