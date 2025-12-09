@@ -19,7 +19,7 @@ from getiaction.data.lerobot import FormatConverter
 from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 from getiaction.policies.base import Policy
 from getiaction.policies.lerobot.mixin import LeRobotExport, LeRobotFromConfig
-from getiaction.policies.lerobot.smolvla_xai.model import SmolVLAPolicyWithXAI
+from getiaction.policies.lerobot.smolvla.model import SmolVLAPolicyWithXAI
 
 if TYPE_CHECKING:
     from getiaction.gyms import Gym
@@ -40,7 +40,7 @@ else:
     LEROBOT_AVAILABLE = False
 
 
-class SmolVLAxAI(LeRobotExport, LeRobotFromConfig, Policy):  # type: ignore[misc,override]
+class SmolVLA(LeRobotExport, LeRobotFromConfig, Policy):  # type: ignore[misc,override]
     """LeRobot's SmolVLA policy wrapper with explainability.
 
     PyTorch Lightning wrapper around LeRobot's SmolVLA implementation that provides

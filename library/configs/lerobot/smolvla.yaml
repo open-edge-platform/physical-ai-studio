@@ -8,7 +8,7 @@
 #   getiaction fit --config configs/lerobot/smolvla_xai.yaml --model.max_state_dim 64
 
 model:
-  class_path: getiaction.policies.lerobot.SmolVLAxAI
+  class_path: getiaction.policies.lerobot.SmolVLA
   init_args:
     # Steps for input and output
     n_obs_steps: 1

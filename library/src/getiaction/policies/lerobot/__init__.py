@@ -102,7 +102,7 @@ from lightning_utilities.core.imports import module_available
 from getiaction.policies.lerobot.act import ACT
 from getiaction.policies.lerobot.diffusion import Diffusion
 from getiaction.policies.lerobot.groot import Groot
-from getiaction.policies.lerobot.smolvla_xai.smolvla_xai import SmolVLAxAI
+from getiaction.policies.lerobot.smolvla import SmolVLA
 from getiaction.policies.lerobot.universal import LeRobotPolicy
 
 LEROBOT_AVAILABLE = module_available("lerobot")
@@ -175,17 +175,6 @@ class PI0Fast(LeRobotPolicy):
         super().__init__(policy_name="pi0fast", **kwargs)
 
 
-class SmolVLA(LeRobotPolicy):
-    """SmolVLA Policy via universal wrapper.
-
-    This is a convenience class that wraps LeRobotPolicy with policy_name="smolvla".
-    """
-
-    def __init__(self, **kwargs) -> None:  # noqa: ANN003
-        """Initialize SmolVLA policy."""
-        super().__init__(policy_name="smolvla", **kwargs)
-
-
 __all__ = [
     "ACT",
     "PI0",
@@ -197,7 +186,6 @@ __all__ = [
     "LeRobotPolicy",
     "PI0Fast",
     "SmolVLA",
-    "SmolVLAxAI",
     "VQBeT",
     "get_lerobot_policy",
 ]
@@ -258,6 +246,7 @@ def get_lerobot_policy(policy_name: str, **kwargs) -> LeRobotPolicy:  # noqa: AN
         # Explicit wrappers
         "act": ACT,
         "diffusion": Diffusion,
+        "smolvla": SmolVLA,
         # Universal wrapper classes
         "vqbet": VQBeT,
         "tdmpc": TDMPC,
@@ -265,8 +254,6 @@ def get_lerobot_policy(policy_name: str, **kwargs) -> LeRobotPolicy:  # noqa: AN
         "pi0": PI0,
         "pi05": PI05,
         "pi0fast": PI0Fast,
-        "smolvla": SmolVLA,
-        "smolvla_xai": SmolVLAxAI,
     }
 
     if policy_name_lower in policy_map:
@@ -311,14 +298,14 @@ def list_available_policies() -> list[str]:
             # Explicit wrappers
             "ACT",
             "Diffusion",
+            "smolvla",
             # Universal wrapper (all LeRobot policies)
             "groot",
             "pi0",
             "pi05",
             "pi0fast",
             "sac",
-            "smolvla",
-            "smolvla_xaitdmpc",
+            "tdmpc",
             "vqbet",
         ]
     return []
