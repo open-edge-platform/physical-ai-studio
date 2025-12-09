@@ -412,6 +412,8 @@ class InferenceModel:
             ".onnx": "onnx",  # ONNX
             ".pt2": "torch_export_ir",  # Torch Export IR (PyTorch 2.x)
             ".ptir": "torch_export_ir",  # Torch Export IR (alternative extension)
+            ".ckpt": "torch",  # Torch
+            ".pt": "torch",  # Torch (alternative extension)
         }
 
         for ext, backend in extension_map.items():
@@ -451,6 +453,7 @@ class InferenceModel:
             ExportBackend.OPENVINO: [".xml"],
             ExportBackend.ONNX: [".onnx"],
             ExportBackend.TORCH_EXPORT_IR: [".pt2", ".ptir"],
+            ExportBackend.TORCH: [".ckpt", ".pt"],
         }
 
         extensions = extension_map[self.backend]
