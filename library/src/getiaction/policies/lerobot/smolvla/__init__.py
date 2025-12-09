@@ -2,4 +2,5 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """LeRobot SmolVLA package with xAI."""
-from .smolvla import SmolVLA
+
+from .smolvla import SmolVLA as SmolVLA
