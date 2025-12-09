@@ -80,6 +80,7 @@ class TestNormalizerSingleEmbodiment:
         }
 
         normalized = normalizer.normalize(original)
+        assert isinstance(normalized, dict)  # Single-embodiment returns dict
         recovered = normalizer.denormalize(normalized)
 
         torch.testing.assert_close(recovered["state"], original["state"])

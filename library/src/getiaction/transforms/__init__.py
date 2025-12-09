@@ -16,11 +16,9 @@ from getiaction.transforms.onnx_transforms import (
 )
 
 __all__ = [
-    # Normalizer
+    "CenterCrop",
     "NormalizationMode",
     "Normalizer",
-    # ONNX transforms
-    "CenterCrop",
     "center_crop_image",
     "replace_center_crop_with_onnx_compatible",
 ]
