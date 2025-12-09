@@ -110,30 +110,30 @@ class Groot(Policy):
         >>> action = policy.select_action(obs)
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
-        # Model architecture
-        chunk_size: int = 50,  # noqa: ARG002 - used via save_hyperparameters()
-        n_action_steps: int = 50,  # noqa: ARG002 - used via save_hyperparameters()
-        max_state_dim: int = 64,  # noqa: ARG002 - used via save_hyperparameters()
-        max_action_dim: int = 32,  # noqa: ARG002 - used via save_hyperparameters()
+        # Model architecture (captured by save_hyperparameters)
+        chunk_size: int = 50,  # noqa: ARG002
+        n_action_steps: int = 50,  # noqa: ARG002
+        max_state_dim: int = 64,  # noqa: ARG002
+        max_action_dim: int = 32,  # noqa: ARG002
         # Model source
-        base_model_path: str = "nvidia/GR00T-N1.5-3B",  # noqa: ARG002 - used via save_hyperparameters()
+        base_model_path: str = "nvidia/GR00T-N1.5-3B",  # noqa: ARG002
         tokenizer_assets_repo: str = "lerobot/eagle2hg-processor-groot-n1p5",  # noqa: ARG002
-        embodiment_tag: str = "new_embodiment",  # noqa: ARG002 - used via save_hyperparameters()
+        embodiment_tag: str = "new_embodiment",  # noqa: ARG002
         # Attention implementation
-        attn_implementation: str = "sdpa",  # noqa: ARG002 - used via save_hyperparameters()
+        attn_implementation: str = "sdpa",  # noqa: ARG002
         # Fine-tuning control
         *,
-        tune_llm: bool = False,  # noqa: ARG002 - used via save_hyperparameters()
-        tune_visual: bool = False,  # noqa: ARG002 - used via save_hyperparameters()
-        tune_projector: bool = True,  # noqa: ARG002 - used via save_hyperparameters()
-        tune_diffusion_model: bool = True,  # noqa: ARG002 - used via save_hyperparameters()
+        tune_llm: bool = False,  # noqa: ARG002
+        tune_visual: bool = False,  # noqa: ARG002
+        tune_projector: bool = True,  # noqa: ARG002
+        tune_diffusion_model: bool = True,  # noqa: ARG002
         # Optimizer
-        learning_rate: float = 1e-4,  # noqa: ARG002 - used via save_hyperparameters()
-        weight_decay: float = 1e-5,  # noqa: ARG002 - used via save_hyperparameters()
+        learning_rate: float = 1e-4,  # noqa: ARG002
+        weight_decay: float = 1e-5,  # noqa: ARG002
         # Precision
-        use_bf16: bool = True,  # noqa: ARG002 - used via save_hyperparameters()
+        use_bf16: bool = True,  # noqa: ARG002
         # Eager initialization (optional - for checkpoint loading and standalone use)
         env_action_dim: int | None = None,
         dataset_stats: dict[str, dict[str, list[float]]] | None = None,
@@ -186,28 +186,28 @@ class Groot(Policy):
 
         # Load pretrained model with explicit args
         self.model = GrootModel.from_pretrained(
-            pretrained_model_name_or_path=self.hparams.base_model_path,
-            n_action_steps=self.hparams.n_action_steps,
-            use_bf16=self.hparams.use_bf16,
-            tokenizer_assets_repo=self.hparams.tokenizer_assets_repo,
-            attn_implementation=self.hparams.attn_implementation,
-            tune_llm=self.hparams.tune_llm,
-            tune_visual=self.hparams.tune_visual,
-            tune_projector=self.hparams.tune_projector,
-            tune_diffusion_model=self.hparams.tune_diffusion_model,
-            chunk_size=self.hparams.chunk_size,
-            max_action_dim=self.hparams.max_action_dim,
+            pretrained_model_name_or_path=self.hparams["base_model_path"],
+            n_action_steps=self.hparams["n_action_steps"],
+            use_bf16=self.hparams["use_bf16"],
+            tokenizer_assets_repo=self.hparams["tokenizer_assets_repo"],
+            attn_implementation=self.hparams["attn_implementation"],
+            tune_llm=self.hparams["tune_llm"],
+            tune_visual=self.hparams["tune_visual"],
+            tune_projector=self.hparams["tune_projector"],
+            tune_diffusion_model=self.hparams["tune_diffusion_model"],
+            chunk_size=self.hparams["chunk_size"],
+            max_action_dim=self.hparams["max_action_dim"],
         )
 
         # Create first-party preprocessor/postprocessor
         self._preprocessor, self._postprocessor = make_groot_preprocessors(
-            max_state_dim=self.hparams.max_state_dim,
-            max_action_dim=self.hparams.max_action_dim,
-            action_horizon=min(self.hparams.chunk_size, 16),  # GR00T max is 16
-            embodiment_tag=self.hparams.embodiment_tag,
+            max_state_dim=self.hparams["max_state_dim"],
+            max_action_dim=self.hparams["max_action_dim"],
+            action_horizon=min(self.hparams["chunk_size"], 16),  # GR00T max is 16
+            embodiment_tag=self.hparams["embodiment_tag"],
             env_action_dim=env_action_dim,
             stats=dataset_stats,
-            eagle_processor_repo=self.hparams.tokenizer_assets_repo,
+            eagle_processor_repo=self.hparams["tokenizer_assets_repo"],
         )
 
         self._is_setup_complete = True
@@ -263,8 +263,8 @@ class Groot(Policy):
         serializable_stats = self._serialize_stats(dataset_stats)
 
         # Save to hparams so checkpoint loading can use eager path
-        self.hparams.env_action_dim = env_action_dim
-        self.hparams.dataset_stats = serializable_stats
+        self.hparams["env_action_dim"] = env_action_dim
+        self.hparams["dataset_stats"] = serializable_stats
 
         # Initialize model using shared method
         self._initialize_model(env_action_dim, serializable_stats)
@@ -296,7 +296,7 @@ class Groot(Policy):
                     serializable[key][stat_name] = list(value) if hasattr(value, "__iter__") else [value]
         return serializable
 
-    def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+    def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:  # type: ignore[override]
         """Forward pass - delegates to model.
 
         Args:
@@ -374,8 +374,8 @@ class Groot(Policy):
 
         return torch.optim.AdamW(
             self.model.get_optim_params(),
-            lr=self.hparams.learning_rate,
-            weight_decay=self.hparams.weight_decay,
+            lr=self.hparams["learning_rate"],
+            weight_decay=self.hparams["weight_decay"],
         )
 
     def select_action(self, batch: Observation | dict[str, torch.Tensor]) -> torch.Tensor:

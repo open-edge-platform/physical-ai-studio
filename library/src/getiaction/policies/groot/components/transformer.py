@@ -194,6 +194,7 @@ class BasicTransformerBlock(nn.Module):
             self.pos_embed = None
 
         # Self-attention with normalization
+        self.norm1: AdaLayerNorm | nn.LayerNorm
         if norm_type == "ada_norm":
             self.norm1 = AdaLayerNorm(dim)
         else:
@@ -282,7 +283,7 @@ def _create_dit_class() -> type:
     """
     config_mixin, model_mixin, register_to_config, *_ = _import_diffusers()
 
-    class DiT(model_mixin, config_mixin):
+    class DiT(model_mixin, config_mixin):  # type: ignore[misc,valid-type]
         """Diffusion Transformer for action generation.
 
         Cross-attention transformer conditioned on vision-language features
@@ -429,7 +430,7 @@ def _create_self_attention_transformer_class() -> type:
     """
     config_mixin, model_mixin, register_to_config, *_ = _import_diffusers()
 
-    class SelfAttentionTransformer(model_mixin, config_mixin):
+    class SelfAttentionTransformer(model_mixin, config_mixin):  # type: ignore[misc,valid-type]
         """Self-attention transformer for VL feature processing."""
 
         _supports_gradient_checkpointing = True
