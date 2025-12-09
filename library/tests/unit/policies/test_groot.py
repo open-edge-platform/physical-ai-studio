@@ -15,12 +15,12 @@ from __future__ import annotations
 
 import pytest
 import torch
-import torch.nn as nn
-
+from torch import nn
 
 # =============================================================================
 # NN PRIMITIVES (nn.py)
 # =============================================================================
+
 
 class TestSwish:
     """Test swish activation function."""
@@ -126,7 +126,10 @@ class TestCategorySpecificMLP:
         from getiaction.policies.groot.components.nn import CategorySpecificMLP
 
         return CategorySpecificMLP(
-            num_categories=4, input_dim=16, hidden_dim=32, output_dim=24
+            num_categories=4,
+            input_dim=16,
+            hidden_dim=32,
+            output_dim=24,
         )
 
     def test_output_shape(self, mlp: nn.Module) -> None:
@@ -153,7 +156,9 @@ class TestMultiEmbodimentActionEncoder:
         from getiaction.policies.groot.components.nn import MultiEmbodimentActionEncoder
 
         return MultiEmbodimentActionEncoder(
-            action_dim=7, hidden_size=64, num_embodiments=4
+            action_dim=7,
+            hidden_size=64,
+            num_embodiments=4,
         )
 
     def test_output_shape(self, encoder: nn.Module) -> None:
@@ -176,6 +181,7 @@ class TestMultiEmbodimentActionEncoder:
 # =============================================================================
 # TRANSFORMER COMPONENTS (transformer.py)
 # =============================================================================
+
 
 class TestTimestepEncoder:
     """Test timestep encoder."""
@@ -312,17 +318,21 @@ class TestSelfAttentionTransformer:
 # ACTION HEAD (action_head.py)
 # =============================================================================
 
+
 class TestFlowMatchingActionHeadConfig:
     """Test FlowMatchingActionHeadConfig."""
 
     def test_default_config(self) -> None:
-        """Test default configuration values."""
+        """Test default configuration values with required args."""
         from getiaction.policies.groot.components.action_head import (
             FlowMatchingActionHeadConfig,
         )
 
-        config = FlowMatchingActionHeadConfig()
-        # Default values are None for action_dim/horizon (set later)
+        config = FlowMatchingActionHeadConfig(action_dim=32, action_horizon=16)
+        # Required values
+        assert config.action_dim == 32
+        assert config.action_horizon == 16
+        # Default values
         assert config.hidden_size == 1024
         assert config.max_num_embodiments == 32
         assert config.max_state_dim == 64
@@ -344,10 +354,48 @@ class TestFlowMatchingActionHeadConfig:
         assert config.action_dim == 64
         assert config.num_inference_timesteps == 20
 
+    def test_from_config_with_dataclass(self) -> None:
+        """Test FromConfig mixin works with FlowMatchingActionHeadConfig dataclass."""
+        from getiaction.policies.groot.components.action_head import (
+            FlowMatchingActionHead,
+            FlowMatchingActionHeadConfig,
+        )
+
+        config = FlowMatchingActionHeadConfig(
+            action_dim=8,
+            action_horizon=16,
+            hidden_size=128,
+        )
+        # Use FromConfig.from_config to instantiate from dataclass
+        head = FlowMatchingActionHead.from_config(config)
+        assert isinstance(head, FlowMatchingActionHead)
+        assert head.action_dim == 8
+        assert head.action_horizon == 16
+        assert head.hidden_size == 128
+
+    def test_from_dict(self) -> None:
+        """Test FromConfig mixin works with dict."""
+        from getiaction.policies.groot.components.action_head import (
+            FlowMatchingActionHead,
+        )
+
+        config_dict = {
+            "action_dim": 8,
+            "action_horizon": 16,
+            "hidden_size": 128,
+        }
+        # Use FromConfig.from_dict to instantiate from dict
+        head = FlowMatchingActionHead.from_dict(config_dict)
+        assert isinstance(head, FlowMatchingActionHead)
+        assert head.action_dim == 8
+        assert head.action_horizon == 16
+        assert head.hidden_size == 128
+
 
 # =============================================================================
 # POLICY (policy.py)
 # =============================================================================
+
 
 class TestGrootPolicy:
     """Test Groot Lightning policy wrapper."""
@@ -448,6 +496,7 @@ class TestGrootPolicySerializeStats:
 # =============================================================================
 # PREPROCESSOR (preprocessor.py)
 # =============================================================================
+
 
 class TestPreprocessor:
     """Test Groot preprocessor functions."""
