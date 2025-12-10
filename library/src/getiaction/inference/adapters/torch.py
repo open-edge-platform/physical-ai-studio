@@ -28,6 +28,7 @@ class TorchAdapter(RuntimeAdapter):
 
     def __init__(self, device: torch.device | str = "cpu") -> None:
         """Initialize the Torch adapter.
+
         Args:
             device: Device for inference ('cpu', 'cuda', 'xpu', etc.)
         """
