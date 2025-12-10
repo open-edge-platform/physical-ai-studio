@@ -191,13 +191,18 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
     def from_dataset(
         cls,
         policy_name: str,
-        dataset: LeRobotDataset | str,
+        dataset: LeRobotDataset | _LeRobotDatasetAdapter | str,
         **kwargs: Any,  # noqa: ANN401
     ) -> LeRobotPolicy:
         """Create policy with eager initialization from a dataset or repo ID.
 
         This factory method extracts features from the dataset and builds the policy
         immediately, making it ready for inference without a Lightning Trainer.
+
+        Note:
+            LeRobot policies require LeRobot-compatible data sources for feature
+            extraction and normalization statistics. Generic getiaction datasets
+            are not supported.
 
         Args:
             policy_name: Name of the policy ('act', 'diffusion', 'vqbet', etc.)
@@ -228,10 +233,20 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
                 ...     dataset,
                 ...     num_inference_steps=100,
                 ... )
+
+            Create from a datamodule's train_dataset:
+
+                >>> datamodule = LeRobotDataModule(repo_id="lerobot/pusht")
+                >>> datamodule.setup("fit")
+                >>> policy = LeRobotPolicy.from_dataset("act", datamodule.train_dataset)
         """
         if not LEROBOT_AVAILABLE:
             msg = "LeRobotPolicy.from_dataset requires LeRobot to be installed."
             raise ImportError(msg)
+
+        # Handle _LeRobotDatasetAdapter (wrapper for getiaction format)
+        if isinstance(dataset, _LeRobotDatasetAdapter):
+            dataset = dataset._lerobot_dataset  # noqa: SLF001
 
         # Get metadata from dataset or repo ID
         meta = LeRobotDatasetMetadata(dataset) if isinstance(dataset, str) else dataset.meta
