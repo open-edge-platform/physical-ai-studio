@@ -115,7 +115,6 @@ class Export:
         checkpoint["state_dict"] = self.state_dict() if hasattr(self, "state_dict") else {}
         config_dict = self.model.config.to_dict() if hasattr(self.model, "config") else {}
         checkpoint[CONFIG_KEY] = config_dict
-        # checkpoint[POLICY_KEY] = f"{self.__class__.__module__}.{self.__class__.__name__}"
 
         # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         torch.save(checkpoint, str(model_path))  # nosec B614
