@@ -110,5 +110,5 @@ def get_getiaction_policy_class(policy_name: str) -> type[Policy]:
     if policy_name == "dummy":
         return Dummy
 
-    msg = f"Unknown policy name: {policy_name}. Supported policies: act, dummy"
+    msg = f"Unknown getiaction policy: {policy_name}. Supported policies: act, dummy"
     raise ValueError(msg)
