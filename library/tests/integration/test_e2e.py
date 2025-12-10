@@ -6,27 +6,38 @@
 This module contains comprehensive E2E tests that validate the complete pipeline:
 1. Train a policy using LeRobot PushT dataset
 2. Validate/test the trained policy
-3. Export the trained policy to multiple backends (OpenVINO, ONNX, Torch, TorchExportIR)
-4. Load exported model for inference
-5. Verify numerical consistency between training and inference
+3. Export the trained policy to multiple backends (OpenVINO, ONNX, Torch, TorchExportIR) - optional
+4. Load exported model for inference - optional
+5. Verify numerical consistency between training and inference - optional
 
-Uses generic fixtures for policy-agnostic testing across all policy × backend combinations.
+Design:
+- CoreE2ETests: Required tests (train/val/test) - all policies must support
+- ExportE2ETests: Optional tests (export/inference) - only run if policy supports export
+- Policies declare export support by inheriting from Export mixin
 """
 
 from pathlib import Path
 
-import numpy as np
 import pytest
 import torch
 
 from getiaction.data import LeRobotDataModule, Observation
+from getiaction.export import Export
 from getiaction.inference import InferenceModel
 from getiaction.policies import get_policy
 from getiaction.policies.base.policy import Policy
 from getiaction.train import Trainer
 
+# Export backend constants
+# TODO: Add "torch" when torch export backend PR is merged
+# EXPORT_BACKENDS = ["openvino", "onnx", "torch", "torch_export_ir"]
+EXPORT_BACKENDS = ["openvino", "onnx", "torch_export_ir"]
+
 # Policy names for parametrization
-FIRST_PARTY_POLICIES = ["act"]
+# Default: policies without export support (core tests only)
+FIRST_PARTY_POLICIES = ["pi0"]
+# Policies with export support (core + export tests)
+FIRST_PARTY_POLICIES_WITH_EXPORT = ["act"]
 LEROBOT_POLICIES = ["act", "diffusion"]
 
 # Shared fixtures
@@ -41,8 +52,21 @@ def trainer() -> Trainer:
     )
 
 
-class E2ETests:
-    """Base class with common E2E test methods for all policies."""
+def _supports_export(policy: Policy) -> bool:
+    """Check if policy supports export functionality."""
+    return isinstance(policy, Export) and hasattr(policy, "export")
+
+
+# ============================================================================ #
+# Core E2E Tests (Required for all policies)                                  #
+# ============================================================================ #
+
+
+class CoreE2ETests:
+    """Base class with required E2E test methods for all policies.
+
+    All policies must support training, validation, and testing.
+    """
 
     def test_train_policy(self, trained_policy: Policy, trainer: Trainer) -> None:
         """Test that policy was trained successfully."""
@@ -58,9 +82,24 @@ class E2ETests:
         trainer.test(trained_policy, datamodule=datamodule)
         assert trainer.state.finished
 
-    @pytest.mark.parametrize("backend", ["openvino", "onnx", "torch", "torch_export_ir"])
+
+# ============================================================================ #
+# Export E2E Tests (Optional - only for policies with export support)          #
+# ============================================================================ #
+
+
+class ExportE2ETests:
+    """Mixin with optional export tests.
+
+    These tests only run for policies that support export (inherit from Export mixin).
+    Tests automatically skip if policy doesn't support export.
+    """
+
+    @pytest.mark.parametrize("backend", EXPORT_BACKENDS)
     def test_export_to_backend(self, trained_policy: Policy, backend: str, tmp_path: Path) -> None:
         """Test that trained policy can be exported to different backends."""
+        if not _supports_export(trained_policy):
+            pytest.skip("Policy doesn't support export")
         export_dir = tmp_path / f"{trained_policy.__class__.__name__.lower()}_{backend}"
         trained_policy.export(export_dir, backend)
 
@@ -77,7 +116,7 @@ class E2ETests:
         elif backend == "torch_export_ir":
             assert any(export_dir.glob("*.pt2"))
 
-    @pytest.mark.parametrize("backend", ["openvino", "onnx", "torch_export_ir"])
+    @pytest.mark.parametrize("backend", EXPORT_BACKENDS)
     def test_inference_with_exported_model(
         self,
         trained_policy: Policy,
@@ -85,6 +124,9 @@ class E2ETests:
         datamodule: LeRobotDataModule,
         tmp_path: Path,
     ) -> None:
+        """Test that exported model can be loaded and used for inference."""
+        if not _supports_export(trained_policy):
+            pytest.skip("Policy doesn't support export")
         """Test that exported model can be loaded and used for inference."""
         export_dir = tmp_path / f"{trained_policy.__class__.__name__.lower()}_{backend}"
         trained_policy.export(export_dir, backend)
@@ -100,12 +142,12 @@ class E2ETests:
 
         # Use Observation indexing to extract first sample
         inference_input = batch_observation[0:1].to_numpy()
-        inference_output: torch.Tensor = inference_model.select_action(inference_input)
+        inference_output = inference_model.select_action(inference_input)
 
         assert inference_output.shape[-1] == 2
         assert len(inference_output.shape) in {1, 2, 3}, f"Expected 1-3D tensor, got {inference_output.shape}"
 
-    @pytest.mark.parametrize("backend", ["openvino", "onnx", "torch_export_ir"])
+    @pytest.mark.parametrize("backend", EXPORT_BACKENDS)
     def test_numerical_consistency_training_vs_inference(
         self,
         trained_policy: Policy,
@@ -113,10 +155,12 @@ class E2ETests:
         datamodule: LeRobotDataModule,
         tmp_path: Path,
     ) -> None:
+        """Test numerical consistency between training and inference outputs."""
+        if not _supports_export(trained_policy):
+            pytest.skip("Policy doesn't support export")
         """Test numerical consistency between training and inference outputs.
 
         This is a clean base implementation for first-party policies.
-        LeRobot-specific handling is in TestLeRobotPolicies override.
         """
         policy_name = trained_policy.__class__.__name__.lower()
         export_dir = tmp_path / f"{policy_name}_{backend}"
@@ -134,7 +178,7 @@ class E2ETests:
         trained_policy.eval()
         trained_policy.reset()
         with torch.no_grad():
-            train_output: torch.Tensor = trained_policy.select_action(single_observation)
+            train_output = trained_policy.select_action(single_observation)
 
         # Export model
         trained_policy.export(export_dir, backend)
@@ -148,7 +192,7 @@ class E2ETests:
             torch.cuda.manual_seed_all(42)
 
         inference_model.reset()
-        inference_output: torch.Tensor = inference_model.select_action(inference_input)
+        inference_output = inference_model.select_action(inference_input)
 
         # Extract first action and handle chunked outputs
         train_action: torch.Tensor = train_output[0].cpu()
@@ -172,9 +216,27 @@ class E2ETests:
         )
 
 
-@pytest.mark.parametrize("policy_name", FIRST_PARTY_POLICIES, indirect=True)
+# ============================================================================ #
+# Combined E2E Tests (Core + Export)                                           #
+# ============================================================================ #
+
+
+class E2ETests(CoreE2ETests, ExportE2ETests):
+    """Combined E2E tests: core (required) + export (optional).
+
+    Policies that support export inherit from this.
+    Policies without export can inherit from CoreE2ETests only.
+    """
+
+
+# ============================================================================ #
+# First-Party Policies (with export support)                                    #
+# ============================================================================ #
+
+
+@pytest.mark.parametrize("policy_name", FIRST_PARTY_POLICIES_WITH_EXPORT, indirect=True)
 class TestFirstPartyPolicies(E2ETests):
-    """E2E tests for first-party policies (getiaction)."""
+    """E2E tests for first-party policies (getiaction) with export support."""
 
     @pytest.fixture(scope="class")
     def datamodule(self) -> LeRobotDataModule:
@@ -202,160 +264,14 @@ class TestFirstPartyPolicies(E2ETests):
         return policy
 
 
+# ============================================================================ #
+# LeRobot Policies (core tests only - no export support)                      #
+# ============================================================================ #
+
+
 @pytest.mark.parametrize("policy_name", LEROBOT_POLICIES, indirect=True)
-class TestLeRobotPolicies(E2ETests):
-    """E2E tests for LeRobot policies."""
-
-    # Skip torch_export_ir: LeRobot's preprocessor/postprocessor uses dynamic Python features
-    # (functools.singledispatch, device adaptation) incompatible with torch.export tracing
-    @pytest.mark.parametrize("backend", ["openvino", "onnx", "torch"])
-    def test_export_to_backend(self, trained_policy: Policy, backend: str, tmp_path: Path) -> None:
-        """Override to skip torch_export_ir (LeRobot preprocessor incompatible with torch.export)."""
-        return super().test_export_to_backend(trained_policy, backend, tmp_path)
-
-    @pytest.mark.parametrize("backend", ["openvino", "onnx"])
-    def test_inference_with_exported_model(
-        self, trained_policy: Policy, backend: str, datamodule: LeRobotDataModule, tmp_path: Path
-    ) -> None:
-        """Override to skip torch_export_ir (no export = no inference test)."""
-        return super().test_inference_with_exported_model(trained_policy, backend, datamodule, tmp_path)
-
-    @staticmethod
-    def _extract_single_observation_from_batch(batch_observation: Observation, keep_temporal: bool = False) -> Observation:
-        """Extract first observation from batch, optionally preserving temporal dimensions.
-
-        LeRobot policies may have temporal observations [B, T, ...] where T is n_obs_steps.
-
-        Args:
-            batch_observation: Batch observation with shape [B, ...] or [B, T, ...]
-            keep_temporal: If True, preserves temporal dimension [1, T, ...].
-                          If False, extracts last temporal frame [1, ...].
-
-        Returns:
-            Single observation for inference.
-        """
-        def extract_single(tensor: torch.Tensor) -> torch.Tensor:
-            """Extract first batch item."""
-            if keep_temporal:
-                return tensor[0:1, ...]  # [1, T, ...] - preserves all dimensions including n_obs_steps
-            # Remove temporal dimension by taking last frame
-            if tensor.ndim == 3:  # [batch, n_obs_steps, feature_dim]
-                return tensor[0:1, -1, ...]  # [1, feature_dim]
-            elif tensor.ndim == 5:  # [batch, n_obs_steps, C, H, W]
-                return tensor[0:1, -1, ...]  # [1, C, H, W]
-            return tensor[0:1]  # [1, ...]
-
-        state_single = None
-        if batch_observation.state is not None:
-            state_single = extract_single(batch_observation.state) if torch.is_tensor(batch_observation.state) else batch_observation.state
-
-        images_single = None
-        if batch_observation.images is not None:
-            if isinstance(batch_observation.images, dict):
-                images_single = {k: extract_single(v) for k, v in batch_observation.images.items()}
-            else:
-                images_single = extract_single(batch_observation.images)
-
-        return Observation(state=state_single, images=images_single)
-
-    @pytest.mark.parametrize("backend", ["openvino", "onnx"])
-    def test_numerical_consistency_training_vs_inference(
-        self,
-        trained_policy: Policy,
-        backend: str,
-        datamodule: LeRobotDataModule,
-        tmp_path: Path,
-    ) -> None:
-        """Test numerical consistency between training and inference.
-
-        LeRobot-specific: Handles temporal dimension extraction for policies with n_obs_steps.
-        All export logic (CPU movement, preprocessors, scheduler) is handled by the policy itself.
-        """
-        policy_name = trained_policy.__class__.__name__.lower()
-        export_dir = tmp_path / f"{policy_name}_{backend}"
-
-        # Get batch and extract single observation (handles LeRobot temporal dimensions)
-        from getiaction.data.lerobot import FormatConverter
-        sample_batch = next(iter(datamodule.train_dataloader()))
-        batch_observation = FormatConverter.to_observation(sample_batch)
-
-        # For PyTorch inference: remove temporal dimension (take last frame)
-        # For ONNX inference: keep temporal dimension (model was exported with it)
-        single_obs_pytorch = self._extract_single_observation_from_batch(batch_observation, keep_temporal=False)
-        single_obs_onnx = self._extract_single_observation_from_batch(batch_observation, keep_temporal=True)
-
-        # Prepare policy for CPU inference (model + preprocessors)
-        # Move model to CPU
-        trained_policy.cpu()
-        # Move preprocessors to CPU (LeRobot requirement for consistent device state)
-        # Don't restore - export() expects them to already be on CPU
-        if hasattr(trained_policy, "_move_processor_steps_to_device"):
-            trained_policy._move_processor_steps_to_device("cpu")  # type: ignore[attr-defined]
-
-        # For Diffusion, also move scheduler tensors to CPU
-        if policy_name == "diffusion" and hasattr(trained_policy, "_lerobot_policy"):
-            scheduler = trained_policy._lerobot_policy.diffusion.noise_scheduler  # type: ignore[attr-defined]
-            for attr_name in dir(scheduler):
-                if not attr_name.startswith("_"):
-                    attr = getattr(scheduler, attr_name, None)
-                    if isinstance(attr, torch.Tensor) and attr.device.type != "cpu":
-                        setattr(scheduler, attr_name, attr.cpu())
-
-        # Get training output (use observation without temporal dim for policies with n_obs_steps)
-        torch.manual_seed(42)
-        trained_policy.eval()
-        trained_policy.reset()
-        with torch.no_grad():
-            train_output: torch.Tensor = trained_policy.select_action(single_obs_pytorch)
-
-        # Export (policy's to_onnx already moved everything to CPU, no need to do it again)
-        trained_policy.export(export_dir, backend)
-
-        # Load exported model and run inference (use observation with temporal dim - matches export trace)
-        inference_model = InferenceModel.load(export_dir)
-        torch.manual_seed(42)
-        inference_model.reset()
-
-        # Run inference (input is already on CPU)
-        inference_output: torch.Tensor = inference_model.select_action(single_obs_onnx.to_numpy())
-
-        # Extract first action from both outputs
-        train_action = train_output[0].cpu()
-        if train_action.ndim > 1:
-            train_action = train_action[0]  # Extract from chunk
-
-        inference_action = torch.as_tensor(inference_output).cpu().squeeze(0)
-        if inference_action.ndim > 1:
-            inference_action = inference_action[0]
-
-        # For Diffusion, random noise is baked into the exported graph, so we can't compare numerically
-        # Instead, verify outputs are valid (not NaN/Inf) and have reasonable magnitude
-        if policy_name == "diffusion":
-            assert not torch.isnan(inference_action).any(), f"Diffusion inference output contains NaN: {inference_action}"
-            assert not torch.isinf(inference_action).any(), f"Diffusion inference output contains Inf: {inference_action}"
-            assert not torch.isnan(train_action).any(), f"Diffusion training output contains NaN: {train_action}"
-            assert not torch.isinf(train_action).any(), f"Diffusion training output contains Inf: {train_action}"
-        else:
-            torch.testing.assert_close(inference_action, train_action, rtol=0.2, atol=0.2)
-
-        # Cleanup: delete inference model and clear CUDA cache to prevent state leakage
-        del inference_model
-        torch.cuda.empty_cache()    # Override trained_policy with function scope for numerical consistency tests
-    # This avoids fixture corruption when modifying policy device/state
-    @pytest.fixture(scope="function")
-    def trained_policy(self, policy_name: str, datamodule: LeRobotDataModule, trainer: Trainer) -> Policy:
-        """Train a fresh policy for each test (function-scoped for numerical consistency)."""
-        # Create a NEW policy instance for each test to avoid state pollution
-        from getiaction.policies import get_policy
-
-        # Fast config for integration tests
-        policy_kwargs = {}
-        if policy_name == "diffusion":
-            policy_kwargs = {"num_inference_steps": 1}
-
-        policy = get_policy(policy_name, source="lerobot", **policy_kwargs)
-        trainer.fit(policy, datamodule=datamodule)
-        return policy
+class TestLeRobotPolicies(CoreE2ETests):
+    """E2E tests for LeRobot policies (core tests only, export not supported)."""
 
     @pytest.fixture(scope="class")
     def policy_name(self, request: pytest.FixtureRequest) -> str:
@@ -416,3 +332,83 @@ class TestLeRobotPolicies(E2ETests):
             }
 
         return get_policy(policy_name, source="lerobot", **policy_kwargs)
+
+    @pytest.fixture(scope="function")
+    def trained_policy(self, policy_name: str, datamodule: LeRobotDataModule, trainer: Trainer) -> Policy:
+        """Train a fresh policy for each test (function-scoped for numerical consistency)."""
+        # Create a NEW policy instance for each test to avoid state pollution
+        policy_kwargs = {}
+        if policy_name == "diffusion":
+            policy_kwargs = {"num_inference_steps": 1}
+
+        policy = get_policy(policy_name, source="lerobot", **policy_kwargs)
+        trainer.fit(policy, datamodule=datamodule)
+        return policy
+
+
+# ============================================================================ #
+# Pi0 Policies (core tests only - no export support yet)                       #
+# ============================================================================ #
+
+
+@pytest.mark.slow
+@pytest.mark.requires_download
+@pytest.mark.parametrize("policy_name", FIRST_PARTY_POLICIES, indirect=True)
+class TestPi0Policies(CoreE2ETests):
+    """E2E tests for Pi0/Pi0.5 policies (core tests only, export not yet supported).
+
+    Pi0 uses flow matching with PaliGemma + Gemma backbone. Export support
+    requires additional work due to the Euler integration loop.
+
+    Note: These tests require downloading PaliGemma-3B (~10GB) even with "gemma_300m" variant.
+    The variant name refers to action expert size, not the VLM backbone.
+    Run with: pytest -m "slow and requires_download" to include these tests.
+    Skip with: pytest -m "not requires_download" to exclude them.
+
+    To add export support:
+    1. Make Pi0 inherit from Export mixin
+    2. Change this class to inherit from E2ETests instead of CoreE2ETests
+    3. Export tests will automatically run (no skip decorators needed)
+    """
+
+    @pytest.fixture(scope="class")
+    def policy_name(self, request: pytest.FixtureRequest) -> str:
+        """Extract policy name from parametrize."""
+        return request.param
+
+    @pytest.fixture(scope="class")
+    def datamodule(self) -> LeRobotDataModule:
+        """Create datamodule for Pi0 policies."""
+        return LeRobotDataModule(
+            repo_id="lerobot/pusht",
+            train_batch_size=2,
+            episodes=list(range(5)),
+            data_format="lerobot",
+            delta_timestamps={
+                "action": [i / 10.0 for i in range(50)],  # chunk_size=50
+            },
+        )
+
+    @pytest.fixture(scope="class")
+    def policy(self, policy_name: str) -> Policy:
+        """Create Pi0 policy with lightweight configuration."""
+        return get_policy(
+            policy_name,
+            source="getiaction",
+            paligemma_variant="gemma_300m",
+            action_expert_variant="gemma_300m",
+            chunk_size=50,
+            n_action_steps=10,
+            num_inference_steps=2,
+            tune_paligemma=False,
+            tune_action_expert=False,
+            tune_vision_encoder=False,
+            gradient_checkpointing=False,
+            use_bf16=False,
+        )
+
+    @pytest.fixture(scope="class")
+    def trained_policy(self, policy: Policy, datamodule: LeRobotDataModule, trainer: Trainer) -> Policy:
+        """Train policy once and reuse across all tests."""
+        trainer.fit(policy, datamodule=datamodule)
+        return policy

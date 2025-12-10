@@ -1,0 +1,191 @@
+# =============================================================================
+# Pi0 Policy Training Configuration
+# Physical Intelligence's Flow Matching VLA Model
+# =============================================================================
+#
+# Default settings optimized for 8-10GB GPUs (minimum memory configuration).
+#
+# Usage:
+#   getiaction fit --config configs/pi0/pi0.yaml
+#
+# Common overrides:
+#   # Change action dimension
+#   getiaction fit --config configs/pi0/pi0.yaml --model.init_args.action_dim 14
+#
+#   # Use Pi0.5 variant (better quality, requires 16GB+ VRAM)
+#   getiaction fit --config configs/pi0/pi0.yaml --model.init_args.variant pi05
+#
+#   # Intel XPU (Arc B580, Data Center Max)
+#   getiaction fit --config configs/pi0/pi0.yaml --trainer.accelerator xpu
+#
+#   # 12-16GB GPU - enable action expert
+#   getiaction fit --config configs/pi0/pi0.yaml \
+#       --model.init_args.tune_action_expert true
+#
+#   # 48GB+ GPU - enable full fine-tuning
+#   getiaction fit --config configs/pi0/pi0.yaml \
+#       --model.init_args.tune_action_expert true \
+#       --model.init_args.tune_paligemma true \
+#       --data.init_args.train_batch_size 4
+#
+# -----------------------------------------------------------------------------
+# MEMORY REQUIREMENTS (approximate)
+# -----------------------------------------------------------------------------
+#
+# | Configuration                    | Trainable Params | VRAM Required |
+# |----------------------------------|------------------|---------------|
+# | Projection heads only (default)  | ~50M             | 8-10GB        |
+# | + Action expert                  | ~350M            | 12-16GB       |
+# | + PaliGemma (full)               | ~2.3B            | 24GB+         |
+# | + PaliGemma (LoRA)               | ~100M            | 10-12GB       |
+#
+# =============================================================================
+
+model:
+  class_path: getiaction.policies.pi0.Pi0
+  init_args:
+    # -------------------------------------------------------------------------
+    # Model Variant
+    # -------------------------------------------------------------------------
+    # Options:
+    #   - "pi0"  : Continuous state, MLP timestep injection
+    #              Lower memory (48 tokens), good for simple tasks
+    #   - "pi05" : Discrete state (tokenized), AdaRMSNorm timestep injection
+    #              Higher memory (200 tokens), better quality for complex tasks
+    #              RECOMMENDED if you have 16GB+ VRAM
+    #
+    # For minimum VRAM, use "pi0". For best quality, use "pi05".
+    variant: "pi0"
+
+    # -------------------------------------------------------------------------
+    # Backbone Architecture
+    # -------------------------------------------------------------------------
+    # Options: "gemma_300m" (smaller, ~1GB) or "gemma_2b" (larger, ~4GB)
+    # For more VRAM: change to "gemma_2b" for better quality
+    paligemma_variant: "gemma_300m"
+    action_expert_variant: "gemma_300m"
+
+    # -------------------------------------------------------------------------
+    # Action Space (MODIFY FOR YOUR ROBOT)
+    # -------------------------------------------------------------------------
+    action_dim: 7 # Your robot's action dimension
+    action_horizon: 50 # Number of action steps to predict (chunk size)
+    max_state_dim: 32 # Maximum state dimension (for padding)
+    max_action_dim: 32 # Maximum action dimension (for padding)
+
+    # -------------------------------------------------------------------------
+    # Inference
+    # -------------------------------------------------------------------------
+    num_inference_steps: 10 # Euler integration steps (more = better, slower)
+
+    # -------------------------------------------------------------------------
+    # Fine-tuning Control (MEMORY vs QUALITY TRADEOFF)
+    # -------------------------------------------------------------------------
+    # These control which parts of the model are trainable.
+    # Freezing more components reduces memory usage.
+    #
+    # Recommended settings by GPU VRAM:
+    #
+    # 8-10GB (RTX 3060, Arc A770) - DEFAULT:
+    #   tune_paligemma: false
+    #   tune_action_expert: false
+    #   tune_vision_encoder: false
+    #
+    # 12-16GB (RTX 3090/4090, Intel B580/B60):
+    #   tune_paligemma: false
+    #   tune_action_expert: true
+    #   tune_vision_encoder: false
+    #
+    # 24GB+ (A100):
+    #   tune_paligemma: true   # Or use LoRA below
+    #   tune_action_expert: true
+    #   tune_vision_encoder: false
+    #
+    tune_paligemma: false # VLM backbone (~2B params) - freeze for memory
+    tune_action_expert: false # Action expert (~300M params) - set true if >12GB
+    tune_vision_encoder: false # SigLIP vision encoder - rarely needed
+
+    # -------------------------------------------------------------------------
+    # LoRA (Low-Rank Adaptation)
+    # -------------------------------------------------------------------------
+    # Efficient alternative to full fine-tuning. Adds ~1-2GB VRAM.
+    # Set lora_rank > 0 to enable (8-32 recommended)
+    #
+    # Good for: Adapting VLM without full fine-tuning
+    # Example: lora_rank: 16, lora_alpha: 32
+    #
+    lora_rank: 0 # 0 = disabled, 8-32 = enabled
+    lora_alpha: 16 # Scaling factor (usually 2x rank)
+    lora_dropout: 0.1 # Dropout for regularization
+
+    # -------------------------------------------------------------------------
+    # Memory Optimization
+    # -------------------------------------------------------------------------
+    gradient_checkpointing: true # Saves ~30% VRAM, slightly slower
+    dtype: "bfloat16" # "bfloat16" (recommended) or "float32"
+
+    # -------------------------------------------------------------------------
+    # Optimizer
+    # -------------------------------------------------------------------------
+    learning_rate: 1.0e-4
+    weight_decay: 1.0e-5
+    warmup_ratio: 0.05
+
+data:
+  class_path: getiaction.data.lerobot.LeRobotDataModule
+  init_args:
+    # -------------------------------------------------------------------------
+    # Dataset
+    # -------------------------------------------------------------------------
+    repo_id: "lerobot/aloha_sim_transfer_cube_human"
+    data_format: "lerobot"
+
+    # -------------------------------------------------------------------------
+    # Batch Size
+    # -------------------------------------------------------------------------
+    # Recommended settings by GPU VRAM:
+    #   - 8-10GB: train_batch_size: 1-2 (DEFAULT: 2)
+    #   - 12-16GB: train_batch_size: 2-4
+    #   - 24GB+: train_batch_size: 4-8
+    #
+    # Use accumulate_grad_batches to achieve larger effective batch sizes
+    train_batch_size: 2
+
+trainer:
+  # ---------------------------------------------------------------------------
+  # Training Control
+  # ---------------------------------------------------------------------------
+  max_epochs: 100
+
+  # ---------------------------------------------------------------------------
+  # Hardware
+  # ---------------------------------------------------------------------------
+  # accelerator options:
+  #   - "auto" : Auto-detect available accelerator (recommended)
+  #   - "gpu"  : NVIDIA CUDA GPUs
+  #   - "xpu"  : Intel Arc/Data Center GPUs (requires torch+xpu)
+  #   - "cpu"  : CPU only (slow, for testing)
+  #
+  # For Intel XPU (Arc A770, B580, B60, Data Center GPUs):
+  #   1. Install PyTorch with XPU: pip install torch --index-url https://download.pytorch.org/whl/xpu
+  #   2. Set accelerator: xpu (or auto)
+  #   3. Note: bfloat16 is supported on Intel GPUs
+  #
+  accelerator: auto
+  devices: 1
+
+  # ---------------------------------------------------------------------------
+  # Precision
+  # ---------------------------------------------------------------------------
+  # Options:
+  #   - "bf16-mixed" : BFloat16 mixed precision (recommended for Ampere+)
+  #   - "16-mixed"   : Float16 mixed precision (for older GPUs)
+  #   - "32"         : Full precision (highest memory usage)
+  #
+  precision: bf16-mixed
+
+  # ---------------------------------------------------------------------------
+  # Logging & Checkpointing
+  # ---------------------------------------------------------------------------
+  log_every_n_steps: 10
+  check_val_every_n_epoch: 1

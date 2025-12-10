@@ -122,12 +122,29 @@ extend-exclude = [
     "docs",
     "examples",
     "tests",
+    "notebooks",
 ]
 
 [tool.ruff.lint]
 # Library uses ALL rules from root config
 # Add any library-specific ignores here if needed
 ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+# Test files can use assert statements and have looser rules
+"tests/**/*.py" = [
+    "S101",  # assert statements are fine in tests
+    "PLR6301",  # test methods don't need to be static
+    "PT006",  # parametrize tuple format
+    "PT011",  # pytest.raises without match is fine
+    "PT018",  # assertion breakdown
+    "DOC201",  # return documentation in fixtures
+    "DOC501",  # exception documentation in tests
+    "SLF001",  # accessing private members in tests
+    "PLR2004",  # magic values in tests
+    "FBT001",  # boolean positional args in tests
+    "E501",  # line length in tests
+]
 
 
 # ============================================================================ #
