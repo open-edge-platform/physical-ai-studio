@@ -26,8 +26,12 @@ class TorchAdapter(RuntimeAdapter):
         >>> outputs = adapter.predict({"image": image_array, "state": state_array})
     """
 
-    def __init__(self) -> None:
-        """Initialize the Torch adapter."""
+    def __init__(self, device: torch.device | str = "cpu") -> None:
+        """Initialize the Torch adapter.
+        Args:
+            device: Device for inference ('cpu', 'cuda', 'xpu', etc.)
+        """
+        self.device = torch.device(device)
         self._policy: torch.nn.Module | None = None
         self._input_names: list[str] = []
         self._output_names: list[str] = []
@@ -64,7 +68,7 @@ class TorchAdapter(RuntimeAdapter):
             _, class_name = policy_class_path.rsplit(".", 1)
             policy_class = get_getiaction_policy_class(class_name)
 
-            self._policy = policy_class.load_from_checkpoint(model_path, map_location="cpu").eval()
+            self._policy = policy_class.load_from_checkpoint(model_path, map_location="cpu").to(self.device).eval()
 
             self._input_names = list(self._policy.model.sample_input.keys())
             self._output_names = self._policy.model.extra_export_args["torch"]["output_names"]
@@ -91,7 +95,7 @@ class TorchAdapter(RuntimeAdapter):
 
         try:
             # Convert numpy arrays to torch tensors
-            torch_inputs = {k: torch.from_numpy(v) for k, v in inputs.items()}
+            torch_inputs = {k: torch.from_numpy(v).to(self.device) for k, v in inputs.items()}
             torch_outputs = self._policy.model(torch_inputs)
             # Handle different output formats
             return self._convert_outputs_to_numpy(torch_outputs)
