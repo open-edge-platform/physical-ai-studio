@@ -7,10 +7,11 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import yaml
+
+from getiaction.policies import get_getiaction_policy_class
 
 from .base import RuntimeAdapter
-import yaml
-import importlib
 
 
 class TorchAdapter(RuntimeAdapter):
@@ -18,10 +19,6 @@ class TorchAdapter(RuntimeAdapter):
 
     This adapter loads and runs models exported via `to_torch()`
     using PyTorch's API.
-    Note:
-        This uses `torch.export.load()` which is part of PyTorch's export API,
-        not the separate ExecuTorch runtime. This adapter is implemented but
-        will be fully tested with real policy exports in subsequent PRs.
 
     Example:
         >>> adapter = TorchAdapter()
@@ -31,7 +28,7 @@ class TorchAdapter(RuntimeAdapter):
 
     def __init__(self) -> None:
         """Initialize the Torch adapter."""
-        self._module: torch.nn.Module | None = None
+        self._policy: torch.nn.Module | None = None
         self._input_names: list[str] = []
         self._output_names: list[str] = []
 
@@ -44,6 +41,7 @@ class TorchAdapter(RuntimeAdapter):
         Raises:
             FileNotFoundError: If model file doesn't exist
             RuntimeError: If model loading fails
+            KeyError: If metadata is missing required entries
         """
         if not model_path.exists():
             msg = f"Model file not found: {model_path}"
@@ -54,27 +52,25 @@ class TorchAdapter(RuntimeAdapter):
             msg = f"Metadata file not found: {metadata_path}"
             raise FileNotFoundError(msg)
 
-        try:
-            with metadata_path.open() as f:
-                metadata = yaml.safe_load(f)
+        with metadata_path.open() as f:
+            metadata = yaml.safe_load(f)
 
             policy_class_path = metadata.get("policy_class", None)
             if policy_class_path is None:
-                msg = f"Metadata missing 'policy_class' entry."
+                msg = "Metadata missing 'policy_class' entry."
                 raise KeyError(msg)
 
-            # Import policy class dynamically
-            module_path, class_name = policy_class_path.rsplit(".", 1)
-            policy_module = importlib.import_module(module_path)
-            policy_class = getattr(policy_module, class_name)
+        try:
+            _, class_name = policy_class_path.rsplit(".", 1)
+            policy_class = get_getiaction_policy_class(class_name)
 
-            self._module = policy_class.load_from_checkpoint(model_path, map_location="cpu").eval()
+            self._policy = policy_class.load_from_checkpoint(model_path, map_location="cpu").eval()
 
-            self._input_names = [f for f in self._module.model.sample_input]
-            self._output_names = [f for f in self._module.model.config.output_features]
+            self._input_names = list(self._policy.model.sample_input.keys())
+            self._output_names = self._policy.model.extra_export_args["torch"]["output_names"]
 
         except Exception as e:
-            msg = f"Failed to load Torch Export IR model from {model_path}: {e}"
+            msg = f"Failed to load Torch model from {model_path}: {e}"
             raise RuntimeError(msg) from e
 
     def predict(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
@@ -88,16 +84,15 @@ class TorchAdapter(RuntimeAdapter):
 
         Raises:
             RuntimeError: If model is not loaded or inference fails
-            ValueError: If input names don't match model expectations
         """
-        if self._module is None:
+        if self._policy is None:
             msg = "Model not loaded. Call load() first."
             raise RuntimeError(msg)
 
         try:
             # Convert numpy arrays to torch tensors
             torch_inputs = {k: torch.from_numpy(v) for k, v in inputs.items()}
-            torch_outputs = self._module.model(torch_inputs)
+            torch_outputs = self._policy.model(torch_inputs)
             # Handle different output formats
             return self._convert_outputs_to_numpy(torch_outputs)
 
@@ -141,7 +136,7 @@ class TorchAdapter(RuntimeAdapter):
         Raises:
             RuntimeError: If model is not loaded
         """
-        if self._module is None:
+        if self._policy is None:
             msg = "Model not loaded. Call load() first."
             raise RuntimeError(msg)
         return self._input_names
@@ -156,7 +151,7 @@ class TorchAdapter(RuntimeAdapter):
         Raises:
             RuntimeError: If model is not loaded
         """
-        if self._module is None:
+        if self._policy is None:
             msg = "Model not loaded. Call load() first."
             raise RuntimeError(msg)
         return self._output_names
