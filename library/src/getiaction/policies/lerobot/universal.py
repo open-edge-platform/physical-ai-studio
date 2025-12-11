@@ -21,6 +21,7 @@ from getiaction.config.serializable import dataclass_to_dict, dict_to_dataclass
 from getiaction.data import Observation
 from getiaction.data.lerobot import FormatConverter
 from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
+from getiaction.export.mixin_export import CONFIG_KEY, DATASET_STATS_KEY, POLICY_NAME_KEY
 from getiaction.policies.base import Policy
 from getiaction.policies.lerobot.mixin import LeRobotFromConfig
 
@@ -52,8 +53,6 @@ else:
     make_policy_config = None
     make_pre_post_processors = None
     LEROBOT_AVAILABLE = False
-
-_CONFIG_KEY = "getiaction_config"
 
 
 class LeRobotPolicy(Policy, LeRobotFromConfig):
@@ -200,10 +199,10 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             checkpoint: Lightning checkpoint dictionary to modify in-place.
         """
         if self._config is not None:
-            checkpoint[_CONFIG_KEY] = dataclass_to_dict(self._config)
-            checkpoint["policy_name"] = self.policy_name
+            checkpoint[CONFIG_KEY] = dataclass_to_dict(self._config)
+            checkpoint[POLICY_NAME_KEY] = self.policy_name
             if self._dataset_stats is not None:
-                checkpoint["dataset_stats"] = dataclass_to_dict(self._dataset_stats)
+                checkpoint[DATASET_STATS_KEY] = dataclass_to_dict(self._dataset_stats)
 
     @classmethod
     def load_from_checkpoint(
@@ -269,26 +268,26 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         )
 
         # Extract model config dict
-        if _CONFIG_KEY not in checkpoint:
-            msg = f"Checkpoint missing '{_CONFIG_KEY}'. Cannot reconstruct policy without config."
+        if CONFIG_KEY not in checkpoint:
+            msg = f"Checkpoint missing '{CONFIG_KEY}'. Cannot reconstruct policy without config."
             raise KeyError(msg)
 
-        config_dict = checkpoint[_CONFIG_KEY]
+        config_dict = checkpoint[CONFIG_KEY]
 
         # Get policy_name from checkpoint or config dict
-        policy_name = checkpoint.get("policy_name")
+        policy_name = checkpoint.get(POLICY_NAME_KEY)
         if policy_name is None:
             # Fallback: try to get from config dict's 'type' field
             policy_name = config_dict.get("type")
             if policy_name is None:
-                msg = "Checkpoint missing 'policy_name'. Cannot determine which LeRobot policy to reconstruct."
+                msg = f"Checkpoint missing '{POLICY_NAME_KEY}'. Cannot determine which LeRobot policy to reconstruct."
                 raise KeyError(msg)
 
         # Reconstruct LeRobot config from dict
         policy_cls = get_policy_class(policy_name)
         config_cls = policy_cls.config_class  # type: ignore[attr-defined]
         config = dict_to_dataclass(config_cls, config_dict)
-        dataset_stats = checkpoint.get("dataset_stats")
+        dataset_stats = checkpoint.get(DATASET_STATS_KEY)
 
         # Create policy instance with the reconstructed config
         if cls is LeRobotPolicy:
