@@ -41,7 +41,7 @@ def get_available_device() -> str:
         logger.debug("CUDA device available")
         return "cuda"
 
-    if hasattr(torch, "xpu") and torch.xpu.is_available():
+    if torch.xpu.is_available():
         logger.debug("XPU device available")
         return "xpu"
 
@@ -80,9 +80,7 @@ def is_accelerator_available() -> bool:
         >>> if is_accelerator_available():
         ...     print("GPU acceleration available")
     """
-    cuda_available = torch.cuda.is_available()
-    xpu_available = hasattr(torch, "xpu") and torch.xpu.is_available()
-    return cuda_available or xpu_available
+    return get_available_device() != "cpu"
 
 
 def get_device_count(device_type: DeviceType | None = None) -> int:
@@ -105,7 +103,7 @@ def get_device_count(device_type: DeviceType | None = None) -> int:
     if device_type == "cuda":
         return torch.cuda.device_count()
     if device_type == "xpu":
-        return torch.xpu.device_count() if hasattr(torch, "xpu") else 0
+        return torch.xpu.device_count()
     return 1  # CPU
 
 
@@ -132,7 +130,7 @@ def get_device_name(device: str | torch.device | None = None) -> str:
     if device_obj.type == "cuda":
         idx = device_obj.index if device_obj.index is not None else 0
         return torch.cuda.get_device_name(idx)
-    if device_obj.type == "xpu" and hasattr(torch, "xpu"):
+    if device_obj.type == "xpu":
         idx = device_obj.index if device_obj.index is not None else 0
         return torch.xpu.get_device_name(idx)
     return "CPU"

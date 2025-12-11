@@ -1,9 +1,9 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""End-to-end integration tests for LiberoGym with policies.
+"""End-to-end integration tests for LiberoGym with first-party ACT policy.
 
-These tests verify that LiberoGym works correctly with our LeRobot policy wrappers
+These tests verify that LiberoGym works correctly with our first-party ACT policy
 in a full evaluation loop: gym -> observation -> policy -> action -> gym.
 """
 
@@ -14,10 +14,11 @@ import torch
 pytest.importorskip("libero")
 pytest.importorskip("robosuite")
 
-from getiaction.data.observation import Observation
+from getiaction.data import Feature, FeatureType, Observation
 from getiaction.gyms.libero import LiberoGym, create_libero_gyms
-from getiaction.policies.lerobot import LeRobotPolicy
-from lerobot.configs.types import FeatureType, PolicyFeature
+from getiaction.policies import ACT, ACTConfig
+from getiaction.policies.act.model import ACT as ACTModel
+from getiaction.policies.utils.normalization import NormalizationParameters
 
 
 @pytest.fixture
@@ -40,21 +41,50 @@ def device():
 
 
 @pytest.fixture
-def policy_features():
-    """Create feature definitions matching LiberoGym output."""
+def act_policy(device):
+    """Create a first-party ACT policy matching LiberoGym output."""
     input_features = {
-        "observation.images.image": PolicyFeature(type=FeatureType.VISUAL, shape=(3, 256, 256)),
-        "observation.images.image2": PolicyFeature(type=FeatureType.VISUAL, shape=(3, 256, 256)),
-        "observation.state": PolicyFeature(type=FeatureType.STATE, shape=(8,)),
+        "image": Feature(
+            ftype=FeatureType.VISUAL,
+            shape=(3, 256, 256),
+            normalization_data=NormalizationParameters(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+        ),
+        "image2": Feature(
+            ftype=FeatureType.VISUAL,
+            shape=(3, 256, 256),
+            normalization_data=NormalizationParameters(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+        ),
+        "state": Feature(
+            ftype=FeatureType.STATE,
+            shape=(8,),
+            normalization_data=NormalizationParameters(mean=[0.0] * 8, std=[1.0] * 8),
+        ),
     }
     output_features = {
-        "action": PolicyFeature(type=FeatureType.ACTION, shape=(7,)),
+        "action": Feature(
+            ftype=FeatureType.ACTION,
+            shape=(7,),
+            normalization_data=NormalizationParameters(mean=[0.0] * 7, std=[1.0] * 7),
+        ),
     }
-    return input_features, output_features
+
+    config = ACTConfig(
+        input_features=input_features,
+        output_features=output_features,
+        chunk_size=100,
+        dim_model=256,
+        n_encoder_layers=2,
+        n_decoder_layers=1,
+    )
+    model = ACTModel.from_config(config)
+    policy = ACT(model)
+    policy.to(device)
+    policy.eval()
+    return policy
 
 
 class TestLiberoGymEndToEnd:
-    """End-to-end integration tests for LiberoGym."""
+    """End-to-end integration tests for LiberoGym with first-party ACT."""
 
     def test_gym_to_observation_format(self, gym, device):
         """Test that gym output is directly usable by policies."""
@@ -66,58 +96,32 @@ class TestLiberoGymEndToEnd:
         assert "image2" in obs.images
 
         # Move to device and verify shapes/device
-        # LiberoGym returns torch tensors, so use .to() not .to_torch()
         obs = obs.to(device)
         assert obs.images["image"].shape == (1, 3, 256, 256)
         assert obs.state.shape == (1, 8)
         assert str(obs.images["image"].device).startswith(device)
 
-    def test_policy_inference_from_gym_observation(self, gym, device, policy_features):
-        """Test that policy can process gym observations and produce valid actions."""
-        input_features, output_features = policy_features
-
-        # Create policy
-        policy = LeRobotPolicy(
-            policy_name="diffusion",
-            input_features=input_features,
-            output_features=output_features,
-            config_kwargs={"crop_shape": None},
-        )
-        policy.to(device)
-        policy.eval()
-
+    def test_policy_inference_from_gym_observation(self, gym, device, act_policy):
+        """Test that ACT policy can process gym observations and produce valid actions."""
         # Get observation from gym
         obs, info = gym.reset(seed=42)
         obs = obs.to(device)
 
         # Run policy inference
         with torch.no_grad():
-            action = policy.select_action(obs)
+            action = act_policy.select_action(obs)
 
-        # Verify action format
+        # Verify action format (ACT returns chunked actions)
         assert isinstance(action, torch.Tensor)
-        assert action.shape == (1, 7)  # Batch size 1, action dim 7
-        assert action.min() >= -1.0
-        assert action.max() <= 1.0
+        assert action.shape[0] == 1  # Batch size 1
+        assert action.shape[1] == 100  # Chunk size
+        assert action.shape[2] == 7  # Action dim
 
-    def test_full_rollout_loop(self, gym, device, policy_features):
+    def test_full_rollout_loop(self, gym, device, act_policy):
         """Test a complete rollout loop: gym -> policy -> gym -> policy -> ..."""
-        input_features, output_features = policy_features
-
-        # Create policy
-        policy = LeRobotPolicy(
-            policy_name="diffusion",
-            input_features=input_features,
-            output_features=output_features,
-            config_kwargs={"crop_shape": None},
-        )
-        policy.to(device)
-        policy.eval()
-
         # Reset
         obs, info = gym.reset(seed=42)
         obs = obs.to(device)
-        policy.reset()
 
         # Run rollout
         num_steps = 10
@@ -126,10 +130,14 @@ class TestLiberoGymEndToEnd:
         for step in range(num_steps):
             # Policy inference
             with torch.no_grad():
-                action = policy.select_action(obs)
+                action = act_policy.select_action(obs)
+
+            # ACT returns chunked actions [batch, chunk_size, action_dim]
+            # Take the first action from the chunk
+            action_to_execute = action[:, 0, :].squeeze(0).cpu().numpy()
 
             # Step environment
-            obs, reward, terminated, truncated, info = gym.step(action.squeeze(0).cpu().numpy())
+            obs, reward, terminated, truncated, info = gym.step(action_to_execute)
             obs = obs.to(device)
             total_reward += reward
 
@@ -146,40 +154,27 @@ class TestLiberoGymEndToEnd:
         # Verify we completed the loop
         assert step >= 0
 
-    def test_multiple_episodes(self, gym, device, policy_features):
+    def test_multiple_episodes(self, gym, device, act_policy):
         """Test running multiple episodes with reset."""
-        input_features, output_features = policy_features
-
-        policy = LeRobotPolicy(
-            policy_name="diffusion",
-            input_features=input_features,
-            output_features=output_features,
-            config_kwargs={"crop_shape": None},
-        )
-        policy.to(device)
-        policy.eval()
-
         num_episodes = 2
         steps_per_episode = 5
 
         for ep in range(num_episodes):
             obs, info = gym.reset(seed=42 + ep)
             obs = obs.to(device)
-            policy.reset()
 
             for step in range(steps_per_episode):
                 with torch.no_grad():
-                    action = policy.select_action(obs)
-                obs, reward, terminated, truncated, info = gym.step(action.squeeze(0).cpu().numpy())
+                    action = act_policy.select_action(obs)
+                action_to_execute = action[:, 0, :].squeeze(0).cpu().numpy()
+                obs, reward, terminated, truncated, info = gym.step(action_to_execute)
                 obs = obs.to(device)
 
                 if terminated:
                     break
 
-    def test_create_libero_gyms_with_policy(self, device, policy_features):
-        """Test create_libero_gyms helper works with policy evaluation."""
-        input_features, output_features = policy_features
-
+    def test_create_libero_gyms_with_policy(self, device, act_policy):
+        """Test create_libero_gyms helper works with ACT policy evaluation."""
         # Create multiple gyms
         gyms = create_libero_gyms(
             task_suites=["libero_spatial", "libero_object"],
@@ -190,43 +185,22 @@ class TestLiberoGymEndToEnd:
 
         assert len(gyms) == 2
 
-        # Create policy
-        policy = LeRobotPolicy(
-            policy_name="diffusion",
-            input_features=input_features,
-            output_features=output_features,
-            config_kwargs={"crop_shape": None},
-        )
-        policy.to(device)
-        policy.eval()
-
         # Test each gym
         for g in gyms:
             obs, info = g.reset(seed=42)
             obs = obs.to(device)
-            policy.reset()
 
             with torch.no_grad():
-                action = policy.select_action(obs)
+                action = act_policy.select_action(obs)
 
-            obs, reward, terminated, truncated, info = g.step(action.squeeze(0).cpu().numpy())
+            action_to_execute = action[:, 0, :].squeeze(0).cpu().numpy()
+            obs, reward, terminated, truncated, info = g.step(action_to_execute)
 
             assert isinstance(obs, Observation)
             g.close()
 
-    def test_control_modes_with_policy(self, device, policy_features):
-        """Test both control modes work with policy evaluation."""
-        input_features, output_features = policy_features
-
-        policy = LeRobotPolicy(
-            policy_name="diffusion",
-            input_features=input_features,
-            output_features=output_features,
-            config_kwargs={"crop_shape": None},
-        )
-        policy.to(device)
-        policy.eval()
-
+    def test_control_modes_with_policy(self, device, act_policy):
+        """Test both control modes work with ACT policy evaluation."""
         for control_mode in ["relative", "absolute"]:
             gym = LiberoGym(
                 task_suite="libero_spatial",
@@ -238,12 +212,12 @@ class TestLiberoGymEndToEnd:
 
             obs, info = gym.reset(seed=42)
             obs = obs.to(device)
-            policy.reset()
 
             with torch.no_grad():
-                action = policy.select_action(obs)
+                action = act_policy.select_action(obs)
 
-            obs, reward, terminated, truncated, info = gym.step(action.squeeze(0).cpu().numpy())
+            action_to_execute = action[:, 0, :].squeeze(0).cpu().numpy()
+            obs, reward, terminated, truncated, info = gym.step(action_to_execute)
 
             assert isinstance(obs, Observation)
             gym.close()
