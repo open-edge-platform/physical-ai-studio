@@ -5,9 +5,11 @@
 
 from __future__ import annotations
 
+import tempfile
 from unittest.mock import MagicMock, patch
 
 import pytest
+import torch
 
 
 # Skip all tests if lerobot not installed
@@ -240,3 +242,168 @@ class TestLeRobotPolicyUniversalWrapper:
         policy = LeRobotPolicy.from_dataset("vqbet", pusht_dataset)
         assert policy._config is not None
         assert "vqbet" in policy._config.__class__.__name__.lower()
+
+
+class TestLeRobotPolicyCheckpoint:
+    """Tests for checkpoint save and load functionality."""
+
+    def test_load_from_checkpoint_universal_wrapper(self, lerobot_imports, pusht_dataset):
+        """Test checkpoint save and load preserves model config and weights for universal wrapper."""
+        LeRobotPolicy = lerobot_imports["LeRobotPolicy"]
+
+        # Create a policy
+        original_policy = LeRobotPolicy.from_dataset("act", pusht_dataset)
+
+        # Save checkpoint manually (simulating Lightning checkpoint)
+        with tempfile.NamedTemporaryFile(suffix=".ckpt", delete=False) as f:
+            checkpoint_path = f.name
+
+        try:
+            checkpoint = {"state_dict": original_policy.state_dict()}
+            original_policy.on_save_checkpoint(checkpoint)
+            # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+            torch.save(checkpoint, checkpoint_path)
+
+            # Load from checkpoint
+            loaded_policy = LeRobotPolicy.load_from_checkpoint(checkpoint_path)
+
+            # Verify policy type
+            assert isinstance(loaded_policy, LeRobotPolicy)
+            assert loaded_policy.policy_name == "act"
+
+            # Verify config is preserved
+            assert loaded_policy._config is not None
+            assert loaded_policy._config.type == original_policy._config.type
+            assert loaded_policy._config.optimizer_lr == original_policy._config.optimizer_lr
+
+            # Verify weights are loaded correctly
+            orig_params = list(original_policy.lerobot_policy.parameters())
+            loaded_params = list(loaded_policy.lerobot_policy.parameters())
+            assert len(orig_params) == len(loaded_params)
+            for orig, loaded in zip(orig_params, loaded_params, strict=True):
+                assert torch.allclose(orig, loaded), "Weights should match after loading"
+
+        finally:
+            import os
+
+            os.unlink(checkpoint_path)
+
+    def test_load_from_checkpoint_explicit_wrapper_act(self, lerobot_imports, pusht_dataset):
+        """Test checkpoint save and load for explicit ACT wrapper."""
+        from getiaction.policies.lerobot import ACT
+
+        # Create a policy using explicit wrapper
+        # Note: n_action_steps must be <= chunk_size for ACT
+        original_policy = ACT.from_dataset(pusht_dataset, chunk_size=10, n_action_steps=10)
+
+        # Save checkpoint
+        with tempfile.NamedTemporaryFile(suffix=".ckpt", delete=False) as f:
+            checkpoint_path = f.name
+
+        try:
+            checkpoint = {"state_dict": original_policy.state_dict()}
+            original_policy.on_save_checkpoint(checkpoint)
+            # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+            torch.save(checkpoint, checkpoint_path)
+
+            # Load from checkpoint using explicit wrapper
+            loaded_policy = ACT.load_from_checkpoint(checkpoint_path)
+
+            # Verify it's an ACT instance
+            assert isinstance(loaded_policy, ACT)
+            assert loaded_policy.policy_name == "act"
+
+            # Verify config is preserved
+            assert loaded_policy._config.chunk_size == original_policy._config.chunk_size
+
+            # Verify weights match
+            orig_params = list(original_policy.lerobot_policy.parameters())
+            loaded_params = list(loaded_policy.lerobot_policy.parameters())
+            assert len(orig_params) == len(loaded_params)
+            for orig, loaded in zip(orig_params, loaded_params, strict=True):
+                assert torch.allclose(orig, loaded), "Weights should match after loading"
+
+        finally:
+            import os
+
+            os.unlink(checkpoint_path)
+
+    def test_load_from_checkpoint_explicit_wrapper_diffusion(self, lerobot_imports, pusht_dataset):
+        """Test checkpoint save and load for explicit Diffusion wrapper."""
+        from getiaction.policies.lerobot import Diffusion
+
+        # Create a policy using explicit wrapper
+        original_policy = Diffusion.from_dataset(pusht_dataset, horizon=16)
+
+        # Save checkpoint
+        with tempfile.NamedTemporaryFile(suffix=".ckpt", delete=False) as f:
+            checkpoint_path = f.name
+
+        try:
+            checkpoint = {"state_dict": original_policy.state_dict()}
+            original_policy.on_save_checkpoint(checkpoint)
+            # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+            torch.save(checkpoint, checkpoint_path)
+
+            # Load from checkpoint using explicit wrapper
+            loaded_policy = Diffusion.load_from_checkpoint(checkpoint_path)
+
+            # Verify it's a Diffusion instance
+            assert isinstance(loaded_policy, Diffusion)
+            assert loaded_policy.policy_name == "diffusion"
+
+            # Verify config is preserved
+            assert loaded_policy._config.horizon == original_policy._config.horizon
+
+            # Verify weights match
+            orig_params = list(original_policy.lerobot_policy.parameters())
+            loaded_params = list(loaded_policy.lerobot_policy.parameters())
+            assert len(orig_params) == len(loaded_params)
+            for orig, loaded in zip(orig_params, loaded_params, strict=True):
+                assert torch.allclose(orig, loaded), "Weights should match after loading"
+
+        finally:
+            import os
+
+            os.unlink(checkpoint_path)
+
+    def test_load_from_checkpoint_missing_config_raises_error(self, tmp_path):
+        """Test that loading checkpoint without config raises KeyError."""
+        from getiaction.policies.lerobot import LeRobotPolicy
+
+        checkpoint_path = tmp_path / "test.ckpt"
+        checkpoint = {"state_dict": {}}
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        torch.save(checkpoint, str(checkpoint_path))
+
+        with pytest.raises(KeyError, match="Checkpoint missing"):
+            LeRobotPolicy.load_from_checkpoint(str(checkpoint_path))
+
+    def test_load_from_checkpoint_preserves_dataset_stats(self, lerobot_imports, pusht_dataset):
+        """Test that dataset_stats are preserved in checkpoint."""
+        LeRobotPolicy = lerobot_imports["LeRobotPolicy"]
+
+        # Create a policy (which will have dataset_stats)
+        original_policy = LeRobotPolicy.from_dataset("act", pusht_dataset)
+
+        # Save checkpoint
+        with tempfile.NamedTemporaryFile(suffix=".ckpt", delete=False) as f:
+            checkpoint_path = f.name
+
+        try:
+            checkpoint = {"state_dict": original_policy.state_dict()}
+            original_policy.on_save_checkpoint(checkpoint)
+            # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+            torch.save(checkpoint, checkpoint_path)
+
+            # Load from checkpoint
+            loaded_policy = LeRobotPolicy.load_from_checkpoint(checkpoint_path)
+
+            # Verify dataset_stats are preserved (if they were saved)
+            if "dataset_stats" in checkpoint:
+                assert loaded_policy._dataset_stats is not None
+
+        finally:
+            import os
+
+            os.unlink(checkpoint_path)
