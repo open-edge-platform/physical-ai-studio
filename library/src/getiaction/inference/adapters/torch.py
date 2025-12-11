@@ -9,7 +9,7 @@ import numpy as np
 import torch
 import yaml
 
-from getiaction.policies import get_getiaction_policy_class
+from getiaction.policies import get_getiaction_policy_class as get_policy_class
 
 from .base import RuntimeAdapter
 
@@ -68,7 +68,7 @@ class TorchAdapter(RuntimeAdapter):
 
         try:
             _, class_name = policy_class_path.rsplit(".", 1)
-            policy_class = get_getiaction_policy_class(class_name)
+            policy_class = get_policy_class(class_name)
 
             self._policy = policy_class.load_from_checkpoint(model_path, map_location="cpu").to(self.device).eval()
 

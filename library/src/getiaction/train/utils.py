@@ -24,7 +24,7 @@ def _get_delta_indices(model: Any, attr_name: str) -> list[int] | None:  # noqa:
         attr_name: Name of the delta indices attribute (e.g., 'observation_delta_indices')
 
     Returns:
-        List of delta indices or None if not available
+        List of delta indices or None if not available/not needed.
     """
     # Try direct attribute access (first-party policies like ACT)
     if hasattr(model, attr_name):
@@ -37,7 +37,9 @@ def _get_delta_indices(model: Any, attr_name: str) -> list[int] | None:  # noqa:
         # action_delta_indices -> n_action_steps, etc.
         if attr_name == "observation_delta_indices" and hasattr(config, "n_obs_steps"):
             n_steps = config.n_obs_steps
-            return list(range(-n_steps + 1, 1)) if n_steps > 0 else None
+            # Only add time dimension if n_obs_steps > 1 (i.e., we need history)
+            # n_obs_steps=1 means just current observation, no time dimension needed
+            return list(range(-n_steps + 1, 1)) if n_steps > 1 else None
         if attr_name == "action_delta_indices" and hasattr(config, "n_action_steps"):
             n_steps = config.n_action_steps
             return list(range(n_steps)) if n_steps > 0 else None
