@@ -13,7 +13,7 @@ data:
     repo_id: "lerobot/pusht"
     train_batch_size: 64
     data_format: "getiaction"
-    val_gyms:
+    val_gym:
       class_path: getiaction.gyms.pusht.PushTGym
     image_transforms:
       class_path: torchvision.transforms.v2.Compose

@@ -16,6 +16,8 @@ import yaml
 from getiaction import __version__
 
 CONFIG_KEY = "model_config"
+POLICY_NAME_KEY = "policy_name"
+DATASET_STATS_KEY = "dataset_stats"
 
 
 class ExportBackend(StrEnum):
