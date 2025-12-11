@@ -15,7 +15,16 @@ from .lerobot import get_lerobot_policy
 if TYPE_CHECKING:
     from .base import Policy
 
-__all__ = ["ACT", "ACTConfig", "ACTModel", "Dummy", "DummyConfig", "get_policy", "lerobot"]
+__all__ = [
+    "ACT",
+    "ACTConfig",
+    "ACTModel",
+    "Dummy",
+    "DummyConfig",
+    "get_getiaction_policy_class",
+    "get_policy",
+    "lerobot",
+]
 
 
 def get_policy(policy_name: str, *, source: str = "getiaction", **kwargs) -> Policy:  # noqa: ANN003
@@ -70,17 +79,36 @@ def get_policy(policy_name: str, *, source: str = "getiaction", **kwargs) -> Pol
     """
     source = source.lower()
 
+    # First-party policies
     if source == "getiaction":
-        # First-party policies
-        if policy_name == "act":
-            return ACT(**kwargs)
-
-        msg = f"Unknown getiaction policy: {policy_name}. Supported policies: act"
-        raise ValueError(msg)
+        return get_getiaction_policy_class(policy_name)(**kwargs)
 
     if source == "lerobot":
         # LeRobot policies via wrapper
         return get_lerobot_policy(policy_name, **kwargs)
 
     msg = f"Unknown source: {source}. Supported sources: getiaction, lerobot"
+    raise ValueError(msg)
+
+
+def get_getiaction_policy_class(policy_name: str) -> type[Policy]:
+    """Get policy class by name.
+
+    Args:
+        policy_name: Name of the policy class to retrieve.
+
+    Returns:
+        Policy class corresponding to the given name.
+
+    Raises:
+        ValueError: If the policy name is unknown.
+    """
+    policy_name = policy_name.lower()
+
+    if policy_name == "act":
+        return ACT
+    if policy_name == "dummy":
+        return Dummy
+
+    msg = f"Unknown getiaction policy: {policy_name}. Supported policies: act, dummy"
     raise ValueError(msg)
