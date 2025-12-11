@@ -5,8 +5,15 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 import torch
+
+# Configure LeRobot to avoid interactive prompts during test collection.
+# This is needed because importing robosuite (used by LIBERO) triggers
+# LeRobot initialization which checks for this environment variable.
+os.environ.setdefault("HF_LEROBOT_HOME", "/tmp/lerobot_test")
 
 
 @pytest.fixture
