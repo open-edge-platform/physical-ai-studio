@@ -48,6 +48,7 @@ class TorchAdapter(RuntimeAdapter):
             RuntimeError: If model loading fails
             KeyError: If metadata is missing required entries
         """
+        model_path = Path(model_path)
         if not model_path.exists():
             msg = f"Model file not found: {model_path}"
             raise FileNotFoundError(msg)
