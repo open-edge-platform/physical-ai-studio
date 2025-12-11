@@ -80,7 +80,7 @@ class TorchAdapter(RuntimeAdapter):
             raise RuntimeError(msg) from e
 
     def predict(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-        """Run inference using Torch Export IR.
+        """Run inference using Torch.
 
         Args:
             inputs: Dictionary mapping input names to numpy arrays
