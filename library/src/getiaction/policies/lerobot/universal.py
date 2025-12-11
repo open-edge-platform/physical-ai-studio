@@ -12,11 +12,12 @@ support, see the specific policy modules (e.g., ACT).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import IO, TYPE_CHECKING, Any
 
 import torch
 from lightning_utilities import module_available
 
+from getiaction.config.serializable import dataclass_to_dict, dict_to_dataclass
 from getiaction.data import Observation
 from getiaction.data.lerobot import FormatConverter
 from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
@@ -24,6 +25,9 @@ from getiaction.policies.base import Policy
 from getiaction.policies.lerobot.mixin import LeRobotFromConfig
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
     from lerobot.configs.types import FeatureType, PolicyFeature
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     from lerobot.policies.pretrained import PreTrainedPolicy
@@ -48,6 +52,8 @@ else:
     make_policy_config = None
     make_pre_post_processors = None
     LEROBOT_AVAILABLE = False
+
+_CONFIG_KEY = "getiaction_config"
 
 
 class LeRobotPolicy(Policy, LeRobotFromConfig):
@@ -186,6 +192,133 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             self._initialize_policy(None, None, config, dataset_stats)
 
         self.save_hyperparameters()
+
+    def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        """Save model config and policy name to checkpoint for reconstruction.
+
+        Args:
+            checkpoint: Lightning checkpoint dictionary to modify in-place.
+        """
+        if self._config is not None:
+            checkpoint[_CONFIG_KEY] = dataclass_to_dict(self._config)
+            checkpoint["policy_name"] = self.policy_name
+            if self._dataset_stats is not None:
+                checkpoint["dataset_stats"] = dataclass_to_dict(self._dataset_stats)
+
+    @classmethod
+    def load_from_checkpoint(
+        cls,
+        checkpoint_path: str | Path | IO[bytes],
+        map_location: torch.device | str | int | Callable | dict | None = None,
+        hparams_file: str | Path | None = None,
+        strict: bool | None = None,  # noqa: FBT001
+        weights_only: bool | None = None,  # noqa: FBT001
+        **kwargs: Any,  # noqa: ANN401
+    ) -> LeRobotPolicy:
+        """Load a LeRobot policy from a Lightning checkpoint.
+
+        This method loads the checkpoint, reconstructs the underlying LeRobot policy
+        from the saved config, and restores the model weights.
+
+        Args:
+            checkpoint_path: Path to the checkpoint file (.ckpt or .pt).
+            map_location: Device to map tensors to. If None, uses default device.
+            hparams_file: Unused. Kept for Lightning compatibility.
+            strict: Unused. Kept for Lightning compatibility.
+            weights_only: Whether to load only weights (default True for security).
+            **kwargs: Additional arguments passed to the policy constructor.
+
+        Returns:
+            Loaded policy with weights restored, ready for inference.
+
+        Raises:
+            KeyError: If checkpoint doesn't contain required model config.
+            ImportError: If LeRobot is not installed.
+
+        Examples:
+            Load checkpoint for inference:
+
+                >>> from getiaction.policies.lerobot import LeRobotPolicy
+                >>> policy = LeRobotPolicy.load_from_checkpoint("checkpoints/epoch=10.ckpt")
+                >>> action = policy.select_action(observation)
+
+            Load checkpoint to specific device:
+
+                >>> policy = LeRobotPolicy.load_from_checkpoint(
+                ...     "checkpoints/best.ckpt",
+                ...     map_location="xpu",
+                ... )
+        """
+        del hparams_file, strict  # Unused, kept for Lightning compatibility
+
+        if not LEROBOT_AVAILABLE:
+            msg = (
+                "LeRobotPolicy.load_from_checkpoint requires LeRobot to be installed.\n\n"
+                "Install with:\n"
+                "    uv pip install lerobot\n\n"
+                "Or install getiaction with LeRobot support:\n"
+                "    uv pip install getiaction[lerobot]"
+            )
+            raise ImportError(msg)
+
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        checkpoint = torch.load(  # nosec B614
+            checkpoint_path,
+            map_location=map_location,
+            weights_only=weights_only if weights_only is not None else True,
+        )
+
+        # Extract model config dict
+        if _CONFIG_KEY not in checkpoint:
+            msg = f"Checkpoint missing '{_CONFIG_KEY}'. Cannot reconstruct policy without config."
+            raise KeyError(msg)
+
+        config_dict = checkpoint[_CONFIG_KEY]
+
+        # Get policy_name from checkpoint or config dict
+        policy_name = checkpoint.get("policy_name")
+        if policy_name is None:
+            # Fallback: try to get from config dict's 'type' field
+            policy_name = config_dict.get("type")
+            if policy_name is None:
+                msg = "Checkpoint missing 'policy_name'. Cannot determine which LeRobot policy to reconstruct."
+                raise KeyError(msg)
+
+        # Reconstruct LeRobot config from dict
+        policy_cls = get_policy_class(policy_name)
+        config_cls = policy_cls.config_class  # type: ignore[attr-defined]
+        config = dict_to_dataclass(config_cls, config_dict)
+        dataset_stats = checkpoint.get("dataset_stats")
+
+        # Create policy instance with the reconstructed config
+        if cls is LeRobotPolicy:
+            # Universal wrapper - can use normal initialization
+            policy = cls(
+                policy_name=policy_name,
+                config=config,
+                dataset_stats=dataset_stats,
+                **kwargs,
+            )
+        else:
+            # Explicit wrapper (ACT, Diffusion, Groot, etc.) - bypass their __init__
+            # and call parent LeRobotPolicy.__init__ directly
+            policy = cls.__new__(cls)
+            # Initialize as PyTorch Module first
+            super(LeRobotPolicy, policy).__init__()
+            # Now call LeRobotPolicy.__init__ with the config
+            LeRobotPolicy.__init__(
+                policy,
+                policy_name=policy_name,
+                config=config,
+                dataset_stats=dataset_stats,
+                **kwargs,
+            )
+
+        # Load state dict (model weights + normalizer stats)
+        if "state_dict" in checkpoint:
+            policy.load_state_dict(checkpoint["state_dict"])
+
+        return policy
 
     @classmethod
     def from_dataset(
@@ -431,7 +564,6 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         """
         del batch_idx  # Unused argument
 
-        # Use forward() which applies preprocessing
         total_loss, loss_dict = self(batch)
 
         # Log individual loss components if available (skip non-scalar values and 'loss' key)
@@ -499,11 +631,8 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         # Convert to LeRobot format if needed
         batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
 
-        # Apply preprocessor (normalizes, moves to device, adds batch dim if needed)
-        batch_dict = self._preprocessor(batch_dict)
-
         if self.training:
-            # Training mode: compute loss
+            # Training mode: data already preprocessed by LeRobot DataLoader
             output = self.lerobot_policy(batch_dict)
 
             # Handle different return formats (some policies return tuple, some just loss)
@@ -511,7 +640,8 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
                 return output
             return output, None
 
-        # Inference mode: Generate actions via select_action
+        # Inference mode: apply preprocessor (normalizes, adds batch dim)
+        batch_dict = self._preprocessor(batch_dict)
         action = self.lerobot_policy.select_action(batch_dict)
         return self._postprocessor(action)
 
