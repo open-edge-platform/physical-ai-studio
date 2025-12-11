@@ -7,8 +7,9 @@ This package provides integration with HuggingFace LeRobot datasets, including:
 - Format conversion between GetiAction Observation and LeRobot dict formats
 - Dataset adapter for wrapping LeRobotDataset
 - DataModule for PyTorch Lightning integration
+- Utilities for delta timestamps configuration
 
-Example:
+Examples:
     >>> from getiaction.data.lerobot import LeRobotDataModule, FormatConverter
 
     >>> # Create datamodule
@@ -21,9 +22,14 @@ Example:
     >>> # Convert between observation dict formats
     >>> lerobot_dict = FormatConverter.to_lerobot_dict(observation)
     >>> observation = FormatConverter.to_observation(lerobot_dict)
+
+    >>> # Get delta timestamps for a policy
+    >>> from getiaction.data.lerobot import get_delta_timestamps_from_policy
+    >>> delta_timestamps = get_delta_timestamps_from_policy("act", fps=10)
 """
 
 from .converters import DataFormat, FormatConverter
 from .datamodule import LeRobotDataModule
+from .utils import get_delta_timestamps_from_policy
 
-__all__ = ["DataFormat", "FormatConverter", "LeRobotDataModule"]
+__all__ = ["DataFormat", "FormatConverter", "LeRobotDataModule", "get_delta_timestamps_from_policy"]
