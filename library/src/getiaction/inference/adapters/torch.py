@@ -1,7 +1,7 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Torch Export IR runtime adapter for inference."""
+"""Torch runtime adapter for inference."""
 
 from pathlib import Path
 
@@ -37,7 +37,7 @@ class TorchAdapter(RuntimeAdapter):
         self._input_names: list[str] = []
         self._output_names: list[str] = []
 
-    def load(self, model_path: Path) -> None:
+    def load(self, model_path: Path | str) -> None:
         """Load Torch model from file.
 
         Args:
