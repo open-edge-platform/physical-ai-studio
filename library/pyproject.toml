@@ -82,6 +82,7 @@ groot = [
 # All optional dependencies
 all = [
     "getiaction[tests]",
+    "getiaction[libero]",
     "getiaction[groot]",
 ]
 
