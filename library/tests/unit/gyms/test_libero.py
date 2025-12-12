@@ -27,6 +27,7 @@ class TestLiberoGym:
             task_id=0,
             observation_height=224,
             observation_width=224,
+            init_states=False,  # Don't require init_states files in unit tests
         )
         yield gym_instance
         gym_instance.close()
@@ -85,7 +86,7 @@ class TestLiberoGym:
     @pytest.mark.parametrize("obs_type", ["pixels", "pixels_agent_pos"])
     def test_obs_types(self, obs_type):
         """Test different observation types."""
-        gym_instance = LiberoGym(task_suite="libero_spatial", task_id=0, obs_type=obs_type)
+        gym_instance = LiberoGym(task_suite="libero_spatial", task_id=0, obs_type=obs_type, init_states=False)
         obs, _ = gym_instance.reset(seed=42)
 
         # obs is now an Observation object
@@ -100,7 +101,7 @@ class TestLiberoGym:
 
     def test_different_suite(self):
         """Test different task suite."""
-        gym_instance = LiberoGym(task_suite="libero_object", task_id=0)
+        gym_instance = LiberoGym(task_suite="libero_object", task_id=0, init_states=False)
         assert gym_instance.get_max_episode_steps() == TASK_SUITE_MAX_STEPS["libero_object"]
         assert gym_instance.max_episode_steps == TASK_SUITE_MAX_STEPS["libero_object"]
         gym_instance.close()
@@ -110,6 +111,7 @@ class TestLiberoGym:
         gyms = create_libero_gyms(
             task_suites=["libero_spatial", "libero_object"],
             task_ids=[0],
+            init_states=False,  # Don't require init_states files in unit tests
         )
 
         assert len(gyms) == 2
@@ -130,6 +132,7 @@ class TestLiberoGym:
             task_id=0,
             observation_height=128,
             observation_width=128,
+            init_states=False,
         )
         obs, _ = gym_instance.reset(seed=42)
         # Observation has shape (1, 3, H, W)
@@ -145,19 +148,19 @@ class TestLiberoGym:
 
     def test_close_idempotent(self):
         """Test close can be called multiple times."""
-        gym_instance = LiberoGym(task_suite="libero_spatial", task_id=0)
+        gym_instance = LiberoGym(task_suite="libero_spatial", task_id=0, init_states=False)
         gym_instance.close()
         gym_instance.close()  # Should not raise
 
     def test_control_mode(self):
         """Test control mode configuration."""
         # Test relative mode (default)
-        gym_rel = LiberoGym(task_suite="libero_spatial", task_id=0, control_mode="relative")
+        gym_rel = LiberoGym(task_suite="libero_spatial", task_id=0, control_mode="relative", init_states=False)
         gym_rel.reset(seed=42)
         gym_rel.close()
 
         # Test absolute mode
-        gym_abs = LiberoGym(task_suite="libero_spatial", task_id=0, control_mode="absolute")
+        gym_abs = LiberoGym(task_suite="libero_spatial", task_id=0, control_mode="absolute", init_states=False)
         gym_abs.reset(seed=42)
         gym_abs.close()
 
