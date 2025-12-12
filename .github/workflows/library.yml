@@ -57,5 +57,9 @@ jobs:
           uv sync --frozen --extra tests --extra libero
       - name: Run python unit tests
         working-directory: library
+        env:
+          # Headless rendering for MuJoCo/OpenGL (must be set before any imports)
+          MUJOCO_GL: egl
+          PYOPENGL_PLATFORM: egl
         run: |
           uv run pytest tests/unit

@@ -41,9 +41,9 @@ if not libero_config_file.exists():
 
     libero_config_file.write_text(yaml.dump(default_config))
 
-# Configure MuJoCo for headless rendering (needed in CI environments)
-os.environ.setdefault("MUJOCO_GL", "egl")
-os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
+# Note: MUJOCO_GL and PYOPENGL_PLATFORM env vars for headless rendering
+# must be set BEFORE Python starts (e.g., in CI workflow), not here.
+# Setting them here is too late as OpenGL may already be initialized.
 
 
 @pytest.fixture
