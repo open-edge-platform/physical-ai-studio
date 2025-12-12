@@ -58,7 +58,7 @@ model:
     gradient_checkpointing: false # Enable to reduce memory (still requires 40GB+ for training)
 
     # Optimization
-    learning_rate: 2.5e-5
+    optimizer_lr: 2.5e-5
     optimizer_betas: [0.9, 0.95]
     optimizer_eps: 1.0e-8
     optimizer_weight_decay: 0.01

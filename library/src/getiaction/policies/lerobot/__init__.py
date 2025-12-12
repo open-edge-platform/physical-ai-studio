@@ -11,28 +11,13 @@ Approaches:
         - Full parameter definitions with IDE autocomplete
         - Type-safe with compile-time checking
         - Direct YAML configuration support
-        - Currently available: ACT, Diffusion, Groot, Pi0, Pi05
+        - Currently available: ACT, Diffusion
 
     2. **Universal Wrapper** (Flexible for advanced users):
         - Single wrapper for all LeRobot policies
         - Runtime policy selection
         - Minimal code overhead
-        - Supports: act, diffusion, groot, vqbet, tdmpc, sac, pi0, pi05, pi0fast, smolvla
-
-Support Matrix:
-    +------------+------+-----+-----+--------+-----------------+
-    | Policy     | CUDA | XPU | CPU | Export | Notes           |
-    +============+======+=====+=====+========+=================+
-    | ACT        |  ✓   |  ✓  |  ✓  |   ✓    |                 |
-    | Diffusion  |  ✓   |  ✓  |  ✓  |   ✓    |                 |
-    | Groot      |  ✓   |  ✗  |  ✗  |   ✗    | Flash Attention |
-    | Pi0        |  ✓   |  ✓  |  ✓  |   ✗    | Eager attention |
-    | Pi05       |  ✓   |  ✓  |  ✓  |   ✗    | Eager attention |
-    +------------+------+-----+-----+--------+-----------------+
-
-    Export = ONNX/OpenVINO support via LeRobotExport mixin
-    Groot requires Flash Attention (CUDA only)
-    Pi0/Pi05 cannot be exported due to iterative denoising loops
+        - Supports: act, diffusion, vqbet, tdmpc, sac, pi0, pi05, pi0fast, smolvla
 
 Note:
     LeRobot must be installed to use these policies:
@@ -158,6 +143,28 @@ class SAC(LeRobotPolicy):
         super().__init__(policy_name="sac", **kwargs)
 
 
+class PI0(LeRobotPolicy):
+    """PI0 Policy via universal wrapper.
+
+    This is a convenience class that wraps LeRobotPolicy with policy_name="pi0".
+    """
+
+    def __init__(self, **kwargs) -> None:  # noqa: ANN003
+        """Initialize PI0 policy."""
+        super().__init__(policy_name="pi0", **kwargs)
+
+
+class PI05(LeRobotPolicy):
+    """PI0.5 Policy via universal wrapper.
+
+    This is a convenience class that wraps LeRobotPolicy with policy_name="pi05".
+    """
+
+    def __init__(self, **kwargs) -> None:  # noqa: ANN003
+        """Initialize PI0.5 policy."""
+        super().__init__(policy_name="pi05", **kwargs)
+
+
 class PI0Fast(LeRobotPolicy):
     """PI0Fast Policy via universal wrapper.
 
@@ -182,6 +189,8 @@ class SmolVLA(LeRobotPolicy):
 
 __all__ = [
     "ACT",
+    "PI0",
+    "PI05",
     "SAC",
     "TDMPC",
     "Diffusion",
@@ -205,8 +214,8 @@ def get_lerobot_policy(policy_name: str, **kwargs) -> LeRobotPolicy:  # noqa: AN
 
     Args:
         policy_name: Name of the LeRobot policy to create. Supported values:
-            - Explicit wrappers: "act", "diffusion"
-            - Universal wrapper: "vqbet", "tdmpc", "sac", "pi0", "pi05", "pi0fast", "smolvla"
+            - Explicit wrappers (recommended): "act", "diffusion", "groot", "pi0", "pi05"
+            - Convenience wrappers: "vqbet", "tdmpc", "sac", "pi0fast", "smolvla"
         **kwargs: Additional keyword arguments passed to the policy constructor.
 
     Returns:
@@ -254,7 +263,7 @@ def get_lerobot_policy(policy_name: str, **kwargs) -> LeRobotPolicy:  # noqa: AN
         "groot": Groot,
         "pi0": Pi0,
         "pi05": Pi05,
-        # Universal wrapper classes
+        # Convenience wrapper classes (universal wrapper)
         "vqbet": VQBeT,
         "tdmpc": TDMPC,
         "sac": SAC,
@@ -307,7 +316,7 @@ def list_available_policies() -> list[str]:
             "Groot",
             "Pi0",
             "Pi05",
-            # Universal wrapper (remaining LeRobot policies)
+            # Convenience wrappers (universal wrapper)
             "pi0fast",
             "sac",
             "smolvla",
