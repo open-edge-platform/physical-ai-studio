@@ -79,9 +79,8 @@ pi = [
 
 # NVIDIA GR00T-N1 foundation model
 # Requires ~24GB+ GPU memory for training, supports LoRA fine-tuning
-# Note: transformers>=4.54.0 required for _prepare_image_like_inputs fix
+# Note: transformers dependency satisfied by lerobot core dependency or pi extra git version
 groot = [
-    "transformers>=4.54.0,<5.0.0",
     "peft>=0.13.0,<1.0.0",
     "dm-tree>=0.1.8,<1.0.0",
     "timm>=1.0.0,<1.1.0",
