@@ -55,7 +55,8 @@ Required:
 """
 
 from getiaction.policies.groot.components import EagleBackbone, EagleProcessor
-from getiaction.policies.groot.model import GrootConfig, GrootModel
+from getiaction.policies.groot.config import GrootConfig
+from getiaction.policies.groot.model import GrootModel
 from getiaction.policies.groot.policy import Groot
 from getiaction.policies.groot.preprocessor import (
     GrootPostprocessor,

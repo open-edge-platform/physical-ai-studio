@@ -22,7 +22,6 @@ from __future__ import annotations
 import json
 import logging
 from collections import deque
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -35,69 +34,6 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class GrootConfig:
-    """Configuration for GrootModel.
-
-    This dataclass can be used with `GrootModel.from_config()` for convenient
-    configuration-based instantiation, or values can be passed directly as
-    explicit arguments to `GrootModel.from_pretrained()`.
-
-    Attributes:
-        pretrained_model_name_or_path: HuggingFace model ID or local path.
-        n_action_steps: Number of action steps to execute per chunk.
-        use_bf16: Whether to use bfloat16 precision for compute.
-        tokenizer_assets_repo: HF repo ID for Eagle tokenizer assets.
-        attn_implementation: Attention implementation ('sdpa', 'flash_attention_2', 'eager').
-        tune_llm: Whether to fine-tune the LLM backbone.
-        tune_visual: Whether to fine-tune the vision tower.
-        tune_projector: Whether to fine-tune the projector.
-        tune_diffusion_model: Whether to fine-tune the diffusion model.
-        chunk_size: Fallback action horizon if not in checkpoint.
-        max_action_dim: Fallback action dimension if not in checkpoint.
-        revision: Git revision (branch, tag, or commit hash) to download from.
-
-    Examples:
-        Using with from_config:
-
-        >>> config = GrootConfig(attn_implementation="sdpa", tune_projector=True)
-        >>> model = GrootModel.from_config(config)
-
-        Loading from YAML:
-
-        >>> model = GrootModel.from_yaml("groot_config.yaml")
-
-        Using explicit args (equivalent):
-
-        >>> model = GrootModel.from_pretrained(
-        ...     attn_implementation="sdpa",
-        ...     tune_projector=True,
-        ... )
-    """
-
-    # Model path
-    pretrained_model_name_or_path: str = field(default="nvidia/GR00T-N1.5-3B")
-
-    # Model args
-    n_action_steps: int = field(default=50)
-    use_bf16: bool = field(default=True)
-
-    # Backbone args
-    tokenizer_assets_repo: str = field(default="nvidia/Eagle2-2B")
-    attn_implementation: str = field(default="sdpa")
-    tune_llm: bool = field(default=False)
-    tune_visual: bool = field(default=False)
-
-    # Action head args
-    tune_projector: bool = field(default=True)
-    tune_diffusion_model: bool = field(default=True)
-    chunk_size: int = field(default=50)
-    max_action_dim: int = field(default=32)
-
-    # HuggingFace args
-    revision: str | None = field(default=None)
 
 
 def _import_snapshot_download() -> tuple[Any, ...]:
@@ -367,43 +303,6 @@ class GrootModel(nn.Module):
             )
 
         return model
-
-    @classmethod
-    def from_config(cls, config: GrootConfig) -> GrootModel:
-        """Create GrootModel from a GrootConfig dataclass.
-
-        This is a convenience method for configuration-based instantiation.
-        It delegates to `from_pretrained()` with values from the config.
-
-        Args:
-            config: GrootConfig dataclass with model configuration.
-
-        Returns:
-            Initialized GrootModel with pretrained weights.
-
-        Examples:
-            >>> config = GrootConfig(attn_implementation="sdpa", tune_projector=True)
-            >>> model = GrootModel.from_config(config)
-
-            >>> # Equivalent to:
-            >>> model = GrootModel.from_pretrained(
-            ...     attn_implementation="sdpa",
-            ...     tune_projector=True,
-            ... )
-        """
-        return cls.from_pretrained(
-            pretrained_model_name_or_path=config.pretrained_model_name_or_path,
-            n_action_steps=config.n_action_steps,
-            use_bf16=config.use_bf16,
-            tokenizer_assets_repo=config.tokenizer_assets_repo,
-            attn_implementation=config.attn_implementation,
-            tune_llm=config.tune_llm,
-            tune_visual=config.tune_visual,
-            tune_projector=config.tune_projector,
-            tune_diffusion_model=config.tune_diffusion_model,
-            chunk_size=config.chunk_size,
-            max_action_dim=config.max_action_dim,
-        )
 
     def forward(self, batch: Mapping[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         """Training forward pass - computes loss.
