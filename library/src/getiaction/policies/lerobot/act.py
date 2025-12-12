@@ -9,14 +9,11 @@ with explicit typed parameters for better IDE support and documentation.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from lightning_utilities.core.imports import module_available
 
 from getiaction.policies.lerobot.universal import LeRobotPolicy
-
-if TYPE_CHECKING:
-    from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 LEROBOT_AVAILABLE = bool(module_available("lerobot"))
 
@@ -183,23 +180,3 @@ class ACT(LeRobotPolicy):
             temporal_ensemble_coeff=temporal_ensemble_coeff,
             **kwargs,
         )
-
-    @classmethod
-    def from_dataset(  # type: ignore[override]
-        cls,
-        dataset: LeRobotDataset | str,
-        **kwargs: Any,  # noqa: ANN401
-    ) -> ACT:
-        """Create ACT policy with eager initialization from a dataset.
-
-        Args:
-            dataset: Either a LeRobotDataset instance or a HuggingFace Hub repo ID.
-            **kwargs: ACT configuration parameters.
-
-        Returns:
-            Fully initialized ACT policy ready for inference.
-
-        Examples:
-            >>> policy = ACT.from_dataset("lerobot/pusht", dim_model=512)
-        """
-        return LeRobotPolicy.from_dataset("act", dataset, **kwargs)  # type: ignore[return-value]

@@ -42,7 +42,7 @@ def pusht_dataset(lerobot_imports):
 def pusht_act_policy(lerobot_imports, pusht_dataset):
     """Create ACT policy from pusht dataset once per module."""
     LeRobotPolicy = lerobot_imports["LeRobotPolicy"]
-    return LeRobotPolicy.from_dataset("act", pusht_dataset)
+    return LeRobotPolicy.from_dataset(pusht_dataset, policy_name="act")
 
 
 class TestLeRobotPolicyLazyInit:
@@ -93,7 +93,7 @@ class TestLeRobotPolicyEagerInit:
         LeRobotPolicy = lerobot_imports["LeRobotPolicy"]
 
         # Use shared dataset fixture
-        policy = LeRobotPolicy.from_dataset("act", pusht_dataset)
+        policy = LeRobotPolicy.from_dataset(pusht_dataset, policy_name="act")
 
         assert policy._config is not None  # Initialized
         assert hasattr(policy, "_lerobot_policy")
@@ -110,8 +110,8 @@ class TestLeRobotPolicyEagerInit:
 
         # Use optimizer_lr which is safe - doesn't have dependent validation
         policy = LeRobotPolicy.from_dataset(
-            "act",
             pusht_dataset,  # Reuse cached dataset
+            policy_name="act",
             optimizer_lr=5e-5,
         )
 
@@ -176,8 +176,8 @@ class TestLeRobotPolicyConfigureOptimizers:
 
         lr = 5e-5
         policy = LeRobotPolicy.from_dataset(
-            "act",
             pusht_dataset,  # Reuse cached dataset
+            policy_name="act",
             optimizer_lr=lr,
         )
 
@@ -216,7 +216,7 @@ class TestLeRobotPolicyErrorCases:
 
         # LeRobot's error message format
         with pytest.raises(ValueError, match="is not available"):
-            LeRobotPolicy.from_dataset("nonexistent_policy", pusht_dataset)
+            LeRobotPolicy.from_dataset(pusht_dataset, policy_name="nonexistent_policy")
 
 
 class TestLeRobotPolicyUniversalWrapper:
@@ -231,7 +231,7 @@ class TestLeRobotPolicyUniversalWrapper:
         """Test universal wrapper supports Diffusion policy."""
         LeRobotPolicy = lerobot_imports["LeRobotPolicy"]
 
-        policy = LeRobotPolicy.from_dataset("diffusion", pusht_dataset)
+        policy = LeRobotPolicy.from_dataset(pusht_dataset, policy_name="diffusion")
         assert policy._config is not None
         assert "diffusion" in policy._config.__class__.__name__.lower()
 
@@ -239,7 +239,7 @@ class TestLeRobotPolicyUniversalWrapper:
         """Test universal wrapper supports VQ-BeT policy."""
         LeRobotPolicy = lerobot_imports["LeRobotPolicy"]
 
-        policy = LeRobotPolicy.from_dataset("vqbet", pusht_dataset)
+        policy = LeRobotPolicy.from_dataset(pusht_dataset, policy_name="vqbet")
         assert policy._config is not None
         assert "vqbet" in policy._config.__class__.__name__.lower()
 
@@ -252,7 +252,7 @@ class TestLeRobotPolicyCheckpoint:
         LeRobotPolicy = lerobot_imports["LeRobotPolicy"]
 
         # Create a policy
-        original_policy = LeRobotPolicy.from_dataset("act", pusht_dataset)
+        original_policy = LeRobotPolicy.from_dataset(pusht_dataset, policy_name="act")
 
         # Save checkpoint manually (simulating Lightning checkpoint)
         with tempfile.NamedTemporaryFile(suffix=".ckpt", delete=False) as f:
@@ -384,7 +384,7 @@ class TestLeRobotPolicyCheckpoint:
         LeRobotPolicy = lerobot_imports["LeRobotPolicy"]
 
         # Create a policy (which will have dataset_stats)
-        original_policy = LeRobotPolicy.from_dataset("act", pusht_dataset)
+        original_policy = LeRobotPolicy.from_dataset(pusht_dataset, policy_name="act")
 
         # Save checkpoint
         with tempfile.NamedTemporaryFile(suffix=".ckpt", delete=False) as f:

@@ -322,8 +322,9 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
     @classmethod
     def from_dataset(
         cls,
-        policy_name: str,
         dataset: LeRobotDataset | _LeRobotDatasetAdapter | str,
+        *,
+        policy_name: str | None = None,
         **kwargs: Any,  # noqa: ANN401
     ) -> LeRobotPolicy:
         """Create policy with eager initialization from a dataset or repo ID.
@@ -331,15 +332,21 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         This factory method extracts features from the dataset and builds the policy
         immediately, making it ready for inference without a Lightning Trainer.
 
+        For explicit wrapper classes (Pi0, ACT, etc.), the policy_name is automatically
+        inferred from the class name. For the base LeRobotPolicy class, policy_name
+        must be provided explicitly.
+
         Note:
             LeRobot policies require LeRobot-compatible data sources for feature
             extraction and normalization statistics. Generic getiaction datasets
             are not supported.
 
         Args:
-            policy_name: Name of the policy ('act', 'diffusion', 'vqbet', etc.)
             dataset: Either a LeRobotDataset instance or a HuggingFace Hub repo ID string.
                 If a string is provided, only metadata is fetched (lightweight).
+            policy_name: Name of the policy ('act', 'diffusion', 'vqbet', etc.).
+                Optional for explicit wrapper classes (inferred from class name).
+                Required when using LeRobotPolicy directly.
             **kwargs: Additional policy configuration parameters.
 
         Returns:
@@ -347,34 +354,38 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
 
         Raises:
             ImportError: If LeRobot is not installed.
+            ValueError: If policy_name cannot be determined.
 
         Examples:
-            Create from repo ID (lightweight, only fetches metadata):
+            Using explicit wrapper classes (policy_name inferred):
+
+                >>> policy = Pi0.from_dataset("lerobot/pusht", chunk_size=50)
+                >>> policy = ACT.from_dataset("lerobot/pusht", dim_model=512)
+
+            Using base class with explicit policy_name:
 
                 >>> policy = LeRobotPolicy.from_dataset(
-                ...     "act",
                 ...     "lerobot/pusht",
+                ...     policy_name="act",
                 ...     dim_model=512,
                 ... )
 
             Create from an already loaded dataset:
 
                 >>> dataset = LeRobotDataset("lerobot/pusht")
-                >>> policy = LeRobotPolicy.from_dataset(
-                ...     "diffusion",
-                ...     dataset,
-                ...     num_inference_steps=100,
-                ... )
-
-            Create from a datamodule's train_dataset:
-
-                >>> datamodule = LeRobotDataModule(repo_id="lerobot/pusht")
-                >>> datamodule.setup("fit")
-                >>> policy = LeRobotPolicy.from_dataset("act", datamodule.train_dataset)
+                >>> policy = Diffusion.from_dataset(dataset, num_inference_steps=100)
         """
         if not LEROBOT_AVAILABLE:
             msg = "LeRobotPolicy.from_dataset requires LeRobot to be installed."
             raise ImportError(msg)
+
+        # Infer policy_name from class name if not provided
+        if policy_name is None:
+            if cls is LeRobotPolicy:
+                msg = "policy_name is required when using LeRobotPolicy.from_dataset() directly."
+                raise ValueError(msg)
+            # Convention: ClassName.lower() == policy_name (e.g., Pi0 -> pi0, ACT -> act)
+            policy_name = cls.__name__.lower()
 
         # Handle _LeRobotDatasetAdapter (wrapper for getiaction format)
         if isinstance(dataset, _LeRobotDatasetAdapter):
@@ -390,13 +401,18 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         input_features = {k: f for k, f in features.items() if f.type != FeatureType.ACTION}
         output_features = {k: f for k, f in features.items() if f.type == FeatureType.ACTION}
 
-        return cls(
-            policy_name=policy_name,
-            input_features=input_features,
-            output_features=output_features,
-            dataset_stats=meta.stats,
+        # Only pass policy_name for base LeRobotPolicy class
+        # Explicit wrappers (Pi0, ACT, etc.) set it in their __init__
+        init_kwargs: dict[str, Any] = {
+            "input_features": input_features,
+            "output_features": output_features,
+            "dataset_stats": meta.stats,
             **kwargs,
-        )
+        }
+        if cls is LeRobotPolicy:
+            init_kwargs["policy_name"] = policy_name
+
+        return cls(**init_kwargs)
 
     @property
     def lerobot_policy(self) -> PreTrainedPolicy:

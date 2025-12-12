@@ -27,14 +27,11 @@ Requirements:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from lightning_utilities.core.imports import module_available
 
 from getiaction.policies.lerobot.universal import LeRobotPolicy
-
-if TYPE_CHECKING:
-    from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 LEROBOT_AVAILABLE = bool(module_available("lerobot"))
 
@@ -228,27 +225,3 @@ class Pi0(LeRobotPolicy):
             scheduler_decay_lr=scheduler_decay_lr,
             **kwargs,
         )
-
-    @classmethod
-    def from_dataset(  # type: ignore[override]
-        cls,
-        dataset: LeRobotDataset | str,
-        **kwargs: Any,  # noqa: ANN401
-    ) -> Pi0:
-        """Create Pi0 policy with eager initialization from a dataset.
-
-        Args:
-            dataset: Either a LeRobotDataset instance or a HuggingFace Hub repo ID.
-            **kwargs: Pi0 configuration parameters.
-
-        Returns:
-            Fully initialized Pi0 policy ready for inference.
-
-        Examples:
-            >>> policy = Pi0.from_dataset(
-            ...     "lerobot/aloha_sim_transfer_cube_human",
-            ...     chunk_size=50,
-            ...     gradient_checkpointing=True,
-            ... )
-        """
-        return LeRobotPolicy.from_dataset("pi0", dataset, **kwargs)  # type: ignore[return-value]

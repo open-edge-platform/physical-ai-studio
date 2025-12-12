@@ -35,14 +35,11 @@ Fine-tuning Strategies:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from lightning_utilities.core.imports import module_available
 
 from getiaction.policies.lerobot.universal import LeRobotPolicy
-
-if TYPE_CHECKING:
-    from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 LEROBOT_AVAILABLE = bool(module_available("lerobot"))
 
@@ -222,26 +219,3 @@ class Groot(LeRobotPolicy):
             use_bf16=use_bf16,
             **kwargs,
         )
-
-    @classmethod
-    def from_dataset(  # type: ignore[override]
-        cls,
-        dataset: LeRobotDataset | str,
-        **kwargs: Any,  # noqa: ANN401
-    ) -> Groot:
-        """Create Groot policy with eager initialization from a dataset.
-
-        Args:
-            dataset: Either a LeRobotDataset instance or a HuggingFace Hub repo ID.
-            **kwargs: Groot configuration parameters.
-
-        Returns:
-            Fully initialized Groot policy ready for inference.
-
-        Examples:
-            >>> policy = Groot.from_dataset(
-            ...     "lerobot/aloha_sim_transfer_cube_human",
-            ...     chunk_size=50,
-            ... )
-        """
-        return LeRobotPolicy.from_dataset("groot", dataset, **kwargs)  # type: ignore[return-value]
