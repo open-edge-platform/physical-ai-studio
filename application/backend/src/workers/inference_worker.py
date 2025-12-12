@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import time
 from multiprocessing import Event, Queue
@@ -12,6 +13,7 @@ from getiaction.policies import ACT, ACTModel
 from lerobot.robots.utils import make_robot_from_config
 from lerobot.utils.robot_utils import precise_sleep
 from loguru import logger
+from pydantic import BaseModel
 
 from schemas import InferenceConfig
 from utils.camera import build_camera_config
@@ -30,12 +32,19 @@ SO_101_REST_POSITION = {
 }
 
 
+class InferenceState(BaseModel):
+    is_running: bool = False
+    task_index: int = 0
+    initialized: bool = False
+    error: bool = False
+
+
 class InferenceWorker(BaseThreadWorker):
     ROLE: str = "InferenceWorker"
 
     events: dict[str, EventClass]
     queue: Queue
-    is_running = False
+    state: InferenceState
 
     action_keys: list[str] = []
     camera_keys: list[str] = []
@@ -44,6 +53,7 @@ class InferenceWorker(BaseThreadWorker):
         super().__init__(stop_event=stop_event)
         self.config = config
         self.queue = queue
+        self.state = InferenceState()
         self.events = {
             "stop": Event(),
             "calculate_trajectory": Event(),
@@ -71,35 +81,39 @@ class InferenceWorker(BaseThreadWorker):
     def setup(self) -> None:
         """Set up robots, cameras and dataset."""
         logger.info("connect to robot, cameras and setup dataset")
-        cameras = {camera.name: build_camera_config(camera) for camera in self.config.cameras}
-        follower_config = make_lerobot_robot_config_from_robot(self.config.robot, cameras)
-        # follower_config.max_relative_target = 1
+        try:
+            cameras = {camera.name: build_camera_config(camera) for camera in self.config.cameras}
+            follower_config = make_lerobot_robot_config_from_robot(self.config.robot, cameras)
+            # follower_config.max_relative_target = 1
 
-        model_path = self.config.model.path
-        self.robot = make_robot_from_config(follower_config)
-        logger.info(f"loading model: {model_path}")
-        self.model = ACTModel.load_from_checkpoint(Path(model_path))
-        self.model.eval()
+            model_path = self.config.model.path
+            self.robot = make_robot_from_config(follower_config)
+            logger.info(f"loading model: {model_path}")
+            self.model = ACTModel.load_from_checkpoint(Path(model_path))
+            self.model.eval()
 
-        self.policy = ACT(self.model)
-        self.policy.eval()
+            self.policy = ACT(self.model)
+            self.policy.eval()
 
-        # TODO: Define this somehow
-        # LeRobot tends to return the robot arm to root position on reset.
-        # This seems to work better for act when I change the environment mid inference
+            # TODO: Define this somehow
+            # LeRobot tends to return the robot arm to root position on reset.
+            # This seems to work better for act when I change the environment mid inference
 
-        # After setting up the robot, instantiate the FrameSource using a bridge
-        # This can be done directly once switched over to LeRobotDataset V3.
-        # We do need to first instantiate using the lerobot dict because a follower requires cameras.
-        self.robot.cameras = {camera.name: FrameSourceCameraBridge(camera) for camera in self.config.cameras}
-        self.robot.connect()
+            # After setting up the robot, instantiate the FrameSource using a bridge
+            # This can be done directly once switched over to LeRobotDataset V3.
+            # We do need to first instantiate using the lerobot dict because a follower requires cameras.
+            self.robot.cameras = {camera.name: FrameSourceCameraBridge(camera) for camera in self.config.cameras}
+            self.robot.connect()
 
-        self.robot.send_action(SO_101_REST_POSITION)
+            self.robot.send_action(SO_101_REST_POSITION)
 
-        self.action_keys = [f"{key}.pos" for key in self.robot.bus.sync_read("Present_Position")]
-        self.camera_keys = [camera.name for camera in self.config.cameras]
+            self.action_keys = [f"{key}.pos" for key in self.robot.bus.sync_read("Present_Position")]
+            self.camera_keys = [camera.name for camera in self.config.cameras]
 
-        logger.info("inference all setup, reporting state")
+            logger.info("inference all setup, reporting state")
+        except Exception as e:
+            self.state.error = True
+            self._report_error(e)
         self._report_state()
 
     async def run_loop(self) -> None:
@@ -109,18 +123,21 @@ class InferenceWorker(BaseThreadWorker):
         self.events["stop"].clear()
         self.events["disconnect"].clear()
 
-        self.is_running = False
+        self.state.is_running = False
 
         start_episode_t = time.perf_counter()
         action_queue: list[list[float]] = []
         while not self.should_stop() and not self.events["disconnect"].is_set():
+            if not self.state.initialized or self.state.error:
+                return
+
             start_loop_t = time.perf_counter()
             if self.events["start"].is_set():
                 logger.info("start")
                 self.events["start"].clear()
                 self.robot.send_action(SO_101_REST_POSITION)
                 precise_sleep(0.3)  # TODO check if neccesary
-                self.is_running = True
+                self.state.is_running = True
                 start_episode_t = time.perf_counter()
                 self._report_state()
 
@@ -129,7 +146,7 @@ class InferenceWorker(BaseThreadWorker):
                 self.events["stop"].clear()
                 action_queue.clear()
                 precise_sleep(0.3)  # TODO check if neccesary
-                self.is_running = False
+                self.state.is_running = False
                 self._report_state()
 
             if self.events["calculate_trajectory"].is_set():
@@ -142,7 +159,7 @@ class InferenceWorker(BaseThreadWorker):
 
             lerobot_obs = self.robot.get_observation()
             timestamp = time.perf_counter() - start_episode_t
-            if self.is_running:
+            if self.state.is_running:
                 observation = self._build_geti_action_observation(lerobot_obs)
                 if not action_queue:
                     action_queue = self.model(observation.to_dict())[0].tolist()
@@ -163,17 +180,26 @@ class InferenceWorker(BaseThreadWorker):
 
     def teardown(self) -> None:
         """Disconnect robots and close queue."""
-        self.robot.disconnect()
+        if self.robot.is_connected:
+            self.robot.disconnect()
+
+        # Wait for 5 seconds before closing queue to allow messages thru
+        asyncio.run(asyncio.sleep(0.5))
         self.queue.close()
         self.queue.cancel_join_thread()
 
     def _report_state(self):
-        state = {
-            "event": "state",
-            "data": {"initialized": True, "is_running": self.is_running, "task_index": self.config.task_index},
-        }
+        state = {"event": "state", "data": self.state.model_dump()}
         logger.info(f"inference state: {state}")
         self.queue.put(state)
+
+    def _report_error(self, error: BaseException):
+        data = {
+            "event": "error",
+            "data": str(error),
+        }
+        logger.error(f"error: {data}")
+        self.queue.put(data)
 
     def _report_trajectory(self, trajectory: list[dict]):
         self.queue.put({"event": "trajectory", "data": {"trajectory": trajectory}})
