@@ -106,7 +106,8 @@ class Pi0Preprocessor:
             try:
                 from transformers import AutoTokenizer  # noqa: PLC0415
 
-                self._tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_name)
+                # Revision pinned for reproducibility and security
+                self._tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_name, revision="main")
             except ImportError as e:
                 msg = "Tokenizer requires transformers. Install with: pip install transformers"
                 raise ImportError(msg) from e

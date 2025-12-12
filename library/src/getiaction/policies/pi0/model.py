@@ -315,7 +315,7 @@ class Pi0Model(nn.Module):
             # Try .pt format
             pt_path = checkpoint_path_obj / "model.pt"
             if pt_path.exists():
-                state_dict = torch.load(pt_path, map_location="cpu")
+                state_dict = torch.load(pt_path, map_location="cpu", weights_only=True)
                 model.load_state_dict(state_dict, strict=False)
                 logger.info("Loaded weights from %s", pt_path)
 

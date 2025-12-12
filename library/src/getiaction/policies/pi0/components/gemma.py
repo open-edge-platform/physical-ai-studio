@@ -221,6 +221,7 @@ class PaliGemmaWithExpert(nn.Module):
         self._paligemma = PaliGemmaForConditionalGeneration.from_pretrained(
             self._paligemma_model_id,
             torch_dtype=self.dtype,
+            revision="main",
         )
 
         # Create action expert (smaller Gemma)
