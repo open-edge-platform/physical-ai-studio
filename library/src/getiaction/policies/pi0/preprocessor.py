@@ -174,8 +174,8 @@ class Pi0Preprocessor:
         images = {}
         image_masks = {}
 
-        # Find image keys
-        image_keys = [k for k in batch if "image" in k.lower() and "mask" not in k.lower()]
+        # Find image keys (exclude metadata keys starting with underscore)
+        image_keys = [k for k in batch if "image" in k.lower() and "mask" not in k.lower() and not k.startswith("_")]
 
         for key in image_keys:
             img = batch[key]
@@ -185,6 +185,10 @@ class Pi0Preprocessor:
             # Convert to tensor if needed
             if isinstance(img, np.ndarray):
                 img = torch.from_numpy(img)
+
+            # Skip if not a tensor (e.g., list of keys)
+            if not isinstance(img, torch.Tensor):
+                continue
 
             # Ensure float and correct range
             if img.dtype == torch.uint8:

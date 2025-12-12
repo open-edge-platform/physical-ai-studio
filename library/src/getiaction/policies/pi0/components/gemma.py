@@ -320,7 +320,7 @@ class PaliGemmaWithExpert(nn.Module):
         self._ensure_loaded()
 
         # Use the language model's embedding layer
-        return self.paligemma.language_model.model.embed_tokens(input_ids)
+        return self.paligemma.language_model.embed_tokens(input_ids)
 
     def forward(
         self,
@@ -356,14 +356,24 @@ class PaliGemmaWithExpert(nn.Module):
 
         prefix_embeds, suffix_embeds = inputs_embeds
 
+        # Compute sequence lengths for position ID slicing
+        prefix_len = prefix_embeds.shape[1] if prefix_embeds is not None else 0
+        suffix_len = suffix_embeds.shape[1] if suffix_embeds is not None else 0
+
         # Handle prefix (PaliGemma)
         prefix_output = None
         if prefix_embeds is not None:
+            # Slice position IDs for prefix
+            prefix_position_ids = position_ids[:, :prefix_len]
+
+            # Slice attention mask for prefix (it's 4D: batch, 1, seq, seq)
+            prefix_attention_mask = attention_mask[:, :, :prefix_len, :prefix_len]
+
             # Forward through PaliGemma language model
             pali_outputs = self.paligemma.language_model(
                 inputs_embeds=prefix_embeds,
-                attention_mask=attention_mask,
-                position_ids=position_ids,
+                attention_mask=prefix_attention_mask,
+                position_ids=prefix_position_ids,
                 past_key_values=past_key_values,
                 use_cache=use_cache,
                 return_dict=True,
@@ -378,26 +388,36 @@ class PaliGemmaWithExpert(nn.Module):
         if suffix_embeds is not None:
             suffix_cond = adarms_cond[1] if adarms_cond is not None else None
 
+            # Slice position IDs for suffix
+            suffix_position_ids = position_ids[:, prefix_len : prefix_len + suffix_len]
+
+            # Slice attention mask for suffix
+            # The suffix can attend to both prefix and itself, so we need the full row but sliced column
+            suffix_attention_mask = attention_mask[:, :, prefix_len:, :]
+
             # For Pi0.5 with AdaRMSNorm, we need custom forward
             if self.use_adarms and suffix_cond is not None:
                 suffix_output = self._forward_action_expert_with_adarms(
                     suffix_embeds,
-                    attention_mask,
-                    position_ids,
+                    suffix_attention_mask,
+                    suffix_position_ids,
                     suffix_cond,
                     past_key_values,
                 )
             else:
                 # Standard forward through action expert
+                # GemmaForCausalLM returns CausalLMOutputWithPast, need output_hidden_states
                 expert_outputs = self.action_expert(
                     inputs_embeds=suffix_embeds,
-                    attention_mask=attention_mask,
-                    position_ids=position_ids,
+                    attention_mask=suffix_attention_mask,
+                    position_ids=suffix_position_ids,
                     past_key_values=past_key_values,
                     use_cache=use_cache,
+                    output_hidden_states=True,
                     return_dict=True,
                 )
-                suffix_output = expert_outputs.last_hidden_state
+                # Get last hidden state from hidden_states tuple
+                suffix_output = expert_outputs.hidden_states[-1]
 
         return (prefix_output, suffix_output), past_key_values
 
@@ -434,10 +454,11 @@ class PaliGemmaWithExpert(nn.Module):
             position_ids=position_ids,
             past_key_values=past_key_values,
             use_cache=False,
+            output_hidden_states=True,
             return_dict=True,
         )
 
-        return expert_outputs.last_hidden_state
+        return expert_outputs.hidden_states[-1]
 
     def to_bfloat16_for_selected_params(self, dtype_str: str = "bfloat16") -> None:
         """Convert selected parameters to bfloat16 for memory efficiency.
