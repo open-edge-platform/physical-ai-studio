@@ -61,6 +61,16 @@ tests = [
 # VLA Policy dependencies - these are heavy models with specific requirements
 # Install with: pip install getiaction[groot]
 
+# Physical Intelligence Pi0/Pi0.5 foundation model
+# Requires PaliGemma backbone + Gemma action expert
+# Supports LoRA fine-tuning for efficient adaptation
+pi0 = [
+    "transformers>=4.54.0,<5.0.0",
+    "peft>=0.13.0,<1.0.0",
+    "safetensors>=0.4.3,<1.0.0",
+    "Pillow>=10.0.0,<13.0.0",
+]
+
 # NVIDIA GR00T-N1 foundation model
 # Requires ~24GB+ GPU memory for training, supports LoRA fine-tuning
 # Note: transformers>=4.54.0 required for _prepare_image_like_inputs fix
@@ -79,6 +89,7 @@ groot = [
 # All optional dependencies
 all = [
     "getiaction[tests]",
+    "getiaction[pi0]",
     "getiaction[groot]",
 ]
 

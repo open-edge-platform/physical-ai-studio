@@ -728,6 +728,12 @@ groot = [
     { name = "timm" },
     { name = "transformers" },
 ]
+pi0 = [
+    { name = "peft" },
+    { name = "pillow" },
+    { name = "safetensors" },
+    { name = "transformers" },
+]
 tests = [
     { name = "httpx" },
     { name = "mypy" },
@@ -760,9 +766,11 @@ requires-dist = [
     { name = "openvino", specifier = ">=2025.0" },
     { name = "peft", marker = "extra == 'all'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'groot'", specifier = ">=0.13.0,<1.0.0" },
+    { name = "peft", marker = "extra == 'pi0'", specifier = ">=0.13.0,<1.0.0" },
     { name = "pillow" },
     { name = "pillow", marker = "extra == 'all'", specifier = ">=10.0.0,<13.0.0" },
     { name = "pillow", marker = "extra == 'groot'", specifier = ">=10.0.0,<13.0.0" },
+    { name = "pillow", marker = "extra == 'pi0'", specifier = ">=10.0.0,<13.0.0" },
     { name = "pydantic" },
     { name = "pymunk", specifier = ">=6.6.0,<7.0.0" },
     { name = "pytest", marker = "extra == 'all'" },
@@ -771,12 +779,14 @@ requires-dist = [
     { name = "pytest-mock", marker = "extra == 'tests'" },
     { name = "safetensors", marker = "extra == 'all'", specifier = ">=0.4.3,<1.0.0" },
     { name = "safetensors", marker = "extra == 'groot'", specifier = ">=0.4.3,<1.0.0" },
+    { name = "safetensors", marker = "extra == 'pi0'", specifier = ">=0.4.3,<1.0.0" },
     { name = "timm", marker = "extra == 'all'", specifier = ">=1.0.0,<1.1.0" },
     { name = "timm", marker = "extra == 'groot'", specifier = ">=1.0.0,<1.1.0" },
     { name = "transformers", marker = "extra == 'all'", specifier = ">=4.54.0,<5.0.0" },
     { name = "transformers", marker = "extra == 'groot'", specifier = ">=4.54.0,<5.0.0" },
+    { name = "transformers", marker = "extra == 'pi0'", specifier = ">=4.54.0,<5.0.0" },
 ]
-provides-extras = ["all", "groot", "tests"]
+provides-extras = ["all", "groot", "pi0", "tests"]
 
 [[package]]
 name = "gitdb"

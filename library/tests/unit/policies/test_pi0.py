@@ -3,6 +3,8 @@
 
 """Unit tests for Pi0/Pi0.5 policy."""
 
+from unittest.mock import MagicMock, patch
+
 import numpy as np
 import pytest
 import torch
@@ -247,6 +249,24 @@ class TestPreprocessorFactory:
 # ============================================================================ #
 
 
+@pytest.fixture
+def mock_paligemma_load():
+    """Mock PaliGemmaWithExpert to skip HuggingFace model loading.
+
+    This mocks _ensure_loaded and set_trainable_parameters to avoid downloading
+    large models in unit tests. Integration tests should use real models.
+    """
+    with patch(
+        "getiaction.policies.pi0.components.gemma.PaliGemmaWithExpert._ensure_loaded",
+        return_value=None,
+    ), patch(
+        "getiaction.policies.pi0.components.gemma.PaliGemmaWithExpert.set_trainable_parameters",
+        return_value=None,
+    ):
+        yield
+
+
+@pytest.mark.usefixtures("mock_paligemma_load")
 class TestPi0Policy:
     """Tests for Pi0Policy and Pi0Model."""
 
