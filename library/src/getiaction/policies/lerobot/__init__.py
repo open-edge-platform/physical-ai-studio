@@ -214,8 +214,8 @@ def get_lerobot_policy(policy_name: str, **kwargs) -> LeRobotPolicy:  # noqa: AN
 
     Args:
         policy_name: Name of the LeRobot policy to create. Supported values:
-            - Explicit wrappers (recommended): "act", "diffusion", "groot", "pi0", "pi05"
-            - Convenience wrappers: "vqbet", "tdmpc", "sac", "pi0fast", "smolvla"
+            - Explicit wrappers: "act", "diffusion", "groot", "pi0", "pi05"
+            - Universal wrapper: "vqbet", "tdmpc", "sac", "pi0fast", "smolvla"
         **kwargs: Additional keyword arguments passed to the policy constructor.
 
     Returns:
@@ -257,7 +257,7 @@ def get_lerobot_policy(policy_name: str, **kwargs) -> LeRobotPolicy:  # noqa: AN
 
     # Map policy names to their classes
     policy_map = {
-        # Explicit wrappers (recommended)
+        # Explicit wrappers
         "act": ACT,
         "diffusion": Diffusion,
         "groot": Groot,
@@ -310,7 +310,7 @@ def list_available_policies() -> list[str]:
     """
     if LEROBOT_AVAILABLE:
         return [
-            # Explicit wrappers (recommended)
+            # Explicit wrappers
             "ACT",
             "Diffusion",
             "Groot",
