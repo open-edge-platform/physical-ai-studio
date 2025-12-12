@@ -24,7 +24,7 @@ dynamic = ["version"]
 requires-python = ">=3.12"
 authors = [
   { name="Alfie Roddan", email="alfiex.roddan@intel.com" },
-  { name="Vladislav Sovrsaov", email="vladislav.sovrasov@intel.com" },
+  { name="Vladislav Sovrasov", email="vladislav.sovrasov@intel.com" },
   { name="Samet Akcay", email="samet.akcay@intel.com" },
 ]
 description = "A package for training vision-action models"
@@ -56,6 +56,9 @@ tests = [
     "pytest",
     "pytest-mock",
     "mypy",
+]
+libero = [
+    "hf-libero>=0.1.3,<0.2.0",
 ]
 
 # VLA Policy dependencies - these are heavy models with specific requirements
@@ -89,6 +92,7 @@ groot = [
 # All optional dependencies
 all = [
     "getiaction[tests]",
+    "getiaction[libero]",
     "getiaction[pi0]",
     "getiaction[groot]",
 ]
