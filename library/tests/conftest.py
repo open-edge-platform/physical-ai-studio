@@ -28,16 +28,29 @@ if not libero_config_file.exists():
 
     # Import yaml only when needed
     import yaml
+    import importlib.util
 
-    # Create minimal config with default paths
-    # These paths will be validated/used by libero on first import
-    default_config = {
-        "benchmark_root": "/tmp/libero",
-        "bddl_files": "/tmp/libero/bddl_files",
-        "init_states": "/tmp/libero/init_files",
-        "datasets": "/tmp/libero/datasets",
-        "assets": "/tmp/libero/assets",
-    }
+    # Try to find the libero package installation path for bundled files
+    # The libero package bundles bddl_files, init_files, and assets
+    libero_spec = importlib.util.find_spec("libero.libero")
+    if libero_spec and libero_spec.origin:
+        libero_pkg_path = Path(libero_spec.origin).parent
+        default_config = {
+            "benchmark_root": str(libero_pkg_path),
+            "bddl_files": str(libero_pkg_path / "bddl_files"),
+            "init_states": str(libero_pkg_path / "init_files"),
+            "datasets": "/tmp/libero/datasets",  # datasets are downloaded separately
+            "assets": str(libero_pkg_path / "assets"),
+        }
+    else:
+        # Fallback to tmp paths if libero package not found
+        default_config = {
+            "benchmark_root": "/tmp/libero",
+            "bddl_files": "/tmp/libero/bddl_files",
+            "init_states": "/tmp/libero/init_files",
+            "datasets": "/tmp/libero/datasets",
+            "assets": "/tmp/libero/assets",
+        }
 
     libero_config_file.write_text(yaml.dump(default_config))
 
