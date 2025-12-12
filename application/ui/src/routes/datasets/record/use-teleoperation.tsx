@@ -6,10 +6,10 @@ import { API_BASE_URL } from '../../../api/client';
 import { SchemaEpisode, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
 import useWebSocketWithResponse from '../../../components/websockets/use-websocket-with-response';
 
-interface RobotState {
+interface TeleoperationState {
     initialized: boolean;
     is_recording: boolean;
-    cameras: string[];
+    error: boolean;
 }
 
 interface RecordApiJsonResponse<Object> {
@@ -17,14 +17,14 @@ interface RecordApiJsonResponse<Object> {
     data: Object;
 }
 
-function createRobotState(data: unknown | null = null) {
+function createTeleoperationState(data: unknown | null = null) {
     if (data) {
-        return data as RobotState;
+        return data as TeleoperationState;
     }
     return {
         initialized: false,
         is_recording: false,
-        cameras: [],
+        error: false,
     };
 }
 
@@ -34,15 +34,19 @@ export interface Observation {
     cameras: { [key: string]: string };
 }
 
-export const useTeleoperation = (setup: SchemaTeleoperationConfig, onEpisode: (episode: SchemaEpisode) => void) => {
-    const [state, setState] = useState<RobotState>(createRobotState());
+export const useTeleoperation = (
+    setup: SchemaTeleoperationConfig,
+    onEpisode: (episode: SchemaEpisode) => void,
+    onError: (error: string) => void
+) => {
+    const [state, setState] = useState<TeleoperationState>(createTeleoperationState());
     const { sendJsonMessage, readyState, sendJsonMessageAndWait } = useWebSocketWithResponse(
         `${API_BASE_URL}/api/record/teleoperate/ws`,
         {
             shouldReconnect: () => true,
             onMessage: (event: WebSocketEventMap['message']) => onMessage(event),
             onOpen: () => init.mutate(),
-            onClose: () => setState(createRobotState()),
+            onClose: () => setState(createTeleoperationState()),
         }
     );
 
@@ -50,10 +54,10 @@ export const useTeleoperation = (setup: SchemaTeleoperationConfig, onEpisode: (e
     const observation = useRef<Observation | undefined>(undefined);
 
     const onMessage = ({ data }: WebSocketEventMap['message']) => {
-        const message = JSON.parse(data) as RecordApiJsonResponse<object>;
+        const message = JSON.parse(data) as RecordApiJsonResponse<unknown>;
         switch (message.event) {
             case 'state':
-                setState(message.data as RobotState);
+                setState(message.data as TeleoperationState);
                 break;
             case 'observations':
                 observation.current = message['data'] as Observation;
@@ -61,12 +65,14 @@ export const useTeleoperation = (setup: SchemaTeleoperationConfig, onEpisode: (e
             case 'episode':
                 onEpisode(message['data'] as SchemaEpisode);
                 break;
+            case 'error':
+                onError(message['data'] as string);
         }
     };
 
     const init = useMutation({
         mutationFn: async () =>
-            await sendJsonMessageAndWait<RecordApiJsonResponse<RobotState>>(
+            await sendJsonMessageAndWait<RecordApiJsonResponse<TeleoperationState>>(
                 { event: 'initialize', data: setup },
                 (data) => data['data']['initialized'] == true
             ),
@@ -81,7 +87,7 @@ export const useTeleoperation = (setup: SchemaTeleoperationConfig, onEpisode: (e
 
     const saveEpisode = useMutation({
         mutationFn: async () => {
-            const message = await sendJsonMessageAndWait<RecordApiJsonResponse<RobotState>>(
+            const message = await sendJsonMessageAndWait<RecordApiJsonResponse<TeleoperationState>>(
                 { event: 'save', data: {} },
                 ({ data }) => data['is_recording'] == false
             );
