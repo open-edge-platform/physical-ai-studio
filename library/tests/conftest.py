@@ -18,46 +18,28 @@ import torch
 os.environ.setdefault("HF_LEROBOT_HOME", "/tmp/lerobot_test")
 
 # Configure LIBERO to avoid interactive prompts during test collection.
-# Only create config if it doesn't exist yet (to avoid overriding user's config)
-if "LIBERO_CONFIG_PATH" not in os.environ:
-    default_libero_config = Path.home() / ".libero"
-    config_file = default_libero_config / "config.yaml"
+# CRITICAL: This must run BEFORE any imports of libero.libero!
+# Create config file to prevent interactive prompt.
+libero_config_dir = Path.home() / ".libero"
+libero_config_file = libero_config_dir / "config.yaml"
 
-    # Only create config if it doesn't exist - this prevents interactive prompt
-    if not config_file.exists():
-        default_libero_config.mkdir(parents=True, exist_ok=True)
+if not libero_config_file.exists():
+    libero_config_dir.mkdir(parents=True, exist_ok=True)
 
-        # Use libero's default paths (from package installation)
-        try:
-            import libero.libero
-            default_config = libero.libero.get_default_path_dict()
-        except (ImportError, AttributeError):
-            # Fallback if libero not installed or function not available
-            import sys
+    # Import yaml only when needed
+    import yaml
 
-            libero_module = sys.modules.get("libero.libero")
-            if libero_module and hasattr(libero_module, "__file__") and libero_module.__file__:
-                libero_path = Path(libero_module.__file__).parent
-                default_config = {
-                    "benchmark_root": str(libero_path),
-                    "bddl_files": str(libero_path / "bddl_files"),
-                    "init_states": str(libero_path / "init_files"),
-                    "datasets": str(libero_path.parent / "datasets"),
-                    "assets": str(libero_path / "assets"),
-                }
-            else:
-                # Last resort: use temp directory (tests may fail but won't prompt)
-                temp_path = Path(tempfile.gettempdir()) / "libero"
-                default_config = {
-                    "benchmark_root": str(temp_path),
-                    "bddl_files": str(temp_path / "bddl_files"),
-                    "init_states": str(temp_path / "init_files"),
-                    "datasets": str(temp_path / "datasets"),
-                    "assets": str(temp_path / "assets"),
-                }
+    # Create minimal config with default paths
+    # These paths will be validated/used by libero on first import
+    default_config = {
+        "benchmark_root": "/tmp/libero",
+        "bddl_files": "/tmp/libero/bddl_files",
+        "init_states": "/tmp/libero/init_files",
+        "datasets": "/tmp/libero/datasets",
+        "assets": "/tmp/libero/assets",
+    }
 
-        import yaml
-        config_file.write_text(yaml.dump(default_config))
+    libero_config_file.write_text(yaml.dump(default_config))
 
 # Configure MuJoCo for headless rendering (needed in CI environments)
 os.environ.setdefault("MUJOCO_GL", "egl")
