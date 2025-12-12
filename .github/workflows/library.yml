@@ -45,6 +45,10 @@ jobs:
         uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
         with:
           python-version-file: "./library/.python-version"
+      - name: Install system dependencies for headless rendering
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev
       - name: Install uv
         uses: astral-sh/setup-uv@1e862dfacbd1d6d858c55d9b792c756523627244 # v7.1.4
       - name: Verify lock file
@@ -53,9 +57,13 @@ jobs:
       - name: Install dependencies
         working-directory: library
         run: |
-          # Note: We only install 'tests' extra, not 'groot' which requires CUDA/flash-attn
-          uv sync --frozen --extra tests
+          # Note: We install 'tests' and 'libero' extras, not 'groot' which requires CUDA/flash-attn
+          uv sync --frozen --extra tests --extra libero
       - name: Run python unit tests
         working-directory: library
+        env:
+          # Headless rendering for MuJoCo/OpenGL (must be set before any imports)
+          MUJOCO_GL: egl
+          PYOPENGL_PLATFORM: egl
         run: |
           uv run pytest tests/unit
