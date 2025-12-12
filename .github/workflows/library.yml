@@ -55,21 +55,7 @@ jobs:
         run: |
           # Note: We install 'tests' and 'libero' extras, not 'groot' which requires CUDA/flash-attn
           uv sync --frozen --extra tests --extra libero
-      - name: Setup libero config
-        run: |
-          # Create libero config to prevent interactive prompt during import
-          mkdir -p ~/.libero
-          cat > ~/.libero/config.yaml << 'EOF'
-          benchmark_root: /tmp/libero
-          bddl_files: /tmp/libero/bddl_files
-          init_states: /tmp/libero/init_files
-          datasets: /tmp/libero/datasets
-          assets: /tmp/libero/assets
-          EOF
       - name: Run python unit tests
         working-directory: library
-        env:
-          MUJOCO_GL: egl
-          PYOPENGL_PLATFORM: egl
         run: |
           uv run pytest tests/unit
