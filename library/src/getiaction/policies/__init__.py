@@ -28,6 +28,8 @@ __all__ = [
     "Pi0",
     "Pi0Config",
     "Pi0Model",
+    # Utils
+    "get_getiaction_policy_class",
     "get_policy",
     "lerobot",
 ]
@@ -93,22 +95,44 @@ def get_policy(policy_name: str, *, source: str = "getiaction", **kwargs) -> Pol
     """
     source = source.lower()
 
+    # First-party policies
     if source == "getiaction":
-        # First-party policies
-        policy_name_lower = policy_name.lower()
-        if policy_name_lower == "act":
-            return ACT(**kwargs)
-        if policy_name_lower == "pi0":
-            return Pi0(variant="pi0", **kwargs)
-        if policy_name_lower == "pi05":
-            return Pi0(variant="pi05", **kwargs)
-
-        msg = f"Unknown getiaction policy: {policy_name}. Supported policies: act, pi0, pi05"
-        raise ValueError(msg)
+        return get_getiaction_policy_class(policy_name)(**kwargs)
 
     if source == "lerobot":
         # LeRobot policies via wrapper
         return get_lerobot_policy(policy_name, **kwargs)
 
     msg = f"Unknown source: {source}. Supported sources: getiaction, lerobot"
+    raise ValueError(msg)
+
+
+def get_getiaction_policy_class(policy_name: str) -> type[Policy]:
+    """Get policy class by name.
+
+    Args:
+        policy_name: Name of the policy class to retrieve.
+
+    Returns:
+        Policy class corresponding to the given name.
+
+    Raises:
+        ValueError: If the policy name is unknown.
+    """
+    policy_name = policy_name.lower()
+
+    if policy_name == "act":
+        return ACT
+    if policy_name == "dummy":
+        return Dummy
+    if policy_name == "pi0":
+        from functools import partial  # noqa: PLC0415
+
+        return partial(Pi0, variant="pi0")  # type: ignore[return-value]
+    if policy_name == "pi05":
+        from functools import partial  # noqa: PLC0415
+
+        return partial(Pi0, variant="pi05")  # type: ignore[return-value]
+
+    msg = f"Unknown getiaction policy: {policy_name}. Supported policies: act, dummy, pi0, pi05"
     raise ValueError(msg)
