@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from storage.storage import GETI_ACTION_DATASETS
+from settings import get_settings
 
 router = APIRouter(prefix="/api/settings", tags=["Settings"])
 
@@ -13,4 +13,5 @@ class UserSettings(BaseModel):
 @router.get("")
 async def get_user_settings() -> UserSettings:
     """Get user settings"""
-    return UserSettings(geti_action_dataset_path=str(GETI_ACTION_DATASETS))
+    settings = get_settings()
+    return UserSettings(geti_action_dataset_path=str(settings.datasets_dir))

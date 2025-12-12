@@ -10,9 +10,9 @@ class DataModule(LightningDataModule):
         self,
         train_dataset: Dataset,
         train_batch_size: int,
-        val_gyms: Gym | list[Gym] | None = None,
+        val_gym: Gym | None = None,
         val_dataset: Dataset | None = None,
-        test_gyms: Gym | list[Gym] | None = None,
+        test_gym: Gym | None = None,
         test_dataset: Dataset | None = None,
         max_episode_steps: int | None = None,
     ):
@@ -31,5 +31,5 @@ class DataModule(LightningDataModule):
 ## Features
 
 - Combines datasets and gym environments
-- Wraps gyms with `TimeLimit`
+- Wraps gyms with `StepLimit`
 - Configurable rollout counts for validation/test

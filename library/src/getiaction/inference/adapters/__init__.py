@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from getiaction.inference.adapters.base import RuntimeAdapter
 from getiaction.inference.adapters.onnx import ONNXAdapter
 from getiaction.inference.adapters.openvino import OpenVINOAdapter
+from getiaction.inference.adapters.torch import TorchAdapter
 from getiaction.inference.adapters.torch_export import TorchExportAdapter
 
 if TYPE_CHECKING:
@@ -19,6 +20,7 @@ __all__ = [
     "ONNXAdapter",
     "OpenVINOAdapter",
     "RuntimeAdapter",
+    "TorchAdapter",
     "TorchExportAdapter",
     "get_adapter",
 ]
@@ -54,6 +56,7 @@ def get_adapter(backend: ExportBackend | str, **kwargs: Any) -> RuntimeAdapter: 
         ExportBackend.OPENVINO: OpenVINOAdapter,
         ExportBackend.ONNX: ONNXAdapter,
         ExportBackend.TORCH_EXPORT_IR: TorchExportAdapter,
+        ExportBackend.TORCH: TorchAdapter,
     }
 
     if backend not in adapter_map:

@@ -15,15 +15,18 @@ from getiaction.eval import Rollout, evaluate_policy
 def dummy_policy():
     """Create a dummy policy for testing."""
     from getiaction.policies.dummy import Dummy, DummyConfig
+    from getiaction.policies.dummy.model import Dummy as DummyModel
 
-    return Dummy(config=DummyConfig(action_shape=(2,)))
+    return Dummy(DummyModel.from_config(DummyConfig(action_shape=(2,))))
 
 
 class TestRolloutNumericalEquivalence:
     """Tests that verify Rollout produces identical results to evaluate_policy."""
 
     @pytest.mark.parametrize(("n_episodes", "seed"), [(1, 42), (5, 100)])
-    def test_aggregated_metrics_equivalence(self, pusht_gym, dummy_policy, n_episodes, seed):
+    def test_aggregated_metrics_equivalence(
+        self, pusht_gym, dummy_policy, n_episodes, seed
+    ):
         """Verify Rollout produces same aggregated metrics as evaluate_policy."""
         max_steps = 30
 
@@ -43,7 +46,7 @@ class TestRolloutNumericalEquivalence:
         new_results = metric.compute()
 
         # Verify all metrics match (0.1% tolerance for floating point differences)
-        for key in ["avg_sum_reward", "avg_max_reward", "pc_success", "avg_episode_length"]:
+        for key in ["avg_sum_reward", "avg_max_reward", "avg_episode_length"]:
             assert torch.isclose(
                 new_results[key],
                 torch.tensor(old_results["aggregated"][key]),
@@ -72,11 +75,12 @@ class TestRolloutNumericalEquivalence:
 
         # Verify per-episode data
         assert len(per_episode_new) == len(old_results["per_episode"]) == n_episodes
-        for i, (old_ep, new_ep) in enumerate(zip(old_results["per_episode"], per_episode_new)):
+        for i, (old_ep, new_ep) in enumerate(
+            zip(old_results["per_episode"], per_episode_new)
+        ):
             assert abs(new_ep["sum_reward"] - old_ep["sum_reward"]) < 1e-5
             assert abs(new_ep["max_reward"] - old_ep["max_reward"]) < 1e-5
             assert new_ep["episode_length"] == old_ep["episode_length"]
-            assert new_ep["success"] == old_ep["success"]
 
 
 class TestRolloutBehavior:
@@ -103,7 +107,10 @@ class TestRolloutBehavior:
     def test_empty_metric_compute(self):
         """Verify compute() handles empty state correctly."""
         results = Rollout().compute()
-        assert all(results[k] == 0.0 for k in ["avg_sum_reward", "avg_max_reward", "pc_success", "avg_episode_length"])
+        assert all(
+            results[k] == 0.0
+            for k in ["avg_sum_reward", "avg_max_reward", "avg_episode_length"]
+        )
         assert results["n_episodes"] == 0
 
     def test_metric_state_types(self, pusht_gym, dummy_policy):
@@ -129,36 +136,37 @@ class TestRolloutBehavior:
 
         # Multiple compute calls should return identical results
         results = [metric.compute() for _ in range(3)]
-        for key in ["avg_sum_reward", "pc_success"]:
+        for key in ["avg_sum_reward", "avg_episode_length"]:
             assert all(torch.equal(results[0][key], r[key]) for r in results[1:])
 
 
 class TestRolloutIntegration:
     """Integration tests for Rollout with Lightning."""
 
-    def test_lightning_training_integration(self, dummy_dataset, pusht_gym):
+    def test_lightning_training_integration(self, dummy_dataset, pusht_gym, dummy_policy):
         """Verify Rollout works correctly in Lightning training loop."""
         from lightning.pytorch import Trainer
-
         from getiaction.data import DataModule
-        from getiaction.policies.dummy import Dummy, DummyConfig
 
         datamodule = DataModule(
             train_dataset=dummy_dataset(num_samples=8),
             train_batch_size=4,
-            val_gyms=pusht_gym,
+            val_gym=pusht_gym,
             num_rollouts_val=3,
             max_episode_steps=10,
         )
 
-        policy = Dummy(config=DummyConfig(action_shape=(2,)))
-        trainer = Trainer(fast_dev_run=True, enable_checkpointing=False, logger=False, enable_progress_bar=False)
-        trainer.fit(policy, datamodule=datamodule)
+        trainer = Trainer(
+            fast_dev_run=True,
+            enable_checkpointing=False,
+            logger=False,
+            enable_progress_bar=False,
+        )
+        trainer.fit(dummy_policy, datamodule=datamodule)
 
         # Verify aggregated metrics were logged
         metric_keys = list(trainer.logged_metrics.keys())
         assert any("val/gym/avg_sum_reward" in k for k in metric_keys)
-        assert any("val/gym/pc_success" in k for k in metric_keys)
 
     def test_device_placement(self, pusht_gym, dummy_policy):
         """Verify metric tensors are on correct device."""

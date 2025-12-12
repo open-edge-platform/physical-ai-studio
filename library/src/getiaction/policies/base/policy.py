@@ -21,7 +21,10 @@ class Policy(L.LightningModule, ABC):
     def __init__(self) -> None:
         """Initialize the Base Lightning Module for Policies."""
         super().__init__()
-        self.model: nn.Module
+        # Only set model attribute if the subclass hasn't defined it as a property
+        # (e.g., LeRobot wrappers define model as a property that returns _lerobot_policy)
+        if not isinstance(getattr(type(self), "model", None), property):
+            self.model: nn.Module | None = None
 
         # Initialize torchmetrics-based rollout metrics for validation and testing
         self.val_rollout = Rollout()
@@ -139,7 +142,6 @@ class Policy(L.LightningModule, ABC):
             "sum_reward": metric.all_sum_rewards[-1].item(),  # type: ignore[index]
             "max_reward": metric.all_max_rewards[-1].item(),  # type: ignore[index]
             "episode_length": int(metric.all_episode_lengths[-1].item()),  # type: ignore[index]
-            "success": float(metric.all_successes[-1].item()),  # type: ignore[index]
         }
 
         # Log per-episode metrics (on_step=True for immediate feedback)

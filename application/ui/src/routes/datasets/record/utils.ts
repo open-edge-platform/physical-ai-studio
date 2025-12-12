@@ -55,8 +55,8 @@ export const configFromCache = (
     }
 
     const problemsInFollower =
-        cache.leader.robot_type !== projectConfig.robot_type &&
-        !!availableRobots.find((b) => robotConfigMatches(cache.leader, b));
+        cache.follower.robot_type !== projectConfig.robot_type &&
+        !!availableRobots.find((b) => robotConfigMatches(cache.follower, b));
 
     if (!problemsInFollower) {
         output = { ...output, follower: cache.follower };

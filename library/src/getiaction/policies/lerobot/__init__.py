@@ -263,7 +263,7 @@ def get_lerobot_policy(policy_name: str, **kwargs) -> LeRobotPolicy:  # noqa: AN
         "groot": Groot,
         "pi0": Pi0,
         "pi05": Pi05,
-        # Convenience wrapper classes (universal wrapper)
+        # Universal wrapper classes
         "vqbet": VQBeT,
         "tdmpc": TDMPC,
         "sac": SAC,

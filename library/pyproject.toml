@@ -79,8 +79,9 @@ pi = [
 
 # NVIDIA GR00T-N1 foundation model
 # Requires ~24GB+ GPU memory for training, supports LoRA fine-tuning
+# Note: transformers>=4.54.0 required for _prepare_image_like_inputs fix
 groot = [
-    "transformers>=4.53.0,<5.0.0",
+    "transformers>=4.54.0,<5.0.0",
     "peft>=0.13.0,<1.0.0",
     "dm-tree>=0.1.8,<1.0.0",
     "timm>=1.0.0,<1.1.0",
@@ -139,6 +140,7 @@ extend-exclude = [
     "docs",
     "examples",
     "tests",
+    "notebooks",  # Jupyter notebooks have different style requirements
 ]
 
 [tool.ruff.lint]

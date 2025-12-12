@@ -5,9 +5,23 @@
 
 from dataclasses import dataclass
 
+import torch
+
+from getiaction.config import Config
+
 
 @dataclass(frozen=True)
-class DummyConfig:
-    """Dummy policy config."""
+class DummyConfig(Config):
+    """Configuration for a dummy policy.
+
+    Attributes:
+        action_shape (list | tuple): Shape of the action space.
+        action_dtype (str | torch.dtype | None): Data type of actions.
+        action_min (float | None): Minimum action value, if applicable.
+        action_max (float | None): Maximum action value, if applicable.
+    """
 
     action_shape: list | tuple
+    action_dtype: str | torch.dtype | None = None
+    action_min: float | None = None
+    action_max: float | None = None

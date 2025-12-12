@@ -17,10 +17,10 @@ import {
 } from '@geti/ui';
 
 import { SchemaDatasetOutput, SchemaProjectConfigOutput } from '../../api/openapi-spec';
+import { TeleoperationSetupModal } from '../../features/configuration/teleoperation/teleoperation';
 import { useProject } from '../../features/projects/use-project';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
 import { DatasetViewer } from './dataset-viewer';
-import { HardwareSetupModal } from './record/hardware-setup';
 import { ProjectSetupModal } from './record/project-setup';
 import { RecordingProvider, useRecording } from './recording-provider';
 
@@ -75,7 +75,7 @@ const Datasets = ({ datasets, projectConfig }: DatasetsProps) => {
                         <DialogTrigger>
                             <Button variant='accent'>Start recording a new dataset</Button>
                             {(close) =>
-                                HardwareSetupModal((config) => {
+                                TeleoperationSetupModal((config) => {
                                     setRecordingConfig(config);
                                     close();
                                 }, undefined)
@@ -102,7 +102,7 @@ const Datasets = ({ datasets, projectConfig }: DatasetsProps) => {
                             <DialogTrigger>
                                 <Button variant='secondary'>New Dataset</Button>
                                 {(close) =>
-                                    HardwareSetupModal((config) => {
+                                    TeleoperationSetupModal((config) => {
                                         setRecordingConfig(config);
                                         close();
                                     }, undefined)
@@ -112,7 +112,7 @@ const Datasets = ({ datasets, projectConfig }: DatasetsProps) => {
                             <DialogTrigger>
                                 <Button variant='accent'>Start recording</Button>
                                 {(close) =>
-                                    HardwareSetupModal((config) => {
+                                    TeleoperationSetupModal((config) => {
                                         setRecordingConfig(config);
                                         close();
                                     }, dataset?.id)

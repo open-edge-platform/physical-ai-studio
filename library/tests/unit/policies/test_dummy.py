@@ -3,11 +3,10 @@
 
 import pytest
 import torch
-from torch import nn
-from collections import deque
 from getiaction.data import Observation
 from getiaction.policies import Dummy, DummyConfig
 from getiaction.policies.dummy.model import Dummy as DummyModel
+
 
 class TestDummyPolicy:
     """Tests for DummyPolicy and DummyModel."""
@@ -15,7 +14,7 @@ class TestDummyPolicy:
     @pytest.fixture
     def policy(self):
         config = DummyConfig(action_shape=(3,))
-        return Dummy(config)
+        return Dummy(DummyModel.from_config(config))
 
     @pytest.fixture
     def batch(self):
@@ -86,7 +85,7 @@ class TestDummyPolicyValidation:
         from getiaction.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
-        policy = Dummy(config=config)
+        policy = Dummy(DummyModel.from_config(config))
 
         assert hasattr(policy, "evaluate_gym")
         assert callable(policy.evaluate_gym)
@@ -97,7 +96,7 @@ class TestDummyPolicyValidation:
         from getiaction.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
-        policy = Dummy(config=config)
+        policy = Dummy(DummyModel.from_config(config))
         gym = PushTGym()
 
         # This should not raise TypeError
@@ -113,7 +112,7 @@ class TestDummyPolicyValidation:
         from getiaction.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
-        policy = Dummy(config=config)
+        policy = Dummy(DummyModel.from_config(config))
         gym = PushTGym()
 
         # This should not raise TypeError
@@ -129,13 +128,13 @@ class TestDummyPolicyValidation:
         from getiaction.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
-        policy = Dummy(config=config)
+        policy = Dummy(DummyModel.from_config(config))
         gym = PushTGym()
 
         metrics = policy.validation_step(gym, batch_idx=0)
 
         # Check for expected keys
-        expected_keys = ["val/gym/episode_length", "val/gym/sum_reward", "val/gym/success"]
+        expected_keys = ["val/gym/episode_length", "val/gym/sum_reward"]
 
         for key in expected_keys:
             assert key in metrics, f"Missing expected metric: {key}"
@@ -146,7 +145,7 @@ class TestDummyPolicyValidation:
         from getiaction.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
-        policy = Dummy(config=config)
+        policy = Dummy(DummyModel.from_config(config))
         gym = PushTGym()
 
         metrics = policy.test_step(gym, batch_idx=0)
@@ -164,7 +163,7 @@ class TestDummyPolicyImportExport:
         from getiaction.policies.dummy.model import Dummy as DummyModel
 
         config = DummyConfig(action_shape=(2,))
-        policy = Dummy(config=config)
+        policy = Dummy(DummyModel.from_config(config))
 
         export_path = tmp_path / "dummy_policy.pth"
         policy.to_torch(export_path)
@@ -172,17 +171,17 @@ class TestDummyPolicyImportExport:
         assert export_path.exists()
 
         # Import the model back
-        loaded_model = DummyModel.load_from_checkpoint(export_path)
+        loaded_policy = Dummy.load_from_checkpoint(export_path)
 
-        assert isinstance(loaded_model, DummyModel)
-        assert loaded_model.action_shape == policy.model.action_shape
+        assert isinstance(loaded_policy, Dummy)
+        assert loaded_policy.model.action_shape == policy.model.action_shape
 
     def test_export_to_onnx(self, tmp_path):
         """Test exporting to ONNX format."""
         from getiaction.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
-        policy = Dummy(config=config)
+        policy = Dummy(DummyModel.from_config(config))
 
         export_path = tmp_path / "dummy_policy.onnx"
         policy.to_onnx(export_path)
@@ -194,7 +193,7 @@ class TestDummyPolicyImportExport:
         from getiaction.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
-        policy = Dummy(config=config)
+        policy = Dummy(DummyModel.from_config(config))
 
         export_path = tmp_path / "dummy_policy.xml"
         policy.to_openvino(export_path)
@@ -206,9 +205,61 @@ class TestDummyPolicyImportExport:
         from getiaction.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
-        policy = Dummy(config=config)
+        policy = Dummy(DummyModel.from_config(config))
 
         export_path = tmp_path / "dummy_policy_torch_ir.ptir"
         policy.to_torch_export_ir(export_path)
 
         assert export_path.exists()
+
+
+class TestDummySample:
+    """Tests for dtype/min/max sampling in Dummy._sample."""
+
+    def test_float_default_distribution(self):
+        """Float dtype with no bounds uses torch.rand."""
+        out = DummyModel._sample((4, 3), torch.float32, None, None)
+        assert out.dtype == torch.float32
+        assert out.shape == (4, 3)
+        assert torch.all((0.0 <= out) & (out <= 1.0)) # torch.rand range
+
+    def test_float_with_bounds(self):
+        """Float dtype with explicit min/max samples inside range."""
+        out = DummyModel._sample((5,), torch.float32, -2.0, 2.0)
+        assert out.dtype == torch.float32
+        assert out.shape == (5,)
+        assert torch.all((out >= -2.0) & (out <= 2.0)) # uniform bounded
+
+    def test_float_clamped_lower(self):
+        """Float dtype with only min clamps values."""
+        out = DummyModel._sample((6,), torch.float32, 0.5, None)
+        assert out.dtype == torch.float32
+        assert torch.all(out >= 0.5) # lower bound enforced
+
+    def test_float_clamped_upper(self):
+        """Float dtype with only max clamps values."""
+        out = DummyModel._sample((6,), torch.float32, None, 0.3)
+        assert out.dtype == torch.float32
+        assert torch.all(out <= 0.3)  # upper bound enforced
+
+    def test_int_default_distribution(self):
+        """Int dtype with no bounds samples full dtype range."""
+        out = DummyModel._sample((3, 3), torch.int32, None, None)
+        assert out.dtype == torch.int32
+        assert out.shape == (3, 3)
+
+    def test_int_with_bounds(self):
+        """Int dtype with explicit min/max samples inside integer bounds."""
+        out = DummyModel._sample((10,), torch.int32, 1, 4)
+        assert out.dtype == torch.int32
+        assert torch.all((out >= 1) & (out <= 4))  # inclusive integer range
+
+    def test_int_clamped_lower(self):
+        """Int dtype with only lower bound clamps values."""
+        out = DummyModel._sample((8,), torch.int32, 5, None)
+        assert torch.all(out >= 5)   #  lower clamp applied
+
+    def test_int_clamped_upper(self):
+        """Int dtype with only upper bound clamps values."""
+        out = DummyModel._sample((8,), torch.int32, None, 7)
+        assert torch.all(out <= 7)   #  upper clamp applied

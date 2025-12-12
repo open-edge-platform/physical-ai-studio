@@ -3,8 +3,6 @@
 
 """Dummy lightning module and policy for testing usage."""
 
-from collections.abc import Iterable
-
 import torch
 
 from getiaction.data import Observation
@@ -13,58 +11,26 @@ from getiaction.gyms import Gym
 from getiaction.policies.base import Policy
 from getiaction.policies.dummy.config import DummyConfig
 from getiaction.policies.dummy.model import Dummy as DummyModel
+from getiaction.policies.utils import FromCheckpoint
 
 
-class Dummy(Export, Policy):
+class Dummy(FromCheckpoint, Export, Policy):
     """Dummy policy wrapper."""
 
-    def __init__(self, config: DummyConfig) -> None:
+    model_type: type = DummyModel
+    model_config_type: type = DummyConfig
+
+    def __init__(self, model: DummyModel) -> None:
         """Initialize the Dummy policy wrapper.
 
         This class wraps a `DummyModel` and integrates it into a `TrainerModule`,
         validating the action shape and preparing the model for training.
 
         Args:
-            config (DummyConfig): Configuration object containing the action shape
-                and other hyperparameters required for initializing the policy.
+            model (DummyModel): An instance of the DummyModel class.
         """
         super().__init__()
-        self.config = config
-        self.action_shape = self._validate_action_shape(self.config.action_shape)
-
-        # model
-        self.model = DummyModel(self.action_shape)
-
-    @staticmethod
-    def _validate_action_shape(shape: list | tuple) -> list | tuple:
-        """Validate and normalize the action shape.
-
-        Args:
-            shape (list | tuple): The input shape to validate.
-
-        Returns:
-            list | tuple: A validated list or tuple object.
-
-        Raises:
-            ValueError: If `shape` is `None`.
-            TypeError: If `shape` is not a valid type (e.g., string).
-        """
-        if shape is None:
-            msg = "Action is missing a 'shape' key in its features dictionary."
-            raise ValueError(msg)
-
-        if isinstance(shape, torch.Size):
-            return shape
-
-        if isinstance(shape, str):
-            msg = f"Shape for action '{shape}' must be a sequence of numbers, but received a string."
-            raise TypeError(msg)
-
-        if isinstance(shape, Iterable):
-            return list(shape)
-
-        msg = f"The 'action_shape' argument must be a list or tuple, but received type {type(shape).__name__}."
-        raise TypeError(msg)
+        self.model: DummyModel = model
 
     def select_action(self, batch: Observation) -> torch.Tensor:
         """Select an action using the policy model.
@@ -76,10 +42,7 @@ class Dummy(Export, Policy):
             torch.Tensor: Selected actions.
         """
         # Get action from model
-        action = self.model.select_action(batch.to_dict())  # type: ignore[attr-defined]
-
-        # Remove batch dim if present (rollout expects unbatched)
-        return action.squeeze(0) if action.ndim > 1 and action.shape[0] == 1 else action
+        return self.model.select_action(batch.to_dict())  # type: ignore[attr-defined]
 
     def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
         """Perform forward pass of the Dummy policy.

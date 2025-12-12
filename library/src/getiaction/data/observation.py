@@ -187,6 +187,24 @@ class Observation:
         """
         return [f.name for f in fields(cls)]
 
+    @property
+    def batch_size(self) -> int:
+        """Infer the batch size from the first tensor in the observation.
+
+        Returns:
+            The inferred batch size.
+
+        Raises:
+            ValueError: If no tensor is found in the observation.
+        """
+        from .utils import infer_batch_size  # noqa: PLC0415
+
+        try:
+            return infer_batch_size(self)
+        except ValueError as e:
+            msg = f"Unable to infer batch size: {e}"
+            raise ValueError(msg) from e
+
     def values(self) -> list[Any]:
         """Return list of all field values (including None).
 
@@ -442,10 +460,10 @@ class Feature:
 class NormalizationParameters:
     """Parameters for normalizing a tensor."""
 
-    mean: torch.Tensor | np.ndarray | None = None
-    std: torch.Tensor | np.ndarray | None = None
-    min: torch.Tensor | np.ndarray | None = None
-    max: torch.Tensor | np.ndarray | None = None
+    mean: list[float] | float | None = None
+    std: list[float] | float | None = None
+    min: list[float] | float | None = None
+    max: list[float] | float | None = None
 
 
 # Module-level constants for convenient dict access

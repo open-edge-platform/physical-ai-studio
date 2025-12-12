@@ -28,7 +28,6 @@ from torchvision.ops.misc import FrozenBatchNorm2d
 from getiaction.config import FromConfig
 from getiaction.data import Feature, FeatureType
 from getiaction.data.observation import ACTION, EXTRA, IMAGES, STATE, Observation
-from getiaction.export import FromCheckpoint
 from getiaction.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
 
 from .config import ACTConfig
@@ -36,7 +35,7 @@ from .config import ACTConfig
 log = logging.getLogger(__name__)
 
 
-class ACT(nn.Module, FromConfig, FromCheckpoint):
+class ACT(nn.Module, FromConfig):
     """Action Chunking Transformer (ACT) model.
 
     Supports training and inference modes.
@@ -251,6 +250,9 @@ class ACT(nn.Module, FromConfig, FromCheckpoint):
             "output": ["action"],
         }
         extra_args["torch_export_ir"] = {}
+        extra_args["torch"] = {
+            "output_names": ["action"],
+        }
 
         return extra_args
 
@@ -721,10 +723,9 @@ class _ACT(nn.Module):
         else:
             # When not using the VAE encoder, we set the latent to be all zeros.
             mu = log_sigma_x2 = None
-            latent_sample = torch.zeros([batch_size, self.config.latent_dim], dtype=torch.float32).to(
+            latent_sample = torch.zeros([batch_size, self.config.latent_dim], dtype=batch[STATE].dtype).to(
                 batch[STATE].device,
             )
-
         # Prepare transformer encoder inputs.
         encoder_in_tokens = [self.encoder_latent_input_proj(latent_sample)]
         encoder_in_pos_embed = list(self.encoder_1d_feature_pos_embed.weight.unsqueeze(1))

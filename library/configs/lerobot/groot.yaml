@@ -63,7 +63,7 @@ model:
     lora_full_model: false
 
     # Optimization
-    learning_rate: 1.0e-4
+    optimizer_lr: 1.0e-4
     optimizer_betas: [0.95, 0.999]
     optimizer_eps: 1.0e-8
     optimizer_weight_decay: 1.0e-5
