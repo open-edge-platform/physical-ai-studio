@@ -31,6 +31,7 @@ class RuntimeAdapter(ABC):
 | **OpenVINOAdapter**    | Intel CPU/GPU  | Hardware opts, quantization |
 | **ONNXAdapter**        | Cross-platform | CUDA/TensorRT               |
 | **TorchExportAdapter** | Edge/mobile    | PyTorch export              |
+| **TorchAdapter**       | CPU/GPU        | Native PyTorch              |
 
 ## InferenceModel
 
@@ -50,14 +51,17 @@ graph TD
     B -->|OpenVINO| C[OpenVINOAdapter]
     B -->|ONNX| D[ONNXAdapter]
     B -->|Torch Export IR| E[TorchExportAdapter]
+    B -->|Torch snapshot| X[TorchAdapter]
 
     C --> F[OpenVINO Runtime]
     D --> G[ONNX Runtime]
     E --> H[PyTorch torch.export]
+    X --> Y[PyTorch torch.save]
 
     F --> I[Hardware: CPU/GPU/NPU]
     G --> J[Hardware: CPU/CUDA/TensorRT]
     H --> K[Hardware: CPU/CUDA]
+    Y --> K
 ```
 
 ### Factory Pattern
@@ -174,7 +178,8 @@ Backend detected from file extensions:
 | --------------- | --------------------- |
 | OpenVINO        | GPU → NPU → CPU       |
 | ONNX            | CUDA → TensorRT → CPU |
-| Torch Export IR | cuda → cpu            |
+| Torch Export IR | cuda → CPU            |
+| Torch           | cuda → CPU            |
 
 ## Performance
 

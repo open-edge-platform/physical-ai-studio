@@ -11,12 +11,13 @@ import torch
 import yaml
 
 from getiaction.data import Dataset, Observation
-from getiaction.export import Export, FromCheckpoint
 from getiaction.export.mixin_export import CONFIG_KEY as _MODEL_CONFIG_KEY
+from getiaction.export.mixin_export import Export
 from getiaction.gyms import Gym
 from getiaction.policies.act.config import ACTConfig
 from getiaction.policies.act.model import ACT as ACTModel  # noqa: N811
 from getiaction.policies.base import Policy
+from getiaction.policies.utils import FromCheckpoint
 from getiaction.train.utils import reformat_dataset_to_match_policy
 
 
@@ -186,11 +187,8 @@ class ACT(FromCheckpoint, Export, Policy):  # type: ignore[misc]
             torch.Tensor: Selected actions.
         """
         # Move batch to device (observations from gym are on CPU)
-        batch = batch.to(self.device)
-        chunk = self.model.predict_action_chunk(batch.to_dict())
-
-        # select only first action from the predicted chunk to unify output with other policies
-        return chunk[:, 1, :]
+        inference_batch = batch.to(self.device).to_dict()
+        return self.model.predict_action_chunk(inference_batch)
 
     def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
         """Perform forward pass of the ACT policy.

@@ -8,9 +8,10 @@ from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np
 import pytest
+import torch
 
 from getiaction.export.mixin_export import ExportBackend
-from getiaction.inference.adapters import ONNXAdapter, OpenVINOAdapter, RuntimeAdapter, TorchExportAdapter, get_adapter
+from getiaction.inference.adapters import ONNXAdapter, OpenVINOAdapter, RuntimeAdapter, TorchExportAdapter, TorchAdapter, get_adapter
 
 
 class TestGetAdapter:
@@ -23,6 +24,7 @@ class TestGetAdapter:
             ("openvino", OpenVINOAdapter),
             ("onnx", ONNXAdapter),
             ("torch_export_ir", TorchExportAdapter),
+            ("torch", TorchAdapter),
         ],
     )
     def test_get_adapter(
@@ -143,6 +145,79 @@ class TestONNXAdapter:
         with patch.dict("sys.modules", {"onnxruntime": None}):
             with pytest.raises(ImportError, match="ONNX Runtime is not installed"):
                 adapter.load(model_path)
+
+
+class TestTorchAdapter:
+    """Test Torch inference adapter."""
+
+    def test_lifecycle(self, tmp_path: Path) -> None:
+        """Test complete adapter lifecycle: init, load, predict."""
+
+        model_path = tmp_path / "model.pt"
+        metadata_path = tmp_path / "metadata.yaml"
+        model_path.touch()
+        metadata_path.touch()
+
+        with metadata_path.open("w") as f:
+            f.write("policy_class: getiaction.policies.act.ACT\n")
+
+        mock_model = MagicMock()
+        mock_model.model.return_value = torch.tensor([[1.0, 2.0]])
+        mock_model.eval.return_value = mock_model
+        mock_model.to.return_value = mock_model
+        mock_model.model.sample_input = {"input": torch.tensor([[0.0]])}
+        mock_model.model.extra_export_args = {"torch": {"output_names": ["output"]}}
+
+        with patch("getiaction.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
+            adapter = TorchAdapter(device="cpu")
+            assert adapter.device == torch.device("cpu")
+            assert "cpu" in repr(adapter)
+
+            adapter.load(model_path)
+
+            outputs = adapter.predict({"input": np.array([[1.0, 2.0]])})
+            assert "output" in outputs and isinstance(outputs["output"], np.ndarray)
+
+    def test_error_cases(self, tmp_path: Path) -> None:
+        """Test error handling for file not found and predict without load."""
+        adapter = TorchAdapter()
+
+        with pytest.raises(FileNotFoundError, match="Model file not found"):
+            adapter.load(Path("/nonexistent/model.pt"))
+
+        with pytest.raises(RuntimeError, match="Model not loaded"):
+            adapter.predict({"input": np.array([1.0])})
+
+    def test_load_failure(self, tmp_path: Path) -> None:
+        """Test error handling when torch.load fails."""
+        model_path = tmp_path / "model.pt"
+        metadata_path = tmp_path / "metadata.yaml"
+        model_path.touch()
+        metadata_path.touch()
+
+        with metadata_path.open("w") as f:
+            f.write("policy_class: getiaction.policies.act.ACT\n")
+
+        with patch("getiaction.policies.act.ACT.load_from_checkpoint", side_effect=RuntimeError("Load error")):
+            adapter = TorchAdapter()
+            with pytest.raises(RuntimeError, match="Failed to load"):
+                adapter.load(model_path)
+
+    def test_device_selection(self) -> None:
+        """Test device selection for Torch adapter."""
+        adapter_cpu = TorchAdapter(device="cpu")
+        assert adapter_cpu.device == torch.device("cpu")
+
+        adapter_cuda = TorchAdapter(device="cuda")
+        assert adapter_cuda.device == torch.device("cuda")
+
+    def test_input_output_names_before_load(self) -> None:
+        """Test input/output names return empty lists before model is loaded."""
+        adapter = TorchAdapter()
+        adapter._policy = MagicMock()
+
+        assert adapter.input_names == []
+        assert adapter.output_names == []
 
 
 class TestTorchExportAdapter:

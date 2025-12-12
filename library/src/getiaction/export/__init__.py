@@ -1,9 +1,8 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Export and import mixins module."""
+"""Export mixins module."""
 
 from .mixin_export import Export, ExportBackend
-from .mixin_torch import FromCheckpoint
 
-__all__ = ["Export", "ExportBackend", "FromCheckpoint"]
+__all__ = ["Export", "ExportBackend"]
