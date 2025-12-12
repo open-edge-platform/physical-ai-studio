@@ -68,5 +68,8 @@ jobs:
           EOF
       - name: Run python unit tests
         working-directory: library
+        env:
+          MUJOCO_GL: egl
+          PYOPENGL_PLATFORM: egl
         run: |
           uv run pytest tests/unit
