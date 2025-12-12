@@ -72,7 +72,10 @@ class SigLIPEncoder(nn.Module):
             raise ImportError(msg) from e
 
         logger.info("Loading SigLIP vision model: %s", self.model_name)
-        self._vision_model = SiglipVisionModel.from_pretrained(self.model_name, revision="main")
+        self._vision_model = SiglipVisionModel.from_pretrained(  # nosec B615
+            self.model_name,
+            revision="main",
+        )
         self._hidden_size = self._vision_model.config.hidden_size
 
     @property

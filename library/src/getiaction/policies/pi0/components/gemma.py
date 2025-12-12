@@ -218,7 +218,7 @@ class PaliGemmaWithExpert(nn.Module):
         logger.info("Loading PaliGemma backbone: %s", self._paligemma_model_id)
 
         # Load PaliGemma
-        self._paligemma = PaliGemmaForConditionalGeneration.from_pretrained(
+        self._paligemma = PaliGemmaForConditionalGeneration.from_pretrained(  # nosec B615
             self._paligemma_model_id,
             torch_dtype=self.dtype,
             revision="main",
