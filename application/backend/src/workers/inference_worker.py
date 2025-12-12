@@ -56,14 +56,9 @@ class InferenceWorker(BaseThreadWorker):
         self.state = InferenceState()
         self.events = {
             "stop": Event(),
-            "calculate_trajectory": Event(),
             "start": Event(),
             "disconnect": Event(),
         }
-
-    def calculate_trajectory(self) -> None:
-        """Calculate trajectory."""
-        self.events["calculate_trajectory"].set()
 
     def start_task(self, task_index: int) -> None:
         """Start specific task index"""
@@ -118,65 +113,60 @@ class InferenceWorker(BaseThreadWorker):
 
     async def run_loop(self) -> None:
         """inference loop."""
-        logger.info("run loop")
-        self.events["start"].clear()
-        self.events["stop"].clear()
-        self.events["disconnect"].clear()
+        try:
+            logger.info("run loop")
+            self.events["start"].clear()
+            self.events["stop"].clear()
+            self.events["disconnect"].clear()
 
-        self.state.is_running = False
+            self.state.is_running = False
 
-        start_episode_t = time.perf_counter()
-        action_queue: list[list[float]] = []
-        while not self.should_stop() and not self.events["disconnect"].is_set():
-            if not self.state.initialized or self.state.error:
-                return
+            start_episode_t = time.perf_counter()
+            action_queue: list[list[float]] = []
+            while not self.should_stop() and not self.events["disconnect"].is_set():
+                if not self.state.initialized or self.state.error:
+                    return
 
-            start_loop_t = time.perf_counter()
-            if self.events["start"].is_set():
-                logger.info("start")
-                self.events["start"].clear()
-                self.robot.send_action(SO_101_REST_POSITION)
-                precise_sleep(0.3)  # TODO check if neccesary
-                self.state.is_running = True
-                start_episode_t = time.perf_counter()
-                self._report_state()
+                start_loop_t = time.perf_counter()
+                if self.events["start"].is_set():
+                    logger.info("start")
+                    self.events["start"].clear()
+                    self.robot.send_action(SO_101_REST_POSITION)
+                    precise_sleep(0.3)  # TODO check if neccesary
+                    self.state.is_running = True
+                    start_episode_t = time.perf_counter()
+                    self._report_state()
 
-            if self.events["stop"].is_set():
-                logger.info("stop")
-                self.events["stop"].clear()
-                action_queue.clear()
-                precise_sleep(0.3)  # TODO check if neccesary
-                self.state.is_running = False
-                self._report_state()
+                if self.events["stop"].is_set():
+                    logger.info("stop")
+                    self.events["stop"].clear()
+                    action_queue.clear()
+                    precise_sleep(0.3)  # TODO check if neccesary
+                    self.state.is_running = False
+                    self._report_state()
 
-            if self.events["calculate_trajectory"].is_set():
-                logger.info("calculate_trajectory")
-                self.events["calculate_trajectory"].clear()
                 lerobot_obs = self.robot.get_observation()
-                observation = self._build_geti_action_observation(lerobot_obs)
-                logger.info(observation.keys())
-                self._report_trajectory(self.model(observation.to_dict())[0].tolist())
+                timestamp = time.perf_counter() - start_episode_t
+                if self.state.is_running:
+                    observation = self._build_geti_action_observation(lerobot_obs)
+                    if not action_queue:
+                        action_queue = self.model(observation.to_dict())[0].tolist()
+                    action = action_queue.pop(0)
 
-            lerobot_obs = self.robot.get_observation()
-            timestamp = time.perf_counter() - start_episode_t
-            if self.state.is_running:
-                observation = self._build_geti_action_observation(lerobot_obs)
-                if not action_queue:
-                    action_queue = self.model(observation.to_dict())[0].tolist()
-                action = action_queue.pop(0)
+                    # print(observation)
+                    # actions = self.policy.select_action(observation)
+                    formatted_actions = dict(zip(self.action_keys, action))
+                    self.robot.send_action(formatted_actions)
+                    self._report_action(formatted_actions, lerobot_obs, timestamp)
+                else:
+                    self._report_action({}, lerobot_obs, timestamp)
 
-                # print(observation)
-                # actions = self.policy.select_action(observation)
-                formatted_actions = dict(zip(self.action_keys, action))
-                self.robot.send_action(formatted_actions)
-                self._report_action(formatted_actions, lerobot_obs, timestamp)
-            else:
-                self._report_action({}, lerobot_obs, timestamp)
+                dt_s = time.perf_counter() - start_loop_t
+                wait_time = 1 / self.config.fps - dt_s
 
-            dt_s = time.perf_counter() - start_loop_t
-            wait_time = 1 / self.config.fps - dt_s
-
-            precise_sleep(wait_time)
+                precise_sleep(wait_time)
+        except Exception as e:
+            self._report_error(e)
 
     def teardown(self) -> None:
         """Disconnect robots and close queue."""

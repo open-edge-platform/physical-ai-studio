@@ -78,16 +78,6 @@ export const useInference = (setup: SchemaInferenceConfig, onError: (error: stri
         });
     };
 
-    const calculateTrajectory = useMutation({
-        mutationFn: async () => {
-            const { data } = await sendJsonMessageAndWait<InferenceApiJsonResponse<{ trajectory: number[][] }>>(
-                { event: 'calculate_trajectory', data: {} },
-                ({ event }) => event === 'trajectory'
-            );
-            return data['trajectory'];
-        },
-    });
-
     const disconnect = () => {
         sendJsonMessage({
             event: 'disconnect',
@@ -107,6 +97,5 @@ export const useInference = (setup: SchemaInferenceConfig, onError: (error: stri
         stop,
         disconnect,
         observation,
-        calculateTrajectory,
     };
 };

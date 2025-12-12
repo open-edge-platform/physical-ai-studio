@@ -109,8 +109,6 @@ async def inference_websocket(
                     process.start_task(task_index)
                 if data["event"] == "stop":
                     process.stop()
-                if data["event"] == "calculate_trajectory":
-                    process.calculate_trajectory()
                 if data["event"] == "disconnect":
                     process.disconnect()
                     break
