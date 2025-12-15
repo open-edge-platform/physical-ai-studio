@@ -1,0 +1,104 @@
+# =============================================================================
+# LIBERO Benchmark Evaluation Configuration
+# Standardized Multi-Task Evaluation for Robotic Manipulation
+# =============================================================================
+#
+# Usage:
+#   getiaction benchmark --config configs/benchmark/libero.yaml \
+#       --policy getiaction.policies.ACT \
+#       --pretrained ./checkpoints/model.ckpt
+#
+# Common overrides:
+#   # Quick test on specific tasks
+#   getiaction benchmark --config configs/benchmark/libero.yaml \
+#       --policy getiaction.policies.ACT \
+#       --pretrained ./checkpoints/model.ckpt \
+#       --benchmark.task_ids [0,1,2] \
+#       --benchmark.num_episodes 5
+#
+#   # Different task suite
+#   getiaction benchmark --config configs/benchmark/libero.yaml \
+#       --benchmark.task_suite libero_spatial \
+#       --policy getiaction.policies.ACT \
+#       --pretrained ./checkpoints/model.ckpt
+#
+# -----------------------------------------------------------------------------
+# LIBERO TASK SUITES REFERENCE
+# -----------------------------------------------------------------------------
+#
+# | Suite          | Tasks | Max Steps | Focus                        |
+# |----------------|-------|-----------|------------------------------|
+# | libero_spatial | 10    | 280       | Spatial reasoning            |
+# | libero_object  | 10    | 280       | Object generalization        |
+# | libero_goal    | 10    | 300       | Goal-conditioned tasks       |
+# | libero_10      | 10    | 520       | Mixed difficulty benchmark   |
+# | libero_90      | 90    | 400       | Large-scale comprehensive    |
+#
+# =============================================================================
+
+benchmark:
+  class_path: getiaction.benchmark.LiberoBenchmark
+  init_args:
+    # -------------------------------------------------------------------------
+    # Task Configuration
+    # -------------------------------------------------------------------------
+    # LIBERO task suite to evaluate on
+    task_suite: libero_10
+
+    # Specific task IDs to evaluate (null = all tasks in suite)
+    # Example: [0, 1, 2] evaluates only first 3 tasks
+    task_ids: null
+
+    # -------------------------------------------------------------------------
+    # Evaluation Parameters
+    # -------------------------------------------------------------------------
+    # Number of episodes per task (standard: 20 for paper results)
+    num_episodes: 20
+
+    # Maximum steps per episode (use null for task suite default)
+    max_steps: 300
+
+    # Random seed for reproducibility
+    seed: 42
+
+    # -------------------------------------------------------------------------
+    # Observation Configuration
+    # -------------------------------------------------------------------------
+    observation_height: 256
+    observation_width: 256
+
+    # -------------------------------------------------------------------------
+    # Video Recording
+    # -------------------------------------------------------------------------
+    # Directory for video output (null = no recording)
+    video_dir: ./results/benchmark/libero_10/videos
+
+    # Recording mode:
+    #   - "all"       : Save all episodes
+    #   - "failures"  : Only save failed episodes (for debugging)
+    #   - "successes" : Only save successful episodes
+    #   - "none"      : Disable recording
+    record_mode: failures
+
+# -----------------------------------------------------------------------------
+# Policy Configuration
+# -----------------------------------------------------------------------------
+# Policy class to evaluate (must have load_from_checkpoint method)
+#
+# CLI: --policy getiaction.policies.ACT
+#
+# Uncomment and configure:
+# policy: getiaction.policies.ACT
+
+# Pretrained checkpoint path (required)
+#
+# CLI: --pretrained ./checkpoints/model.ckpt
+#
+# Uncomment and configure:
+# pretrained: ./checkpoints/act_libero.ckpt
+
+# -----------------------------------------------------------------------------
+# Output Configuration
+# -----------------------------------------------------------------------------
+# Directory for benchmark results (JSON, CSV exports)
+output_dir: ./results/benchmark/libero_10
