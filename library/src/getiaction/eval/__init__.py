@@ -4,5 +4,6 @@
 """Evaluation utilities for testing policies in gym environments."""
 
 from getiaction.eval.rollout import Rollout, evaluate_policy, rollout
+from getiaction.eval.video import RecordMode, VideoRecorder
 
-__all__ = ["Rollout", "evaluate_policy", "rollout"]
+__all__ = ["RecordMode", "Rollout", "VideoRecorder", "evaluate_policy", "rollout"]
