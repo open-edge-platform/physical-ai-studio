@@ -65,9 +65,11 @@ class TestVideoRecorder:
             r.start_episode("t1")
             for f in frames:
                 r.record_frame(f)
-            assert "success" in r.finish_episode(success=True).name
+            result1 = r.finish_episode(success=True)
+            assert result1 is not None and "success" in result1.name
 
             r.start_episode("t2")
             for f in frames:
                 r.record_frame(f)
-            assert "failure" in r.finish_episode(success=False).name
+            result2 = r.finish_episode(success=False)
+            assert result2 is not None and "failure" in result2.name
