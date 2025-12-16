@@ -4,9 +4,6 @@
 # Copyright (C) 2025 Physical Intelligence
 # SPDX-License-Identifier: Apache-2.0
 
-# ruff: noqa: ARG002
-# Lightning's save_hyperparameters() captures all __init__ args but ruff doesn't understand this
-
 """Pi0/Pi0.5 Policy - Lightning wrapper for training and inference.
 
 This module provides PyTorch Lightning policies for Pi0 and Pi0.5 models,
@@ -41,7 +38,6 @@ Example:
 from __future__ import annotations
 
 import logging
-from collections import deque
 from typing import TYPE_CHECKING, Any, Literal
 
 import torch
@@ -144,7 +140,7 @@ class Pi0(Policy):
 
         Creates Pi0Config from explicit args and saves it as hyperparameters.
         """
-        super().__init__()
+        super().__init__(n_action_steps=n_action_steps)
 
         # Create config from explicit args (policy-level config)
         self.config = Pi0Config(
@@ -181,9 +177,6 @@ class Pi0(Policy):
         # Preprocessor/postprocessor set in setup() or _initialize_model()
         self._preprocessor: Any = None
         self._postprocessor: Any = None
-
-        # Action queue for temporal consistency
-        self._action_queue: deque[torch.Tensor] = deque(maxlen=n_action_steps)
 
         # Track initialization state
         self._is_setup_complete: bool = False
@@ -296,7 +289,7 @@ class Pi0(Policy):
 
         logger.info("LoRA applied (rank=%d, alpha=%d)", config.lora_rank, config.lora_alpha)
 
-    def setup(self, stage: str) -> None:
+    def setup(self, stage: str) -> None:  # noqa: ARG002
         """Set up model from datamodule (lazy initialization path).
 
         Called by Lightning before fit/validate/test/predict.
@@ -403,7 +396,7 @@ class Pi0(Policy):
 
         return loss, loss_dict
 
-    def training_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
+    def training_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:  # noqa: ARG002
         """Lightning training step.
 
         Args:
@@ -436,17 +429,17 @@ class Pi0(Policy):
         return self.evaluate_gym(batch, batch_idx, stage="val")
 
     @torch.no_grad()
-    def select_action(self, batch: Observation) -> torch.Tensor:
-        """Select action for environment interaction.
+    def predict_action_chunk(self, batch: Observation) -> torch.Tensor:
+        """Predict a chunk of actions from observation.
 
-        Uses action queue for temporal consistency - only re-predicts
-        when queue is empty.
+        Implements the abstract method from Policy base class.
+        Returns action chunk that will be queued by select_action().
 
         Args:
             batch: Input observation.
 
         Returns:
-            Action tensor of shape (batch, action_dim).
+            Action chunk tensor of shape (B, T, D) where T is chunk size.
 
         Raises:
             RuntimeError: If model is not initialized.
@@ -454,10 +447,6 @@ class Pi0(Policy):
         if self.model is None:
             msg = "Model not initialized"
             raise RuntimeError(msg)
-
-        # Return from queue if available
-        if len(self._action_queue) > 0:
-            return self._action_queue.popleft()
 
         # Preprocess batch
         processed = self._preprocessor(batch)
@@ -481,19 +470,13 @@ class Pi0(Policy):
 
         # Postprocess
         outputs = self._postprocessor({"actions": action_chunk})
-        action_chunk = outputs["actions"]
+        return outputs["actions"]
 
-        # Fill queue (skip first as we return it immediately)
-        n_action_steps = self.hparams["n_action_steps"]
-        for i in range(1, min(n_action_steps, action_chunk.shape[1])):
-            self._action_queue.append(action_chunk[:, i])
-
-        # Return first action
-        return action_chunk[:, 0]
+    # select_action() is inherited from Policy base class - uses queue with predict_action_chunk()
 
     def reset(self) -> None:
-        """Reset policy state when environment resets."""
-        self._action_queue.clear()
+        """Reset policy state for new episode."""
+        super().reset()  # Clears action queue
 
     def configure_optimizers(self) -> dict[str, Any]:
         """Configure optimizer and scheduler.
