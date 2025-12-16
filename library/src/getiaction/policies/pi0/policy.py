@@ -547,11 +547,6 @@ class Pi0(Policy):
             betas=(0.9, 0.95),
         )
 
-        # Apply gradient clipping if enabled
-        if self.config.grad_clip_norm > 0:
-            # Lightning will handle gradient clipping via trainer.gradient_clip_val
-            pass
-
         # Create scheduler with warmup
         # Calculate warmup_steps from warmup_ratio and total training steps
         warmup_ratio = self.config.warmup_ratio
@@ -589,3 +584,29 @@ class Pi0(Policy):
             "lr": self.config.learning_rate,
             "weight_decay": self.config.weight_decay,
         }
+
+    def configure_gradient_clipping(
+        self,
+        optimizer: torch.optim.Optimizer,
+        gradient_clip_val: float | None = None,
+        gradient_clip_algorithm: str | None = None,
+    ) -> None:
+        """Configure gradient clipping from policy config.
+
+        This overrides Lightning's default gradient clipping to use
+        the policy's grad_clip_norm config value.
+
+        Args:
+            optimizer: The optimizer being used.
+            gradient_clip_val: Ignored (uses config value instead).
+            gradient_clip_algorithm: Ignored (always uses 'norm').
+        """
+        # Use Trainer's value if set, otherwise fall back to policy config
+        clip_val = gradient_clip_val if gradient_clip_val is not None else self.config.grad_clip_norm
+
+        if clip_val and clip_val > 0:
+            self.clip_gradients(
+                optimizer,
+                gradient_clip_val=clip_val,
+                gradient_clip_algorithm=gradient_clip_algorithm or "norm",
+            )
