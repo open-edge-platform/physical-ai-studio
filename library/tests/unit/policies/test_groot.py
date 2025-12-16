@@ -116,21 +116,6 @@ class TestGrootPolicy:
         with pytest.raises(RuntimeError, match="not initialized"):
             policy.configure_optimizers()
 
-    def test_serialize_stats(self) -> None:
-        """Test stats serialization for checkpointing."""
-        stats = {
-            "action": {
-                "mean": torch.tensor([1.0, 2.0]),
-                "std": torch.tensor([0.1, 0.2]),
-            },
-        }
-        serialized = Groot._serialize_stats(stats)
-        assert serialized is not None
-        assert serialized["action"]["mean"] == pytest.approx([1.0, 2.0])
-        assert serialized["action"]["std"] == pytest.approx([0.1, 0.2])
-        assert Groot._serialize_stats(None) is None
-
-
 # ============================================================================ #
 # NN Component Tests                                                           #
 # ============================================================================ #

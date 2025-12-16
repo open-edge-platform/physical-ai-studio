@@ -10,9 +10,9 @@ device support (CUDA, XPU) without requiring the Flash Attention CUDA package.
 ## Quick Start
 
 ```python
-from getiaction.policies.groot import Groot, GrootConfig
 from getiaction.data.lerobot import LeRobotDataModule
-import lightning as L
+from getiaction.policies.groot import Groot, GrootConfig
+from getiaction.train import Trainer
 
 # Create policy with explicit args
 policy = Groot(
@@ -33,7 +33,7 @@ datamodule = LeRobotDataModule(
 )
 
 # Train
-trainer = L.Trainer(max_epochs=100, precision="bf16-mixed")
+trainer = Trainer(max_epochs=100, precision="bf16-mixed")
 trainer.fit(policy, datamodule)
 
 # Load checkpoint (native Lightning - just works!)
@@ -106,7 +106,7 @@ class Groot(Policy):
         Training (lazy initialization):
 
         >>> policy = Groot(chunk_size=50, learning_rate=1e-4)
-        >>> trainer = L.Trainer(max_epochs=100)
+        >>> trainer = Trainer(max_epochs=100)
         >>> trainer.fit(policy, datamodule)
 
         Load from checkpoint (eager initialization - just works!):
@@ -302,33 +302,6 @@ class Groot(Policy):
 
         # Initialize model using shared method
         self._initialize_model(env_action_dim, dataset_stats)
-
-    @staticmethod
-    def _serialize_stats(
-        stats: dict[str, dict[str, Any]] | None,
-    ) -> dict[str, dict[str, list[float]]] | None:
-        """Convert stats with tensors to JSON-serializable format.
-
-        Args:
-            stats: Dataset stats with tensor values.
-
-        Returns:
-            Stats with list values (JSON-serializable for checkpoint hparams).
-        """
-        if stats is None:
-            return None
-
-        import torch  # noqa: PLC0415
-
-        serializable: dict[str, dict[str, list[float]]] = {}
-        for key, stat_dict in stats.items():
-            serializable[key] = {}
-            for stat_name, value in stat_dict.items():
-                if isinstance(value, torch.Tensor) or hasattr(value, "tolist"):
-                    serializable[key][stat_name] = value.tolist()
-                else:
-                    serializable[key][stat_name] = list(value) if hasattr(value, "__iter__") else [value]
-        return serializable
 
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:  # type: ignore[override]
         """Forward pass - delegates to model.
