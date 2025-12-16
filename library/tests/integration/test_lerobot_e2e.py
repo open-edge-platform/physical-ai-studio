@@ -118,7 +118,7 @@ class TestLeRobotCorePolicies(LeRobotE2ETestBase):
 
 @pytest.mark.slow
 @pytest.mark.skip(
-    reason="LeRobot Groot wrapper has action dimension validation issues. "
+    reason="LeRobot Groot wrapper has Eagle image processor compatibility issues. "
     "Use first-party getiaction Groot implementation instead (test_first_party_e2e.py)."
 )
 @pytest.mark.parametrize("policy_name", VLA_POLICIES, indirect=True)
@@ -126,8 +126,8 @@ class TestLeRobotVLAPolicies(LeRobotE2ETestBase):
     """E2E tests for Vision-Language-Action policies (groot).
 
     NOTE: These tests are skipped because LeRobot's Groot wrapper has known issues
-    with action dimension validation. Use the first-party getiaction Groot
-    implementation instead, which is tested in test_first_party_e2e.py.
+    with the Eagle image processor (_prepare_image_like_inputs). Use the first-party
+    getiaction Groot implementation instead, which is tested in test_first_party_e2e.py.
 
     These tests require:
     - 24GB+ VRAM
