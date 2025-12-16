@@ -5,8 +5,58 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
+from pathlib import Path
+
 import pytest
 import torch
+
+# Configure LeRobot to avoid interactive prompts during test collection.
+# This is needed because importing robosuite (used by LIBERO) triggers
+# LeRobot initialization which checks for this environment variable.
+os.environ.setdefault("HF_LEROBOT_HOME", "/tmp/lerobot_test")
+
+# Configure LIBERO to avoid interactive prompts during test collection.
+# CRITICAL: This must run BEFORE any imports of libero.libero!
+# Create config file to prevent interactive prompt.
+libero_config_dir = Path.home() / ".libero"
+libero_config_file = libero_config_dir / "config.yaml"
+
+if not libero_config_file.exists():
+    libero_config_dir.mkdir(parents=True, exist_ok=True)
+
+    # Import yaml only when needed
+    import yaml
+    import importlib.util
+
+    # Try to find the libero package installation path for bundled files
+    # The libero package bundles bddl_files, init_files, and assets
+    libero_spec = importlib.util.find_spec("libero.libero")
+    if libero_spec and libero_spec.origin:
+        libero_pkg_path = Path(libero_spec.origin).parent
+        default_config = {
+            "benchmark_root": str(libero_pkg_path),
+            "bddl_files": str(libero_pkg_path / "bddl_files"),
+            "init_states": str(libero_pkg_path / "init_files"),
+            "datasets": "/tmp/libero/datasets",  # datasets are downloaded separately
+            "assets": str(libero_pkg_path / "assets"),
+        }
+    else:
+        # Fallback to tmp paths if libero package not found
+        default_config = {
+            "benchmark_root": "/tmp/libero",
+            "bddl_files": "/tmp/libero/bddl_files",
+            "init_states": "/tmp/libero/init_files",
+            "datasets": "/tmp/libero/datasets",
+            "assets": "/tmp/libero/assets",
+        }
+
+    libero_config_file.write_text(yaml.dump(default_config))
+
+# Note: MUJOCO_GL and PYOPENGL_PLATFORM env vars for headless rendering
+# must be set BEFORE Python starts (e.g., in CI workflow), not here.
+# Setting them here is too late as OpenGL may already be initialized.
 
 
 @pytest.fixture
