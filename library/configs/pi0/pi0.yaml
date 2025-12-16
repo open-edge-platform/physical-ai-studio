@@ -91,7 +91,7 @@ model:
     #   tune_action_expert: false
     #   tune_vision_encoder: false
     #
-    # 12-16GB (RTX 3090/4090, Intel B580/B60):
+    # 12-24GB (RTX 3090/4090, Intel B60):
     #   tune_paligemma: false
     #   tune_action_expert: true
     #   tune_vision_encoder: false
@@ -166,7 +166,7 @@ trainer:
   #   - "xpu"  : Intel Arc/Data Center GPUs (requires torch+xpu)
   #   - "cpu"  : CPU only (slow, for testing)
   #
-  # For Intel XPU (Arc A770, B580, B60, Data Center GPUs):
+  # For Intel XPU:
   #   1. Install PyTorch with XPU: pip install torch --index-url https://download.pytorch.org/whl/xpu
   #   2. Set accelerator: xpu (or auto)
   #   3. Note: bfloat16 is supported on Intel GPUs
