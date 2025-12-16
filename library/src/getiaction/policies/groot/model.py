@@ -12,7 +12,7 @@ are used as external dependencies.
 
 Supported Devices:
     - CUDA: NVIDIA GPUs with CUDA support
-    - XPU: Intel GPUs (Arc, Data Center Max) with PyTorch XPU support
+    - XPU: Intel GPUs with PyTorch XPU support
     - CPU: Fallback for development/debugging
 
 """

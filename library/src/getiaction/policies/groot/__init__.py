@@ -16,6 +16,7 @@ foundation model, with several improvements:
 
 ```python
 from getiaction.policies.groot import Groot, GrootModel
+from getiaction.train import Trainer
 
 # Training with Lightning
 policy = Groot(
@@ -23,7 +24,7 @@ policy = Groot(
     attn_implementation='sdpa',  # PyTorch native, no flash-attn needed
     tune_projector=True,
 )
-trainer = L.Trainer(max_epochs=100)
+trainer = Trainer(max_epochs=100)
 trainer.fit(policy, datamodule)
 
 # Load checkpoint (native Lightning)

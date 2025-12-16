@@ -13,7 +13,7 @@ The configuration inherits from the base `Config` class, enabling:
 
 For CLI usage, use the YAML config in `configs/groot/groot.yaml`:
 
-    getiaction fit --config configs/groot/groot.yaml
+    getiaction fit --config configs/getiaction/groot.yaml
 
 Example (API):
     >>> from getiaction.policies.groot import GrootConfig
