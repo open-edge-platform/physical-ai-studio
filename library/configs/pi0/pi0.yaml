@@ -15,7 +15,7 @@
 #   # Use Pi0.5 variant (better quality, requires 16GB+ VRAM)
 #   getiaction fit --config configs/pi0/pi0.yaml --model.init_args.variant pi05
 #
-#   # Intel XPU (Arc B580, Data Center Max)
+#   # Intel XPU
 #   getiaction fit --config configs/pi0/pi0.yaml --trainer.accelerator xpu
 #
 #   # 12-16GB GPU - enable action expert
