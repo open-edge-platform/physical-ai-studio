@@ -3,13 +3,13 @@
 # First-party implementation with PyTorch native SDPA attention
 # =============================================================================
 #
-# Default settings optimized for 24GB GPUs (3090, 4090, Intel B580/B60).
+# Default settings optimized for 24GB GPUs (3090, 4090, Intel B60).
 #
 # Usage:
 #   getiaction fit --config configs/getiaction/groot.yaml
 #
 # Override examples:
-#   # Intel XPU (Arc B580, Data Center Max)
+#   # Intel XPU
 #   getiaction fit --config configs/getiaction/groot.yaml \
 #       --trainer.accelerator xpu
 #
@@ -70,7 +70,7 @@ model:
     #
     # Recommended settings by GPU VRAM:
     #
-    # 24GB (3090, 4090, Intel B580/B60) - DEFAULT:
+    # 24GB (3090, 4090, Intel B60) - DEFAULT:
     #   tune_llm: false
     #   tune_visual: false
     #   tune_projector: true
@@ -119,7 +119,7 @@ data:
     # Batch Size
     # -------------------------------------------------------------------------
     # Recommended settings by GPU VRAM:
-    #   - 24GB (3090, 4090, Intel B580/B60): train_batch_size: 1 (DEFAULT)
+    #   - 24GB (3090, 4090, Intel B60): train_batch_size: 1 (DEFAULT)
     #   - 48GB (A6000, A100):  train_batch_size: 2
     #   - 80GB+ (H100):        train_batch_size: 4-8
     #
@@ -150,7 +150,7 @@ trainer:
   # ---------------------------------------------------------------------------
   # accelerator options:
   #   - "gpu"  : NVIDIA CUDA GPUs
-  #   - "xpu"  : Intel Arc/Data Center GPUs (requires Intel Extension for PyTorch)
+  #   - "xpu"  : Intel GPUs
   #   - "cpu"  : CPU only (very slow, for debugging)
   #   - "auto" : Auto-detect available accelerator
   #
@@ -177,13 +177,13 @@ trainer:
 # QUICK REFERENCE: GPU-SPECIFIC OVERRIDES
 # =============================================================================
 #
-# Default config is optimized for 24GB GPUs (3090, 4090, Intel B580/B60).
+# Default config is optimized for 24GB GPUs (3090, 4090, Intel B60).
 # Just run directly:
 #
 #   getiaction fit --config configs/getiaction/groot.yaml
 #
 # -----------------------------------------------------------------------------
-# Intel XPU (Arc B580, Data Center Max):
+# Intel XPU (B60):
 #   getiaction fit --config configs/getiaction/groot.yaml \
 #       --trainer.accelerator xpu
 #
