@@ -47,13 +47,13 @@ def get_delta_timestamps_from_policy(
 
     n_obs_steps: int = getattr(config, "n_obs_steps", 1)
 
+    # Initialize delta_timestamps dictionary
+    delta_timestamps: dict[str, list[float]] = {}
+
     # For policies with action_delta_indices (e.g., Groot), use that length as the source of truth
     # This respects the model's capped horizon (e.g., Groot caps at 16 steps even though chunk_size=50)
     action_delta_indices = getattr(config, "action_delta_indices", None)
     if action_delta_indices is not None:
-        # Use the actual delta indices directly
-        delta_timestamps: dict[str, list[float]] = {}
-
         # Observation timestamps: indices from -(n_obs_steps-1) to 0
         if n_obs_steps > 1:
             obs_indices = list(range(-(n_obs_steps - 1), 1))  # e.g., [-1, 0] for n_obs_steps=2
@@ -74,8 +74,6 @@ def get_delta_timestamps_from_policy(
         or getattr(config, "n_action_steps", None)
     )
     action_length: int = int(action_length_raw) if action_length_raw is not None else 1
-
-    delta_timestamps: dict[str, list[float]] = {}
 
     # Observation timestamps: indices from -(n_obs_steps-1) to 0
     if n_obs_steps > 1:
