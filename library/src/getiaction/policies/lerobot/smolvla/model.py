@@ -19,7 +19,7 @@ from lerobot.policies.smolvla.smolvlm_with_expert import SmolVLMWithExpertModel,
 from lerobot.policies.utils import populate_queues
 from lerobot.utils.constants import ACTION
 from torch import nn
-import torch.nn.functional as F
+from torch.nn import functional
 
 if TYPE_CHECKING:
     from collections import deque
@@ -252,6 +252,7 @@ class VLAFlowMatchingWithXAI(VLAFlowMatching):
 
         Args:
             config: Config for SmolVLA.
+            rtc_processor: The RTC Processor.
         """
         nn.Module.__init__(self)  # Call grandparent instead of parent to prevent redundant initialization
         self.config = config
@@ -359,11 +360,7 @@ class SmolVLAPolicyWithXAI(SmolVLAPolicy):
             self._queues[ACTION].extend(actions.transpose(0, 1)[: self.config.n_action_steps])
 
         # Also get the weights and task
-        index = (
-            max(self.model.vlm_with_expert.qk.keys()) + self.layer_idx + 1
-            if self.layer_idx < 0
-            else self.layer_idx
-        )
+        index = max(self.model.vlm_with_expert.qk.keys()) + self.layer_idx + 1 if self.layer_idx < 0 else self.layer_idx
         attention_maps = self.model.vlm_with_expert.qk[index]
 
         self.attention_modes = self._map_attention(attention_maps)
@@ -371,18 +368,20 @@ class SmolVLAPolicyWithXAI(SmolVLAPolicy):
 
         return self._queues[ACTION].popleft()
 
-    def apply_colormap(self, batch: torch.Tensor, colormap='jet'):
+    @staticmethod
+    def _apply_colormap(batch: torch.Tensor, colormap: str = "jet") -> torch.Tensor:
         images_resize = batch.squeeze(1)
         if colormap == "viridis":
-            r = torch.clamp(-2.5 * x + 2.5, 0, 1)
-            g = torch.clamp(-4 * torch.abs(x - 0.5) + 1.5, 0, 1)
-            b = torch.clamp(4 * x - 2, 0, 1)
+            r = torch.clamp(-2.5 * images_resize + 2.5, 0, 1)
+            g = torch.clamp(-4 * torch.abs(images_resize - 0.5) + 1.5, 0, 1)
+            b = torch.clamp(4 * images_resize - 2, 0, 1)
         elif colormap == "jet":
-            r = torch.clamp(1.5 - torch.abs(4*images_resize - 3), 0, 1)
-            g = torch.clamp(1.5 - torch.abs(4*images_resize - 2), 0, 1)
-            b = torch.clamp(1.5 - torch.abs(4*images_resize - 1), 0, 1)
+            r = torch.clamp(1.5 - torch.abs(4 * images_resize - 3), 0, 1)
+            g = torch.clamp(1.5 - torch.abs(4 * images_resize - 2), 0, 1)
+            b = torch.clamp(1.5 - torch.abs(4 * images_resize - 1), 0, 1)
         else:
-            raise RuntimeError(f"Unsupported colormap: {colormap}")
+            msg = f"Unsupported colormap: {colormap}"
+            raise RuntimeError(msg)
         return torch.stack([r, g, b], dim=1)
 
     def explain(self) -> dict[str, torch.Tensor]:
@@ -392,15 +391,15 @@ class SmolVLAPolicyWithXAI(SmolVLAPolicy):
             An array of xAI output.
         """
         if self.attention_modes is None:
-            return []
+            return {}
         visualizations = {}
         for key, imgs in self.attention_modes["image_att"].items():
             # Add singleton dimension
             images = imgs.unsqueeze(-3)
             # Resize and interpolate
             h, w = self.image_shapes[key][1:]
-            images_resize = F.interpolate(images, size=(h, w), mode="bilinear")
-            images_color = self.apply_colormap(images_resize, 'jet')
+            images_resize = functional.interpolate(images, size=(h, w), mode="bilinear")
+            images_color = self._apply_colormap(images_resize, "jet")
             # Convert to 8 bit image
             images_color = (images_color * 255).type(torch.uint8)
             visualizations[key] = images_color
@@ -491,12 +490,12 @@ class SmolVLAPolicyWithXAI(SmolVLAPolicy):
 
         # Select the appropriate attention type display method for the text
         num_text_tokens = attention.shape[-1] - offset - 1  # seems to based on tokenizer output
-        text_att = attention_heads_select[:, :, offset: offset + num_text_tokens].mean(dim=1)
+        text_att = attention_heads_select[:, :, offset : offset + num_text_tokens].mean(dim=1)
         min_text_value, max_text_value = torch.min(text_att).item(), torch.max(text_att).item()
         offset += num_text_tokens
 
         # Select the appropriate attention type display method for the robot state
-        state_att = attention_heads_select[:, :, offset: offset + 1].mean(dim=1)
+        state_att = attention_heads_select[:, :, offset : offset + 1].mean(dim=1)
 
         # rescale all modalities using min, max values
         images_att = {key: (img - min_img_value) / (max_img_value - min_img_value) for key, img in images_att.items()}

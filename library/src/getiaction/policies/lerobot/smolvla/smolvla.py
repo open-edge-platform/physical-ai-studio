@@ -18,7 +18,7 @@ from getiaction.data import Observation
 from getiaction.data.lerobot import FormatConverter
 from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
 from getiaction.policies.base import Policy
-from getiaction.policies.lerobot.mixin import LeRobotExport, LeRobotFromConfig
+from getiaction.policies.lerobot.mixin import LeRobotFromConfig
 
 if TYPE_CHECKING or (module_available("transformers") and module_available("num2words")):
     from getiaction.policies.lerobot.smolvla.model import SmolVLAPolicyWithXAI
@@ -44,7 +44,7 @@ else:
     LEROBOT_AVAILABLE = False
 
 
-class SmolVLA(LeRobotExport, LeRobotFromConfig, Policy):  # type: ignore[misc,override]
+class SmolVLA(LeRobotFromConfig, Policy):  # type: ignore[misc,override]
     """LeRobot's SmolVLA policy wrapper with explainability.
 
     PyTorch Lightning wrapper around LeRobot's SmolVLA implementation that provides
@@ -441,11 +441,10 @@ class SmolVLA(LeRobotExport, LeRobotFromConfig, Policy):  # type: ignore[misc,ov
         # Step 4: Apply postprocessing (denormalization)
         return self._postprocessor(action)
 
-
     def select_action_with_explain(
         self,
         batch: Observation | dict[str, torch.Tensor],
-    ) -> tuple[torch.Tensor, list[torch.Tensor]]:
+    ) -> tuple[torch.Tensor, dict[str, Any]]:
         """Select action (inference mode) through LeRobot and also return explanation.
 
         Handles full preprocessing and postprocessing pipeline:
@@ -476,9 +475,7 @@ class SmolVLA(LeRobotExport, LeRobotFromConfig, Policy):  # type: ignore[misc,ov
         action = self.smolvla_policy_with_xai.select_action(batch_dict)
 
         # Step 4: Apply postprocessing (denormalization)
-        # return self._postprocessor(action), [torch.from_numpy(arr) for arr in self.smolvla_policy_with_xai.explain()]
-        return action, self.smolvla_policy_with_xai.explain()
-
+        return self._postprocessor(action), self.smolvla_policy_with_xai.explain()
 
     def reset(self) -> None:
         """Reset the policy state."""
