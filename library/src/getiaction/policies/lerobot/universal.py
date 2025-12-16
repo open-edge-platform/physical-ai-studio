@@ -630,8 +630,12 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         # Convert to LeRobot format if needed
         batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
 
+        # Apply preprocessor for normalization, padding to max_action_dim, etc.
+        # This is required for policies like Groot that expect padded actions
+        batch_dict = self._preprocessor(batch_dict)
+
         if self.training:
-            # Training mode: data already preprocessed by LeRobot DataLoader
+            # Training mode: compute loss
             output = self.lerobot_policy(batch_dict)
 
             # Handle different return formats (some policies return tuple, some just loss)
@@ -639,8 +643,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
                 return output
             return output, None
 
-        # Inference mode: apply preprocessor (normalizes, adds batch dim)
-        batch_dict = self._preprocessor(batch_dict)
+        # Inference mode: predict actions and denormalize
         action = self.lerobot_policy.select_action(batch_dict)
         return self._postprocessor(action)
 
