@@ -44,7 +44,7 @@ else:
     LEROBOT_AVAILABLE = False
 
 
-class SmolVLA(LeRobotFromConfig, Policy):  # type: ignore[misc,override]
+class SmolVLA(Policy, LeRobotFromConfig):  # type: ignore[misc,override]
     """LeRobot's SmolVLA policy wrapper with explainability.
 
     PyTorch Lightning wrapper around LeRobot's SmolVLA implementation that provides
@@ -476,6 +476,40 @@ class SmolVLA(LeRobotFromConfig, Policy):  # type: ignore[misc,override]
 
         # Step 4: Apply postprocessing (denormalization)
         return self._postprocessor(action), self.smolvla_policy_with_xai.explain()
+
+    def forward(  # type: ignore[override]
+        self,
+        batch: Observation | dict[str, torch.Tensor],
+    ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor] | None]:
+        """Forward pass the LeRobot policy.
+
+        Handles both training and inference modes:
+        - Training: Returns (loss, loss_dict) for backpropagation
+        - Inference: Returns denormalized actions for prediction/export
+
+        Args:
+            batch: Input batch (Observation or LeRobot dict).
+
+        Returns:
+            - Training mode: Tuple of (loss, loss_dict or None)
+            - Inference mode: Action tensor
+        """
+        # Convert to LeRobot format if needed
+        batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
+
+        if self.training:
+            # Training mode: data already preprocessed by LeRobot DataLoader
+            output = self.lerobot_policy(batch_dict)
+
+            # Handle different return formats (some policies return tuple, some just loss)
+            if isinstance(output, tuple):
+                return output
+            return output, None
+
+        # Inference mode: apply preprocessor (normalizes, adds batch dim)
+        batch_dict = self._preprocessor(batch_dict)
+        action = self.lerobot_policy.select_action(batch_dict)
+        return self._postprocessor(action)
 
     def reset(self) -> None:
         """Reset the policy state."""
