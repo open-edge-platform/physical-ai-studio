@@ -171,19 +171,17 @@ class Pi0(Policy):
         # Also save config dict for compatibility
         self.hparams["config"] = self.config.to_dict()
 
-        # Model will be built in setup() or immediately if env_action_dim provided
+        # Model pre/post-processors will be built in setup() or _initialize_model()
         self.model: Pi0Model | None = None
-
-        # Preprocessor/postprocessor set in setup() or _initialize_model()
         self._preprocessor: Any = None
         self._postprocessor: Any = None
-
-        # Track initialization state
-        self._is_setup_complete: bool = False
 
         # Eager initialization if env_action_dim is provided
         if env_action_dim is not None:
             self._initialize_model(env_action_dim, dataset_stats)
+
+        # Track initialization state
+        self._is_setup_complete: bool = False
 
     def _initialize_model(
         self,
