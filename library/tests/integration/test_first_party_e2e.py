@@ -1,14 +1,14 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""End-to-end integration tests for first-party policies (getiaction).
+"""End-to-end integration tests for first-party policies.
 
-This module validates the complete pipeline for first-party policies:
-    1. Train a policy using LeRobot PushT dataset
-    2. Validate/test the trained policy
-    3. Export to multiple backends (OpenVINO, ONNX, Torch, TorchExportIR)
-    4. Load exported model for inference
-    5. Verify numerical consistency between training and inference
+Tests validate the complete pipeline:
+1. Train a policy
+2. Validate/test the trained policy
+3. Export to multiple backends (TestE2E only)
+4. Load exported model for inference (TestE2E only)
+5. Verify numerical consistency (TestE2E only)
 """
 
 from pathlib import Path
@@ -22,8 +22,12 @@ from getiaction.policies import get_policy
 from getiaction.policies.base.policy import Policy
 from getiaction.train import Trainer
 
-# First-party policies to test
-POLICIES = ["act"]
+# Export backend constants
+EXPORT_BACKENDS = ["openvino", "onnx", "torch", "torch_export_ir"]
+
+# Policy names for parametrization
+FIRST_PARTY_POLICIES = ["pi0"]
+FIRST_PARTY_POLICIES_WITH_EXPORT = ["act"]
 
 
 @pytest.fixture(scope="class")
@@ -37,23 +41,13 @@ def trainer() -> Trainer:
     )
 
 
-@pytest.mark.parametrize("policy_name", POLICIES, indirect=True)
-class TestFirstPartyPolicies:
-    """E2E tests for first-party policies (getiaction)."""
+class CoreE2ETests:
+    """Base class with core E2E tests (train/validate/test)."""
 
     @pytest.fixture(scope="class")
     def policy_name(self, request: pytest.FixtureRequest) -> str:
         """Extract policy name from parametrize."""
         return request.param
-
-    @pytest.fixture(scope="class")
-    def datamodule(self) -> LeRobotDataModule:
-        """Create datamodule for first-party policies."""
-        return LeRobotDataModule(
-            repo_id="lerobot/pusht",
-            train_batch_size=8,
-            episodes=list(range(10)),
-        )
 
     @pytest.fixture(scope="class")
     def policy(self, policy_name: str) -> Policy:
@@ -65,8 +59,6 @@ class TestFirstPartyPolicies:
         """Train policy once and reuse across all tests."""
         trainer.fit(policy, datamodule=datamodule)
         return policy
-
-    # --- Training Tests ---
 
     def test_train_policy(self, trained_policy: Policy, trainer: Trainer) -> None:
         """Test that policy was trained successfully."""
@@ -82,9 +74,11 @@ class TestFirstPartyPolicies:
         trainer.test(trained_policy, datamodule=datamodule)
         assert trainer.state.finished
 
-    # --- Export Tests ---
 
-    @pytest.mark.parametrize("backend", ["openvino", "onnx", "torch", "torch_export_ir"])
+class ExportE2ETests:
+    """Base class with export E2E tests (export/inference/consistency)."""
+
+    @pytest.mark.parametrize("backend", EXPORT_BACKENDS)
     def test_export_to_backend(self, trained_policy: Policy, backend: str, tmp_path: Path) -> None:
         """Test that trained policy can be exported to different backends."""
         export_dir = tmp_path / f"{trained_policy.__class__.__name__.lower()}_{backend}"
@@ -103,9 +97,7 @@ class TestFirstPartyPolicies:
         elif backend == "torch_export_ir":
             assert any(export_dir.glob("*.pt2"))
 
-    # --- Inference Tests ---
-
-    @pytest.mark.parametrize("backend", ["openvino", "onnx", "torch_export_ir"])
+    @pytest.mark.parametrize("backend", EXPORT_BACKENDS)
     def test_inference_with_exported_model(
         self,
         trained_policy: Policy,
@@ -122,17 +114,16 @@ class TestFirstPartyPolicies:
 
         sample_batch = next(iter(datamodule.train_dataloader()))
 
-        # Convert to Observation format and extract first sample
         from getiaction.data.lerobot import FormatConverter
 
         batch_observation = FormatConverter.to_observation(sample_batch)
         inference_input = batch_observation[0:1].to_numpy()
-        inference_output: torch.Tensor = inference_model.select_action(inference_input)
+        inference_output = inference_model.select_action(inference_input)
 
         assert inference_output.shape[-1] == 2
         assert len(inference_output.shape) in {1, 2, 3}, f"Expected 1-3D tensor, got {inference_output.shape}"
 
-    @pytest.mark.parametrize("backend", ["openvino", "onnx", "torch_export_ir"])
+    @pytest.mark.parametrize("backend", EXPORT_BACKENDS)
     def test_numerical_consistency_training_vs_inference(
         self,
         trained_policy: Policy,
@@ -144,7 +135,6 @@ class TestFirstPartyPolicies:
         policy_name = trained_policy.__class__.__name__.lower()
         export_dir = tmp_path / f"{policy_name}_{backend}"
 
-        # Get batch and convert to Observation
         from getiaction.data.lerobot import FormatConverter
 
         sample_batch = next(iter(datamodule.train_dataloader()))
@@ -156,7 +146,7 @@ class TestFirstPartyPolicies:
         trained_policy.eval()
         trained_policy.reset()
         with torch.no_grad():
-            train_output: torch.Tensor = trained_policy.select_action(single_observation)
+            train_output = trained_policy.select_action(single_observation)
 
         # Export and load model
         trained_policy.export(export_dir, backend)
@@ -168,9 +158,9 @@ class TestFirstPartyPolicies:
             torch.cuda.manual_seed_all(42)
 
         inference_model.reset()
-        inference_output: torch.Tensor = inference_model.select_action(single_observation.to_numpy())
+        inference_output = inference_model.select_action(single_observation.to_numpy())
 
-        # Extract first action and handle chunked outputs
+        # Compare outputs
         train_action: torch.Tensor = train_output[0].cpu()
         if len(train_action.shape) > 1:
             train_action = train_action[0]
@@ -183,3 +173,31 @@ class TestFirstPartyPolicies:
             inference_output_cpu = inference_output_cpu[0]
 
         torch.testing.assert_close(inference_output_cpu, train_action, rtol=0.2, atol=0.2)
+
+
+@pytest.mark.parametrize("policy_name", FIRST_PARTY_POLICIES, indirect=True)
+class TestE2ECore(CoreE2ETests):
+    """E2E core tests for policies without export support (Pi0, etc.)."""
+
+    @pytest.fixture(scope="class")
+    def datamodule(self) -> LeRobotDataModule:
+        """Create datamodule with image observations for Pi0."""
+        return LeRobotDataModule(
+            repo_id="lerobot/aloha_sim_transfer_cube_human",
+            train_batch_size=2,
+            episodes=list(range(2)),
+        )
+
+
+@pytest.mark.parametrize("policy_name", FIRST_PARTY_POLICIES_WITH_EXPORT, indirect=True)
+class TestE2E(CoreE2ETests, ExportE2ETests):
+    """E2E tests for policies with export support (ACT, etc.)."""
+
+    @pytest.fixture(scope="class")
+    def datamodule(self) -> LeRobotDataModule:
+        """Create datamodule for first-party policies."""
+        return LeRobotDataModule(
+            repo_id="lerobot/pusht",
+            train_batch_size=8,
+            episodes=list(range(10)),
+        )
