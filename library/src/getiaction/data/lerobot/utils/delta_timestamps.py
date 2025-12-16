@@ -20,6 +20,10 @@ def get_delta_timestamps_from_policy(
     default configuration to automatically compute the correct delta timestamps
     for use with LeRobotDataModule.
 
+    For policies like Groot that have action_delta_indices with a capped horizon,
+    we use the length of action_delta_indices rather than chunk_size to ensure
+    the generated delta timestamps match what the policy expects.
+
     Args:
         policy_name: Name of the LeRobot policy (e.g., "act", "diffusion", "groot").
         fps: Frames per second of the dataset.
@@ -43,6 +47,25 @@ def get_delta_timestamps_from_policy(
 
     n_obs_steps: int = getattr(config, "n_obs_steps", 1)
 
+    # For policies with action_delta_indices (e.g., Groot), use that length as the source of truth
+    # This respects the model's capped horizon (e.g., Groot caps at 16 steps even though chunk_size=50)
+    action_delta_indices = getattr(config, "action_delta_indices", None)
+    if action_delta_indices is not None:
+        # Use the actual delta indices directly
+        delta_timestamps: dict[str, list[float]] = {}
+
+        # Observation timestamps: indices from -(n_obs_steps-1) to 0
+        if n_obs_steps > 1:
+            obs_indices = list(range(-(n_obs_steps - 1), 1))  # e.g., [-1, 0] for n_obs_steps=2
+            delta_timestamps[obs_image_key] = [i / fps for i in obs_indices]
+            delta_timestamps[obs_state_key] = [i / fps for i in obs_indices]
+
+        # Action timestamps: use the action_delta_indices directly
+        delta_timestamps["action"] = [i / fps for i in action_delta_indices]
+
+        return delta_timestamps
+
+    # Fallback for policies without action_delta_indices (ACT, Diffusion)
     # Get action sequence length - different policies use different attribute names
     action_length_raw = (
         getattr(config, "chunk_size", None)
