@@ -305,46 +305,37 @@ class Pi0(Policy):
             stage: Lightning stage (unused, required by Lightning API).
 
         Raises:
-            ImportError: If LeRobot dataset is not available.
-            TypeError: If train dataset is not LeRobotDataset or adapter.
-            ValueError: If dataset lacks 'action' feature.
+            TypeError: If train dataset is not a getiaction Dataset.
+            ValueError: If dataset lacks action features.
         """
         if self._is_setup_complete or self.model is not None:
             return  # Already initialized
 
-        # Get dataset for features and stats
-        try:
-            from lerobot.datasets.lerobot_dataset import LeRobotDataset  # noqa: PLC0415
-
-            from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter  # noqa: PLC0415
-        except ImportError as e:
-            msg = "LeRobot dataset required for lazy initialization"
-            raise ImportError(msg) from e
+        from getiaction.data.dataset import Dataset  # noqa: PLC0415
 
         datamodule = self.trainer.datamodule  # type: ignore[attr-defined]
         train_dataset = datamodule.train_dataset
 
-        # Get underlying LeRobot dataset
-        if isinstance(train_dataset, _LeRobotDatasetAdapter):
-            lerobot_dataset = train_dataset._lerobot_dataset  # noqa: SLF001
-        elif isinstance(train_dataset, LeRobotDataset):
-            lerobot_dataset = train_dataset
-        else:
-            msg = f"Expected LeRobot dataset, got {type(train_dataset)}"
+        # Use getiaction dataset interface
+        if not isinstance(train_dataset, Dataset):
+            msg = f"Expected getiaction Dataset, got {type(train_dataset)}"
             raise TypeError(msg)
 
         # Extract action dimension from features
-        features = lerobot_dataset.meta.features
-        action_feature = features.get("action")
-        if action_feature is None:
-            msg = "Dataset must have 'action' feature"
+        action_features = train_dataset.action_features
+        if not action_features:
+            msg = "Dataset must have action features"
             raise ValueError(msg)
 
-        # LeRobot features are dicts with 'shape' key, not objects with .shape attribute
-        env_action_dim = action_feature["shape"][-1] if isinstance(action_feature, dict) else action_feature.shape[-1]
+        # Get action feature (typically "action")
+        action_feature = next(iter(action_features.values()))
+        if action_feature.shape is None:
+            msg = "Action feature must have shape defined"
+            raise ValueError(msg)
+        env_action_dim = action_feature.shape[-1]
 
-        # Extract stats and convert to serializable format
-        stats_dict = self._extract_stats(lerobot_dataset)
+        # Extract stats from dataset
+        stats_dict = train_dataset.stats
 
         # Save to hparams for checkpoint
         self.hparams["env_action_dim"] = env_action_dim
@@ -352,32 +343,6 @@ class Pi0(Policy):
 
         # Initialize model
         self._initialize_model(env_action_dim, stats_dict)
-
-    @staticmethod
-    def _extract_stats(dataset: Any) -> dict[str, dict[str, list[float]]]:  # noqa: ANN401
-        """Extract normalization stats from dataset.
-
-        Args:
-            dataset: LeRobot dataset.
-
-        Returns:
-            Stats dict with list values (JSON-serializable).
-        """
-        stats_dict: dict[str, dict[str, list[float]]] = {}
-
-        if not hasattr(dataset.meta, "stats") or dataset.meta.stats is None:
-            return stats_dict
-
-        stat_names = ["mean", "std", "min", "max", "q01", "q99"]
-        for key, stats in dataset.meta.stats.items():
-            stats_dict[key] = {}
-            for stat_name in stat_names:
-                value = getattr(stats, stat_name, None)
-                if value is None:
-                    continue
-                stats_dict[key][stat_name] = value.tolist() if isinstance(value, torch.Tensor) else list(value)
-
-        return stats_dict
 
     def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
         """Forward pass.
