@@ -163,7 +163,7 @@ trainer:
   # accelerator options:
   #   - "auto" : Auto-detect available accelerator (recommended)
   #   - "gpu"  : NVIDIA CUDA GPUs
-  #   - "xpu"  : Intel Arc/Data Center GPUs (requires torch+xpu)
+  #   - "xpu"  : Intel GPUs (requires torch+xpu)
   #   - "cpu"  : CPU only (slow, for testing)
   #
   # For Intel XPU:
