@@ -3,4 +3,4 @@
 
 """LeRobot SmolVLA package with xAI."""
 
-from .smolvla import SmolVLA as SmolVLA
+from .smolvla import SmolVLA
