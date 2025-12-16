@@ -33,7 +33,7 @@ model:
     dropout: 0.1
 
     # Optimization
-    learning_rate: 1.0e-5
+    optimizer_lr: 1.0e-5
 
     # Temporal ensembling (optional, set to null to disable)
     temporal_ensemble_coeff: null # e.g., 0.01 for ensembling

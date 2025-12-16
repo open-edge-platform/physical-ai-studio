@@ -250,6 +250,9 @@ class ACT(nn.Module, FromConfig):
             "output": ["action"],
         }
         extra_args["torch_export_ir"] = {}
+        extra_args["torch"] = {
+            "output_names": ["action"],
+        }
 
         return extra_args
 

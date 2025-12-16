@@ -247,6 +247,7 @@ def get_lerobot_policy(policy_name: str, **kwargs) -> LeRobotPolicy:  # noqa: AN
         "act": ACT,
         "diffusion": Diffusion,
         "smolvla": SmolVLA,
+        "groot": Groot,
         # Universal wrapper classes
         "vqbet": VQBeT,
         "tdmpc": TDMPC,
