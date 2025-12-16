@@ -59,3 +59,38 @@ class Dataset(TorchDataset, ABC):
     @abstractmethod
     def delta_indices(self, indices: dict[str, list[int]]) -> None:
         """Allows setting delta_indices on the dataset."""
+
+    @property
+    def stats(self) -> dict[str, dict[str, list[float]]]:
+        """Dataset normalization statistics.
+
+        Returns a dict mapping feature keys to stat dicts with mean, std, min, max.
+        Keys follow the format: "observation.{name}" for observation features,
+        "action" for action features.
+
+        Returns:
+            Stats dict suitable for policy normalization.
+        """
+        stats_dict: dict[str, dict[str, list[float]]] = {}
+
+        # Observation features: "observation.{name}" -> stats
+        for name, feature in self.observation_features.items():
+            if feature.normalization_data is not None:
+                norm = feature.normalization_data
+                stats_dict[f"observation.{name}"] = {
+                    stat: list(val) if hasattr(val, "__iter__") else [val]
+                    for stat in ("mean", "std", "min", "max")
+                    if (val := getattr(norm, stat, None)) is not None
+                }
+
+        # Action features: use key as-is (usually "action")
+        for key, feature in self.action_features.items():
+            if feature.normalization_data is not None:
+                norm = feature.normalization_data
+                stats_dict[key] = {
+                    stat: list(val) if hasattr(val, "__iter__") else [val]
+                    for stat in ("mean", "std", "min", "max")
+                    if (val := getattr(norm, stat, None)) is not None
+                }
+
+        return stats_dict

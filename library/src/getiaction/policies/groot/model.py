@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import json
 import logging
-from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -172,8 +171,6 @@ class GrootModel(nn.Module):
             tune_projector=tune_projector,
             tune_diffusion_model=tune_diffusion_model,
         )
-
-        self._action_queue: deque[torch.Tensor] = deque(maxlen=n_action_steps)
 
     @classmethod
     def from_pretrained(  # noqa: PLR0914
@@ -359,27 +356,6 @@ class GrootModel(nn.Module):
             action_head_outputs = self.action_head.get_action(backbone_outputs, groot_inputs)
 
         return action_head_outputs.get("action_pred")
-
-    def select_action(self, batch: Mapping[str, torch.Tensor]) -> torch.Tensor:
-        """Select single action using action chunking.
-
-        Maintains internal queue of predicted actions, refilling
-        when empty by calling get_action().
-
-        Args:
-            batch: Input batch for inference.
-
-        Returns:
-            Single action tensor.
-        """
-        if len(self._action_queue) == 0:
-            actions = self.get_action(batch)
-            self._action_queue.extend(actions.transpose(0, 1))
-        return self._action_queue.popleft()
-
-    def reset(self) -> None:
-        """Reset action queue for new episode."""
-        self._action_queue.clear()
 
     def get_optim_params(self) -> list[nn.Parameter]:
         """Get parameters for optimizer.

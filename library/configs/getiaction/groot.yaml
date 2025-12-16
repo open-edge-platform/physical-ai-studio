@@ -3,7 +3,7 @@
 # First-party implementation with PyTorch native SDPA attention
 # =============================================================================
 #
-# Default settings optimized for 24GB GPUs (3090, 4090, Intel B60).
+# Default settings optimized for 24GB GPUs (RTX 3090, RTX 4090).
 #
 # Usage:
 #   getiaction fit --config configs/getiaction/groot.yaml
@@ -17,12 +17,6 @@
 #   getiaction fit --config configs/getiaction/groot.yaml \
 #       --data.repo_id lerobot/pusht
 #
-#   # Use 48GB+ GPU settings (enables diffusion model tuning)
-#   getiaction fit --config configs/getiaction/groot.yaml \
-#       --model.tune_diffusion_model true \
-#       --data.train_batch_size 2 \
-#       --trainer.accumulate_grad_batches 8
-#
 # =============================================================================
 # MEMORY REQUIREMENTS (approximate)
 # =============================================================================
@@ -31,7 +25,6 @@
 # |----------------------------------|------------------|---------------|
 # | tune_projector only (default)    | ~518M            | 24GB          |
 # | tune_projector + tune_diffusion  | ~1.1B            | 48GB          |
-# | + tune_llm or tune_visual        | ~2.7B+           | 80GB+         |
 #
 # =============================================================================
 
@@ -70,30 +63,18 @@ model:
     #
     # Recommended settings by GPU VRAM:
     #
-    # 24GB (3090, 4090, Intel B60) - DEFAULT:
-    #   tune_llm: false
-    #   tune_visual: false
+    # 24GB (RTX 3090, RTX 4090) - DEFAULT:
     #   tune_projector: true
-    #   tune_diffusion_model: false   # <-- Must be false for 24GB
+    #   tune_diffusion_model: false
     #
-    # 48GB+ (A6000, A100):
-    #   tune_llm: false
-    #   tune_visual: false
-    #   tune_projector: true
-    #   tune_diffusion_model: true    # <-- Can enable with 48GB+
-    #
-    # 80GB+ (A100 80GB, H100):
-    #   tune_llm: true                # <-- Can enable with 80GB+
-    #   tune_visual: true             # <-- Can enable with 80GB+
+    # 48GB+ (A6000, A100, L40):
     #   tune_projector: true
     #   tune_diffusion_model: true
     #
     tune_llm: false # Fine-tune LLM backbone (~2B params)
     tune_visual: false # Fine-tune vision tower (~300M params)
     tune_projector: true # Fine-tune projector (~518M params)
-    tune_diffusion_model:
-      false # Fine-tune DiT action head (~550M params)
-      # Set to true for 48GB+ GPUs
+    tune_diffusion_model: false # Fine-tune DiT action head (~550M params)
 
     # -------------------------------------------------------------------------
     # Optimizer
@@ -119,9 +100,8 @@ data:
     # Batch Size
     # -------------------------------------------------------------------------
     # Recommended settings by GPU VRAM:
-    #   - 24GB (3090, 4090, Intel B60): train_batch_size: 1 (DEFAULT)
-    #   - 48GB (A6000, A100):  train_batch_size: 2
-    #   - 80GB+ (H100):        train_batch_size: 4-8
+    #   - 24GB: train_batch_size: 1 (DEFAULT)
+    #   - 48GB: train_batch_size: 2
     #
     # Use accumulate_grad_batches to achieve larger effective batch sizes
     train_batch_size: 1
@@ -149,10 +129,9 @@ trainer:
   # Hardware
   # ---------------------------------------------------------------------------
   # accelerator options:
-  #   - "gpu"  : NVIDIA CUDA GPUs
+  #   - "gpu"  : NVIDIA CUDA GPUs (default)
   #   - "xpu"  : Intel GPUs
-  #   - "cpu"  : CPU only (very slow, for debugging)
-  #   - "auto" : Auto-detect available accelerator
+  #   - "auto" : Auto-detect
   #
   accelerator: gpu
   devices: 1
@@ -177,26 +156,16 @@ trainer:
 # QUICK REFERENCE: GPU-SPECIFIC OVERRIDES
 # =============================================================================
 #
-# Default config is optimized for 24GB GPUs (3090, 4090, Intel B60).
-# Just run directly:
+# Default config is optimized for 24GB GPUs.
 #
-#   getiaction fit --config configs/getiaction/groot.yaml
-#
-# -----------------------------------------------------------------------------
-# Intel XPU (B60):
+# Intel XPU:
 #   getiaction fit --config configs/getiaction/groot.yaml \
 #       --trainer.accelerator xpu
 #
-# 48GB GPU (A6000, L40) - enable DiT fine-tuning:
+# 48GB GPU - enable DiT fine-tuning:
 #   getiaction fit --config configs/getiaction/groot.yaml \
 #       --model.tune_diffusion_model true \
 #       --data.train_batch_size 2 \
 #       --trainer.accumulate_grad_batches 8
-#
-# 80GB GPU (A100, H100) - larger batch and DiT:
-#   getiaction fit --config configs/getiaction/groot.yaml \
-#       --model.tune_diffusion_model true \
-#       --data.train_batch_size 4 \
-#       --trainer.accumulate_grad_batches 4
 #
 # =============================================================================
