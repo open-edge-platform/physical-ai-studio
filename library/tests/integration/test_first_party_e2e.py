@@ -181,11 +181,30 @@ class TestE2ECore(CoreE2ETests):
     """E2E core tests for policies without export support (Groot, etc.)."""
 
     @pytest.fixture(scope="class")
+    def policy(self, policy_name: str) -> Policy:
+        """Create first-party policy instance with memory-efficient settings.
+
+        For Groot, we freeze most of the model to fit in 24GB GPU memory.
+        Only the projector is trainable (~518M params instead of 3.2B).
+        """
+        if policy_name == "groot":
+            return get_policy(
+                policy_name,
+                source="getiaction",
+                # Memory-efficient settings for 24GB GPU
+                tune_llm=False,
+                tune_visual=False,
+                tune_projector=True,
+                tune_diffusion_model=False,
+            )
+        return get_policy(policy_name, source="getiaction")
+
+    @pytest.fixture(scope="class")
     def datamodule(self) -> LeRobotDataModule:
         """Create datamodule with image observations for VLA policies."""
         return LeRobotDataModule(
             repo_id="lerobot/aloha_sim_transfer_cube_human",
-            train_batch_size=2,
+            train_batch_size=1,  # Small batch for memory efficiency
             episodes=list(range(2)),
         )
 
