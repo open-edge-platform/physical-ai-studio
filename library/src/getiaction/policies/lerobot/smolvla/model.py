@@ -12,12 +12,14 @@ from typing import TYPE_CHECKING, Any
 import cv2
 import numpy as np
 import torch
+from lerobot.policies.rtc.modeling_rtc import RTCProcessor
 from lerobot.policies.smolvla.configuration_smolvla import SmolVLAConfig
 from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy, VLAFlowMatching
 from lerobot.policies.smolvla.smolvlm_with_expert import SmolVLMWithExpertModel, apply_rope
 from lerobot.policies.utils import populate_queues
 from lerobot.utils.constants import ACTION
 from torch import nn
+import torch.nn.functional as F
 
 if TYPE_CHECKING:
     from collections import deque
@@ -245,7 +247,7 @@ class SmolVLMWithExpertModelWithXAI(SmolVLMWithExpertModel):
 class VLAFlowMatchingWithXAI(VLAFlowMatching):
     """This replaces the original VLAFlowMatching implementation."""
 
-    def __init__(self, config: SmolVLAConfig) -> None:
+    def __init__(self, config: SmolVLAConfig, rtc_processor: RTCProcessor | None = None) -> None:
         """Intialize the VLAFlowMatching class.
 
         Args:
@@ -293,6 +295,7 @@ class VLAFlowMatchingWithXAI(VLAFlowMatching):
         self.add_image_special_tokens = self.config.add_image_special_tokens
         self.image_end_token = torch.tensor([self.fake_image_token], dtype=torch.long)
         self.prefix_length = self.config.prefix_length
+        self.rtc_processor = rtc_processor
 
 
 class SmolVLAPolicyWithXAI(SmolVLAPolicy):
@@ -319,7 +322,7 @@ class SmolVLAPolicyWithXAI(SmolVLAPolicy):
         super().__init__(config)
         config.validate_features()
         self.config = config
-
+        self.init_rtc_processor()
         self.model = VLAFlowMatchingWithXAI(config)
         self.reset()
 
@@ -333,7 +336,6 @@ class SmolVLAPolicyWithXAI(SmolVLAPolicy):
             self.model.config.resize_imgs_with_padding,
         )
         self.image_tile_shapes = {k: [8, 8] for k in self.model.config.image_features}
-        self.num_text_tokens = self.model.config.tokenizer_max_length
         self.num_robot_tokens = 1
         self.attention_modes: dict[str, Any] | None = None
 
@@ -358,18 +360,32 @@ class SmolVLAPolicyWithXAI(SmolVLAPolicy):
 
         # Also get the weights and task
         index = (
-            max(self.policy.model.vlm_with_expert.qk.keys()) + self.layer_idx + 1
+            max(self.model.vlm_with_expert.qk.keys()) + self.layer_idx + 1
             if self.layer_idx < 0
             else self.layer_idx
         )
-        attention_maps = self.policy.model.vlm_with_expert.qk[index]
+        attention_maps = self.model.vlm_with_expert.qk[index]
 
         self.attention_modes = self._map_attention(attention_maps)
         self.attention_modes["task"] = batch["task"]
 
         return self._queues[ACTION].popleft()
 
-    def explain(self) -> list[np.ndarray]:
+    def apply_colormap(self, batch: torch.Tensor, colormap='jet'):
+        images_resize = batch.squeeze(1)
+        if colormap == "viridis":
+            r = torch.clamp(-2.5 * x + 2.5, 0, 1)
+            g = torch.clamp(-4 * torch.abs(x - 0.5) + 1.5, 0, 1)
+            b = torch.clamp(4 * x - 2, 0, 1)
+        elif colormap == "jet":
+            r = torch.clamp(1.5 - torch.abs(4*images_resize - 3), 0, 1)
+            g = torch.clamp(1.5 - torch.abs(4*images_resize - 2), 0, 1)
+            b = torch.clamp(1.5 - torch.abs(4*images_resize - 1), 0, 1)
+        else:
+            raise RuntimeError(f"Unsupported colormap: {colormap}")
+        return torch.stack([r, g, b], dim=1)
+
+    def explain(self) -> dict[str, torch.Tensor]:
         """Get the XAI layer.
 
         Returns:
@@ -377,47 +393,23 @@ class SmolVLAPolicyWithXAI(SmolVLAPolicy):
         """
         if self.attention_modes is None:
             return []
-        visualizations = []
-        for key, img in self.attention_modes["image_att"].items():
-            # Scale pixel values to 0, 255 and permute channels
-            obs_image = self.attention_modes["observation"][key].permute(0, 2, 3, 1)[0].cpu().numpy()
-            mi, ma = np.min(obs_image), np.max(obs_image)
-            obs_image = (((obs_image - mi) / (ma - mi)) * 255).astype(np.uint8)
-            att_image = img[0, :, :, None].cpu().numpy()
-            att_image = (att_image * 255).astype(np.uint8)
-
-            # Resize attention maps
+        visualizations = {}
+        for key, imgs in self.attention_modes["image_att"].items():
+            # Add singleton dimension
+            images = imgs.unsqueeze(-3)
+            # Resize and interpolate
             h, w = self.image_shapes[key][1:]
-            att_image = cv2.resize(att_image, (w, h))
+            images_resize = F.interpolate(images, size=(h, w), mode="bilinear")
+            images_color = self.apply_colormap(images_resize, 'jet')
+            # Convert to 8 bit image
+            images_color = (images_color * 255).type(torch.uint8)
+            visualizations[key] = images_color
 
-            # Create heatmap from attention map
-            heatmap = cv2.applyColorMap(att_image, cv2.COLORMAP_JET)
+        # Text
+        visualizations["text"] = (self.attention_modes["text_att"] * 255).type(torch.uint8)
 
-            # blend images
-            vis = cv2.addWeighted(
-                obs_image,
-                1 - 0.5,
-                heatmap,
-                0.5,
-                0,
-            )
-
-            modalities_border: int = 20
-
-            # Show robot attention as border
-            arr = (self.attention_modes["state_att"].cpu().numpy() * 255).astype(np.uint8)
-            border_color = cv2.applyColorMap(arr, cv2.COLORMAP_JET).squeeze().astype(int).tolist()
-            cv2.rectangle(vis, (0, 0), (w - 1, h - 1), border_color, modalities_border)
-
-            # Show text as bottom ribbon
-            arr = (self.attention_modes["text_att"].cpu().numpy() * 255).astype(np.uint8)
-            arr = arr[:, (arr != 0)[0]]  # Filter zeros
-            colors = cv2.applyColorMap(arr, cv2.COLORMAP_JET)
-            colored = cv2.resize(colors, (w, modalities_border * 2))
-            vis[h - modalities_border * 2 : h, 0:w] = colored
-            self._draw_text(self.attention_modes["task"], vis, w, h, 5)
-
-            visualizations.append(vis)
+        # proprioception
+        visualizations["state"] = (self.attention_modes["state_att"] * 255).type(torch.uint8)
 
         return visualizations
 
@@ -498,12 +490,13 @@ class SmolVLAPolicyWithXAI(SmolVLAPolicy):
             offset += height * width
 
         # Select the appropriate attention type display method for the text
-        text_att = self._get_attention_of_type(attention_heads_select, offset, self.num_text_tokens)
+        num_text_tokens = attention.shape[-1] - offset - 1  # seems to based on tokenizer output
+        text_att = attention_heads_select[:, :, offset: offset + num_text_tokens].mean(dim=1)
         min_text_value, max_text_value = torch.min(text_att).item(), torch.max(text_att).item()
-        offset += self.num_text_tokens
+        offset += num_text_tokens
 
         # Select the appropriate attention type display method for the robot state
-        state_att = self._get_attention_of_type(attention_heads_select, offset, offset)
+        state_att = attention_heads_select[:, :, offset: offset + 1].mean(dim=1)
 
         # rescale all modalities using min, max values
         images_att = {key: (img - min_img_value) / (max_img_value - min_img_value) for key, img in images_att.items()}

@@ -441,6 +441,7 @@ class SmolVLA(LeRobotExport, LeRobotFromConfig, Policy):  # type: ignore[misc,ov
         # Step 4: Apply postprocessing (denormalization)
         return self._postprocessor(action)
 
+
     def select_action_with_explain(
         self,
         batch: Observation | dict[str, torch.Tensor],
@@ -475,7 +476,9 @@ class SmolVLA(LeRobotExport, LeRobotFromConfig, Policy):  # type: ignore[misc,ov
         action = self.smolvla_policy_with_xai.select_action(batch_dict)
 
         # Step 4: Apply postprocessing (denormalization)
-        return self._postprocessor(action), [torch.from_numpy(arr) for arr in self.smolvla_policy_with_xai.explain()]
+        # return self._postprocessor(action), [torch.from_numpy(arr) for arr in self.smolvla_policy_with_xai.explain()]
+        return action, self.smolvla_policy_with_xai.explain()
+
 
     def reset(self) -> None:
         """Reset the policy state."""
