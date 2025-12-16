@@ -163,7 +163,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             )
             raise ImportError(msg)
 
-        super().__init__()
+        super().__init__(n_action_steps=1)  # LeRobot handles its own action chunking
 
         # Store metadata
         self.policy_name = policy_name
@@ -644,11 +644,37 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         action = self.lerobot_policy.select_action(batch_dict)
         return self._postprocessor(action)
 
+    def predict_action_chunk(self, batch: Observation | dict[str, torch.Tensor]) -> torch.Tensor:
+        """Predict action chunk using the wrapped LeRobot policy.
+
+        LeRobot policies handle their own action chunking internally. This method
+        delegates to the LeRobot policy's select_action, which returns the next
+        action from its internal queue (or predicts a new chunk if empty).
+
+        Note: For LeRobot policies, predict_action_chunk and select_action return
+        the same result because the chunking logic is internal to the LeRobot policy.
+
+        Args:
+            batch: Input batch of observations.
+
+        Returns:
+            Action tensor (single action or chunk depending on internal policy).
+        """
+        # LeRobot handles chunking internally - delegate to forward in eval mode
+        batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
+        batch_dict = self._preprocessor(batch_dict)
+        action = self.lerobot_policy.select_action(batch_dict)
+        return self._postprocessor(action)
+
     def select_action(self, batch: Observation | dict[str, torch.Tensor]) -> torch.Tensor:
         """Select action (inference mode) through LeRobot.
 
-        Delegates to forward() in eval mode, which handles preprocessing,
+        Delegates to predict_action_chunk, which handles preprocessing,
         action prediction, and postprocessing (denormalization).
+
+        Note: This overrides the base class select_action to delegate to
+        the LeRobot policy's internal action chunking mechanism rather than
+        using the base class action queue.
 
         Args:
             batch: Input batch of observations (raw, from gym).
@@ -659,7 +685,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         was_training = self.training
         self.eval()
         try:
-            return self(batch)
+            return self.predict_action_chunk(batch)
         finally:
             if was_training:
                 self.train()
@@ -671,6 +697,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         which clears action queues, observation histories, and any
         other stateful components.
         """
+        super().reset()
         self.lerobot_policy.reset()
 
     @property

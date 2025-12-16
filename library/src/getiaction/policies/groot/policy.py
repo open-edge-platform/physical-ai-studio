@@ -165,7 +165,7 @@ class Groot(Policy):
         The eager path is used by load_from_checkpoint() since env_action_dim
         is saved in hyperparameters during training.
         """
-        super().__init__()
+        super().__init__(n_action_steps=n_action_steps)
 
         # Create config from explicit args (policy-level config)
         self.config = GrootConfig(
@@ -271,47 +271,37 @@ class Groot(Policy):
             stage: Lightning stage ('fit', 'validate', 'test', 'predict').
 
         Raises:
-            TypeError: If dataset is not a LeRobot dataset.
+            TypeError: If dataset is not a getiaction Dataset.
         """
         if self._is_setup_complete or self.model is not None:
             return  # Already initialized (eager path)
 
-        # Get dataset for features and stats
-        from lerobot.datasets.lerobot_dataset import LeRobotDataset  # noqa: PLC0415
-
-        from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter  # noqa: PLC0415
+        from getiaction.data import Dataset  # noqa: PLC0415
 
         datamodule = self.trainer.datamodule  # type: ignore[attr-defined]
         train_dataset = datamodule.train_dataset
 
-        # Get underlying LeRobot dataset
-        if isinstance(train_dataset, _LeRobotDatasetAdapter):
-            lerobot_dataset = train_dataset._lerobot_dataset  # noqa: SLF001
-        elif isinstance(train_dataset, LeRobotDataset):
-            lerobot_dataset = train_dataset
-        else:
-            msg = f"Expected LeRobot dataset, got {type(train_dataset)}"
+        if not isinstance(train_dataset, Dataset):
+            msg = f"Expected getiaction.data.Dataset, got {type(train_dataset)}"
             raise TypeError(msg)
 
-        # Get dataset stats for normalization
-        dataset_stats = lerobot_dataset.meta.stats
+        # Get stats from dataset interface (no LeRobot internals)
+        dataset_stats = train_dataset.stats
 
-        # Determine environment action dimension from features
+        # Get action dimension from features
+        action_features = train_dataset.action_features
         env_action_dim = 0
-        if hasattr(lerobot_dataset.meta, "features") and "action" in lerobot_dataset.meta.features:
-            action_feature = lerobot_dataset.meta.features["action"]
-            if hasattr(action_feature, "shape"):
-                env_action_dim = action_feature.shape[0]
-
-        # Convert stats tensors to lists for JSON serialization in checkpoint
-        serializable_stats = self._serialize_stats(dataset_stats)
+        for feature in action_features.values():
+            if feature.shape:
+                env_action_dim = feature.shape[0]
+                break
 
         # Save to hparams so checkpoint loading can use eager path
         self.hparams["env_action_dim"] = env_action_dim
-        self.hparams["dataset_stats"] = serializable_stats
+        self.hparams["dataset_stats"] = dataset_stats
 
         # Initialize model using shared method
-        self._initialize_model(env_action_dim, serializable_stats)
+        self._initialize_model(env_action_dim, dataset_stats)
 
     @staticmethod
     def _serialize_stats(
@@ -453,44 +443,45 @@ class Groot(Policy):
             },
         }
 
-    def select_action(self, batch: Observation | dict[str, torch.Tensor]) -> torch.Tensor:
-        """Select action for inference.
+    def predict_action_chunk(self, batch: Observation) -> torch.Tensor:
+        """Predict a chunk of actions from observation.
+
+        Implements the abstract method from Policy base class.
+        Returns action chunk that will be queued by select_action().
 
         Args:
-            batch: Input observation.
+            batch: Input batch of observations.
 
         Returns:
-            Selected action tensor.
+            Action chunk tensor of shape (B, T, D) where T is n_action_steps.
 
         Raises:
             RuntimeError: If model is not initialized.
         """
-        from getiaction.data import Observation  # noqa: PLC0415
         from getiaction.data.lerobot import FormatConverter  # noqa: PLC0415
 
         if self.model is None:
             msg = "Model not initialized."
             raise RuntimeError(msg)
 
-        # Convert to dict format if needed
-        batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
+        # Convert Observation to dict format and move to device early
+        batch_dict = FormatConverter.to_lerobot_dict(batch)
+        batch_dict = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in batch_dict.items()}
 
         # Preprocess
         batch_dict = self._preprocessor(batch_dict)
 
-        # Move to model device for inference
-        batch_dict = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in batch_dict.items()}
-
-        # Get action
-        action = self.model.select_action(batch_dict)
+        # Get actions from model
+        actions = self.model.get_action(batch_dict)
 
         # Postprocess
-        return self._postprocessor(action)
+        return self._postprocessor(actions)
+
+    # select_action() is inherited from Policy base class - uses queue with predict_action_chunk()
 
     def reset(self) -> None:
         """Reset policy state for new episode."""
-        if self.model is not None:
-            self.model.reset()
+        super().reset()  # Clears action queue
 
     def get_optim_params(self) -> dict[str, Any]:
         """Get optimizer parameters for external configuration.
