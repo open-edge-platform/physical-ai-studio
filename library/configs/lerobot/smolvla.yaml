@@ -1,0 +1,137 @@
+# SmolVLAxAI Policy Training Configuration
+# Train SmolVLA using LeRobot's implementation
+#
+# Usage:
+#   getiaction fit --config configs/lerobot/smolvla_xai.yaml
+#
+# Override parameters:
+#   getiaction fit --config configs/lerobot/smolvla_xai.yaml --model.max_state_dim 64
+
+model:
+  class_path: getiaction.policies.lerobot.SmolVLA
+  init_args:
+    # Steps for input and output
+    n_obs_steps: 1
+    chunk_size: 50
+    n_action_steps: 50
+
+    # State dimensions
+    max_state_dim: 32
+    max_action_dim: 32
+
+    # Image preprocessing
+    resize_imgs_with_padding: [512, 512]
+
+    # Aloha specific parameters
+    empty_cameras: 0
+    adapt_to_pi_aloha: False
+    use_delta_joint_actions_aloha: False
+
+    # Tokenizer and decoding
+    tokenizer_max_length: 48
+    num_steps: 10
+    use_cache: True
+
+    # Finetuning settings
+    freeze_vision_encoder: True
+    train_expert_only: True
+    train_state_proj: True
+
+    # Training presets
+    optimizer_lr: 1e-4
+    optimizer_betas: [0.9, 0.95]
+    optimizer_eps: 1e-8
+    optimizer_weight_decay: 1e-10
+    optimizer_grad_clip_norm: 10
+    scheduler_warmup_steps: 1_000
+    scheduler_decay_steps: 30_000
+    scheduler_decay_lr: 2.5e-6
+
+    # VLM/VLA model parameters
+    vlm_model_name: "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"
+    load_vlm_weights: true
+    add_image_special_tokens: False
+    attention_mode: "cross_attn"
+    prefix_length: -1
+    pad_language_to: "longest"
+    num_expert_layers: -1
+    num_vlm_layers: 16
+    self_attn_every_n_layers: 2
+    expert_width_multiplier: 0.75
+
+    # Positional encoding
+    min_period: 4e-3
+    max_period: 4.0
+
+    # XAI
+    layer_idx: -1 # Which layer to display (null means average from all layers)
+    head_idx: null # Which head to display (null means average from all heads, -1 takes the max)
+
+data:
+  class_path: getiaction.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: "lerobot/svla_so100_stacking"
+    train_batch_size: 64
+    data_format: "lerobot" # Output format: "lerobot" (flattened dict) or "getiaction" (Observation)
+    delta_timestamps:
+      action:
+        [
+          0.0,
+          0.03333333333333333,
+          0.06666666666666667,
+          0.1,
+          0.13333333333333333,
+          0.16666666666666666,
+          0.2,
+          0.23333333333333334,
+          0.26666666666666666,
+          0.3,
+          0.3333333333333333,
+          0.36666666666666664,
+          0.4,
+          0.43333333333333335,
+          0.4666666666666667,
+          0.5,
+          0.5333333333333333,
+          0.5666666666666667,
+          0.6,
+          0.6333333333333333,
+          0.6666666666666666,
+          0.7,
+          0.7333333333333333,
+          0.7666666666666667,
+          0.8,
+          0.8333333333333334,
+          0.8666666666666667,
+          0.9,
+          0.9333333333333333,
+          0.9666666666666667,
+          1.0,
+          1.0333333333333334,
+          1.0666666666666667,
+          1.1,
+          1.1333333333333333,
+          1.1666666666666667,
+          1.2,
+          1.2333333333333334,
+          1.2666666666666666,
+          1.3,
+          1.3333333333333333,
+          1.3666666666666667,
+          1.4,
+          1.4333333333333333,
+          1.4666666666666666,
+          1.5,
+          1.5333333333333334,
+          1.5666666666666667,
+          1.6,
+          1.6333333333333333,
+        ]
+
+trainer:
+  max_epochs: 200
+  accelerator: gpu
+  devices: 1
+  precision: 32
+  log_every_n_steps: 10
+  check_val_every_n_epoch: 10

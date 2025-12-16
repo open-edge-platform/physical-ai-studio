@@ -62,18 +62,15 @@ class Dataset(TorchDataset, ABC):
 
     @property
     def stats(self) -> dict[str, dict[str, list[float]]]:
-        """Dataset normalization statistics.
-
-        Returns a dict mapping feature keys to stat dicts with mean, std, min, max.
-        Keys follow the format: "observation.{name}" for observation features,
-        "action" for action features.
+        """Normalization statistics extracted from features.
 
         Returns:
-            Stats dict suitable for policy normalization.
+            Dict mapping feature keys to their normalization stats
+            (mean, std, min, max). Keys follow the format used by
+            the underlying dataset (e.g., "observation.state", "action").
         """
         stats_dict: dict[str, dict[str, list[float]]] = {}
 
-        # Observation features: "observation.{name}" -> stats
         for name, feature in self.observation_features.items():
             if feature.normalization_data is not None:
                 norm = feature.normalization_data
@@ -83,11 +80,10 @@ class Dataset(TorchDataset, ABC):
                     if (val := getattr(norm, stat, None)) is not None
                 }
 
-        # Action features: use key as-is (usually "action")
-        for key, feature in self.action_features.items():
+        for name, feature in self.action_features.items():
             if feature.normalization_data is not None:
                 norm = feature.normalization_data
-                stats_dict[key] = {
+                stats_dict[name] = {
                     stat: list(val) if hasattr(val, "__iter__") else [val]
                     for stat in ("mean", "std", "min", "max")
                     if (val := getattr(norm, stat, None)) is not None

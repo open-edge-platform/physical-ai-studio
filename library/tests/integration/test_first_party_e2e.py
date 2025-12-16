@@ -26,7 +26,7 @@ from getiaction.train import Trainer
 EXPORT_BACKENDS = ["openvino", "onnx", "torch", "torch_export_ir"]
 
 # Policy names for parametrization
-FIRST_PARTY_POLICIES = ["groot"]
+FIRST_PARTY_VLA_POLICIES = ["groot", "pi0"]
 FIRST_PARTY_POLICIES_WITH_EXPORT = ["act"]
 
 
@@ -144,30 +144,22 @@ class ExportE2ETests:
         # Get training output
         torch.manual_seed(42)
         trained_policy.eval()
-        trained_policy.reset()
         with torch.no_grad():
-            train_output = trained_policy.select_action(single_observation)
-
-        # Export and load model
-        trained_policy.export(export_dir, backend)
-        inference_model = InferenceModel.load(export_dir)
-
-        # Run inference
-        torch.manual_seed(42)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(42)
-
-        inference_model.reset()
-        inference_output = inference_model.select_action(single_observation.to_numpy())
-
-        # Compare outputs
-        train_action: torch.Tensor = train_output[0].cpu()
+            train_action = trained_policy.predict_action_chunk(single_observation)
+        if isinstance(train_action, tuple):
+            train_action = train_action[0]
+        train_action = train_action.squeeze(0)
         if len(train_action.shape) > 1:
             train_action = train_action[0]
 
-        if not isinstance(inference_output, torch.Tensor):
-            inference_output = torch.from_numpy(inference_output)
+        # Export and get inference output
+        trained_policy.export(export_dir, backend)
+        inference_model = InferenceModel.load(export_dir)
 
+        torch.manual_seed(42)
+        inference_input = single_observation.to_numpy()
+        inference_output = inference_model.select_action(inference_input)
+        inference_output = torch.as_tensor(inference_output)
         inference_output_cpu: torch.Tensor = inference_output.cpu().squeeze(0)
         if len(inference_output_cpu.shape) > 1:
             inference_output_cpu = inference_output_cpu[0]
@@ -176,16 +168,15 @@ class ExportE2ETests:
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("policy_name", FIRST_PARTY_POLICIES, indirect=True)
+@pytest.mark.parametrize("policy_name", FIRST_PARTY_VLA_POLICIES, indirect=True)
 class TestE2ECore(CoreE2ETests):
-    """E2E core tests for policies without export support (Groot, etc.)."""
+    """E2E core tests for VLA policies without export support (Groot, Pi0, etc.)."""
 
     @pytest.fixture(scope="class")
     def policy(self, policy_name: str) -> Policy:
         """Create first-party policy instance with memory-efficient settings.
 
-        For Groot, we freeze most of the model to fit in 24GB GPU memory.
-        Only the projector is trainable (~518M params instead of 3.2B).
+        For VLA policies, we freeze most of the model to fit in 24GB GPU memory.
         """
         if policy_name == "groot":
             return get_policy(
@@ -197,6 +188,7 @@ class TestE2ECore(CoreE2ETests):
                 tune_projector=True,
                 tune_diffusion_model=False,
             )
+        # Pi0 and other VLA policies use defaults (already memory-efficient)
         return get_policy(policy_name, source="getiaction")
 
     @pytest.fixture(scope="class")
