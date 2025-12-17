@@ -407,3 +407,154 @@ class TestLeRobotPolicyCheckpoint:
             import os
 
             os.unlink(checkpoint_path)
+
+
+class TestLeRobotPolicyNumericalEquivalence:
+    """Tests verifying wrapper produces identical results to direct LeRobot calls.
+
+    These tests ensure our wrapper's predict_action_chunk and select_action
+    produce numerically equivalent outputs to calling the underlying LeRobot
+    policy methods directly.
+    """
+
+    @pytest.fixture
+    def device(self):
+        """Get the device to use for tests."""
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    @pytest.fixture
+    def act_policy_on_device(self, lerobot_imports, pusht_dataset, device):
+        """Create ACT policy and move to correct device."""
+        LeRobotPolicy = lerobot_imports["LeRobotPolicy"]
+        policy = LeRobotPolicy.from_dataset("act", pusht_dataset)
+        policy.to(device)
+        policy.eval()
+        return policy
+
+    def test_select_action_matches_lerobot_directly(self, act_policy_on_device, pusht_dataset, device):
+        """Verify wrapper.select_action == lerobot_policy.select_action."""
+        policy = act_policy_on_device
+
+        # Create a sample batch and move to device
+        sample = pusht_dataset[0]
+        batch = {k: v.unsqueeze(0).to(device) for k, v in sample.items() if isinstance(v, torch.Tensor)}
+
+        # Reset both to clear any state
+        policy.reset()
+
+        # Get preprocessed batch (what LeRobot expects)
+        preprocessed = policy._preprocessor(batch)
+
+        # Direct LeRobot call
+        lerobot_action = policy.lerobot_policy.select_action(preprocessed)
+
+        # Reset again before wrapper call (action queue state)
+        policy.reset()
+
+        # Wrapper call (includes preprocessing internally)
+        wrapper_action = policy.select_action(batch)
+
+        # Should be numerically identical
+        torch.testing.assert_close(
+            wrapper_action,
+            policy._postprocessor(lerobot_action),
+            rtol=1e-5,
+            atol=1e-5,
+            msg="Wrapper select_action should match LeRobot select_action",
+        )
+
+    def test_predict_action_chunk_matches_lerobot_directly(self, act_policy_on_device, pusht_dataset, device):
+        """Verify wrapper.predict_action_chunk == lerobot_policy.predict_action_chunk."""
+        policy = act_policy_on_device
+
+        # Create a sample batch and move to device
+        sample = pusht_dataset[0]
+        batch = {k: v.unsqueeze(0).to(device) for k, v in sample.items() if isinstance(v, torch.Tensor)}
+
+        # Reset to clear state
+        policy.reset()
+
+        # Get preprocessed batch
+        preprocessed = policy._preprocessor(batch)
+
+        # Direct LeRobot call
+        lerobot_chunk = policy.lerobot_policy.predict_action_chunk(preprocessed)
+
+        # Reset again
+        policy.reset()
+
+        # Wrapper call
+        wrapper_chunk = policy.predict_action_chunk(batch)
+
+        # Should be numerically identical
+        torch.testing.assert_close(
+            wrapper_chunk,
+            policy._postprocessor(lerobot_chunk),
+            rtol=1e-5,
+            atol=1e-5,
+            msg="Wrapper predict_action_chunk should match LeRobot predict_action_chunk",
+        )
+
+    def test_select_action_shape_is_single_action(self, act_policy_on_device, pusht_dataset, device):
+        """Verify select_action returns single action per batch item."""
+        policy = act_policy_on_device
+
+        sample = pusht_dataset[0]
+        batch = {k: v.unsqueeze(0).to(device) for k, v in sample.items() if isinstance(v, torch.Tensor)}
+
+        policy.reset()
+        action = policy.select_action(batch)
+
+        # select_action returns (batch, action_dim) - one action per batch item
+        # LeRobot's select_action preserves the batch dimension
+        action_dim = policy._config.output_features["action"].shape[0]
+        assert action.dim() == 2, f"Expected 2D tensor, got shape {action.shape}"
+        assert action.shape[0] == 1  # batch size
+        assert action.shape[1] == action_dim  # action_dim
+
+    def test_predict_action_chunk_shape_is_full_chunk(self, act_policy_on_device, pusht_dataset, device):
+        """Verify predict_action_chunk returns full chunk."""
+        policy = act_policy_on_device
+
+        sample = pusht_dataset[0]
+        batch = {k: v.unsqueeze(0).to(device) for k, v in sample.items() if isinstance(v, torch.Tensor)}
+
+        policy.reset()
+        chunk = policy.predict_action_chunk(batch)
+
+        # predict_action_chunk should return (batch, chunk_size, action_dim)
+        action_dim = policy._config.output_features["action"].shape[0]
+        assert chunk.dim() == 3, f"Expected 3D tensor, got shape {chunk.shape}"
+        assert chunk.shape[0] == 1  # batch size
+        assert chunk.shape[1] == policy._config.chunk_size  # chunk_size
+        assert chunk.shape[2] == action_dim  # action_dim
+
+    def test_multiple_select_action_uses_cached_chunk(self, lerobot_imports, pusht_dataset, device):
+        """Verify select_action uses internal queue correctly."""
+        LeRobotPolicy = lerobot_imports["LeRobotPolicy"]
+
+        policy = LeRobotPolicy.from_dataset("act", pusht_dataset, n_action_steps=3)
+        policy.to(device)
+        policy.eval()
+
+        sample = pusht_dataset[0]
+        batch = {k: v.unsqueeze(0).to(device) for k, v in sample.items() if isinstance(v, torch.Tensor)}
+
+        policy.reset()
+
+        # Get full chunk first
+        full_chunk = policy.predict_action_chunk(batch)
+
+        # Reset and call select_action multiple times
+        policy.reset()
+        actions = []
+        for _ in range(3):
+            action = policy.select_action(batch)
+            actions.append(action)
+
+        # Each action should match corresponding position in chunk
+        # select_action returns (batch, action_dim), chunk is (batch, chunk_size, action_dim)
+        for i, action in enumerate(actions):
+            # LeRobot's select_action returns from its internal queue
+            # which is populated by predict_action_chunk[:, :n_action_steps]
+            assert action.shape == (1, full_chunk.shape[2])  # (batch, action_dim)

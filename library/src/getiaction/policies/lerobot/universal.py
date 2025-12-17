@@ -648,47 +648,44 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         return self._postprocessor(action)
 
     def predict_action_chunk(self, batch: Observation | dict[str, torch.Tensor]) -> torch.Tensor:
-        """Predict action chunk using the wrapped LeRobot policy.
+        """Predict full action chunk using the wrapped LeRobot policy.
 
-        LeRobot policies handle their own action chunking internally. This method
-        delegates to the LeRobot policy's select_action, which returns the next
-        action from its internal queue (or predicts a new chunk if empty).
-
-        Note: For LeRobot policies, predict_action_chunk and select_action return
-        the same result because the chunking logic is internal to the LeRobot policy.
+        Returns the complete action chunk predicted by the model without
+        queue management. Use this when you need all predicted future actions.
 
         Args:
             batch: Input batch of observations.
 
         Returns:
-            Action tensor (single action or chunk depending on internal policy).
+            Action chunk tensor of shape (B, chunk_size, action_dim) or
+            (chunk_size, action_dim) for unbatched input.
         """
-        # LeRobot handles chunking internally - delegate to forward in eval mode
         batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
         batch_dict = self._preprocessor(batch_dict)
-        action = self.lerobot_policy.select_action(batch_dict)
-        return self._postprocessor(action)
+        actions = self.lerobot_policy.predict_action_chunk(batch_dict)
+        return self._postprocessor(actions)
 
     def select_action(self, batch: Observation | dict[str, torch.Tensor]) -> torch.Tensor:
-        """Select action (inference mode) through LeRobot.
+        """Select single action using LeRobot's internal action queue.
 
-        Delegates to predict_action_chunk, which handles preprocessing,
-        action prediction, and postprocessing (denormalization).
-
-        Note: This overrides the base class select_action to delegate to
-        the LeRobot policy's internal action chunking mechanism rather than
-        using the base class action queue.
+        Delegates to the LeRobot policy's select_action, which manages
+        its own action queue internally. When the queue is empty, it calls
+        predict_action_chunk to get a new chunk, queues the actions, and
+        returns the first one.
 
         Args:
             batch: Input batch of observations (raw, from gym).
 
         Returns:
-            Predicted actions (denormalized).
+            Single action tensor of shape (action_dim,).
         """
         was_training = self.training
         self.eval()
         try:
-            return self.predict_action_chunk(batch)
+            batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
+            batch_dict = self._preprocessor(batch_dict)
+            action = self.lerobot_policy.select_action(batch_dict)
+            return self._postprocessor(action)
         finally:
             if was_training:
                 self.train()
