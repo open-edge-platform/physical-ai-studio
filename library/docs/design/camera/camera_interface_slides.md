@@ -7,7 +7,7 @@ footer: "Camera Interface Design | getiaction.cameras"
 
 # Camera Interface Design
 
-**Unified frame acquisition for getiaction**
+## Unified frame acquisition for getiaction
 
 Live cameras, video files, and image folders — one interface
 
@@ -76,7 +76,7 @@ with Webcam(index=0, fps=30) as camera:
 
 ## Class Hierarchy
 
-```
+```text
 Camera (ABC)
 ├── Webcam              # Webcam, USB cameras
 ├── RealSense           # Intel depth cameras
@@ -162,8 +162,6 @@ class Webcam(Camera):  # Sync only by default
     ): ...
 ```
 
-_Alias: `OpenCVCamera` for LeRobot compatibility_
-
 ---
 
 <!-- _header: "3. Implementations" -->
@@ -207,7 +205,7 @@ with ImageFolder(path="dataset/images/", pattern="*.png") as folder:
         process(frame)
 ```
 
-_Video files and image folders are just recorded camera output_
+Video files and image folders are just recorded camera output
 
 ---
 
@@ -260,7 +258,7 @@ with robot, camera:
 
 ## Package Structure
 
-```
+```text
 library/src/getiaction/cameras/
 ├── __init__.py         # Public API + aliases
 ├── base.py             # Camera ABC
@@ -327,8 +325,8 @@ pip install getiaction[cameras]    # All camera deps
 
 ## Other Open Decisions
 
-| Decision            | Options                                 | Recommendation   |
-| ------------------- | --------------------------------------- | ---------------- |
+| Decision            | Options                                 | Recommendation    |
+| ------------------- | --------------------------------------- | ----------------- |
 | **LeRobot interop** | In cameras vs. lerobot module           | ✅ In cameras     |
 | **Transforms**      | Built-in vs. callable hook vs. pipeline | ✅ Built-in first |
 
@@ -357,6 +355,6 @@ pip install getiaction[cameras]    # All camera deps
 <!-- _header: "" -->
 <!-- _footer: "" -->
 
-# Questions?
+## Questions?
 
 📄 Full reference: [camera_interface_design.md](camera_interface_design.md)

@@ -24,8 +24,6 @@ This design retains FrameSource's low-level strengths while delivering the polis
 
 A unified `Camera` interface for frame acquisition from live cameras, video files, and image folders. Video files and image folders are recorded camera output—the data originally came from a camera, we're just replaying it. One abstraction covers all cases.
 
-**Module**: `getiaction.cameras` or a standalone package.
-
 **Design Principles:**
 
 - **Hparams-first**: Explicit constructor args with IDE autocomplete, plus `from_config()` for configs
@@ -34,20 +32,74 @@ A unified `Camera` interface for frame acquisition from live cameras, video file
 
 ---
 
+## Packaging Strategy
+
+This camera interface is needed across the Geti ecosystem (`geti-action`, `geti-prompt`, `geti-inspect`, `geti-tune`) and by external users. We propose a **two-phase approach**:
+
+### Option A: Subpackage (Initial Development)
+
+Start inside `getiaction` for rapid iteration:
+
+```text
+library/src/getiaction/cameras/
+├── __init__.py         # Public API + aliases
+├── base.py             # Camera ABC
+├── async_mixin.py      # Background capture (optional)
+├── webcam.py           # Webcam
+├── realsense.py        # RealSense
+├── basler.py           # Basler
+├── genicam.py          # Genicam
+├── ipcam.py            # IPCam
+├── screen.py           # Screen
+├── video.py            # VideoFile
+├── folder.py           # ImageFolder
+└── lerobot.py          # LeRobot
+```
+
+```python
+from getiaction.cameras import Webcam, RealSense
+```
+
+### Option B: Standalone Package (Long-term Goal)
+
+Once stable, extract to a standalone package for ecosystem-wide reuse:
+
+```text
+geticam/
+├── src/geticam/
+│   ├── __init__.py
+│   ├── base.py
+│   ├── webcam.py
+│   ├── ...
+├── pyproject.toml
+└── README.md
+```
+
+```python
+from geticam import Webcam, RealSense
+```
+
+We could start with **Option A** for speed. We could design the API to be extraction-friendly (no internal `getiaction` imports in camera code) so migration to **Option B** is seamless once the interface stabilizes.
+
+See [Open Design Decisions](#1-package-vs-subpackage-critical-decision) for full trade-off analysis.
+
+---
+
 ## Background: FrameSource
 
 [FrameSource](https://github.com/ArendJanKramer/FrameSource) is an existing library that handles low-level camera integrations. It supports:
 
-| FrameSource Class  | Hardware/Source           |
-| ------------------ | ------------------------- |
-| `WebcamCapture`    | USB webcams               |
-| `BaslerCapture`    | Basler industrial cameras |
-| `GenicamCapture`   | Generic GenICam devices   |
-| `RealsenseCapture` | Intel RealSense depth     |
-| `IPCameraCapture`  | RTSP/HTTP network cameras |
-| `ScreenCapture`    | Desktop screen capture    |
-| `VideoFileCapture` | Video file playback       |
-| `FolderCapture`    | Image sequence playback   |
+| FrameSource Class     | Hardware/Source                                                                   |
+| --------------------- | --------------------------------------------------------------------------------- |
+| `WebcamCapture`       | USB webcams (OpenCV backend)                                                      |
+| `WebcamCaptureNokhwa` | USB webcams ([nokhwa](https://github.com/l1npengtul/nokhwa) backend, more stable) |
+| `BaslerCapture`       | Basler industrial cameras                                                         |
+| `GenicamCapture`      | Generic GenICam devices                                                           |
+| `RealsenseCapture`    | Intel RealSense depth                                                             |
+| `IPCameraCapture`     | RTSP/HTTP network cameras                                                         |
+| `ScreenCapture`       | Desktop screen capture                                                            |
+| `VideoFileCapture`    | Video file playback                                                               |
+| `FolderCapture`       | Image sequence playback                                                           |
 
 **What FrameSource does well**: Hardware abstraction, threading, buffer management
 
@@ -63,7 +115,7 @@ A unified `Camera` interface for frame acquisition from live cameras, video file
 
 ## Class Hierarchy
 
-```
+```text
 Camera (ABC)
 ├── Webcam              # Webcam, USB cameras (alias: OpenCVCamera)
 ├── RealSense           # Intel depth cameras
@@ -80,37 +132,21 @@ Camera (ABC)
 
 | FrameSource               | This Design   | Notes        |
 | ------------------------- | ------------- | ------------ |
-| `WebcamCapture`           | `Webcam`      | ✅            |
-| `BaslerCapture`           | `Basler`      | ✅            |
-| `GenicamCapture`          | `Genicam`     | ✅            |
-| `RealsenseCapture`        | `RealSense`   | ✅            |
-| `IPCameraCapture`         | `IPCam`       | ✅            |
-| `ScreenCapture`           | `Screen`      | ✅            |
-| `VideoFileCapture`        | `VideoFile`   | ✅            |
-| `FolderCapture`           | `ImageFolder` | ✅            |
-| `AudioSpectrogramCapture` | ❌             | Not a camera |
+| `WebcamCapture`           | `Webcam`      | Yes          |
+| `BaslerCapture`           | `Basler`      | Yes          |
+| `GenicamCapture`          | `Genicam`     | Yes          |
+| `RealsenseCapture`        | `RealSense`   | Yes          |
+| `IPCameraCapture`         | `IPCam`       | Yes          |
+| `ScreenCapture`           | `Screen`      | Yes          |
+| `VideoFileCapture`        | `VideoFile`   | Yes          |
+| `FolderCapture`           | `ImageFolder` | Yes          |
+| `AudioSpectrogramCapture` | No            | Not a camera |
 
 ---
 
-## Package Structure
+## Dependencies
 
-```
-library/src/getiaction/cameras/
-├── __init__.py         # Public API + aliases
-├── base.py             # Camera ABC
-├── async_mixin.py      # Background capture
-├── webcam.py           # Webcam
-├── realsense.py        # RealSense
-├── basler.py           # Basler
-├── genicam.py          # Genicam
-├── ipcam.py            # IPCam
-├── screen.py           # Screen
-├── video.py            # VideoFile
-├── folder.py           # ImageFolder
-└── lerobot.py          # LeRobot
-```
-
-**Dependencies**: OpenCV is a base dependency. Optional extras for specialized hardware:
+OpenCV is a base dependency. Optional extras for specialized hardware:
 
 ```bash
 pip install getiaction[realsense]  # Intel RealSense
@@ -207,7 +243,7 @@ class Camera(ABC):
 
 **This is opt-in, not required.** Cameras work perfectly with synchronous `read()` only.
 
-For live cameras that *choose* to support background capture, a mixin provides:
+For live cameras that _choose_ to support background capture, a mixin provides:
 
 ```python
 class AsyncCaptureMixin:
@@ -228,7 +264,11 @@ The following subclasses implement the `Camera` ABC. Details are illustrative—
 
 ```python
 class Webcam(Camera):
-    """USB cameras, built-in webcams, V4L2 devices. Alias: OpenCVCamera"""
+    """USB cameras, built-in webcams, V4L2 devices. Alias: OpenCVCamera
+
+    Backend: Can use OpenCV or nokhwa (via omnicamera). nokhwa provides
+    better stability for USB cameras on some platforms.
+    """
 
     def __init__(
         self, *,
@@ -239,6 +279,7 @@ class Webcam(Camera):
         color_mode: ColorMode = ColorMode.RGB,
         rotation: Rotation = Rotation.NONE,
         warmup_s: float = 1.0,
+        backend: str = "opencv",  # or "nokhwa"
     ) -> None: ...
 
 
@@ -418,14 +459,6 @@ camera = Webcam.from_config({"index": 0, "fps": 30})
 camera = Webcam.from_config(my_config)
 ```
 
-### Aliases
-
-```python
-# In __init__.py - for LeRobot compatibility
-from .webcam import Webcam
-OpenCVCamera = Webcam  # Alias
-```
-
 ### Robot Integration (Sync)
 
 ```python
@@ -480,14 +513,16 @@ with robot, camera:
 | Option                    | Package Name        | Import                               | Pros                                      | Cons                                         |
 | ------------------------- | ------------------- | ------------------------------------ | ----------------------------------------- | -------------------------------------------- |
 | **A: Subpackage**         | (inside getiaction) | `from getiaction.cameras import ...` | Fast to implement, no new repo            | Tight coupling, can't use elsewhere          |
-| **B: Standalone package** | `geti-camera` (new) | `from geti_camera import ...`        | Reusable across ecosystem, clean branding | New repo, more maintenance                   |
+| **B: Standalone package** | `geticam` (new)     | `from geticam import ...`            | Reusable across ecosystem, clean branding | New repo, more maintenance                   |
 | **C: Fork + refactor**    | Keep `framesource`  | `from framesource import ...`        | Minimal effort                            | No differentiation, legacy baggage, not ours |
 
-**Branding consideration**: We need a unique identity separate from the original FrameSource codebase. Options:
+**Branding consideration**: We need a unique identity separate from the original FrameSource codebase.
 
-- `geti-camera` — aligns with Geti product family
-- `geti-stream` — emphasizes streaming capability?
-- `geticam` — short, memorable
+| Name           | Import                         | Verdict                                             |
+| -------------- | ------------------------------ | --------------------------------------------------- |
+| **`geticam`**  | `from geticam import ...`      | Recommended — short, memorable, clear purpose       |
+| `geti-camera`  | `from geti_camera import ...`  | Good — matches `geti-action` convention, but longer |
+| `geti-capture` | `from geti_capture import ...` | Broader scope, could imply screen recording         |
 
 **Recommendation**: Start with **Option A** (subpackage in `getiaction.cameras`) for rapid development. Design the API to be extraction-friendly so we can move to **Option B** later if cross-product usage is confirmed.
 
@@ -495,10 +530,10 @@ with robot, camera:
 
 ### 2. LeRobot Interop
 
-| Option            | Location                        | Recommendation         |
-| ----------------- | ------------------------------- | ---------------------- |
-| In cameras        | `getiaction/cameras/lerobot.py` | ✅ All cameras together |
-| In lerobot module | `getiaction/lerobot/cameras.py` | Groups interop code    |
+| Option            | Location                        | Recommendation       |
+| ----------------- | ------------------------------- | -------------------- |
+| In cameras        | `getiaction/cameras/lerobot.py` | All cameras together |
+| In lerobot module | `getiaction/lerobot/cameras.py` | Groups interop code  |
 
 ### 3. Frame Transforms
 
@@ -522,7 +557,7 @@ The existing FrameSource has `FrameProcessor` classes:
 
 Specialized processors (360°, depth colorization) would be separate utilities, not part of Camera.
 
-### 4. Additional Questions
+### 4. Additional Opens
 
 1. **Calibration data**: Add optional `calibration` property?
 2. **Recording**: Add `CameraRecorder` for saving frames?
