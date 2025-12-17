@@ -13,6 +13,38 @@ Live cameras, video files, and image folders — one interface
 
 ---
 
+## Background: FrameSource
+
+**Existing work**: [FrameSource](https://github.com/olkham/FrameSource) — low-level camera integrations
+
+✅ **What it does well**:
+
+- Hardware abstraction (webcams, RealSense, Basler, GenICam, IP cameras)
+- Threading and buffer management
+- Solid foundational implementation
+
+⚠️ **The challenge**:
+
+- Fork of a previous employee's repo
+- Developed without strict engineering standards
+- Lacks consistent API, typing, tests, documentation
+
+---
+
+## What This Design Adds
+
+| FrameSource (Low-level)     | This Design (High-level)           |
+| --------------------------- | ---------------------------------- |
+| Functional but inconsistent | Clean, typed API with IDE support  |
+| Minimal error handling      | Production-level error management  |
+| Limited documentation       | Fully documented with examples     |
+| No config support           | `from_config()` for YAML/dataclass |
+| Manual resource management  | Context manager pattern            |
+
+**Goal**: Keep FrameSource's strengths, add the polish for production
+
+---
+
 ## Agenda
 
 1. **Design** — Principles, Class Hierarchy, Camera ABC
@@ -85,9 +117,9 @@ class Camera(ABC):
 
 <!-- _header: "2. Core" -->
 
-## AsyncCaptureMixin
+## AsyncCaptureMixin (Optional)
 
-Background capture for live cameras — no more dropped frames
+Background capture for live cameras — **opt-in, not required**
 
 ```python
 class AsyncCaptureMixin:
@@ -96,13 +128,16 @@ class AsyncCaptureMixin:
     def async_read(self, timeout_ms=200) -> NDArray: ...
 ```
 
-**Usage:**
+> ⚠️ FrameSource intentionally does not implement async. Validate need before adding.
+
+**Usage (if needed):**
 
 ```python
-with Webcam(index=0) as camera:
+class AsyncWebcam(AsyncCaptureMixin, Webcam): ...
+
+with AsyncWebcam(index=0) as camera:
     camera.start_async()
-    while running:
-        frame = camera.async_read()  # Latest frame
+    frame = camera.async_read()
 ```
 
 ---
@@ -114,7 +149,7 @@ with Webcam(index=0) as camera:
 USB cameras, built-in webcams, V4L2 devices
 
 ```python
-class Webcam(AsyncCaptureMixin, Camera):
+class Webcam(Camera):  # Sync only by default
     def __init__(
         self, *,
         index: int = 0,
@@ -138,7 +173,7 @@ _Alias: `OpenCVCamera` for LeRobot compatibility_
 Intel depth cameras with optional depth stream
 
 ```python
-class RealSense(AsyncCaptureMixin, Camera):
+class RealSense(Camera):  # Sync only by default
     def __init__(
         self, *,
         serial_number: str | None = None,
@@ -257,13 +292,45 @@ pip install getiaction[cameras]    # All camera deps
 
 <!-- _header: "5. Decisions" -->
 
-## Open Design Decisions
+## Critical: Package vs. Subpackage
 
-| Decision            | Options                                 | Recommendation           |
-| ------------------- | --------------------------------------- | ------------------------ |
-| **Location**        | Inside getiaction vs. separate package  | ✅ Inside, extract later |
-| **LeRobot interop** | In cameras vs. lerobot module           | ✅ In cameras            |
-| **Transforms**      | Built-in vs. callable hook vs. pipeline | ✅ Built-in first        |
+**This camera interface is needed across the Geti ecosystem:**
+
+| Product        | Purpose                                 |
+| -------------- | --------------------------------------- |
+| `geti-action`  | Robotics / VLA policies                 |
+| `geti-prompt`  | SAM3, prompt-based tasks                |
+| `geti-inspect` | Anomaly detection                       |
+| `geti-tune`    | Classification, detection, segmentation |
+
+⚠️ **Team alignment needed on this decision**
+
+---
+
+<!-- _header: "5. Decisions" -->
+
+## Packaging Options
+
+| Option            | Import                             | Trade-off                    |
+| ----------------- | ---------------------------------- | ---------------------------- |
+| **A: Subpackage** | `from getiaction.cameras import …` | Fast, but tied to getiaction |
+| **B: Standalone** | `from geti_camera import …`        | Reusable, but new repo       |
+| **C: Keep fork**  | `from framesource import …`        | Minimal effort, no branding  |
+
+**Recommendation**: Start with **A**, design for extraction to **B**
+
+**Branding**: Need unique identity (`geti-camera`? `geti-vision`? `geticam`?)
+
+---
+
+<!-- _header: "5. Decisions" -->
+
+## Other Open Decisions
+
+| Decision            | Options                                 | Recommendation   |
+| ------------------- | --------------------------------------- | ---------------- |
+| **LeRobot interop** | In cameras vs. lerobot module           | ✅ In cameras     |
+| **Transforms**      | Built-in vs. callable hook vs. pipeline | ✅ Built-in first |
 
 ### Additional Questions
 
