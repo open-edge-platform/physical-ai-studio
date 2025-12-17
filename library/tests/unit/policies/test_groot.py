@@ -10,10 +10,8 @@ from __future__ import annotations
 
 import pytest
 import torch
-
 from getiaction.config import Config
 from getiaction.policies.groot import Groot, GrootConfig
-
 
 # ============================================================================ #
 # Configuration Tests                                                          #
@@ -115,6 +113,7 @@ class TestGrootPolicy:
         policy = Groot()
         with pytest.raises(RuntimeError, match="not initialized"):
             policy.configure_optimizers()
+
 
 # ============================================================================ #
 # NN Component Tests                                                           #
@@ -219,7 +218,10 @@ class TestTransformerComponents:
         from getiaction.policies.groot.components.transformer import BasicTransformerBlock
 
         block = BasicTransformerBlock(
-            dim=256, num_attention_heads=4, attention_head_dim=64, cross_attention_dim=256
+            dim=256,
+            num_attention_heads=4,
+            attention_head_dim=64,
+            cross_attention_dim=256,
         )
         block.eval()
 
@@ -292,7 +294,7 @@ class TestFlowMatchingActionHead:
         config = FlowMatchingActionHeadConfig(action_dim=8, action_horizon=16, hidden_size=128)
         head_from_config = FlowMatchingActionHead.from_config(config)
         head_from_dict = FlowMatchingActionHead.from_dict(
-            {"action_dim": 8, "action_horizon": 16, "hidden_size": 128}
+            {"action_dim": 8, "action_horizon": 16, "hidden_size": 128},
         )
 
         for head in [head_from_config, head_from_dict]:
@@ -310,11 +312,11 @@ class TestFlowMatchingActionHead:
 class TestPreprocessor:
     """Tests for Groot preprocessor functions."""
 
-    def test_make_groot_preprocessors(self) -> None:
-        """Test make_groot_preprocessors returns callables."""
-        from getiaction.policies.groot.preprocessor import make_groot_preprocessors
+    def test_make_groot_transforms(self) -> None:
+        """Test make_groot_transforms returns callables."""
+        from getiaction.policies.groot.transforms import make_groot_transforms
 
-        preprocessor, postprocessor = make_groot_preprocessors(
+        preprocessor, postprocessor = make_groot_transforms(
             max_state_dim=64,
             max_action_dim=32,
             action_horizon=16,
@@ -325,3 +327,93 @@ class TestPreprocessor:
         )
         assert callable(preprocessor)
         assert callable(postprocessor)
+
+    def test_preprocessor_is_nn_module(self) -> None:
+        """Test that preprocessors are nn.Module instances."""
+        from getiaction.policies.groot.transforms import GrootPostprocessor, GrootPreprocessor
+        from torch import nn
+
+        preprocessor = GrootPreprocessor()
+        postprocessor = GrootPostprocessor()
+
+        assert isinstance(preprocessor, nn.Module)
+        assert isinstance(postprocessor, nn.Module)
+
+    def test_preprocessor_buffers_registered(self) -> None:
+        """Test that stats are registered as buffers."""
+        from getiaction.policies.groot.transforms import GrootPreprocessor
+
+        stats = {
+            "observation.state": {"min": [0.0, 1.0], "max": [1.0, 2.0]},
+            "action": {"min": [-1.0, -2.0], "max": [1.0, 2.0]},
+        }
+        preprocessor = GrootPreprocessor(stats=stats)
+
+        # Check buffers are registered
+        buffer_names = [name for name, _ in preprocessor.named_buffers()]
+        assert "state_min" in buffer_names
+        assert "state_max" in buffer_names
+        assert "action_min" in buffer_names
+        assert "action_max" in buffer_names
+
+    def test_preprocessor_device_handling(self) -> None:
+        """Test that preprocessor buffers move with .to(device)."""
+        from getiaction.policies.groot.transforms import GrootPreprocessor
+
+        stats = {
+            "observation.state": {"min": [0.0], "max": [1.0]},
+            "action": {"min": [-1.0], "max": [1.0]},
+        }
+        preprocessor = GrootPreprocessor(stats=stats)
+
+        # Initially on CPU
+        assert preprocessor.state_min.device.type == "cpu"
+
+        # Move to CPU explicitly (always works)
+        preprocessor = preprocessor.to("cpu")
+        assert preprocessor.state_min.device.type == "cpu"
+        assert preprocessor.action_min.device.type == "cpu"
+
+    def test_postprocessor_buffers_registered(self) -> None:
+        """Test that postprocessor stats are registered as buffers."""
+        from getiaction.policies.groot.transforms import GrootPostprocessor
+
+        stats = {"action": {"min": [-1.0, -2.0], "max": [1.0, 2.0]}}
+        postprocessor = GrootPostprocessor(env_action_dim=2, stats=stats)
+
+        buffer_names = [name for name, _ in postprocessor.named_buffers()]
+        assert "action_min" in buffer_names
+        assert "action_max" in buffer_names
+
+    def test_preprocessor_state_normalization(self) -> None:
+        """Test state normalization with registered buffers."""
+        from getiaction.policies.groot.transforms import GrootPreprocessor
+
+        stats = {
+            "observation.state": {"min": [0.0, 0.0], "max": [10.0, 10.0]},
+        }
+        preprocessor = GrootPreprocessor(max_state_dim=4, stats=stats)
+
+        # Input state in [0, 10] should normalize to [-1, 1]
+        state = torch.tensor([[5.0, 5.0]])  # Middle value
+        batch = {"observation.state": state}
+
+        result = preprocessor(batch)
+
+        # Middle of [0, 10] maps to 0.0 in [-1, 1]
+        assert result["state"][0, 0, 0] == pytest.approx(0.0, abs=1e-5)
+        assert result["state"][0, 0, 1] == pytest.approx(0.0, abs=1e-5)
+
+    def test_postprocessor_denormalization(self) -> None:
+        """Test action denormalization with registered buffers."""
+        from getiaction.policies.groot.transforms import GrootPostprocessor
+
+        stats = {"action": {"min": [0.0, 0.0], "max": [10.0, 10.0]}}
+        postprocessor = GrootPostprocessor(env_action_dim=2, stats=stats)
+
+        # Normalized action 0.0 should denormalize to middle (5.0)
+        normalized = torch.tensor([[0.0, 0.0]])
+        result = postprocessor(normalized)
+
+        assert result[0, 0] == pytest.approx(5.0, abs=1e-5)
+        assert result[0, 1] == pytest.approx(5.0, abs=1e-5)

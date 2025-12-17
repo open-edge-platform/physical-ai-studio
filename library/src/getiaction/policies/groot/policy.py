@@ -58,10 +58,13 @@ from getiaction.policies.base import Policy
 
 from .config import GrootConfig
 from .model import GrootModel
+from .transforms import make_groot_transforms
 
 if TYPE_CHECKING:
     from getiaction.data import Observation
     from getiaction.gyms import Gym
+
+    from .transforms import GrootPostprocessor, GrootPreprocessor
 
 logger = logging.getLogger(__name__)
 
@@ -196,9 +199,9 @@ class Groot(Policy):
         # Model will be built in setup() or immediately if env_action_dim provided
         self.model: GrootModel | None = None
 
-        # Preprocessor/postprocessor set in setup() or _initialize_model()
-        self._preprocessor: Any = None
-        self._postprocessor: Any = None
+        # Preprocessor/postprocessor (nn.Module) set in setup() or _initialize_model()
+        self._preprocessor: GrootPreprocessor | None = None
+        self._postprocessor: GrootPostprocessor | None = None
 
         # Track initialization state
         self._is_setup_complete: bool = False
@@ -222,8 +225,6 @@ class Groot(Policy):
             env_action_dim: Environment action dimension.
             dataset_stats: Dataset normalization statistics (with list values, not tensors).
         """
-        from .preprocessor import make_groot_preprocessors  # noqa: PLC0415
-
         # Use config (policy-level config created in __init__)
         config = self.config
 
@@ -244,7 +245,7 @@ class Groot(Policy):
         )
 
         # Create first-party preprocessor/postprocessor
-        self._preprocessor, self._postprocessor = make_groot_preprocessors(
+        self._preprocessor, self._postprocessor = make_groot_transforms(
             max_state_dim=config.max_state_dim,
             max_action_dim=config.max_action_dim,
             action_horizon=min(config.chunk_size, 16),  # GR00T max is 16
@@ -329,15 +330,22 @@ class Groot(Policy):
 
         Returns:
             Training loss.
+
+        Raises:
+            RuntimeError: If model is not initialized.
         """
         del batch_idx  # Unused
 
+        if self._preprocessor is None:
+            msg = "Model not initialized. Call setup() first."
+            raise RuntimeError(msg)
+
         # Apply preprocessing
-        batch = self._preprocessor(batch)
+        preprocessed = self._preprocessor(batch)
 
         # Forward pass
-        outputs = self(batch)
-        loss = outputs.get("loss")
+        outputs = self(preprocessed)
+        loss = outputs["loss"]
 
         self.log("train/loss", loss, prog_bar=True)
         return loss
@@ -431,18 +439,15 @@ class Groot(Policy):
         Raises:
             RuntimeError: If model is not initialized.
         """
-        from getiaction.data.lerobot import FormatConverter  # noqa: PLC0415
-
-        if self.model is None:
+        if self.model is None or self._preprocessor is None or self._postprocessor is None:
             msg = "Model not initialized."
             raise RuntimeError(msg)
 
-        # Convert Observation to dict format and move to device early
-        batch_dict = FormatConverter.to_lerobot_dict(batch)
-        batch_dict = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in batch_dict.items()}
+        # Preprocess Observation directly (nn.Module handles device via buffers)
+        batch_dict = self._preprocessor(batch)
 
-        # Preprocess
-        batch_dict = self._preprocessor(batch_dict)
+        # Move tensors to device
+        batch_dict = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in batch_dict.items()}
 
         # Get actions from model
         actions = self.model.get_action(batch_dict)

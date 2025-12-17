@@ -59,10 +59,10 @@ from getiaction.policies.groot.components import EagleBackbone, EagleProcessor
 from getiaction.policies.groot.config import GrootConfig
 from getiaction.policies.groot.model import GrootModel
 from getiaction.policies.groot.policy import Groot
-from getiaction.policies.groot.preprocessor import (
+from getiaction.policies.groot.transforms import (
     GrootPostprocessor,
     GrootPreprocessor,
-    make_groot_preprocessors,
+    make_groot_transforms,
 )
 
 __all__ = [
@@ -73,5 +73,5 @@ __all__ = [
     "GrootModel",
     "GrootPostprocessor",
     "GrootPreprocessor",
-    "make_groot_preprocessors",
+    "make_groot_transforms",
 ]
