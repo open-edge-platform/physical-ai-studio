@@ -59,7 +59,9 @@ class ACT(FromCheckpoint, Export, Policy):  # type: ignore[misc]
               The optimizer factory function that takes model parameters and returns an optimizer instance.
               If None, defaults to Adam optimizer with lr=1e-5 and weight_decay=1e-4.
         """
-        super().__init__()
+        # Get n_action_steps from model config if available (for action queue sizing)
+        n_action_steps = model.config.n_action_steps if model is not None else 1
+        super().__init__(n_action_steps=n_action_steps)
 
         self.model = model  # type: ignore[assignment]
         self.optimizer_fn = optimizer_fn
@@ -177,39 +179,44 @@ class ACT(FromCheckpoint, Export, Policy):  # type: ignore[misc]
         # TO-DO(Vlad):  remove that workaround after CLI is able to run getiaction trainer
         reformat_dataset_to_match_policy(self, datamodule)
 
-    def select_action(self, batch: Observation) -> torch.Tensor:
-        """Select an action using the policy model.
+    def predict_action_chunk(self, batch: Observation) -> torch.Tensor:
+        """Predict a chunk of actions from observation.
+
+        Implements the abstract method from Policy base class.
+        Returns the full action chunk predicted by the model.
 
         Args:
             batch: Input batch of observations.
 
         Returns:
-            torch.Tensor: Selected actions.
+            Action chunk tensor from the model.
         """
         # Move batch to device (observations from gym are on CPU)
         inference_batch = batch.to(self.device).to_dict()
         return self.model.predict_action_chunk(inference_batch)
+
+    # select_action() is inherited from Policy base class - uses queue with predict_action_chunk()
 
     def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
         """Perform forward pass of the ACT policy.
 
         The return value depends on the model's training mode:
         - In training mode: Returns (loss, loss_dict) from the model's forward method
-        - In evaluation mode: Returns action predictions via select_action method
+        - In evaluation mode: Returns action chunk predictions via predict_action_chunk
 
         Args:
             batch (Observation): Input batch of observations
 
         Returns:
             torch.Tensor | tuple[torch.Tensor, dict[str, float]]: In training mode, returns
-                tuple of (loss, loss_dict). In eval mode, returns selected actions tensor.
+                tuple of (loss, loss_dict). In eval mode, returns action chunk tensor.
         """
         if self.training:
             # During training, return loss information for backpropagation
             return self.model(batch.to_dict())
 
-        # During evaluation, return action predictions
-        return self.select_action(batch)
+        # During evaluation, return action chunk predictions
+        return self.predict_action_chunk(batch)
 
     def training_step(self, batch: Observation, batch_idx: int) -> dict[str, torch.Tensor]:
         """Training step for the policy.
@@ -288,7 +295,8 @@ class ACT(FromCheckpoint, Export, Policy):  # type: ignore[misc]
         """Reset the policy state for a new episode.
 
         Clears internal state like action queues or observation history.
-        For ACT, this delegates to the model's reset method.
+        For ACT, this also delegates to the model's reset method if available.
         """
+        super().reset()  # Clear action queue
         if hasattr(self.model, "reset") and callable(self.model.reset):
             self.model.reset()
