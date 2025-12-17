@@ -35,7 +35,7 @@ A robotics engineer trains a policy and exports to OpenVINO...
 | Use LeRobot directly    | Bypasses Geti Action inference |
 | Write custom glue code  | Duplicates effort              |
 
-**Goal**: `pip install getiaction[lerobot]` + ~10 lines of Python
+**Goal**: `pip install getiaction[robots]` + ~10 lines of Python
 
 ---
 

@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document proposes adding a `Robot` interface to the Geti Action library, enabling programmatic robot control for policy deployment. Currently, robot interaction is only available through the Application (Studio) backend. Users wanting to run trained policies on real robots must either run the full Application stack or bypass Geti Action entirely by using LeRobot directly.
+This document proposes adding a `Robot` interface to the Geti Action library to enable programmatic robot control for policy deployment. Currently, robot interaction is only available through the Application (Studio) backend. Users wanting to run trained policies on real robots must either run the full Application stack or bypass Geti Action entirely by using LeRobot directly.
 
 The proposed design:
 
@@ -11,7 +11,7 @@ The proposed design:
 - Follows the same patterns as our policy wrappers (universal + specific)
 - Shares the interface between Library and Application
 
-This enables a simple deployment workflow: `pip install getiaction[lerobot]`, then run inference on real robots with ~10 lines of Python.
+This enables a simple deployment workflow: `pip install getiaction[robot]`, then run inference on real robots with ~10 lines of Python.
 
 ---
 
@@ -40,7 +40,7 @@ The library handles model development. The application handles human interaction
 
 ### The Gap
 
-A robotics engineer who trains a policy and exports to OpenVINO cannot easily deploy it:
+A robotics engineer who trains a policy and exports to ONNX/OpenVINO cannot easily deploy it:
 
 | Current Options         | Problem                                 |
 | ----------------------- | --------------------------------------- |
@@ -51,6 +51,8 @@ A robotics engineer who trains a policy and exports to OpenVINO cannot easily de
 ---
 
 ## Proposed Design
+
+We design a `Robot` interface in the library, following the same patterns as our policy interface, where we could have both first party robot wrappers and third party robot integrations via LeRobot.
 
 ### Target Workflow
 
@@ -210,7 +212,7 @@ All implementations wrap pip-installable SDKs where available:
 | Franka (Panda)                | `frankx`         | `pip install frankx`         |
 | KUKA                          | `py-openshowvar` | `pip install py-openshowvar` |
 
-**Note**: Trossen/Interbotix robots (ViperX, WidowX) are supported via LeRobot, which wraps their Dynamixel-based hardware.
+**Note**: Trossen/Interbotix robots (ViperX, WidowX) can be supported via LeRobot, which wraps their Dynamixel-based hardware. As a permanent solution, we collaborate with Trossen to add native SDK support in the future.
 
 No vendored code—thin wrappers only.
 
@@ -261,7 +263,7 @@ getiaction infer \
 
 ### Pattern 3: Application
 
-Application imports the same interface:
+Application imports the same interface, and can use it as is within its pipeline, or extend it with additional functionality:
 
 ```python
 # application/backend/src/workers/inference_worker.py
@@ -299,8 +301,6 @@ library/src/getiaction/
 │       └── irb.py
 └── ...
 ```
-
-Camera interface will live in a separate package within the Geti ecosystem (TBD).
 
 ---
 
@@ -363,4 +363,4 @@ class UR5e(Robot):
         self._rtde.setSpeedSlider(scale)  # Delegates to ur_rtde
 ```
 
-Core interface stays simple. Industrial features are opt-in.
+Core interface stays simple. Industrial features are opt-in. Alternatively, we can define a separate `IndustrialRobot` ABC if needed.
