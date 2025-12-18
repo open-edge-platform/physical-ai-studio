@@ -48,7 +48,7 @@ def get_dataset_service() -> DatasetService:
 
 
 @lru_cache
-def get_model_service() -> DatasetService:
+def get_model_service() -> ModelService:
     """Provides a ModelService instance for managing models."""
     return ModelService()
 
