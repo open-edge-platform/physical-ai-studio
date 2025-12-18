@@ -34,11 +34,11 @@ A unified `Camera` interface for frame acquisition from live cameras, video file
 
 ## Packaging Strategy
 
-This camera interface is needed across the Geti ecosystem (`geti-action`, `geti-prompt`, `geti-inspect`, `geti-tune`) and by external users. We propose a **two-phase approach**:
+This camera interface is needed across the Geti ecosystem (`geti-action`, `geti-prompt`, `geti-inspect`, `geti-tune`) and by external users. We therefore have **two approaches**:
 
-### Option A: Subpackage (Initial Development)
+### Option A: Subpackage
 
-Start inside `getiaction` for rapid iteration:
+We could start inside `getiaction` for rapid iteration:
 
 ```text
 library/src/getiaction/cameras/
@@ -60,9 +60,10 @@ library/src/getiaction/cameras/
 from getiaction.cameras import Webcam, RealSense
 ```
 
-### Option B: Standalone Package (Long-term Goal)
+### Option B: Standalone Package (In long term, this is preferred)
 
-Once stable, extract to a standalone package for ecosystem-wide reuse:
+We could extract to a standalone package for ecosystem-wide reuse. FrameSource is already a standalone repo.
+However, we want a unique identity separate from the original codebase, so we would create a new package, e.g., `geticam`:
 
 ```text
 geticam/
@@ -117,7 +118,7 @@ See [Open Design Decisions](#1-package-vs-subpackage-critical-decision) for full
 
 ```text
 Camera (ABC)
-├── Webcam              # Webcam, USB cameras (alias: OpenCVCamera)
+├── Webcam              # Webcam, USB cameras
 ├── RealSense           # Intel depth cameras
 ├── Basler              # Industrial (pypylon)
 ├── Genicam             # Generic industrial (harvesters)
@@ -241,7 +242,7 @@ class Camera(ABC):
 
 ### Async Capture Mixin (Optional)
 
-**This is opt-in, not required.** Cameras work perfectly with synchronous `read()` only.
+**This is optional, not required.** Cameras work perfectly with synchronous `read()` only.
 
 For live cameras that _choose_ to support background capture, a mixin provides:
 
@@ -264,7 +265,7 @@ The following subclasses implement the `Camera` ABC. Details are illustrative—
 
 ```python
 class Webcam(Camera):
-    """USB cameras, built-in webcams, V4L2 devices. Alias: OpenCVCamera
+    """USB cameras, built-in webcams, V4L2 devices.
 
     Backend: Can use OpenCV or nokhwa (via omnicamera). nokhwa provides
     better stability for USB cameras on some platforms.
@@ -398,6 +399,7 @@ class LeRobot(Camera):
 
 ```python
 from getiaction.cameras import Webcam, VideoFile, ImageFolder
+# or from geticam import Webcam, VideoFile, ImageFolder
 
 # Live camera
 with Webcam(index=0, fps=30, width=640, height=480) as camera:
@@ -481,9 +483,9 @@ with robot, camera:
 
 ---
 
-## Comparison: FrameSource vs. getiaction.cameras
+## Comparison: FrameSource vs. getiaction.cameras/geticam
 
-| Aspect              | FrameSource (Old)         | getiaction.cameras (New)          |
+| Aspect              | FrameSource               | getiaction.cameras / geticam      |
 | ------------------- | ------------------------- | --------------------------------- |
 | Instantiation       | Factory with string types | Hparams-first constructors        |
 | Configuration       | Kwargs dict               | Explicit params + `from_config()` |
@@ -524,7 +526,7 @@ with robot, camera:
 | `geti-camera`  | `from geti_camera import ...`  | Good — matches `geti-action` convention, but longer |
 | `geti-capture` | `from geti_capture import ...` | Broader scope, could imply screen recording         |
 
-**Recommendation**: Start with **Option A** (subpackage in `getiaction.cameras`) for rapid development. Design the API to be extraction-friendly so we can move to **Option B** later if cross-product usage is confirmed.
+**Recommendation**: We could start with **Option A** (subpackage in `getiaction.cameras`) for rapid development. We could design the API to be extraction-friendly so we can move to **Option B** later if cross-product usage is confirmed.
 
 **Team alignment needed**: This decision affects repo structure, CI/CD, and versioning strategy.
 
