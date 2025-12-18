@@ -20,14 +20,15 @@ Handles:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 
-from getiaction.data.observation import TASK
+from getiaction.data.observation import TASK, STATE, ACTION
+from getiaction.data import Feature, FeatureType, NormalizationParameters
+from getiaction.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -37,23 +38,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class NormStats:
-    """Normalization statistics for a feature.
-
-    Supports both z-score (mean/std) and quantile (q01/q99) normalization.
-
-    Attributes:
-        mean: Mean values for z-score normalization.
-        std: Standard deviation for z-score normalization.
-        q01: 1st percentile for quantile normalization.
-        q99: 99th percentile for quantile normalization.
-    """
-
-    mean: np.ndarray | None = None
-    std: np.ndarray | None = None
-    q01: np.ndarray | None = None
-    q99: np.ndarray | None = None
+NORM_MAP = {
+    FeatureType.STATE: NormalizationType.MEAN_STD,
+    FeatureType.ACTION: NormalizationType.MEAN_STD,
+}
 
 
 class SmolVLAPreprocessor(torch.nn.Module):
@@ -89,7 +77,7 @@ class SmolVLAPreprocessor(torch.nn.Module):
         max_state_dim: int = 32,
         max_action_dim: int = 32,
         image_resolution: tuple[int, int] = (512, 512),
-        stats: dict[str, NormStats] | None = None,
+        features: dict[str, Feature] | None = None,
         max_token_len: int = 48,
         tokenizer_name: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
         padding: str = "longest",
@@ -98,24 +86,24 @@ class SmolVLAPreprocessor(torch.nn.Module):
         self.max_state_dim = max_state_dim
         self.max_action_dim = max_action_dim
         self.image_resolution = image_resolution
-        self.stats = stats or {}
         self.max_token_len = max_token_len
         self.tokenizer_name = tokenizer_name
         self.padding = padding
         self._tokenizer = None
 
+        if features is not None:
+            self._state_action_normalizer = FeatureNormalizeTransform(features, NORM_MAP)
+        else:
+            self._state_action_normalizer = torch.nn.Identity()
+
     def forward(self, batch: dict[str, Any]) -> dict[str, torch.Tensor]:
         batch = self._newline_processor(batch)
 
         tokens, masks = self._tokenize(batch[TASK])
-
         batch["tokenized_prompt"] = tokens
         batch["tokenized_prompt_mask"] = masks
 
-        print(batch.keys())
-        print(batch[TASK])
-
-        exit(0)
+        batch = self._state_action_normalizer(batch)
 
         return batch
 
@@ -213,12 +201,8 @@ class SmolVLAPreprocessor(torch.nn.Module):
         padded_img = F.pad(resized_img, (pad_width, 0, pad_height, 0), value=pad_value)
         return padded_img
 
-    def _normalize(self, x: torch.Tensor, stats: NormStats) -> torch.Tensor:
-        pass
 
-
-@dataclass
-class SmolVLAPostprocessor:
+class SmolVLAPostprocessor(torch.nn.Module):
     """Postprocessor for SmolVLA model outputs.
 
     Transforms model outputs back to the original action space:
@@ -231,69 +215,30 @@ class SmolVLAPostprocessor:
         use_quantile_norm: Whether quantile normalization was used.
         stats: Normalization statistics dict.
     """
+    def __init__(
+        self,
+        features: dict[str, Feature] | None = None,
+    ) -> None:
+        super().__init__()
 
-    action_dim: int
-    max_action_dim: int = 32
-    use_quantile_norm: bool = True
-    stats: dict[str, NormStats] | None = None
+        if features is not None:
+            action_features = {k: v for k, v in features.items() if v.ftype == FeatureType.ACTION}
+            self._action_denormalizer = FeatureNormalizeTransform(action_features, NORM_MAP, inverse=True)
+        else:
+            self._action_denormalizer = torch.nn.Identity()
 
-    def __call__(self, outputs: dict[str, Any]) -> dict[str, Any]:
-        """Postprocess model outputs.
-
-        Args:
-            outputs: Model output dict with "actions" key.
-
-        Returns:
-            Postprocessed outputs with denormalized actions.
-        """
-        result = dict(outputs)
-
-        if "actions" in result:
-            actions = result["actions"]
-
-            # Truncate to actual dimension
-            actions = actions[..., : self.action_dim]
-
-            # Denormalize
-            if self.stats is not None and "actions" in self.stats:
-                actions = self._denormalize(actions, self.stats["actions"])
-
-            result["actions"] = actions
-
-        return result
-
-    def _denormalize(self, x: torch.Tensor, stats: NormStats) -> torch.Tensor:
-        """Denormalize tensor using stats.
-
-        Args:
-            x: Normalized tensor.
-            stats: Normalization statistics.
-
-        Returns:
-            Denormalized tensor.
-        """
-        if self.use_quantile_norm and stats.q01 is not None and stats.q99 is not None:
-            q01 = torch.tensor(stats.q01, dtype=x.dtype, device=x.device)
-            q99 = torch.tensor(stats.q99, dtype=x.dtype, device=x.device)
-            dim = x.shape[-1]
-            q01 = q01[..., :dim]
-            q99 = q99[..., :dim]
-            return (x + 1.0) / 2.0 * (q99 - q01 + 1e-6) + q01
-        if stats.mean is not None and stats.std is not None:
-            mean = torch.tensor(stats.mean, dtype=x.dtype, device=x.device)
-            std = torch.tensor(stats.std, dtype=x.dtype, device=x.device)
-            dim = x.shape[-1]
-            mean = mean[..., :dim]
-            std = std[..., :dim]
-            return x * (std + 1e-6) + mean
-        return x
+    def forward(self, batch: dict[str, Any]) -> dict[str, torch.Tensor]:
+        batch = dict(batch)
+        if "actions" in batch:
+            batch["actions"] = self._action_denormalizer({"actions": batch["actions"]})["actions"]
+        return batch
 
 
 def make_smolvla_preprocessors(
     max_state_dim: int = 32,
     max_action_dim: int = 32,
     env_action_dim: int | None = None,
-    stats: dict[str, dict[str, list[float]]] | None = None,
+    stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
     *,
     image_resolution: tuple[int, int] = (512, 512),
     max_token_len: int = 48,
@@ -311,30 +256,38 @@ def make_smolvla_preprocessors(
     Returns:
         Tuple of (preprocessor, postprocessor).
     """
-    # Convert stats format if needed
-    norm_stats: dict[str, NormStats] | None = None
+
+    features = {}
     if stats is not None:
-        norm_stats = {}
-        for key, stat_dict in stats.items():
-            norm_stats[key] = NormStats(
-                mean=np.array(stat_dict.get("mean")) if "mean" in stat_dict else None,
-                std=np.array(stat_dict.get("std")) if "std" in stat_dict else None,
-                q01=np.array(stat_dict.get("q01")) if "q01" in stat_dict else None,
-                q99=np.array(stat_dict.get("q99")) if "q99" in stat_dict else None,
-            )
+        for key, stat in stats.items():
+            if ACTION in key:
+                feature_type = FeatureType.ACTION
+            elif STATE in key:
+                feature_type = FeatureType.STATE
+            else:
+                continue
+            features[stat["name"]] = Feature(
+                name=stat["name"],
+                ftype=feature_type,
+                shape=stat["shape"],
+                normalization_data=NormalizationParameters(
+                    mean=stat["mean"],
+                    std=stat["std"],
+                    )
+                )
 
     preprocessor = SmolVLAPreprocessor(
         max_state_dim=max_state_dim,
         max_action_dim=max_action_dim,
         image_resolution=image_resolution,
-        stats=norm_stats,
+        features=features,
         max_token_len=max_token_len,
     )
 
     postprocessor = SmolVLAPostprocessor(
         action_dim=env_action_dim or max_action_dim,
         max_action_dim=max_action_dim,
-        stats=norm_stats,
+        features=features,
     )
 
     return preprocessor, postprocessor
