@@ -20,20 +20,14 @@ Handles:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 
-from getiaction.data.observation import TASK, STATE, ACTION
 from getiaction.data import Feature, FeatureType, NormalizationParameters
+from getiaction.data.observation import ACTION, STATE, TASK
 from getiaction.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping
-
-    from getiaction.data.observation import Observation
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +66,7 @@ class SmolVLAPreprocessor(torch.nn.Module):
         ... )
         >>> batch = preprocessor(raw_batch)
     """
+
     def __init__(
         self,
         max_state_dim: int = 32,
@@ -110,8 +105,10 @@ class SmolVLAPreprocessor(torch.nn.Module):
     @staticmethod
     def _newline_processor(batch: dict[str, Any]) -> dict[str, torch.Tensor]:
         """Ensure task descriptions end with newline character.
+
         Args:
             batch: Input batch dict containing 'extra' with 'task'.
+
         Returns:
             Updated batch with newline-terminated 'task'.
         """
@@ -191,7 +188,10 @@ class SmolVLAPreprocessor(torch.nn.Module):
         resized_height = int(cur_height / ratio)
         resized_width = int(cur_width / ratio)
         resized_img = F.interpolate(
-            img, size=(resized_height, resized_width), mode="bilinear", align_corners=False
+            img,
+            size=(resized_height, resized_width),
+            mode="bilinear",
+            align_corners=False,
         )
 
         pad_height = max(0, int(height - resized_height))
@@ -215,6 +215,7 @@ class SmolVLAPostprocessor(torch.nn.Module):
         use_quantile_norm: Whether quantile normalization was used.
         stats: Normalization statistics dict.
     """
+
     def __init__(
         self,
         features: dict[str, Feature] | None = None,
@@ -237,7 +238,6 @@ class SmolVLAPostprocessor(torch.nn.Module):
 def make_smolvla_preprocessors(
     max_state_dim: int = 32,
     max_action_dim: int = 32,
-    env_action_dim: int | None = None,
     stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
     *,
     image_resolution: tuple[int, int] = (512, 512),
@@ -256,7 +256,6 @@ def make_smolvla_preprocessors(
     Returns:
         Tuple of (preprocessor, postprocessor).
     """
-
     features = {}
     if stats is not None:
         for key, stat in stats.items():
@@ -273,8 +272,8 @@ def make_smolvla_preprocessors(
                 normalization_data=NormalizationParameters(
                     mean=stat["mean"],
                     std=stat["std"],
-                    )
-                )
+                ),
+            )
 
     preprocessor = SmolVLAPreprocessor(
         max_state_dim=max_state_dim,
@@ -285,8 +284,6 @@ def make_smolvla_preprocessors(
     )
 
     postprocessor = SmolVLAPostprocessor(
-        action_dim=env_action_dim or max_action_dim,
-        max_action_dim=max_action_dim,
         features=features,
     )
 

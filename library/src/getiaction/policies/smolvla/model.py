@@ -12,9 +12,6 @@ import math
 import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import Tensor, nn
-from typing_extensions import Unpack
-
-
 from transformers import (
     AutoConfig,
     AutoModel,
@@ -23,11 +20,11 @@ from transformers import (
     SmolVLMForConditionalGeneration,
 )
 
+from .config import SmolVLAConfig
+
 
 def _get_safe_dtype(dtype: torch.dtype, device: str | torch.device):
-    """
-    mps is currently not compatible with float64
-    """
+    """Mps is currently not compatible with float64"""
     if isinstance(device, torch.device):
         device = device.type
     if device == "mps" and dtype == torch.float64:
@@ -39,20 +36,23 @@ def _get_safe_dtype(dtype: torch.dtype, device: str | torch.device):
             # The `has_fp64` flag is returned by `torch.xpu.get_device_capability()`
             # when available; if False, we fall back to float32 for compatibility.
             if not device_capability.get("has_fp64", False):
-                #logging.warning(f"Device {device} does not support float64, using float32 instead.")
+                # logging.warning(f"Device {device} does not support float64, using float32 instead.")
                 return torch.float32
         else:
-            #logging.warning(
+            # logging.warning(
             #    f"Device {device} capability check failed. Assuming no support for float64, using float32 instead."
-            #)
+            # )
             return torch.float32
         return dtype
-    else:
-        return dtype
+    return dtype
 
 
 def _create_sinusoidal_pos_embedding(
-    time: torch.Tensor, dimension: int, min_period: float, max_period: float, device=torch.device("cpu")
+    time: torch.Tensor,
+    dimension: int,
+    min_period: float,
+    max_period: float,
+    device=torch.device("cpu"),
 ) -> Tensor:
     """Computes sine-cosine positional embedding vectors for scalar positions."""
     if dimension % 2 != 0:
@@ -106,8 +106,7 @@ def _make_att_2d_masks(pad_masks, att_masks):
 
 
 def _pad_tensor(tensor, max_len, pad_value=0):
-    """
-    Efficiently pads a tensor along sequence dimension to match max_len.
+    """Efficiently pads a tensor along sequence dimension to match max_len.
 
     Args:
         tensor (torch.Tensor): Shape (B, L, ...) or (B, L).
@@ -121,7 +120,10 @@ def _pad_tensor(tensor, max_len, pad_value=0):
 
     # Create a padded tensor of max_len and copy the existing values
     padded_tensor = torch.full(
-        (b, max_len, *tensor.shape[2:]), pad_value, dtype=tensor.dtype, device=tensor.device
+        (b, max_len, *tensor.shape[2:]),
+        pad_value,
+        dtype=tensor.dtype,
+        device=tensor.device,
     )
     padded_tensor[:, :d] = tensor  # Efficient in-place copy
 
@@ -129,8 +131,7 @@ def _pad_tensor(tensor, max_len, pad_value=0):
 
 
 class VLAFlowMatching(nn.Module):
-    """
-    SmolVLA
+    """SmolVLA
 
     [Paper]()
 
@@ -154,7 +155,7 @@ class VLAFlowMatching(nn.Module):
     └──────────────────────────────┘
     """
 
-    def __init__(self, config: SmolVLAConfig, rtc_processor: RTCProcessor | None = None):
+    def __init__(self, config: SmolVLAConfig):
         super().__init__()
         self.config = config
 
@@ -170,32 +171,32 @@ class VLAFlowMatching(nn.Module):
             expert_width_multiplier=self.config.expert_width_multiplier,
         )
         self.state_proj = nn.Linear(
-            self.config.max_state_dim, self.vlm_with_expert.config.text_config.hidden_size
+            self.config.max_state_dim,
+            self.vlm_with_expert.config.text_config.hidden_size,
         )
         self.action_in_proj = nn.Linear(self.config.max_action_dim, self.vlm_with_expert.expert_hidden_size)
         self.action_out_proj = nn.Linear(self.vlm_with_expert.expert_hidden_size, self.config.max_action_dim)
 
         self.action_time_mlp_in = nn.Linear(
-            self.vlm_with_expert.expert_hidden_size * 2, self.vlm_with_expert.expert_hidden_size
+            self.vlm_with_expert.expert_hidden_size * 2,
+            self.vlm_with_expert.expert_hidden_size,
         )
         self.action_time_mlp_out = nn.Linear(
-            self.vlm_with_expert.expert_hidden_size, self.vlm_with_expert.expert_hidden_size
+            self.vlm_with_expert.expert_hidden_size,
+            self.vlm_with_expert.expert_hidden_size,
         )
 
         self.set_requires_grad()
         self.fake_image_token = self.vlm_with_expert.processor.tokenizer.fake_image_token_id
         self.global_image_token = self.vlm_with_expert.processor.tokenizer.global_image_token_id
         self.global_image_start_token = torch.tensor(
-            [self.fake_image_token, self.global_image_token], dtype=torch.long
+            [self.fake_image_token, self.global_image_token],
+            dtype=torch.long,
         )
 
         self.add_image_special_tokens = self.config.add_image_special_tokens
         self.image_end_token = torch.tensor([self.fake_image_token], dtype=torch.long)
         self.prefix_length = self.config.prefix_length
-        self.rtc_processor = rtc_processor
-
-    def _rtc_enabled(self):
-        return self.config.rtc_config is not None and self.config.rtc_config.enabled
 
     def set_requires_grad(self):
         for params in self.state_proj.parameters():
@@ -218,7 +219,12 @@ class VLAFlowMatching(nn.Module):
         return time
 
     def embed_prefix(
-        self, images, img_masks, lang_tokens, lang_masks, state: torch.Tensor = None
+        self,
+        images,
+        img_masks,
+        lang_tokens,
+        lang_masks,
+        state: torch.Tensor = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Embed images with SigLIP and language tokens with embedding layer to prepare
         for SmolVLM transformer processing.
@@ -233,13 +239,15 @@ class VLAFlowMatching(nn.Module):
             if self.add_image_special_tokens:
                 image_start_token = (
                     self.vlm_with_expert.embed_language_tokens(
-                        self.global_image_start_token.to(device=self.vlm_with_expert.vlm.device)
+                        self.global_image_start_token.to(device=self.vlm_with_expert.vlm.device),
                     )
                     .unsqueeze(0)
                     .expand(img.shape[0], -1, -1)
                 )
                 image_start_mask = torch.ones_like(
-                    image_start_token[:, :, 0], dtype=torch.bool, device=image_start_token.device
+                    image_start_token[:, :, 0],
+                    dtype=torch.bool,
+                    device=image_start_token.device,
                 )
                 att_masks += [0] * (image_start_mask.shape[-1])
                 embs.append(image_start_token)
@@ -262,13 +270,15 @@ class VLAFlowMatching(nn.Module):
             if self.add_image_special_tokens:
                 image_end_token = (
                     self.vlm_with_expert.embed_language_tokens(
-                        self.image_end_token.to(device=self.vlm_with_expert.vlm.device)
+                        self.image_end_token.to(device=self.vlm_with_expert.vlm.device),
                     )
                     .unsqueeze(0)
                     .expand(img.shape[0], -1, -1)
                 )
                 image_end_mask = torch.ones_like(
-                    image_end_token[:, :, 0], dtype=torch.bool, device=image_end_token.device
+                    image_end_token[:, :, 0],
+                    dtype=torch.bool,
+                    device=image_end_token.device,
                 )
                 embs.append(image_end_token)
                 pad_masks.append(image_end_mask)
@@ -355,7 +365,15 @@ class VLAFlowMatching(nn.Module):
         return embs, pad_masks, att_masks
 
     def forward(
-        self, images, img_masks, lang_tokens, lang_masks, state, actions, noise=None, time=None
+        self,
+        images,
+        img_masks,
+        lang_tokens,
+        lang_masks,
+        state,
+        actions,
+        noise=None,
+        time=None,
     ) -> Tensor:
         """Do a full training forward pass and compute the loss (batch_size x num_steps x num_motors)"""
         if noise is None:
@@ -368,7 +386,11 @@ class VLAFlowMatching(nn.Module):
         x_t = time_expanded * noise + (1 - time_expanded) * actions
         u_t = noise - actions
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(
-            images, img_masks, lang_tokens, lang_masks, state=state
+            images,
+            img_masks,
+            lang_tokens,
+            lang_masks,
+            state=state,
         )
         suffix_embs, suffix_pad_masks, suffix_att_masks = self.embed_suffix(x_t, time)
 
@@ -400,7 +422,6 @@ class VLAFlowMatching(nn.Module):
         lang_masks,
         state,
         noise=None,
-        **kwargs: Unpack[ActionSelectKwargs],
     ) -> Tensor:
         """Do a full inference forward and compute the action (batch_size x num_steps x num_motors)"""
         bsize = state.shape[0]
@@ -411,7 +432,11 @@ class VLAFlowMatching(nn.Module):
             noise = self.sample_noise(actions_shape, device)
 
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(
-            images, img_masks, lang_tokens, lang_masks, state=state
+            images,
+            img_masks,
+            lang_tokens,
+            lang_masks,
+            state=state,
         )
         prefix_att_2d_masks = _make_att_2d_masks(prefix_pad_masks, prefix_att_masks)
         prefix_position_ids = torch.cumsum(prefix_pad_masks, dim=1) - 1
@@ -500,9 +525,7 @@ class VLAFlowMatching(nn.Module):
 
 
 def _apply_rope(x, positions, max_wavelength=10_000) -> torch.Tensor:
-    """
-    Applies RoPE positions [B, L] to x [B, L, H, D].
-    """
+    """Applies RoPE positions [B, L] to x [B, L, H, D]."""
     d_half = x.shape[-1] // 2
     device = x.device
     dtype = x.dtype
@@ -622,10 +645,7 @@ class _SmolVLMWithExpertModel(nn.Module):
         else:
             # To avoid unused params issue with distributed training
             last_layers = [self.num_vlm_layers - 1]
-            if (
-                self.num_vlm_layers != self.num_expert_layers
-                and self.num_vlm_layers % self.num_expert_layers == 0
-            ):
+            if self.num_vlm_layers != self.num_expert_layers and self.num_vlm_layers % self.num_expert_layers == 0:
                 last_layers.append(self.num_vlm_layers - 2)
             frozen_layers = [
                 "lm_head",
@@ -742,7 +762,12 @@ class _SmolVLMWithExpertModel(nn.Module):
         attention_interface = self.get_attention_interface()
 
         att_output = attention_interface(
-            attention_mask_, batch_size, head_dim, query_states, key_states, value_states
+            attention_mask_,
+            batch_size,
+            head_dim,
+            query_states,
+            key_states,
+            value_states,
         )
         return [att_output], past_key_values
 
@@ -789,7 +814,12 @@ class _SmolVLMWithExpertModel(nn.Module):
             key_states = _apply_rope(key_state, position_id)
 
             att_output = attention_interface(
-                prefix_attention_mask, batch_size, head_dim, query_states, key_states, value_states
+                prefix_attention_mask,
+                batch_size,
+                head_dim,
+                query_states,
+                key_states,
+                value_states,
             )
             att_outputs.append(att_output)
         else:
@@ -824,24 +854,32 @@ class _SmolVLMWithExpertModel(nn.Module):
             expert_query_state = expert_layer.self_attn.q_proj(expert_hidden_states).view(expert_hidden_shape)
 
             _key_states = key_states.to(dtype=expert_layer.self_attn.k_proj.weight.dtype).view(
-                *key_states.shape[:2], -1
+                *key_states.shape[:2],
+                -1,
             )
             expert_key_states = expert_layer.self_attn.k_proj(_key_states).view(
-                *_key_states.shape[:-1], -1, expert_layer.self_attn.head_dim
+                *_key_states.shape[:-1],
+                -1,
+                expert_layer.self_attn.head_dim,
             )  # k_proj should have same dim as kv
 
             _value_states = value_states.to(dtype=expert_layer.self_attn.v_proj.weight.dtype).view(
-                *value_states.shape[:2], -1
+                *value_states.shape[:2],
+                -1,
             )
             expert_value_states = expert_layer.self_attn.v_proj(_value_states).view(
-                *_value_states.shape[:-1], -1, expert_layer.self_attn.head_dim
+                *_value_states.shape[:-1],
+                -1,
+                expert_layer.self_attn.head_dim,
             )
 
             expert_position_id = (
                 expert_position_id - torch.min(expert_position_id, dim=1, keepdim=True).values
             )  # start from 0
             expert_attention_mask = attention_mask[
-                :, -inputs_embeds[1].shape[1] :, : expert_key_states.shape[1] :
+                :,
+                -inputs_embeds[1].shape[1] :,
+                : expert_key_states.shape[1] :,
             ]  # take into account kv
 
             expert_query_states = _apply_rope(expert_query_state, expert_position_id)
@@ -932,9 +970,7 @@ class _SmolVLMWithExpertModel(nn.Module):
             start = 0
             for i, hidden_states in enumerate(inputs_embeds):
                 layer = model_layers[i][layer_idx]
-                att_output = (
-                    att_outputs[i] if i < len(att_outputs) else att_outputs[0]
-                )  # in case of self_attn
+                att_output = att_outputs[i] if i < len(att_outputs) else att_outputs[0]  # in case of self_attn
                 if hidden_states is not None:
                     if layer is None:
                         outputs_embeds.append(hidden_states)
@@ -977,7 +1013,13 @@ class _SmolVLMWithExpertModel(nn.Module):
         return attention_interface
 
     def eager_attention_forward(
-        self, attention_mask, batch_size, head_dim, query_states, key_states, value_states
+        self,
+        attention_mask,
+        batch_size,
+        head_dim,
+        query_states,
+        key_states,
+        value_states,
     ):
         num_att_heads = self.num_attention_heads
         num_key_value_heads = self.num_key_value_heads
@@ -986,17 +1028,31 @@ class _SmolVLMWithExpertModel(nn.Module):
         sequence_length = key_states.shape[1]
 
         key_states = key_states[:, :, :, None, :].expand(
-            batch_size, sequence_length, num_key_value_heads, num_key_value_groups, head_dim
+            batch_size,
+            sequence_length,
+            num_key_value_heads,
+            num_key_value_groups,
+            head_dim,
         )
         key_states = key_states.reshape(
-            batch_size, sequence_length, num_key_value_heads * num_key_value_groups, head_dim
+            batch_size,
+            sequence_length,
+            num_key_value_heads * num_key_value_groups,
+            head_dim,
         )
 
         value_states = value_states[:, :, :, None, :].expand(
-            batch_size, sequence_length, num_key_value_heads, num_key_value_groups, head_dim
+            batch_size,
+            sequence_length,
+            num_key_value_heads,
+            num_key_value_groups,
+            head_dim,
         )
         value_states = value_states.reshape(
-            batch_size, sequence_length, num_key_value_heads * num_key_value_groups, head_dim
+            batch_size,
+            sequence_length,
+            num_key_value_heads * num_key_value_groups,
+            head_dim,
         )
 
         # Attention here is upcasted to float32 to match the original eager implementation.

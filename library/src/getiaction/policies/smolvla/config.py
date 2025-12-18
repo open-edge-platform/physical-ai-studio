@@ -71,7 +71,9 @@ class SmolVLAConfig(Config):
     scheduler_decay_lr: float = 2.5e-6
 
     vlm_model_name: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"  # Select the VLM backbone.
-    load_vlm_weights: bool = False  # Set to True in case of training the expert from scratch. True when init from pretrained SmolVLA weights
+    load_vlm_weights: bool = (
+        False  # Set to True in case of training the expert from scratch. True when init from pretrained SmolVLA weights
+    )
 
     add_image_special_tokens: bool = False  # Whether to use special image tokens around image features.
 
@@ -94,10 +96,11 @@ class SmolVLAConfig(Config):
         if self.n_action_steps > self.chunk_size:
             raise ValueError(
                 f"The chunk size is the upper bound for the number of action steps per model invocation. Got "
-                f"{self.n_action_steps} for `n_action_steps` and {self.chunk_size} for `chunk_size`."
+                f"{self.n_action_steps} for `n_action_steps` and {self.chunk_size} for `chunk_size`.",
             )
 
-'''
+
+"""
     @property
     def observation_delta_indices(self) -> list:
         return [0]
@@ -109,4 +112,4 @@ class SmolVLAConfig(Config):
     @property
     def reward_delta_indices(self) -> None:
         return None
-'''
+"""
