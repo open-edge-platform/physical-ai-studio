@@ -4,17 +4,19 @@
 
 This document proposes a unified `Camera` interface for `getiaction`, built on top of the existing [FrameSource](https://github.com/ArendJanKramer/FrameSource) library. FrameSource provides solid low-level camera integrations across multiple hardware backends (webcams, RealSense, Basler, GenICam, etc.)—excellent foundational work by our team.
 
-**The challenge**: FrameSource is a fork of a another repository and was developed without strict engineering standards. While the low-level implementations are functional, the codebase lacks:
+**The challenge**: FrameSource is a fork of a another repository and was developed without strict engineering standards. While the low-level implementations are functional, the codebase has limitations:
 
 - Consistent API design and documentation
 - Production-level code quality (typing, testing, error handling)
 - A user-friendly high-level interface
+- PyPI compatibility: FrameSource has GitHub-based dependencies that could prevent PyPI publication—it cannot be installed via `pip install framesource`
 
-**Our goal**: Build a clean, production-ready camera abstraction layer on top of FrameSource that:
+**Our goal**: Build a clean, production-ready camera abstraction layer that:
 
 1. **Differentiates** from the original codebase with a well-designed API
 2. **Elevates** to product-level quality (typed, tested, documented)
 3. **Provides** an intuitive high-level interface for excellent UX/DX
+4. **Is pip-installable** — deployable as a standard Python package on PyPI
 
 This design retains FrameSource's low-level strengths while delivering the polish expected of a production library. This would, overall, be our unique contribution, and novel product within the Geti ecosystem.
 
@@ -555,7 +557,7 @@ The existing FrameSource has `FrameProcessor` classes:
 | **B: Callable hook**      | Accept postprocess function  | `Webcam(postprocess=fn)`            |
 | **C: Transform pipeline** | torchvision-style (no torch) | `Compose([Resize(640), ToRGB()])`   |
 
-**Recommendation**: Start with **A** (built-in hparams). Add **B** (callable) if needed. Defer **C** unless clear demand.
+**Recommendation**: We could start with **A** (built-in hparams). Add **B** (callable) if needed. Defer **C** unless clear demand.
 
 Specialized processors (360°, depth colorization) would be separate utilities, not part of Camera.
 
