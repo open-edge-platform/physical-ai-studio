@@ -122,7 +122,7 @@ class TestLeRobotVLAPolicies(LeRobotE2ETestBase):
     """E2E tests for Vision-Language-Action policies (groot).
 
     These tests require:
-    - 24GB+ VRAM (48GB recommended)
+    - 24GB+ VRAM
 
     By default, Groot freezes the backbone and only trains the projector + action head.
 
@@ -142,4 +142,30 @@ class TestLeRobotVLAPolicies(LeRobotE2ETestBase):
         if not is_package_available("flash_attn"):
             pytest.skip("Groot requires lerobot[groot]: uv pip install 'lerobot[groot]'")
 
-    pass
+    @pytest.fixture(scope="class")
+    def datamodule(self, policy_name: str) -> LeRobotDataModule:
+        """Create datamodule for VLA policies with smaller batch size for memory."""
+        delta_timestamps = get_delta_timestamps_from_policy(policy_name)
+
+        return LeRobotDataModule(
+            repo_id="lerobot/aloha_sim_insertion_human",
+            train_batch_size=1,  # Small batch for 24GB GPU memory
+            episodes=list(range(2)),
+            data_format="lerobot",
+            delta_timestamps=delta_timestamps if delta_timestamps else None,
+        )
+
+    @pytest.fixture(scope="class")
+    def policy(self, policy_name: str) -> Policy:
+        """Create VLA policy with memory-efficient settings for 24GB GPUs."""
+        if policy_name == "groot":
+            # Memory-efficient settings: freeze backbone, only train projector
+            return get_policy(
+                policy_name,
+                source="lerobot",
+                tune_llm=False,
+                tune_visual=False,
+                tune_projector=True,
+                tune_diffusion_model=False,
+            )
+        return get_policy(policy_name, source="lerobot")

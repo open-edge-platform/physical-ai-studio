@@ -331,9 +331,10 @@ def run_rollout_loop(  # noqa: PLR0914
             if frame is not None:
                 video_recorder.record_frame(frame)
 
-        # Policy forward
+        # Policy select_action returns single action using action queue
         with torch.inference_mode():
-            action = _get_policy_action(policy, observation)
+            policy.eval()
+            action = policy.select_action(observation)  # shape: (B, action_dim)
 
         # For non-vectorized envs (batch_size=1), squeeze the batch dimension
         # LiberoGym and similar envs expect action shape (action_dim,) not (1, action_dim)
