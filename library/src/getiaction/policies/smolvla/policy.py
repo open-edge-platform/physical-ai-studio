@@ -8,17 +8,16 @@
 
 from __future__ import annotations
 
-import torch
-import torch.nn.functional as F
 from typing import TYPE_CHECKING, Any
 
-from getiaction.policies.base import Policy
-from getiaction.data.observation import ACTION, EXTRA, STATE, IMAGES
+import torch
+
 from getiaction.data import Observation
+from getiaction.data.observation import ACTION
+from getiaction.policies.base import Policy
 
-from .model import SmolVLAModel
 from .config import SmolVLAConfig
-
+from .model import SmolVLAModel
 
 if TYPE_CHECKING:
     from getiaction.gyms import Gym
@@ -62,46 +61,35 @@ class SmolVLA(Policy):
         resize_imgs_with_padding: tuple[int, int] = (512, 512),
         # Architecture
         tokenizer_max_length: int = 48,
-
         vlm_model_name: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",  # Select the VLM backbone.
         load_vlm_weights: bool = False,  # Set to True in case of training the expert from scratch. True when init from pretrained SmolVLA weights
-
         add_image_special_tokens: bool = False,  # Whether to use special image tokens around image features.
-
         attention_mode: str = "cross_attn",
-
         prefix_length: int = -1,
         pad_language_to: str = "longest",  # "max_length"
-
         num_expert_layers: int = -1,  # Less or equal to 0 is the default where the action expert has the same number of layers of VLM. Otherwise the expert have less layers.
         num_vlm_layers: int = 16,  # Number of layers used in the VLM (first num_vlm_layers layers)
         self_attn_every_n_layers: int = 2,  # Interleave SA layers each self_attn_every_n_layers
         expert_width_multiplier: float = 0.75,  # The action expert hidden size (wrt to the VLM)
-
         min_period: float = 4e-3,  # sensitivity range for the timestep used in sine-cosine positional encoding
         max_period: float = 4.0,
-
         # Decoding
         num_steps: int = 10,
         # Attention utils
         use_cache: bool = True,
-
         # Finetuning settings
         freeze_vision_encoder: bool = True,
         train_expert_only: bool = True,
         train_state_proj: bool = True,
-
         # Training presets
         optimizer_lr: float = 1e-4,
         optimizer_betas: tuple[float, float] = (0.9, 0.95),
         optimizer_eps: float = 1e-8,
         optimizer_weight_decay: float = 1e-10,
         optimizer_grad_clip_norm: float = 10,
-
         scheduler_warmup_steps: int = 1_000,
         scheduler_decay_steps: int = 30_000,
         scheduler_decay_lr: float = 2.5e-6,
-
         # Eager initialization (for checkpoint loading)
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
     ) -> None:
@@ -258,8 +246,7 @@ class SmolVLA(Policy):
 
             processed_batch = self._preprocessor(batch.to_dict())
             return self.model(processed_batch)
-        else:
-            return self.predict_action_chunk(batch)
+        return self.predict_action_chunk(batch)
 
     @torch.no_grad()
     def predict_action_chunk(self, batch: Observation) -> torch.Tensor:
@@ -320,6 +307,7 @@ class SmolVLA(Policy):
         )
 
         warmup_steps = self.config.scheduler_warmup_steps
+
         def lr_lambda(step: int) -> float:
             if step < warmup_steps:
                 return step / max(1, warmup_steps)

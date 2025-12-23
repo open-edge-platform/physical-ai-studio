@@ -20,7 +20,7 @@ from transformers import (
     SmolVLMForConditionalGeneration,
 )
 
-from getiaction.data.observation import Observation, STATE, IMAGES, ACTION, EXTRA
+from getiaction.data.observation import ACTION, EXTRA, IMAGES, STATE, Observation
 
 from .config import SmolVLAConfig
 
@@ -62,8 +62,7 @@ class SmolVLAModel(nn.Module):
             loss = losses.mean()
             loss_dict["loss"] = loss.item()
             return loss, loss_dict
-        else:
-            return self.predict_action_chunk(batch)
+        return self.predict_action_chunk(batch)
 
     def predict_action_chunk(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         processed_batch = self._prepare_batch(batch)
@@ -74,7 +73,11 @@ class SmolVLAModel(nn.Module):
         lang_masks = processed_batch["tokenized_prompt_mask"].to(processed_batch[STATE].device)
 
         actions = self._model.sample_actions(
-            images, img_masks, lang_tokens, lang_masks, state
+            images,
+            img_masks,
+            lang_tokens,
+            lang_masks,
+            state,
         )
 
         # Unpad actions
@@ -103,7 +106,7 @@ class SmolVLAModel(nn.Module):
 
         if len(batch_img_keys) != len(all_keys):
             raise ValueError(
-                f"Some of the image features are missing from the batch. (batch: {batch.keys()}) (image_features:{all_keys})"
+                f"Some of the image features are missing from the batch. (batch: {batch.keys()}) (image_features:{all_keys})",
             )
         # Preprocess image features present in the batch
         for key in batch_img_keys:
@@ -175,7 +178,10 @@ def _resize_with_pad(img, width, height, pad_value=-1):
     resized_height = int(cur_height / ratio)
     resized_width = int(cur_width / ratio)
     resized_img = F.interpolate(
-        img, size=(resized_height, resized_width), mode="bilinear", align_corners=False
+        img,
+        size=(resized_height, resized_width),
+        mode="bilinear",
+        align_corners=False,
     )
 
     pad_height = max(0, int(height - resized_height))
