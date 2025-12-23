@@ -3,6 +3,6 @@
 
 """Base classes for policies."""
 
-from .policy import Policy
+from .policy import Policy, PolicyLike
 
-__all__ = ["Policy"]
+__all__ = ["Policy", "PolicyLike"]

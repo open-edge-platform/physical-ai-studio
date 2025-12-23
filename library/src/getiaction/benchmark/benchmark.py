@@ -26,6 +26,12 @@ Example:
         results = benchmark.evaluate([act, pi0, groot])
         for name, result in results.items():
             print(f"{name}: {result.overall_success_rate:.1%}")
+
+    Evaluate exported inference models:
+
+        from getiaction.inference import InferenceModel
+        model = InferenceModel.load("./exports/act_policy")
+        results = benchmark.evaluate(model)
 """
 
 from __future__ import annotations
@@ -43,7 +49,7 @@ if TYPE_CHECKING:
 
     from getiaction.eval.video import VideoRecorder
     from getiaction.gyms import Gym
-    from getiaction.policies.base import Policy
+    from getiaction.policies.base import PolicyLike
 
 logger = logging.getLogger(__name__)
 
@@ -104,14 +110,19 @@ class Benchmark:
 
     def evaluate(
         self,
-        policy: Policy | Sequence[Policy],
+        policy: PolicyLike | Sequence[PolicyLike],
         *,
         continue_on_error: bool = True,
     ) -> BenchmarkResults | dict[str, BenchmarkResults]:
         """Evaluate one or more policies on all benchmark gyms.
 
+        Supports both PyTorch `Policy` objects and exported `InferenceModel`
+        objects, enabling benchmarking of production inference performance.
+
         Args:
-            policy: Single policy or sequence of policies to evaluate.
+            policy: Single policy/model or sequence of policies/models to evaluate.
+                Accepts Policy (PyTorch), InferenceModel (exported), or any
+                object implementing the PolicyLike protocol (select_action, reset).
             continue_on_error: Whether to continue if a task fails.
 
         Returns:
@@ -127,6 +138,11 @@ class Benchmark:
                 >>> results = benchmark.evaluate([act, pi0, groot])
                 >>> for name, r in results.items():
                 ...     print(f"{name}: {r.overall_success_rate:.1%}")
+
+            Exported inference model:
+                >>> from getiaction.inference import InferenceModel
+                >>> model = InferenceModel.load("./exports/act_policy")
+                >>> results = benchmark.evaluate(model)
         """
         # Handle multi-policy evaluation
         if isinstance(policy, (list, tuple)):
@@ -142,7 +158,7 @@ class Benchmark:
 
     def _evaluate_single(
         self,
-        policy: Policy,
+        policy: PolicyLike,
         *,
         continue_on_error: bool = True,
     ) -> BenchmarkResults:
@@ -242,7 +258,7 @@ class Benchmark:
 
     def _evaluate_multiple(
         self,
-        policies: Sequence[Policy],
+        policies: Sequence[PolicyLike],
         *,
         continue_on_error: bool = True,
     ) -> dict[str, BenchmarkResults]:
@@ -274,7 +290,7 @@ class Benchmark:
 
     def _create_video_recorder(
         self,
-        policy: Policy,
+        policy: PolicyLike,
         task_id: str,
     ) -> VideoRecorder | None:
         """Create a VideoRecorder for the current task if video recording is enabled.
@@ -300,7 +316,7 @@ class Benchmark:
             record_mode=self.record_mode,  # type: ignore[arg-type]
         )
 
-    def _build_metadata(self, policy: Policy) -> dict[str, Any]:
+    def _build_metadata(self, policy: PolicyLike) -> dict[str, Any]:
         """Build metadata dict for results.
 
         Returns:
@@ -355,12 +371,17 @@ def _get_task_name(gym: Gym) -> str:
     return ""
 
 
-def _get_policy_name(policy: Policy, _index: int = 0) -> str:
+def _get_policy_name(policy: PolicyLike, _index: int = 0) -> str:
     """Extract policy name for results dict key.
+
+    Handles both Policy objects and InferenceModel objects.
 
     Returns:
         Policy name string.
     """
     if hasattr(policy, "name") and policy.name:
         return str(policy.name)
+    if hasattr(policy, "policy_name") and policy.policy_name:
+        # InferenceModel uses policy_name attribute
+        return str(policy.policy_name)
     return type(policy).__name__

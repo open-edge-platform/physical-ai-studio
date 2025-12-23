@@ -7,12 +7,6 @@ This module provides functions for evaluating policies in gym environments,
 collecting metrics, and generating evaluation reports. The evaluation approach
 is inspired by LeRobot's evaluation framework but adapted for getiaction's
 architecture using Observation dataclass and Lightning integration.
-
-TODO: Refactor this module to further improve code organization:
-  - Consider splitting helper functions into a separate utils module
-  - Extract episode data collection into a dedicated class
-  - Add more comprehensive type hints for observation formats
-  - Improve error handling for edge cases (empty episodes, invalid observations)
 """
 
 from __future__ import annotations
@@ -31,7 +25,7 @@ if TYPE_CHECKING:
     from getiaction.data import Observation
     from getiaction.eval.video import VideoRecorder
     from getiaction.gyms import Gym
-    from getiaction.policies.base import Policy
+    from getiaction.policies.base import Policy, PolicyLike
 
 
 @dataclass
@@ -250,7 +244,7 @@ def _get_policy_action(policy: Policy, observation: Observation) -> Tensor:
 
 def setup_rollout(
     env: Gym,
-    policy: Policy,
+    policy: PolicyLike,
     seed: int | None,
     max_steps: int | None,
 ) -> tuple[Observation, int]:
@@ -258,7 +252,7 @@ def setup_rollout(
 
     Args:
         env (Gym): environment to probe max_steps and init.
-        policy (Policy): policy to reset if it has attribute.
+        policy (PolicyLike): policy to reset if it has attribute.
         seed (int | None): seed to init reset.
         max_steps (int | None): maximum number of steps
 
@@ -279,7 +273,7 @@ def setup_rollout(
 
 def run_rollout_loop(  # noqa: PLR0914
     env: Gym,
-    policy: Policy,
+    policy: PolicyLike,
     initial_observation: Observation,
     max_steps: int,
     *,
@@ -333,7 +327,10 @@ def run_rollout_loop(  # noqa: PLR0914
 
         # Policy select_action returns single action using action queue
         with torch.inference_mode():
-            policy.eval()
+            # Set eval mode if available (PyTorch models)
+            # InferenceModel doesn't have eval() but doesn't need it
+            if hasattr(policy, "eval") and callable(policy.eval):
+                policy.eval()
             action = policy.select_action(observation)  # shape: (B, action_dim)
 
         # For non-vectorized envs (batch_size=1), squeeze the batch dimension
@@ -429,7 +426,7 @@ def finalize_rollout(
 
 def rollout(
     env: Gym,
-    policy: Policy,
+    policy: PolicyLike,
     *,
     seed: int | None = None,
     max_steps: int | None = None,
@@ -441,6 +438,9 @@ def rollout(
 ) -> dict[str, Any]:
     """Runs a policy in an environment for a single episode.
 
+    Supports both PyTorch `Policy` objects and exported `InferenceModel`
+    objects, enabling evaluation of production inference performance.
+
     This function is equivalent to the notebook's run_episode() but with
     additional features for distributed evaluation and batch support.
 
@@ -450,7 +450,9 @@ def rollout(
 
     Args:
         env (Gym): Environment to interact with.
-        policy (Policy): Policy used to select actions.
+        policy (PolicyLike): Policy or inference model used to select actions.
+            Accepts Policy (PyTorch), InferenceModel (exported), or any
+            object implementing the PolicyLike protocol (select_action, reset).
         seed (int | None, optional): RNG seed for the environment. Defaults to None.
         max_steps (int | None, optional): Maximum number of steps before termination.
             If None, runs until the episode ends. Defaults to None.
@@ -568,7 +570,7 @@ def _extract_episode_records(
 
 def evaluate_policy(
     env: Gym,
-    policy: Policy,
+    policy: PolicyLike,
     n_episodes: int,
     *,
     start_seed: int | None = None,
@@ -578,9 +580,14 @@ def evaluate_policy(
 ) -> dict[str, Any]:
     """Evaluates a policy over multiple episodes.
 
+    Supports both PyTorch `Policy` objects and exported `InferenceModel`
+    objects, enabling evaluation of production inference performance.
+
     Args:
         env (Gym): Environment used for evaluation.
-        policy (Policy): Policy to evaluate.
+        policy (PolicyLike): Policy or inference model to evaluate.
+            Accepts Policy (PyTorch), InferenceModel (exported), or any
+            object implementing the PolicyLike protocol (select_action, reset).
         n_episodes (int): Number of episodes to run.
         start_seed (int | None, optional): Initial seed; incremented per episode
             if provided. Defaults to None.
