@@ -39,9 +39,9 @@ class SmolVLAModel(nn.Module):
                 batch[STATE] = self._pi_aloha_decode_state(batch[STATE])
                 batch[ACTION] = self._pi_aloha_encode_actions_inv(batch[ACTION])
 
-            images, img_masks = self.prepare_images(batch)
-            state = self.prepare_state(batch)
-            actions = self.prepare_action(batch)
+            images, img_masks = self._prepare_images(batch)
+            state = self._prepare_state(batch)
+            actions = self._prepare_action(batch)
 
             lang_tokens = batch["tokenized_prompt"]
             lang_masks = batch["tokenized_prompt_mask"]
@@ -67,8 +67,8 @@ class SmolVLAModel(nn.Module):
     def predict_action_chunk(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         processed_batch = self._prepare_batch(batch)
 
-        images, img_masks = self.prepare_images(processed_batch)
-        state = self.prepare_state(processed_batch)
+        images, img_masks = self._prepare_images(processed_batch)
+        state = self._prepare_state(processed_batch)
         lang_tokens = processed_batch["tokenized_prompt"].to(processed_batch[STATE].device)
         lang_masks = processed_batch["tokenized_prompt_mask"].to(processed_batch[STATE].device)
 
@@ -94,7 +94,7 @@ class SmolVLAModel(nn.Module):
             batch[STATE] = self._pi_aloha_decode_state(batch[STATE])
         return batch
 
-    def prepare_images(self, batch):
+    def _prepare_images(self, batch):
         """Apply SmolVLA preprocessing to the images, like resizing to 224x224 and padding to keep aspect ratio, and
         convert pixel range from [0.0, 1.0] to [-1.0, 1.0] as requested by SigLIP.
         """
@@ -155,13 +155,13 @@ class SmolVLAModel(nn.Module):
             actions[:, :, motor_idx] = _aloha_gripper_from_angular_inv(actions[:, :, motor_idx])
         return actions
 
-    def prepare_state(self, batch):
+    def _prepare_state(self, batch):
         """Pad state"""
         state = batch[STATE][:, -1, :] if batch[STATE].ndim > 2 else batch[STATE]
         state = _pad_vector(state, self._config.max_state_dim)
         return state
 
-    def prepare_action(self, batch):
+    def _prepare_action(self, batch):
         """Pad action"""
         actions = _pad_vector(batch[ACTION], self._config.max_action_dim)
         return actions
