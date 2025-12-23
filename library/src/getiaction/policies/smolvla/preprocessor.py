@@ -230,8 +230,8 @@ class SmolVLAPostprocessor(torch.nn.Module):
 
     def forward(self, batch: dict[str, Any]) -> dict[str, torch.Tensor]:
         batch = dict(batch)
-        if "actions" in batch:
-            batch["actions"] = self._action_denormalizer({"actions": batch["actions"]})["actions"]
+        if ACTION in batch:
+            batch[ACTION] = self._action_denormalizer({ACTION: batch[ACTION]})[ACTION]
         return batch
 
 

@@ -267,7 +267,8 @@ class SmolVLA(Policy):
             raise ValueError("Model not initialized")
 
         processed_batch = self._preprocessor(batch.to(self.device).to_dict())
-        return self.model.predict_action_chunk(processed_batch)
+        chunk = self.model.predict_action_chunk(processed_batch)
+        return self._postprocessor({ACTION: chunk})[ACTION]
 
     def training_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
         """Lightning training step.
