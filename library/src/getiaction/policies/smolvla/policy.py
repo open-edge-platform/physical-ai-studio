@@ -15,6 +15,7 @@ import torch
 from getiaction.data import Observation
 from getiaction.data.observation import ACTION
 from getiaction.policies.base import Policy
+from getiaction.train.utils import reformat_dataset_to_match_policy
 
 from .config import SmolVLAConfig
 from .model import SmolVLAModel
@@ -205,33 +206,18 @@ class SmolVLA(Policy):
         datamodule = self.trainer.datamodule  # type: ignore[attr-defined]
         train_dataset = datamodule.train_dataset
 
-        # Use getiaction dataset interface
         if not isinstance(train_dataset, Dataset):
             msg = f"Expected getiaction Dataset, got {type(train_dataset)}"
             raise TypeError(msg)
 
-        # Extract action dimension from features
-        action_features = train_dataset.action_features
-        if not action_features:
-            msg = "Dataset must have action features"
-            raise ValueError(msg)
-
-        # Get action feature (typically "action")
-        action_feature = next(iter(action_features.values()))
-        if action_feature.shape is None:
-            msg = "Action feature must have shape defined"
-            raise ValueError(msg)
-        env_action_dim = action_feature.shape[-1]
-
-        # Extract stats from dataset
         stats_dict = train_dataset.stats
 
         # Save to hparams for checkpoint
-        self.hparams["env_action_dim"] = env_action_dim
         self.hparams["dataset_stats"] = stats_dict
 
-        # Initialize model
         self._initialize_model(stats_dict)
+
+        reformat_dataset_to_match_policy(self, datamodule)
 
     def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
         """Do a full training forward pass to compute the loss"""

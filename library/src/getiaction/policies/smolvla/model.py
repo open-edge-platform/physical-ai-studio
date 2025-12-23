@@ -89,6 +89,35 @@ class SmolVLAModel(nn.Module):
 
         return actions
 
+    @property
+    def reward_delta_indices(self) -> None:
+        """Return reward indices.
+
+        Currently returns `None` as rewards are not implemented.
+
+        Returns:
+            None
+        """
+        return None
+
+    @property
+    def action_delta_indices(self) -> list[int]:
+        """Get indices of actions relative to the current timestep.
+
+        Returns:
+            list[int]: A list of relative action indices.
+        """
+        return list(range(self._config.chunk_size))
+
+    @property
+    def observation_delta_indices(self) -> list[int]:
+        """Get indices of observations relative to the current timestep.
+
+        Returns:
+            list[int]: A list of relative observation indices.
+        """
+        return [0]
+
     def _prepare_batch(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         if self._config.adapt_to_pi_aloha:
             batch[STATE] = self._pi_aloha_decode_state(batch[STATE])
