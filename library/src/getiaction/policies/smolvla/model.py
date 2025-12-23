@@ -7,6 +7,7 @@
 """SmolVLA model implementation."""
 
 import copy
+import logging
 import math
 from collections.abc import Callable
 
@@ -24,6 +25,8 @@ from transformers import (
 from getiaction.data.observation import ACTION, EXTRA, IMAGES, STATE, Observation
 
 from .config import SmolVLAConfig
+
+logger = logging.getLogger(__name__)
 
 
 class SmolVLAModel(nn.Module):
@@ -372,7 +375,7 @@ def _make_att_2d_masks(pad_masks, att_masks):
     return att_2d_masks
 
 
-def _pad_tensor(tensor, max_len, pad_value=0):
+def _pad_tensor(tensor: torch.Tensor, max_len: int, pad_value: float = 0) -> torch.Tensor:
     """Efficiently pads a tensor along sequence dimension to match max_len.
 
     Args:
@@ -588,7 +591,11 @@ class VLAFlowMatching(nn.Module):
 
         return embs, pad_masks, att_masks
 
-    def embed_suffix(self, noisy_actions, timestep):
+    def embed_suffix(
+        self,
+        noisy_actions: torch.Tensor,
+        timestep: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Embed state, noisy_actions, timestep to prepare for Expert Gemma processing."""
         embs = []
         pad_masks = []
@@ -639,9 +646,9 @@ class VLAFlowMatching(nn.Module):
         lang_masks,
         state,
         actions,
-        noise=None,
-        time=None,
-    ) -> Tensor:
+        noise: torch.Tensor | None = None,
+        time: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         """Do a full training forward pass and compute the loss (batch_size x num_steps x num_motors)"""
         if noise is None:
             noise = self.sample_noise(actions.shape, actions.device)
@@ -678,19 +685,37 @@ class VLAFlowMatching(nn.Module):
         # Original openpi code, upcast attention output
         suffix_out = suffix_out.to(dtype=torch.float32)
         v_t = self.action_out_proj(suffix_out)
-        losses = F.mse_loss(u_t, v_t, reduction="none")
-        return losses
+        return F.mse_loss(u_t, v_t, reduction="none")
 
-    def sample_actions(
+    def sample_actions(  # noqa: PLR0914
         self,
-        images,
-        img_masks,
-        lang_tokens,
-        lang_masks,
-        state,
-        noise=None,
-    ) -> Tensor:
-        """Do a full inference forward and compute the action (batch_size x num_steps x num_motors)"""
+        images: list[torch.Tensor],
+        img_masks: list[torch.Tensor],
+        lang_tokens: torch.Tensor,
+        lang_masks: torch.Tensor,
+        state: torch.Tensor,
+        noise: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Perform full inference forward pass to compute actions using a diffusion-based sampling process.
+
+        This method generates actions by iteratively denoising a noise sample using the learned
+        velocity field. It first computes embeddings for the prefix (images, language tokens, and state),
+        then uses a cached key-value mechanism for efficient inference, and finally performs
+        multi-step denoising to produce the final action sequence.
+
+        Args:
+            images: Input images tensor for visual conditioning.
+            img_masks: Mask tensor indicating valid image regions.
+            lang_tokens: Tokenized language instructions.
+            lang_masks: Mask tensor indicating valid language tokens.
+            state: Current state tensor of shape (batch_size, state_dim).
+            noise: Optional pre-sampled noise tensor. If None, noise will be sampled
+                with shape (batch_size, chunk_size, max_action_dim).
+
+        Returns:
+            Tensor: Predicted actions of shape (batch_size, chunk_size, max_action_dim),
+                representing the denoised action sequence.
+        """
         bsize = state.shape[0]
         device = state.device
 
@@ -724,7 +749,10 @@ class VLAFlowMatching(nn.Module):
             time = 1.0 + step * dt
             time_tensor = torch.tensor(time, dtype=torch.float32, device=device).expand(bsize)
 
-            def denoise_step_partial_call(input_x_t, current_timestep=time_tensor):
+            def denoise_step_partial_call(
+                input_x_t: torch.Tensor,
+                current_timestep: torch.Tensor = time_tensor,
+            ) -> torch.Tensor:
                 return self.denoise_step(
                     x_t=input_x_t,
                     prefix_pad_masks=prefix_pad_masks,
@@ -734,18 +762,34 @@ class VLAFlowMatching(nn.Module):
 
             v_t = denoise_step_partial_call(x_t)
 
-            x_t = x_t + dt * v_t
+            x_t += dt * v_t
 
         return x_t
 
     def denoise_step(
         self,
-        prefix_pad_masks,
-        past_key_values,
-        x_t,
-        timestep,
-    ):
-        """Apply one denoising step of the noise `x_t` at a given timestep."""
+        prefix_pad_masks: torch.Tensor,
+        past_key_values: dict,
+        x_t: torch.Tensor,
+        timestep: torch.Tensor,
+    ) -> torch.Tensor:
+        """Apply one de-noising step of the noise `x_t` at a given timestep.
+
+        This method performs a single de-noising iteration in the diffusion process,
+        transforming noisy action representations towards cleaner predictions.
+
+        Args:
+            prefix_pad_masks: Boolean tensor of shape (batch_size, prefix_len) indicating
+                valid positions in the prefix sequence (e.g., vision/language tokens).
+            past_key_values: Cached key-value pairs from the prefix forward pass,
+                used to avoid recomputing prefix representations.
+            x_t: Noisy action tensor at the current timestep to be denoised.
+            timestep: Current diffusion timestep indicating the noise level.
+
+        Returns:
+            Tensor of shape (batch_size, chunk_size, action_dim) containing the
+            predicted denoised action output after projection.
+        """
         suffix_embs, suffix_pad_masks, suffix_att_masks = self.embed_suffix(x_t, timestep)
 
         suffix_len = suffix_pad_masks.shape[1]
@@ -770,12 +814,27 @@ class VLAFlowMatching(nn.Module):
         suffix_out = outputs_embeds[1]
         suffix_out = suffix_out[:, -self.config.chunk_size :]
         suffix_out = suffix_out.to(dtype=torch.float32)
-        v_t = self.action_out_proj(suffix_out)
-        return v_t
+        return self.action_out_proj(suffix_out)
 
 
-def _apply_rope(x, positions, max_wavelength=10_000) -> torch.Tensor:
-    """Applies RoPE positions [B, L] to x [B, L, H, D]."""
+def _apply_rope(x: torch.Tensor, positions: torch.Tensor, max_wavelength: int = 10_000) -> torch.Tensor:
+    """Applies Rotary Position Embedding (RoPE) to the input tensor.
+
+    RoPE encodes positional information by rotating the input features based on
+    their position, allowing the model to learn relative positional relationships.
+
+    Args:
+        x: Input tensor of shape [B, L, H, D] where B is batch size, L is sequence
+            length, H is number of heads, and D is the head dimension.
+        positions: Position indices tensor of shape [B, L] containing the position
+            of each token in the sequence.
+        max_wavelength: Maximum wavelength for the sinusoidal position encoding.
+            Controls the range of frequencies used. Defaults to 10,000.
+
+    Returns:
+        torch.Tensor: The input tensor with rotary position embeddings applied,
+            same shape as input [B, L, H, D] and same dtype as input.
+    """
     d_half = x.shape[-1] // 2
     device = x.device
     dtype = x.dtype
@@ -798,17 +857,17 @@ def _apply_rope(x, positions, max_wavelength=10_000) -> torch.Tensor:
     return res.to(dtype)
 
 
-def _get_intermediate_size(hidden_dim, ffn_dim_multiplier=4, multiple_of=256):
+def _get_intermediate_size(hidden_dim: int, ffn_dim_multiplier: int = 4, multiple_of: int = 256) -> int:
     hidden_dim = int(2 * hidden_dim / 3)
     hidden_dim = int(ffn_dim_multiplier * hidden_dim)
-    hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
-    return hidden_dim
+    return multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
 
 
 class _SmolVLMWithExpertModel(nn.Module):
     def __init__(
         self,
         model_id: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
+        *,
         load_vlm_weights: bool = True,
         train_expert_only: bool = True,
         freeze_vision_encoder: bool = False,
@@ -818,10 +877,10 @@ class _SmolVLMWithExpertModel(nn.Module):
         self_attn_every_n_layers: int = -1,
         expert_width_multiplier: float = 0.5,
         device: str = "auto",
-    ):
+    ) -> None:
         super().__init__()
         if load_vlm_weights:
-            print(f"Loading  {model_id} weights ...")
+            logger.info("Loading  %s weights ...", model_id)
             self.vlm = AutoModelForImageTextToText.from_pretrained(
                 model_id,
                 device_map=device,
@@ -834,7 +893,7 @@ class _SmolVLMWithExpertModel(nn.Module):
             self.vlm = SmolVLMForConditionalGeneration(config=config)
         self.processor = AutoProcessor.from_pretrained(model_id)
         if num_vlm_layers > 0:
-            print(f"Reducing the number of VLM layers to {num_vlm_layers} ...")
+            logger.info("Reducing the number of VLM layers to %s ...", num_vlm_layers)
             self.get_vlm_model().text_model.layers = self.get_vlm_model().text_model.layers[:num_vlm_layers]
         self.num_vlm_layers = len(self.get_vlm_model().text_model.layers)
         self.config = config
@@ -844,11 +903,13 @@ class _SmolVLMWithExpertModel(nn.Module):
         lm_expert_config.hidden_size = int(hidden_size * expert_width_multiplier)  # hidden_size // 2
         lm_expert_config.intermediate_size = _get_intermediate_size(int(hidden_size * expert_width_multiplier))
         lm_expert_config.num_hidden_layers = self.num_vlm_layers
-        if num_expert_layers > 0:
-            assert len(self.get_vlm_model().text_model.layers) % num_expert_layers == 0, (
-                f"Number of layers in the VLM {len(self.get_vlm_model().text_model.layers)} are not multiple of num_expert_layers {num_expert_layers}"
-            )
+        if num_expert_layers > 0 and len(self.get_vlm_model().text_model.layers) % num_expert_layers == 0:
             lm_expert_config.num_hidden_layers = num_expert_layers
+            msg = (
+                f"Number of layers in the VLM {len(self.get_vlm_model().text_model.layers)} are "
+                f"not multiple of num_expert_layers {num_expert_layers}"
+            )
+            raise RuntimeError(msg)
         self.lm_expert = AutoModel.from_config(lm_expert_config)
 
         self.num_expert_layers = len(self.lm_expert.layers)
@@ -880,10 +941,10 @@ class _SmolVLMWithExpertModel(nn.Module):
         self.expert_hidden_size = lm_expert_config.hidden_size
         self.set_requires_grad()
 
-    def get_vlm_model(self):
+    def get_vlm_model(self) -> torch.nn.Module:
         return self.vlm.model
 
-    def set_requires_grad(self):
+    def set_requires_grad(self) -> None:
         if self.freeze_vision_encoder:
             self.get_vlm_model().vision_model.eval()
             for params in self.get_vlm_model().vision_model.parameters():
@@ -902,7 +963,7 @@ class _SmolVLMWithExpertModel(nn.Module):
                 "text_model.model.norm.weight",
             ]
             for layer in last_layers:
-                frozen_layers.append(f"text_model.model.layers.{layer}.")
+                frozen_layers.append(f"text_model.model.layers.{layer}.")  # noqa: PERF401
 
             for name, params in self.vlm.named_parameters():
                 if any(k in name for k in frozen_layers):
@@ -912,7 +973,7 @@ class _SmolVLMWithExpertModel(nn.Module):
             if "lm_head" in name:
                 params.requires_grad = False
 
-    def train(self, *, mode: bool = True):
+    def train(self, mode: bool = True) -> None:  # noqa: FBT002, FBT001 : torch is not compatible with the fix
         super().train(mode)
 
         if self.freeze_vision_encoder:
@@ -921,7 +982,7 @@ class _SmolVLMWithExpertModel(nn.Module):
         if self.train_expert_only:
             self.vlm.eval()
 
-    def embed_image(self, image: torch.Tensor):
+    def embed_image(self, image: torch.Tensor) -> torch.Tensor:
         patch_attention_mask = None
         # Get sequence from the vision encoder
         image_hidden_states = (
@@ -933,26 +994,25 @@ class _SmolVLMWithExpertModel(nn.Module):
             .last_hidden_state
         )
         # Modality projection & resampling
-        image_hidden_states = self.get_vlm_model().connector(image_hidden_states)
-        return image_hidden_states
+        return self.get_vlm_model().connector(image_hidden_states)
 
-    def embed_language_tokens(self, tokens: torch.Tensor):
+    def embed_language_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
         return self.get_vlm_model().text_model.get_input_embeddings()(tokens)
 
-    def forward_attn_layer(
+    def forward_attn_layer(  # noqa: PLR0914
         self,
-        model_layers,
-        inputs_embeds,
-        layer_idx,
-        position_ids,
-        attention_mask,
+        model_layers: list,
+        inputs_embeds: list,
+        layer_idx: int,
+        position_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
         batch_size: int,
         head_dim: int,
         *,
         use_cache: bool = True,
         fill_kv_cache: bool = True,
-        past_key_values=None,
-    ) -> list[torch.Tensor]:
+        past_key_values: dict | None = None,
+    ) -> tuple[list[torch.Tensor], dict]:
         query_states = []
         key_states = []
         value_states = []
@@ -960,15 +1020,15 @@ class _SmolVLMWithExpertModel(nn.Module):
             layer = model_layers[i][layer_idx]
             if hidden_states is None or layer is None:
                 continue
-            hidden_states = layer.input_layernorm(hidden_states)
+            hidden_states_ = layer.input_layernorm(hidden_states)
 
-            input_shape = hidden_states.shape[:-1]
+            input_shape = hidden_states_.shape[:-1]
             hidden_shape = (*input_shape, -1, layer.self_attn.head_dim)
 
-            hidden_states = hidden_states.to(dtype=layer.self_attn.q_proj.weight.dtype)
-            query_state = layer.self_attn.q_proj(hidden_states).view(hidden_shape)
-            key_state = layer.self_attn.k_proj(hidden_states).view(hidden_shape)
-            value_state = layer.self_attn.v_proj(hidden_states).view(hidden_shape)
+            hidden_states_ = hidden_states_.to(dtype=layer.self_attn.q_proj.weight.dtype)
+            query_state = layer.self_attn.q_proj(hidden_states_).view(hidden_shape)
+            key_state = layer.self_attn.k_proj(hidden_states_).view(hidden_shape)
+            value_state = layer.self_attn.v_proj(hidden_states_).view(hidden_shape)
 
             query_states.append(query_state)
             key_states.append(key_state)
@@ -981,14 +1041,14 @@ class _SmolVLMWithExpertModel(nn.Module):
         value_states = torch.cat(value_states, dim=1)
         seq_len = query_states.shape[1]
         if seq_len < position_ids.shape[1]:
-            _position_ids = position_ids[:, :seq_len]
-            _attention_mask = attention_mask[:, :seq_len, :seq_len]
+            indexed_position_ids = position_ids[:, :seq_len]
+            indexed_attention_mask = attention_mask[:, :seq_len, :seq_len]
         else:
-            _position_ids = position_ids
-            _attention_mask = attention_mask
+            indexed_position_ids = position_ids
+            indexed_attention_mask = attention_mask
 
-        attention_mask_ = _attention_mask
-        position_ids_ = _position_ids
+        attention_mask_ = indexed_attention_mask
+        position_ids_ = indexed_position_ids
 
         query_states = _apply_rope(query_states, position_ids_)
         key_states = _apply_rope(key_states, position_ids_)
