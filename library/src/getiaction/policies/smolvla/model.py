@@ -20,7 +20,238 @@ from transformers import (
     SmolVLMForConditionalGeneration,
 )
 
+from getiaction.data.observation import Observation, STATE, IMAGES, ACTION, EXTRA
+
 from .config import SmolVLAConfig
+
+
+class SmolVLAModel(nn.Module):
+    def __init__(self, config: SmolVLAConfig, dataset_stats: dict[str, dict[str, list[float] | str | tuple]]):
+        super().__init__()
+        self._config = config
+        self._model = VLAFlowMatching(config)
+        self._dataset_stats = dataset_stats
+
+    def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
+        """Do a full training forward pass to compute the loss"""
+        if self.training:
+            if self._config.adapt_to_pi_aloha:
+                batch[STATE] = self._pi_aloha_decode_state(batch[STATE])
+                batch[ACTION] = self._pi_aloha_encode_actions_inv(batch[ACTION])
+
+            images, img_masks = self.prepare_images(batch)
+            state = self.prepare_state(batch)
+            actions = self.prepare_action(batch)
+
+            lang_tokens = batch["tokenized_prompt"]
+            lang_masks = batch["tokenized_prompt_mask"]
+            actions_is_pad = batch.get(EXTRA + ".actions_id_pad")
+            loss_dict = {}
+            losses = self._model.forward(images, img_masks, lang_tokens, lang_masks, state, actions)
+            loss_dict["losses_after_forward"] = losses.clone()
+
+            if actions_is_pad is not None:
+                in_episode_bound = ~actions_is_pad
+                losses = losses * in_episode_bound.unsqueeze(-1)
+                loss_dict["losses_after_in_ep_bound"] = losses.clone()
+
+            # Remove padding
+            losses = losses[:, :, : self._config.max_action_dim]
+            loss_dict["losses_after_rm_padding"] = losses.clone()
+
+            loss = losses.mean()
+            loss_dict["loss"] = loss.item()
+            return loss, loss_dict
+        else:
+            return self.predict_action_chunk(batch)
+
+    def predict_action_chunk(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        processed_batch = self._prepare_batch(batch)
+
+        images, img_masks = self.prepare_images(processed_batch)
+        state = self.prepare_state(processed_batch)
+        lang_tokens = processed_batch["tokenized_prompt"].to(processed_batch[STATE].device)
+        lang_masks = processed_batch["tokenized_prompt_mask"].to(processed_batch[STATE].device)
+
+        actions = self._model.sample_actions(
+            images, img_masks, lang_tokens, lang_masks, state
+        )
+
+        # Unpad actions
+        original_action_dim = self._dataset_stats[ACTION]["shape"][-1]
+        actions = actions[:, :, :original_action_dim]
+
+        if self._config.adapt_to_pi_aloha:
+            actions = self._pi_aloha_encode_actions(actions)
+
+        return actions
+
+    def _prepare_batch(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        if self._config.adapt_to_pi_aloha:
+            batch[STATE] = self._pi_aloha_decode_state(batch[STATE])
+        return batch
+
+    def prepare_images(self, batch):
+        """Apply SmolVLA preprocessing to the images, like resizing to 224x224 and padding to keep aspect ratio, and
+        convert pixel range from [0.0, 1.0] to [-1.0, 1.0] as requested by SigLIP.
+        """
+        images = []
+        img_masks = []
+
+        batch_img_keys = Observation.get_flattened_keys(batch, IMAGES)
+        all_keys = [key for key in self._dataset_stats.keys() if "image" in key]
+
+        if len(batch_img_keys) != len(all_keys):
+            raise ValueError(
+                f"Some of the image features are missing from the batch. (batch: {batch.keys()}) (image_features:{all_keys})"
+            )
+        # Preprocess image features present in the batch
+        for key in batch_img_keys:
+            img = batch[key][:, -1, :, :, :] if batch[key].ndim == 5 else batch[key]
+            if self._config.resize_imgs_with_padding is not None:
+                img = _resize_with_pad(img, *self._config.resize_imgs_with_padding, pad_value=0)
+
+            # Normalize from range [0,1] to [-1,1] as expected by siglip
+            img = img * 2.0 - 1.0
+
+            bsize = img.shape[0]
+            device = img.device
+            if EXTRA + f".{key}_padding_mask" in batch:
+                mask = batch[EXTRA + f".{key}_padding_mask"].bool()
+            else:
+                mask = torch.ones(bsize, dtype=torch.bool, device=device)
+            images.append(img)
+            img_masks.append(mask)
+
+        return images, img_masks
+
+    def _pi_aloha_decode_state(self, state):
+        # Flip the joints.
+        for motor_idx in [1, 2, 8, 9]:
+            state[:, motor_idx] *= -1
+        # Reverse the gripper transformation that is being applied by the Aloha runtime.
+        for motor_idx in [6, 13]:
+            state[:, motor_idx] = _aloha_gripper_to_angular(state[:, motor_idx])
+        return state
+
+    def _pi_aloha_encode_actions(self, actions):
+        # Flip the joints.
+        for motor_idx in [1, 2, 8, 9]:
+            actions[:, :, motor_idx] *= -1
+        # Reverse the gripper transformation that is being applied by the Aloha runtime.
+        for motor_idx in [6, 13]:
+            actions[:, :, motor_idx] = _aloha_gripper_from_angular(actions[:, :, motor_idx])
+        return actions
+
+    def _pi_aloha_encode_actions_inv(self, actions):
+        # Flip the joints again.
+        for motor_idx in [1, 2, 8, 9]:
+            actions[:, :, motor_idx] *= -1
+        # Reverse the gripper transformation that is being applied by the Aloha runtime.
+        for motor_idx in [6, 13]:
+            actions[:, :, motor_idx] = _aloha_gripper_from_angular_inv(actions[:, :, motor_idx])
+        return actions
+
+    def prepare_state(self, batch):
+        """Pad state"""
+        state = batch[STATE][:, -1, :] if batch[STATE].ndim > 2 else batch[STATE]
+        state = _pad_vector(state, self._config.max_state_dim)
+        return state
+
+    def prepare_action(self, batch):
+        """Pad action"""
+        actions = _pad_vector(batch[ACTION], self._config.max_action_dim)
+        return actions
+
+
+def _resize_with_pad(img, width, height, pad_value=-1):
+    # assume no-op when width height fits already
+    if img.ndim != 4:
+        raise ValueError(f"(b,c,h,w) expected, but {img.shape}")
+
+    cur_height, cur_width = img.shape[2:]
+
+    ratio = max(cur_width / width, cur_height / height)
+    resized_height = int(cur_height / ratio)
+    resized_width = int(cur_width / ratio)
+    resized_img = F.interpolate(
+        img, size=(resized_height, resized_width), mode="bilinear", align_corners=False
+    )
+
+    pad_height = max(0, int(height - resized_height))
+    pad_width = max(0, int(width - resized_width))
+
+    # pad on left and top of image
+    padded_img = F.pad(resized_img, (pad_width, 0, pad_height, 0), value=pad_value)
+    return padded_img
+
+
+def _pad_vector(vector, new_dim):
+    """Can be (batch_size x sequence_length x features_dimension)
+    or (batch_size x features_dimension)
+    """
+    if vector.shape[-1] == new_dim:
+        return vector
+    shape = list(vector.shape)
+    current_dim = shape[-1]
+    shape[-1] = new_dim
+    new_vector = torch.zeros(*shape, dtype=vector.dtype, device=vector.device)
+    new_vector[..., :current_dim] = vector
+    return new_vector
+
+
+def _normalize(x, min_val, max_val):
+    return (x - min_val) / (max_val - min_val)
+
+
+def _unnormalize(x, min_val, max_val):
+    return x * (max_val - min_val) + min_val
+
+
+def _safe_arcsin(value):
+    # This ensures that the input stays within
+    # [−1,1] to avoid invalid values for arcsin
+    return torch.arcsin(torch.clamp(value, -1.0, 1.0))
+
+
+def _aloha_gripper_to_angular(value):
+    # Aloha transforms the gripper positions into a linear space. The following code
+    # reverses this transformation to be consistent with smolvla which is pretrained in
+    # angular space.
+    #
+    # These values are coming from the Aloha code:
+    # PUPPET_GRIPPER_POSITION_OPEN, PUPPET_GRIPPER_POSITION_CLOSED
+    value = _unnormalize(value, min_val=0.01844, max_val=0.05800)
+
+    # This is the inverse of the angular to linear transformation inside the Interbotix code.
+    def linear_to_radian(linear_position, arm_length, horn_radius):
+        value = (horn_radius**2 + linear_position**2 - arm_length**2) / (2 * horn_radius * linear_position)
+        return _safe_arcsin(value)
+
+    # The constants are taken from the Interbotix code.
+    value = linear_to_radian(value, arm_length=0.036, horn_radius=0.022)
+
+    # Normalize to [0, 1].
+    # The values 0.4 and 1.5 were measured on an actual Trossen robot.
+    return _normalize(value, min_val=0.4, max_val=1.5)
+
+
+def _aloha_gripper_from_angular(value):
+    # Convert from the gripper position used by smolvla to the gripper position that is used by Aloha.
+    # Note that the units are still angular but the range is different.
+
+    # The values 0.4 and 1.5 were measured on an actual Trossen robot.
+    value = _unnormalize(value, min_val=0.4, max_val=1.5)
+
+    # These values are coming from the Aloha code:
+    # PUPPET_GRIPPER_JOINT_OPEN, PUPPET_GRIPPER_JOINT_CLOSE
+    return _normalize(value, min_val=-0.6213, max_val=1.4910)
+
+
+def _aloha_gripper_from_angular_inv(value):
+    # Directly inverts the gripper_from_angular function.
+    value = _unnormalize(value, min_val=-0.6213, max_val=1.4910)
+    return _normalize(value, min_val=0.4, max_val=1.5)
 
 
 def _get_safe_dtype(dtype: torch.dtype, device: str | torch.device):

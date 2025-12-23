@@ -105,9 +105,9 @@ class SmolVLA(Policy):
         # Eager initialization (for checkpoint loading)
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
     ) -> None:
-        """Initialize Pi0 policy.
+        """Initialize SmolVLA policy.
 
-        Creates Pi0Config from explicit args and saves it as hyperparameters.
+        Creates SmolVLAConfig from explicit args and saves it as hyperparameters.
         """
         super().__init__(n_action_steps=n_action_steps)
 
@@ -170,7 +170,7 @@ class SmolVLA(Policy):
 
     def _initialize_model(
         self,
-        dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
+        dataset_stats: dict[str, dict[str, list[float] | str | tuple]],
     ) -> None:
         """Initialize model and preprocessors.
 
@@ -189,7 +189,7 @@ class SmolVLA(Policy):
         config = self.config
 
         # Create model with explicit args (no config dependency)
-        self.model = SmolVLAModel(config)
+        self.model = SmolVLAModel(config, dataset_stats)
 
         # Create preprocessor/postprocessor
         self._preprocessor, self._postprocessor = make_smolvla_preprocessors(
