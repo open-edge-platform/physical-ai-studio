@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """Configuration for SmolVLA model.
+
 This module provides dataclass configurations for the SmolVLA flow matching
 vision-language-action model.
 For CLI usage, use the YAML config in `configs/getiaction/smolvla.yaml`:
@@ -11,7 +12,6 @@ comments on how to adjust for different GPU sizes.
 Example (API):
     >>> from getiaction.policies.smolvla import SmolVLAConfig
     >>> config = SmolVLAConfig(
-    ...     action_dim=14,
     ... )
 """
 
@@ -83,7 +83,8 @@ class SmolVLAConfig(Config):
 
     pad_language_to: str = "longest"  # "max_length"
 
-    num_expert_layers: int = -1  # Less or equal to 0 is the default where the action expert has the same number of layers of VLM. Otherwise the expert have less layers.
+    num_expert_layers: int = -1  # Less or equal to 0 is the default where the action expert has the same
+    # number of layers of VLM. Otherwise the expert have less layers.
     num_vlm_layers: int = 16  # Number of layers used in the VLM (first num_vlm_layers layers)
     self_attn_every_n_layers: int = 2  # Interleave SA layers each self_attn_every_n_layers
     expert_width_multiplier: float = 0.75  # The action expert hidden size (wrt to the VLM)
@@ -92,9 +93,17 @@ class SmolVLAConfig(Config):
     max_period: float = 4.0
 
     def __post_init__(self) -> None:
-        """Input validation (not exhaustive)."""
+        """Validate configuration parameters after initialization.
+
+        Ensures that the number of action steps does not exceed the chunk size,
+        as the chunk size represents the upper bound for action steps per model invocation.
+
+        Raises:
+            ValueError: If n_action_steps is greater than chunk_size.
+        """
         if self.n_action_steps > self.chunk_size:
-            raise ValueError(
+            msg = (
                 f"The chunk size is the upper bound for the number of action steps per model invocation. Got "
-                f"{self.n_action_steps} for `n_action_steps` and {self.chunk_size} for `chunk_size`.",
+                f"{self.n_action_steps} for `n_action_steps` and {self.chunk_size} for `chunk_size`."
             )
+            raise ValueError(msg)

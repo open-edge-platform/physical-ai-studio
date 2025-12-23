@@ -36,7 +36,39 @@ class SmolVLA(Policy):
     - **Eager path**: `SmolVLA.load_from_checkpoint()` - model built immediately
 
     Args:
-
+        n_obs_steps: Number of observation steps to use. Default: 1.
+        chunk_size: Size of action chunks for prediction. Default: 50.
+        n_action_steps: Number of action steps to execute. Default: 50.
+        max_state_dim: Maximum state dimension (shorter vectors are padded). Default: 32.
+        max_action_dim: Maximum action dimension (shorter vectors are padded). Default: 32.
+        resize_imgs_with_padding: Target image resolution (height, width). Default: (512, 512).
+        tokenizer_max_length: Maximum length for tokenizer. Default: 48.
+        vlm_model_name: VLM backbone model name. Default: "HuggingFaceTB/SmolVLM2-500M-Video-Instruct".
+        load_vlm_weights: Whether to load pretrained VLM weights. Default: False.
+        add_image_special_tokens: Whether to use special image tokens around image features. Default: False.
+        attention_mode: Attention mode for the model. Default: "cross_attn".
+        prefix_length: Prefix length for attention. Default: -1.
+        pad_language_to: Padding strategy for language tokens. Default: "longest".
+        num_expert_layers: Number of expert layers (-1 matches VLM layers). Default: -1.
+        num_vlm_layers: Number of layers used in the VLM. Default: 16.
+        self_attn_every_n_layers: Interleave self-attention layers frequency. Default: 2.
+        expert_width_multiplier: Action expert hidden size ratio to VLM. Default: 0.75.
+        min_period: Minimum period for sine-cosine positional encoding. Default: 4e-3.
+        max_period: Maximum period for sine-cosine positional encoding. Default: 4.0.
+        num_steps: Number of decoding steps. Default: 10.
+        use_cache: Whether to use attention cache. Default: True.
+        freeze_vision_encoder: Whether to freeze vision encoder during training. Default: True.
+        train_expert_only: Whether to train only the expert layers. Default: True.
+        train_state_proj: Whether to train state projection layers. Default: True.
+        optimizer_lr: Learning rate for optimizer. Default: 1e-4.
+        optimizer_betas: Beta parameters for AdamW optimizer. Default: (0.9, 0.95).
+        optimizer_eps: Epsilon for optimizer numerical stability. Default: 1e-8.
+        optimizer_weight_decay: Weight decay for optimizer. Default: 1e-10.
+        optimizer_grad_clip_norm: Gradient clipping norm value. Default: 10.
+        scheduler_warmup_steps: Number of warmup steps for scheduler. Default: 1_000.
+        scheduler_decay_steps: Number of steps between learning rate decays. Default: 30_000.
+        scheduler_decay_lr: Learning rate decay factor. Default: 2.5e-6.
+        dataset_stats: Dataset normalization statistics for eager initialization. Default: None.
 
     Example:
         Training:

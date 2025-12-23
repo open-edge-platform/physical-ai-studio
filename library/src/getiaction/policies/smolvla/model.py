@@ -13,7 +13,7 @@ from collections.abc import Callable
 
 import torch
 import torch.nn.functional as F  # noqa: N812
-from torch import Tensor, nn
+from torch import nn
 from transformers import (
     AutoConfig,
     AutoModel,
@@ -30,14 +30,45 @@ logger = logging.getLogger(__name__)
 
 
 class SmolVLAModel(nn.Module):
-    def __init__(self, config: SmolVLAConfig, dataset_stats: dict[str, dict[str, list[float] | str | tuple]]):
+    """SmolVLA flow matching vision-language-action model."""
+
+    def __init__(self, config: SmolVLAConfig, dataset_stats: dict[str, dict[str, list[float] | str | tuple]]) -> None:
+        """Initialize the SmolVLA model.
+
+        Args:
+            config: Configuration object containing model hyperparameters and settings.
+            dataset_stats: Dictionary containing dataset statistics with keys mapping to
+                dictionaries that hold statistics values (lists of floats), string metadata,
+                or tuple information used for normalization and preprocessing.
+        """
         super().__init__()
         self._config = config
         self._model = VLAFlowMatching(config)
         self._dataset_stats = dataset_stats
 
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
-        """Do a full training forward pass to compute the loss"""
+        """Forward pass for the SmolVLA model.
+
+        During training, processes the input batch to compute the loss for action prediction.
+        Handles optional adaptation for PI-ALOHA format, prepares images, state, and actions,
+        and applies masking for padded actions.
+        During inference, delegates to predict_action_chunk for action generation.
+
+        Args:
+            batch: Dictionary containing input tensors with keys:
+                - STATE: Robot state tensor
+                - ACTION: Ground truth action tensor (training only)
+                - "tokenized_prompt": Language instruction tokens
+                - "tokenized_prompt_mask": Attention mask for language tokens
+                - EXTRA + ".actions_id_pad": Optional padding mask for actions
+                - Image-related keys processed by _prepare_images
+
+        Returns:
+            If training: A tuple containing:
+                - loss: Mean loss value as a tensor
+                - loss_dict: Dictionary with intermediate loss values for debugging
+            If inference: Output from predict_action_chunk (action predictions)
+        """
         if self.training:
             if self._config.adapt_to_pi_aloha:
                 batch[STATE] = self._pi_aloha_decode_state(batch[STATE])
@@ -56,7 +87,7 @@ class SmolVLAModel(nn.Module):
 
             if actions_is_pad is not None:
                 in_episode_bound = ~actions_is_pad
-                losses = losses * in_episode_bound.unsqueeze(-1)
+                losses *= in_episode_bound.unsqueeze(-1)
                 loss_dict["losses_after_in_ep_bound"] = losses.clone()
 
             # Remove padding
@@ -69,6 +100,20 @@ class SmolVLAModel(nn.Module):
         return self.predict_action_chunk(batch)
 
     def predict_action_chunk(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        """Predict a chunk of actions from input batch.
+
+        This method processes the input batch, prepares images, state, and language tokens,
+        then uses the model to sample actions. The resulting actions are unpadded to match
+        the original action dimension and optionally encoded for Pi Aloha compatibility.
+
+        Args:
+            batch: A dictionary containing input tensors including images, state information,
+                and tokenized prompts with their masks.
+
+        Returns:
+            torch.Tensor: A tensor of predicted actions with shape matching the original
+                action dimensions from the dataset statistics.
+        """
         processed_batch = self._prepare_batch(batch)
 
         images, img_masks = self._prepare_images(processed_batch)
@@ -127,23 +172,44 @@ class SmolVLAModel(nn.Module):
             batch[STATE] = self._pi_aloha_decode_state(batch[STATE])
         return batch
 
-    def _prepare_images(self, batch):
-        """Apply SmolVLA preprocessing to the images, like resizing to 224x224 and padding to keep aspect ratio, and
-        convert pixel range from [0.0, 1.0] to [-1.0, 1.0] as requested by SigLIP.
+    def _prepare_images(self, batch: dict[str, torch.Tensor]) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
+        """Apply SmolVLA preprocessing to the images.
+
+        This method processes image tensors from a batch by:
+        1. Extracting the last frame if the input is a 5D tensor (video sequence)
+        2. Optionally resizing images with padding to maintain aspect ratio
+        3. Converting pixel values from [0.0, 1.0] range to [-1.0, 1.0] range as required by SigLIP
+        4. Extracting or creating padding masks for each image
+        Args:
+            batch: A dictionary containing image tensors and optional padding masks.
+                Image tensors should be 4D (B, C, H, W) or 5D (B, T, C, H, W).
+                Optional padding masks are stored with keys prefixed by EXTRA.
+
+        Returns:
+            A tuple containing:
+                - images: List of preprocessed image tensors, each with shape (B, C, H, W)
+                    and pixel values in range [-1.0, 1.0]
+                - img_masks: List of boolean mask tensors indicating valid (non-padded)
+                    images in each batch position
+
+        Raises:
+            ValueError: If the batch is missing expected image features based on
+                the dataset statistics configuration.
         """
         images = []
         img_masks = []
 
         batch_img_keys = Observation.get_flattened_keys(batch, IMAGES)
-        all_keys = [key for key in self._dataset_stats.keys() if "image" in key]
+        all_keys = [key for key in self._dataset_stats if "image" in key]
 
         if len(batch_img_keys) != len(all_keys):
-            raise ValueError(
-                f"Some of the image features are missing from the batch. (batch: {batch.keys()}) (image_features:{all_keys})",
-            )
+            msg = f"Some of the image features are missing from the batch. \
+                    (batch: {batch.keys()}) (image_features:{all_keys})"
+            raise ValueError(msg)
         # Preprocess image features present in the batch
+        max_image_dim = 5
         for key in batch_img_keys:
-            img = batch[key][:, -1, :, :, :] if batch[key].ndim == 5 else batch[key]
+            img = batch[key][:, -1, :, :, :] if batch[key].ndim == max_image_dim else batch[key]
             if self._config.resize_imgs_with_padding is not None:
                 img = _resize_with_pad(img, *self._config.resize_imgs_with_padding, pad_value=0)
 
@@ -161,7 +227,8 @@ class SmolVLAModel(nn.Module):
 
         return images, img_masks
 
-    def _pi_aloha_decode_state(self, state):
+    @staticmethod
+    def _pi_aloha_decode_state(state: torch.Tensor) -> torch.Tensor:
         # Flip the joints.
         for motor_idx in [1, 2, 8, 9]:
             state[:, motor_idx] *= -1
@@ -170,7 +237,8 @@ class SmolVLAModel(nn.Module):
             state[:, motor_idx] = _aloha_gripper_to_angular(state[:, motor_idx])
         return state
 
-    def _pi_aloha_encode_actions(self, actions):
+    @staticmethod
+    def _pi_aloha_encode_actions(actions: torch.Tensor) -> torch.Tensor:
         # Flip the joints.
         for motor_idx in [1, 2, 8, 9]:
             actions[:, :, motor_idx] *= -1
@@ -179,7 +247,8 @@ class SmolVLAModel(nn.Module):
             actions[:, :, motor_idx] = _aloha_gripper_from_angular(actions[:, :, motor_idx])
         return actions
 
-    def _pi_aloha_encode_actions_inv(self, actions):
+    @staticmethod
+    def _pi_aloha_encode_actions_inv(actions: torch.Tensor) -> torch.Tensor:
         # Flip the joints again.
         for motor_idx in [1, 2, 8, 9]:
             actions[:, :, motor_idx] *= -1
@@ -188,22 +257,46 @@ class SmolVLAModel(nn.Module):
             actions[:, :, motor_idx] = _aloha_gripper_from_angular_inv(actions[:, :, motor_idx])
         return actions
 
-    def _prepare_state(self, batch):
-        """Pad state"""
-        state = batch[STATE][:, -1, :] if batch[STATE].ndim > 2 else batch[STATE]
-        state = _pad_vector(state, self._config.max_state_dim)
-        return state
+    def _prepare_state(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        """Prepare and normalize the state tensor from the input batch.
 
-    def _prepare_action(self, batch):
-        """Pad action"""
-        actions = _pad_vector(batch[ACTION], self._config.max_action_dim)
-        return actions
+        Extracts the state tensor from the batch dictionary, selecting the last
+        timestep if the tensor has more than 2 dimensions. The state is then
+        padded to match the maximum state dimension specified in the configuration.
+
+        Args:
+            batch: A dictionary containing tensors, must include a STATE key
+                with a tensor of shape (batch_size, seq_len, state_dim) or
+                (batch_size, state_dim).
+
+        Returns:
+            A tensor of shape (batch_size, max_state_dim) containing the
+            padded state representation.
+        """
+        state_dim = 2
+        state = batch[STATE][:, -1, :] if batch[STATE].ndim > state_dim else batch[STATE]
+        return _pad_vector(state, self._config.max_state_dim)
+
+    def _prepare_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        """Prepare and pad the action tensor from the batch.
+
+        Args:
+            batch: A dictionary containing tensors, must include the ACTION key
+                with the action tensor to be padded.
+
+        Returns:
+            A dictionary containing the padded action tensor with dimensions
+            extended to match the configured maximum action dimension.
+        """
+        return _pad_vector(batch[ACTION], self._config.max_action_dim)
 
 
-def _resize_with_pad(img, width, height, pad_value=-1):
+def _resize_with_pad(img: torch.Tensor, width: int, height: int, pad_value: float = -1) -> torch.Tensor:
     # assume no-op when width height fits already
-    if img.ndim != 4:
-        raise ValueError(f"(b,c,h,w) expected, but {img.shape}")
+    img_dim = 4
+    if img.ndim != img_dim:
+        msg = f"(b,c,h,w) expected, but {img.shape}"
+        raise ValueError(msg)
 
     cur_height, cur_width = img.shape[2:]
 
@@ -221,13 +314,25 @@ def _resize_with_pad(img, width, height, pad_value=-1):
     pad_width = max(0, int(width - resized_width))
 
     # pad on left and top of image
-    padded_img = F.pad(resized_img, (pad_width, 0, pad_height, 0), value=pad_value)
-    return padded_img
+    return F.pad(resized_img, (pad_width, 0, pad_height, 0), value=pad_value)
 
 
-def _pad_vector(vector, new_dim):
-    """Can be (batch_size x sequence_length x features_dimension)
-    or (batch_size x features_dimension)
+def _pad_vector(vector: torch.Tensor, new_dim: int) -> torch.Tensor:
+    """Pad a tensor along its last dimension with zeros to reach a new dimension size.
+
+    Can be (batch_size x sequence_length x features_dimension)
+    or (batch_size x features_dimension).
+
+    Args:
+        vector: Input tensor to pad. Can be of shape (batch_size x sequence_length x features_dimension)
+            or (batch_size x features_dimension).
+        new_dim: The target size for the last dimension after padding.
+
+    Returns:
+        A new tensor with the last dimension padded to `new_dim` with zeros.
+        If the input tensor's last dimension already equals `new_dim`,
+        the original tensor is returned unchanged.
+
     """
     if vector.shape[-1] == new_dim:
         return vector
@@ -239,21 +344,21 @@ def _pad_vector(vector, new_dim):
     return new_vector
 
 
-def _normalize(x, min_val, max_val):
+def _normalize(x: torch.Tensor, min_val: float, max_val: float) -> torch.Tensor:
     return (x - min_val) / (max_val - min_val)
 
 
-def _unnormalize(x, min_val, max_val):
+def _unnormalize(x: torch.Tensor, min_val: float, max_val: float) -> torch.Tensor:
     return x * (max_val - min_val) + min_val
 
 
-def _safe_arcsin(value):
+def _safe_arcsin(value: torch.Tensor) -> torch.Tensor:
     # This ensures that the input stays within
-    # [−1,1] to avoid invalid values for arcsin
+    # [-1,1] to avoid invalid values for arcsin
     return torch.arcsin(torch.clamp(value, -1.0, 1.0))
 
 
-def _aloha_gripper_to_angular(value):
+def _aloha_gripper_to_angular(value: torch.Tensor) -> torch.Tensor:
     # Aloha transforms the gripper positions into a linear space. The following code
     # reverses this transformation to be consistent with smolvla which is pretrained in
     # angular space.
@@ -263,7 +368,7 @@ def _aloha_gripper_to_angular(value):
     value = _unnormalize(value, min_val=0.01844, max_val=0.05800)
 
     # This is the inverse of the angular to linear transformation inside the Interbotix code.
-    def linear_to_radian(linear_position, arm_length, horn_radius):
+    def linear_to_radian(linear_position: torch.Tensor, arm_length: float, horn_radius: float) -> torch.Tensor:
         value = (horn_radius**2 + linear_position**2 - arm_length**2) / (2 * horn_radius * linear_position)
         return _safe_arcsin(value)
 
@@ -275,7 +380,7 @@ def _aloha_gripper_to_angular(value):
     return _normalize(value, min_val=0.4, max_val=1.5)
 
 
-def _aloha_gripper_from_angular(value):
+def _aloha_gripper_from_angular(value: torch.Tensor) -> torch.Tensor:
     # Convert from the gripper position used by smolvla to the gripper position that is used by Aloha.
     # Note that the units are still angular but the range is different.
 
@@ -287,14 +392,28 @@ def _aloha_gripper_from_angular(value):
     return _normalize(value, min_val=-0.6213, max_val=1.4910)
 
 
-def _aloha_gripper_from_angular_inv(value):
+def _aloha_gripper_from_angular_inv(value: torch.Tensor) -> torch.Tensor:
     # Directly inverts the gripper_from_angular function.
     value = _unnormalize(value, min_val=-0.6213, max_val=1.4910)
     return _normalize(value, min_val=0.4, max_val=1.5)
 
 
-def _get_safe_dtype(dtype: torch.dtype, device: str | torch.device):
-    """Mps is currently not compatible with float64"""
+def _get_safe_dtype(dtype: torch.dtype, device: str | torch.device) -> torch.dtype:
+    """Get a safe dtype for the given device, handling compatibility issues.
+
+    This function checks if the requested dtype is compatible with the given device
+    and returns a safe alternative if necessary.
+    Mps is currently not compatible with float64
+
+    Args:
+        dtype: The requested torch dtype.
+        device: The device (as string or torch.device) where the tensor will be used.
+
+    Returns:
+        The original dtype if compatible with the device, or torch.float32 as a
+        fallback when float64 is not supported (e.g., on MPS devices or Intel XPU
+        devices without FP64 support).
+    """
     if isinstance(device, torch.device):
         device = device.type
     if device == "mps" and dtype == torch.float64:
@@ -306,12 +425,13 @@ def _get_safe_dtype(dtype: torch.dtype, device: str | torch.device):
             # The `has_fp64` flag is returned by `torch.xpu.get_device_capability()`
             # when available; if False, we fall back to float32 for compatibility.
             if not device_capability.get("has_fp64", False):
-                # logging.warning(f"Device {device} does not support float64, using float32 instead.")
+                logger.warning("Device %s does not support float64, using float32 instead.", device)
                 return torch.float32
         else:
-            # logging.warning(
-            #    f"Device {device} capability check failed. Assuming no support for float64, using float32 instead."
-            # )
+            logger.warning(
+                "Device %s capability check failed. Assuming no support for float64, using float32 instead.",
+                device,
+            )
             return torch.float32
         return dtype
     return dtype
@@ -322,14 +442,37 @@ def _create_sinusoidal_pos_embedding(
     dimension: int,
     min_period: float,
     max_period: float,
-    device=torch.device("cpu"),
-) -> Tensor:
-    """Computes sine-cosine positional embedding vectors for scalar positions."""
+    device: torch.device,
+) -> torch.Tensor:
+    """Computes sine-cosine positional embedding vectors for scalar positions.
+
+    This function generates sinusoidal positional embeddings using a combination
+    of sine and cosine functions with varying frequencies, commonly used in
+    transformer-based models for encoding temporal information.
+
+    Args:
+        time: A 1D tensor of shape `(batch_size,)` containing time values.
+        dimension: The dimension of the output embeddings. Must be divisible by 2.
+        min_period: The minimum period for the sinusoidal functions.
+        max_period: The maximum period for the sinusoidal functions.
+        device: The device on which to create the embedding tensor. Defaults to CPU.
+
+    Returns:
+        A tensor of shape `(batch_size, dimension)` containing the sinusoidal
+        positional embeddings, where the first half contains sine values and
+        the second half contains cosine values.
+
+    Raises:
+        ValueError: If `dimension` is not divisible by 2.
+        ValueError: If `time` tensor is not 1-dimensional.
+    """
     if dimension % 2 != 0:
-        raise ValueError(f"dimension ({dimension}) must be divisible by 2")
+        msg = f"Dimension ({dimension}) must be divisible by 2"
+        raise ValueError(msg)
 
     if time.ndim != 1:
-        raise ValueError("The time tensor is expected to be of shape `(batch_size, )`.")
+        msg = "The time tensor is expected to be of shape `(batch_size, )`."
+        raise ValueError(msg)
 
     dtype = _get_safe_dtype(torch.float64, device.type)
     fraction = torch.linspace(0.0, 1.0, dimension // 2, dtype=dtype, device=device)
@@ -338,11 +481,10 @@ def _create_sinusoidal_pos_embedding(
     # Compute the outer product
     scaling_factor = 1.0 / period * 2 * math.pi
     sin_input = scaling_factor[None, :] * time[:, None]
-    pos_emb = torch.cat([torch.sin(sin_input), torch.cos(sin_input)], dim=1)
-    return pos_emb
+    return torch.cat([torch.sin(sin_input), torch.cos(sin_input)], dim=1)
 
 
-def _make_att_2d_masks(pad_masks, att_masks):
+def _make_att_2d_masks(pad_masks: torch.Tensor, att_masks: torch.Tensor) -> torch.Tensor:
     """Copied from big_vision.
 
     Tokens can attend to valid inputs tokens which have a cumulative mask_ar
@@ -359,20 +501,26 @@ def _make_att_2d_masks(pad_masks, att_masks):
           block can attend all previous blocks and all tokens on the same block.
 
     Args:
-      input_mask: bool[B, N] true if its part of the input, false if padding.
-      mask_ar: int32[B, N] mask that's 1 where previous tokens cannot depend on
+      pad_masks: bool[B, N] true if its part of the input, false if padding.
+      att_masks: int32[B, N] mask that's 1 where previous tokens cannot depend on
         it and 0 where it shares the same attention mask as the previous token.
+
+    Returns:
+        bool[B, N, N] attention masks.
+
+    Raises:
+        ValueError: If input masks do not have the expected number of dimensions.
     """
-    if att_masks.ndim != 2:
+    required_mask_dim = 2
+    if att_masks.ndim != required_mask_dim:
         raise ValueError(att_masks.ndim)
-    if pad_masks.ndim != 2:
+    if pad_masks.ndim != required_mask_dim:
         raise ValueError(pad_masks.ndim)
 
     cumsum = torch.cumsum(att_masks, dim=1)
     att_2d_masks = cumsum[:, None, :] <= cumsum[:, :, None]
     pad_2d_masks = pad_masks[:, None, :] * pad_masks[:, :, None]
-    att_2d_masks = att_2d_masks & pad_2d_masks
-    return att_2d_masks
+    return att_2d_masks & pad_2d_masks
 
 
 def _pad_tensor(tensor: torch.Tensor, max_len: int, pad_value: float = 0) -> torch.Tensor:
@@ -401,9 +549,9 @@ def _pad_tensor(tensor: torch.Tensor, max_len: int, pad_value: float = 0) -> tor
 
 
 class VLAFlowMatching(nn.Module):
-    """SmolVLA
+    """SmolVLA internal model.
 
-    [Paper]()
+    [Paper](https://arxiv.org/abs/2506.01844)
 
     Designed by Hugging Face.
     ┌──────────────────────────────┐
@@ -425,7 +573,25 @@ class VLAFlowMatching(nn.Module):
     └──────────────────────────────┘
     """
 
-    def __init__(self, config: SmolVLAConfig):
+    def __init__(self, config: SmolVLAConfig) -> None:
+        """Initialize the SmolVLA model.
+
+        Args:
+            config: Configuration object containing model hyperparameters including:
+                - vlm_model_name: Name/ID of the vision-language model to use
+                - freeze_vision_encoder: Whether to freeze the vision encoder weights
+                - train_expert_only: Whether to only train the expert layers
+                - load_vlm_weights: Whether to load pretrained VLM weights
+                - attention_mode: Attention mechanism configuration
+                - num_expert_layers: Number of expert layers
+                - num_vlm_layers: Number of VLM layers
+                - self_attn_every_n_layers: Frequency of self-attention layers
+                - expert_width_multiplier: Multiplier for expert layer width
+                - max_state_dim: Maximum state dimension for state projection
+                - max_action_dim: Maximum action dimension for action projections
+                - add_image_special_tokens: Whether to add special image tokens
+                - prefix_length: Length of the prefix sequence
+        """
         super().__init__()
         self.config = config
 
@@ -468,36 +634,62 @@ class VLAFlowMatching(nn.Module):
         self.image_end_token = torch.tensor([self.fake_image_token], dtype=torch.long)
         self.prefix_length = self.config.prefix_length
 
-    def set_requires_grad(self):
+    def set_requires_grad(self) -> None:
+        """Set the requires_grad attribute for state projection parameters.
+
+        Configures the gradient computation for the state projection module's
+        parameters based on the train_state_proj setting in the model configuration.
+        """
         for params in self.state_proj.parameters():
             params.requires_grad = self.config.train_state_proj
 
-    def sample_noise(self, shape, device):
-        noise = torch.normal(
+    @staticmethod
+    def _sample_noise(shape: tuple[int, ...], device: torch.device) -> torch.Tensor:
+        return torch.normal(
             mean=0.0,
             std=1.0,
             size=shape,
             dtype=torch.float32,
             device=device,
         )
-        return noise
 
-    def sample_time(self, bsize, device):
+    @staticmethod
+    def _sample_time(bsize: int, device: torch.device) -> torch.Tensor:
         beta_dist = torch.distributions.Beta(concentration1=1.5, concentration0=1.0)
         time_beta = beta_dist.sample((bsize,)).to(device=device, dtype=torch.float32)
-        time = time_beta * 0.999 + 0.001
-        return time
+        return time_beta * 0.999 + 0.001
 
-    def embed_prefix(
+    def embed_prefix(  # noqa: PLR0914, PLR0915
         self,
-        images,
-        img_masks,
-        lang_tokens,
-        lang_masks,
-        state: torch.Tensor = None,
+        images: list[torch.Tensor],
+        img_masks: list[torch.Tensor],
+        lang_tokens: torch.Tensor,
+        lang_masks: torch.Tensor,
+        state: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Embed images with SigLIP and language tokens with embedding layer to prepare
-        for SmolVLM transformer processing.
+        """Embed images with SigLIP and language tokens to prepare for SmolVLM transformer processing.
+
+        Args:
+            images: List of image tensors to be embedded.
+            img_masks: List of boolean masks for each image indicating valid regions.
+            lang_tokens: Token IDs for language input to be embedded.
+            lang_masks: Boolean mask for language tokens indicating valid tokens.
+            state: Optional state tensor to be projected and included in the prefix.
+                If None, state embedding is still computed.
+
+        Returns:
+            A tuple containing:
+                - embs: Concatenated embeddings tensor of shape (batch_size, seq_len, embed_dim)
+                    containing image, language, and state embeddings.
+                - pad_masks: Boolean tensor of shape (batch_size, seq_len) indicating
+                    valid (non-padded) positions.
+                - att_masks: Boolean tensor of shape (batch_size, seq_len) for attention
+                    masking, where True indicates positions that should be masked
+                    (state tokens are masked from image/language attention).
+
+        Note:
+            If the total sequence length is less than `self.prefix_length`, the outputs
+            are padded to match the required prefix length.
         """
         embs = []
         pad_masks = []
@@ -524,17 +716,16 @@ class VLAFlowMatching(nn.Module):
                 pad_masks.append(image_start_mask)
 
             img_emb = self.vlm_with_expert.embed_image(img)
-            img_emb = img_emb
 
             # Normalize image embeddings
             img_emb_dim = img_emb.shape[-1]
-            img_emb = img_emb * torch.tensor(img_emb_dim**0.5, dtype=img_emb.dtype, device=img_emb.device)
+            img_emb *= torch.tensor(img_emb_dim**0.5, dtype=img_emb.dtype, device=img_emb.device)
 
             bsize, num_img_embs = img_emb.shape[:2]
-            img_mask = img_mask[:, None].expand(bsize, num_img_embs)
+            img_mask_ = img_mask[:, None].expand(bsize, num_img_embs)
 
             embs.append(img_emb)
-            pad_masks.append(img_mask)
+            pad_masks.append(img_mask_)
 
             att_masks += [0] * (num_img_embs)
             if self.add_image_special_tokens:
@@ -556,7 +747,7 @@ class VLAFlowMatching(nn.Module):
         lang_emb = self.vlm_with_expert.embed_language_tokens(lang_tokens)
         # Normalize language embeddings
         lang_emb_dim = lang_emb.shape[-1]
-        lang_emb = lang_emb * math.sqrt(lang_emb_dim)
+        lang_emb *= math.sqrt(lang_emb_dim)
 
         embs.append(lang_emb)
         pad_masks.append(lang_masks)
@@ -565,7 +756,8 @@ class VLAFlowMatching(nn.Module):
         att_masks += [0] * num_lang_embs
 
         state_emb = self.state_proj(state)
-        state_emb = state_emb[:, None, :] if state_emb.ndim == 2 else state_emb
+        emb_dim = 2
+        state_emb = state_emb[:, None, :] if state_emb.ndim == emb_dim else state_emb
         embs.append(state_emb)
         bsize = state_emb.shape[0]
         device = state_emb.device
@@ -596,6 +788,29 @@ class VLAFlowMatching(nn.Module):
         noisy_actions: torch.Tensor,
         timestep: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Embed noisy actions and timestep to prepare for Expert Gemma processing.
+
+        This method creates embeddings for the action prediction head by:
+        1. Projecting noisy actions through an input projection layer
+        2. Creating sinusoidal positional embeddings for the timestep
+        3. Concatenating action and time embeddings and processing through an MLP
+        4. Generating appropriate padding and attention masks
+        Args:
+            noisy_actions: Tensor of shape (batch_size, chunk_size, action_dim) containing
+                noisy action samples from the diffusion process.
+            timestep: Tensor of shape (batch_size,) containing the diffusion timestep
+                values for each sample in the batch.
+
+        Returns:
+            A tuple containing:
+                - embs: Tensor of shape (batch_size, chunk_size, hidden_size) containing
+                    the fused action-time embeddings.
+                - pad_masks: Boolean tensor of shape (batch_size, chunk_size) indicating
+                    valid positions (all True for action tokens).
+                - att_masks: Tensor of shape (batch_size, chunk_size) containing attention
+                    mask values (all 1s) indicating that action tokens should not be
+                    attended to by image, language, and state inputs.
+        """
         """Embed state, noisy_actions, timestep to prepare for Expert Gemma processing."""
         embs = []
         pad_masks = []
@@ -638,23 +853,42 @@ class VLAFlowMatching(nn.Module):
         att_masks = att_masks[None, :].expand(bsize, len(att_masks))
         return embs, pad_masks, att_masks
 
-    def forward(
+    def forward(  # noqa: PLR0914
         self,
-        images,
-        img_masks,
-        lang_tokens,
-        lang_masks,
-        state,
-        actions,
+        images: list[torch.Tensor],
+        img_masks: list[torch.Tensor],
+        lang_tokens: torch.Tensor,
+        lang_masks: torch.Tensor,
+        state: torch.Tensor,
+        actions: torch.Tensor,
         noise: torch.Tensor | None = None,
         time: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        """Do a full training forward pass and compute the loss (batch_size x num_steps x num_motors)"""
+        """Do a full training forward pass and compute the loss (batch_size x num_steps x num_motors).
+
+        This method implements the flow matching training objective for the diffusion model.
+        It generates noisy action trajectories and trains the model to predict the noise
+        direction (velocity field) that would denoise them.
+
+        Args:
+            images: List of image tensors from different camera views.
+            img_masks: List of attention masks for each image tensor.
+            lang_tokens: Tokenized language instruction tensor of shape (batch_size, seq_len).
+            lang_masks: Attention masks for language tokens of shape (batch_size, seq_len).
+            state: Robot state tensor containing proprioceptive information.
+            actions: Ground truth action sequence tensor of shape (batch_size, chunk_size, action_dim).
+            noise: Optional pre-sampled noise tensor. If None, noise is sampled internally.
+            time: Optional time step tensor for the diffusion process. If None, time is sampled uniformly.
+
+        Returns:
+            torch.Tensor: Per-element MSE loss between predicted and target velocity fields,
+                with shape (batch_size, chunk_size, action_dim)
+        """
         if noise is None:
-            noise = self.sample_noise(actions.shape, actions.device)
+            noise = self._sample_noise(actions.shape, actions.device)
 
         if time is None:
-            time = self.sample_time(actions.shape[0], actions.device)
+            time = self._sample_time(actions.shape[0], actions.device)
 
         time_expanded = time[:, None, None]
         x_t = time_expanded * noise + (1 - time_expanded) * actions
@@ -721,7 +955,7 @@ class VLAFlowMatching(nn.Module):
 
         if noise is None:
             actions_shape = (bsize, self.config.chunk_size, self.config.max_action_dim)
-            noise = self.sample_noise(actions_shape, device)
+            noise = self._sample_noise(actions_shape, device)
 
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(
             images,
