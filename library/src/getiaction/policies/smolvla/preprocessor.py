@@ -23,7 +23,7 @@ import logging
 from typing import Any
 
 import torch
-import torch.nn.functional as F
+import torch.nn.functional as F  # noqa: N812
 
 from getiaction.data import Feature, FeatureType, NormalizationParameters
 from getiaction.data.observation import ACTION, STATE, TASK
@@ -77,7 +77,22 @@ class SmolVLAPreprocessor(torch.nn.Module):
         tokenizer_name: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
         padding: str = "longest",
     ) -> None:
+        """Initialize the SmolVLA preprocessor.
+
+        Args:
+            max_state_dim: Maximum dimension for state vectors. Defaults to 32.
+            max_action_dim: Maximum dimension for action vectors. Defaults to 32.
+            image_resolution: Target resolution for input images as (height, width).
+                Defaults to (512, 512).
+            features: Dictionary mapping feature names to Feature objects for
+                normalization. If None, no normalization is applied. Defaults to None.
+            max_token_len: Maximum length of tokenized text sequences. Defaults to 48.
+            tokenizer_name: HuggingFace tokenizer identifier to use for text
+                processing. Defaults to "HuggingFaceTB/SmolVLM2-500M-Video-Instruct".
+            padding: Padding strategy for tokenization. Defaults to "longest".
+        """
         super().__init__()
+
         self.max_state_dim = max_state_dim
         self.max_action_dim = max_action_dim
         self.image_resolution = image_resolution
@@ -92,14 +107,22 @@ class SmolVLAPreprocessor(torch.nn.Module):
             self._state_action_normalizer = torch.nn.Identity()
 
     def forward(self, batch: dict[str, Any]) -> dict[str, torch.Tensor]:
+        """Process a batch by applying newline processing, tokenization, and normalization.
+
+        Args:
+            batch: A dictionary containing input data with keys including TASK and STATE.
+                TASK is used for tokenization and STATE determines the target device.
+
+        Returns:
+            A dictionary containing the processed batch with added 'tokenized_prompt'
+            and 'tokenized_prompt_mask' tensors, after applying state-action normalization.
+        """
         batch = self._newline_processor(batch)
         tokens, masks = self._tokenize(batch[TASK])
         batch["tokenized_prompt"] = tokens.to(batch[STATE].device)
         batch["tokenized_prompt_mask"] = masks.to(batch[STATE].device)
 
-        batch = self._state_action_normalizer(batch)
-
-        return batch
+        return self._state_action_normalizer(batch)
 
     @staticmethod
     def _newline_processor(batch: dict[str, Any]) -> dict[str, torch.Tensor]:
@@ -177,10 +200,12 @@ class SmolVLAPreprocessor(torch.nn.Module):
         return self._tokenizer
 
     @staticmethod
-    def _resize_with_pad(img, width, height, pad_value=-1):
+    def _resize_with_pad(img: torch.Tensor, width: int, height: int, pad_value: int = -1) -> torch.Tensor:
         # assume no-op when width height fits already
-        if img.ndim != 4:
-            raise ValueError(f"(b,c,h,w) expected, but {img.shape}")
+        img_dim = 4
+        if img.ndim != img_dim:
+            msg = f"(b,c,h,w) expected, but {img.shape}"
+            raise ValueError(msg)
 
         cur_height, cur_width = img.shape[2:]
 
@@ -198,8 +223,7 @@ class SmolVLAPreprocessor(torch.nn.Module):
         pad_width = max(0, int(width - resized_width))
 
         # pad on left and top of image
-        padded_img = F.pad(resized_img, (pad_width, 0, pad_height, 0), value=pad_value)
-        return padded_img
+        return F.pad(resized_img, (pad_width, 0, pad_height, 0), value=pad_value)
 
 
 class SmolVLAPostprocessor(torch.nn.Module):
@@ -220,6 +244,14 @@ class SmolVLAPostprocessor(torch.nn.Module):
         self,
         features: dict[str, Feature] | None = None,
     ) -> None:
+        """Initialize the preprocessor.
+
+        Args:
+            features: A dictionary mapping feature names to Feature objects.
+                If provided, action features will be extracted and used to create
+                a denormalizer transform. If None, an identity transform is used
+                for action denormalization.
+        """
         super().__init__()
 
         if features is not None:
@@ -229,6 +261,16 @@ class SmolVLAPostprocessor(torch.nn.Module):
             self._action_denormalizer = torch.nn.Identity()
 
     def forward(self, batch: dict[str, Any]) -> dict[str, torch.Tensor]:
+        """Process a batch by denormalizing actions if present.
+
+        Args:
+            batch: A dictionary containing batch data. May optionally contain
+                an ACTION key with action values to be denormalized.
+
+        Returns:
+            A dictionary with the same structure as the input batch, but with
+            action values denormalized if they were present.
+        """
         batch = dict(batch)
         if ACTION in batch:
             batch[ACTION] = self._action_denormalizer({ACTION: batch[ACTION]})[ACTION]

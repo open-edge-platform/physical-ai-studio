@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from getiaction.data import Observation
 from getiaction.data.observation import ACTION
 from getiaction.policies.base import Policy
 from getiaction.train.utils import reformat_dataset_to_match_policy
@@ -21,7 +20,10 @@ from .config import SmolVLAConfig
 from .model import SmolVLAModel
 
 if TYPE_CHECKING:
+    from getiaction.data import Observation
     from getiaction.gyms import Gym
+
+    from .preprocessor import SmolVLAPostprocessor, SmolVLAPreprocessor
 
 
 class SmolVLA(Policy):
@@ -60,15 +62,18 @@ class SmolVLA(Policy):
         max_action_dim: int = 32,
         # Image preprocessing
         resize_imgs_with_padding: tuple[int, int] = (512, 512),
+        *,
         # Architecture
         tokenizer_max_length: int = 48,
         vlm_model_name: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",  # Select the VLM backbone.
-        load_vlm_weights: bool = False,  # Set to True in case of training the expert from scratch. True when init from pretrained SmolVLA weights
+        load_vlm_weights: bool = False,  # Set to True in case of training the expert from scratch.
+        # True when init from pretrained SmolVLA weights
         add_image_special_tokens: bool = False,  # Whether to use special image tokens around image features.
         attention_mode: str = "cross_attn",
         prefix_length: int = -1,
         pad_language_to: str = "longest",  # "max_length"
-        num_expert_layers: int = -1,  # Less or equal to 0 is the default where the action expert has the same number of layers of VLM. Otherwise the expert have less layers.
+        num_expert_layers: int = -1,  # Less or equal to 0 is the default where the action expert has the same
+        # number of layers of VLM. Otherwise, the expert have less layers.
         num_vlm_layers: int = 16,  # Number of layers used in the VLM (first num_vlm_layers layers)
         self_attn_every_n_layers: int = 2,  # Interleave SA layers each self_attn_every_n_layers
         expert_width_multiplier: float = 0.75,  # The action expert hidden size (wrt to the VLM)
@@ -145,8 +150,8 @@ class SmolVLA(Policy):
         self.model: SmolVLAModel | None = None
 
         # Preprocessor/postprocessor set in setup() or _initialize_model()
-        self._preprocessor: Any = None
-        self._postprocessor: Any = None
+        self._preprocessor: SmolVLAPreprocessor | None = None
+        self._postprocessor: SmolVLAPostprocessor | None = None
 
         # Track initialization state
         self._is_setup_complete: bool = False
@@ -168,9 +173,6 @@ class SmolVLA(Policy):
         Args:
             env_action_dim: Environment action dimension.
             dataset_stats: Dataset normalization statistics.
-
-        Raises:
-            ValueError: If max_token_len is not set in config.
         """
         from .preprocessor import make_smolvla_preprocessors  # noqa: PLC0415
 
@@ -196,8 +198,9 @@ class SmolVLA(Policy):
 
         Raises:
             TypeError: If train dataset is not a getiaction Dataset.
-            ValueError: If dataset lacks action features.
         """
+        del stage  # Unused argument
+
         if self._is_setup_complete or self.model is not None:
             return  # Already initialized
 
@@ -220,10 +223,26 @@ class SmolVLA(Policy):
         reformat_dataset_to_match_policy(self, datamodule)
 
     def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
-        """Do a full training forward pass to compute the loss"""
+        """Forward pass through the model.
+
+        Processes the input batch and either trains the model or predicts actions
+        depending on the current mode.
+
+        Args:
+            batch: An Observation object containing the input data for the model.
+
+        Returns:
+            If training: Returns the model output, either a tensor or a tuple
+                containing a tensor and a dictionary of loss metrics.
+            If not training: Returns the predicted action chunk as a tensor.
+
+        Raises:
+            ValueError: If the model is not initialized during training mode.
+        """
         if self.training:
             if self.model is None:
-                raise ValueError("Model not initialized")
+                msg = "Model is not initialized"
+                raise ValueError(msg)
 
             processed_batch = self._preprocessor(batch.to_dict())
             return self.model(processed_batch)
@@ -231,8 +250,20 @@ class SmolVLA(Policy):
 
     @torch.no_grad()
     def predict_action_chunk(self, batch: Observation) -> torch.Tensor:
+        """Predict a chunk of actions from the given observation batch.
+
+        Args:
+            batch: An Observation object containing the input data for action prediction.
+
+        Returns:
+            torch.Tensor: The predicted action chunk after post-processing.
+
+        Raises:
+            ValueError: If the model has not been initialized.
+        """
         if self.model is None:
-            raise ValueError("Model not initialized")
+            msg = "Model is not initialized"
+            raise ValueError(msg)
 
         processed_batch = self._preprocessor(batch.to(self.device).to_dict())
         chunk = self.model.predict_action_chunk(processed_batch)
@@ -248,6 +279,7 @@ class SmolVLA(Policy):
         Returns:
             Loss tensor for backpropagation.
         """
+        del batch_idx
         loss, loss_dict = self(batch)
 
         # Log metrics
@@ -293,7 +325,7 @@ class SmolVLA(Policy):
 
         def lr_lambda(step: int) -> float:
             num_drops = step // drop_steps
-            decay_factor = decay_value ** num_drops
+            decay_factor = decay_value**num_drops
             if step < warmup_steps:
                 return step / max(1, warmup_steps)
             return decay_factor

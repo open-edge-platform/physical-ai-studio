@@ -98,18 +98,3 @@ class SmolVLAConfig(Config):
                 f"The chunk size is the upper bound for the number of action steps per model invocation. Got "
                 f"{self.n_action_steps} for `n_action_steps` and {self.chunk_size} for `chunk_size`.",
             )
-
-
-"""
-    @property
-    def observation_delta_indices(self) -> list:
-        return [0]
-
-    @property
-    def action_delta_indices(self) -> list:
-        return list(range(self.chunk_size))
-
-    @property
-    def reward_delta_indices(self) -> None:
-        return None
-"""

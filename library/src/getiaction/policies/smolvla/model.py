@@ -8,6 +8,7 @@
 
 import copy
 import math
+from collections.abc import Callable
 
 import torch
 import torch.nn.functional as F  # noqa: N812
@@ -911,7 +912,7 @@ class _SmolVLMWithExpertModel(nn.Module):
             if "lm_head" in name:
                 params.requires_grad = False
 
-    def train(self, mode: bool = True):
+    def train(self, *, mode: bool = True):
         super().train(mode)
 
         if self.freeze_vision_encoder:
@@ -945,8 +946,9 @@ class _SmolVLMWithExpertModel(nn.Module):
         layer_idx,
         position_ids,
         attention_mask,
-        batch_size,
-        head_dim,
+        batch_size: int,
+        head_dim: int,
+        *,
         use_cache: bool = True,
         fill_kv_cache: bool = True,
         past_key_values=None,
@@ -1001,10 +1003,10 @@ class _SmolVLMWithExpertModel(nn.Module):
                     "value_states": value_states,
                 }
             else:
-                # TODO here, some optimization can be done - similar to a `StaticCache` we can declare the `max_len` before.
-                # so we create an empty cache, with just one cuda malloc, and if (in autoregressive case) we reach
-                # the max len, then we (for instance) double the cache size. This implementation already exists
-                # in `transformers`. (molbap)
+                # to-do here, some optimization can be done - similar to a `StaticCache` we can declare the `max_len`
+                # before. so we create an empty cache, with just one cuda malloc, and if (in autoregressive case)
+                # we reach  the max len, then we (for instance) double the cache size. This implementation
+                #  already exists in `transformers`. (molbap)
                 key_states = torch.cat([past_key_values[layer_idx]["key_states"], key_states], dim=1)
                 value_states = torch.cat([past_key_values[layer_idx]["value_states"], value_states], dim=1)
 
@@ -1020,27 +1022,33 @@ class _SmolVLMWithExpertModel(nn.Module):
         )
         return [att_output], past_key_values
 
-    def forward_cross_attn_layer(
+    def forward_cross_attn_layer(  # noqa: PLR0914
         self,
-        model_layers,
-        inputs_embeds,
-        layer_idx,
-        position_ids,
-        attention_mask,
-        batch_size,
-        head_dim,
+        model_layers: list[nn.Module],
+        inputs_embeds: list[torch.Tensor],
+        layer_idx: int,
+        position_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        batch_size: int,
+        head_dim: int,
+        *,
         use_cache: bool = True,
         fill_kv_cache: bool = True,
-        past_key_values=None,
-    ) -> list[torch.Tensor]:
+        past_key_values: dict | None = None,
+    ) -> tuple[list[torch.Tensor], dict]:
         attention_interface = self.get_attention_interface()
 
         att_outputs = []
-        assert len(inputs_embeds) == 2 or (use_cache and past_key_values is not None and not fill_kv_cache), (
-            f"Both len(inputs_embeds) == {len(inputs_embeds)} and past_key_values is {past_key_values}"
-        )
+        required_embeds_num = 2
 
-        if len(inputs_embeds) == 2 and not past_key_values:
+        if not (
+            len(inputs_embeds) == required_embeds_num
+            or (use_cache and past_key_values is not None and not fill_kv_cache)
+        ):
+            msg = f"Both len(inputs_embeds) == {len(inputs_embeds)} and past_key_values is {past_key_values}"
+            raise ValueError(msg)
+
+        if len(inputs_embeds) == required_embeds_num and not past_key_values:
             # Prefix attention
             seq_len = inputs_embeds[0].shape[1]
             position_id, expert_position_id = position_ids[:, :seq_len], position_ids[:, seq_len:]
@@ -1084,10 +1092,10 @@ class _SmolVLMWithExpertModel(nn.Module):
                     "value_states": value_states,
                 }
             else:
-                # TODO here, some optimization can be done - similar to a `StaticCache` we can declare the `max_len` before.
-                # so we create an empty cache, with just one cuda malloc, and if (in autoregressive case) we reach
-                # the max len, then we (for instance) double the cache size. This implementation already exists
-                # in `transformers`. (molbap)
+                # to-do here, some optimization can be done - similar to a `StaticCache` we can declare the `max_len`
+                # before. so we create an empty cache, with just one cuda malloc, and if (in autoregressive case)
+                # we reach the max len, then we (for instance) double the cache size. This implementation
+                # already exists in `transformers`. (molbap)
                 key_states = past_key_values[layer_idx]["key_states"]
                 value_states = past_key_values[layer_idx]["value_states"]
 
@@ -1102,29 +1110,27 @@ class _SmolVLMWithExpertModel(nn.Module):
             expert_hidden_states = expert_hidden_states.to(dtype=expert_layer.self_attn.q_proj.weight.dtype)
             expert_query_state = expert_layer.self_attn.q_proj(expert_hidden_states).view(expert_hidden_shape)
 
-            _key_states = key_states.to(dtype=expert_layer.self_attn.k_proj.weight.dtype).view(
+            casted_key_states = key_states.to(dtype=expert_layer.self_attn.k_proj.weight.dtype).view(
                 *key_states.shape[:2],
                 -1,
             )
-            expert_key_states = expert_layer.self_attn.k_proj(_key_states).view(
-                *_key_states.shape[:-1],
+            expert_key_states = expert_layer.self_attn.k_proj(casted_key_states).view(
+                *casted_key_states.shape[:-1],
                 -1,
                 expert_layer.self_attn.head_dim,
             )  # k_proj should have same dim as kv
 
-            _value_states = value_states.to(dtype=expert_layer.self_attn.v_proj.weight.dtype).view(
+            casted_value_states = value_states.to(dtype=expert_layer.self_attn.v_proj.weight.dtype).view(
                 *value_states.shape[:2],
                 -1,
             )
-            expert_value_states = expert_layer.self_attn.v_proj(_value_states).view(
-                *_value_states.shape[:-1],
+            expert_value_states = expert_layer.self_attn.v_proj(casted_value_states).view(
+                *casted_value_states.shape[:-1],
                 -1,
                 expert_layer.self_attn.head_dim,
             )
 
-            expert_position_id = (
-                expert_position_id - torch.min(expert_position_id, dim=1, keepdim=True).values
-            )  # start from 0
+            expert_position_id -= torch.min(expert_position_id, dim=1, keepdim=True).values  # start from 0
             expert_attention_mask = attention_mask[
                 :,
                 -inputs_embeds[1].shape[1] :,
@@ -1145,7 +1151,6 @@ class _SmolVLMWithExpertModel(nn.Module):
         else:
             att_outputs.append(None)
 
-        # att_output = att_output.to(dtype=models[i].dtype)
         return att_outputs, past_key_values
 
     def get_model_layers(self, models: list) -> list:
@@ -1162,19 +1167,20 @@ class _SmolVLMWithExpertModel(nn.Module):
             expert_layers.append(expert_layer)
         return [vlm_layers, expert_layers]
 
-    def forward(
+    def forward(  # noqa: PLR0914, PLR0912
         self,
         attention_mask: torch.Tensor | None = None,
         position_ids: torch.LongTensor | None = None,
         past_key_values: list[torch.FloatTensor] | None = None,
-        inputs_embeds: list[torch.FloatTensor] = None,
+        inputs_embeds: list[torch.FloatTensor] | None = None,
+        *,
         use_cache: bool | None = None,
         fill_kv_cache: bool | None = None,
-    ):
+    ) -> tuple:
         models = [self.get_vlm_model().text_model, self.lm_expert]
         model_layers = self.get_model_layers(models)
         for hidden_states in inputs_embeds:
-            # TODO this is very inefficient
+            # to-do this is very inefficient
             # dtype is always the same, batch size too (if > 1 len)
             # device could be trickier in multi gpu edge cases but that's it
             if hidden_states is None:
@@ -1257,19 +1263,18 @@ class _SmolVLMWithExpertModel(nn.Module):
                 outputs_embeds.append(None)
         return outputs_embeds, past_key_values
 
-    def get_attention_interface(self):
-        attention_interface = self.eager_attention_forward
-        return attention_interface
+    def get_attention_interface(self) -> Callable:
+        return self.eager_attention_forward
 
     def eager_attention_forward(
         self,
-        attention_mask,
-        batch_size,
-        head_dim,
-        query_states,
-        key_states,
-        value_states,
-    ):
+        attention_mask: torch.Tensor,
+        batch_size: int,
+        head_dim: int,
+        query_states: torch.Tensor,
+        key_states: torch.Tensor,
+        value_states: torch.Tensor,
+    ) -> torch.Tensor:
         num_att_heads = self.num_attention_heads
         num_key_value_heads = self.num_key_value_heads
         num_key_value_groups = num_att_heads // num_key_value_heads
@@ -1324,6 +1329,4 @@ class _SmolVLMWithExpertModel(nn.Module):
 
         att_output = att_output.permute(0, 2, 1, 3)
         # we use -1 because sequence length can change
-        att_output = att_output.reshape(batch_size, -1, num_key_value_heads * num_key_value_groups * head_dim)
-
-        return att_output
+        return att_output.reshape(batch_size, -1, num_key_value_heads * num_key_value_groups * head_dim)
