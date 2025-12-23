@@ -173,19 +173,14 @@ class SmolVLA(Policy):
         """
         from .preprocessor import make_smolvla_preprocessors  # noqa: PLC0415
 
-        # Use config (policy-level config created in __init__)
-        config = self.config
+        self.model = SmolVLAModel(self.config, dataset_stats)
 
-        # Create model with explicit args (no config dependency)
-        self.model = SmolVLAModel(config, dataset_stats)
-
-        # Create preprocessor/postprocessor
         self._preprocessor, self._postprocessor = make_smolvla_preprocessors(
-            max_state_dim=config.max_state_dim,
-            max_action_dim=config.max_action_dim,
+            max_state_dim=self.config.max_state_dim,
+            max_action_dim=self.config.max_action_dim,
             stats=dataset_stats,
-            image_resolution=config.resize_imgs_with_padding,
-            max_token_len=config.tokenizer_max_length,
+            image_resolution=self.config.resize_imgs_with_padding,
+            max_token_len=self.config.tokenizer_max_length,
         )
 
         self._is_setup_complete = True

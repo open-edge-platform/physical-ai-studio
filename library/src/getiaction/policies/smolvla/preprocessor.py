@@ -94,8 +94,8 @@ class SmolVLAPreprocessor(torch.nn.Module):
     def forward(self, batch: dict[str, Any]) -> dict[str, torch.Tensor]:
         batch = self._newline_processor(batch)
         tokens, masks = self._tokenize(batch[TASK])
-        batch["tokenized_prompt"] = tokens
-        batch["tokenized_prompt_mask"] = masks
+        batch["tokenized_prompt"] = tokens.to(batch[STATE].device)
+        batch["tokenized_prompt_mask"] = masks.to(batch[STATE].device)
 
         batch = self._state_action_normalizer(batch)
 
