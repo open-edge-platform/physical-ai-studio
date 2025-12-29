@@ -6,26 +6,49 @@
 
 """SmolVLA model implementation."""
 
+from __future__ import annotations
+
 import copy
 import logging
 import math
-from collections.abc import Callable
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import nn
-from transformers import (
-    AutoConfig,
-    AutoModel,
-    AutoModelForImageTextToText,
-    AutoProcessor,
-    SmolVLMForConditionalGeneration,
-)
 
 from getiaction.data.observation import ACTION, EXTRA, IMAGES, STATE, Observation
 
-from .config import SmolVLAConfig
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from .config import SmolVLAConfig
+
+
+def _lazy_import_transformers() -> tuple:
+    """Lazy import transformers classes to reduce initial load time.
+
+    Returns:
+        Tuple containing (AutoConfig, AutoModel, AutoModelForImageTextToText,
+            AutoProcessor, SmolVLMForConditionalGeneration).
+
+    Raises:
+        ImportError: If diffusers is not installed.
+    """
+    try:
+        from transformers import (  # noqa: PLC0415
+            AutoConfig,
+            AutoModel,
+            AutoModelForImageTextToText,
+            AutoProcessor,
+            SmolVLMForConditionalGeneration,
+        )
+    except ImportError as e:
+        msg = "SmolVLA requires transformers library.\n\nInstall with:\n    pip install transformers"
+        raise ImportError(msg) from e
+    else:
+        return AutoConfig, AutoModel, AutoModelForImageTextToText, AutoProcessor, SmolVLMForConditionalGeneration
+
 
 logger = logging.getLogger(__name__)
 
@@ -1159,9 +1182,18 @@ class _SmolVLMWithExpertModel(nn.Module):
         device: str = "auto",
     ) -> None:
         super().__init__()
+
+        (
+            auto_config_cls,
+            auto_model_cls,
+            auto_model_for_image_text_to_text_cls,
+            auto_processor_cls,
+            smol_vlm_for_conditional_generation_cls,
+        ) = _lazy_import_transformers()
+
         if load_vlm_weights:
             logger.info("Loading  %s weights ...", model_id)
-            self.vlm = AutoModelForImageTextToText.from_pretrained(
+            self.vlm = auto_model_for_image_text_to_text_cls.from_pretrained(
                 model_id,
                 device_map=device,
                 torch_dtype="bfloat16",
@@ -1169,9 +1201,9 @@ class _SmolVLMWithExpertModel(nn.Module):
             )
             config = self.vlm.config
         else:
-            config = AutoConfig.from_pretrained(model_id)
-            self.vlm = SmolVLMForConditionalGeneration(config=config)
-        self.processor = AutoProcessor.from_pretrained(model_id)
+            config = auto_config_cls.from_pretrained(model_id)
+            self.vlm = smol_vlm_for_conditional_generation_cls(config=config)
+        self.processor = auto_processor_cls.from_pretrained(model_id)
         if num_vlm_layers > 0:
             logger.info("Reducing the number of VLM layers to %s ...", num_vlm_layers)
             self.get_vlm_model().text_model.layers = self.get_vlm_model().text_model.layers[:num_vlm_layers]
@@ -1190,7 +1222,7 @@ class _SmolVLMWithExpertModel(nn.Module):
                 f"not multiple of num_expert_layers {num_expert_layers}"
             )
             raise RuntimeError(msg)
-        self.lm_expert = AutoModel.from_config(lm_expert_config)
+        self.lm_expert = auto_model_cls.from_config(lm_expert_config)
 
         self.num_expert_layers = len(self.lm_expert.layers)
         self.self_attn_every_n_layers = self_attn_every_n_layers
