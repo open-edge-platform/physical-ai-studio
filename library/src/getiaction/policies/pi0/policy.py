@@ -134,7 +134,7 @@ class Pi0(Policy):
         gradient_checkpointing: bool = False,
         # Eager initialization (for checkpoint loading)
         env_action_dim: int | None = None,
-        dataset_stats: dict[str, dict[str, list[float]]] | None = None,
+        dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
     ) -> None:
         """Initialize Pi0 policy.
 
@@ -186,7 +186,7 @@ class Pi0(Policy):
     def _initialize_model(
         self,
         env_action_dim: int,
-        dataset_stats: dict[str, dict[str, list[float]]] | None = None,
+        dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
     ) -> None:
         """Initialize model and preprocessors.
 

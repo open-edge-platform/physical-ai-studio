@@ -185,9 +185,6 @@ class SmolVLA(Policy):
         self._preprocessor: SmolVLAPreprocessor | None = None
         self._postprocessor: SmolVLAPostprocessor | None = None
 
-        # Track initialization state
-        self._is_setup_complete: bool = False
-
         # Eager initialization if dataset_stats is provided
         if dataset_stats is not None:
             self._initialize_model(dataset_stats)
@@ -218,8 +215,6 @@ class SmolVLA(Policy):
             max_token_len=self.config.tokenizer_max_length,
         )
 
-        self._is_setup_complete = True
-
     def setup(self, stage: str) -> None:
         """Set up model from datamodule (lazy initialization path).
 
@@ -233,8 +228,8 @@ class SmolVLA(Policy):
         """
         del stage  # Unused argument
 
-        if self._is_setup_complete or self.model is not None:
-            return  # Already initialized
+        if self.model is not None:
+            return
 
         from getiaction.data.dataset import Dataset  # noqa: PLC0415
 
@@ -272,7 +267,7 @@ class SmolVLA(Policy):
             ValueError: If the model is not initialized during training mode.
         """
         if self.training:
-            if self.model is None:
+            if self.model is None or self._preprocessor is None:
                 msg = "Model is not initialized"
                 raise ValueError(msg)
 
@@ -293,7 +288,7 @@ class SmolVLA(Policy):
         Raises:
             ValueError: If the model has not been initialized.
         """
-        if self.model is None:
+        if self.model is None or self._preprocessor is None or self._postprocessor is None:
             msg = "Model is not initialized"
             raise ValueError(msg)
 

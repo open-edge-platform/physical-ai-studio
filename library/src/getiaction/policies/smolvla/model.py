@@ -32,7 +32,11 @@ logger = logging.getLogger(__name__)
 class SmolVLAModel(nn.Module):
     """SmolVLA flow matching vision-language-action model."""
 
-    def __init__(self, config: SmolVLAConfig, dataset_stats: dict[str, dict[str, list[float] | str | tuple]]) -> None:
+    def __init__(
+        self,
+        config: SmolVLAConfig,
+        dataset_stats: dict[str, dict[str, list[float] | str | tuple[int, ...]]],
+    ) -> None:
         """Initialize the SmolVLA model.
 
         Args:
@@ -130,7 +134,7 @@ class SmolVLAModel(nn.Module):
         )
 
         # Unpad actions
-        original_action_dim = self._dataset_stats[ACTION]["shape"][-1]
+        original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
         actions = actions[:, :, :original_action_dim]
 
         if self._config.adapt_to_pi_aloha:
@@ -1246,7 +1250,7 @@ class _SmolVLMWithExpertModel(nn.Module):
         use_cache: bool = True,
         fill_kv_cache: bool = True,
         past_key_values: dict | None = None,
-    ) -> tuple[list[torch.Tensor], dict]:
+    ) -> tuple[list[torch.Tensor], dict | None]:
         query_states = []
         key_states = []
         value_states = []
@@ -1287,10 +1291,10 @@ class _SmolVLMWithExpertModel(nn.Module):
         query_states = _apply_rope(query_states, position_ids_)
         key_states = _apply_rope(key_states, position_ids_)
 
-        if use_cache and past_key_values is None:
-            past_key_values = {}
-
         if use_cache:
+            if past_key_values is None:
+                past_key_values = {}
+
             if fill_kv_cache:
                 past_key_values[layer_idx] = {
                     "key_states": key_states,
@@ -1329,7 +1333,7 @@ class _SmolVLMWithExpertModel(nn.Module):
         use_cache: bool = True,
         fill_kv_cache: bool = True,
         past_key_values: dict | None = None,
-    ) -> tuple[list[torch.Tensor], dict]:
+    ) -> tuple[list[torch.Tensor], dict | None]:
         attention_interface = self.get_attention_interface()
 
         att_outputs = []
@@ -1376,10 +1380,9 @@ class _SmolVLMWithExpertModel(nn.Module):
         else:
             expert_position_id = position_ids
 
-        if use_cache and past_key_values is None:
-            past_key_values = {}
-
         if use_cache:
+            if past_key_values is None:
+                past_key_values = {}
             if fill_kv_cache:
                 past_key_values[layer_idx] = {
                     "key_states": key_states,
@@ -1463,16 +1466,17 @@ class _SmolVLMWithExpertModel(nn.Module):
 
     def forward(  # noqa: PLR0914, PLR0912
         self,
-        attention_mask: torch.Tensor | None = None,
-        position_ids: torch.LongTensor | None = None,
-        past_key_values: list[torch.FloatTensor] | None = None,
-        inputs_embeds: list[torch.FloatTensor] | None = None,
+        attention_mask: torch.Tensor,
+        position_ids: torch.Tensor,
+        past_key_values: dict | None,
+        inputs_embeds: list[torch.Tensor | None],
         *,
-        use_cache: bool | None = None,
-        fill_kv_cache: bool | None = None,
+        use_cache: bool = False,
+        fill_kv_cache: bool = False,
     ) -> tuple:
         models = [self.get_vlm_model().text_model, self.lm_expert]
         model_layers = self.get_model_layers(models)
+
         for hidden_states in inputs_embeds:
             # to-do this is very inefficient
             # dtype is always the same, batch size too (if > 1 len)

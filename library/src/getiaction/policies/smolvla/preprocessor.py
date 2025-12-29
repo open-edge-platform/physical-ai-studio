@@ -20,7 +20,7 @@ Handles:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 import torch
 import torch.nn.functional as F  # noqa: N812
@@ -298,7 +298,7 @@ def make_smolvla_preprocessors(
     Returns:
         Tuple of (preprocessor, postprocessor).
     """
-    features = {}
+    features: dict[str, Feature] = {}
     if stats is not None:
         for key, stat in stats.items():
             if ACTION in key:
@@ -307,13 +307,13 @@ def make_smolvla_preprocessors(
                 feature_type = FeatureType.STATE
             else:
                 continue
-            features[stat["name"]] = Feature(
-                name=stat["name"],
+            features[str(stat["name"])] = Feature(
+                name=str(stat["name"]),
                 ftype=feature_type,
-                shape=stat["shape"],
+                shape=cast("tuple[int, ...]", stat["shape"]),
                 normalization_data=NormalizationParameters(
-                    mean=stat["mean"],
-                    std=stat["std"],
+                    mean=cast("list[float]", stat["mean"]),
+                    std=cast("list[float]", stat["std"]),
                 ),
             )
 
