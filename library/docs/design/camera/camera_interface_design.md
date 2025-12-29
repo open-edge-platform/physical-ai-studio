@@ -515,6 +515,45 @@ class ColorControlMixin:
     def set_exposure(self, value: float) -> None: ...
 
 
+class DepthMixin:
+    """Adds depth capture capability.
+
+    For cameras that support depth sensing (RealSense, stereo cameras,
+    ToF sensors, etc.). Depth is returned as uint16 in millimeters.
+
+    Example:
+        cam = RealSense(serial_number="12345678")
+        cam.connect()
+
+        if cam.supports_depth:
+            rgb = cam.read()
+            depth = cam.read_depth()  # (H, W) uint16 in mm
+            rgbd = cam.read_rgbd()    # (H, W, 4) with depth as 4th channel
+    """
+    supports_depth: ClassVar[bool] = True
+
+    @abstractmethod
+    def read_depth(self) -> NDArray[np.uint16]:
+        """Read depth frame.
+
+        Returns:
+            Depth map as (H, W) uint16 array in millimeters.
+        """
+        ...
+
+    def read_rgbd(self) -> NDArray[np.uint16]:
+        """Read aligned RGB-D frame.
+
+        Returns:
+            RGBD as (H, W, 4) array. RGB channels are uint8, depth is uint16.
+            Default implementation stacks read() and read_depth().
+        """
+        rgb = self.read()
+        depth = self.read_depth()
+        # Stack RGB (H,W,3) with depth (H,W,1)
+        return np.dstack([rgb, depth[..., np.newaxis]])
+
+
 class ResolutionDiscoveryMixin:
     """Adds format discovery and selection."""
     supports_resolution_discovery: ClassVar[bool] = True
@@ -533,6 +572,29 @@ class Format:
     height: int
     fps: float
     pixel_format: str = "RGB"
+
+
+class AsyncContextMixin:
+    """Adds async context manager support for async/await usage.
+
+    Enables `async with` syntax for cameras in async code:
+
+        async with Webcam(index=0) as cam:
+            frame = cam.read()
+
+    Note: This wraps synchronous connect/disconnect. For fully async I/O,
+    subclasses can override with thread pool executors.
+    """
+    supports_async_context: ClassVar[bool] = True
+
+    async def __aenter__(self) -> Self:
+        """Async context entry - connects the camera."""
+        self.connect()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Async context exit - disconnects the camera."""
+        self.disconnect()
 ```
 
 ---
@@ -564,8 +626,11 @@ class Webcam(Camera):
     ) -> None: ...
 
 
-class RealSense(Camera):
-    """Intel RealSense with optional depth stream."""
+class RealSense(DepthMixin, Camera):
+    """Intel RealSense with depth sensing capability.
+
+    Inherits from DepthMixin to provide read_depth() and read_rgbd().
+    """
 
     def __init__(
         self, *,
@@ -574,10 +639,32 @@ class RealSense(Camera):
         width: int = 640,
         height: int = 480,
         color_mode: ColorMode = ColorMode.RGB,
-        use_depth: bool = False,
     ) -> None: ...
 
-    def read_depth(self) -> NDArray[np.uint16]: ...
+    # read_depth() inherited from DepthMixin, implemented here
+    def read_depth(self) -> NDArray[np.uint16]:
+        """Read depth frame from RealSense depth sensor."""
+        ...
+
+
+class StereoCamera(DepthMixin, Camera):
+    """Stereo camera pair with computed depth.
+
+    Example of another camera type using DepthMixin.
+    Depth is computed from stereo disparity.
+    """
+
+    def __init__(
+        self, *,
+        left_index: int = 0,
+        right_index: int = 1,
+        baseline_mm: float = 60.0,
+        # ... other stereo params
+    ) -> None: ...
+
+    def read_depth(self) -> NDArray[np.uint16]:
+        """Compute depth from stereo disparity."""
+        ...
 
 
 class Basler(Camera):
