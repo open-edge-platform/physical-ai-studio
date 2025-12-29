@@ -1,5 +1,48 @@
 # Camera Interface Design
 
+## Table of Contents
+
+- [Camera Interface Design](#camera-interface-design)
+  - [Table of Contents](#table-of-contents)
+  - [Executive Summary](#executive-summary)
+  - [Overview](#overview)
+  - [Packaging Strategy](#packaging-strategy)
+    - [Option A: Subpackage](#option-a-subpackage)
+    - [Option B: Standalone Package (In long term, this is preferred)](#option-b-standalone-package-in-long-term-this-is-preferred)
+  - [Background: FrameSource](#background-framesource)
+  - [Class Hierarchy](#class-hierarchy)
+    - [Coverage vs. FrameSource](#coverage-vs-framesource)
+  - [Dependencies](#dependencies)
+  - [Multi-Consumer \& Lifecycle Management](#multi-consumer--lifecycle-management)
+    - [Problem Statement](#problem-statement)
+    - [Design Choice: Invisible Sharing](#design-choice-invisible-sharing)
+    - [Alternative Considered: CameraManager](#alternative-considered-cameramanager)
+    - [Other Alternatives](#other-alternatives)
+  - [Core Interface](#core-interface)
+    - [Camera ABC](#camera-abc)
+    - [Callback System (PyTorch Lightning-inspired)](#callback-system-pytorch-lightning-inspired)
+    - [Capability Mixins](#capability-mixins)
+  - [Proposed Implementations](#proposed-implementations)
+    - [Live Cameras](#live-cameras)
+    - [Recorded Sources](#recorded-sources)
+    - [Interop (Outside cameras package)](#interop-outside-cameras-package)
+  - [Usage](#usage)
+    - [Basic](#basic)
+    - [Push-Based Frame Delivery (Callbacks)](#push-based-frame-delivery-callbacks)
+    - [Multi-Camera Setup](#multi-camera-setup)
+    - [Multi-Consumer (Automatic Sharing)](#multi-consumer-automatic-sharing)
+    - [From Config](#from-config)
+    - [Robot Integration](#robot-integration)
+    - [IPCam with PTZ Control](#ipcam-with-ptz-control)
+  - [Comparison: FrameSource vs. getiaction.cameras/geticam](#comparison-framesource-vs-getiactioncamerasgeticam)
+  - [Open Design Decisions](#open-design-decisions)
+    - [1. Package vs. Subpackage (Critical Decision)](#1-package-vs-subpackage-critical-decision)
+    - [2. Frame Transforms](#2-frame-transforms)
+    - [3. Additional Opens](#3-additional-opens)
+  - [References](#references)
+
+---
+
 ## Executive Summary
 
 This document proposes a unified `Camera` interface for `getiaction`, built on top of the existing [FrameSource](https://github.com/ArendJanKramer/FrameSource) library. FrameSource provides solid low-level camera integrations across multiple hardware backends (webcams, RealSense, Basler, GenICam, etc.)—excellent foundational work by our team.
@@ -31,6 +74,9 @@ A unified `Camera` interface for frame acquisition from live cameras, video file
 - **Hparams-first**: Explicit constructor args with IDE autocomplete, plus `from_config()` for configs
 - **Context manager**: Safe resource management with `with` statement
 - **Single ABC**: One `Camera` interface for all sources
+- **Invisible sharing**: Multiple Camera instances for the same device share automatically
+- **Callback-driven**: PyTorch Lightning-style callbacks for reactive/event-driven use cases
+- **Capability mixins**: Optional features (Async, PTZ, color control, resolution discovery) via composable mixins
 
 ---
 
@@ -45,13 +91,14 @@ We could start inside `getiaction` for rapid iteration:
 ```text
 library/src/getiaction/cameras/
 ├── __init__.py         # Public API + aliases
-├── base.py             # Camera ABC
-├── async_mixin.py      # Background capture (optional)
-├── webcam.py           # Webcam
+├── base.py             # Camera ABC, _Capture, ColorMode
+├── callbacks.py        # Callback base class and hooks
+├── mixins.py           # PTZMixin, ColorControlMixin, ResolutionDiscoveryMixin
+├── webcam.py           # Webcam (with nokhwa/opencv backends)
 ├── realsense.py        # RealSense
 ├── basler.py           # Basler
 ├── genicam.py          # Genicam
-├── ipcam.py            # IPCam
+├── ipcam.py            # IPCam (with PTZMixin)
 ├── screen.py           # Screen
 ├── video.py            # VideoFile
 ├── folder.py           # ImageFolder
@@ -111,7 +158,9 @@ See [Open Design Decisions](#1-package-vs-subpackage-critical-decision) for full
 - Consistent, typed API with IDE autocomplete
 - Context manager pattern for safe resource management
 - Config-driven instantiation (`from_config()`)
-- Optional async capture mixin (opt-in, not required)
+- Invisible sharing: multiple Camera instances share the same physical device automatically
+- Callback system for push-based frame delivery
+- Capability mixins for optional features (PTZ, color control, resolution discovery)
 - Production-level error handling and documentation
 
 ---
@@ -127,8 +176,7 @@ Camera (ABC)
 ├── IPCam               # Network cameras (RTSP/HTTP)
 ├── Screen              # Desktop capture
 ├── VideoFile           # Recorded: video files
-├── ImageFolder         # Recorded: image sequences
-└── LeRobot             # Wrapper for LeRobot cameras
+└── ImageFolder         # Recorded: image sequences
 ```
 
 ### Coverage vs. FrameSource
@@ -160,21 +208,138 @@ pip install getiaction[cameras]    # All camera dependencies
 
 ---
 
+## Multi-Consumer & Lifecycle Management
+
+### Problem Statement
+
+Real-world camera usage involves multiple consumers accessing the same physical device:
+
+- **UI display** needs camera feed for live preview
+- **Recording** needs same camera feed to save to disk
+- **Teleoperation** needs feed for remote control
+- **WebSocket/WebRTC** streams need feed for network transmission
+
+**The challenge**: A physical camera can only be opened once. Multiple opens fail or cause undefined behavior.
+
+**Requirements**:
+
+| Requirement                    | Description                                        |
+| ------------------------------ | -------------------------------------------------- |
+| **R1: Single device access**   | Only one process opens the physical camera         |
+| **R2: Multi-consumer support** | Multiple code paths read from same device          |
+| **R3: Automatic lifecycle**    | Device opens on first use, closes when unused      |
+| **R4: Simple API**             | Basic usage should remain simple                   |
+| **R5: Thread safety**          | Safe access from multiple threads                  |
+| **R6: Camera as main concept** | Avoid introducing many new abstractions            |
+| **R7: Extensibility**          | Support callbacks and capability mixins            |
+| **R8: Push & Pull delivery**   | Both polling (`read()`) and callbacks (`on_frame`) |
+
+### Design Choice: Invisible Sharing
+
+**Concept**: `Camera` remains the only public concept. Sharing happens automatically based on device identity. Internal reference counting manages lifecycle.
+
+```python
+# Simple usage
+with Webcam(index=0) as cam:
+    frame = cam.read()
+
+# Multi-consumer - automatic sharing
+cam1 = Webcam(index=0)
+cam2 = Webcam(index=0)  # Same device
+
+cam1.connect()  # Opens device, ref_count = 1
+cam2.connect()  # Reuses capture, ref_count = 2
+
+frame1 = cam1.read()  # Both get frames
+frame2 = cam2.read()  # from same source
+
+cam1.disconnect()  # ref_count = 1, device stays open
+cam2.disconnect()  # ref_count = 0, device closes
+```
+
+**How it works**:
+
+```
+┌─────────────────────────────────────────────┐
+│              User Code                      │
+│  cam1 = Webcam(0)     cam2 = Webcam(0)      │
+│        ↑                    ↑               │
+│   cam1.read()          callback.on_frame()  │
+└─────────────────────────────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────────┐
+│           Camera Interface                  │
+│  - Clean public API                         │
+│  - Delegates to internal shared state       │
+└─────────────────────────────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────────┐
+│     Internal: _Capture (ref counted)        │
+│  "webcam:0" → _Capture                      │
+│     └─ ref_count: 2                         │
+│     └─ callbacks: [Logging, Recording]      │
+│     └─ Background capture thread            │
+│     └─ Invokes on_frame() for each frame    │
+└─────────────────────────────────────────────┘
+```
+
+**Why this approach?**
+
+The best abstractions **hide complexity**, not expose it. Similar patterns:
+- `logging.getLogger("app")` — Multiple calls return same logger
+- Python reference counting — Automatic, invisible
+- ORM connection pooling — You just query, pool is hidden
+
+| Pros                                | Cons                                |
+| ----------------------------------- | ----------------------------------- |
+| Camera stays the only concept       | Implicit sharing may surprise users |
+| Zero API change for consumers       | Hidden global state                 |
+| Automatic resource management       | Testing requires care               |
+| Simple single-camera case unchanged | Need clear docs on sharing behavior |
+| Supports callbacks for push-based   |                                     |
+
+### Alternative Considered: CameraManager
+
+A separate manager object could handle sharing explicitly:
+
+```python
+manager = CameraManager()
+cam1 = manager.get_camera("webcam:0", fps=30)
+cam2 = manager.get_camera("webcam:0", fps=30)  # Shared
+```
+
+| Pros                           | Cons                            |
+| ------------------------------ | ------------------------------- |
+| Explicit resource coordination | Requires managing the manager   |
+| Clear ownership model          | Extra object to pass around     |
+| Easy to test                   | Less ergonomic for simple cases |
+
+**Not recommended** because it introduces a second concept users must learn.
+
+### Other Alternatives
+
+**Camera + Explicit Feed**: Separate "device ownership" from "frame reading" via a `Feed` object. May not be ideal because callbacks (`on_frame`) provide the same push-based delivery more elegantly.
+
+**Broadcast Mode**: Add `start_broadcast()` / `subscribe()` methods. May not be ideal because two modes of operation is confusing, and `_Capture` already runs a background thread.
+
+---
+
 ## Core Interface
 
 ### Camera ABC
 
+The `Camera` ABC defines the interface all camera implementations must follow.
+
+**Key design elements**:
+
+- **Abstract methods** (`device_key`, `_connect_device`, `_disconnect_device`, `_read_frame`) — Subclasses implement these
+- **Public API** (`connect`, `disconnect`, `read`, `add_callback`) — Users call these
+- **Invisible sharing** — Handled automatically via class-level `_captures` dict
+- **Capability flags** — `supports_ptz`, `supports_color_control`, etc. (set by mixins)
+
 ```python
-from abc import ABC, abstractmethod
-from dataclasses import asdict
-from enum import Enum
-from pathlib import Path
-from typing import Any, Self, TypeVar
-
-import numpy as np
-from numpy.typing import NDArray
-
-
 class ColorMode(str, Enum):
     RGB = "rgb"
     BGR = "bgr"
@@ -182,79 +347,192 @@ class ColorMode(str, Enum):
 
 
 class Camera(ABC):
-    """Abstract interface for frame acquisition."""
+    """Abstract interface for frame acquisition with automatic sharing."""
 
     def __init__(
         self,
         *,
         width: int | None = None,
         height: int | None = None,
+        fps: int | None = None,
         color_mode: ColorMode = ColorMode.RGB,
-    ) -> None:
-        self.width = width
-        self.height = height
-        self.color_mode = color_mode
+        callbacks: list[Callback] | None = None,
+    ) -> None: ...
 
-    @classmethod
-    def from_config(cls, config: str | Path | dict | Any) -> Self:
-        """Create from YAML file, dict, dataclass, or Pydantic model."""
-        import yaml
-
-        if isinstance(config, (str, Path)):
-            with open(config) as f:
-                config = yaml.safe_load(f)
-        elif hasattr(config, "model_dump"):
-            config = config.model_dump()
-        elif hasattr(config, "__dataclass_fields__"):
-            config = asdict(config)
-
-        return cls(**config)
+    # === Abstract: Subclasses must implement ===
 
     @property
     @abstractmethod
+    def device_key(self) -> str:
+        """Unique identifier for the physical device (e.g., 'webcam:0')."""
+        ...
+
+    @abstractmethod
+    def _connect_device(self) -> None:
+        """Open the physical device (called only for first user)."""
+        ...
+
+    @abstractmethod
+    def _disconnect_device(self) -> None:
+        """Close the physical device (called only when last user disconnects)."""
+        ...
+
+    @abstractmethod
+    def _read_frame(self) -> NDArray[np.uint8] | None:
+        """Read a single frame from the device."""
+        ...
+
+    # === Public API ===
+
+    @property
     def is_connected(self) -> bool: ...
 
-    @abstractmethod
-    def connect(self) -> None: ...
+    @property
+    def is_shared(self) -> bool:
+        """Whether other Camera instances are using this device."""
+        ...
 
-    @abstractmethod
-    def disconnect(self) -> None: ...
+    def connect(self) -> None:
+        """Connect to the device (shares if already open)."""
+        ...
 
-    @abstractmethod
-    def read(self) -> NDArray[np.uint8]: ...
+    def disconnect(self) -> None:
+        """Disconnect (device closes only when last user disconnects)."""
+        ...
 
-    def __enter__(self) -> Self:
-        self.connect()
-        return self
+    def read(self) -> NDArray[np.uint8]:
+        """Read the latest frame (pull-based)."""
+        ...
 
-    def __exit__(self, *args) -> None:
-        self.disconnect()
+    def add_callback(self, callback: Callback) -> None:
+        """Add a callback for push-based frame delivery."""
+        ...
 
-    def __iter__(self) -> Self:
-        return self
+    def remove_callback(self, callback: Callback) -> None:
+        """Remove a callback."""
+        ...
 
-    def __next__(self) -> NDArray[np.uint8]:
-        try:
-            return self.read()
-        except RuntimeError as e:
-            if "end of" in str(e).lower():
-                raise StopIteration from e
-            raise
+    @classmethod
+    def from_config(cls, config: str | Path | dict) -> Self:
+        """Create from YAML file, dict, dataclass, or Pydantic model."""
+        ...
+
+    @classmethod
+    def active_devices(cls) -> list[str]:
+        """List device keys of all currently open captures."""
+        ...
+
+    # Context manager and iterator support
+    def __enter__(self) -> Self: ...
+    def __exit__(self, *args) -> None: ...
+    def __iter__(self) -> Self: ...
+    def __next__(self) -> NDArray[np.uint8]: ...
 ```
 
-### Async Capture Mixin (Optional)
+### Callback System (PyTorch Lightning-inspired)
 
-**This is optional, not required.** Cameras work perfectly with synchronous `read()` only.
-
-For live cameras that _choose_ to support background capture, a mixin provides:
+Callbacks provide push-based frame delivery and lifecycle hooks. Override only the hooks you need.
 
 ```python
-class AsyncCaptureMixin:
-    """Mixin for background capture. Subclass must implement _capture_frame()."""
+class Callback:
+    """Base callback class. Override hooks as needed."""
 
-    def start_async(self) -> None: ...
-    def stop_async(self) -> None: ...
-    def async_read(self, timeout_ms: float = 200.0) -> NDArray[np.uint8]: ...
+    def on_connect(self, camera: Camera) -> None:
+        """Called after camera connects."""
+        pass
+
+    def on_disconnect(self, camera: Camera) -> None:
+        """Called before camera disconnects."""
+        pass
+
+    def on_frame(self, camera: Camera, frame: NDArray[np.uint8]) -> None:
+        """Called when a new frame is captured (push-based)."""
+        pass
+
+    def on_error(self, camera: Camera, error: Exception) -> None:
+        """Called when a capture error occurs."""
+        pass
+```
+
+**Example callbacks:**
+
+```python
+class LoggingCallback(Callback):
+    def on_connect(self, camera):
+        logger.info(f"Connected: {camera.device_key}")
+
+    def on_frame(self, camera, frame):
+        logger.debug(f"Frame: {frame.shape}")
+
+
+class RecordingCallback(Callback):
+    def __init__(self, path: Path):
+        self.writer = VideoWriter(path)
+
+    def on_frame(self, camera, frame):
+        self.writer.write(frame)
+
+    def on_disconnect(self, camera):
+        self.writer.close()
+```
+
+### Capability Mixins
+
+Optional capabilities are added via mixins. Each mixin sets a `ClassVar` flag automatically.
+
+```python
+class PTZMixin:
+    """Adds pan-tilt-zoom controls."""
+    supports_ptz: ClassVar[bool] = True
+
+    @abstractmethod
+    def pan(self, degrees: float) -> None: ...
+
+    @abstractmethod
+    def tilt(self, degrees: float) -> None: ...
+
+    @abstractmethod
+    def zoom(self, level: float) -> None: ...
+
+    def move_to(self, pan: float, tilt: float, zoom: float) -> None:
+        """Move to absolute position (default implementation)."""
+        self.pan(pan)
+        self.tilt(tilt)
+        self.zoom(zoom)
+
+
+class ColorControlMixin:
+    """Adds camera color/exposure controls."""
+    supports_color_control: ClassVar[bool] = True
+
+    @abstractmethod
+    def get_brightness(self) -> float: ...
+    @abstractmethod
+    def set_brightness(self, value: float) -> None: ...
+    @abstractmethod
+    def get_exposure(self) -> float: ...
+    @abstractmethod
+    def set_exposure(self, value: float) -> None: ...
+
+
+class ResolutionDiscoveryMixin:
+    """Adds format discovery and selection."""
+    supports_resolution_discovery: ClassVar[bool] = True
+
+    @abstractmethod
+    def get_supported_formats(self) -> list[Format]: ...
+
+    @abstractmethod
+    def set_format(self, format: Format) -> None: ...
+
+
+@dataclass
+class Format:
+    """Represents a supported camera format."""
+    width: int
+    height: int
+    fps: float
+    pixel_format: str = "RGB"
 ```
 
 ---
@@ -381,16 +659,23 @@ class ImageFolder(Camera):
     ) -> None: ...
 ```
 
-### Interop
+### Interop (Outside cameras package)
+
+LeRobot interop lives in `getiaction.cameras.lerobot`, not in the cameras package:
 
 ```python
-class LeRobot(Camera):
-    """Wrapper for LeRobot camera instances."""
+# getiaction/lerobot/cameras.py
+class LeRobotCamera(Camera):
+    """Adapter wrapping LeRobot camera instances."""
 
     def __init__(self, lerobot_camera) -> None: ...
 
     @classmethod
-    def from_lerobot_config(cls, config) -> "LeRobot": ...
+    def from_lerobot_config(cls, config) -> "LeRobotCamera": ...
+```
+
+```python
+from getiaction.lerobot import LeRobotCamera
 ```
 
 ---
@@ -418,24 +703,30 @@ with ImageFolder(path="dataset/images/") as folder:
         process(frame)
 ```
 
-### Async Capture (Optional)
+### Push-Based Frame Delivery (Callbacks)
 
-If async capture is needed (e.g., for robotics with tight control loops), use the mixin:
+For reactive/event-driven systems, use callbacks instead of polling:
 
 ```python
-class AsyncWebcam(AsyncCaptureMixin, Webcam):
-    """Webcam with background capture support."""
-    ...
+class FrameProcessor(Callback):
+    def on_frame(self, camera, frame):
+        # Called automatically when new frame arrives
+        result = model.predict(frame)
+        display(result)
 
-# Usage
-camera = AsyncWebcam(index=0)
+# Register callback
+camera = Webcam(index=0, callbacks=[FrameProcessor()])
 with camera:
-    camera.start_async()
-    while running:
-        frame = camera.async_read()  # Latest frame, non-blocking
+    # Frames are pushed to callback automatically
+    time.sleep(10)  # Just wait, frames are processed in background
+
+# Or add callback later
+camera = Webcam(index=0)
+camera.add_callback(FrameProcessor())
+camera.connect()
 ```
 
-### Multi-Camera (Sync)
+### Multi-Camera Setup
 
 ```python
 cameras = {
@@ -446,8 +737,35 @@ cameras = {
 for cam in cameras.values():
     cam.connect()
 
-# Synchronous reads
+# Pull-based: synchronous reads
 frames = {name: cam.read() for name, cam in cameras.items()}
+
+for cam in cameras.values():
+    cam.disconnect()
+```
+
+### Multi-Consumer (Automatic Sharing)
+
+Multiple Camera instances for the same device share automatically:
+
+```python
+# UI display thread
+cam_ui = Webcam(index=0)
+cam_ui.connect()
+
+# Recording thread (same physical camera, shared automatically)
+cam_record = Webcam(index=0)
+cam_record.connect()
+
+print(cam_ui.is_shared)  # True
+
+# Both read from the same device
+while running:
+    display(cam_ui.read())
+    save_to_disk(cam_record.read())
+
+cam_ui.disconnect()     # Device stays open
+cam_record.disconnect() # Device closes (last user)
 ```
 
 ### From Config
@@ -463,7 +781,7 @@ camera = Webcam.from_config({"index": 0, "fps": 30})
 camera = Webcam.from_config(my_config)
 ```
 
-### Robot Integration (Sync)
+### Robot Integration
 
 ```python
 from getiaction.cameras import RealSense
@@ -483,18 +801,38 @@ with robot, camera:
         robot.send_action(action)
 ```
 
+### IPCam with PTZ Control
+
+```python
+class IPCam(Camera, PTZMixin):
+    """Network camera with PTZ support."""
+    ...
+
+cam = IPCam(url="rtsp://192.168.1.100/stream")
+with cam:
+    print(cam.supports_ptz)  # True (from PTZMixin)
+
+    cam.pan(45)   # Pan 45 degrees
+    cam.tilt(-10) # Tilt down 10 degrees
+    cam.zoom(2.0) # Zoom level 2x
+
+    frame = cam.read()
+```
+
 ---
 
 ## Comparison: FrameSource vs. getiaction.cameras/geticam
 
-| Aspect              | FrameSource               | getiaction.cameras / geticam      |
-| ------------------- | ------------------------- | --------------------------------- |
-| Instantiation       | Factory with string types | Hparams-first constructors        |
-| Configuration       | Kwargs dict               | Explicit params + `from_config()` |
-| Async threading     | Not implemented           | Optional via `AsyncCaptureMixin`  |
-| Resource management | Manual                    | Context manager (`with`)          |
-| Error handling      | `(success, frame)` tuples | Exceptions                        |
-| Dependencies        | All bundled               | Optional per camera type          |
+| Aspect              | FrameSource               | getiaction.cameras / geticam           |
+| ------------------- | ------------------------- | -------------------------------------- |
+| Instantiation       | Factory with string types | Hparams-first constructors             |
+| Configuration       | Kwargs dict               | Explicit params + `from_config()`      |
+| Multi-consumer      | Manual threading          | Invisible sharing (automatic)          |
+| Frame delivery      | Pull only                 | Pull (`read()`) + push (callbacks)     |
+| Resource management | Manual                    | Context manager (`with`) + ref-counted |
+| Error handling      | `(success, frame)` tuples | Exceptions + `on_error` callback       |
+| Capabilities        | All-or-nothing            | Composable mixins (PTZ, color, etc.)   |
+| Dependencies        | All bundled               | Optional per camera type               |
 
 ---
 
@@ -532,14 +870,7 @@ with robot, camera:
 
 **Team alignment needed**: This decision affects repo structure, CI/CD, and versioning strategy.
 
-### 2. LeRobot Interop
-
-| Option            | Location                        | Recommendation       |
-| ----------------- | ------------------------------- | -------------------- |
-| In cameras        | `getiaction/cameras/lerobot.py` | All cameras together |
-| In lerobot module | `getiaction/lerobot/cameras.py` | Groups interop code  |
-
-### 3. Frame Transforms
+### 2. Frame Transforms
 
 **Question**: Do we need a transforms system, or are built-in hparams enough?
 
@@ -561,15 +892,15 @@ The existing FrameSource has `FrameProcessor` classes:
 
 Specialized processors (360°, depth colorization) would be separate utilities, not part of Camera.
 
-### 4. Additional Opens
+### 3. Additional Opens
 
-1. **Calibration data**: Add optional `calibration` property?
-2. **Recording**: Add `CameraRecorder` for saving frames?
-3. **Discovery**: Add `Camera.find_all()` for listing available devices?
+1. **Config conflicts**: What if `Webcam(index=0, fps=30)` and `Webcam(index=0, fps=60)` try to share? Options: first config wins, error on mismatch, or warn on mismatch.
+2. **Frame freshness**: Should consumers get "latest frame" (may skip) or queue-based delivery (no skipping)?
 
 ---
 
 ## References
 
-- [Robot Interface Design](robot_interface_design.md)
+- [Robot Interface Design](../robot/robot_interface_design.md)
+- [FrameSource Repository](https://github.com/ArendJanKramer/FrameSource)
 - [LeRobot Cameras](https://github.com/huggingface/lerobot/tree/main/src/lerobot/cameras)

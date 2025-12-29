@@ -11,6 +11,8 @@ footer: "Camera Interface Design | getiaction.cameras"
 
 Live cameras, video files, and image folders — one interface
 
+**Key features:** Invisible sharing, callbacks, capability mixins
+
 ---
 
 ## Background: FrameSource
@@ -36,10 +38,11 @@ Live cameras, video files, and image folders — one interface
 | FrameSource (Low-level)     | This Design (High-level)           |
 | --------------------------- | ---------------------------------- |
 | Functional but inconsistent | Clean, typed API with IDE support  |
-| Minimal error handling      | Production-level error management  |
-| Limited documentation       | Fully documented with examples     |
+| Manual multi-consumer       | Invisible sharing (automatic)      |
+| Pull-only frame access      | Pull (`read()`) + push (callbacks) |
 | No config support           | `from_config()` for YAML/dataclass |
-| Manual resource management  | Context manager pattern            |
+| Manual resource management  | Context manager + ref-counting     |
+| All-or-nothing features     | Composable capability mixins       |
 
 **Goal**: Keep FrameSource's strengths, add the polish for production
 
@@ -48,9 +51,9 @@ Live cameras, video files, and image folders — one interface
 ## Agenda
 
 1. **Design** — Principles, Class Hierarchy, Camera ABC
-2. **Core** — AsyncCaptureMixin, Webcam
-3. **Implementations** — RealSense, VideoFile, ImageFolder
-4. **Usage** — Basic, Async, Multi-Camera, Robot Integration
+2. **Core** — Invisible Sharing, Callbacks, Mixins
+3. **Implementations** — Webcam, RealSense, IPCam (with PTZ)
+4. **Usage** — Basic, Multi-Consumer, Callbacks, Robot Integration
 5. **Decisions** — Package Structure, Dependencies, Open Questions
 
 ---
@@ -59,11 +62,14 @@ Live cameras, video files, and image folders — one interface
 
 ## Design Principles
 
-| Principle           | Description                                     |
-| ------------------- | ----------------------------------------------- |
-| **Hparams-first**   | Explicit constructor args with IDE autocomplete |
-| **Context manager** | Safe resource management with `with` statement  |
-| **Single ABC**      | One `Camera` interface for all sources          |
+| Principle             | Description                                        |
+| --------------------- | -------------------------------------------------- |
+| **Hparams-first**     | Explicit constructor args with IDE autocomplete    |
+| **Context manager**   | Safe resource management with `with` statement     |
+| **Single ABC**        | One `Camera` interface for all sources             |
+| **Invisible sharing** | Multiple instances share same device automatically |
+| **Callback-driven**   | Push-based frame delivery (Lightning-inspired)     |
+| **Capability mixins** | Optional features via composable mixins            |
 
 ```python
 with Webcam(index=0, fps=30) as camera:
@@ -85,8 +91,7 @@ Camera (ABC)
 ├── IPCam               # Network cameras (RTSP/HTTP)
 ├── Screen              # Desktop capture
 ├── VideoFile           # Recorded: video files
-├── ImageFolder         # Recorded: image sequences
-└── LeRobot             # Wrapper for LeRobot
+└── ImageFolder         # Recorded: image sequences
 ```
 
 ---
@@ -97,134 +102,159 @@ Camera (ABC)
 
 ```python
 class Camera(ABC):
-    def __init__(self, *, width, height, color_mode): ...
-
-    @classmethod
-    def from_config(cls, config) -> Self: ...  # YAML/dict/dataclass
+    def __init__(self, *, width, height, fps, color_mode, callbacks): ...
 
     @property
-    def is_connected(self) -> bool: ...
+    def device_key(self) -> str: ...  # Unique ID for sharing
+    @property
+    def is_shared(self) -> bool: ...  # Other instances using this?
 
-    def connect(self) -> None: ...
-    def disconnect(self) -> None: ...
-    def read(self) -> NDArray[np.uint8]: ...
+    def connect(self) -> None: ...    # Shares if device already open
+    def disconnect(self) -> None: ... # Closes only when last user
+    def read(self) -> NDArray: ...    # Pull-based
 
-    def __enter__(self) -> Self: ...  # Context manager
-    def __iter__(self) -> Self: ...   # Iterator support
+    def add_callback(self, cb: Callback) -> None: ...  # Push-based
 ```
 
 ---
 
 <!-- _header: "2. Core" -->
 
-## AsyncCaptureMixin (Optional)
+## Callback System (Lightning-inspired)
 
-Background capture for live cameras — **opt-in, not required**
+Push-based frame delivery — override only hooks you need
 
 ```python
-class AsyncCaptureMixin:
-    def start_async(self) -> None: ...
-    def stop_async(self) -> None: ...
-    def async_read(self, timeout_ms=200) -> NDArray: ...
+class Callback:
+    def on_connect(self, camera: Camera) -> None: ...
+    def on_disconnect(self, camera: Camera) -> None: ...
+    def on_frame(self, camera: Camera, frame: NDArray) -> None: ...
+    def on_error(self, camera: Camera, error: Exception) -> None: ...
 ```
 
-> ⚠️ FrameSource intentionally does not implement async. Validate need before adding.
-
-**Usage (if needed):**
+**Usage:**
 
 ```python
-class AsyncWebcam(AsyncCaptureMixin, Webcam): ...
+class RecordingCallback(Callback):
+    def on_frame(self, camera, frame):
+        self.writer.write(frame)
 
-with AsyncWebcam(index=0) as camera:
-    camera.start_async()
-    frame = camera.async_read()
+camera = Webcam(index=0, callbacks=[RecordingCallback("out.mp4")])
 ```
 
 ---
 
 <!-- _header: "2. Core" -->
 
-## Webcam
+## Multi-Consumer Challenge
 
-USB cameras, built-in webcams, V4L2 devices
+Real-world usage requires multiple consumers on same camera:
+
+- **UI display** — Live preview
+- **Recording** — Save to disk
+- **Teleoperation** — Remote control
+- **WebSocket/WebRTC** — Network streaming
+
+**Problem**: Physical camera can only be opened once!
+
+**Solution**: Invisible sharing with reference counting
+
+---
+
+<!-- _header: "2. Core" -->
+
+## Invisible Sharing
+
+Multiple Camera instances for same device share automatically:
 
 ```python
-class Webcam(Camera):  # Sync only by default
-    def __init__(
-        self, *,
-        index: int = 0,
-        fps: int | None = None,
-        width: int | None = None,
-        height: int | None = None,
-        color_mode: ColorMode = ColorMode.RGB,
-        rotation: Rotation = Rotation.NONE,
-        warmup_s: float = 1.0,
-    ): ...
+cam_ui = Webcam(index=0)
+cam_record = Webcam(index=0)  # Same device
+
+cam_ui.connect()     # Opens device
+cam_record.connect() # Reuses existing capture
+
+print(cam_ui.is_shared)  # True
+
+cam_ui.disconnect()     # Device stays open
+cam_record.disconnect() # Device closes (last user)
+```
+
+Similar to `logging.getLogger()` — same name returns shared instance
+
+---
+
+<!-- _header: "3. Implementations" -->
+
+## Capability Mixins
+
+Optional features via composable mixins:
+
+```python
+class PTZMixin:
+    supports_ptz: ClassVar[bool] = True  # Auto-set
+    def pan(self, degrees: float) -> None: ...
+    def tilt(self, degrees: float) -> None: ...
+    def zoom(self, level: float) -> None: ...
+
+class ColorControlMixin:
+    supports_color_control: ClassVar[bool] = True
+    def get_brightness(self) -> float: ...
+    def set_brightness(self, value: float) -> None: ...
+
+class ResolutionDiscoveryMixin:
+    supports_resolution_discovery: ClassVar[bool] = True
+    def get_supported_formats(self) -> list[Format]: ...
 ```
 
 ---
 
 <!-- _header: "3. Implementations" -->
 
-## RealSense
-
-Intel depth cameras with optional depth stream
+## IPCam with PTZ (Mixin Example)
 
 ```python
-class RealSense(Camera):  # Sync only by default
-    def __init__(
-        self, *,
-        serial_number: str | None = None,
-        fps: int = 30,
-        width: int = 640,
-        height: int = 480,
-        use_depth: bool = False,
-    ): ...
+class IPCam(Camera, PTZMixin):
+    """Network camera with PTZ support."""
+    ...
 
-    def read(self) -> NDArray[np.uint8]: ...
-    def read_depth(self) -> NDArray[np.uint16]: ...
+cam = IPCam(url="rtsp://192.168.1.100/stream")
+with cam:
+    print(cam.supports_ptz)  # True (from PTZMixin)
+
+    cam.pan(45)   # Pan 45 degrees
+    cam.tilt(-10) # Tilt down
+    cam.zoom(2.0) # Zoom level 2x
+
+    frame = cam.read()
 ```
 
----
-
-<!-- _header: "3. Implementations" -->
-
-## VideoFile & ImageFolder
-
-Recorded camera data — same interface as live cameras
-
-```python
-# Video file
-with VideoFile(path="recording.mp4", loop=True) as video:
-    for frame in video:
-        process(frame)
-
-# Image folder
-with ImageFolder(path="dataset/images/", pattern="*.png") as folder:
-    for frame in folder:
-        process(frame)
-```
-
-Video files and image folders are just recorded camera output
+Capability flags are set automatically by mixin inheritance
 
 ---
 
 <!-- _header: "4. Usage" -->
 
-## Multi-Camera Setup
+## Callback-Based Processing
 
 ```python
-cameras = {
-    "wrist": Webcam(index=0),
-    "overhead": RealSense(serial_number="012345"),
-}
+class FrameProcessor(Callback):
+    def on_frame(self, camera, frame):
+        result = model.predict(frame)
+        display(result)
 
-for cam in cameras.values():
-    cam.connect()
-    cam.start_async()
+class MetricsCallback(Callback):
+    def on_frame(self, camera, frame):
+        self.frame_count += 1
+        self.log_fps()
 
-# Capture from all cameras
-frames = {name: cam.async_read() for name, cam in cameras.items()}
+# Multiple callbacks, composable
+camera = Webcam(
+    index=0,
+    callbacks=[FrameProcessor(), MetricsCallback()]
+)
+with camera:
+    time.sleep(10)  # Frames pushed to callbacks automatically
 ```
 
 ---
@@ -243,48 +273,15 @@ robot = SO101.from_config("robot.yaml")
 camera = RealSense(fps=30)
 
 with robot, camera:
-    camera.start_async()
     while True:
         action = policy.select_action({
-            "images": {"wrist": camera.async_read()},
+            "images": {"wrist": camera.read()},
             "state": robot.get_state(),
         })
         robot.send_action(action)
 ```
 
----
-
-<!-- _header: "5. Decisions" -->
-
-## Package Structure
-
-```text
-library/src/getiaction/cameras/
-├── __init__.py         # Public API + aliases
-├── base.py             # Camera ABC
-├── async_mixin.py      # Background capture
-├── webcam.py           # Webcam
-├── realsense.py        # RealSense
-├── basler.py           # Basler
-├── video.py            # VideoFile
-├── folder.py           # ImageFolder
-└── lerobot.py          # LeRobot
-```
-
----
-
-<!-- _header: "5. Decisions" -->
-
-## Dependencies
-
-OpenCV is a base dependency. Optional extras for specialized hardware:
-
-```bash
-pip install getiaction[realsense]  # Intel RealSense
-pip install getiaction[basler]     # Basler (pypylon)
-pip install getiaction[genicam]    # GenICam (harvesters)
-pip install getiaction[cameras]    # All camera deps
-```
+Pull-based `read()` for control loops, callbacks for streaming
 
 ---
 
@@ -312,7 +309,7 @@ pip install getiaction[cameras]    # All camera deps
 | Option            | Import                             | Trade-off                    |
 | ----------------- | ---------------------------------- | ---------------------------- |
 | **A: Subpackage** | `from getiaction.cameras import …` | Fast, but tied to getiaction |
-| **B: Standalone** | `from geti_camera import …`        | Reusable, but new repo       |
+| **B: Standalone** | `from geticam import …`            | Reusable, but new repo       |
 | **C: Keep fork**  | `from framesource import …`        | Minimal effort, no branding  |
 
 **Recommendation**: Start with **A**, design for extraction to **B**
@@ -325,8 +322,8 @@ pip install getiaction[cameras]    # All camera deps
 
 ## Other Open Decisions
 
-| Decision            | Options                                 | Recommendation    |
-| ------------------- | --------------------------------------- | ----------------- |
+| Decision            | Options                                 | Recommendation   |
+| ------------------- | --------------------------------------- | ---------------- |
 | **LeRobot interop** | In cameras vs. lerobot module           | ✅ In cameras     |
 | **Transforms**      | Built-in vs. callable hook vs. pipeline | ✅ Built-in first |
 
@@ -342,12 +339,13 @@ pip install getiaction[cameras]    # All camera deps
 
 ## Implementation Plan
 
-| Phase | Deliverables                                |
-| ----- | ------------------------------------------- |
-| **1** | `Camera` ABC, `AsyncCaptureMixin`, `Webcam` |
-| **2** | `VideoFile`, `ImageFolder`                  |
-| **3** | `RealSense`, `Basler`, `LeRobot`            |
-| **4** | YAML config, documentation                  |
+| Phase | Deliverables                                      |
+| ----- | ------------------------------------------------- |
+| **1** | `Camera` ABC, `_Capture`, `Callback`, `Webcam`    |
+| **2** | Capability mixins (PTZ, ColorControl, Resolution) |
+| **3** | `VideoFile`, `ImageFolder`, `RealSense`           |
+| **4** | `IPCam` (with PTZ), `Basler`, `LeRobot`           |
+| **5** | YAML config, documentation, tests                 |
 
 ---
 
@@ -358,3 +356,4 @@ pip install getiaction[cameras]    # All camera deps
 ## Questions?
 
 📄 Full reference: [camera_interface_design.md](camera_interface_design.md)
+📄 Lifecycle details: [camera_lifecycle_design.md](camera_lifecycle_design.md)
