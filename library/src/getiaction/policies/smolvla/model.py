@@ -10,6 +10,7 @@ import copy
 import logging
 import math
 from collections.abc import Callable
+from typing import cast
 
 import torch
 import torch.nn.functional as F  # noqa: N812
@@ -141,6 +142,47 @@ class SmolVLAModel(nn.Module):
             actions = self._pi_aloha_encode_actions(actions)
 
         return actions
+
+    @property
+    def sample_input(self) -> dict[str, torch.Tensor]:
+        """Generate a sample input dictionary for the model with random tensors.
+
+        This method creates a dictionary containing sample input tensors that match the expected
+        input format of the model. The tensors are randomly initialized and have shapes derived
+        from the model's configuration.
+
+        Returns:
+            dict[str, torch.Tensor | dict[str, torch.Tensor]]: A dictionary with two keys
+                - 'state': A tensor representing the robot state with shape (1, *state_feature.shape).
+                - 'images': Either a single tensor or a dictionary of tensors representing visual inputs,
+                    depending on the number of image features configured.
+
+        Note:
+            The batch dimension (first dimension) is set to 1 for all tensors.
+            The tensors are created on the same device as the model's parameters.
+        """
+        device = next(self._model.parameters()).device
+
+        sample_input = {}
+
+        num_image_features = sum(1 for key in self._dataset_stats if "image" in key)
+
+        for feature_id in self._dataset_stats:
+            if STATE in feature_id:
+                state_feature = self._dataset_stats[feature_id]
+                sample_input[STATE] = torch.randn(1, *cast("tuple", state_feature["shape"]), device=device)
+            elif "image" in feature_id:
+                image_feature = self._dataset_stats[feature_id]
+                if num_image_features == 1:
+                    sample_input[IMAGES] = torch.randn(1, *cast("tuple", image_feature["shape"]), device=device)
+                else:
+                    sample_input[IMAGES + "." + str(image_feature["name"])] = torch.randn(
+                        1,
+                        *cast("tuple", image_feature["shape"]),
+                        device=device,
+                    )
+
+        return sample_input
 
     @property
     def reward_delta_indices(self) -> None:
