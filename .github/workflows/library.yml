@@ -58,7 +58,7 @@ jobs:
         working-directory: library
         run: |
           # Note: We install 'tests', 'pi0', and 'libero' extras, not 'groot' which requires CUDA/flash-attn
-          uv sync --frozen --extra tests --extra pi0 --extra libero
+          uv sync --frozen --extra tests --extra pi0 --extra libero --extra smolvla
       - name: Run python unit tests
         working-directory: library
         env:
