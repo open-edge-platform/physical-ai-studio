@@ -108,7 +108,7 @@ Implementation notes:
 
 ## Execution Flow
 
-1. Parse `--benchmark`, `--policy`, `--pretrained` arguments
+1. Parse `--benchmark`, `--policy`, `--ckpt_path` arguments
 2. Instantiate benchmark via jsonargparse class_path
 3. Load policy from checkpoint
 4. For each task: create gym → run episodes → collect metrics → optionally record video
