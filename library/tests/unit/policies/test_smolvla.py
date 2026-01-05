@@ -338,7 +338,7 @@ class TestFeatureNormalization:
         """Test make_smolvla_preprocessors with dataset statistics."""
         from getiaction.policies.smolvla.preprocessor import make_smolvla_preprocessors
 
-        stats = {
+        stats: dict[str, dict[str, list[float] | str | tuple]] = {
             "observation.state": {
                 "name": "observation.state",
                 "shape": (10,),
