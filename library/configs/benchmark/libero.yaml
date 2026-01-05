@@ -90,12 +90,16 @@ benchmark:
 # Uncomment and configure:
 # policy: getiaction.policies.ACT
 
-# Pretrained checkpoint path (required)
+# Checkpoint or export path (required for evaluation)
 #
-# CLI: --pretrained ./checkpoints/model.ckpt
+# For Policy subclasses (Lightning checkpoints):
+#   CLI: --ckpt_path ./checkpoints/model.ckpt
+#
+# For InferenceModel (exported models):
+#   CLI: --ckpt_path ./exports/act_policy
 #
 # Uncomment and configure:
-# pretrained: ./checkpoints/act_libero.ckpt
+# ckpt_path: ./checkpoints/act_libero.ckpt
 
 # -----------------------------------------------------------------------------
 # Output Configuration
