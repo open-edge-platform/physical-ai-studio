@@ -183,10 +183,10 @@ def run_rollout_loop(
         if return_observations:
             episode_data.add_observation(observation)
 
-        # Policy forward (already batched)
+        # Policy select_action returns single action using action queue
         with torch.inference_mode():
             policy.eval()
-            action = policy(observation)  # shape: (B, action_dim)
+            action = policy.select_action(observation)  # shape: (B, action_dim)
 
         # Step environment (env expects batched action)
         observation, reward, terminated, truncated, _info = env.step(action)

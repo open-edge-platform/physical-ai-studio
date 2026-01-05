@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from . import lerobot
 from .act import ACT, ACTConfig, ACTModel
 from .dummy import Dummy, DummyConfig
+from .groot import Groot, GrootConfig, GrootModel
 from .lerobot import get_lerobot_policy
 from .pi0 import Pi0, Pi0Config, Pi0Model
 
@@ -24,6 +25,10 @@ __all__ = [
     # Dummy
     "Dummy",
     "DummyConfig",
+    # Groot
+    "Groot",
+    "GrootConfig",
+    "GrootModel",
     # Pi0
     "Pi0",
     "Pi0Config",
@@ -43,7 +48,7 @@ def get_policy(policy_name: str, *, source: str = "getiaction", **kwargs) -> Pol
 
     Args:
         policy_name: Name of the policy to create. Supported values depend on source:
-            - getiaction: "act", "dummy", "pi0", "pi05"
+            - getiaction: "act", "dummy", "groot", "pi0", "pi05"
             - lerobot: "act", "diffusion", "vqbet", "tdmpc", "sac", "pi0", etc.
         source: Where the policy implementation comes from. Options:
             - "getiaction": First-party implementations (default)
@@ -125,6 +130,8 @@ def get_getiaction_policy_class(policy_name: str) -> type[Policy]:
         return ACT
     if policy_name == "dummy":
         return Dummy
+    if policy_name == "groot":
+        return Groot
     if policy_name == "pi0":
         from functools import partial  # noqa: PLC0415
 
@@ -134,5 +141,5 @@ def get_getiaction_policy_class(policy_name: str) -> type[Policy]:
 
         return partial(Pi0, variant="pi05")  # type: ignore[return-value]
 
-    msg = f"Unknown getiaction policy: {policy_name}. Supported policies: act, dummy, pi0, pi05"
+    msg = f"Unknown getiaction policy: {policy_name}. Supported policies: act, dummy, groot, pi0, pi05"
     raise ValueError(msg)
