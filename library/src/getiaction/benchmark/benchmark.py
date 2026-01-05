@@ -37,9 +37,10 @@ Example:
 from __future__ import annotations
 
 import logging
+import sys
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from getiaction.benchmark.results import BenchmarkResults, TaskResult
 from getiaction.eval.rollout import evaluate_policy
@@ -91,6 +92,8 @@ class Benchmark:
         seed: int = 42,
         video_dir: str | Path | None = None,
         record_mode: str = "failures",
+        *,
+        show_progress: bool | Literal["auto"] = "auto",
     ) -> None:
         """Initialize benchmark with gyms and evaluation parameters.
 
@@ -107,6 +110,7 @@ class Benchmark:
         self.seed = seed
         self.video_dir = Path(video_dir) if video_dir else None
         self.record_mode = record_mode
+        self.show_progress = show_progress
 
     def evaluate(
         self,
@@ -170,10 +174,7 @@ class Benchmark:
         Raises:
             RuntimeError: If all tasks fail during evaluation.
         """
-        # Build metadata
         metadata = self._build_metadata(policy)
-
-        # Initialize results
         results = BenchmarkResults(metadata=metadata)
 
         total_gyms = len(self.gyms)
@@ -187,7 +188,13 @@ class Benchmark:
 
         start_time = time.time()
 
-        for gym_idx, gym in enumerate(self.gyms):
+        gym_iterator = self._wrap_with_progress(
+            enumerate(self.gyms),
+            total=total_gyms,
+            desc="Benchmark",
+        )
+
+        for gym_idx, gym in gym_iterator:
             task_id = _get_task_id(gym, gym_idx)
             task_name = _get_task_name(gym)
 
@@ -332,6 +339,28 @@ class Benchmark:
             "video_dir": str(self.video_dir) if self.video_dir else None,
             "record_mode": self.record_mode,
         }
+
+    def _should_show_progress(self) -> bool:
+        if self.show_progress == "auto":
+            return sys.stderr.isatty()
+        return bool(self.show_progress)
+
+    def _wrap_with_progress(
+        self,
+        iterable: Any,  # noqa: ANN401
+        total: int,
+        desc: str,
+    ) -> Any:  # noqa: ANN401
+        if not self._should_show_progress():
+            return iterable
+
+        try:
+            from tqdm import tqdm  # noqa: PLC0415
+
+            return tqdm(iterable, total=total, desc=desc)
+        except ImportError:
+            logger.debug("tqdm not installed, progress bar disabled")
+            return iterable
 
     def __repr__(self) -> str:
         """Return string representation."""
