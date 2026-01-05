@@ -39,7 +39,7 @@ Examples:
         --config configs/benchmark/libero.yaml \
         --benchmark.num_episodes 50 \
         --policy getiaction.policies.ACT \
-        --policy.pretrained ./checkpoints/model.ckpt
+        --ckpt_path ./checkpoints/model.ckpt
 
     # Generate config template
     getiaction fit --print_config
@@ -87,7 +87,7 @@ class CLI(LightningCLI):
                 --benchmark getiaction.benchmark.LiberoBenchmark \\
                 --benchmark.task_suite libero_10 \\
                 --policy getiaction.policies.ACT \\
-                --pretrained ./checkpoints/model.ckpt
+                --ckpt_path ./checkpoints/model.ckpt
 
         YAML configuration for benchmark:
 
@@ -98,7 +98,7 @@ class CLI(LightningCLI):
                 num_episodes: 20
 
             policy: getiaction.policies.ACT
-            pretrained: ./checkpoints/model.ckpt
+            ckpt_path: ./checkpoints/model.ckpt
             output_dir: ./results/benchmark
     """
 
@@ -169,7 +169,7 @@ class CLI(LightningCLI):
             else:
                 # Standard LightningCLI handling for training subcommands
                 fn = getattr(trainer_class, subcommand)
-                description = _get_short_description(fn)
+                description = _get_short_description(fn) or f"Run {subcommand}"
                 subparser_kwargs = kwargs.get(subcommand, {})
                 subparser_kwargs.setdefault("description", description)
                 subcommand_parser = self._prepare_subcommand_parser(trainer_class, subcommand, **subparser_kwargs)
@@ -203,12 +203,16 @@ class CLI(LightningCLI):
             help="Policy class path (e.g., getiaction.policies.ACT).",
         )
 
-        # Pretrained checkpoint path (optional - if not provided, uses random init)
         parser.add_argument(
-            "--pretrained",
+            "--ckpt_path",
             type=str,
             default=None,
-            help="Path to pretrained checkpoint file (.ckpt). If not provided, uses randomly initialized policy.",
+            help=(
+                "Path to checkpoint file (.ckpt) or export directory. "
+                "For Policy subclasses: path to Lightning checkpoint (.ckpt). "
+                "For InferenceModel: path to export directory containing model files. "
+                "If not provided, uses randomly initialized policy (Policy only)."
+            ),
         )
 
         # Output directory
@@ -226,74 +230,100 @@ class CLI(LightningCLI):
         if subcommand == "benchmark":
             self._run_benchmark()
         else:
-            # Delegate to parent for training subcommands
             super()._run_subcommand(subcommand)
+
+    @staticmethod
+    def _load_policy(
+        policy_path: str,
+        ckpt_path: str | None,
+    ) -> tuple[Any, str]:
+        """Load policy from class path and optional checkpoint.
+
+        Args:
+            policy_path: Fully qualified policy class path (e.g., getiaction.policies.ACT)
+            ckpt_path: Path to checkpoint file or export directory (optional)
+
+        Returns:
+            Tuple of (policy instance, device string)
+
+        Raises:
+            ImportError: If policy class cannot be imported.
+            ValueError: If InferenceModel is used without ckpt_path.
+        """
+        import importlib  # noqa: PLC0415
+
+        from getiaction.devices import get_available_device  # noqa: PLC0415
+        from getiaction.inference import InferenceModel  # noqa: PLC0415
+
+        module_path, class_name = policy_path.rsplit(".", 1)
+        try:
+            policy_class = getattr(importlib.import_module(module_path), class_name)
+        except (ImportError, AttributeError) as e:
+            msg = f"Could not import policy class '{policy_path}'"
+            raise ImportError(msg) from e
+
+        is_inference_model = policy_class is InferenceModel or (
+            isinstance(policy_class, type) and issubclass(policy_class, InferenceModel)
+        )
+
+        if is_inference_model:
+            if not ckpt_path:
+                msg = "InferenceModel requires --ckpt_path pointing to export directory"
+                raise ValueError(msg)
+            policy = InferenceModel.load(ckpt_path)
+            return policy, policy.device
+
+        device = get_available_device()
+        if ckpt_path:
+            policy = policy_class.load_from_checkpoint(ckpt_path)
+        else:
+            logger.warning("No checkpoint provided - using randomly initialized policy")
+            policy = policy_class()
+
+        policy.to(device)
+        policy.eval()
+        return policy, device
 
     def _run_benchmark(self) -> None:
         """Execute benchmark evaluation.
 
         Raises:
             ValueError: If benchmark configuration is not found.
-            ImportError: If policy class cannot be imported.
         """
-        import importlib  # noqa: PLC0415
-
         from jsonargparse import Namespace  # noqa: PLC0415
 
-        from getiaction.devices import get_available_device  # noqa: PLC0415
-
-        # Get benchmark config from parsed args
+        if self.subcommand is None:
+            msg = "No subcommand specified"
+            raise ValueError(msg)
         config = self.config.get(self.subcommand)
         if config is None:
             msg = "Benchmark configuration not found"
             raise ValueError(msg)
 
-        # Instantiate benchmark from class_path config
         benchmark_parser = self._subcommand_parsers["benchmark"]
         benchmark = benchmark_parser.instantiate_classes(
             Namespace(benchmark=config.benchmark),
         ).benchmark
 
-        # Import policy class
-        module_path, class_name = config.policy.rsplit(".", 1)
-        try:
-            policy_class = getattr(importlib.import_module(module_path), class_name)
-        except (ImportError, AttributeError) as e:
-            msg = f"Could not import policy class '{config.policy}'"
-            raise ImportError(msg) from e
-
-        # Load from checkpoint or create fresh instance
-        if config.pretrained:
-            policy = policy_class.load_from_checkpoint(config.pretrained)
-        else:
-            logger.warning("No checkpoint provided - using randomly initialized policy")
-            policy = policy_class()
-
-        # Setup device and policy
-        device = get_available_device()
-        policy.to(device)
-        policy.eval()
+        policy, device = self._load_policy(config.policy, config.ckpt_path)
 
         logger.info("Benchmark: %s", benchmark)
         logger.info("Policy: %s", type(policy).__name__)
         logger.info("Device: %s", device)
 
-        # Run evaluation
-        results = benchmark.evaluate(policy=policy)
+        try:
+            results = benchmark.evaluate(policy=policy)
 
-        # Print summary
-        print(results.summary())  # noqa: T201
+            print(results.summary())  # noqa: T201
 
-        # Save results
-        output_dir = Path(config.output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        results.to_json(output_dir / "results.json")
-        results.to_csv(output_dir / "results.csv")
-        logger.info("Results saved to %s", output_dir)
-
-        # Cleanup
-        for gym in benchmark.gyms:
-            gym.close()
+            output_dir = Path(config.output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            results.to_json(output_dir / "results.json")
+            results.to_csv(output_dir / "results.csv")
+            logger.info("Results saved to %s", output_dir)
+        finally:
+            for gym in benchmark.gyms:
+                gym.close()
 
 
 def cli() -> None:
