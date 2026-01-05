@@ -6,13 +6,13 @@
 # Usage:
 #   getiaction benchmark --config configs/benchmark/libero.yaml \
 #       --policy getiaction.policies.ACT \
-#       --pretrained ./checkpoints/model.ckpt
+#       --ckpt_path ./checkpoints/model.ckpt
 #
 # Common overrides:
 #   # Quick test on specific tasks
 #   getiaction benchmark --config configs/benchmark/libero.yaml \
 #       --policy getiaction.policies.ACT \
-#       --pretrained ./checkpoints/model.ckpt \
+#       --ckpt_path ./checkpoints/model.ckpt \
 #       --benchmark.task_ids [0,1,2] \
 #       --benchmark.num_episodes 5
 #
@@ -20,7 +20,7 @@
 #   getiaction benchmark --config configs/benchmark/libero.yaml \
 #       --benchmark.task_suite libero_spatial \
 #       --policy getiaction.policies.ACT \
-#       --pretrained ./checkpoints/model.ckpt
+#       --ckpt_path ./checkpoints/model.ckpt
 #
 # -----------------------------------------------------------------------------
 # LIBERO TASK SUITES REFERENCE
