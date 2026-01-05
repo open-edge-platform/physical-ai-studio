@@ -7,7 +7,7 @@ footer: "Robot Interface Design | getiaction.robots"
 
 # Robot Interface Design
 
-**Programmatic robot control for getiaction**
+## Programmatic robot control for getiaction
 
 Train policies → Export models → Deploy on real robots
 
@@ -175,7 +175,7 @@ All implementations wrap pip-installable SDKs:
 | Franka (Panda)                | `frankx`         | `pip install frankx`         |
 | KUKA                          | `py-openshowvar` | `pip install py-openshowvar` |
 
-_Trossen/Interbotix via LeRobot_
+## Trossen/Interbotix via LeRobot
 
 ---
 
@@ -218,7 +218,7 @@ getiaction infer \
 
 ## Package Structure
 
-```
+```bash
 library/src/getiaction/robots/
 ├── __init__.py              # Public API exports
 ├── base.py                  # Robot ABC
@@ -289,6 +289,6 @@ class UR5e(Robot):
 <!-- _header: "" -->
 <!-- _footer: "" -->
 
-# Questions?
+## Questions?
 
 📄 Full reference: [robot_interface_design.md](robot_interface_design.md)

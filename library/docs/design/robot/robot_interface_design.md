@@ -1,4 +1,3 @@
-
 # Robot Interface Design
 
 ## Executive Summary
@@ -34,10 +33,10 @@ This enables a simple deployment workflow: `pip install getiaction[robot]`, then
 
 Geti Action has two packages:
 
-| Package                                 | Purpose                             | Target Users                                                  |
-| --------------------------------------- | ----------------------------------- | ------------------------------------------------------------- |
-| **Library** (`pip install getiaction`)  | Training, inference, export         | ML researchers, robotics engineers                            |
-| **Application** (Studio)                | Data collection, teleoperation, GUI | Subject matter experts such as Lab operators, non-programmers |
+| Package                                | Purpose                             | Target Users                                                  |
+| -------------------------------------- | ----------------------------------- | ------------------------------------------------------------- |
+| **Library** (`pip install getiaction`) | Training, inference, export         | ML researchers, robotics engineers                            |
+| **Application** (Studio)               | Data collection, teleoperation, GUI | Subject matter experts such as Lab operators, non-programmers |
 
 The library handles model development. The application handles human interaction. Robot control currently exists only in the Application, tightly coupled to its backend.
 
@@ -212,11 +211,11 @@ class Robot(ABC):
 
 The `format` parameter follows the same pattern as `data_format` in `LeRobotDataModule`:
 
-| Format        | Output Type                  | Use Case                           |
-| ------------- | ---------------------------- | ---------------------------------- |
-| `"dict"`      | `dict[str, Any]`             | Framework-agnostic (default)       |
-| `"getiaction"`| `Observation`                | Native getiaction workflows        |
-| `"lerobot"`   | `dict[str, Any]` (flattened) | LeRobot policy compatibility       |
+| Format         | Output Type                  | Use Case                     |
+| -------------- | ---------------------------- | ---------------------------- |
+| `"dict"`       | `dict[str, Any]`             | Framework-agnostic (default) |
+| `"getiaction"` | `Observation`                | Native getiaction workflows  |
+| `"lerobot"`    | `dict[str, Any]` (flattened) | LeRobot policy compatibility |
 
 ```python
 # Framework-agnostic (default)
@@ -456,7 +455,7 @@ One interface, multiple usage patterns.
 
 ## File Structure
 
-```
+```text
 library/src/getiaction/
 ├── robots/                      # NEW
 │   ├── __init__.py              # Public API exports
@@ -556,10 +555,10 @@ Core interface stays simple. Industrial features are opt-in. Alternatively, we c
 
 ### Why `format` Parameter Instead of Separate Methods?
 
-| Approach | Pros | Cons |
-|----------|------|------|
-| `get_observation_dict()` / `get_observation()` | Explicit method names | Two methods to maintain, unclear which is "primary" |
-| `get_observation(format=...)` | Single method, extensible, consistent with `data_format` | Slightly more complex signature |
+| Approach                                       | Pros                                                     | Cons                                                |
+| ---------------------------------------------- | -------------------------------------------------------- | --------------------------------------------------- |
+| `get_observation_dict()` / `get_observation()` | Explicit method names                                    | Two methods to maintain, unclear which is "primary" |
+| `get_observation(format=...)`                  | Single method, extensible, consistent with `data_format` | Slightly more complex signature                     |
 
 We chose the `format` parameter because:
 
