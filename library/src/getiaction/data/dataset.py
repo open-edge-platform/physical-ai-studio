@@ -81,6 +81,7 @@ class Dataset(TorchDataset, ABC):
                 }
                 stats_dict[f"observation.{name}"].update(
                     {
+                        "type": feature.ftype.value if feature.ftype is not None else "",
                         "name": feature.name if feature.name is not None else "",
                         "shape": feature.shape if feature.shape is not None else (),
                     },
@@ -96,6 +97,7 @@ class Dataset(TorchDataset, ABC):
                 }
                 stats_dict[name].update(
                     {
+                        "type": feature.ftype.value if feature.ftype is not None else "",
                         "name": feature.name if feature.name is not None else "",
                         "shape": feature.shape if feature.shape is not None else (),
                     },

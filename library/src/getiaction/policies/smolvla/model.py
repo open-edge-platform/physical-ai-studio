@@ -17,7 +17,7 @@ import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import nn
 
-from getiaction.data.observation import ACTION, EXTRA, IMAGES, STATE, Observation
+from getiaction.data.observation import ACTION, EXTRA, IMAGES, STATE, FeatureType, Observation
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -269,7 +269,8 @@ class SmolVLAModel(nn.Module):
         img_masks = []
 
         batch_img_keys = Observation.get_flattened_keys(batch, IMAGES)
-        all_keys = [key for key in self._dataset_stats if "image" in key]
+        batch_img_keys = [key for key in batch_img_keys if "is_pad" not in key]
+        all_keys = [key for key in self._dataset_stats if self._dataset_stats[key]["type"] == FeatureType.VISUAL.value]
 
         if len(batch_img_keys) != len(all_keys):
             msg = f"Some of the image features are missing from the batch. \
