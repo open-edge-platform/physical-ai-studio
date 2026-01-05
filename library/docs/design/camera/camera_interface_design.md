@@ -259,7 +259,7 @@ cam2.disconnect()  # ref_count = 0, device closes
 
 **How it works**:
 
-```
+```text
 ┌─────────────────────────────────────────────┐
 │              User Code                      │
 │  cam1 = Webcam(0)     cam2 = Webcam(0)      │
@@ -288,6 +288,7 @@ cam2.disconnect()  # ref_count = 0, device closes
 **Why this approach?**
 
 The best abstractions **hide complexity**, not expose it. Similar patterns:
+
 - `logging.getLogger("app")` — Multiple calls return same logger
 - Python reference counting — Automatic, invisible
 - ORM connection pooling — You just query, pool is hidden

@@ -322,8 +322,8 @@ Pull-based `read()` for control loops, callbacks for streaming
 
 ## Other Open Decisions
 
-| Decision            | Options                                 | Recommendation   |
-| ------------------- | --------------------------------------- | ---------------- |
+| Decision            | Options                                 | Recommendation    |
+| ------------------- | --------------------------------------- | ----------------- |
 | **LeRobot interop** | In cameras vs. lerobot module           | ✅ In cameras     |
 | **Transforms**      | Built-in vs. callable hook vs. pipeline | ✅ Built-in first |
 
