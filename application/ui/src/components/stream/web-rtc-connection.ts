@@ -135,7 +135,7 @@ export class WebRTCConnection {
             params: {
                 query: {
                     ...this.camera,
-                    camera: this.camera.port_or_device_id,
+                    camera: this.camera.fingerprint,
                 },
             },
         });

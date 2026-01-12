@@ -66,9 +66,9 @@ export const InferenceSetup = ({ model_id, onDone }: InferenceSetupProps) => {
             ...config,
             cameras: config.cameras.map((c) => {
                 if (c.name === name) {
-                    return { ...c, port_or_device_id: id, driver };
-                } else if (c.port_or_device_id === id && c.driver === driver) {
-                    return { ...c, port_or_device_id: oldId, driver: oldDriver };
+                    return { ...c, fingerprint: id, driver };
+                } else if (c.fingerprint === id && c.driver === driver) {
+                    return { ...c, fingerprint: oldId, driver: oldDriver };
                 } else {
                     return c;
                 }

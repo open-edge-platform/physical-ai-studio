@@ -72,10 +72,10 @@ export const CamerasList = () => {
                 {cameras.map((camera, idx) => {
                     return (
                         <CameraListItem
-                            key={camera.port_or_device_id}
+                            key={camera.fingerprint}
                             id={`${idx}`}
                             name={camera.name}
-                            cameraId={camera.port_or_device_id}
+                            cameraId={camera.fingerprint}
                             driver={camera.driver}
                         />
                     );
