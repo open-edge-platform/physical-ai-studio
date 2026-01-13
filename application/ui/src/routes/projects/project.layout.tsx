@@ -62,7 +62,10 @@ const getMainPageInProjectUrl = (pathname: string) => {
     const regexp = /\/projects\/[\w-]*\/([\w-]*)/g;
     const found = [...pathname.matchAll(regexp)];
     if (found.length) {
-        const [_base, main] = found[0];
+        const [, main] = found[0];
+        if (main === 'cameras' || main === 'environments') {
+            return 'robots';
+        }
         return main;
     } else {
         return 'datasets';
@@ -76,18 +79,17 @@ export const ProjectLayout = () => {
     const pageName = getMainPageInProjectUrl(pathname);
 
     return (
-        <Tabs aria-label='Header navigation' selectedKey={pageName}>
+        <Tabs aria-label='Header navigation' selectedKey={pageName} UNSAFE_style={{ height: '100%', minHeight: 0 }}>
             <Grid
-                areas={['header', 'content']}
+                areas={['header', 'subheader', 'content']}
                 UNSAFE_style={{
-                    gridTemplateRows: 'var(--spectrum-global-dimension-size-800, 4rem) auto',
+                    gridTemplateRows: 'var(--spectrum-global-dimension-size-800, 4rem) min-content auto',
                 }}
-                minHeight={'100vh'}
-                maxHeight={'100vh'}
+                minHeight={0}
                 height={'100%'}
             >
                 <Header project_id={project_id} />
-                <View gridArea={'content'}>
+                <View gridArea={'content'} maxHeight={'100vh'} minHeight={0} height='100%'>
                     <Suspense fallback={<Loading mode='overlay' />}>
                         <Outlet />
                     </Suspense>
