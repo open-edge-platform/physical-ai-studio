@@ -1319,6 +1319,35 @@ class _SmolVLMWithExpertModel(nn.Module):
         fill_kv_cache: bool = True,
         past_key_values: dict | None = None,
     ) -> tuple[list[torch.Tensor], dict | None]:
+        """Process attention layer forward pass with multi-head self-attention.
+
+        Full attention is computed on all input embeddings from different modalities/components.
+
+        Args:
+            model_layers: List of model layer groups, where each group contains layers
+                for different modalities/components.
+            inputs_embeds: List of hidden state tensors for each modality/component.
+                Can contain None values which are skipped.
+            layer_idx: Index of the current layer being processed.
+            position_ids: Position indices tensor of shape (batch_size, seq_len).
+            attention_mask: Attention mask tensor of shape (batch_size, seq_len, seq_len).
+            batch_size: Number of samples in the batch.
+            head_dim: Dimension of each attention head.
+            use_cache: Whether to use key-value caching for efficient inference.
+                Defaults to True.
+            fill_kv_cache: If True, populate the cache with current key/value states.
+                If False, append current states to existing cache (autoregressive mode).
+                Defaults to True.
+            past_key_values: Dictionary containing cached key/value states from previous
+                forward passes, keyed by layer index. Defaults to None.
+
+        Returns:
+            A tuple containing:
+                - List with a single tensor: the attention output of shape
+                  (batch_size, seq_len, hidden_dim).
+                - Dictionary of updated past_key_values cache, or None if caching
+                  is disabled.
+        """
         query_states = []
         key_states = []
         value_states = []
@@ -1388,7 +1417,7 @@ class _SmolVLMWithExpertModel(nn.Module):
         )
         return [att_output], past_key_values
 
-    def forward_cross_attn_layer(  # noqa: PLR0914
+    def forward_cross_attn_layer(  # noqa: PLR0914, PLR0915
         self,
         model_layers: list[nn.Module],
         inputs_embeds: list[torch.Tensor],
@@ -1402,8 +1431,42 @@ class _SmolVLMWithExpertModel(nn.Module):
         fill_kv_cache: bool = True,
         past_key_values: dict | None = None,
     ) -> tuple[list[torch.Tensor], dict | None]:
-        attention_interface = self.get_attention_interface()
+        """Perform forward pass through a cross-attention layer with optional caching.
 
+        This method processes inputs through cross-attention layers, handling both prefix
+        attention and expert attention computations. It supports key-value caching for
+        efficient autoregressive generation.
+
+        Args:
+            model_layers: A list containing two lists of model layer modules - the first
+                for prefix/base layers and the second for expert layers.
+            inputs_embeds: List of input embeddings tensors. Should contain 2 tensors
+                when not using cached values.
+            layer_idx: Index of the current layer being processed.
+            position_ids: Position IDs tensor for rotary position embeddings.
+            attention_mask: Attention mask tensor to control which positions attend
+                to which other positions.
+            batch_size: The batch size for the current forward pass.
+            head_dim: The dimension of each attention head.
+            use_cache: Whether to use key-value caching. Defaults to True.
+            fill_kv_cache: Whether to fill the cache with new key-value states.
+                Defaults to True.
+            past_key_values: Optional dictionary containing cached key and value states
+                from previous forward passes.
+
+        Returns:
+            A tuple containing:
+                - att_outputs: List of attention output tensors. Contains up to 2 elements
+                    (prefix attention output and expert attention output). Expert output
+                    may be None if expert_layer is None.
+                - past_key_values: Updated dictionary with cached key-value states, or None
+                    if caching is disabled.
+
+        Raises:
+            ValueError: If inputs_embeds doesn't contain exactly 2 tensors and caching
+                conditions are not met.
+        """
+        attention_interface = self.get_attention_interface()
         att_outputs = []
         required_embeds_num = 2
 
