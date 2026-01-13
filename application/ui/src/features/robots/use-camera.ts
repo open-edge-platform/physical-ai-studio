@@ -1,7 +1,7 @@
 import { useParams } from 'react-router';
 
 import { $api } from '../../api/client';
-import { SchemaSchemasRobotCamera as SchemaCamera } from '../../api/openapi-spec';
+import { SchemaProjectCamera } from '../../api/types';
 
 export function useCameraId() {
     const { camera_id, project_id } = useParams<{ camera_id: string; project_id: string }>();
@@ -13,7 +13,7 @@ export function useCameraId() {
     return { project_id, camera_id };
 }
 
-export function useCamera(): SchemaCamera {
+export function useCamera(): SchemaProjectCamera {
     const { project_id, camera_id } = useCameraId();
 
     const { data: camera } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/cameras/{camera_id}', {

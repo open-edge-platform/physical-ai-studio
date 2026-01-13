@@ -1,13 +1,11 @@
 import { createContext, Dispatch, ReactNode, SetStateAction, useContext, useState } from 'react';
 
-import { SchemaRobot, SchemaRobotCamera, SchemaRobotType } from '../../../api/openapi-spec';
+import { SchemaRobot, SchemaRobotType } from '../../../api/openapi-spec';
 
 type RobotForm = {
     name: string;
     type: SchemaRobotType | null;
     serial_id: string | null;
-
-    cameras: Array<SchemaRobotCamera>;
 };
 
 export type RobotFormState = RobotForm | null;
@@ -31,7 +29,6 @@ export const useRobotFormBody = (robot_id: string): SchemaRobot | null => {
         name: robotForm.name,
         type: robotForm.type,
         serial_id: robotForm.serial_id,
-        cameras: robotForm.cameras.filter(({ fingerprint }) => fingerprint !== ''),
     };
 };
 
@@ -40,7 +37,6 @@ export const RobotFormProvider = ({ children, robot }: { children: ReactNode; ro
         name: robot?.name ?? '',
         type: robot?.type ?? null,
         serial_id: robot?.serial_id ?? null,
-        cameras: robot?.cameras ?? [],
     });
 
     return (

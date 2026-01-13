@@ -20,7 +20,7 @@ import { clsx } from 'clsx';
 import { NavLink, Outlet, useParams } from 'react-router-dom';
 
 import { $api } from '../../api/client';
-import { SchemaSchemasRobotCamera } from '../../api/openapi-spec';
+import { SchemaProjectCamera } from '../../api/types';
 import { useProjectId } from '../../features/projects/use-project';
 import { ConnectionStatus } from '../../features/robots/robots-list';
 import { paths } from '../../router';
@@ -58,7 +58,7 @@ const CameraListItem = ({
     isActive,
 }: {
     status: 'connected' | 'disconnected';
-    camera: SchemaSchemasRobotCamera;
+    camera: SchemaProjectCamera;
     isActive: boolean;
 }) => {
     return (
@@ -83,14 +83,14 @@ const CameraListItem = ({
                             {camera.name}
                         </Heading>
                         <View UNSAFE_style={{ fontSize: '14px' }}>
-                            {camera.resolution_width} x {camera.resolution_height} @ {camera.resolution_fps}
+                            {camera.payload.width} x {camera.payload.height} @ {camera.payload.fps}
                         </View>
                     </View>
                     <View gridArea='status'>
                         <ConnectionStatus status={status} />
                     </View>
                     <View gridArea='menu' alignSelf={'end'} justifySelf={'end'}>
-                        <MenuActions camera_id={camera.id} />
+                        <MenuActions camera_id={camera.id ?? 'undefined'} />
                     </View>
                     <View gridArea='parameters'>
                         <ul
@@ -145,41 +145,11 @@ export const CamerasList = () => {
             </Button>
 
             <Flex direction='column' gap='size-100'>
-                <NavLink to={paths.project.cameras.overview({ project_id })}>
-                    {({ isActive }) => {
-                        return (
-                            <View
-                                padding='size-200'
-                                UNSAFE_className={clsx({
-                                    [classes.robotListItem]: true,
-                                    [classes.robotListItemActive]: isActive,
-                                })}
-                            >
-                                <Flex direction={'column'} justifyContent={'space-between'} gap={'size-50'}>
-                                    <Grid areas={['icon name']} columns={['auto', '1fr']} gap={'size-100'}>
-                                        <View gridArea={'icon'} padding='size-100'>
-                                            <CameraIcon style={{ width: '32px', height: '32px' }} />
-                                        </View>
-                                        <View gridArea='name' alignSelf={'center'}>
-                                            <Heading
-                                                level={2}
-                                                UNSAFE_style={isActive ? { color: 'var(--energy-blue)' } : {}}
-                                            >
-                                                Overview
-                                            </Heading>
-                                        </View>
-                                    </Grid>
-                                </Flex>
-                            </View>
-                        );
-                    }}
-                </NavLink>
-
                 {projectCameras.map((camera) => {
                     const hardwareCamera = hardwareCameras.find((hardware) => {
                         return hardware.fingerprint === camera.fingerprint;
                     });
-                    const to = paths.project.cameras.show({ project_id, camera_id: camera.id });
+                    const to = paths.project.cameras.show({ project_id, camera_id: camera.id ?? 'undefined' });
 
                     return (
                         <NavLink key={camera.id} to={to}>

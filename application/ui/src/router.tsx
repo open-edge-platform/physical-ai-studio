@@ -6,7 +6,7 @@ import { createBrowserRouter } from 'react-router-dom';
 import { path } from 'static-path';
 
 import { ErrorPage } from './components/error-page/error-page';
-import { Camera, CameraOverview } from './routes/cameras/camera';
+import { Camera } from './routes/cameras/camera';
 import { Edit as CameraEdit } from './routes/cameras/edit';
 import { Layout as CamerasLayout } from './routes/cameras/layout';
 import { New as CamerasNew } from './routes/cameras/new';
@@ -59,7 +59,6 @@ export const paths = {
         cameras: {
             index: cameras,
             webcam: cameras.path('/webcam'),
-            overview: cameras.path('/overview'),
             new: cameras.path('/new'),
             edit: cameras.path(':camera_id/edit'),
             show: cameras.path(':camera_id'),
@@ -211,10 +210,6 @@ export const router = createBrowserRouter([
                                     {
                                         path: paths.project.cameras.show.pattern,
                                         element: <Camera />,
-                                    },
-                                    {
-                                        path: paths.project.cameras.overview.pattern,
-                                        element: <CameraOverview />,
                                     },
                                     {
                                         path: paths.project.cameras.webcam.pattern,

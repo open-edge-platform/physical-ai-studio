@@ -31,8 +31,8 @@ export const SubmitNewCameraButton = () => {
                         body,
                     },
                     {
-                        onSuccess: ({}, { body: { id: camera_id } }) => {
-                            navigate(paths.project.cameras.show({ project_id, camera_id }));
+                        onSuccess: ({}, { body: { id } }) => {
+                            navigate(paths.project.cameras.show({ project_id, camera_id: id ?? 'undefined' }));
                         },
                     }
                 );

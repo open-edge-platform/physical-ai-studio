@@ -1,6 +1,7 @@
 import { Content, Flex, Heading, IllustratedMessage, Text, View } from '@geti/ui';
 
 import { $api } from '../../../api/client';
+import { SchemaProjectCamera } from '../../../api/types';
 import { CameraFeed } from '../../cameras/camera-feed';
 import { ReactComponent as RobotIllustration } from './../../../assets/illustrations/INTEL_08_NO-TESTS.svg';
 import { useCameraForm } from './provider';
@@ -32,21 +33,26 @@ export const Preview = () => {
         return actualCamera.fingerprint === fingerprint;
     });
 
-    const camera = {
-        name: actualCamera.name,
+    const camera: SchemaProjectCamera = {
+        name: actualCamera.name ?? '',
         hardware_name: hardwareCamera?.name ?? '',
-        driver: hardwareCamera?.driver ?? '',
+        driver: (hardwareCamera?.driver as undefined | 'usb_camera') ?? 'usb_camera',
         fingerprint: hardwareCamera?.fingerprint ?? '',
-        fps: actualCamera.resolution_fps,
-        width: actualCamera.resolution_width,
-        height: actualCamera.resolution_height,
+        payload: {
+            fps: actualCamera.payload?.fps ?? 30,
+            width: actualCamera.payload?.width ?? 640,
+            height: actualCamera.payload?.height ?? 480,
+        },
     };
 
     const isEnabled =
-        actualCamera.resolution_fps &&
-        actualCamera.resolution_width &&
-        actualCamera.resolution_height &&
+        actualCamera.payload?.fps &&
+        actualCamera.payload?.width &&
+        actualCamera.payload?.height &&
         actualCamera.fingerprint;
+
+    // Make sure we completely refresh the camera preview when changing resolution
+    const key = `${camera.fingerprint}-${form.payload?.fps}-${form.payload?.height}-${form.payload?.width}`;
 
     return (
         <View
@@ -61,14 +67,7 @@ export const Preview = () => {
             }}
             position={'relative'}
         >
-            {isEnabled ? (
-                <CameraFeed
-                    key={`${camera.fingerprint}-${form.resolution_fps}-${form.resolution_height}-${form.resolution_width}`}
-                    camera={camera}
-                />
-            ) : (
-                <EmptyPreview />
-            )}
+            {isEnabled ? <CameraFeed key={key} camera={camera} /> : <EmptyPreview />}
         </View>
     );
 };

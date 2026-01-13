@@ -2,10 +2,9 @@ import { Button, Divider, Flex, Form, Heading, Icon, Item, Picker, Text, TextFie
 import { ChevronLeft } from '@geti/ui/icons';
 
 import { $api } from '../../../api/client';
-import { SchemaRobotCamera } from '../../../api/openapi-spec';
 import { useProjectId } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
-import { useCameraForm, useSetCameraForm } from './provider';
+import { CameraFormProps, useCameraForm, useSetCameraForm } from './provider';
 import { SubmitNewCameraButton } from './submit-new-camera-button';
 
 const CameraFormFields = () => {
@@ -14,31 +13,38 @@ const CameraFormFields = () => {
     const availableCamerasQuery = $api.useSuspenseQuery('get', '/api/hardware/cameras');
     const setCameraForm = useSetCameraForm();
 
-    const updateCamera = (newCamera: Partial<SchemaRobotCamera>) => {
+    const updateCamera = (newCamera: CameraFormProps) => {
         setCameraForm((oldForm) => {
             return {
                 ...oldForm,
                 name: newCamera.name ?? oldForm.name,
                 fingerprint: newCamera.fingerprint ?? oldForm.fingerprint,
-                resolution_width: newCamera.resolution_width ?? oldForm.resolution_width,
-                resolution_height: newCamera.resolution_height ?? oldForm.resolution_height,
-                resolution_fps: newCamera.resolution_fps ?? oldForm.resolution_fps,
+                payload: {
+                    fps: newCamera.payload?.fps ?? oldForm.payload?.fps ?? 30,
+                    width: newCamera.payload?.width ?? oldForm.payload?.width ?? 640,
+                    height: newCamera.payload?.height ?? oldForm.payload?.height ?? 480,
+                },
             };
         });
     };
 
-    const supportedFormatsQuery = $api.useQuery('get', '/api/cameras/supported_formats/{driver}', {
-        params: {
-            path: { driver: 'webcam' },
-            query: { fingerprint: camera.fingerprint },
+    const supportedFormatsQuery = $api.useQuery(
+        'get',
+        '/api/cameras/supported_formats/{driver}',
+        {
+            params: {
+                path: { driver: 'webcam' },
+                query: { fingerprint: camera.fingerprint ?? '' },
+            },
         },
-    });
+        { enabled: camera.fingerprint !== undefined }
+    );
 
     const supportedResolution = supportedFormatsQuery.data;
     const SUPPORTED_RESOLUTION = supportedResolution ?? [];
 
     const selectedResolution = SUPPORTED_RESOLUTION.find(
-        ({ width, height }) => width === camera.resolution_width && height === camera.resolution_height
+        ({ width, height }) => width === camera.payload?.width && height === camera.payload?.height
     );
     const selectedResolutionKey = `${selectedResolution?.width}_${selectedResolution?.height}`;
     const SUPPORTED_FPS = selectedResolution?.fps ?? [];
@@ -85,22 +91,24 @@ const CameraFormFields = () => {
                 width='100%'
                 selectedKey={selectedResolutionKey}
                 onSelectionChange={(resolution) => {
-                    const selectedResolution = SUPPORTED_RESOLUTION.find(
+                    const newlySelectedResolution = SUPPORTED_RESOLUTION.find(
                         ({ width, height }) => `${width}_${height}` === resolution
                     );
-                    if (selectedResolution === undefined) {
+                    if (newlySelectedResolution === undefined) {
                         return;
                     }
 
-                    const fps =
-                        selectedResolution.fps.find((fps) => fps === camera.resolution_fps) ??
-                        selectedResolution.fps.at(0) ??
+                    const newFps =
+                        newlySelectedResolution.fps.find((fps) => fps === camera.payload?.fps) ??
+                        newlySelectedResolution.fps.at(0) ??
                         1;
 
                     updateCamera({
-                        resolution_width: selectedResolution.width,
-                        resolution_height: selectedResolution.height,
-                        resolution_fps: fps,
+                        payload: {
+                            width: newlySelectedResolution.width,
+                            height: newlySelectedResolution.height,
+                            fps: newFps,
+                        },
                     });
                 }}
             >
@@ -112,13 +120,13 @@ const CameraFormFields = () => {
             <Picker
                 label='Frames per second (FPS)'
                 width='100%'
-                selectedKey={String(camera.resolution_fps)}
+                selectedKey={String(camera.payload?.fps)}
                 onSelectionChange={(fps) => {
                     if (fps === null) {
                         return;
                     }
 
-                    updateCamera({ resolution_fps: Number(fps) });
+                    updateCamera({ payload: { ...camera.payload!, fps: Number(fps) } });
                 }}
             >
                 {SUPPORTED_FPS.map((fps) => (

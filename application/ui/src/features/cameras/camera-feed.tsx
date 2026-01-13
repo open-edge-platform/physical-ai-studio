@@ -1,18 +1,8 @@
 import { Flex, Grid, Heading, minmax, repeat } from '@geti/ui';
 
-import { WebsocketCamera } from './websocket-camera';
+import { SchemaProjectCamera } from '../../api/types';
 
-type CameraFeedProps = {
-    name: string;
-    hardware_name: string;
-    driver: string;
-    fingerprint: string;
-    fps: number;
-    width: number;
-    height: number;
-};
-
-export const CameraFeed = ({ camera, empty = false }: { camera: CameraFeedProps; empty?: boolean }) => {
+export const CameraFeed = ({ camera, empty = false }: { camera: SchemaProjectCamera; empty?: boolean }) => {
     return (
         <Flex direction='column' gap='size-200'>
             {empty === false && camera && (
@@ -46,7 +36,7 @@ export const CameraFeed = ({ camera, empty = false }: { camera: CameraFeedProps;
                                         borderRadius: '2px',
                                     }}
                                 >
-                                    {camera.width} x {camera.height} @ {camera.fps}
+                                    {camera.payload.width} x {camera.payload.height} @ {camera.payload.fps}
                                 </span>
                             </Flex>
                         </span>
@@ -60,7 +50,7 @@ export const CameraFeed = ({ camera, empty = false }: { camera: CameraFeedProps;
                 gap='size-400'
                 width='100%'
             >
-                <WebsocketCamera camera={camera} />
+                <>{/* TODO: add camera preview */}</>
             </Grid>
         </Flex>
     );
