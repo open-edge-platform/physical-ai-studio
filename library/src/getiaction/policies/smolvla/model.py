@@ -1307,8 +1307,8 @@ class _SmolVLMWithExpertModel(nn.Module):
 
     def forward_attn_layer(  # noqa: PLR0914
         self,
-        model_layers: list,
-        inputs_embeds: list,
+        model_layers: list[nn.Module],
+        inputs_embeds: list[torch.Tensor],
         layer_idx: int,
         position_ids: torch.Tensor,
         attention_mask: torch.Tensor,
