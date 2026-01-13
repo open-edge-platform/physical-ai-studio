@@ -31,10 +31,15 @@ class ProjectCameraService:
             return await repo.save(camera)
 
     @staticmethod
-    async def update_camera(project_id: UUID, camera: Camera) -> Camera:
+    async def update_camera(project_id: UUID, partial_camera: Camera) -> Camera:
         async with get_async_db_session_ctx() as session:
             repo = ProjectCameraRepository(session, str(project_id))
-            return await repo.update(camera, partial_update=camera.model_dump(exclude={"id"}))
+
+            camera = await repo.get_by_id(partial_camera.id)
+            if camera is None:
+                raise ResourceNotFoundError(ResourceType.CAMERA, str(partial_camera.id))
+
+            return await repo.update(camera, partial_update=partial_camera.model_dump(exclude={"id"}))
 
     @staticmethod
     async def delete_camera(project_id: UUID, camera_id: UUID) -> None:
