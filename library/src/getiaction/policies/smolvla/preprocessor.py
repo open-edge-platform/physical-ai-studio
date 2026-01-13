@@ -192,7 +192,7 @@ class SmolVLAPreprocessor(torch.nn.Module):
                 # Revision pinned for reproducibility and security
                 self._tokenizer = AutoTokenizer.from_pretrained(
                     self.tokenizer_name,
-                    revision="e977446e632670f9972fc4ff1432b414c8b813cb",
+                    revision="7b375e1b73b11138ff12fe22c8f2822d8fe03467",
                 )
             except ImportError as e:
                 msg = "Tokenizer requires transformers. Install with: pip install transformers"
