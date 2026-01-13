@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 # Copyright 2025 HuggingFace Inc. team.
@@ -74,7 +74,7 @@ class SmolVLA(Policy):
         Training:
 
         >>> policy = SmolVLA(learning_rate=2.5e-5)
-        >>> trainer = L.Trainer(max_epochs=100)
+        >>> trainer = getiaction.Trainer(max_epochs=100)
         >>> trainer.fit(policy, datamodule)
 
         Inference:
