@@ -2,7 +2,6 @@ import { useRef, useState } from 'react';
 
 import { useMutation } from '@tanstack/react-query';
 
-import { API_BASE_URL } from '../../../api/client';
 import { SchemaInferenceConfig } from '../../../api/openapi-spec';
 import useWebSocketWithResponse from '../../../components/websockets/use-websocket-with-response';
 
@@ -36,16 +35,13 @@ export const useInference = (setup: SchemaInferenceConfig) => {
     const [state, setState] = useState<InferenceState>(createInferenceState());
     const observation = useRef<Observation | undefined>(undefined);
 
-    const { sendJsonMessage, sendJsonMessageAndWait } = useWebSocketWithResponse(
-        `${API_BASE_URL}/api/record/inference/ws`,
-        {
-            shouldReconnect: () => true,
-            onMessage: (event: WebSocketEventMap['message']) => onMessage(event),
-            onOpen: () => init.mutate(),
-            onClose: () => setState(createInferenceState()),
-            onError: console.error,
-        }
-    );
+    const { sendJsonMessage, sendJsonMessageAndWait } = useWebSocketWithResponse(`/api/record/inference/ws`, {
+        shouldReconnect: () => true,
+        onMessage: (event: WebSocketEventMap['message']) => onMessage(event),
+        onOpen: () => init.mutate(),
+        onClose: () => setState(createInferenceState()),
+        onError: console.error,
+    });
 
     const init = useMutation({
         mutationFn: async () =>
