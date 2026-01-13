@@ -102,7 +102,7 @@ class SmolVLAModel(nn.Module):
                 batch[STATE] = self._pi_aloha_decode_state(batch[STATE])
                 batch[ACTION] = self._pi_aloha_encode_actions_inv(batch[ACTION])
 
-            images, img_masks = self._prepare_images(batch)
+            images, img_masks = self._preprocess_images(batch)
             state = self._prepare_state(batch)
             actions = self._prepare_action(batch)
 
@@ -142,9 +142,9 @@ class SmolVLAModel(nn.Module):
             torch.Tensor: A tensor of predicted actions with shape matching the original
                 action dimensions from the dataset statistics.
         """
-        processed_batch = self._prepare_batch(batch)
+        processed_batch = self._preprocess_batch(batch)
 
-        images, img_masks = self._prepare_images(processed_batch)
+        images, img_masks = self._preprocess_images(processed_batch)
         state = self._prepare_state(processed_batch)
         lang_tokens = processed_batch["tokenized_prompt"].to(processed_batch[STATE].device)
         lang_masks = processed_batch["tokenized_prompt_mask"].to(processed_batch[STATE].device)
@@ -236,12 +236,12 @@ class SmolVLAModel(nn.Module):
         """
         return [0]
 
-    def _prepare_batch(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+    def _preprocess_batch(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         if self._config.adapt_to_pi_aloha:
             batch[STATE] = self._pi_aloha_decode_state(batch[STATE])
         return batch
 
-    def _prepare_images(self, batch: dict[str, torch.Tensor]) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
+    def _preprocess_images(self, batch: dict[str, torch.Tensor]) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
         """Apply SmolVLA preprocessing to the images.
 
         This method processes image tensors from a batch by:
