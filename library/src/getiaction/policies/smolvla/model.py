@@ -1053,19 +1053,12 @@ class VLAFlowMatching(nn.Module):
             time = 1.0 + step * dt
             time_tensor = torch.tensor(time, dtype=torch.float32, device=device).expand(bsize)
 
-            def denoise_step_partial_call(
-                input_x_t: torch.Tensor,
-                current_timestep: torch.Tensor = time_tensor,
-            ) -> torch.Tensor:
-                return self.denoise_step(
-                    x_t=input_x_t,
-                    prefix_pad_masks=prefix_pad_masks,
-                    past_key_values=past_key_values,
-                    timestep=current_timestep,
-                )
-
-            v_t = denoise_step_partial_call(x_t)
-
+            v_t = self.denoise_step(
+                x_t=x_t,
+                prefix_pad_masks=prefix_pad_masks,
+                past_key_values=past_key_values,
+                timestep=time_tensor,
+            )
             x_t += dt * v_t
 
         return x_t
