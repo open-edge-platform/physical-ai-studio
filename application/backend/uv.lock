@@ -830,7 +830,7 @@ wheels = [
 [[package]]
 name = "framesource"
 version = "0.2.2"
-source = { git = "https://github.com/ArendJanKramer/FrameSource.git?rev=1eec5b2df1c7af9c8a941ee90bfc5e617c5b4522#1eec5b2df1c7af9c8a941ee90bfc5e617c5b4522" }
+source = { git = "https://github.com/ArendJanKramer/FrameSource.git?rev=4d51da9bc2f8f9353562e1641ddbf87d3045baf6#4d51da9bc2f8f9353562e1641ddbf87d3045baf6" }
 dependencies = [
     { name = "mss" },
     { name = "numba" },
@@ -1009,7 +1009,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.3.0" },
     { name = "cv2-enumerate-cameras" },
     { name = "fastapi", extras = ["standard"] },
-    { name = "framesource", git = "https://github.com/ArendJanKramer/FrameSource.git?rev=1eec5b2df1c7af9c8a941ee90bfc5e617c5b4522" },
+    { name = "framesource", git = "https://github.com/ArendJanKramer/FrameSource.git?rev=4d51da9bc2f8f9353562e1641ddbf87d3045baf6" },
     { name = "getiaction", editable = "../../library" },
     { name = "greenlet", specifier = ">=3.2.4" },
     { name = "harvesters" },
@@ -2212,7 +2212,7 @@ wheels = [
 [[package]]
 name = "omni-camera"
 version = "0.6.3"
-source = { git = "https://github.com/ArendJanKramer/OmniCamera.git?rev=f34506a8ed1017af74ca24479f0cad80cc4a64e0#f34506a8ed1017af74ca24479f0cad80cc4a64e0" }
+source = { git = "https://github.com/ArendJanKramer/OmniCamera.git?rev=776a1fb9ba6357f18c4159d43babf795153ac483#776a1fb9ba6357f18c4159d43babf795153ac483" }
 
 [[package]]
 name = "onnx"
