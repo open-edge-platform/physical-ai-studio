@@ -41,7 +41,7 @@ NORM_MAP = {
 class SmolVLAPreprocessor(torch.nn.Module):
     """Preprocessor for SmolVLA model inputs.
 
-    Transforms observations and actions into the format expected by Pi0Model:
+    Transforms observations and actions into the format expected by SmolVLAModel:
     1. Resizes images to target resolution with padding
     2. Normalizes images to [-1, 1]
     3. Normalizes state/action using quantile or z-score normalization

@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 # Copyright 2025 HuggingFace Inc. team.
@@ -44,7 +44,7 @@ def _lazy_import_transformers() -> tuple:
             SmolVLMForConditionalGeneration,
         )
     except ImportError as e:
-        msg = "SmolVLA requires transformers library.\n\nInstall with:\n    pip install transformers"
+        msg = "SmolVLA requires transformers library.\n\nInstall with:\n    uv pip install transformers"
         raise ImportError(msg) from e
     else:
         return AutoConfig, AutoModel, AutoModelForImageTextToText, AutoProcessor, SmolVLMForConditionalGeneration
