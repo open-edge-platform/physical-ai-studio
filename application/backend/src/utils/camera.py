@@ -14,14 +14,14 @@ def build_camera_config(camera_config: CameraConfig) -> LeRobotCameraConfig:
     """Build either realsense or opencv camera config from CameraConfig BaseModel"""
     if camera_config.driver == "realsense":
         return RealSenseCameraConfig(
-            serial_number_or_name=camera_config.port_or_device_id,
+            serial_number_or_name=camera_config.fingerprint,
             fps=camera_config.fps,
             width=camera_config.width,
             height=camera_config.height,
             use_depth=camera_config.use_depth,
         )
     if camera_config.driver == "webcam":
-        path = camera_config.port_or_device_id.split(":")[0]
+        path = camera_config.fingerprint.split(":")[0]
         return OpenCVCameraConfig(
             index_or_path=Path(path),
             width=camera_config.width,

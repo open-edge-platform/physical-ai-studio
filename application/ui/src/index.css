@@ -62,6 +62,13 @@ body {
     min-height: 100vh;
 }
 
+html,
+body,
+#root,
+#theme-provider {
+    height: 100%;
+}
+
 /* This should be a safe reset option thanks to https://github.com/adobe/react-spectrum/pull/4180 */
 * {
     box-sizing: border-box;

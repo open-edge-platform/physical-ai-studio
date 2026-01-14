@@ -8,9 +8,9 @@ from sqlalchemy.sql import expression
 from sqlalchemy.sql.selectable import Select, and_
 
 from db.schema import Base
-from schemas.base import BaseIDModel
+from schemas.base import BaseIDModel, BaseModel
 
-ModelType = TypeVar("ModelType", bound=BaseIDModel)
+ModelType = TypeVar("ModelType", bound=BaseIDModel | BaseModel)
 SchemaType = TypeVar("SchemaType", bound=Base)
 
 
@@ -120,6 +120,30 @@ class ProjectBaseRepository(BaseRepository, metaclass=abc.ABCMeta):
     def __init__(self, db: AsyncSession, project_id: str | UUID, schema: type[SchemaType]):
         super().__init__(db, schema)
         self.project_id = self._id_to_str(project_id)
+
+    async def save(self, item: ModelType) -> ModelType:
+        schema_item = self.to_schema(item)
+        if hasattr(schema_item, "project_id"):
+            setattr(schema_item, "project_id", self.project_id)
+        self.db.add(schema_item)
+        await self.db.commit()
+        return item
+
+    async def update(self, item: ModelType, partial_update: dict) -> ModelType:
+        to_update = item.model_copy(update=partial_update, deep=True)
+        # Re-validate to convert dicts back to their proper model types
+        to_update = item.__class__.model_validate(to_update.model_dump())
+        schema_item = self.to_schema(to_update)
+
+        if hasattr(schema_item, "project_id"):
+            setattr(schema_item, "project_id", self.project_id)
+
+        await self.db.merge(schema_item)
+        await self.db.commit()
+        updated = await self.get_by_id(item.id)
+        if updated is None:
+            raise ValueError(f"{item.__class__} with ID `{item.id}` doesn't exist")
+        return updated
 
     @property
     def base_filters(self) -> dict:

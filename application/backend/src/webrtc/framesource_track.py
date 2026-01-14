@@ -20,10 +20,10 @@ class FrameSourceVideoStreamTrack(VideoStreamTrack):
         super().__init__()
         _id: str | int
         self.driver = camera.driver
-        self.device = camera.port_or_device_id
+        self.device = camera.fingerprint
         self.cam = FrameSourceFactory.create(
             camera.driver,
-            camera.port_or_device_id,
+            camera.fingerprint,
             width=stream_profile.width,
             height=stream_profile.height,
             fps=stream_profile.fps,
