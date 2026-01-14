@@ -3,13 +3,15 @@ name: Collect License Information
 on:
   workflow_dispatch:
   pull_request: # TODO: remove
-permissions:
-  contents: read
+
+permissions: {} # No permissions by default on workflow level
 
 jobs:
   collect-licenses-library:
-    name: Collect Library Licenses (${{ matrix.extra }})
+    name: Collect Library Licenses
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Runner cleanup
         uses: open-edge-platform/geti-ci/actions/cleanup-runner@d12afacb644860a6971f0ff3dc63b460b127b6ac
@@ -28,7 +30,7 @@ jobs:
         working-directory: ./library
         run: |
           uv lock --check
-          uv sync --frozen --all-extras
+          uv sync --frozen --extra tests --extra pi0 --extra libero --extra smolvla
           uv pip install pip-licenses
           uv run pip-licenses
           uv run pip-licenses --format=csv --output-file=../licenses-library.csv
@@ -43,6 +45,8 @@ jobs:
   collect-licenses-backend:
     name: Collect Backend Licenses
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -73,6 +77,8 @@ jobs:
   collect-licenses-ui:
     name: Collect UI Licenses
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -107,6 +113,8 @@ jobs:
   summarize-python-licenses:
     name: Summarize Python Licenses
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: [collect-licenses-library, collect-licenses-backend]
     steps:
       - name: Download all artifacts
@@ -150,6 +158,8 @@ jobs:
   consolidate-all-licenses:
     name: Consolidate All Licenses
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: [summarize-python-licenses, collect-licenses-ui]
     steps:
       - name: Download all artifacts
@@ -169,10 +179,8 @@ jobs:
           python - <<'EOF'
           import pandas as pd
           from pathlib import Path
-
           python_df = pd.read_csv('artifacts/licenses-summary-python/licenses-summary-python.csv')
           ui_df = pd.read_csv('artifacts/licenses-summary-npm/licenses-summary-npm.csv')
-
           ui_df = ui_df.rename(columns={'module name': 'Name', 'repository': 'Origin', 'license': 'License'})
           ui_df['Type'] = 'pkg:npm'
           ui_df[['Name', 'Version']] = ui_df['Name'].str.rsplit('@', n=1, expand=True)
@@ -180,7 +188,6 @@ jobs:
           combined_df = pd.concat([python_df, ui_df], ignore_index=True)
           combined_df = combined_df.sort_values('Name').reset_index(drop=True)
           combined_df.to_csv('licenses-consolidated.csv', index=False)
-
           EOF
 
       - name: Upload consolidated summary
