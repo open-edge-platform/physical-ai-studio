@@ -22,8 +22,6 @@ from getiaction.data.observation import ACTION, EXTRA, IMAGES, STATE, FeatureTyp
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from .config import SmolVLAConfig
-
 
 def _lazy_import_transformers() -> tuple:
     """Lazy import transformers classes to reduce initial load time.
@@ -58,20 +56,86 @@ class SmolVLAModel(nn.Module):
 
     def __init__(
         self,
-        config: SmolVLAConfig,
         dataset_stats: dict[str, dict[str, list[float] | str | tuple[int, ...]]],
+        *,
+        chunk_size: int = 50,
+        max_state_dim: int = 32,
+        max_action_dim: int = 32,
+        resize_imgs_with_padding: tuple[int, int] | None = (512, 512),
+        adapt_to_pi_aloha: bool = False,
+        num_steps: int = 10,
+        use_cache: bool = True,
+        freeze_vision_encoder: bool = True,
+        train_expert_only: bool = True,
+        train_state_proj: bool = True,
+        vlm_model_name: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
+        load_vlm_weights: bool = False,
+        add_image_special_tokens: bool = False,
+        attention_mode: str = "cross_attn",
+        prefix_length: int = -1,
+        num_expert_layers: int = -1,
+        num_vlm_layers: int = 16,
+        self_attn_every_n_layers: int = 2,
+        expert_width_multiplier: float = 0.75,
+        min_period: float = 4e-3,
+        max_period: float = 4.0,
     ) -> None:
         """Initialize the SmolVLA model.
 
         Args:
-            config: Configuration object containing model hyperparameters and settings.
             dataset_stats: Dictionary containing dataset statistics with keys mapping to
                 dictionaries that hold statistics values (lists of floats), string metadata,
                 or tuple information used for normalization and preprocessing.
+            chunk_size: Size of action chunks for prediction.
+            max_state_dim: Maximum dimension for state vectors; shorter vectors will be padded.
+            max_action_dim: Maximum dimension for action vectors; shorter vectors will be padded.
+            resize_imgs_with_padding: Target size (height, width) for image preprocessing with padding.
+            adapt_to_pi_aloha: Whether to convert joint and gripper values from standard Aloha space
+                to pi internal runtime space.
+            num_steps: Number of decoding steps for flow matching.
+            use_cache: Whether to use attention caching for efficiency.
+            freeze_vision_encoder: Whether to freeze the vision encoder during fine-tuning.
+            train_expert_only: Whether to train only the action expert during fine-tuning.
+            train_state_proj: Whether to train the state projection layer.
+            vlm_model_name: Name or path of the VLM backbone model to use.
+            load_vlm_weights: Whether to load pretrained VLM weights.
+            add_image_special_tokens: Whether to add special tokens around image features.
+            attention_mode: Type of attention mechanism to use.
+            prefix_length: Length of prefix for attention. Negative values indicate default behavior.
+            num_expert_layers: Number of layers in the action expert. Values <= 0 use same number as VLM.
+            num_vlm_layers: Number of VLM layers to use (first N layers).
+            self_attn_every_n_layers: Frequency of self-attention layer interleaving.
+            expert_width_multiplier: Multiplier for action expert hidden size relative to VLM.
+            min_period: Minimum period for sine-cosine positional encoding of timesteps.
+            max_period: Maximum period for sine-cosine positional encoding of timesteps.
         """
         super().__init__()
-        self._config = config
-        self._model = VLAFlowMatching(config)
+        self._chunk_size = chunk_size
+        self._max_state_dim = max_state_dim
+        self._max_action_dim = max_action_dim
+        self._resize_imgs_with_padding = resize_imgs_with_padding
+        self._adapt_to_pi_aloha = adapt_to_pi_aloha
+        self._model = VLAFlowMatching(
+            chunk_size=chunk_size,
+            max_state_dim=max_state_dim,
+            max_action_dim=max_action_dim,
+            num_steps=num_steps,
+            use_cache=use_cache,
+            freeze_vision_encoder=freeze_vision_encoder,
+            train_expert_only=train_expert_only,
+            train_state_proj=train_state_proj,
+            vlm_model_name=vlm_model_name,
+            load_vlm_weights=load_vlm_weights,
+            add_image_special_tokens=add_image_special_tokens,
+            attention_mode=attention_mode,
+            prefix_length=prefix_length,
+            num_expert_layers=num_expert_layers,
+            num_vlm_layers=num_vlm_layers,
+            self_attn_every_n_layers=self_attn_every_n_layers,
+            expert_width_multiplier=expert_width_multiplier,
+            min_period=min_period,
+            max_period=max_period,
+        )
         self._dataset_stats = dataset_stats
 
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
@@ -98,7 +162,7 @@ class SmolVLAModel(nn.Module):
             If inference: Output from predict_action_chunk (action predictions)
         """
         if self.training:
-            if self._config.adapt_to_pi_aloha:
+            if self._adapt_to_pi_aloha:
                 batch[STATE] = self._pi_aloha_decode_state(batch[STATE])
                 batch[ACTION] = self._pi_aloha_encode_actions_inv(batch[ACTION])
 
@@ -119,7 +183,7 @@ class SmolVLAModel(nn.Module):
                 loss_dict["losses_after_in_ep_bound"] = losses.clone()
 
             # Remove padding
-            losses = losses[:, :, : self._config.max_action_dim]
+            losses = losses[:, :, : self._max_action_dim]
             loss_dict["losses_after_rm_padding"] = losses.clone()
 
             loss = losses.mean()
@@ -161,7 +225,7 @@ class SmolVLAModel(nn.Module):
         original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
         actions = actions[:, :, :original_action_dim]
 
-        if self._config.adapt_to_pi_aloha:
+        if self._adapt_to_pi_aloha:
             actions = self._pi_aloha_encode_actions(actions)
 
         return actions
@@ -225,7 +289,7 @@ class SmolVLAModel(nn.Module):
         Returns:
             list[int]: A list of relative action indices.
         """
-        return list(range(self._config.chunk_size))
+        return list(range(self._chunk_size))
 
     @property
     def observation_delta_indices(self) -> list[int]:
@@ -237,7 +301,7 @@ class SmolVLAModel(nn.Module):
         return [0]
 
     def _preprocess_batch(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-        if self._config.adapt_to_pi_aloha:
+        if self._adapt_to_pi_aloha:
             batch[STATE] = self._pi_aloha_decode_state(batch[STATE])
         return batch
 
@@ -280,8 +344,8 @@ class SmolVLAModel(nn.Module):
         max_image_dim = 5
         for key in batch_img_keys:
             img = batch[key][:, -1, :, :, :] if batch[key].ndim == max_image_dim else batch[key]
-            if self._config.resize_imgs_with_padding is not None:
-                img = _resize_with_pad(img, *self._config.resize_imgs_with_padding, pad_value=0)
+            if self._resize_imgs_with_padding is not None:
+                img = _resize_with_pad(img, *self._resize_imgs_with_padding, pad_value=0)
 
             # Normalize from range [0,1] to [-1,1] as expected by siglip
             img = img * 2.0 - 1.0
@@ -345,7 +409,7 @@ class SmolVLAModel(nn.Module):
         """
         state_dim = 2
         state = batch[STATE][:, -1, :] if batch[STATE].ndim > state_dim else batch[STATE]
-        return _pad_vector(state, self._config.max_state_dim)
+        return _pad_vector(state, self._max_state_dim)
 
     def _prepare_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """Prepare and pad the action tensor from the batch.
@@ -358,7 +422,7 @@ class SmolVLAModel(nn.Module):
             A dictionary containing the padded action tensor with dimensions
             extended to match the configured maximum action dimension.
         """
-        return _pad_vector(batch[ACTION], self._config.max_action_dim)
+        return _pad_vector(batch[ACTION], self._max_action_dim)
 
 
 def _resize_with_pad(img: torch.Tensor, width: int, height: int, pad_value: float = -1) -> torch.Tensor:
@@ -643,45 +707,78 @@ class VLAFlowMatching(nn.Module):
     └──────────────────────────────┘
     """
 
-    def __init__(self, config: SmolVLAConfig) -> None:
+    def __init__(
+        self,
+        *,
+        chunk_size: int = 50,
+        max_state_dim: int = 32,
+        max_action_dim: int = 32,
+        num_steps: int = 10,
+        use_cache: bool = True,
+        freeze_vision_encoder: bool = True,
+        train_expert_only: bool = True,
+        train_state_proj: bool = True,
+        vlm_model_name: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
+        load_vlm_weights: bool = False,
+        add_image_special_tokens: bool = False,
+        attention_mode: str = "cross_attn",
+        prefix_length: int = -1,
+        num_expert_layers: int = -1,
+        num_vlm_layers: int = 16,
+        self_attn_every_n_layers: int = 2,
+        expert_width_multiplier: float = 0.75,
+        min_period: float = 4e-3,
+        max_period: float = 4.0,
+    ) -> None:
         """Initialize the SmolVLA model.
 
         Args:
-            config: Configuration object containing model hyperparameters including:
-                - vlm_model_name: Name/ID of the vision-language model to use
-                - freeze_vision_encoder: Whether to freeze the vision encoder weights
-                - train_expert_only: Whether to only train the expert layers
-                - load_vlm_weights: Whether to load pretrained VLM weights
-                - attention_mode: Attention mechanism configuration
-                - num_expert_layers: Number of expert layers
-                - num_vlm_layers: Number of VLM layers
-                - self_attn_every_n_layers: Frequency of self-attention layers
-                - expert_width_multiplier: Multiplier for expert layer width
-                - max_state_dim: Maximum state dimension for state projection
-                - max_action_dim: Maximum action dimension for action projections
-                - add_image_special_tokens: Whether to add special image tokens
-                - prefix_length: Length of the prefix sequence
+            chunk_size: Size of action chunks for prediction.
+            max_state_dim: Maximum dimension for state vectors; shorter vectors will be padded.
+            max_action_dim: Maximum dimension for action vectors; shorter vectors will be padded.
+            num_steps: Number of decoding steps for flow matching.
+            use_cache: Whether to use attention caching for efficiency.
+            freeze_vision_encoder: Whether to freeze the vision encoder during fine-tuning.
+            train_expert_only: Whether to train only the action expert during fine-tuning.
+            train_state_proj: Whether to train the state projection layer.
+            vlm_model_name: Name or path of the VLM backbone model to use.
+            load_vlm_weights: Whether to load pretrained VLM weights.
+            add_image_special_tokens: Whether to add special tokens around image features.
+            attention_mode: Type of attention mechanism to use.
+            prefix_length: Length of prefix for attention. Negative values indicate default behavior.
+            num_expert_layers: Number of layers in the action expert. Values <= 0 use same number as VLM.
+            num_vlm_layers: Number of VLM layers to use (first N layers).
+            self_attn_every_n_layers: Frequency of self-attention layer interleaving.
+            expert_width_multiplier: Multiplier for action expert hidden size relative to VLM.
+            min_period: Minimum period for sine-cosine positional encoding of timesteps.
+            max_period: Maximum period for sine-cosine positional encoding of timesteps.
         """
         super().__init__()
-        self.config = config
+        self._chunk_size = chunk_size
+        self._max_action_dim = max_action_dim
+        self._num_steps = num_steps
+        self._use_cache = use_cache
+        self._train_state_proj = train_state_proj
+        self._min_period = min_period
+        self._max_period = max_period
 
         self.vlm_with_expert = _SmolVLMWithExpertModel(
-            model_id=self.config.vlm_model_name,
-            freeze_vision_encoder=self.config.freeze_vision_encoder,
-            train_expert_only=self.config.train_expert_only,
-            load_vlm_weights=self.config.load_vlm_weights,
-            attention_mode=self.config.attention_mode,
-            num_expert_layers=self.config.num_expert_layers,
-            num_vlm_layers=self.config.num_vlm_layers,
-            self_attn_every_n_layers=self.config.self_attn_every_n_layers,
-            expert_width_multiplier=self.config.expert_width_multiplier,
+            model_id=vlm_model_name,
+            freeze_vision_encoder=freeze_vision_encoder,
+            train_expert_only=train_expert_only,
+            load_vlm_weights=load_vlm_weights,
+            attention_mode=attention_mode,
+            num_expert_layers=num_expert_layers,
+            num_vlm_layers=num_vlm_layers,
+            self_attn_every_n_layers=self_attn_every_n_layers,
+            expert_width_multiplier=expert_width_multiplier,
         )
         self.state_proj = nn.Linear(
-            self.config.max_state_dim,
+            max_state_dim,
             self.vlm_with_expert.config.text_config.hidden_size,
         )
-        self.action_in_proj = nn.Linear(self.config.max_action_dim, self.vlm_with_expert.expert_hidden_size)
-        self.action_out_proj = nn.Linear(self.vlm_with_expert.expert_hidden_size, self.config.max_action_dim)
+        self.action_in_proj = nn.Linear(max_action_dim, self.vlm_with_expert.expert_hidden_size)
+        self.action_out_proj = nn.Linear(self.vlm_with_expert.expert_hidden_size, max_action_dim)
 
         self.action_time_mlp_in = nn.Linear(
             self.vlm_with_expert.expert_hidden_size * 2,
@@ -700,9 +797,9 @@ class VLAFlowMatching(nn.Module):
             dtype=torch.long,
         )
 
-        self.add_image_special_tokens = self.config.add_image_special_tokens
+        self.add_image_special_tokens = add_image_special_tokens
         self.image_end_token = torch.tensor([self.fake_image_token], dtype=torch.long)
-        self.prefix_length = self.config.prefix_length
+        self.prefix_length = prefix_length
 
     def set_requires_grad(self) -> None:
         """Set the requires_grad attribute for state projection parameters.
@@ -711,7 +808,7 @@ class VLAFlowMatching(nn.Module):
         parameters based on the train_state_proj setting in the model configuration.
         """
         for params in self.state_proj.parameters():
-            params.requires_grad = self.config.train_state_proj
+            params.requires_grad = self._train_state_proj
 
     @staticmethod
     def _sample_noise(shape: tuple[int, ...], device: torch.device) -> torch.Tensor:
@@ -895,8 +992,8 @@ class VLAFlowMatching(nn.Module):
         time_emb = _create_sinusoidal_pos_embedding(
             timestep,
             self.vlm_with_expert.expert_hidden_size,
-            self.config.min_period,
-            self.config.max_period,
+            self._min_period,
+            self._max_period,
             device=device,
         )
         time_emb = time_emb.type(dtype=dtype)
@@ -916,7 +1013,7 @@ class VLAFlowMatching(nn.Module):
         pad_masks.append(action_time_mask)
 
         # Set attention masks so that image, language and state inputs do not attend to action tokens
-        att_masks += [1] * self.config.chunk_size
+        att_masks += [1] * self._chunk_size
         embs = torch.cat(embs, dim=1)
         pad_masks = torch.cat(pad_masks, dim=1)
         att_masks = torch.tensor(att_masks, dtype=embs.dtype, device=embs.device)
@@ -985,7 +1082,7 @@ class VLAFlowMatching(nn.Module):
             use_cache=False,
             fill_kv_cache=False,
         )
-        suffix_out = suffix_out[:, -self.config.chunk_size :]
+        suffix_out = suffix_out[:, -self._chunk_size :]
         # Original openpi code, upcast attention output
         suffix_out = suffix_out.to(dtype=torch.float32)
         v_t = self.action_out_proj(suffix_out)
@@ -1024,7 +1121,7 @@ class VLAFlowMatching(nn.Module):
         device = state.device
 
         if noise is None:
-            actions_shape = (bsize, self.config.chunk_size, self.config.max_action_dim)
+            actions_shape = (bsize, self._chunk_size, self._max_action_dim)
             noise = self._sample_noise(actions_shape, device)
 
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(
@@ -1042,10 +1139,10 @@ class VLAFlowMatching(nn.Module):
             position_ids=prefix_position_ids,
             past_key_values=None,
             inputs_embeds=[prefix_embs, None],
-            use_cache=self.config.use_cache,
+            use_cache=self._use_cache,
             fill_kv_cache=True,
         )
-        num_steps = self.config.num_steps
+        num_steps = self._num_steps
         dt = -1.0 / num_steps
 
         x_t = noise
@@ -1105,11 +1202,11 @@ class VLAFlowMatching(nn.Module):
             position_ids=position_ids,
             past_key_values=past_key_values,
             inputs_embeds=[None, suffix_embs],
-            use_cache=self.config.use_cache,
+            use_cache=self._use_cache,
             fill_kv_cache=False,
         )
         suffix_out = outputs_embeds[1]
-        suffix_out = suffix_out[:, -self.config.chunk_size :]
+        suffix_out = suffix_out[:, -self._chunk_size :]
         suffix_out = suffix_out.to(dtype=torch.float32)
         return self.action_out_proj(suffix_out)
 

@@ -205,7 +205,30 @@ class SmolVLA(Policy):
         """
         from .preprocessor import make_smolvla_preprocessors  # noqa: PLC0415
 
-        self.model = SmolVLAModel(self.config, dataset_stats)
+        self.model = SmolVLAModel(
+            dataset_stats,
+            chunk_size=self.config.chunk_size,
+            max_state_dim=self.config.max_state_dim,
+            max_action_dim=self.config.max_action_dim,
+            resize_imgs_with_padding=self.config.resize_imgs_with_padding,
+            adapt_to_pi_aloha=self.config.adapt_to_pi_aloha,
+            num_steps=self.config.num_steps,
+            use_cache=self.config.use_cache,
+            freeze_vision_encoder=self.config.freeze_vision_encoder,
+            train_expert_only=self.config.train_expert_only,
+            train_state_proj=self.config.train_state_proj,
+            vlm_model_name=self.config.vlm_model_name,
+            load_vlm_weights=self.config.load_vlm_weights,
+            add_image_special_tokens=self.config.add_image_special_tokens,
+            attention_mode=self.config.attention_mode,
+            prefix_length=self.config.prefix_length,
+            num_expert_layers=self.config.num_expert_layers,
+            num_vlm_layers=self.config.num_vlm_layers,
+            self_attn_every_n_layers=self.config.self_attn_every_n_layers,
+            expert_width_multiplier=self.config.expert_width_multiplier,
+            min_period=self.config.min_period,
+            max_period=self.config.max_period,
+        )
 
         self._preprocessor, self._postprocessor = make_smolvla_preprocessors(
             max_state_dim=self.config.max_state_dim,
