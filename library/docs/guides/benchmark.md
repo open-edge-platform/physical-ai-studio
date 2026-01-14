@@ -11,7 +11,7 @@ getiaction benchmark \
     --benchmark getiaction.benchmark.LiberoBenchmark \
     --benchmark.task_suite libero_10 \
     --policy getiaction.policies.ACT \
-    --pretrained ./lightning_logs/version_0/checkpoints/epoch=99.ckpt
+    --ckpt_path ./lightning_logs/version_0/checkpoints/epoch=99.ckpt
 ```
 
 ### Python API
@@ -37,7 +37,7 @@ results.to_json("results.json")
 | `--benchmark`   | Yes      | Benchmark class path                               |
 | `--benchmark.*` | -        | Benchmark-specific options                         |
 | `--policy`      | Yes      | Policy class path                                  |
-| `--pretrained`  | Yes      | Path to checkpoint file                            |
+| `--ckpt_path`   | Yes      | Path to checkpoint file or export directory        |
 | `--output_dir`  | No       | Results directory (default: `./results/benchmark`) |
 
 ## Python API Reference
@@ -145,7 +145,7 @@ benchmark:
     record_mode: failures
 
 policy: getiaction.policies.ACT
-pretrained: ./checkpoints/act_libero.ckpt
+ckpt_path: ./checkpoints/act_libero.ckpt
 output_dir: ./results/benchmark
 ```
 
@@ -196,7 +196,7 @@ getiaction benchmark \
     --benchmark.task_ids "[0]" \
     --benchmark.num_episodes 1 \
     --policy getiaction.policies.ACT \
-    --pretrained ./checkpoints/act.ckpt
+    --ckpt_path ./checkpoints/act.ckpt
 ```
 
 Python:
@@ -218,7 +218,7 @@ getiaction benchmark \
     --benchmark.video_dir ./results/videos \
     --benchmark.record_mode all \
     --policy getiaction.policies.ACT \
-    --pretrained ./checkpoints/act.ckpt
+    --ckpt_path ./checkpoints/act.ckpt
 ```
 
 Python:
@@ -245,7 +245,7 @@ getiaction benchmark \
     --benchmark.video_dir ./debug_videos \
     --benchmark.record_mode failures \
     --policy getiaction.policies.ACT \
-    --pretrained ./checkpoints/act.ckpt
+    --ckpt_path ./checkpoints/act.ckpt
 ```
 
 Python:

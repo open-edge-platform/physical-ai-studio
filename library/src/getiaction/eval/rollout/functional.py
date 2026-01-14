@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from getiaction.data import Observation
     from getiaction.eval.video import VideoRecorder
     from getiaction.gyms import Gym
-    from getiaction.policies.base import Policy, PolicyLike
+    from getiaction.policies.base import PolicyLike
 
 
 @dataclass
@@ -219,27 +219,6 @@ def _collect_frame(
         return None
     img = observation.images[frame_key]  # type: ignore[index]
     return img.squeeze(0).permute(1, 2, 0).cpu().numpy()  # type: ignore[union-attr]
-
-
-def _get_policy_action(policy: Policy, observation: Observation) -> Tensor:
-    """Get action from policy, handling chunked outputs.
-
-    Args:
-        policy: Policy to query
-        observation: Current observation
-
-    Returns:
-        Action tensor of shape (batch, action_dim)
-    """
-    policy.eval()
-    action = policy(observation)
-
-    # Handle chunked outputs (ACT returns [batch, chunk_size, action_dim])
-    chunked_action_ndim = 3
-    if action.dim() == chunked_action_ndim:
-        action = action[:, 0, :]
-
-    return action
 
 
 def setup_rollout(
