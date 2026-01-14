@@ -162,23 +162,21 @@ const Camera = ({ idx, camera, onRemove }: { onRemove: () => void; camera: Schem
                 width='100%'
                 selectedKey={camera.fingerprint}
                 onSelectionChange={(key) => {
-                    const selected = availableCamerasQuery.data.find(
-                        ({ port_or_device_id }) => port_or_device_id === key
-                    );
+                    const selected = availableCamerasQuery.data.find(({ fingerprint }) => fingerprint === key);
 
                     if (!selected) {
                         return;
                     }
-                    updateCamera({ fingerprint: selected.port_or_device_id });
+                    updateCamera({ fingerprint: selected.fingerprint });
                 }}
             >
                 {availableCamerasQuery.data.map((availableCamera) => {
                     return (
-                        <Item textValue={availableCamera.port_or_device_id} key={availableCamera.port_or_device_id}>
+                        <Item textValue={availableCamera.fingerprint} key={availableCamera.fingerprint}>
                             {/* TODO: use an Icon here for visualizing the driver? */}
                             <Text>{availableCamera.name}</Text>
                             <Text slot={'description'}>
-                                {availableCamera.port_or_device_id} ({availableCamera.driver})
+                                {availableCamera.fingerprint} ({availableCamera.driver})
                             </Text>
                         </Item>
                     );

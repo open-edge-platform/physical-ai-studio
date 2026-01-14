@@ -111,17 +111,17 @@ class TestLiberoGymEndToEnd:
         with torch.no_grad():
             action = act_policy.select_action(obs)
 
-        # Verify action format (ACT returns chunked actions)
+        # Verify action format (select_action returns single action, not chunk)
         assert isinstance(action, torch.Tensor)
         assert action.shape[0] == 1  # Batch size 1
-        assert action.shape[1] == 100  # Chunk size
-        assert action.shape[2] == 7  # Action dim
+        assert action.shape[1] == 7  # Action dim (single action)
 
     def test_full_rollout_loop(self, gym, device, act_policy):
         """Test a complete rollout loop: gym -> policy -> gym -> policy -> ..."""
         # Reset
         obs, info = gym.reset(seed=42)
         obs = obs.to(device)
+        act_policy.reset()
 
         # Run rollout
         num_steps = 10
@@ -132,9 +132,8 @@ class TestLiberoGymEndToEnd:
             with torch.no_grad():
                 action = act_policy.select_action(obs)
 
-            # ACT returns chunked actions [batch, chunk_size, action_dim]
-            # Take the first action from the chunk
-            action_to_execute = action[:, 0, :].squeeze(0).cpu().numpy()
+            # select_action returns single action [batch, action_dim]
+            action_to_execute = action.squeeze(0).cpu().numpy()
 
             # Step environment
             obs, reward, terminated, truncated, info = gym.step(action_to_execute)
@@ -162,11 +161,13 @@ class TestLiberoGymEndToEnd:
         for ep in range(num_episodes):
             obs, info = gym.reset(seed=42 + ep)
             obs = obs.to(device)
+            act_policy.reset()
 
             for step in range(steps_per_episode):
                 with torch.no_grad():
                     action = act_policy.select_action(obs)
-                action_to_execute = action[:, 0, :].squeeze(0).cpu().numpy()
+                # select_action returns single action [batch, action_dim]
+                action_to_execute = action.squeeze(0).cpu().numpy()
                 obs, reward, terminated, truncated, info = gym.step(action_to_execute)
                 obs = obs.to(device)
 
@@ -189,11 +190,13 @@ class TestLiberoGymEndToEnd:
         for g in gyms:
             obs, info = g.reset(seed=42)
             obs = obs.to(device)
+            act_policy.reset()
 
             with torch.no_grad():
                 action = act_policy.select_action(obs)
 
-            action_to_execute = action[:, 0, :].squeeze(0).cpu().numpy()
+            # select_action returns single action [batch, action_dim]
+            action_to_execute = action.squeeze(0).cpu().numpy()
             obs, reward, terminated, truncated, info = g.step(action_to_execute)
 
             assert isinstance(obs, Observation)
@@ -212,11 +215,13 @@ class TestLiberoGymEndToEnd:
 
             obs, info = gym.reset(seed=42)
             obs = obs.to(device)
+            act_policy.reset()
 
             with torch.no_grad():
                 action = act_policy.select_action(obs)
 
-            action_to_execute = action[:, 0, :].squeeze(0).cpu().numpy()
+            # select_action returns single action [batch, action_dim]
+            action_to_execute = action.squeeze(0).cpu().numpy()
             obs, reward, terminated, truncated, info = gym.step(action_to_execute)
 
             assert isinstance(obs, Observation)

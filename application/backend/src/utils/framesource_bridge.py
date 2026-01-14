@@ -20,7 +20,7 @@ class FrameSourceCameraBridge(LeRobotCamera):
         self.rotation: Cv2Rotation = Cv2Rotation.NO_ROTATION
         self.warmup_s: int = 1
         self.camera = FrameSourceFactory.create(
-            config.driver, source=config.port_or_device_id, width=config.width, height=config.height, fps=config.fps
+            config.driver, source=config.fingerprint, width=config.width, height=config.height, fps=config.fps
         )
 
     @property

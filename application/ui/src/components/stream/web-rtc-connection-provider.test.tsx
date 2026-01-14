@@ -63,7 +63,7 @@ describe('WebRTCConnectionProvider', () => {
     const cameraConfig: SchemaCamera = {
         name: 'camera',
         driver: 'driver',
-        port_or_device_id: 'camera',
+        fingerprint: 'camera',
         default_stream_profile: {
             width: 640,
             height: 480,

@@ -38,7 +38,7 @@ class WebRTCManager:
         Create or reuse a FrameSourceVideoStreamTrack for the given device.
         Each device corresponds to a queue feeding numpy frames.
         """
-        identifier = self.identifier_for_driver_device(camera.driver, camera.port_or_device_id)
+        identifier = self.identifier_for_driver_device(camera.driver, camera.fingerprint)
         if identifier not in self._tracks:
             # Create a new queue for incoming frames
             q: queue.Queue[np.ndarray] = queue.Queue(maxsize=10)
@@ -60,7 +60,7 @@ class WebRTCManager:
         await pc.setRemoteDescription(RTCSessionDescription(sdp=sdp, type=type))
         track = self.get_track(camera, profile)
 
-        identifier = self.identifier_for_driver_device(camera.driver, camera.port_or_device_id)
+        identifier = self.identifier_for_driver_device(camera.driver, camera.fingerprint)
         self._device_connections[identifier].add(webrtc_id)
         pc.addTrack(track)
 

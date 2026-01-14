@@ -4,6 +4,7 @@
 """Base Lightning Module for Policies."""
 
 from abc import ABC, abstractmethod
+from collections import deque
 from typing import Any
 
 import lightning as L  # noqa: N812
@@ -16,15 +17,30 @@ from getiaction.gyms import Gym
 
 
 class Policy(L.LightningModule, ABC):
-    """Base Lightning Module for Policies."""
+    """Base Lightning Module for Policies.
 
-    def __init__(self) -> None:
-        """Initialize the Base Lightning Module for Policies."""
+    Provides common functionality for all policies including:
+    - Action queue management for action chunking
+    - Gym evaluation with torchmetrics
+    - Device transfer hooks
+    """
+
+    def __init__(self, n_action_steps: int = 1) -> None:
+        """Initialize the Base Lightning Module for Policies.
+
+        Args:
+            n_action_steps: Number of action steps to execute per chunk.
+                Used for action queue sizing. Defaults to 1 (no chunking).
+        """
         super().__init__()
         # Only set model attribute if the subclass hasn't defined it as a property
         # (e.g., LeRobot wrappers define model as a property that returns _lerobot_policy)
         if not isinstance(getattr(type(self), "model", None), property):
             self.model: nn.Module | None = None
+
+        # Action queue for action chunking (unified across all policies)
+        self._action_queue: deque[torch.Tensor] = deque(maxlen=n_action_steps)
+        self._n_action_steps = n_action_steps
 
         # Initialize torchmetrics-based rollout metrics for validation and testing
         self.val_rollout = Rollout()
@@ -65,8 +81,7 @@ class Policy(L.LightningModule, ABC):
         The behavior of this method depends on the model's training mode:
         - In training mode: Should return loss information for backpropagation
           (typically a loss tensor or tuple of (loss, loss_dict))
-        - In evaluation mode: Should return action predictions for environment interaction
-          (typically via calling self.select_action(batch))
+        - In evaluation mode: Should return action chunk predictions
 
         The input batch is an Observation dataclass that can be converted to
         the format expected by the model using `.to_dict()` or `.to_lerobot_dict()`.
@@ -77,44 +92,95 @@ class Policy(L.LightningModule, ABC):
         Returns:
             The return type depends on the training mode and specific policy implementation:
             - Training mode: Loss information (torch.Tensor or tuple[torch.Tensor, dict])
-            - Evaluation mode: Action predictions (torch.Tensor)
+            - Evaluation mode: Action chunk tensor of shape (B, T, D) or (T, D)
 
         Example implementation:
             ```python
             def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict]:
                 if self.training:
                     return self.model(batch)
-                return self.select_action(batch)
+                return self.predict_action_chunk(batch)
             ```
         """
 
     @abstractmethod
-    def select_action(self, batch: Observation) -> torch.Tensor:
-        """Select an action using the policy model.
+    def predict_action_chunk(self, batch: Observation) -> torch.Tensor:
+        """Predict a chunk of actions from observation.
+
+        This is the core inference method that predicts multiple future actions
+        (action chunking). Subclasses must implement this method.
 
         Args:
             batch: Input batch of observations.
 
         Returns:
-            torch.Tensor: Selected actions.
+            Action chunk tensor of shape (B, T, D) or (T, D) where T is chunk size.
         """
 
-    @abstractmethod
+    def select_action(self, batch: Observation) -> torch.Tensor:
+        """Select a single action using action chunking with queue.
+
+        This method implements the standard action chunking pattern:
+        1. Check if there are queued actions from previous predictions
+        2. If queue is empty, predict a new action chunk via predict_action_chunk()
+        3. Queue the predicted actions and return the first one
+
+        For policies that don't use action chunking (n_action_steps=1),
+        this simply calls predict_action_chunk() and returns the action.
+
+        Args:
+            batch: Input batch of observations.
+
+        Returns:
+            Single action tensor of shape (B, D) or (D,).
+        """
+        # Check queue first
+        queued = self._get_queued_action()
+        if queued is not None:
+            return queued
+
+        # Predict new action chunk and queue
+        actions = self.predict_action_chunk(batch)
+        return self._queue_actions(actions)
+
     def reset(self) -> None:
         """Reset the policy state.
 
-        This method should be called when the environment is reset. It clears
-        internal state such as action queues, observation histories, and any
-        other stateful components used by the policy.
-
-        For example:
-        - Action chunking policies clear their action queue
-        - Diffusion policies reset observation/action deques
-        - Recurrent policies reset hidden states
-
-        This is critical for proper evaluation in gym environments, where
-        each episode must start with a clean slate.
+        Clears the action queue and any other stateful components.
+        Called when the environment is reset to start a new episode.
         """
+        self._action_queue.clear()
+
+    def _queue_actions(self, actions: torch.Tensor) -> torch.Tensor:
+        """Queue predicted actions and return the first one.
+
+        This implements action chunking: the model predicts multiple actions,
+        they are queued, and returned one at a time on subsequent calls.
+
+        Args:
+            actions: Predicted actions of shape (B, T, D) or (T, D).
+
+        Returns:
+            First action from the queue.
+        """
+        # Handle (B, T, D) -> split along T dimension
+        if actions.dim() == 3:  # noqa: PLR2004
+            # Transpose to (T, B, D), then extend queue
+            self._action_queue.extend(actions.transpose(0, 1))
+        else:
+            # Already (T, D), just extend
+            self._action_queue.extend(actions)
+        return self._action_queue.popleft()
+
+    def _get_queued_action(self) -> torch.Tensor | None:
+        """Get next action from queue if available.
+
+        Returns:
+            Next queued action or None if queue is empty.
+        """
+        if len(self._action_queue) > 0:
+            return self._action_queue.popleft()
+        return None
 
     def evaluate_gym(self, batch: Gym, batch_idx: int, stage: str) -> dict[str, float]:
         """Evaluate policy on gym environment and log metrics using torchmetrics.

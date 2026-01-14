@@ -77,8 +77,19 @@ class TestACTolicy:
         assert explain.shape[3] > 1
 
     def test_select_action(self, policy, batch):
+        """Test select_action returns a single action (uses action queue)."""
         policy.eval()
         actions = policy.select_action(batch)
+
+        assert isinstance(actions, torch.Tensor)
+        assert actions.shape[0] == batch.images.shape[0]
+        # select_action returns a single action, not a chunk
+        assert actions.shape[1] == batch.action.shape[2]
+
+    def test_predict_action_chunk(self, policy, batch):
+        """Test predict_action_chunk returns the full action chunk."""
+        policy.eval()
+        actions = policy.predict_action_chunk(batch)
 
         assert isinstance(actions, torch.Tensor)
         assert actions.shape[0] == batch.images.shape[0]
