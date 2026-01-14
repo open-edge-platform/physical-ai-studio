@@ -4,6 +4,7 @@ from lerobot.cameras import CameraConfig
 from lerobot.robots.config import RobotConfig as LeRobotConfig
 from lerobot.robots.so101_follower import SO101Follower, SO101FollowerConfig
 from lerobot.teleoperators.config import TeleoperatorConfig as LeRobotTeleoperatorConfig
+from loguru import logger
 from serial.tools import list_ports
 from serial.tools.list_ports_common import ListPortInfo
 
@@ -52,22 +53,22 @@ class RobotConnectionManager:
             serial_num = getattr(port, "serial_number", None)
             # Skip if this port or its serial has already been connected
             if port.device in connected_devices or (serial_num and serial_num in connected_serials):
-                print(f"Skipping {port.device}: already connected (or alias).")
+                logger.debug(f"Skipping {port.device}: already connected (or alias).")
                 continue
 
             for name in [
                 "so-100",
             ]:
-                print(f"Trying to connect to {name} on {port.device}.")
+                logger.debug(f"Trying to connect to {name} on {port.device}.")
                 robot = from_port(port, robot_type=name)
                 if robot is None:
-                    print(f"Failed to create robot from {name} on {port.device}.")
+                    logger.debug(f"Failed to create robot from {name} on {port.device}.")
                     continue
-                print(f"Robot created: {robot}")
+                logger.debug(f"Robot created: {robot}")
                 # await robot.connect()
 
                 if robot is not None:
-                    print(f"Connected to {name} on {port.device}.")
+                    logger.debug(f"Connected to {name} on {port.device}.")
                     self._all_robots.append(robot)
                     # Mark both device and serial as connected
                     connected_devices.add(port.device)
@@ -76,7 +77,7 @@ class RobotConnectionManager:
                     break  # stop trying other classes on this port
 
         if not self._all_robots:
-            print("No robot connected.")
+            logger.debug("No robot connected.")
 
 
 async def find_robots() -> list[RobotPortInfo]:

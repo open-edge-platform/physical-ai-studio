@@ -30,7 +30,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import useWebSocket from 'react-use-websocket';
 import { v4 as uuidv4 } from 'uuid';
 
-import { $api, API_BASE_URL } from '../../api/client';
+import { $api } from '../../api/client';
 import { SchemaJob, SchemaModel } from '../../api/openapi-spec';
 import { useProjectId } from '../../features/projects/use-project';
 import { paths } from '../../router';
@@ -155,7 +155,7 @@ export const Index = () => {
         params: { path: { project_id } },
     });
 
-    const {} = useWebSocket(`${API_BASE_URL}/api/jobs/ws`, {
+    const {} = useWebSocket(`/api/jobs/ws`, {
         shouldReconnect: () => true,
         onMessage: (event: WebSocketEventMap['message']) => onMessage(event),
     });

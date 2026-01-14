@@ -1,8 +1,9 @@
 from functools import lru_cache
 from uuid import UUID
 
-from fastapi import Request, WebSocket, status
+from fastapi import status
 from fastapi.exceptions import HTTPException
+from fastapi.requests import HTTPConnection
 
 from core.scheduler import Scheduler
 from services import DatasetService, JobService, ModelService, ProjectService, RobotService
@@ -24,7 +25,7 @@ def is_valid_uuid(identifier: str) -> bool:
     return True
 
 
-def get_webrtc_manager(request: Request) -> WebRTCManager:
+def get_webrtc_manager(request: HTTPConnection) -> WebRTCManager:
     """Provide the global WebRTCManager instance from FastAPI application's state."""
     return request.app.state.webrtc_manager
 
@@ -48,7 +49,7 @@ def get_dataset_service() -> DatasetService:
 
 
 @lru_cache
-def get_model_service() -> DatasetService:
+def get_model_service() -> ModelService:
     """Provides a ModelService instance for managing models."""
     return ModelService()
 
@@ -80,16 +81,16 @@ def validate_uuid(uuid: str) -> UUID:
     return UUID(uuid)
 
 
-def get_scheduler(request: Request) -> Scheduler:
+def get_scheduler(request: HTTPConnection) -> Scheduler:
     """Provide the global Scheduler instance."""
     return request.app.state.scheduler
 
 
-def get_scheduler_ws(request: WebSocket) -> Scheduler:
+def get_scheduler_ws(request: HTTPConnection) -> Scheduler:
     """Provide the global Scheduler instance for WebSocket."""
     return request.app.state.scheduler
 
 
-def get_event_processor_ws(request: WebSocket) -> EventProcessor:
+def get_event_processor_ws(request: HTTPConnection) -> EventProcessor:
     """Provide the global event_processor instance for WebSocket."""
     return request.app.state.event_processor

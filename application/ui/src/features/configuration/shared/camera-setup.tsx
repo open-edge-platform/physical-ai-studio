@@ -67,24 +67,24 @@ interface CameraSetupProps {
 }
 export const CameraSetup = ({ camera, availableCameras, updateCamera }: CameraSetupProps) => {
     const camerasConnectedOfType = availableCameras.filter((m) => m.driver === camera.driver);
-    const makeKey = (cam: SchemaCamera) => `${cam.driver}%${cam.port_or_device_id}`;
+    const makeKey = (cam: SchemaCamera) => `${cam.driver}%${cam.fingerprint}`;
 
     const onSelection = (key: Key | null) => {
         if (key) {
             const [driver, id] = String(key).split('%');
-            updateCamera(camera.name, String(id), camera.port_or_device_id ?? '', driver, camera.driver);
+            updateCamera(camera.name, String(id), camera.fingerprint ?? '', driver, camera.driver);
         }
     };
 
     return (
         <Flex direction={'column'} flex={1}>
             <Heading>{camera.name}</Heading>
-            <Picker selectedKey={`${camera.driver}%${camera.port_or_device_id}`} onSelectionChange={onSelection}>
+            <Picker selectedKey={`${camera.driver}%${camera.fingerprint}`} onSelectionChange={onSelection}>
                 {camerasConnectedOfType.map((cam) => (
                     <Item key={makeKey(cam)}>{cam.name}</Item>
                 ))}
             </Picker>
-            {<CameraPreview key={camera.port_or_device_id} camera={camera} />}
+            {<CameraPreview key={camera.fingerprint} camera={camera} />}
         </Flex>
     );
 };
