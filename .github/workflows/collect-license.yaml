@@ -11,6 +11,11 @@ jobs:
     name: Collect Library Licenses (${{ matrix.extra }})
     runs-on: ubuntu-latest
     steps:
+      - name: Runner cleanup
+        uses: open-edge-platform/geti-ci/actions/cleanup-runner@d12afacb644860a6971f0ff3dc63b460b127b6ac
+        with:
+          type: "all"
+
       - name: Checkout code
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
@@ -36,7 +41,7 @@ jobs:
           retention-days: 10
 
   collect-licenses-backend:
-    name: Collect Backend Licenses (${{ matrix.extra }})
+    name: Collect Backend Licenses
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
