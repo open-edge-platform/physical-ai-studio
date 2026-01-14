@@ -4,6 +4,7 @@
 """Unit tests for mixin_export module."""
 
 from dataclasses import dataclass
+from typing import Any
 
 import onnx
 import pytest
@@ -129,6 +130,10 @@ class ExportWrapper(Export):
 
     def __init__(self, model: torch.nn.Module):
         self.model = model
+
+    @property
+    def metadata_extra(self) -> dict[str, Any]:
+        return {"chunk_size": 10, "use_action_queue": True}
 
 
 class TestToOnnx:

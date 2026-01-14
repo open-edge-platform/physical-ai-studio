@@ -138,7 +138,7 @@ def camera_config_from_dataset_features(
             fps=feature["info"]["video.fps"],
             driver="webcam",
             use_depth=False,
-            port_or_device_id="",
+            fingerprint="",
             id=uuid.uuid4(),
         )
         for name, feature in dataset.features.items()

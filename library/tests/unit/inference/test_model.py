@@ -15,6 +15,40 @@ from getiaction.export.mixin_export import ExportBackend
 from getiaction.inference.model import InferenceModel
 
 
+def test_exported_metadata_controls_action_queue(
+    tmp_path: Path, mock_adapter: MagicMock, sample_observation: Observation
+) -> None:
+    export_dir = tmp_path / "exports"
+    export_dir.mkdir()
+
+    import yaml
+
+    metadata = {
+        "policy_class": "getiaction.policies.lerobot.smolvla.SmolVLA",
+        "backend": "openvino",
+        "use_action_queue": True,
+        "chunk_size": 3,
+    }
+
+    with (export_dir / "metadata.yaml").open("w") as f:
+        yaml.dump(metadata, f)
+
+    (export_dir / "smolvla.xml").touch()
+    (export_dir / "smolvla.bin").touch()
+
+    with patch("getiaction.inference.model.get_adapter", return_value=mock_adapter):
+        model = InferenceModel(export_dir)
+
+        mock_adapter.predict.return_value = {"actions": np.random.randn(1, 3, 2)}
+
+        action1 = model.select_action(sample_observation)
+        action2 = model.select_action(sample_observation)
+
+        assert action1.shape == (1, 2)
+        assert action2.shape == (1, 2)
+        assert mock_adapter.predict.call_count == 1
+
+
 @pytest.fixture
 def mock_export_dir(tmp_path: Path) -> Path:
     """Create mock export directory with metadata."""
@@ -55,7 +89,7 @@ def sample_observation() -> Observation:
     """Create sample observation for testing."""
     return Observation(
         state=torch.randn(1, 4),
-        images=[torch.randn(1, 3, 224, 224)],
+        images=torch.randn(1, 3, 224, 224),
     )
 
 
@@ -101,6 +135,7 @@ class TestInferenceModelInit:
         (export_dir / f"model{file_ext}").touch()
 
         import yaml
+
         with (export_dir / "metadata.yaml").open("w") as f:
             yaml.dump({"policy_class": "getiaction.policies.act.ACT"}, f)
 
@@ -139,11 +174,13 @@ class TestMetadataLoading:
 
         if format_type == "yaml":
             import yaml
+
             with (export_dir / "metadata.yaml").open("w") as f:
                 yaml.dump(metadata_content, f)
             (export_dir / "dummy.xml").touch()
         else:
             import json
+
             with (export_dir / "metadata.json").open("w") as f:
                 json.dump(metadata_content, f)
             (export_dir / "act.onnx").touch()
@@ -335,7 +372,7 @@ class TestInputPreparation:
 
             obs = Observation(
                 state=torch.randn(1, 4),
-                images=[torch.randn(1, 3, 224, 224)],
+                images=torch.randn(1, 3, 224, 224),
             )
 
             inputs = model._prepare_inputs(obs)
@@ -358,7 +395,7 @@ class TestInputPreparation:
 
             obs = Observation(
                 state=torch.randn(1, 4),
-                images=[torch.randn(1, 3, 224, 224)],
+                images=torch.randn(1, 3, 224, 224),
             )
 
             inputs = model._prepare_inputs(obs)
@@ -415,7 +452,11 @@ class TestFieldMapping:
             ({"state": 1}, {"observation.state"}, {"state": "observation.state"}),
             ({"images": 1}, {"observation.image"}, {"images": "observation.image"}),
             # Mixed
-            ({"state": 1, "images": 1}, {"state", "observation.image"}, {"state": "state", "images": "observation.image"}),
+            (
+                {"state": 1, "images": 1},
+                {"state", "observation.image"},
+                {"state": "state", "images": "observation.image"},
+            ),
             # No match
             ({"unknown": 1}, {"state"}, {}),
         ],
@@ -533,6 +574,7 @@ class TestModelPathResolution:
 
         # Add metadata so policy name detection works
         import yaml
+
         with (export_dir / "metadata.yaml").open("w") as f:
             yaml.dump({"policy_class": "getiaction.policies.act.ACT"}, f)
 

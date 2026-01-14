@@ -2,7 +2,6 @@ import { useRef, useState } from 'react';
 
 import { useMutation } from '@tanstack/react-query';
 
-import { API_BASE_URL } from '../../../api/client';
 import { SchemaEpisode, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
 import useWebSocketWithResponse from '../../../components/websockets/use-websocket-with-response';
 
@@ -37,7 +36,7 @@ export interface Observation {
 export const useTeleoperation = (setup: SchemaTeleoperationConfig, onEpisode: (episode: SchemaEpisode) => void) => {
     const [state, setState] = useState<RobotState>(createRobotState());
     const { sendJsonMessage, readyState, sendJsonMessageAndWait } = useWebSocketWithResponse(
-        `${API_BASE_URL}/api/record/teleoperate/ws`,
+        `/api/record/teleoperate/ws`,
         {
             shouldReconnect: () => true,
             onMessage: (event: WebSocketEventMap['message']) => onMessage(event),
