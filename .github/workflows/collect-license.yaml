@@ -2,6 +2,7 @@ name: Collect License Information
 
 on:
   workflow_dispatch:
+  pull_request: # TODO: remove
 permissions:
   contents: read
 
