@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 class SmolVLAModel(nn.Module):
     """SmolVLA flow matching vision-language-action model."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         dataset_stats: dict[str, dict[str, list[float] | str | tuple[int, ...]]],
         *,
@@ -707,7 +707,7 @@ class VLAFlowMatching(nn.Module):
     └──────────────────────────────┘
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         chunk_size: int = 50,
