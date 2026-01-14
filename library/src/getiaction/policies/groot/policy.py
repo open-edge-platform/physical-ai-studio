@@ -156,7 +156,7 @@ class Groot(Policy):
         use_bf16: bool = True,
         # Eager initialization (optional - for checkpoint loading and standalone use)
         env_action_dim: int | None = None,
-        dataset_stats: dict[str, dict[str, list[float]]] | None = None,
+        dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
     ) -> None:
         """Initialize Groot policy.
 
@@ -213,7 +213,7 @@ class Groot(Policy):
     def _initialize_model(
         self,
         env_action_dim: int,
-        dataset_stats: dict[str, dict[str, list[float]]] | None = None,
+        dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
     ) -> None:
         """Initialize model and preprocessors.
 
@@ -486,7 +486,7 @@ class Groot(Policy):
         config: GrootConfig,
         *,
         env_action_dim: int | None = None,
-        dataset_stats: dict[str, dict[str, list[float]]] | None = None,
+        dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
     ) -> Groot:
         """Create Groot policy from a config object.
 

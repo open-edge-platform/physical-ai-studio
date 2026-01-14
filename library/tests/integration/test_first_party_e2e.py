@@ -26,7 +26,7 @@ from getiaction.train import Trainer
 EXPORT_BACKENDS = ["openvino", "onnx", "torch", "torch_export_ir"]
 
 # Policy names for parametrization
-FIRST_PARTY_VLA_POLICIES = ["groot", "pi0"]
+FIRST_PARTY_VLA_POLICIES = ["groot", "pi0", "smolvla"]
 FIRST_PARTY_POLICIES_WITH_EXPORT = ["act"]
 
 
