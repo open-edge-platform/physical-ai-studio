@@ -1,0 +1,185 @@
+name: Collect License Information
+
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  collect-licenses-library:
+    name: Collect Library Licenses (${{ matrix.extra }})
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7.1.6
+
+      - name: Collect licenses
+        working-directory: ./library
+        run: |
+          uv lock --check
+          uv sync --frozen --all-extras
+          uv pip install pip-licenses
+          uv run pip-licenses
+          uv run pip-licenses --format=csv --output-file=../licenses-library.csv
+
+      - name: Upload CSV
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: licenses-list-library
+          path: licenses-library.csv
+          retention-days: 10
+
+  collect-licenses-backend:
+    name: Collect Backend Licenses (${{ matrix.extra }})
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7.1.6
+        with:
+          version: "0.8.8"
+
+      - name: Collect licenses
+        working-directory: ./application/backend
+        run: |
+          uv lock --check
+          uv sync --frozen --all-extras
+          uv pip install pip-licenses
+          uv run pip-licenses
+          uv run pip-licenses --format=csv --output-file=../../licenses-backend.csv
+
+      - name: Upload CSV
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: licenses-list-backend
+          path: licenses-backend.csv
+          retention-days: 10
+
+  collect-licenses-ui:
+    name: Collect UI Licenses
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        id: setup-node
+        with:
+          node-version-file: application/ui/.nvmrc
+
+      - name: Install dependencies
+        working-directory: "application/ui"
+        run: npm ci
+
+      - name: Install license checker
+        working-directory: "application/ui"
+        run: npm install -g license-checker@25.0.1
+
+      - name: Check licenses
+        working-directory: "application/ui"
+        run: |
+          license-checker --csv --out ../../licenses-summary-npm.csv
+
+      - name: Upload CSV
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: licenses-summary-npm
+          path: licenses-summary-npm.csv
+          retention-days: 10
+
+  summarize-python-licenses:
+    name: Summarize Python Licenses
+    runs-on: ubuntu-latest
+    needs: [collect-licenses-library, collect-licenses-backend]
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v5.0.0
+        with:
+          pattern: licenses-list-{library,backend}
+          path: artifacts
+
+      - name: Install Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.13"
+
+      - name: Process and deduplicate licenses
+        run: |
+          pip install pandas==2.3.3
+          python - <<'EOF'
+          import pandas as pd
+          from pathlib import Path
+
+          artifacts_dir = Path("artifacts")
+          all_dfs = []
+
+          for csv_file in artifacts_dir.rglob("*.csv"):
+              inp = pd.read_csv(csv_file)
+              all_dfs.append(inp)
+
+          combined_csv = pd.concat(all_dfs, ignore_index=True)
+          unique_df = combined_csv.drop_duplicates(subset=['Name', 'Version'], keep='first')
+          unique_df['Type'] = 'pkg:pypi'
+          unique_df['Origin'] = 'https://pypi.org/project/' + unique_df['Name']
+          unique_df.to_csv('licenses-summary-python.csv', index=False)
+          EOF
+      - name: Upload summary
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: licenses-summary-python
+          path: licenses-summary-python.csv
+          retention-days: 10
+
+  consolidate-all-licenses:
+    name: Consolidate All Licenses
+    runs-on: ubuntu-latest
+    needs: [summarize-python-licenses, collect-licenses-ui]
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v5.0.0
+        with:
+          pattern: licenses-summary-{python,npm}
+          path: artifacts
+
+      - name: Install Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.13"
+
+      - name: Consolidate licenses
+        run: |
+          pip install pandas==2.3.3
+          python - <<'EOF'
+          import pandas as pd
+          from pathlib import Path
+
+          python_df = pd.read_csv('artifacts/licenses-summary-python/licenses-summary-python.csv')
+          ui_df = pd.read_csv('artifacts/licenses-summary-npm/licenses-summary-npm.csv')
+
+          ui_df = ui_df.rename(columns={'module name': 'Name', 'repository': 'Origin', 'license': 'License'})
+          ui_df['Type'] = 'pkg:npm'
+          ui_df[['Name', 'Version']] = ui_df['Name'].str.rsplit('@', n=1, expand=True)
+          ui_df = ui_df[['Name', 'Version', 'License', 'Type', 'Origin']]
+          combined_df = pd.concat([python_df, ui_df], ignore_index=True)
+          combined_df = combined_df.sort_values('Name').reset_index(drop=True)
+          combined_df.to_csv('licenses-consolidated.csv', index=False)
+
+          EOF
+
+      - name: Upload consolidated summary
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: licenses-consolidated
+          path: licenses-consolidated.csv
+          retention-days: 10
