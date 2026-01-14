@@ -4,6 +4,7 @@
 """Mixin classes for exporting PyTorch models."""
 
 import inspect
+from collections.abc import Mapping
 from enum import StrEnum
 from os import PathLike
 from pathlib import Path
@@ -46,6 +47,10 @@ class Export:
             export_dir: Directory containing exported model
             backend: Export backend used
             **metadata_kwargs: Additional metadata to include
+
+        Raises:
+            TypeError: If ``metadata_extra`` is present but not a mapping.
+            ValueError: If ``metadata_extra`` contains keys that collide with existing metadata.
         """
         # Build metadata
         metadata = {
@@ -58,6 +63,19 @@ class Export:
         # Add model config if available
         if hasattr(self.model, "config") and hasattr(self.model.config, "to_jsonargparse"):
             metadata["config"] = self.model.config.to_jsonargparse()
+
+        metadata_extra = getattr(self, "metadata_extra", None)
+        if metadata_extra is not None:
+            if not isinstance(metadata_extra, Mapping):
+                msg = f"metadata_extra must be a mapping, got: {type(metadata_extra)!r}"
+                raise TypeError(msg)
+
+            collisions = set(metadata_extra) & set(metadata)
+            if collisions:
+                msg = f"metadata_extra collides with existing metadata keys: {sorted(collisions)}"
+                raise ValueError(msg)
+
+            metadata.update(metadata_extra)
 
         # Save as YAML (preferred)
         yaml_path = export_dir / "metadata.yaml"

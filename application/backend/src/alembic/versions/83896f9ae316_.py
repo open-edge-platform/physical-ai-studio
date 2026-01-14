@@ -56,7 +56,7 @@ def upgrade() -> None:
         sa.Column("project_config_id", sa.Text(), nullable=False),
         sa.Column("id", sa.Text(), nullable=False),
         sa.Column("name", sa.String(length=255), nullable=False),
-        sa.Column("port_or_device_id", sa.String(length=255), nullable=False),
+        sa.Column("fingerprint", sa.String(length=255), nullable=False),
         sa.Column("driver", sa.String(length=255), nullable=False),
         sa.Column("width", sa.Integer(), nullable=False),
         sa.Column("height", sa.Integer(), nullable=False),

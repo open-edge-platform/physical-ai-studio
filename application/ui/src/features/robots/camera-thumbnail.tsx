@@ -64,9 +64,7 @@ const CameraView = () => {
 
 export const CameraThumbnail = ({ name, fingerprint }: { name: string; fingerprint: string | null }) => {
     const availableCamerasQuery = $api.useQuery('get', '/api/hardware/cameras');
-    const availableCamera = availableCamerasQuery.data?.find(
-        ({ port_or_device_id }) => port_or_device_id === fingerprint
-    );
+    const availableCamera = availableCamerasQuery.data?.find((camera) => camera.fingerprint === fingerprint);
 
     const ratio =
         (availableCamera?.default_stream_profile?.width ?? 1) / (availableCamera?.default_stream_profile?.height ?? 1);
