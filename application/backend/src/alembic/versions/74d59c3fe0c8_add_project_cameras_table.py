@@ -49,6 +49,7 @@ def upgrade() -> None:
     # Remove the old column from project robots without migrating the old cameras
     op.drop_column("project_robots", "cameras")
 
+
 def downgrade() -> None:
     """Downgrade schema."""
     op.drop_table("project_cameras")

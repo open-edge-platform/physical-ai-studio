@@ -26,7 +26,6 @@ class RobotType(StrEnum):
     SO101_LEADER = "SO101_Leader"
 
 
-
 class Robot(ABC, BaseModel):
     id: Annotated[UUID, Field(description="Unique identifier")]
 

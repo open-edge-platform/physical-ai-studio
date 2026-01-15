@@ -1,6 +1,6 @@
 from db.schema import ProjectRobotDB
 from repositories.mappers.base_mapper_interface import IBaseMapper
-from schemas.robot import Robot 
+from schemas.robot import Robot
 
 
 class ProjectRobotMapper(IBaseMapper):
