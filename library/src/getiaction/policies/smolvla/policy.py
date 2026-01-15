@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 
 from getiaction.data.observation import ACTION
+from getiaction.export.mixin_export import Export
 from getiaction.policies.base import Policy
 from getiaction.train.utils import reformat_dataset_to_match_policy
 
@@ -26,7 +27,7 @@ if TYPE_CHECKING:
     from .preprocessor import SmolVLAPostprocessor, SmolVLAPreprocessor
 
 
-class SmolVLA(Policy):
+class SmolVLA(Export, Policy):
     """SmolVLA Policy - Hugging Face's flow matching VLA model.
 
     Lightning wrapper for training and inference with SmolVLA model.

@@ -272,6 +272,35 @@ class SmolVLAModel(nn.Module):
         return sample_input
 
     @property
+    def extra_export_args(self) -> dict:
+        """Additional export arguments for model conversion.
+
+        This property provides extra configuration parameters needed when exporting
+        the model to different formats, particularly ONNX format.
+
+        Returns:
+            dict: A dictionary containing format-specific export arguments.
+
+        Example:
+            >>> extra_args = model.extra_export_args()
+            >>> print(extra_args)
+            {'onnx': {'output_names': ['action']}}
+        """
+        extra_args = {}
+        extra_args["onnx"] = {
+            "output_names": ["action"],
+        }
+        extra_args["openvino"] = {
+            "output": ["action"],
+        }
+        extra_args["torch_export_ir"] = {}
+        extra_args["torch"] = {
+            "output_names": ["action"],
+        }
+
+        return extra_args
+
+    @property
     def reward_delta_indices(self) -> None:
         """Return reward indices.
 
