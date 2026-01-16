@@ -34,7 +34,7 @@ export const NewProjectLink = ({ className }: { className?: string }) => {
             { body: { id, name, datasets: [] } },
             {
                 onSuccess: () => {
-                    navigate(paths.project.datasets.index({ project_id: id }));
+                    navigate(paths.project.robots.new({ project_id: id }));
                 },
             }
         );

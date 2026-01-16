@@ -84,7 +84,6 @@ export const CameraSetup = ({ camera, availableCameras, updateCamera }: CameraSe
                     <Item key={makeKey(cam)}>{cam.name}</Item>
                 ))}
             </Picker>
-            {<CameraPreview key={camera.fingerprint} camera={camera} />}
         </Flex>
     );
 };

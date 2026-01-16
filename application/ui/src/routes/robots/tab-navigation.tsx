@@ -1,19 +1,8 @@
-import { Suspense } from 'react';
-
-import { Flex, Grid, Item, Loading, minmax, TabList, Tabs, View } from '@geti/ui';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Flex, Item, TabList, Tabs, View } from '@geti/ui';
+import { useLocation } from 'react-router-dom';
 
 import { useProjectId } from '../../features/projects/use-project';
-import { RobotsList } from '../../features/robots/robots-list';
 import { paths } from '../../router';
-
-const CenteredLoading = () => {
-    return (
-        <Flex width='100%' height='100%' alignItems={'center'} justifyContent={'center'}>
-            <Loading mode='inline' />
-        </Flex>
-    );
-};
 
 const Header = ({ project_id }: { project_id: string }) => {
     return (
@@ -58,7 +47,7 @@ const Header = ({ project_id }: { project_id: string }) => {
     );
 };
 
-export const RobotTabNavigation = () => {
+export const TabNavigation = () => {
     const { project_id } = useProjectId();
 
     const { pathname } = useLocation();
@@ -74,22 +63,5 @@ export const RobotTabNavigation = () => {
         >
             <Header project_id={project_id} />
         </Tabs>
-    );
-};
-
-export const Layout = () => {
-    return (
-        <Grid areas={['robot controls']} columns={[minmax('size-6000', 'auto'), '1fr']} height={'100%'} minHeight={0}>
-            <View gridArea='robot' backgroundColor={'gray-100'} padding='size-400'>
-                <Suspense fallback={<CenteredLoading />}>
-                    <RobotsList />
-                </Suspense>
-            </View>
-            <View gridArea='controls' backgroundColor={'gray-50'} padding='size-400' minHeight={0}>
-                <Suspense fallback={<CenteredLoading />}>
-                    <Outlet />
-                </Suspense>
-            </View>
-        </Grid>
     );
 };

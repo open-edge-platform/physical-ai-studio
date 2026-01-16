@@ -24,10 +24,11 @@ dependencies = [
   "loguru>=0.7.3",
   "getiaction",
   "greenlet>=3.2.4",
+  "tenacity>=9.1.2",
 ]
 
 [tool.uv.sources]
-FrameSource = { git = "https://github.com/ArendJanKramer/FrameSource.git", rev = "1eec5b2df1c7af9c8a941ee90bfc5e617c5b4522" }
+FrameSource = { git = "https://github.com/ArendJanKramer/FrameSource.git", rev = "4d51da9bc2f8f9353562e1641ddbf87d3045baf6" }
 getiaction = { path = "../../library", editable = true }
 
 [dependency-groups]

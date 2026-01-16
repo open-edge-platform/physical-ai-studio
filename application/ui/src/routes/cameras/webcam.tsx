@@ -64,7 +64,7 @@ const WebCamView = ({ device }: { device: MediaDeviceInfo }) => {
     }, [status]);
 
     return (
-        <View maxHeight={'100%'} padding={'size-400'} backgroundColor={'gray-50'}>
+        <View maxHeight={'100%'} padding={'size-400'} backgroundColor={'gray-100'}>
             <Grid areas={['canvas']} alignItems={'center'} justifyItems={'center'} height='100%'>
                 <View gridArea='canvas' width='100%' height='100%'>
                     <video
