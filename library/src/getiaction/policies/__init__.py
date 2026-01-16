@@ -12,7 +12,7 @@ from .act import ACT, ACTConfig, ACTModel
 from .dummy import Dummy, DummyConfig
 from .groot import Groot, GrootConfig, GrootModel
 from .lerobot import get_lerobot_policy
-from .pi0 import Pi0, Pi0Config, Pi0Model
+from .pi0 import Pi0, Pi0Config, Pi0Model, Pi05
 from .smolvla import SmolVLA, SmolVLAConfig, SmolVLAModel
 
 if TYPE_CHECKING:
@@ -34,6 +34,7 @@ __all__ = [
     "Pi0",
     "Pi0Config",
     "Pi0Model",
+    "Pi05",
     # SmolVLA
     "SmolVLA",
     "SmolVLAConfig",
@@ -138,13 +139,9 @@ def get_getiaction_policy_class(policy_name: str) -> type[Policy]:
     if policy_name == "groot":
         return Groot
     if policy_name == "pi0":
-        from functools import partial  # noqa: PLC0415
-
-        return partial(Pi0, variant="pi0")  # type: ignore[return-value]
+        return Pi0
     if policy_name == "pi05":
-        from functools import partial  # noqa: PLC0415
-
-        return partial(Pi0, variant="pi05")  # type: ignore[return-value]
+        return Pi05
     if policy_name == "smolvla":
         return SmolVLA
 

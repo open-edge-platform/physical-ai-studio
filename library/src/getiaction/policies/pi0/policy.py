@@ -502,3 +502,19 @@ class Pi0(Export, Policy):
                 gradient_clip_val=clip_val,
                 gradient_clip_algorithm=gradient_clip_algorithm or "norm",
             )
+
+
+class Pi05(Pi0):
+    """Pi0.5 Policy - Alias for Pi0 with variant set to "pi05".
+
+    This class is a convenience alias for creating a Pi0 policy
+    configured as Pi0.5.
+
+    Example:
+        >>> from getiaction.policies.pi0 import Pi05
+        >>> policy = Pi05(learning_rate=2.5e-5)
+    """
+
+    def __init__(self, **kwargs: Any) -> None:  # noqa: ANN401
+        """Initialize Pi0.5 policy with variant set to "pi05"."""
+        super().__init__(variant="pi05", **kwargs)
