@@ -1,7 +1,8 @@
 from functools import lru_cache
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import status
+from fastapi import Depends, status
 from fastapi.exceptions import HTTPException
 from fastapi.requests import HTTPConnection
 
@@ -9,6 +10,7 @@ from core.scheduler import Scheduler
 from services import DatasetService, JobService, ModelService, ProjectCameraService, ProjectService, RobotService
 from services.event_processor import EventProcessor
 from webrtc.manager import WebRTCManager
+from workers.camera_worker_registry import CameraWorkerRegistry
 
 
 def is_valid_uuid(identifier: str) -> bool:
@@ -107,3 +109,14 @@ def get_scheduler_ws(request: HTTPConnection) -> Scheduler:
 def get_event_processor_ws(request: HTTPConnection) -> EventProcessor:
     """Provide the global event_processor instance for WebSocket."""
     return request.app.state.event_processor
+
+
+def get_camera_registry(request: HTTPConnection) -> CameraWorkerRegistry:
+    """Dependency to get camera worker registry."""
+    registry = getattr(request.app.state, "camera_registry", None)
+    if registry is None:
+        raise RuntimeError("Camera worker registry not initialized")
+    return registry
+
+
+CameraRegistryDep = Annotated[CameraWorkerRegistry, Depends(get_camera_registry)]
