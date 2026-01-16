@@ -1,6 +1,7 @@
 import { Flex, Grid, Heading, minmax, repeat } from '@geti/ui';
 
 import { SchemaProjectCamera } from '../../api/types';
+import { WebsocketCamera } from './websocket-camera';
 
 export const CameraFeed = ({ camera, empty = false }: { camera: SchemaProjectCamera; empty?: boolean }) => {
     return (
@@ -50,7 +51,7 @@ export const CameraFeed = ({ camera, empty = false }: { camera: SchemaProjectCam
                 gap='size-400'
                 width='100%'
             >
-                <>{/* TODO: add camera preview */}</>
+                <WebsocketCamera camera={camera} />
             </Grid>
         </Flex>
     );
