@@ -9,6 +9,7 @@ from api.hardware import router as hardware_router
 from api.job import router as job_router
 from api.models import router as models_router
 from api.project import router as project_router
+from api.project_camera import router as project_cameras_router
 from api.record import router as record_router
 from api.robots import router as project_robots_router
 from api.settings import router as settings_router
@@ -27,6 +28,7 @@ app = FastAPI(
 
 app.include_router(project_router)
 app.include_router(project_robots_router)
+app.include_router(project_cameras_router)
 app.include_router(hardware_router)
 app.include_router(camera_router)
 app.include_router(dataset_router)
@@ -39,4 +41,4 @@ register_application_exception_handlers(app)
 
 if __name__ == "__main__":
     uvicorn_port = int(os.environ.get("HTTP_SERVER_PORT", "7860"))
-    uvicorn.run("main:app", host="0.0.0.0", port=uvicorn_port)  # noqa: S104
+    uvicorn.run("main:app", host="0.0.0.0", port=uvicorn_port)  # noqa: S104  # nosec B104

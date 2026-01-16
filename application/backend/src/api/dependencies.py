@@ -6,7 +6,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.requests import HTTPConnection
 
 from core.scheduler import Scheduler
-from services import DatasetService, JobService, ModelService, ProjectService, RobotService
+from services import DatasetService, JobService, ModelService, ProjectCameraService, ProjectService, RobotService
 from services.event_processor import EventProcessor
 from webrtc.manager import WebRTCManager
 
@@ -43,6 +43,12 @@ def get_robot_service() -> RobotService:
 
 
 @lru_cache
+def get_camera_service() -> ProjectCameraService:
+    """Provide a ProjectCameraService instance for managing cameras in a project."""
+    return ProjectCameraService()
+
+
+@lru_cache
 def get_dataset_service() -> DatasetService:
     """Provides a DatasetService instance for managing datasets."""
     return DatasetService()
@@ -72,6 +78,13 @@ def get_robot_id(robot_id: str) -> UUID:
     if not is_valid_uuid(robot_id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid robot ID")
     return UUID(robot_id)
+
+
+def get_camera_id(camera_id: str) -> UUID:
+    """Initialize and validates a camera ID."""
+    if not is_valid_uuid(camera_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid camera ID")
+    return UUID(camera_id)
 
 
 def validate_uuid(uuid: str) -> UUID:
