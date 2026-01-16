@@ -40,5 +40,5 @@ app.include_router(job_router)
 register_application_exception_handlers(app)
 
 if __name__ == "__main__":
-    uvicorn_port = int(os.environ.get("HTTP_SERVER_PORT", "7860"))
-    uvicorn.run("main:app", host="0.0.0.0", port=uvicorn_port)  # noqa: S104  # nosec B104
+    uvicorn_port = int(os.environ.get("HTTP_SERVER_PORT", settings.port))
+    uvicorn.run("main:app", host=settings.host, port=uvicorn_port)
