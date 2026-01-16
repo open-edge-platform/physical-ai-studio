@@ -702,6 +702,35 @@ class Pi0Model(nn.Module):
 
         return extra_args
 
+    @property
+    def reward_delta_indices(self) -> None:
+        """Return reward indices.
+
+        Currently returns `None` as rewards are not implemented.
+
+        Returns:
+            None
+        """
+        return None
+
+    @property
+    def action_delta_indices(self) -> list[int]:
+        """Get indices of actions relative to the current timestep.
+
+        Returns:
+            list[int]: A list of relative action indices.
+        """
+        return list(range(self.action_horizon))
+
+    @property
+    def observation_delta_indices(self) -> None:
+        """Get indices of observations relative to the current timestep.
+
+        Returns:
+            list[int]: A list of relative observation indices.
+        """
+        return None
+
     def _forward_train(  # noqa: PLR0914
         self,
         observation: Mapping[str, Any],

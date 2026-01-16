@@ -45,6 +45,7 @@ import torch
 from getiaction.data.observation import ACTION
 from getiaction.export.mixin_export import Export
 from getiaction.policies.base import Policy
+from getiaction.train.utils import reformat_dataset_to_match_policy
 
 from .config import Pi0Config
 from .model import Pi0Model
@@ -336,6 +337,8 @@ class Pi0(Export, Policy):
 
         # Initialize model
         self._initialize_model(env_action_dim, stats_dict)
+
+        reformat_dataset_to_match_policy(self, datamodule)
 
     def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
         """Forward pass through the model.
