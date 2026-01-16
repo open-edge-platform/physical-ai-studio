@@ -17,7 +17,7 @@ import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import nn
 
-from getiaction.data.observation import ACTION, EXTRA, IMAGES, STATE, FeatureType, Observation
+from getiaction.data.observation import ACTION, EXTRA, IMAGES, STATE, TASK, FeatureType, Observation
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -231,7 +231,7 @@ class SmolVLAModel(nn.Module):
         return actions
 
     @property
-    def sample_input(self) -> dict[str, torch.Tensor]:
+    def sample_input(self) -> dict[str, torch.Tensor | str]:
         """Generate a sample input dictionary for the model with random tensors.
 
         This method creates a dictionary containing sample input tensors that match the expected
@@ -269,6 +269,8 @@ class SmolVLAModel(nn.Module):
                         device=device,
                     )
 
+        sample_input[TASK] = "sample_task"
+
         return sample_input
 
     @property
@@ -295,6 +297,7 @@ class SmolVLAModel(nn.Module):
         }
         extra_args["torch_export_ir"] = {}
         extra_args["torch"] = {
+            "input_names": ["Observation"],
             "output_names": ["action"],
         }
 

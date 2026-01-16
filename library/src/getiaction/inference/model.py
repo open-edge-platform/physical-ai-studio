@@ -194,17 +194,19 @@ class InferenceModel:
         """
         self._action_queue.clear()
 
-    def _prepare_inputs(self, observation: Observation) -> dict[str, np.ndarray]:
+    def _prepare_inputs(self, observation: Observation) -> dict[str, np.ndarray | Observation]:
         """Convert observation to model input format.
 
         Handles both first-party (state, images) and LeRobot (observation.*, action)
         naming conventions by mapping Observation fields to expected model inputs.
+        Returns the original Observation object when the model expects
+        a single "Observation" input.
 
         Args:
             observation: Robot observation
 
         Returns:
-            Dictionary mapping input names to numpy arrays
+            Dictionary mapping input names to numpy arrays or the input Observation
 
         Raises:
             ValueError: If required model inputs are missing from observation
@@ -228,6 +230,9 @@ class InferenceModel:
             adapter_input_names = expected_input_names
 
         expected_inputs = set(expected_input_names)
+
+        if expected_inputs == {"Observation"}:
+            return {"Observation": observation}
 
         # Build mapping from observation fields to expected input names
         # This handles different naming conventions:

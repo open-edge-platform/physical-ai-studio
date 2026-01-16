@@ -635,7 +635,7 @@ class Pi0Model(nn.Module):
 
         # Forward pass
         with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=use_bf16):
-            loss_per_sample = self.forward_train(observation, actions)
+            loss_per_sample = self._forward_train(observation, actions)
 
         # Average loss
         loss = loss_per_sample.mean()
@@ -672,7 +672,37 @@ class Pi0Model(nn.Module):
         with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=use_bf16):
             return self.sample_actions(device, observation)
 
-    def forward_train(  # noqa: PLR0914
+    @property
+    def extra_export_args(self) -> dict:
+        """Additional export arguments for model conversion.
+
+        This property provides extra configuration parameters needed when exporting
+        the model to different formats, particularly ONNX format.
+
+        Returns:
+            dict: A dictionary containing format-specific export arguments.
+
+        Example:
+            >>> extra_args = model.extra_export_args()
+            >>> print(extra_args)
+            {'onnx': {'output_names': ['action']}}
+        """
+        extra_args = {}
+        extra_args["onnx"] = {
+            "output_names": ["action"],
+        }
+        extra_args["openvino"] = {
+            "output": ["action"],
+        }
+        extra_args["torch_export_ir"] = {}
+        extra_args["torch"] = {
+            "input_names": ["Observation"],
+            "output_names": ["action"],
+        }
+
+        return extra_args
+
+    def _forward_train(  # noqa: PLR0914
         self,
         observation: Mapping[str, Any],
         actions: torch.Tensor,
