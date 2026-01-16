@@ -1,9 +1,33 @@
-import { Flex, Grid, Heading, minmax, repeat } from '@geti/ui';
+import { ReactNode } from 'react';
+
+import { Flex, Grid, Heading, minmax, repeat, View, Well } from '@geti/ui';
 
 import { SchemaProjectCamera } from '../../api/types';
 import { WebsocketCamera } from './websocket-camera';
 
+const CameraWell = ({ children, aspectRatio }: { children: ReactNode; aspectRatio: number }) => {
+    return (
+        <Flex direction='column' alignContent='start' flex gap='size-30'>
+            <Flex UNSAFE_style={{ aspectRatio }}>
+                <Well flex UNSAFE_style={{ position: 'relative', overflow: 'hidden' }}>
+                    <View
+                        maxHeight='100%'
+                        padding='size-400'
+                        backgroundColor='gray-100'
+                        height='100%'
+                        position='relative'
+                    >
+                        {children}
+                    </View>
+                </Well>
+            </Flex>
+        </Flex>
+    );
+};
+
 export const CameraFeed = ({ camera, empty = false }: { camera: SchemaProjectCamera; empty?: boolean }) => {
+    const aspectRatio = camera.payload.width / camera.payload.height;
+
     return (
         <Flex direction='column' gap='size-200'>
             {empty === false && camera && (
@@ -51,7 +75,9 @@ export const CameraFeed = ({ camera, empty = false }: { camera: SchemaProjectCam
                 gap='size-400'
                 width='100%'
             >
-                <WebsocketCamera camera={camera} />
+                <CameraWell aspectRatio={aspectRatio}>
+                    <WebsocketCamera camera={camera} />
+                </CameraWell>
             </Grid>
         </Flex>
     );
