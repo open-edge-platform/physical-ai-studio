@@ -612,7 +612,67 @@ class Pi0Model(nn.Module):
 
         return embeddings, pad_masks, att_masks, adarms_cond
 
-    def forward(  # noqa: PLR0914
+    def forward(self, batch: Mapping[str, Any], *, use_bf16: bool = True) -> tuple[torch.Tensor, dict[str, float]]:
+        """Training forward pass.
+
+        Args:
+            batch: Input batch with observations and actions.
+            use_bf16: Whether to use bfloat16 autocasting.
+
+        Returns:
+            Tuple of (loss, loss_dict).
+        """
+        device = next(self.parameters()).device
+
+        observation = {
+            "images": {k: v.to(device) for k, v in batch["images"].items()},
+            "image_masks": {k: v.to(device) for k, v in batch["image_masks"].items()},
+            "state": batch["state"].to(device),
+            "tokenized_prompt": batch["tokenized_prompt"].to(device),
+            "tokenized_prompt_mask": batch["tokenized_prompt_mask"].to(device),
+        }
+        actions = batch["actions"].to(device)
+
+        # Forward pass
+        with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=use_bf16):
+            loss_per_sample = self.forward_train(observation, actions)
+
+        # Average loss
+        loss = loss_per_sample.mean()
+        loss_dict = {"loss": loss.item()}
+
+        return loss, loss_dict
+
+    def predict_action_chunk(self, batch: Mapping[str, Any], *, use_bf16: bool = True) -> torch.Tensor:
+        """Predict a chunk of actions from input batch.
+
+        This method processes the input batch, prepares images, state, and language tokens,
+        then uses the model to sample actions.
+
+        Args:
+            batch: A dictionary containing input tensors including images, state information,
+                and tokenized prompts with their masks.
+            use_bf16: Whether to use bfloat16 autocasting.
+
+        Returns:
+            torch.Tensor: A tensor of predicted actions with shape matching the original
+                action dimensions from the dataset statistics.
+        """
+        device = next(self.parameters()).device
+
+        observation = {
+            "images": {k: v.to(device) for k, v in batch["images"].items()},
+            "image_masks": {k: v.to(device) for k, v in batch["image_masks"].items()},
+            "state": batch["state"].to(device),
+            "tokenized_prompt": batch["tokenized_prompt"].to(device),
+            "tokenized_prompt_mask": batch["tokenized_prompt_mask"].to(device),
+        }
+
+        self.eval()
+        with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=use_bf16):
+            return self.sample_actions(device, observation)
+
+    def forward_train(  # noqa: PLR0914
         self,
         observation: Mapping[str, Any],
         actions: torch.Tensor,

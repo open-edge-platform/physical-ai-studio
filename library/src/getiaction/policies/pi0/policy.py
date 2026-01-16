@@ -42,6 +42,8 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import torch
 
+from getiaction.data.observation import ACTION
+from getiaction.export.mixin_export import Export
 from getiaction.policies.base import Policy
 
 from .config import Pi0Config
@@ -54,7 +56,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class Pi0(Policy):
+class Pi0(Export, Policy):
     """Pi0/Pi0.5 Policy - Physical Intelligence's flow matching VLA model.
 
     Lightning wrapper for training and inference with Pi0/Pi0.5 models.
@@ -336,65 +338,55 @@ class Pi0(Policy):
         self._initialize_model(env_action_dim, stats_dict)
 
     def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
-        """Forward pass.
+        """Forward pass through the model.
 
-        Behavior depends on training mode:
-        - Training: Returns loss tensor or (loss, loss_dict)
-        - Evaluation: Returns action via select_action
-
-        Args:
-            batch: Input observation batch.
-
-        Returns:
-            Loss tensor in training mode, action tensor in eval mode.
-        """
-        if self.training:
-            return self._training_forward(batch)
-        return self.select_action(batch)
-
-    def _training_forward(self, batch: Observation) -> tuple[torch.Tensor, dict[str, float]]:
-        """Training forward pass.
+        Processes the input batch and either trains the model or predicts actions
+        depending on the current mode.
 
         Args:
-            batch: Input batch with observations and actions.
+            batch: An Observation object containing the input data for the model.
 
         Returns:
-            Tuple of (loss, loss_dict).
+            If training: Returns the model output, either a tensor or a tuple
+                containing a tensor and a dictionary of loss metrics.
+            If not training: Returns the predicted action chunk as a tensor.
 
         Raises:
-            RuntimeError: If model is not initialized.
+            ValueError: If the model is not initialized during training mode.
         """
-        if self.model is None:
-            msg = "Model not initialized. Call setup() first."
-            raise RuntimeError(msg)
+        if self.training:
+            if self.model is None or self._preprocessor is None:
+                msg = "Model is not initialized"
+                raise ValueError(msg)
 
-        # Preprocess batch
-        processed = self._preprocessor(batch)
+            processed_batch = self._preprocessor(batch.to_dict())
+            return self.model(processed_batch, use_bf16=self.hparams["use_bf16"])
+        return self.predict_action_chunk(batch)
 
-        # Get device
-        device = next(self.model.parameters()).device
+    @torch.no_grad()
+    def predict_action_chunk(self, batch: Observation) -> torch.Tensor:
+        """Predict a chunk of actions from the given observation batch.
 
-        # Move to device
-        observation = {
-            "images": {k: v.to(device) for k, v in processed["images"].items()},
-            "image_masks": {k: v.to(device) for k, v in processed["image_masks"].items()},
-            "state": processed["state"].to(device),
-            "tokenized_prompt": processed["tokenized_prompt"].to(device),
-            "tokenized_prompt_mask": processed["tokenized_prompt_mask"].to(device),
-        }
-        actions = processed["actions"].to(device)
+        Args:
+            batch: An Observation object containing the input data for action prediction.
 
-        # Forward pass
-        with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=self.hparams["use_bf16"]):
-            loss_per_sample = self.model.forward(observation, actions)
+        Returns:
+            torch.Tensor: The predicted action chunk after post-processing.
 
-        # Average loss
-        loss = loss_per_sample.mean()
-        loss_dict = {"loss": loss.item()}
+        Raises:
+            ValueError: If the model has not been initialized.
+        """
+        if self.model is None or self._preprocessor is None or self._postprocessor is None:
+            msg = "Model is not initialized"
+            raise ValueError(msg)
 
-        return loss, loss_dict
+        processed_batch = self._preprocessor(batch.to_dict())
+        chunk = self.model.predict_action_chunk(processed_batch, use_bf16=self.hparams["use_bf16"])
+        return self._postprocessor({ACTION: chunk})[ACTION]
 
-    def training_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:  # noqa: ARG002
+    # select_action() is inherited from Policy base class - uses queue with predict_action_chunk()
+
+    def training_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
         """Lightning training step.
 
         Args:
@@ -404,9 +396,9 @@ class Pi0(Policy):
         Returns:
             Loss tensor for backpropagation.
         """
-        loss, loss_dict = self._training_forward(batch)
+        del batch_idx
+        loss, loss_dict = self(batch)
 
-        # Log metrics
         self.log("train/loss", loss_dict["loss"], prog_bar=True)
 
         return loss
@@ -425,52 +417,6 @@ class Pi0(Policy):
             Dictionary of metrics from the gym rollout evaluation.
         """
         return self.evaluate_gym(batch, batch_idx, stage="val")
-
-    @torch.no_grad()
-    def predict_action_chunk(self, batch: Observation) -> torch.Tensor:
-        """Predict a chunk of actions from observation.
-
-        Implements the abstract method from Policy base class.
-        Returns action chunk that will be queued by select_action().
-
-        Args:
-            batch: Input observation.
-
-        Returns:
-            Action chunk tensor of shape (B, T, D) where T is chunk size.
-
-        Raises:
-            RuntimeError: If model is not initialized.
-        """
-        if self.model is None:
-            msg = "Model not initialized"
-            raise RuntimeError(msg)
-
-        # Preprocess batch
-        processed = self._preprocessor(batch)
-
-        # Get device
-        device = next(self.model.parameters()).device
-
-        # Move to device
-        observation = {
-            "images": {k: v.to(device) for k, v in processed["images"].items()},
-            "image_masks": {k: v.to(device) for k, v in processed["image_masks"].items()},
-            "state": processed["state"].to(device),
-            "tokenized_prompt": processed["tokenized_prompt"].to(device),
-            "tokenized_prompt_mask": processed["tokenized_prompt_mask"].to(device),
-        }
-
-        # Sample actions
-        self.model.eval()
-        with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=self.hparams["use_bf16"]):
-            action_chunk = self.model.sample_actions(device, observation)
-
-        # Postprocess
-        outputs = self._postprocessor({"actions": action_chunk})
-        return outputs["actions"]
-
-    # select_action() is inherited from Policy base class - uses queue with predict_action_chunk()
 
     def reset(self) -> None:
         """Reset policy state for new episode."""
