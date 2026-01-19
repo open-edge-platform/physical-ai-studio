@@ -22,7 +22,7 @@ dependencies = [
   "click>=8.3.0",
   "FrameSource>=0.2.2",
   "loguru>=0.7.3",
-  "getiaction",
+  "getiaction[pi0,smolvla]",
   "greenlet>=3.2.4",
   "tenacity>=9.1.2",
 ]
