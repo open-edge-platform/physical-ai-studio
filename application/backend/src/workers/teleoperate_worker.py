@@ -258,7 +258,7 @@ class TeleoperateWorker(BaseThreadWorker):
         if self.dataset.num_episodes == 0:
             shutil.rmtree(self.dataset.root)
 
-        # Wait for 5 seconds before closing queue to allow messages thru
+        # Wait for .5 seconds before closing queue to allow messages thru
         asyncio.run(asyncio.sleep(0.5))
 
         self.robot.disconnect()

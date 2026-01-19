@@ -173,7 +173,7 @@ class InferenceWorker(BaseThreadWorker):
         if self.robot.is_connected:
             self.robot.disconnect()
 
-        # Wait for 5 seconds before closing queue to allow messages thru
+        # Wait for .5 seconds before closing queue to allow messages thru
         asyncio.run(asyncio.sleep(0.5))
         self.queue.close()
         self.queue.cancel_join_thread()
