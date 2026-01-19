@@ -50,8 +50,11 @@ async def get_supported_formats(
     fingerprint: str,
 ) -> list[SupportedCameraFormat]:
     """Returns the supported camera resolution and fps associated to the camera"""
-    camera = FrameSourceFactory.create(driver, source=fingerprint)
+    camera = FrameSourceFactory.create(driver if driver != "usb_camera" else "webcam", source=fingerprint)
     formats = camera.get_supported_formats()
+
+    if formats is None:
+        return []
 
     return [
         SupportedCameraFormat(width=format["width"], height=format["height"], fps=format["fps"]) for format in formats
