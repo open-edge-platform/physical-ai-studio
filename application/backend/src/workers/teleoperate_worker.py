@@ -2,6 +2,7 @@ import base64
 import copy
 import shutil
 import time
+import uuid
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
 
@@ -100,7 +101,7 @@ class TeleoperateWorker(BaseThreadWorker):
             self.dataset = load_local_lerobot_dataset(self.config.dataset.path, batch_encoding_size=1)
         else:
             self.dataset = LeRobotDataset.create(
-                repo_id="dataset",
+                repo_id=str(uuid.uuid4()),
                 root=self.config.dataset.path,
                 fps=self.config.fps,
                 features=self.dataset_features,
