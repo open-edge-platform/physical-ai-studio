@@ -74,7 +74,7 @@ const emptyCamera = (): SchemaCameraConfigInput => {
         height: 480,
         id: uuidv4(),
         name: '',
-        port_or_device_id: '',
+        fingerprint: '',
         use_depth: false,
     };
 };

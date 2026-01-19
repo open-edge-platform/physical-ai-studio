@@ -22,7 +22,7 @@ async def offer_camera(
     """Create a WebRTC offer"""
     config = Camera(
         name=camera,
-        port_or_device_id=camera,
+        fingerprint=camera,
         driver=driver,
         default_stream_profile=CameraProfile(
             width=width,

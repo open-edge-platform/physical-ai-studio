@@ -29,41 +29,46 @@ class Dummy(FromCheckpoint, Export, Policy):
         Args:
             model (DummyModel): An instance of the DummyModel class.
         """
-        super().__init__()
+        super().__init__(n_action_steps=1)  # Dummy policy doesn't use action chunking
         self.model: DummyModel = model
 
-    def select_action(self, batch: Observation) -> torch.Tensor:
-        """Select an action using the policy model.
+    def predict_action_chunk(self, batch: Observation) -> torch.Tensor:
+        """Predict action chunk using the policy model.
+
+        Dummy policy doesn't use action chunking, so this returns a single
+        action with shape (B, 1, D) to match the action chunk interface.
 
         Args:
             batch: Input batch of observations.
 
         Returns:
-            torch.Tensor: Selected actions.
+            torch.Tensor: Action tensor of shape (B, 1, D).
         """
-        # Get action from model
-        return self.model.select_action(batch.to_dict())  # type: ignore[attr-defined]
+        # Get action from model - shape (B, D)
+        actions = self.model.select_action(batch.to_dict())  # type: ignore[attr-defined]
+        # Add time dimension for consistency with chunk interface: (B, D) -> (B, 1, D)
+        return actions.unsqueeze(1)
 
     def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
         """Perform forward pass of the Dummy policy.
 
         The return value depends on the model's training mode:
         - In training mode: Returns (loss, loss_dict) from the model's forward method
-        - In evaluation mode: Returns action predictions via select_action method
+        - In evaluation mode: Returns action chunk via predict_action_chunk
 
         Args:
             batch (Observation): Input batch of observations
 
         Returns:
             torch.Tensor | tuple[torch.Tensor, dict[str, float]]: In training mode, returns
-                tuple of (loss, loss_dict). In eval mode, returns selected actions tensor.
+                tuple of (loss, loss_dict). In eval mode, returns action chunk tensor.
         """
         if self.training:
             # During training, return loss information for backpropagation
             return self.model(batch.to_dict())
 
-        # During evaluation, return action predictions
-        return self.select_action(batch)
+        # During evaluation, return action chunk
+        return self.predict_action_chunk(batch)
 
     @staticmethod
     def _generate_example_inputs() -> dict[str, torch.Tensor]:
@@ -149,5 +154,6 @@ class Dummy(FromCheckpoint, Export, Policy):
     def reset(self) -> None:
         """Reset the policy state.
 
-        Dummy policy has no state to reset, so this is a no-op.
+        Clears the action queue from the base class.
         """
+        super().reset()

@@ -24,7 +24,7 @@ dynamic = ["version"]
 requires-python = ">=3.12"
 authors = [
   { name="Alfie Roddan", email="alfiex.roddan@intel.com" },
-  { name="Vladislav Sovrsaov", email="vladislav.sovrasov@intel.com" },
+  { name="Vladislav Sovrasov", email="vladislav.sovrasov@intel.com" },
   { name="Samet Akcay", email="samet.akcay@intel.com" },
 ]
 description = "A package for training vision-action models"
@@ -57,9 +57,22 @@ tests = [
     "pytest-mock",
     "mypy",
 ]
+libero = [
+    "hf-libero>=0.1.3,<0.2.0",
+]
 
 # VLA Policy dependencies - these are heavy models with specific requirements
 # Install with: pip install getiaction[groot]
+
+# Physical Intelligence Pi0/Pi0.5 foundation model
+# Requires PaliGemma backbone + Gemma action expert
+# Supports LoRA fine-tuning for efficient adaptation
+pi0 = [
+    "transformers>=4.54.0,<5.0.0",
+    "peft>=0.13.0,<1.0.0",
+    "safetensors>=0.4.3,<1.0.0",
+    "Pillow>=10.0.0,<13.0.0",
+]
 
 # NVIDIA GR00T-N1 foundation model
 # Requires ~24GB+ GPU memory for training, supports LoRA fine-tuning
@@ -76,10 +89,20 @@ groot = [
     "flash-attn>=2.5.9,<3.0.0; sys_platform != 'darwin'",
 ]
 
+# SmolVLA foundation model
+smolvla = [
+    "transformers>=4.53.0,<5.0.0",
+    "num2words>=0.5.14,<0.6.0",
+    "safetensors>=0.4.3,<1.0.0",
+]
+
 # All optional dependencies
 all = [
     "getiaction[tests]",
+    "getiaction[libero]",
+    "getiaction[pi0]",
     "getiaction[groot]",
+    "getiaction[smolvla]",
 ]
 
 [project.scripts]

@@ -73,7 +73,7 @@ export const Camera = () => {
             >
                 {camera && (
                     <WebRTCConnectionProvider camera={camera}>
-                        <CameraView label={camera.port_or_device_id} />
+                        <CameraView label={camera.fingerprint} />
                     </WebRTCConnectionProvider>
                 )}
             </Grid>
@@ -96,8 +96,8 @@ export const CameraOverview = () => {
             >
                 {cameras.map((camera) => {
                     return (
-                        <WebRTCConnectionProvider camera={camera} key={camera.port_or_device_id}>
-                            <CameraView label={camera.port_or_device_id} />
+                        <WebRTCConnectionProvider camera={camera} key={camera.fingerprint}>
+                            <CameraView label={camera.fingerprint} />
                         </WebRTCConnectionProvider>
                     );
                 })}

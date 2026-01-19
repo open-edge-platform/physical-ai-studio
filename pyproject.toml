@@ -55,6 +55,7 @@ exclude = [
     "dist",
     "node_modules",
     "venv",
+    "notebooks"
 ]
 
 [tool.ruff.lint]
