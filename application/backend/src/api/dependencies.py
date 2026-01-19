@@ -9,6 +9,9 @@ from fastapi.requests import HTTPConnection
 from core.scheduler import Scheduler
 from services import DatasetService, JobService, ModelService, ProjectCameraService, ProjectService, RobotService
 from services.event_processor import EventProcessor
+from services.robot_calibration_service import RobotCalibrationService
+from settings import get_settings
+from utils.robot import RobotConnectionManager
 from webrtc.manager import WebRTCManager
 from workers.camera_worker_registry import CameraWorkerRegistry
 
@@ -42,6 +45,24 @@ def get_project_service() -> ProjectService:
 def get_robot_service() -> RobotService:
     """Provide a RobotService instance for managing robots in a project."""
     return RobotService()
+
+
+def get_robot_manager_service(request: HTTPConnection) -> RobotConnectionManager:
+    """Provide a RobotConnectionManager instance."""
+    robot_manager = getattr(request.app.state, "robot_manager", None)
+
+    if robot_manager is None:
+        raise RuntimeError("Robot manager not initialized")
+
+    return robot_manager
+
+
+RobotConnectionManagerDep = Annotated[RobotConnectionManager, Depends(get_robot_manager_service)]
+
+
+def get_robot_calibration_service(robot_manager: RobotConnectionManagerDep) -> RobotCalibrationService:
+    """Provide a RobotCalibrationService instance for managing robot calibrations."""
+    return RobotCalibrationService(robot_manager, settings=get_settings())
 
 
 @lru_cache
@@ -80,6 +101,13 @@ def get_robot_id(robot_id: str) -> UUID:
     if not is_valid_uuid(robot_id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid robot ID")
     return UUID(robot_id)
+
+
+def get_calibration_id(calibration_id: str) -> UUID:
+    """Initialize and validates a calibration ID."""
+    if not is_valid_uuid(calibration_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid calibration ID")
+    return UUID(calibration_id)
 
 
 def get_camera_id(camera_id: str) -> UUID:

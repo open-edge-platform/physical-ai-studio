@@ -8,6 +8,7 @@ class ResourceType(StrEnum):
 
     PROJECT = "Project"
     ROBOT = "Robot"
+    ROBOT_CALIBRATION = "Robot calibration"
     CAMERA = "Camera"
     DATASET = "Dataset"
     MODEL = "Model"
