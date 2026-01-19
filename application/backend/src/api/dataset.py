@@ -1,6 +1,6 @@
-from uuid import UUID
 import os
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import FileResponse
