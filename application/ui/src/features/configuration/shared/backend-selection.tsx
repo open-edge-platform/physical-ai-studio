@@ -1,4 +1,4 @@
-import { Picker, Item } from "@geti/ui";
+import { Item, Picker } from '@geti/ui';
 
 interface BackendSelectionProps {
     backend: string;
@@ -6,10 +6,10 @@ interface BackendSelectionProps {
 }
 
 const availableBackends = [
-    { id: "torch", name: "Torch" },
-    { id: "openvino", name: "OpenVINO" },
-    { id: "onnx", name: "ONNX" },
-    { id: "torch_export_ir", name: "Torch Export IR" }
+    { id: 'torch', name: 'Torch' },
+    { id: 'openvino', name: 'OpenVINO' },
+    { id: 'onnx', name: 'ONNX' },
+    { id: 'torch_export_ir', name: 'Torch Export IR' },
 ];
 
 export const BackendSelection = ({ backend, setBackend }: BackendSelectionProps) => {
@@ -23,5 +23,5 @@ export const BackendSelection = ({ backend, setBackend }: BackendSelectionProps)
         >
             {(item) => <Item key={item.id}>{item.name}</Item>}
         </Picker>
-    )
-}
+    );
+};

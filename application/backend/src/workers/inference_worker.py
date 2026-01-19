@@ -84,11 +84,7 @@ class InferenceWorker(BaseThreadWorker):
         if not export_dir.is_dir():
             policy.export(export_dir, backend=self.config.backend)
 
-        self.model = InferenceModel(
-            export_dir=export_dir,
-            policy_name="act",
-            backend=self.config.backend
-        )
+        self.model = InferenceModel(export_dir=export_dir, policy_name="act", backend=self.config.backend)
 
         # TODO: Define this somehow
         # LeRobot tends to return the robot arm to root position on reset.

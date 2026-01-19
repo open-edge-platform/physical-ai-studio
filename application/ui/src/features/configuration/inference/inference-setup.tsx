@@ -21,9 +21,9 @@ import { $api } from '../../../api/client';
 import { SchemaInferenceConfig, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
 import { TELEOPERATION_CONFIG_CACHE_KEY } from '../../../routes/datasets/record/utils';
 import { useProject } from '../../projects/use-project';
+import { BackendSelection } from '../shared/backend-selection';
 import { CameraSetup } from '../shared/camera-setup';
 import { RobotSetup } from '../shared/robot-setup';
-import { BackendSelection } from '../shared/backend-selection';
 
 interface InferenceSetupProps {
     onDone: (config: SchemaInferenceConfig | undefined) => void;
@@ -60,7 +60,7 @@ export const InferenceSetup = ({ model_id, onDone }: InferenceSetupProps) => {
             port: '',
             type: 'follower',
         },
-        backend: 'torch'
+        backend: 'torch',
     });
 
     const updateCamera = (name: string, id: string, oldId: string, driver: string, oldDriver: string) => {
@@ -146,7 +146,10 @@ export const InferenceSetup = ({ model_id, onDone }: InferenceSetupProps) => {
             </View>
             <Flex justifyContent={'space-between'}>
                 <View>
-                    <BackendSelection backend={config.backend} setBackend={(backend) => setConfig((c) => ({...c, backend}))} />
+                    <BackendSelection
+                        backend={config.backend}
+                        setBackend={(backend) => setConfig((c) => ({ ...c, backend }))}
+                    />
                 </View>
                 <View paddingTop={'size-300'}>
                     <ButtonGroup>

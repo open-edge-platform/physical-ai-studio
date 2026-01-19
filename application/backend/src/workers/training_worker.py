@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from getiaction.policies.base import Policy
 from lightning.pytorch.callbacks import ModelCheckpoint
 
 from services.snapshot_service import SnapshotService
@@ -15,6 +14,8 @@ from settings import get_settings
 if TYPE_CHECKING:
     import multiprocessing as mp
     from multiprocessing.synchronize import Event as EventClass
+
+    from getiaction.policies.base import Policy
 
 from getiaction.data import DataModule, LeRobotDataModule
 from getiaction.policies import ACT, ACTModel, Pi0
@@ -108,7 +109,6 @@ class TrainingWorker(BaseProcessWorker):
             )
 
             trainer = Trainer(
-
                 callbacks=[
                     checkpoint_callback,
                     TrainingTrackingCallback(
