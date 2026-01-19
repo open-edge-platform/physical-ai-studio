@@ -22,7 +22,7 @@ def get_dataset_episodes(repo_id: str, root: str | None) -> list[Episode]:
     if root and not check_repository_exists(Path(root)):
         return []
     try:
-        dataset = LeRobotDataset(repo_id, root)
+        dataset = LeRobotDataset("dataset", root)
         metadata = dataset.meta
         episodes = metadata.episodes
         result = []

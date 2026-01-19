@@ -98,11 +98,11 @@ class TeleoperateWorker(BaseThreadWorker):
 
         if check_repository_exists(self.config.dataset.path):
             self.dataset = LeRobotDataset(
-                repo_id=self.config.dataset.name, root=self.config.dataset.path, batch_encoding_size=1
+                repo_id="dataset", root=self.config.dataset.path, batch_encoding_size=1
             )
         else:
             self.dataset = LeRobotDataset.create(
-                repo_id=self.config.dataset.name,
+                repo_id="dataset",
                 root=self.config.dataset.path,
                 fps=self.config.fps,
                 features=self.dataset_features,
