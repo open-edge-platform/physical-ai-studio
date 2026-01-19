@@ -149,7 +149,6 @@ class InferenceWorker(BaseThreadWorker):
                 observation = self._build_geti_action_observation(lerobot_obs)
                 if not action_queue:
                     action_queue = self.model.select_action(observation)[0].tolist()
-                #    action_queue = self.model(observation.to_dict())[0].tolist()
                 action = action_queue.pop(0)
 
                 # print(observation)
