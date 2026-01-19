@@ -19,7 +19,7 @@ from loguru import logger
 from schemas import TeleoperationConfig
 from schemas.dataset import Episode, EpisodeVideo
 from utils.camera import build_camera_config
-from utils.dataset import check_repository_exists
+from utils.dataset import check_repository_exists, load_local_lerobot_dataset
 from utils.framesource_bridge import FrameSourceCameraBridge
 from utils.robot import make_lerobot_robot_config_from_robot, make_lerobot_teleoperator_config_from_robot
 
@@ -97,9 +97,7 @@ class TeleoperateWorker(BaseThreadWorker):
         self.robot.cameras = {camera.name: FrameSourceCameraBridge(camera) for camera in self.config.cameras}
 
         if check_repository_exists(self.config.dataset.path):
-            self.dataset = LeRobotDataset(
-                repo_id="dataset", root=self.config.dataset.path, batch_encoding_size=1
-            )
+            self.dataset = load_local_lerobot_dataset(self.config.dataset.path, batch_encoding_size=1)
         else:
             self.dataset = LeRobotDataset.create(
                 repo_id="dataset",

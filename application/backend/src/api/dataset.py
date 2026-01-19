@@ -1,3 +1,4 @@
+from uuid import UUID
 import os
 from typing import Annotated
 
@@ -59,8 +60,8 @@ async def get_episodes_of_dataset(
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
 ) -> list[Episode]:
     """Get dataset episodes of dataset by id."""
-    dataset = await dataset_service.get_dataset_by_id(dataset_id)
-    return get_dataset_episodes(dataset.name, dataset.path)
+    dataset = await dataset_service.get_dataset_by_id(UUID(dataset_id))
+    return get_dataset_episodes(dataset.path)
 
 
 @router.get("/{dataset_id}/{episode}/{camera}.mp4")
@@ -71,7 +72,7 @@ async def dataset_video_endpoint(
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
 ) -> FileResponse:
     """Get path to video of episode"""
-    dataset = await dataset_service.get_dataset_by_id(dataset_id)
+    dataset = await dataset_service.get_dataset_by_id(UUID(dataset_id))
     metadata = LeRobotDatasetMetadata(dataset.name, dataset.path, None, force_cache_sync=False)
     full_camera_name = f"observation.images.{camera}"
     video_path = os.path.join(metadata.root, metadata.get_video_file_path(episode, full_camera_name))
