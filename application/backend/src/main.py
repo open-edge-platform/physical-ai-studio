@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from api.camera import router as camera_router
 from api.dataset import router as dataset_router
 from api.dependencies import CameraRegistryDep, RobotRegistryDep
+from api.environments import router as project_environments_router
 from api.hardware import router as hardware_router
 from api.job import router as job_router
 from api.models import router as models_router
@@ -34,6 +35,7 @@ app.include_router(project_robots_router)
 app.include_router(project_cameras_router)
 app.include_router(robot_calibration_router)
 app.include_router(robot_control_router)
+app.include_router(project_environments_router)
 app.include_router(hardware_router)
 app.include_router(camera_router)
 app.include_router(dataset_router)

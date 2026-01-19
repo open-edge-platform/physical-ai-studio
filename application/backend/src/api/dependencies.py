@@ -8,6 +8,7 @@ from fastapi.requests import HTTPConnection
 
 from core.scheduler import Scheduler
 from services import DatasetService, JobService, ModelService, ProjectCameraService, ProjectService, RobotService
+from services.environment_service import EnvironmentService
 from services.event_processor import EventProcessor
 from services.robot_calibration_service import RobotCalibrationService
 from settings import get_settings
@@ -76,6 +77,12 @@ def get_camera_service() -> ProjectCameraService:
 
 
 @lru_cache
+def get_environment_service() -> EnvironmentService:
+    """Provide a EnvironmentService instance for managing environments in a project."""
+    return EnvironmentService()
+
+
+@lru_cache
 def get_dataset_service() -> DatasetService:
     """Provides a DatasetService instance for managing datasets."""
     return DatasetService()
@@ -119,6 +126,13 @@ def get_camera_id(camera_id: str) -> UUID:
     if not is_valid_uuid(camera_id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid camera ID")
     return UUID(camera_id)
+
+
+def get_environment_id(environment_id: str) -> UUID:
+    """Initialize and validates an environment ID."""
+    if not is_valid_uuid(environment_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid environment ID")
+    return UUID(environment_id)
 
 
 def validate_uuid(uuid: str) -> UUID:

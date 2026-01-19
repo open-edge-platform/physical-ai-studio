@@ -49,6 +49,12 @@ class ProjectDB(Base):
         cascade="all, delete-orphan",
     )
 
+    environments: Mapped[list["ProjectEnvironmentDB"]] = relationship(
+        "ProjectEnvironmentDB",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+
 
 class ProjectRobotDB(Base):
     __tablename__ = "project_robots"
@@ -123,6 +129,20 @@ class ProjectCameraDB(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
 
     project: Mapped["ProjectDB"] = relationship(back_populates="cameras")
+
+
+class ProjectEnvironmentDB(Base):
+    __tablename__ = "project_environments"
+
+    id: Mapped[UUID] = mapped_column(Text, primary_key=True, default=uuid4)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(String(255))
+    robots: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    camera_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+
+    project: Mapped["ProjectDB"] = relationship(back_populates="environments")
 
 
 class ProjectConfigDB(Base):
