@@ -5,13 +5,15 @@ Practical documentation for training and deploying policies.
 ## Guides
 
 - **[CLI Guide](cli.md)** - Train policies from the command line
+- **[Benchmark Guide](benchmark.md)** - Evaluate policies on standardized benchmarks
 - **[Export & Inference](export_inference.md)** - Deploy models to production
 
 ## Quick Start
 
 1. Install GetiAction: `uv pip install getiaction`
-2. Train a policy: `python -m getiaction fit --config configs/train.yaml`
-3. Export for deployment: See [Export & Inference](export_inference.md)
+2. Train a policy: `getiaction fit --config configs/train.yaml`
+3. Benchmark: `getiaction benchmark --config configs/benchmark/libero.yaml`
+4. Export for deployment: See [Export & Inference](export_inference.md)
 
 ## Resources
 
