@@ -21,9 +21,9 @@ Example:
         benchmark = LiberoBenchmark(task_suite="libero_10", num_episodes=20)
         results = benchmark.evaluate(policy)
 
-    Multi-policy comparison:
+    Compare multiple policies:
 
-        results = benchmark.evaluate([act, pi0, groot])
+        results = {p.name: benchmark.evaluate(p) for p in [act, pi0, groot]}
         for name, result in results.items():
             print(f"{name}: {result.overall_success_rate:.1%}")
 
@@ -46,8 +46,6 @@ from getiaction.benchmark.results import BenchmarkResults, TaskResult
 from getiaction.eval.rollout import evaluate_policy
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from getiaction.eval.video import VideoRecorder
     from getiaction.gyms import Gym
     from getiaction.policies.base import PolicyLike
@@ -114,32 +112,31 @@ class Benchmark:
 
     def evaluate(
         self,
-        policy: PolicyLike | Sequence[PolicyLike],
+        policy: PolicyLike,
         *,
         continue_on_error: bool = True,
-    ) -> BenchmarkResults | dict[str, BenchmarkResults]:
-        """Evaluate one or more policies on all benchmark gyms.
+    ) -> BenchmarkResults:
+        """Evaluate a policy on all benchmark gyms.
 
         Supports both PyTorch `Policy` objects and exported `InferenceModel`
         objects, enabling benchmarking of production inference performance.
 
         Args:
-            policy: Single policy/model or sequence of policies/models to evaluate.
-                Accepts Policy (PyTorch), InferenceModel (exported), or any
-                object implementing the PolicyLike protocol (select_action, reset).
+            policy: Policy or model to evaluate. Accepts Policy (PyTorch),
+                InferenceModel (exported), or any object implementing the
+                PolicyLike protocol (select_action, reset).
             continue_on_error: Whether to continue if a task fails.
 
         Returns:
-            If single policy: BenchmarkResults for that policy.
-            If multiple policies: Dict mapping policy name to BenchmarkResults.
+            BenchmarkResults containing evaluation metrics for all tasks.
 
         Example:
             Single policy:
                 >>> results = benchmark.evaluate(my_policy)
                 >>> print(results.overall_success_rate)
 
-            Multiple policies:
-                >>> results = benchmark.evaluate([act, pi0, groot])
+            Compare multiple policies:
+                >>> results = {p.name: benchmark.evaluate(p) for p in policies}
                 >>> for name, r in results.items():
                 ...     print(f"{name}: {r.overall_success_rate:.1%}")
 
@@ -147,58 +144,6 @@ class Benchmark:
                 >>> from getiaction.inference import InferenceModel
                 >>> model = InferenceModel.load("./exports/act_policy")
                 >>> results = benchmark.evaluate(model)
-        """
-        # Normalize to list for uniform processing
-        is_single_policy = not isinstance(policy, (list, tuple))
-        policies: Sequence[PolicyLike] = (
-            [policy] if is_single_policy else policy  # type: ignore[list-item,assignment]
-        )
-
-        all_results: dict[str, BenchmarkResults] = {}
-        total_policies = len(policies)
-
-        for policy_idx, current_policy in enumerate(policies):
-            policy_name = _get_policy_name(current_policy, policy_idx)
-
-            if total_policies > 1:
-                logger.info(
-                    "Evaluating policy %d/%d: %s",
-                    policy_idx + 1,
-                    total_policies,
-                    policy_name,
-                )
-
-            results = self._evaluate_single_policy(
-                current_policy,
-                policy_name=policy_name,
-                show_policy_in_progress=total_policies > 1,
-                continue_on_error=continue_on_error,
-            )
-            all_results[policy_name] = results
-
-        # Return single result or dict based on input type
-        if is_single_policy:
-            return next(iter(all_results.values()))
-        return all_results
-
-    def _evaluate_single_policy(
-        self,
-        policy: PolicyLike,
-        *,
-        policy_name: str,
-        show_policy_in_progress: bool,
-        continue_on_error: bool = True,
-    ) -> BenchmarkResults:
-        """Evaluate a single policy across all benchmark gyms.
-
-        Args:
-            policy: The policy to evaluate.
-            policy_name: Name for logging and progress display.
-            show_policy_in_progress: Whether to show policy name in progress bar.
-            continue_on_error: Whether to continue if a task fails.
-
-        Returns:
-            BenchmarkResults for this policy.
 
         Raises:
             RuntimeError: If all tasks fail during evaluation.
@@ -219,7 +164,7 @@ class Benchmark:
         gym_iterator = self._wrap_with_progress(
             enumerate(self.gyms),
             total=total_gyms,
-            desc=f"Benchmark ({policy_name})" if show_policy_in_progress else "Benchmark",
+            desc="Benchmark",
         )
 
         for gym_idx, gym in gym_iterator:
@@ -234,7 +179,6 @@ class Benchmark:
             if task_result is not None:
                 results.task_results.append(task_result)
 
-        # Record timing
         elapsed = time.time() - start_time
         results.metadata["elapsed_seconds"] = elapsed
         results.metadata["failed_tasks"] = failed_tasks

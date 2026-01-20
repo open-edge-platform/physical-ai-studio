@@ -90,12 +90,6 @@ class TestBenchmark:
             results = benchmark.evaluate(MagicMock())
         assert results.n_tasks == 1 and results.overall_success_rate == 80.0
 
-    def test_evaluate_multiple_policies(self, mock_gym, eval_result):
-        benchmark = Benchmark(gyms=[mock_gym], num_episodes=5, max_steps=100)
-        with patch("getiaction.benchmark.benchmark.evaluate_policy", return_value=eval_result):
-            results = benchmark.evaluate([MagicMock(), MagicMock()])
-        assert isinstance(results, dict) and len(results) == 2
-
 
 class TestLiberoBenchmark:
     def test_init(self):

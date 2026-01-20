@@ -12,7 +12,7 @@ Example:
     >>> print(results.summary())
 
     # Compare multiple policies
-    >>> results = benchmark.evaluate([act, pi0, groot])
+    >>> results = {p.name: benchmark.evaluate(p) for p in [act, pi0, groot]}
     >>> for name, r in results.items():
     ...     print(f"{name}: {r.overall_success_rate:.1%}")
 """
