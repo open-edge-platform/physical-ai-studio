@@ -68,7 +68,7 @@ export const TeleoperationSetup = ({ dataset_id, onDone }: TeleoperationSetupPro
             cameras: config.cameras.map((c) => {
                 if (c.name === name) {
                     return { ...c, fingerprint: id, driver };
-                } else if (c.fingerprint === id && c.driver === driver) {
+                } else if (c.fingerprint === id && c.driver === (driver === 'webcam' ? 'usb_camera' : driver)) {
                     return { ...c, fingerprint: oldId, driver: oldDriver };
                 } else {
                     return c;

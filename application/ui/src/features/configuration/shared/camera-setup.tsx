@@ -66,7 +66,9 @@ interface CameraSetupProps {
     updateCamera: (name: string, id: string, oldId: string, driver: string, oldDriver: string) => void;
 }
 export const CameraSetup = ({ camera, availableCameras, updateCamera }: CameraSetupProps) => {
-    const camerasConnectedOfType = availableCameras.filter((m) => m.driver === camera.driver);
+    const camerasConnectedOfType = availableCameras.filter(
+        (m) => m.driver === (camera.driver === 'webcam' ? 'usb_camera' : camera.driver)
+    );
     const makeKey = (cam: SchemaCamera) => `${cam.driver}%${cam.fingerprint}`;
 
     const onSelection = (key: Key | null) => {
