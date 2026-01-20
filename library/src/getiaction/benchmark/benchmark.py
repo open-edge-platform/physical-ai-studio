@@ -148,37 +148,65 @@ class Benchmark:
                 >>> model = InferenceModel.load("./exports/act_policy")
                 >>> results = benchmark.evaluate(model)
         """
-        # Handle multi-policy evaluation
-        if isinstance(policy, (list, tuple)):
-            return self._evaluate_multiple(
-                policies=policy,  # type: ignore[arg-type]
-                continue_on_error=continue_on_error,
-            )
-
-        return self._evaluate_single(
-            policy=policy,  # type: ignore[arg-type]
-            continue_on_error=continue_on_error,
+        # Normalize to list for uniform processing
+        is_single_policy = not isinstance(policy, (list, tuple))
+        policies: Sequence[PolicyLike] = (
+            [policy] if is_single_policy else policy  # type: ignore[list-item,assignment]
         )
 
-    def _evaluate_single(
+        all_results: dict[str, BenchmarkResults] = {}
+        total_policies = len(policies)
+
+        for policy_idx, current_policy in enumerate(policies):
+            policy_name = _get_policy_name(current_policy, policy_idx)
+
+            if total_policies > 1:
+                logger.info(
+                    "Evaluating policy %d/%d: %s",
+                    policy_idx + 1,
+                    total_policies,
+                    policy_name,
+                )
+
+            results = self._evaluate_single_policy(
+                current_policy,
+                policy_name=policy_name,
+                show_policy_in_progress=total_policies > 1,
+                continue_on_error=continue_on_error,
+            )
+            all_results[policy_name] = results
+
+        # Return single result or dict based on input type
+        if is_single_policy:
+            return next(iter(all_results.values()))
+        return all_results
+
+    def _evaluate_single_policy(
         self,
         policy: PolicyLike,
         *,
+        policy_name: str,
+        show_policy_in_progress: bool,
         continue_on_error: bool = True,
     ) -> BenchmarkResults:
-        """Evaluate a single policy on all gyms.
+        """Evaluate a single policy across all benchmark gyms.
+
+        Args:
+            policy: The policy to evaluate.
+            policy_name: Name for logging and progress display.
+            show_policy_in_progress: Whether to show policy name in progress bar.
+            continue_on_error: Whether to continue if a task fails.
 
         Returns:
-            BenchmarkResults containing evaluation metrics.
+            BenchmarkResults for this policy.
 
         Raises:
             RuntimeError: If all tasks fail during evaluation.
         """
         metadata = self._build_metadata(policy)
         results = BenchmarkResults(metadata=metadata)
-
-        total_gyms = len(self.gyms)
         failed_tasks: list[str] = []
+        total_gyms = len(self.gyms)
 
         logger.info(
             "Starting benchmark: %d gyms, %d episodes each",
@@ -191,57 +219,20 @@ class Benchmark:
         gym_iterator = self._wrap_with_progress(
             enumerate(self.gyms),
             total=total_gyms,
-            desc="Benchmark",
+            desc=f"Benchmark ({policy_name})" if show_policy_in_progress else "Benchmark",
         )
 
         for gym_idx, gym in gym_iterator:
-            task_id = _get_task_id(gym, gym_idx)
-            task_name = _get_task_name(gym)
-
-            logger.info("Evaluating task %d/%d: %s", gym_idx + 1, total_gyms, task_id)
-
-            # Create video recorder for this task if enabled
-            video_recorder = self._create_video_recorder(policy, task_id)
-
-            try:
-                eval_result = evaluate_policy(
-                    env=gym,
-                    policy=policy,
-                    n_episodes=self.num_episodes,
-                    start_seed=self.seed,
-                    max_steps=self.max_steps,
-                    video_recorder=video_recorder,
-                )
-
-                aggregated = eval_result["aggregated"]
-                per_episode = eval_result.get("per_episode", [])
-
-                task_result = TaskResult(
-                    task_id=task_id,
-                    task_name=task_name,
-                    n_episodes=self.num_episodes,
-                    success_rate=aggregated.get("pc_success", 0.0),
-                    avg_reward=aggregated["avg_sum_reward"],
-                    avg_episode_length=aggregated["avg_episode_length"],
-                    avg_fps=aggregated.get("avg_fps", 0.0),
-                    per_episode_data=per_episode,
-                )
-
+            task_result = self._evaluate_gym(
+                gym=gym,
+                gym_idx=gym_idx,
+                total_gyms=total_gyms,
+                policy=policy,
+                failed_tasks=failed_tasks,
+                continue_on_error=continue_on_error,
+            )
+            if task_result is not None:
                 results.task_results.append(task_result)
-
-                logger.info(
-                    "  Task %s: success=%.1f%%, reward=%.4f",
-                    task_id,
-                    task_result.success_rate,
-                    task_result.avg_reward,
-                )
-
-            except Exception:
-                logger.exception("Error evaluating task %s", task_id)
-                failed_tasks.append(task_id)
-
-                if not continue_on_error:
-                    raise
 
         # Record timing
         elapsed = time.time() - start_time
@@ -263,37 +254,76 @@ class Benchmark:
 
         return results
 
-    def _evaluate_multiple(
+    def _evaluate_gym(
         self,
-        policies: Sequence[PolicyLike],
+        gym: Gym,
+        gym_idx: int,
+        total_gyms: int,
+        policy: PolicyLike,
+        failed_tasks: list[str],
         *,
-        continue_on_error: bool = True,
-    ) -> dict[str, BenchmarkResults]:
-        """Evaluate multiple policies and return results dict.
+        continue_on_error: bool,
+    ) -> TaskResult | None:
+        """Evaluate policy on a single gym environment.
+
+        Args:
+            gym: The gym environment to evaluate on.
+            gym_idx: Index of the gym in the benchmark.
+            total_gyms: Total number of gyms (for logging).
+            policy: The policy to evaluate.
+            failed_tasks: List to append failed task IDs to.
+            continue_on_error: Whether to continue if evaluation fails.
 
         Returns:
-            Dict mapping policy names to their BenchmarkResults.
+            TaskResult if successful, None if failed and continue_on_error=True.
         """
-        all_results: dict[str, BenchmarkResults] = {}
-        total_policies = len(policies)
+        task_id = _get_task_id(gym, gym_idx)
+        task_name = _get_task_name(gym)
 
-        for policy_idx, policy in enumerate(policies):
-            policy_name = _get_policy_name(policy, policy_idx)
-            logger.info(
-                "Evaluating policy %d/%d: %s",
-                policy_idx + 1,
-                total_policies,
-                policy_name,
-            )
+        logger.info("Evaluating task %d/%d: %s", gym_idx + 1, total_gyms, task_id)
 
-            results = self._evaluate_single(
+        video_recorder = self._create_video_recorder(policy, task_id)
+
+        try:
+            eval_result = evaluate_policy(
+                env=gym,
                 policy=policy,
-                continue_on_error=continue_on_error,
+                n_episodes=self.num_episodes,
+                start_seed=self.seed,
+                max_steps=self.max_steps,
+                video_recorder=video_recorder,
             )
+        except Exception:
+            logger.exception("Error evaluating task %s", task_id)
+            failed_tasks.append(task_id)
 
-            all_results[policy_name] = results
+            if not continue_on_error:
+                raise
 
-        return all_results
+            return None
+
+        aggregated = eval_result["aggregated"]
+        per_episode = eval_result.get("per_episode", [])
+
+        task_result = TaskResult(
+            task_id=task_id,
+            task_name=task_name,
+            n_episodes=self.num_episodes,
+            success_rate=aggregated.get("pc_success", 0.0),
+            avg_reward=aggregated["avg_sum_reward"],
+            avg_episode_length=aggregated["avg_episode_length"],
+            avg_fps=aggregated.get("avg_fps", 0.0),
+            per_episode_data=per_episode,
+        )
+
+        logger.info(
+            "  Task %s: success=%.1f%%, reward=%.4f",
+            task_id,
+            task_result.success_rate,
+            task_result.avg_reward,
+        )
+
+        return task_result
 
     def _create_video_recorder(
         self,
