@@ -20,7 +20,7 @@ class ProjectConfig(BaseIDModel):
                 "robot_type": "so101_follower",
                 "cameras": [
                     {
-                        "port_or_device_id": "/dev/video0",
+                        "fingerprint": "/dev/video0",
                         "name": "WebCam",
                         "driver": "webcam",
                         "width": 640,
@@ -56,7 +56,7 @@ class Project(BaseIDNameModel):
                     "robot_type": "so101_follower",
                     "cameras": [
                         {
-                            "port_or_device_id": "/dev/video0",
+                            "fingerprint": "/dev/video0",
                             "name": "WebCam",
                             "driver": "webcam",
                             "width": 640,

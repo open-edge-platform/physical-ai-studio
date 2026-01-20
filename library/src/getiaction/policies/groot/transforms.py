@@ -596,7 +596,7 @@ def make_groot_transforms(
     action_horizon: int = ACTION_HORIZON,
     embodiment_tag: str = DEFAULT_EMBODIMENT_TAG,
     env_action_dim: int = 0,
-    stats: dict[str, dict[str, list[float]]] | None = None,
+    stats: dict[str, dict[str, Any]] | None = None,
     eagle_processor_repo: str = DEFAULT_EAGLE_PROCESSOR_REPO,
 ) -> tuple[GrootPreprocessor, GrootPostprocessor]:
     """Create preprocessor and postprocessor for Groot policy.

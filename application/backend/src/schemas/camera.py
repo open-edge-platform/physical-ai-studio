@@ -6,7 +6,7 @@ from schemas.base import BaseIDModel
 
 
 class CameraConfig(BaseIDModel):
-    port_or_device_id: str = Field("", description="Camera port or realsense id")
+    fingerprint: str = Field("", description="Camera port or realsense id")
     name: str = Field(min_length=1, max_length=50, description="Camera name")
     driver: str = Field(description="Driver used for Camera access")
     width: int = Field(640, description="Frame width")
@@ -41,10 +41,26 @@ class CameraProfile(BaseModel):
 
 class Camera(BaseModel):
     name: str = Field(description="Camera name")
-    port_or_device_id: str = Field(description="Either serial id for  RealSense or port for OpenCV")
+    fingerprint: str = Field(description="Either serial id for  RealSense or port for OpenCV")
     driver: str = Field(description="Driver used for Camera access")
     default_stream_profile: CameraProfile
 
-    @field_validator("port_or_device_id", mode="before")
+    @field_validator("fingerprint", mode="before")
     def cast_id_to_str(cls, v: Any) -> str:
         return str(v)
+
+
+class SupportedCameraFormat(BaseModel):
+    width: int = Field(..., description="Frame width")
+    height: int = Field(..., description="Frame height")
+    fps: list[int] = Field(..., description="FPS supported by resolution")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "width": 640,
+                "height": 480,
+                "fps": [5, 10, 30],
+            }
+        }
+    }

@@ -14,6 +14,7 @@ from .dummy import Dummy, DummyConfig
 from .groot import Groot, GrootConfig, GrootModel
 from .lerobot import get_lerobot_policy
 from .pi0 import Pi0, Pi0Config, Pi0Model
+from .smolvla import SmolVLA, SmolVLAConfig, SmolVLAModel
 
 if TYPE_CHECKING:
     from .base import Policy
@@ -36,6 +37,10 @@ __all__ = [
     "Pi0Model",
     # Protocol
     "PolicyLike",
+    # SmolVLA
+    "SmolVLA",
+    "SmolVLAConfig",
+    "SmolVLAModel",
     # Utils
     "get_getiaction_policy_class",
     "get_policy",
@@ -143,6 +148,8 @@ def get_getiaction_policy_class(policy_name: str) -> type[Policy]:
         from functools import partial  # noqa: PLC0415
 
         return partial(Pi0, variant="pi05")  # type: ignore[return-value]
+    if policy_name == "smolvla":
+        return SmolVLA
 
     msg = f"Unknown getiaction policy: {policy_name}. Supported policies: act, dummy, groot, pi0, pi05"
     raise ValueError(msg)

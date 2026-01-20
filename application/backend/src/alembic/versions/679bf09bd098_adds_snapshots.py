@@ -32,15 +32,27 @@ def upgrade() -> None:
         "snapshots",
         sa.Column("id", sa.Text(), nullable=False),
         sa.Column("path", sa.String(length=255), nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(),
+            server_default=sa.text("(CURRENT_TIMESTAMP)"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(),
+            server_default=sa.text("(CURRENT_TIMESTAMP)"),
+            nullable=False,
+        ),
         sa.Column("dataset_id", sa.Text(), nullable=False),
         sa.ForeignKeyConstraint(["dataset_id"], ["datasets.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
 
     settings = get_settings()
-    rmtree(settings.models_dir)
+    if settings.models_dir.exists():
+        rmtree(settings.models_dir)
+
     op.drop_table("models")
     op.create_table(
         "models",
@@ -49,8 +61,18 @@ def upgrade() -> None:
         sa.Column("path", sa.String(length=255), nullable=False),
         sa.Column("policy", sa.String(length=255), nullable=False),
         sa.Column("properties", sa.JSON(), nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(),
+            server_default=sa.text("(CURRENT_TIMESTAMP)"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(),
+            server_default=sa.text("(CURRENT_TIMESTAMP)"),
+            nullable=False,
+        ),
         sa.Column("dataset_id", sa.Text(), nullable=False),
         sa.Column("project_id", sa.Text(), nullable=False),
         sa.Column("snapshot_id", sa.Text(), nullable=False),

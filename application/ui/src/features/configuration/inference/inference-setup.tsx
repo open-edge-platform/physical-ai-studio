@@ -21,6 +21,7 @@ import { $api } from '../../../api/client';
 import { SchemaInferenceConfig, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
 import { TELEOPERATION_CONFIG_CACHE_KEY } from '../../../routes/datasets/record/utils';
 import { useProject } from '../../projects/use-project';
+import { BackendSelection } from '../shared/backend-selection';
 import { CameraSetup } from '../shared/camera-setup';
 import { RobotSetup } from '../shared/robot-setup';
 
@@ -59,6 +60,7 @@ export const InferenceSetup = ({ model_id, onDone }: InferenceSetupProps) => {
             port: '',
             type: 'follower',
         },
+        backend: 'torch',
     });
 
     const updateCamera = (name: string, id: string, oldId: string, driver: string, oldDriver: string) => {
@@ -66,9 +68,9 @@ export const InferenceSetup = ({ model_id, onDone }: InferenceSetupProps) => {
             ...config,
             cameras: config.cameras.map((c) => {
                 if (c.name === name) {
-                    return { ...c, port_or_device_id: id, driver };
-                } else if (c.port_or_device_id === id && c.driver === driver) {
-                    return { ...c, port_or_device_id: oldId, driver: oldDriver };
+                    return { ...c, fingerprint: id, driver };
+                } else if (c.fingerprint === id && c.driver === driver) {
+                    return { ...c, fingerprint: oldId, driver: oldDriver };
                 } else {
                     return c;
                 }
@@ -142,7 +144,13 @@ export const InferenceSetup = ({ model_id, onDone }: InferenceSetupProps) => {
                     </TabPanels>
                 </Tabs>
             </View>
-            <Flex justifyContent={'end'}>
+            <Flex justifyContent={'space-between'}>
+                <View>
+                    <BackendSelection
+                        backend={config.backend}
+                        setBackend={(backend) => setConfig((c) => ({ ...c, backend }))}
+                    />
+                </View>
                 <View paddingTop={'size-300'}>
                     <ButtonGroup>
                         <Button onPress={onRefresh} variant='secondary'>

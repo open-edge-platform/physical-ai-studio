@@ -474,7 +474,7 @@ def make_pi0_preprocessors(
     max_action_dim: int = 32,
     action_horizon: int = 50,
     env_action_dim: int | None = None,
-    stats: dict[str, dict[str, list[float]]] | None = None,
+    stats: dict[str, dict[str, Any]] | None = None,
     *,
     use_quantile_norm: bool = True,
     image_resolution: tuple[int, int] = (224, 224),

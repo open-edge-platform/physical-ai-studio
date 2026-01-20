@@ -25,6 +25,8 @@ class MigrationManager:
     def __ensure_data_directory(self) -> None:
         """Ensure the data directory exists"""
         self.settings.data_dir.mkdir(parents=True, exist_ok=True)
+        if hasattr(self.settings, "models_dir"):
+            self.settings.models_dir.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
     def check_connection() -> bool:
@@ -42,6 +44,11 @@ class MigrationManager:
         alembic_cfg = Config(self.settings.alembic_config_path)
         alembic_cfg.set_main_option("script_location", self.settings.alembic_script_location)
         alembic_cfg.set_main_option("sqlalchemy.url", self.settings.database_url_sync)
+
+        # Enable batch mode for SQLite
+        if self.settings.database_url_sync.startswith("sqlite"):
+            alembic_cfg.set_section_option("alembic", "render_as_batch", "true")
+
         return alembic_cfg
 
     def run_migrations(self) -> bool:
