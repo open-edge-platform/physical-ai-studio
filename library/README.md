@@ -67,18 +67,17 @@ Geti Action supports both API and CLI-based training.
 ## API
 
 ```python
-from anomalib.engine import Engine
-
 from getiaction.data import LeRobotDataModule
 from getiaction.policies import ACT
+from getiaction.train import Trainer
 
 # Initialize components
 datamodule = LeRobotDataModule(repo_id="lerobot/aloha_sim_transfer_cube_human")
 model = ACT()
-engine = Engine()
+trainer = Trainer(max_epochs=100)
 
 # Train
-engine.fit(datamodule=datamodule, model=model)
+trainer.fit(model=model, datamodule=datamodule)
 ```
 
 ## CLI
