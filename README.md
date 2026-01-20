@@ -1,18 +1,54 @@
+<p align="center">
+  <img src="docs/assets/banner.png" alt="Geti Action" width="100%">
+</p>
+
 # Geti Action
 
-Welcome to the `geti-action` repository. This project provides an SDK and a studio application to train and deploy Vision-Language-Action models.
+Train and deploy Vision-Language-Action (VLA) models for robotic imitation learning.
 
 ## Overview
 
-This repository is a monorepo that contains two main components:
+This monorepo provides two ways to work with VLA policies:
 
--   **`/library`**: A core Python library that contains Vision-Language-Action models to train, evaluate and deploy.
--   **`/application`**: Geti Action studio application to capture observations, episodes to train/deploy VLA models.
+| Component                         | Description                                                  | Documentation                      |
+| --------------------------------- | ------------------------------------------------------------ | ---------------------------------- |
+| **[Library](./library/)**         | Python SDK for training, evaluating, and deploying policies  | [Library Docs](./library/docs/)    |
+| **[Application](./application/)** | Studio app with GUI for data collection and model management | [Application Docs](./application/) |
 
-## Getting Started
+**Library** is for developers who want programmatic control via Python or CLI. **Application** is for users who prefer a visual interface.
 
-For detailed instructions on how to set up your development environment and contribute to the project, please see our **[Developer Guide](./docs/developer_guide.md)**.
+## Quick Start
+
+### Library (Python/CLI)
+
+```bash
+cd library
+uv sync --all-extras
+source .venv/bin/activate
+
+# Train a policy
+getiaction fit --config configs/train.yaml
+
+# Benchmark
+getiaction benchmark --config configs/benchmark/libero.yaml
+```
+
+See the [Library README](./library/README.md) for full setup and usage.
+
+### Application (GUI)
+
+```bash
+cd application
+# Start backend and frontend (see Application README for details)
+```
+
+See the [Application README](./application/README.md) for setup instructions.
+
+## Documentation
+
+- **[Library Documentation](./library/docs/)** - Guides, API reference, and design docs
+- **[Developer Guide](./docs/developer_guide.md)** - Development setup and contribution workflow
 
 ## Contributing
 
-We welcome contributions! Please read our [CONTRIBUTING.md](./CONTRIBUTING.md) to learn about our development process, how to propose bugfixes and improvements, and how to build and test your changes.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines on how to contribute.

@@ -6,45 +6,39 @@ Export trained policies and deploy them to production.
 
 ```python
 from getiaction.policies.act import ACT
-from getiaction.train import Trainer
 from getiaction.inference import InferenceModel
 
-# 1. Train
-policy = ACT(...)
-trainer.fit(policy, datamodule)
+# Train (or load checkpoint)
+policy = ACT.load_from_checkpoint("checkpoints/best.ckpt")
 
-# 2. Export
+# Export
 policy.export("./exports", backend="openvino")
 
-# 3. Inference
-inference_model = InferenceModel.load("./exports")
-action = inference_model.select_action(observation)
+# Deploy
+model = InferenceModel.load("./exports")
+action = model.select_action(observation)
 ```
 
 ## Backends
 
-| Backend             | Best For      | Install                | Support |
-| ------------------- | ------------- | ---------------------- | ------- |
-| **OpenVINO**        | Intel HW      | `pip install openvino` | ✅      |
-| **ONNX**            | NVIDIA/x-plat | `pip install onnx`     | ✅      |
-| **Torch Export IR** | Edge/mobile   | Built-in               | ✅      |
+| Backend             | Best For                               | Install                |
+| ------------------- | -------------------------------------- | ---------------------- |
+| **OpenVINO**        | Intel hardware (CPU/GPU/NPU)           | `pip install openvino` |
+| **ONNX**            | NVIDIA GPUs (TensorRT), cross-platform | `pip install onnx`     |
+| **Torch Export IR** | Edge/mobile devices                    | Built-in               |
 
 ## Export
 
 ```python
-# From checkpoint
-policy = ACT.load_from_checkpoint("checkpoints/best.ckpt")
-policy.export("./exports", backend="openvino")
+from getiaction.policies import ACT
 
-# LeRobot policies (same API)
-from getiaction.policies.lerobot import ACT
-policy = ACT(...)
+policy = ACT.load_from_checkpoint("checkpoints/best.ckpt")
 policy.export("./exports", backend="openvino")
 ```
 
-**Output:**
+**Output structure:**
 
-```text
+```
 exports/
 ├── model.xml / model.onnx / model.pt
 ├── metadata.yaml
@@ -67,22 +61,18 @@ while not done:
     obs, reward, done, _ = env.step(action)
 ```
 
-## Choosing a Backend
-
-- **OpenVINO**: Intel hardware (CPU/GPU/NPU), edge devices
-- **ONNX**: NVIDIA GPUs (TensorRT), cross-platform, cloud
-- **Torch Export IR**: Edge/mobile deployment, resource-constrained devices
-
 ## Performance Tips
 
-1. **Match backend to hardware** (OpenVINO for Intel, ONNX for NVIDIA)
-2. **Use action queuing** (chunked policies run model once, return `chunk_size` actions)
-3. **Warm-up model** (first inference is slower due to compilation)
-4. **Reuse policy instance** (avoid loading model repeatedly)
+1. **Match backend to hardware** - OpenVINO for Intel, ONNX for NVIDIA
+2. **Use action queuing** - Chunked policies return multiple actions per inference
+3. **Warm-up model** - First inference is slower due to compilation
+4. **Reuse policy instance** - Avoid loading model repeatedly
+
+### Benchmarking Latency
 
 ```python
-# Benchmark
 import time
+
 policy = InferenceModel.load("./exports")
 policy.reset()
 
@@ -95,5 +85,5 @@ print(f"{(time.time()-start)/1000*1000:.2f}ms per action")
 ## See Also
 
 - [Inference Design](../design/inference/overview.md) - Architecture details
-- [Export Design](../design/export/README.md) - Export system design
-- [CLI Guide](cli.md) - Command-line interface
+- [Export Design](../design/export/overview.md) - Export system design
+- [CLI Guide](cli.md) - Training via command line

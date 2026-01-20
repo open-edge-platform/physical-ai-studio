@@ -1,54 +1,42 @@
-# GetiAction Documentation
+# Library Documentation
 
-Train and deploy robotic immitation learning policies.
+Documentation for the Geti Action Python library.
 
-## Choose Your Path
+## User Guides
 
-**🖥️ Application Users** - Use the GUI interface
+Practical guides for common workflows:
 
-- Train policies through the UI
-- Manage datasets and policies
-- Deploy models to production
+- **[CLI Guide](guides/cli.md)** - Train policies from the command line
+- **[Benchmark Guide](guides/benchmark.md)** - Evaluate policies on standardized environments
+- **[Export & Inference](guides/export_inference.md)** - Deploy models to production
 
-**⚙️ Library Users** - Use Python API/CLI
+## Design Documentation
 
-- Train policies programmatically
-- Custom policy development
-- Integration into your projects
-- [Library Documentation](#library-documentation)
+Architecture and implementation details (for contributors):
 
-## Application Documentation
+- **[Architecture Overview](design/)** - Module structure
+- **[CLI Design](design/cli/)** - Command-line interface
+- **[Config System](design/config/)** - Configuration patterns
+- **[Data Module](design/data/)** - Dataset management
+- **[Policies](design/policy/)** - Policy implementations
+- **[Gyms](design/gyms/)** - Simulation environments
+- **[Export](design/export/)** - Model export backends
+- **[Inference](design/inference/)** - Production deployment
 
-Full-stack application with web UI and backend:
+## Quick Reference
 
-- [Application README](../../application/README.md)
-- [Backend Documentation](../../application/backend/README.md)
-- [UI Documentation](../../application/ui/README.md)
+```bash
+# Train
+getiaction fit --config configs/train.yaml
 
-## Library Documentation
+# Benchmark
+getiaction benchmark --config configs/benchmark/libero.yaml
 
-Python library for policy training:
+# Export
+policy.export("./exports", backend="openvino")
+```
 
-### User Guides
+## See Also
 
-- [CLI Guide](guides/cli.md) - Command-line interface and training
-- [Export & Inference](guides/export_inference.md) - Model deployment
-
-### Design Documentation
-
-- [Architecture Overview](design/) - System structure
-- [CLI Design](design/cli/) - Command-line interface
-- [Config System](design/config/) - Configuration patterns
-- [Data Module](design/data/) - Dataset management
-- [Policies](design/policy/) - Policy implementations
-- [Gyms](design/gyms/) - Simulation environments
-- [Export](design/export/) - Model export backends
-- [Inference](design/inference/) - Production deployment
-
-## Resources
-
-- [Main README](../../README.md) - Project overview
-- [Contributing Guide](../../CONTRIBUTING.md) - Contribution guidelines
-- [Configuration Examples](../../configs/) - YAML config examples
-
----
+- **[Library README](../README.md)** - Installation and quick start
+- **[Main Repository](../../README.md)** - Project overview

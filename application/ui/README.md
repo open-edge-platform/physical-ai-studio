@@ -1,41 +1,37 @@
-# Geti Action
+# Geti Action UI
+
+React web application for the Geti Action studio.
 
 ## Setup
-
-Install the dependencies:
 
 ```bash
 npm install
 ```
 
-## Get started
-
-Start the dev server:
+## Development
 
 ```bash
+# Start dev server
 npm run start
-```
 
-Build the app for production:
-
-```bash
+# Build for production
 npm run build
-```
 
-Preview the production build locally:
-
-```bash
+# Preview production build
 npm run preview
 ```
 
 ## Testing
 
-Use the following commands to test your changes.
-
-```
+```bash
 npm run format
 npm run lint
 npm run type-check
 npm run test:unit
 npm run test:component
 ```
+
+## See Also
+
+- **[Application Overview](../README.md)** - Application components
+- **[Backend](../backend/)** - FastAPI backend service

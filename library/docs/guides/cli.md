@@ -1,6 +1,6 @@
 # CLI Guide
 
-Train policies using the command-line interface built on PyTorch Lightning and jsonargparse.
+Train policies using the command-line interface built on PyTorch Lightning CLI.
 
 ## Features
 
@@ -9,49 +9,38 @@ Train policies using the command-line interface built on PyTorch Lightning and j
 - Dynamic class loading (`class_path` pattern)
 - Full PyTorch Lightning features (callbacks, loggers, distributed training)
 
-## Installation
-
-```bash
-# Install with jsonargparse support
-pip install getiaction
-
-# Or from source
-cd library
-pip install -e "."
-```
-
 ## Basic Usage
 
-### 1. Train with YAML Config
+### Train with Config File
 
 ```bash
-python -m getiaction fit --config configs/train_dummy_class_path.yaml
+getiaction fit --config configs/train.yaml
 ```
 
-### 2. Generate Config Template
+### Generate Config Template
 
 ```bash
-# See all available options
-python -m getiaction fit --help
+# See all options
+getiaction fit --help
 
 # Print default config
-python -m getiaction fit --print_config
+getiaction fit --print_config
 ```
 
-### 3. Override Config from CLI
+### Override Config from CLI
 
 ```bash
-python -m getiaction fit \
-    --config configs/train_dummy_class_path.yaml \
+getiaction fit \
+    --config configs/train.yaml \
     --trainer.max_epochs 200 \
     --data.train_batch_size 64 \
     --model.optimizer.init_args.lr 0.0001
 ```
 
-### 4. Train without Config File
+### Train without Config File
 
 ```bash
-python -m getiaction fit \
+getiaction fit \
     --model.class_path getiaction.policies.dummy.policy.Dummy \
     --model.model.class_path getiaction.policies.dummy.model.Dummy \
     --model.model.action_shape=[7] \
@@ -64,22 +53,7 @@ python -m getiaction fit \
 
 ## Configuration Patterns
 
-### Pattern 1: Dataclass/Pydantic (Type-Safe)
-
-Create strongly-typed configs using Python dataclasses or Pydantic:
-
-```python
-from dataclasses import dataclass
-from getiaction.policies.dummy.config import DummyConfig, DummyModelConfig, OptimizerConfig
-
-@dataclass
-class TrainConfig:
-    seed: int = 42
-    model: DummyConfig
-    max_epochs: int = 100
-```
-
-### Pattern 2: jsonargparse class_path (Dynamic)
+### Pattern 1: class_path (Dynamic)
 
 Use `class_path` for maximum flexibility:
 
@@ -97,24 +71,18 @@ model:
         lr: 0.001
 ```
 
-### Pattern 3: Mixed Approach
+### Pattern 2: Dataclass/Pydantic (Type-Safe)
 
-Combine both patterns for flexibility + type safety:
+Create strongly-typed configs:
 
-```yaml
-# Use dataclass for structured configs
-model_config:
-  action_shape: [7]
-  n_action_steps: 4
+```python
+from dataclasses import dataclass
 
-# Use class_path for dynamic components
-model:
-  class_path: getiaction.policies.dummy.policy.Dummy
-  init_args:
-    model: ${model_config}
+@dataclass
+class TrainConfig:
+    seed: int = 42
+    max_epochs: int = 100
 ```
-
-## Advanced Features
 
 ### Config Composition
 
@@ -125,44 +93,36 @@ trainer:
   accelerator: auto
 
 # experiment.yaml
-__base__: base_config.yaml  # Inherit from base
+__base__: base_config.yaml
 trainer:
-  max_epochs: 200  # Override specific values
-```
-
-### Environment Variables
-
-```bash
-export GETI_ACTION_EPOCHS=200
-python -m getiaction fit \
-    --config configs/train.yaml \
-    --trainer.max_epochs=${GETI_ACTION_EPOCHS}
+  max_epochs: 200  # Override
 ```
 
 ### Multiple Configs
 
 ```bash
-# Merge multiple config files
-python -m getiaction fit \
+getiaction fit \
     --config configs/base.yaml \
     --config configs/experiment.yaml
 ```
 
-### Validation
+## Commands
 
-Validate config before full training:
+| Command    | Description         |
+| ---------- | ------------------- |
+| `fit`      | Train a model       |
+| `validate` | Run validation      |
+| `test`     | Run test evaluation |
+| `predict`  | Run inference       |
 
 ```bash
-python -m getiaction fit --config configs/train.yaml --trainer.fast_dev_run=true
+getiaction fit --config CONFIG_PATH
+getiaction validate --config CONFIG_PATH --ckpt_path CHECKPOINT
+getiaction test --config CONFIG_PATH --ckpt_path CHECKPOINT
+getiaction predict --config CONFIG_PATH --ckpt_path CHECKPOINT
 ```
 
 ## Examples
-
-### Quick Start
-
-```bash
-python -m getiaction fit --config configs/train_dummy_class_path.yaml
-```
 
 ### GPU Training
 
@@ -177,7 +137,7 @@ trainer:
 ### Multi-GPU Training
 
 ```bash
-python -m getiaction fit --config configs/train.yaml --trainer.strategy=ddp --trainer.devices=4
+getiaction fit --config configs/train.yaml --trainer.strategy=ddp --trainer.devices=4
 ```
 
 ### Custom Callbacks
@@ -203,20 +163,10 @@ model:
         weight_decay: 0.00001
 ```
 
-## Commands
+### Validate Before Training
 
 ```bash
-# Train
-python -m getiaction fit --config CONFIG_PATH
-
-# Validate
-python -m getiaction validate --config CONFIG_PATH --ckpt_path CHECKPOINT
-
-# Test
-python -m getiaction test --config CONFIG_PATH --ckpt_path CHECKPOINT
-
-# Predict
-python -m getiaction predict --config CONFIG_PATH --ckpt_path CHECKPOINT
+getiaction fit --config configs/train.yaml --trainer.fast_dev_run=true
 ```
 
 ## Tips
@@ -228,18 +178,12 @@ python -m getiaction predict --config CONFIG_PATH --ckpt_path CHECKPOINT
 
 ## Troubleshooting
 
-### Config errors
+**Config errors**: Run `--print_config` to see parsed values
 
-Run `--print_config` to see parsed values
-
-### Import errors
-
-Test imports manually:
+**Import errors**: Test imports manually:
 
 ```bash
 python -c "from getiaction.policies.dummy.policy import Dummy"
 ```
 
-### Type errors
-
-Check config matches class signature
+**Type errors**: Check config matches class signature

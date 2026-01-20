@@ -1,35 +1,32 @@
 # User Guides
 
-Practical documentation for training and deploying policies.
+Practical guides for training and deploying policies.
 
 ## Guides
 
-- **[CLI Guide](cli.md)** - Train policies from the command line
-- **[Benchmark Guide](benchmark.md)** - Evaluate policies on standardized benchmarks
-- **[Export & Inference](export_inference.md)** - Deploy models to production
+| Guide                                         | Description                                    |
+| --------------------------------------------- | ---------------------------------------------- |
+| **[CLI Guide](cli.md)**                       | Train policies from the command line           |
+| **[Benchmark Guide](benchmark.md)**           | Evaluate policies on standardized environments |
+| **[Export & Inference](export_inference.md)** | Deploy models to production                    |
 
 ## Quick Start
 
-1. Install GetiAction: `uv pip install getiaction`
-2. Train a policy: `getiaction fit --config configs/train.yaml`
-3. Benchmark: `getiaction benchmark --config configs/benchmark/libero.yaml`
-4. Export for deployment: See [Export & Inference](export_inference.md)
+```bash
+# 1. Install
+cd library && uv sync --all-extras && source .venv/bin/activate
 
-## Resources
+# 2. Train
+getiaction fit --config configs/train.yaml
 
-- [Configuration Examples](../../../configs/) - Example YAML files
-- [Design Documentation](../design/) - For contributors
-- [Main README](../../../README.md) - Project overview
+# 3. Benchmark
+getiaction benchmark --config configs/benchmark/libero.yaml
 
----
+# 4. Export
+# See Export & Inference guide
+```
 
-## Upcoming Guides
+## See Also
 
-We're working on adding more guides:
-
-- [ ] Configuration Guide - Deep dive into configuration patterns
-- [ ] Examples Guide - Common workflows and use cases
-- [ ] Deployment Guide - Running in production
-- [ ] Troubleshooting Guide - Common issues and solutions
-
-Stay tuned!
+- **[Design Documentation](../design/)** - Architecture details (for contributors)
+- **[Library README](../../README.md)** - Installation and overview
