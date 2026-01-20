@@ -1,41 +1,27 @@
 import { useState } from 'react';
 
-import { ActionButton } from '@adobe/react-spectrum';
 import {
     Button,
-    Cell,
-    Column,
     Content,
     DialogTrigger,
     Divider,
     Flex,
     Heading,
     IllustratedMessage,
-    Item,
-    Key,
-    Link,
-    Menu,
-    MenuTrigger,
-    ProgressBar,
-    Row,
-    TableBody,
-    TableHeader,
-    TableView,
     Text,
     View,
     Well,
 } from '@geti/ui';
-import { MoreMenu } from '@geti/ui/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import useWebSocket from 'react-use-websocket';
-import { v4 as uuidv4 } from 'uuid';
-
 import { $api } from '../../api/client';
 import { SchemaJob, SchemaModel } from '../../api/openapi-spec';
 import { useProjectId } from '../../features/projects/use-project';
-import { paths } from '../../router';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
 import { SchemaTrainJob, TrainModelModal } from './train-model';
+
+import { ModelHeader, ModelRow } from './model-table.component';
+import { TrainingHeader, TrainingRow } from './job-table.component';
 
 const ModelList = ({ models }: { models: SchemaModel[] }) => {
     const sortedModels = models.toSorted(
@@ -44,57 +30,16 @@ const ModelList = ({ models }: { models: SchemaModel[] }) => {
 
     const deleteModelMutation = $api.useMutation('delete', '/api/models');
 
-    const onAction = (key: Key, model: SchemaModel) => {
-        const action = key.toString();
-        if (action === 'delete') {
-            deleteModelMutation.mutate({ params: { query: { uuid: model.id! } } });
-        }
+    const deleteModel = (model: SchemaModel) => {
+        deleteModelMutation.mutate({ params: { query: { uuid: model.id! } } });
     };
 
     return (
-        <View borderTopWidth='thin' borderTopColor='gray-400' backgroundColor={'gray-300'}>
-            <TableView aria-label='Models' overflowMode='wrap' selectionStyle='highlight' selectionMode='single'>
-                <TableHeader>
-                    <Column>MODEL NAME</Column>
-                    <Column>TRAINED</Column>
-                    <Column>ARCHITECTURE</Column>
-                    <Column>{''}</Column>
-                    <Column>{''}</Column>
-                </TableHeader>
-                <TableBody>
-                    {sortedModels.map((model) => (
-                        <Row key={model.id}>
-                            <Cell>{model.name}</Cell>
-                            <Cell>{new Date(model.created_at!).toLocaleString()}</Cell>
-                            <Cell>{model.policy}</Cell>
-                            <Cell>
-                                <Link
-                                    href={paths.project.models.inference({
-                                        project_id: model.project_id,
-                                        model_id: model.id!,
-                                    })}
-                                >
-                                    Run model
-                                </Link>
-                            </Cell>
-                            <Cell>
-                                <MenuTrigger>
-                                    <ActionButton
-                                        isQuiet
-                                        UNSAFE_style={{ fill: 'var(--spectrum-gray-900)' }}
-                                        aria-label='options'
-                                    >
-                                        <MoreMenu />
-                                    </ActionButton>
-                                    <Menu onAction={(key) => onAction(key, model)}>
-                                        <Item key='delete'>Delete</Item>
-                                    </Menu>
-                                </MenuTrigger>
-                            </Cell>
-                        </Row>
-                    ))}
-                </TableBody>
-            </TableView>
+        <View>
+            <ModelHeader />
+            {sortedModels.map((model) => (
+                <ModelRow key={model.id} model={model} onDelete={() => deleteModel(model)} />
+            ))}
         </View>
     );
 };
@@ -113,40 +58,10 @@ const ModelInTraining = ({ trainJob }: { trainJob: SchemaTrainJob }) => {
         }
     };
 
-    if (trainJob === undefined) {
-        return <></>;
-    }
-
-    const loss = trainJob.extra_info ? trainJob.extra_info["train/loss_step"] as string : "..."
-
     return (
         <View marginBottom={'size-600'}>
-            <Heading level={4} marginBottom={'size-100'}>
-                Current Training
-            </Heading>
-            <View borderTopWidth='thin' borderTopColor='gray-400' backgroundColor={'gray-300'}>
-                <TableView aria-label='Models' overflowMode='wrap' selectionStyle='highlight' selectionMode='single'>
-                    <TableHeader>
-                        <Column>MODEL NAME</Column>
-                        <Column>LOSS</Column>
-                        <Column>ARCHITECTURE</Column>
-                        <Column>{''}</Column>
-                    </TableHeader>
-                    <TableBody>
-                        <Row key={trainJob.id ?? uuidv4()}>
-                            <Cell>{trainJob.payload.model_name}</Cell>
-                            <Cell>{loss}</Cell>
-                            <Cell>{trainJob.payload.policy}</Cell>
-                            <Cell>
-                                <Button variant='secondary' onPress={onInterrupt}>
-                                    Interrupt
-                                </Button>
-                            </Cell>
-                        </Row>
-                    </TableBody>
-                </TableView>
-            </View>
-            {trainJob.status === 'running' && <ProgressBar width={'100%'} value={trainJob.progress} />}
+            <TrainingHeader />
+            <TrainingRow trainJob={trainJob} onInterrupt={onInterrupt} />
         </View>
     );
 };
