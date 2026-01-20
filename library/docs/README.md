@@ -27,7 +27,7 @@ Architecture and implementation details (for contributors):
 
 ```bash
 # Train
-getiaction fit --config configs/train.yaml
+getiaction fit --config configs/getiaction/act.yaml
 
 # Benchmark
 getiaction benchmark --config configs/benchmark/libero.yaml

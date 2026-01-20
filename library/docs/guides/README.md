@@ -17,7 +17,7 @@ Practical guides for training and deploying policies.
 cd library && uv sync --all-extras && source .venv/bin/activate
 
 # 2. Train
-getiaction fit --config configs/train.yaml
+getiaction fit --config configs/getiaction/act.yaml
 
 # 3. Benchmark
 getiaction benchmark --config configs/benchmark/libero.yaml

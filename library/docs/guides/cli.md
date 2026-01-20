@@ -14,7 +14,7 @@ Train policies using the command-line interface built on PyTorch Lightning CLI.
 ### Train with Config File
 
 ```bash
-getiaction fit --config configs/train.yaml
+getiaction fit --config configs/getiaction/act.yaml
 ```
 
 ### Generate Config Template
@@ -137,7 +137,7 @@ trainer:
 ### Multi-GPU Training
 
 ```bash
-getiaction fit --config configs/train.yaml --trainer.strategy=ddp --trainer.devices=4
+getiaction fit --config configs/getiaction/act.yaml --trainer.strategy=ddp --trainer.devices=4
 ```
 
 ### Custom Callbacks
@@ -166,7 +166,7 @@ model:
 ### Validate Before Training
 
 ```bash
-getiaction fit --config configs/train.yaml --trainer.fast_dev_run=true
+getiaction fit --config configs/getiaction/act.yaml --trainer.fast_dev_run=true
 ```
 
 ## Tips

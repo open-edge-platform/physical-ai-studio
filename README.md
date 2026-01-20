@@ -27,7 +27,7 @@ uv sync --all-extras
 source .venv/bin/activate
 
 # Train a policy
-getiaction fit --config configs/train.yaml
+getiaction fit --config configs/getiaction/act.yaml
 
 # Benchmark
 getiaction benchmark --config configs/benchmark/libero.yaml

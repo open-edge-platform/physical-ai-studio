@@ -42,7 +42,7 @@ uv sync --all-extras
 
 ```bash
 # Using a config file
-getiaction fit --config configs/train.yaml
+getiaction fit --config configs/getiaction/act.yaml
 
 # Or specify components directly
 getiaction fit \
