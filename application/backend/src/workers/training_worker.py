@@ -15,8 +15,10 @@ if TYPE_CHECKING:
     import multiprocessing as mp
     from multiprocessing.synchronize import Event as EventClass
 
-from getiaction.data import LeRobotDataModule
-from getiaction.policies import ACT, ACTModel
+    from getiaction.policies.base import Policy
+
+from getiaction.data import DataModule, LeRobotDataModule
+from getiaction.policies import ACT, ACTModel, Pi0
 from getiaction.train import Trainer
 from loguru import logger
 
@@ -50,16 +52,16 @@ class TrainingWorker(BaseProcessWorker):
                 id = uuid4()
 
                 dataset = await DatasetService.get_dataset_by_id(payload.dataset_id)
-                model_path = Path(str(settings.models_dir / str(id) / "model.pth"))
-                model_path.parent.mkdir(parents=True)
-                snapshot_dir = model_path.parent / SnapshotService.generate_snapshot_folder_name()
+                model_dir = Path(str(settings.models_dir / str(id)))
+                model_dir.mkdir(parents=True)
+                snapshot_dir = model_dir / SnapshotService.generate_snapshot_folder_name()
                 snapshot = await SnapshotService.create_snapshot_for_dataset(dataset, destination=snapshot_dir)
 
                 model = Model(
                     id=id,
                     project_id=payload.project_id,
                     dataset_id=payload.dataset_id,
-                    path=str(model_path),
+                    path=str(model_dir),
                     name=payload.model_name,
                     snapshot_id=snapshot.id,
                     policy=payload.policy,
@@ -96,16 +98,11 @@ class TrainingWorker(BaseProcessWorker):
                 root=snapshot.path,
                 train_batch_size=8,
             )
-            lib_model = ACTModel(
-                input_features=l_dm.train_dataset.observation_features,
-                output_features=l_dm.train_dataset.action_features,
-            )
-
-            policy = ACT(model=lib_model)
+            policy = self._setup_policy(model, l_dm)
 
             checkpoint_callback = ModelCheckpoint(
-                dirpath=path.parent,
-                filename=path.stem,  # filename without suffix
+                dirpath=path,
+                filename="model",  # filename without suffix
                 save_top_k=1,
                 monitor="train/loss",
                 mode="min",
@@ -120,12 +117,13 @@ class TrainingWorker(BaseProcessWorker):
                         dispatcher=dispatcher,
                     ),
                 ],
-                max_steps=10,
+                max_steps=10000,
             )
 
             dispatcher.start()
+            # policy.export(path, backend="torch")
             trainer.fit(model=policy, datamodule=l_dm)
-            policy.to_torch(path)
+            # policy.export(path, backend="openvino")
 
             job = await JobService.update_job_status(
                 job_id=job.id, status=JobStatus.COMPLETED, message="Training finished"
@@ -141,3 +139,20 @@ class TrainingWorker(BaseProcessWorker):
         self.interrupt_event.set()
         dispatcher.join(timeout=10)
         self.queue.put((EventType.JOB_UPDATE, job))
+
+    def _setup_policy(self, model: Model, l_dm: DataModule) -> Policy:
+        if model.policy == "act":
+            lib_model = ACTModel(
+                input_features=l_dm.train_dataset.observation_features,
+                output_features=l_dm.train_dataset.action_features,
+            )
+
+            return ACT(model=lib_model)
+        if model.policy == "pi0":
+            return Pi0(
+                variant="pi0",
+                chunk_size=50,
+                learning_rate=2.5e-5,
+            )
+
+        raise ValueError(f"Policy not implemented yet: {model.policy}")

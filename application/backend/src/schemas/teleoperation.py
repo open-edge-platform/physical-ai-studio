@@ -21,3 +21,4 @@ class InferenceConfig(BaseModel):
     fps: int
     cameras: list[CameraConfig]
     robot: RobotConfig
+    backend: str
