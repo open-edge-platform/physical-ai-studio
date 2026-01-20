@@ -34,9 +34,14 @@ Geti Action Library is a Python SDK for training, evaluating, and deploying Visi
 
 # Installation
 
-Geti Action Library requires Python 3.10+ and can be installed from source using `uv`.
+Geti Action Library requires Python 3.10+.
 
-## Prerequisites
+```bash
+pip install getiaction
+```
+
+<details>
+<summary><strong>Prerequisites</strong></summary>
 
 FFMPEG is required as a dependency of LeRobot:
 
@@ -48,7 +53,10 @@ sudo apt-get install -y ffmpeg
 brew install ffmpeg
 ```
 
-## Install from Source
+</details>
+
+<details>
+<summary><strong>Install from Source</strong></summary>
 
 ```bash
 git clone https://github.com/open-edge-platform/geti-action.git
@@ -59,6 +67,8 @@ uv venv
 source .venv/bin/activate
 uv sync --all-extras
 ```
+
+</details>
 
 # Training
 
