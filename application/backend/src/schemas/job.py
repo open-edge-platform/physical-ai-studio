@@ -26,6 +26,7 @@ class Job(BaseIDModel):
     progress: int = Field(default=0, ge=0, le=100, description="Progress percentage from 0 to 100")
     status: JobStatus = JobStatus.PENDING
     payload: dict
+    extra_info: dict | None = None
     message: str = "Job created"
     start_time: datetime | None = None
     end_time: datetime | None = None

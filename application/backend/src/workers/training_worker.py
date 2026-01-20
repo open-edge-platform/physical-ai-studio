@@ -1,4 +1,5 @@
 from __future__ import annotations
+from lightning.pytorch.loggers import CSVLogger
 
 import asyncio
 import traceback
@@ -107,8 +108,10 @@ class TrainingWorker(BaseProcessWorker):
                 monitor="train/loss",
                 mode="min",
             )
+            csv_logger = CSVLogger(path.parent, name=path.stem)
 
             trainer = Trainer(
+                logger=csv_logger,
                 callbacks=[
                     checkpoint_callback,
                     TrainingTrackingCallback(
@@ -121,9 +124,7 @@ class TrainingWorker(BaseProcessWorker):
             )
 
             dispatcher.start()
-            # policy.export(path, backend="torch")
             trainer.fit(model=policy, datamodule=l_dm)
-            # policy.export(path, backend="openvino")
 
             job = await JobService.update_job_status(
                 job_id=job.id, status=JobStatus.COMPLETED, message="Training finished"

@@ -117,6 +117,8 @@ const ModelInTraining = ({ trainJob }: { trainJob: SchemaTrainJob }) => {
         return <></>;
     }
 
+    const loss = trainJob.extra_info ? trainJob.extra_info["train/loss_step"] as string : "..."
+
     return (
         <View marginBottom={'size-600'}>
             <Heading level={4} marginBottom={'size-100'}>
@@ -126,14 +128,14 @@ const ModelInTraining = ({ trainJob }: { trainJob: SchemaTrainJob }) => {
                 <TableView aria-label='Models' overflowMode='wrap' selectionStyle='highlight' selectionMode='single'>
                     <TableHeader>
                         <Column>MODEL NAME</Column>
-                        <Column>TRAINED</Column>
+                        <Column>LOSS</Column>
                         <Column>ARCHITECTURE</Column>
                         <Column>{''}</Column>
                     </TableHeader>
                     <TableBody>
                         <Row key={trainJob.id ?? uuidv4()}>
                             <Cell>{trainJob.payload.model_name}</Cell>
-                            <Cell>...</Cell>
+                            <Cell>{loss}</Cell>
                             <Cell>{trainJob.payload.policy}</Cell>
                             <Cell>
                                 <Button variant='secondary' onPress={onInterrupt}>

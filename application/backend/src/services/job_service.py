@@ -51,7 +51,11 @@ class JobService:
 
     @staticmethod
     async def update_job_status(
-        job_id: UUID, status: JobStatus, message: str | None = None, progress: int | None = None
+            job_id: UUID,
+            status: JobStatus,
+            message: str | None = None,
+            progress: int | None = None,
+            extra_info: dict | None = None
     ) -> Job:
         async with get_async_db_session_ctx() as session:
             repo = JobRepository(session)
@@ -64,4 +68,6 @@ class JobService:
             progress_ = 100 if status is JobStatus.COMPLETED else progress
             if progress_ is not None:
                 updates["progress"] = progress_
+            if extra_info is not None:
+                updates["extra_info"] = extra_info
             return await repo.update(job, updates)
