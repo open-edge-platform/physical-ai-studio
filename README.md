@@ -46,7 +46,11 @@ For users who prefer a visual interface for end-to-end workflow:
 - Real-time training monitoring
 - One-click model deployment
 
-![Application demo](docs/assets/application.gif)
+<!-- markdownlint-disable MD033 -->
+<p align="center">
+  <img src="docs/assets/application.gif" alt="Application demo" width="100%">
+</p>
+<!-- markdownlint-enable MD033 -->
 
 [Application Documentation →](./application/README.md)
 
