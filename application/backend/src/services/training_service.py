@@ -50,10 +50,7 @@ class TrainingTrackingDispatcher(BaseThreadWorker):
             try:
                 progress, extra_info = self.queue.get_nowait()
                 job = await JobService.update_job_status(
-                    self.job_id,
-                    JobStatus.RUNNING,
-                    progress=progress,
-                    extra_info=extra_info
+                    self.job_id, JobStatus.RUNNING, progress=progress, extra_info=extra_info
                 )
                 self.event_queue.put((EventType.JOB_UPDATE, job))
             except Empty:
@@ -79,7 +76,7 @@ class TrainingTrackingCallback(Callback):
         self,
         trainer: "pl.Trainer",
         pl_module: "pl.LightningModule",  # noqa ARG002
-        outputs: STEP_OUTPUT,  # noqa ARG002
+        outputs: STEP_OUTPUT,
         batch: Any,  # noqa ARG002
         batch_idx: int,  # noqa ARG002
     ) -> None:
@@ -87,7 +84,7 @@ class TrainingTrackingCallback(Callback):
         if loss_tensor is not None:
             loss_val = loss_tensor.detach().cpu().item()
         else:
-            loss_val = None   # safety fallback
+            loss_val = None  # safety fallback
 
         progress = round((trainer.global_step) / trainer.max_steps * 100)
         self.dispatcher.update_progress(progress, extra_info={"train/loss_step": loss_val})

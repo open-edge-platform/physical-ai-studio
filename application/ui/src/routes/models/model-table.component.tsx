@@ -1,44 +1,34 @@
-import { Grid, Key, Text, View, Link, Item, MenuTrigger, ActionButton, Menu } from "@geti/ui"
-import { SchemaModel } from "../../api/openapi-spec";
-import { paths } from "../../router";
+import { ActionButton, Grid, Item, Key, Link, Menu, MenuTrigger, Text, View } from '@geti/ui';
+import { MoreMenu } from '@geti/ui/icons';
+
+import { SchemaModel } from '../../api/openapi-spec';
+import { paths } from '../../router';
+import { GRID_COLUMNS } from './constants';
 
 import classes from './model-table.module.scss';
-import { MoreMenu } from "@geti/ui/icons";
-import { GRID_COLUMNS } from "./constants";
 
 export const ModelHeader = () => {
     return (
-        <Grid
-            columns={GRID_COLUMNS}
-            alignItems={'center'}
-            width={"100%"}
-            UNSAFE_className={classes.modelHeader}
-        >
+        <Grid columns={GRID_COLUMNS} alignItems={'center'} width={'100%'} UNSAFE_className={classes.modelHeader}>
             <Text>Model name</Text>
             <Text>Trained</Text>
             <Text>Architecture</Text>
             <div />
             <div />
         </Grid>
-    )
-}
+    );
+};
 
-
-export const ModelRow = ({ model, onDelete }: { model: SchemaModel, onDelete: () => void }) => {
+export const ModelRow = ({ model, onDelete }: { model: SchemaModel; onDelete: () => void }) => {
     const onAction = (key: Key) => {
         const action = key.toString();
         if (action === 'delete') {
-            onDelete()
+            onDelete();
         }
     };
 
     return (
-        <Grid
-            columns={GRID_COLUMNS}
-            alignItems={'center'}
-            width={"100%"}
-            UNSAFE_className={classes.modelRow}
-        >
+        <Grid columns={GRID_COLUMNS} alignItems={'center'} width={'100%'} UNSAFE_className={classes.modelRow}>
             <Text>{model.name}</Text>
             <Text>{new Date(model.created_at!).toLocaleString()}</Text>
             <Text>{model.policy.toUpperCase()}</Text>
@@ -52,11 +42,7 @@ export const ModelRow = ({ model, onDelete }: { model: SchemaModel, onDelete: ()
             </Link>
             <View>
                 <MenuTrigger>
-                    <ActionButton
-                        isQuiet
-                        UNSAFE_style={{ fill: 'var(--spectrum-gray-900)' }}
-                        aria-label='options'
-                    >
+                    <ActionButton isQuiet UNSAFE_style={{ fill: 'var(--spectrum-gray-900)' }} aria-label='options'>
                         <MoreMenu />
                     </ActionButton>
                     <Menu onAction={onAction}>
@@ -65,5 +51,5 @@ export const ModelRow = ({ model, onDelete }: { model: SchemaModel, onDelete: ()
                 </MenuTrigger>
             </View>
         </Grid>
-    )
-}
+    );
+};

@@ -1,5 +1,5 @@
-import { Badge } from "@adobe/react-spectrum";
-import { Flex } from "@geti/ui"
+import { Badge } from '@adobe/react-spectrum';
+import { Flex } from '@geti/ui';
 
 import classes from './split-badge.module.scss';
 
@@ -11,12 +11,20 @@ interface SplitBadgeProps {
 export const SplitBadge = ({ first, second }: SplitBadgeProps) => {
     return (
         <Flex>
-            <Badge variant={'positive'} UNSAFE_className={classes.badgeLeft}>{first}</Badge>
-            <Badge variant={'info'} UNSAFE_className={classes.badgeRight}>{second}</Badge>
+            <Badge variant={'positive'} UNSAFE_className={classes.badgeLeft}>
+                {first}
+            </Badge>
+            <Badge variant={'info'} UNSAFE_className={classes.badgeRight}>
+                {second}
+            </Badge>
         </Flex>
     );
-}
+};
 
-export const SingleBadge = ({ text, color }: {text: string, color: string}) => {
-  return <Badge variant={'info'} UNSAFE_className={classes.badge} UNSAFE_style={{backgroundColor: color}}>{text}</Badge>
-}
+export const SingleBadge = ({ text, color }: { text: string; color: string }) => {
+    return (
+        <Badge variant={'info'} UNSAFE_className={classes.badge} UNSAFE_style={{ backgroundColor: color }}>
+            {text}
+        </Badge>
+    );
+};

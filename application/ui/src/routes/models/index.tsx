@@ -1,25 +1,14 @@
-import {
-    Button,
-    Content,
-    DialogTrigger,
-    Divider,
-    Flex,
-    Heading,
-    IllustratedMessage,
-    Text,
-    View,
-    Well,
-} from '@geti/ui';
+import { Button, Content, DialogTrigger, Divider, Flex, Heading, IllustratedMessage, Text, View, Well } from '@geti/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import useWebSocket from 'react-use-websocket';
+
 import { $api } from '../../api/client';
 import { SchemaJob, SchemaModel } from '../../api/openapi-spec';
 import { useProjectId } from '../../features/projects/use-project';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
-import { SchemaTrainJob, TrainModelModal } from './train-model';
-
-import { ModelHeader, ModelRow } from './model-table.component';
 import { TrainingHeader, TrainingRow } from './job-table.component';
+import { ModelHeader, ModelRow } from './model-table.component';
+import { SchemaTrainJob, TrainModelModal } from './train-model';
 
 const ModelList = ({ models }: { models: SchemaModel[] }) => {
     const sortedModels = models.toSorted(
@@ -43,9 +32,9 @@ const ModelList = ({ models }: { models: SchemaModel[] }) => {
 };
 
 const JobList = ({ jobs }: { jobs: SchemaTrainJob[] }) => {
-    const sortedJobs = jobs.filter((m) => m.status !== "completed").toSorted(
-        (a, b) => new Date(b.created_at!).getTime() - new Date(a.created_at!).getTime()
-    );
+    const sortedJobs = jobs
+        .filter((m) => m.status !== 'completed')
+        .toSorted((a, b) => new Date(b.created_at!).getTime() - new Date(a.created_at!).getTime());
 
     const interruptMutation = $api.useMutation('post', '/api/jobs/{job_id}:interrupt');
     const onInterrupt = (job: SchemaTrainJob) => {
@@ -67,16 +56,18 @@ const JobList = ({ jobs }: { jobs: SchemaTrainJob[] }) => {
             </Heading>
 
             <TrainingHeader />
-            { sortedJobs.map((job) => <TrainingRow trainJob={job} onInterrupt={() => onInterrupt(job)} />) }
+            {sortedJobs.map((job) => (
+                <TrainingRow key={job.id} trainJob={job} onInterrupt={() => onInterrupt(job)} />
+            ))}
         </View>
     );
 };
 
 const useProjectJobs = (project_id: string): SchemaJob[] => {
-    const {data: allJobs } = $api.useQuery('get', '/api/jobs')
+    const { data: allJobs } = $api.useQuery('get', '/api/jobs');
 
-    return allJobs?.filter((j) => j.project_id === project_id) ?? []
-}
+    return allJobs?.filter((j) => j.project_id === project_id) ?? [];
+};
 
 export const Index = () => {
     const { project_id } = useProjectId();
@@ -93,10 +84,16 @@ export const Index = () => {
     const client = useQueryClient();
 
     const updateJob = (job: SchemaJob) => {
-        client.setQueryData<SchemaJob[]>(["get", "/api/jobs"], (old = []) => {
-            return old.map((m) => m.id === job.id ? job : m);
-        })
-    }
+        client.setQueryData<SchemaJob[]>(['get', '/api/jobs'], (old = []) => {
+            return old.map((m) => (m.id === job.id ? job : m));
+        });
+    };
+
+    const addJob = (job: SchemaJob) => {
+        client.setQueryData<SchemaJob[]>(['get', '/api/jobs'], (old = []) => {
+            return [...old, job];
+        });
+    };
 
     const onMessage = ({ data }: WebSocketEventMap['message']) => {
         const message_data = JSON.parse(data);
@@ -106,7 +103,7 @@ export const Index = () => {
                 return;
             }
 
-            updateJob(message.data as SchemaTrainJob)
+            updateJob(message.data as SchemaTrainJob);
             if (message.data.status === 'completed') {
                 client.invalidateQueries({ queryKey: ['get', '/api/projects/{project_id}/models'] });
             }
@@ -144,13 +141,13 @@ export const Index = () => {
                                 <Button variant='secondary'>Train model</Button>
                                 {(close) =>
                                     TrainModelModal((job) => {
-                                        //setTrainJob(job);
+                                        addJob(job);
                                         close();
                                     })
                                 }
                             </DialogTrigger>
                         </Flex>
-                        <JobList jobs={jobs.filter((m) => m.type === "training") as SchemaTrainJob[]} />
+                        <JobList jobs={jobs.filter((m) => m.type === 'training') as SchemaTrainJob[]} />
                         {hasModels && <ModelList models={models} />}
                     </View>
                 )}

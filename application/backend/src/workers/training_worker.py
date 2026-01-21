@@ -1,5 +1,4 @@
 from __future__ import annotations
-from lightning.pytorch.loggers import CSVLogger
 
 import asyncio
 import traceback
@@ -8,6 +7,7 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.loggers import CSVLogger
 
 from services.snapshot_service import SnapshotService
 from settings import get_settings
@@ -120,7 +120,7 @@ class TrainingWorker(BaseProcessWorker):
                         dispatcher=dispatcher,
                     ),
                 ],
-                max_steps=10000,
+                max_steps=50000,
             )
 
             dispatcher.start()

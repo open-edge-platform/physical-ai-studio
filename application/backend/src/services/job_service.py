@@ -51,11 +51,11 @@ class JobService:
 
     @staticmethod
     async def update_job_status(
-            job_id: UUID,
-            status: JobStatus,
-            message: str | None = None,
-            progress: int | None = None,
-            extra_info: dict | None = None
+        job_id: UUID,
+        status: JobStatus,
+        message: str | None = None,
+        progress: int | None = None,
+        extra_info: dict | None = None,
     ) -> Job:
         async with get_async_db_session_ctx() as session:
             repo = JobRepository(session)
