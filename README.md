@@ -12,9 +12,9 @@
 [Contributing](#contributing)
 
 <!-- TODO: Add badges here -->
-<!-- [![python](https://img.shields.io/badge/python-3.10%2B-green)]() -->
-<!-- [![pytorch](https://img.shields.io/badge/pytorch-2.0%2B-orange)]() -->
-<!-- [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE) -->
+<!-- [![python](https://img.shields.io/badge/python-3.10%2B-green)]()
+[![pytorch](https://img.shields.io/badge/pytorch-2.0%2B-orange)]()
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE) -->
 
 </div>
 
@@ -32,12 +32,9 @@
 
 Geti Action lets you teach robots new tasks through demonstration. Record yourself performing a task, train a policy, and deploy it to your robot - all with a few lines of code or through our visual interface.
 
-<!-- TODO: Add architecture diagram -->
-<!--
 <p align="center">
-  <img src="docs/assets/architecture.png" alt="Architecture" width="700">
+  <img src="docs/assets/architecture.svg" alt="Architecture" width="100%">
 </p>
--->
 
 ## Key Features
 
@@ -135,11 +132,11 @@ For users who prefer a visual interface for data collection and training.
 
 ## Documentation
 
-| Resource | Description |
-|----------|-------------|
-| [Library Docs](./library/docs/) | API reference, guides, and examples |
-| [Application Docs](./application/README.md) | GUI setup and usage |
-| [Developer Guide](./docs/developer_guide.md) | Contributing and development setup |
+| Resource                                     | Description                         |
+| -------------------------------------------- | ----------------------------------- |
+| [Library Docs](./library/docs/)              | API reference, guides, and examples |
+| [Application Docs](./application/README.md)  | GUI setup and usage                 |
+| [Developer Guide](./docs/developer_guide.md) | Contributing and development setup  |
 
 ## Contributing
 
