@@ -20,13 +20,9 @@
 
 ---
 
-<!-- TODO: Add demo GIF showing full workflow -->
-<!-- Record: data collection → training progress → robot executing policy -->
-<!--
 <p align="center">
-  <img src="docs/assets/demo.gif" alt="Geti Action Demo" width="800">
+  <img src="docs/assets/getiaction-demo.gif" alt="Geti Action Demo" width="100%">
 </p>
--->
 
 ## What is Geti Action?
 
@@ -46,15 +42,11 @@ Geti Action lets you teach robots new tasks through demonstration. Record yourse
 
 ## Quick Start
 
-Install and run your first training in under 5 minutes.
-
-### Installation
+### Library (Python/CLI)
 
 ```bash
 pip install getiaction
 ```
-
-### Train → Evaluate → Export → Deploy
 
 ```python
 from getiaction.data import LeRobotDataModule
@@ -84,7 +76,8 @@ while not done:
     observation, reward, done, info = env.step(action)
 ```
 
-Or use the CLI:
+<details>
+<summary>Or use the CLI</summary>
 
 ```bash
 # Train
@@ -97,19 +90,7 @@ getiaction benchmark --config configs/benchmark/libero.yaml --ckpt_path model.ck
 getiaction export --ckpt_path model.ckpt --export_path ./policy --backend openvino
 ```
 
-## Choose Your Interface
-
-### Library (Python/CLI)
-
-For developers who want full control over training and deployment.
-
-```bash
-pip install getiaction
-```
-
-- Programmatic access to all components
-- Custom training loops and callbacks
-- CI/CD integration
+</details>
 
 [Library Documentation →](./library/README.md)
 
