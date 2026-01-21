@@ -141,7 +141,7 @@ export const Index = () => {
                                 <Button variant='secondary'>Train model</Button>
                                 {(close) =>
                                     TrainModelModal((job) => {
-                                        addJob(job);
+                                        if (job) addJob(job);
                                         close();
                                     })
                                 }

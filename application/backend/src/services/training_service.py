@@ -1,5 +1,6 @@
 import asyncio
 import multiprocessing as mp
+from collections.abc import Mapping
 from multiprocessing.synchronize import Event
 from queue import Empty
 from typing import TYPE_CHECKING, Any
@@ -80,9 +81,12 @@ class TrainingTrackingCallback(Callback):
         batch: Any,  # noqa ARG002
         batch_idx: int,  # noqa ARG002
     ) -> None:
-        loss_tensor = outputs.get("loss")
-        if loss_tensor is not None:
-            loss_val = loss_tensor.detach().cpu().item()
+        if isinstance(outputs, Mapping):
+            loss_tensor = outputs.get("loss")
+            if loss_tensor is not None:
+                loss_val = loss_tensor.detach().cpu().item()
+            else:
+                loss_val = None  # safety fallback
         else:
             loss_val = None  # safety fallback
 
