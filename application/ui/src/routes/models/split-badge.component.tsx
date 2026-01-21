@@ -16,3 +16,7 @@ export const SplitBadge = ({ first, second }: SplitBadgeProps) => {
         </Flex>
     );
 }
+
+export const SingleBadge = ({ text, color }: {text: string, color: string}) => {
+  return <Badge variant={'info'} UNSAFE_className={classes.badge} UNSAFE_style={{backgroundColor: color}}>{text}</Badge>
+}

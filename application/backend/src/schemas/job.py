@@ -30,6 +30,7 @@ class Job(BaseIDModel):
     message: str = "Job created"
     start_time: datetime | None = None
     end_time: datetime | None = None
+    created_at: datetime | None = Field(None)
 
     @field_serializer("project_id")
     def serialize_project_id(self, project_id: UUID, _info: Any) -> str:

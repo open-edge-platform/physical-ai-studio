@@ -4,7 +4,8 @@ import { Grid, Flex, Text, View, Button, ProgressBar } from "@geti/ui"
 import classes from './model-table.module.scss';
 import { SchemaTrainJob } from "./train-model";
 import { GRID_COLUMNS } from "./constants";
-import { SplitBadge } from "./split-badge.component";
+import { SplitBadge, SingleBadge } from "./split-badge.component";
+import { Badge } from "@adobe/react-spectrum";
 
 const timeSince = (dateString: string) => {
     const date = new Date(dateString);
@@ -34,9 +35,40 @@ export const TrainingHeader = () => {
 }
 
 
+const TrainJobStatus = ({job}: {job: SchemaTrainJob}) => {
+  if (job.status === "running") {
+    return (
+        <View>
+            <Flex gap={'size-100'}>
+                <Text UNSAFE_style={{ fontWeight: 500 }}>{job.payload.model_name}</Text>
+                <SplitBadge first={job.status} second={"Fine-tuning the model - epoch n/n"} />
+            </Flex>
+            {job.start_time ?
+                <Text UNSAFE_className={classes.modelInfo}>
+                    Started: {new Date(job.start_time).toLocaleString()} | Elapsed: {timeSince(job.start_time)}
+                </Text>
+                : <></>
+            }
+        </View>
+    )
+  } else {
+    const color = job.status === 'failed' ? "var(--spectrum-negative-visual-color)" : 'var(--energy-blue)';
+    return (
+        <View>
+            <Flex gap={'size-100'}>
+                <Text UNSAFE_style={{ fontWeight: 500 }}>{job.payload.model_name}</Text>
+                <SingleBadge color={color} text={job.status}/>
+            </Flex>
+        </View>
+    )
+  }
+
+}
+
+
 export const TrainingRow = ({ trainJob, onInterrupt }: { trainJob: SchemaTrainJob, onInterrupt: () => void }) => {
 
-    const loss = trainJob.extra_info["train/loss_step"] as number | undefined
+    const loss = trainJob.extra_info && trainJob.extra_info["train/loss_step"] as number | undefined
 
     return (
         <View>
@@ -46,18 +78,7 @@ export const TrainingRow = ({ trainJob, onInterrupt }: { trainJob: SchemaTrainJo
                 width={"100%"}
                 UNSAFE_className={classes.modelRow}
             >
-                <View>
-                    <Flex gap={'size-100'}>
-                        <Text UNSAFE_style={{ fontWeight: 500 }}>{trainJob.payload.model_name}</Text>
-                        <SplitBadge first={"Training"} second={"Fine-tuning the model - epoch n/n"} />
-                    </Flex>
-                    {trainJob.start_time ?
-                        <Text UNSAFE_className={classes.modelInfo}>
-                            Started: {new Date(trainJob.start_time).toLocaleString()} | Elapsed: {timeSince(trainJob.start_time)}
-                        </Text>
-                        : <></>
-                    }
-                </View>
+              <TrainJobStatus job={trainJob}/>
               <Text>{loss ? loss.toFixed(2) : "..."}</Text>
                 <Text>{trainJob.payload.policy.toUpperCase()}</Text>
                 <View>
