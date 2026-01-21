@@ -65,6 +65,9 @@ def get_robot_calibration_service(robot_manager: RobotConnectionManagerDep) -> R
     return RobotCalibrationService(robot_manager, settings=get_settings())
 
 
+RobotCalibrationServiceDep = Annotated[RobotCalibrationService, Depends(get_robot_calibration_service)]
+
+
 @lru_cache
 def get_camera_service() -> ProjectCameraService:
     """Provide a ProjectCameraService instance for managing cameras in a project."""
