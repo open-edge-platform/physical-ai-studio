@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from . import lerobot
 from .act import ACT, ACTConfig, ACTModel
+from .base import PolicyLike
 from .dummy import Dummy, DummyConfig
 from .groot import Groot, GrootConfig, GrootModel
 from .lerobot import get_lerobot_policy
@@ -34,6 +35,8 @@ __all__ = [
     "Pi0",
     "Pi0Config",
     "Pi0Model",
+    # Protocol
+    "PolicyLike",
     # SmolVLA
     "SmolVLA",
     "SmolVLAConfig",
