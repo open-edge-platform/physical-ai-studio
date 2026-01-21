@@ -92,18 +92,20 @@ getiaction export --ckpt_path model.ckpt --export_path ./policy --backend openvi
 
 ### Application (GUI)
 
-For users who prefer a visual interface for data collection and training.
-
-<!-- TODO: Add screenshot -->
-<!--
-<p align="center">
-  <img src="docs/assets/app-screenshot.png" alt="Application" width="600">
-</p>
--->
+For users who prefer a visual interface for end-to-end workflow:
 
 - Visual demonstration recording
 - Real-time training monitoring
 - One-click model deployment
+
+<!-- markdownlint-disable MD033 -->
+<p align="center">
+  <video width="600" controls autoplay loop muted poster="docs/assets/banner.png">
+    <source src="docs/assets/application.mp4" type="video/mp4">
+    Your browser does not support the video tag. Download the video <a href="docs/assets/application.mp4">here</a>.
+  </video>
+</p>
+<!-- markdownlint-enable MD033 -->
 
 [Application Documentation →](./application/README.md)
 
