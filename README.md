@@ -20,10 +20,6 @@
 
 ---
 
-<p align="center">
-  <img src="docs/assets/getiaction-demo.gif" alt="Geti Action Demo" width="100%">
-</p>
-
 ## What is Geti Action?
 
 Geti Action lets you teach robots new tasks through demonstration. Record yourself performing a task, train a policy, and deploy it to your robot - all with a few lines of code or through our visual interface.
@@ -35,9 +31,9 @@ Geti Action lets you teach robots new tasks through demonstration. Record yourse
 ## Key Features
 
 - **End-to-End Pipeline** - From demonstration recording to robot deployment
-- **Flexible Interface** - Use Python API, CLI, or the visual Application
+- **Flexible Interface** - Use Python API, CLI, or GUI
 - **Production Export** - Deploy to OpenVINO, ONNX, or Torch for any hardware
-- **Standardized Benchmarks** - Evaluate on LIBERO and PushT environments
+- **Standardized Benchmarks** - Evaluate on benchmarks such as LIBERO and PushT
 - **Built on Lightning** - Distributed training, mixed precision, and more
 
 ## Quick Start
