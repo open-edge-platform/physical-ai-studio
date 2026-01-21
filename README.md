@@ -98,14 +98,7 @@ For users who prefer a visual interface for end-to-end workflow:
 - Real-time training monitoring
 - One-click model deployment
 
-<!-- markdownlint-disable MD033 -->
-<p align="center">
-  <video width="600" controls autoplay loop muted poster="docs/assets/banner.png">
-    <source src="docs/assets/application.mp4" type="video/mp4">
-    Your browser does not support the video tag. Download the video <a href="docs/assets/application.mp4">here</a>.
-  </video>
-</p>
-<!-- markdownlint-enable MD033 -->
+[![Application demo (GIF)](docs/assets/application.gif)](docs/assets/application.mp4)
 
 [Application Documentation →](./application/README.md)
 
