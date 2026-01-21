@@ -82,9 +82,11 @@ export const TrainingRow = ({ trainJob, onInterrupt }: { trainJob: SchemaTrainJo
               <Text>{loss ? loss.toFixed(2) : "..."}</Text>
                 <Text>{trainJob.payload.policy.toUpperCase()}</Text>
                 <View>
+                  { trainJob.status === "running" &&
                     <Button variant='secondary' onPress={onInterrupt}>
                         Interrupt
                     </Button>
+                  }
                 </View>
             </Grid>
 

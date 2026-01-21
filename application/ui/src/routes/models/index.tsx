@@ -1,5 +1,3 @@
-import { useState } from 'react';
-
 import {
     Button,
     Content,
@@ -35,7 +33,7 @@ const ModelList = ({ models }: { models: SchemaModel[] }) => {
     };
 
     return (
-        <View>
+        <View marginBottom={'size-600'}>
             <ModelHeader />
             {sortedModels.map((model) => (
                 <ModelRow key={model.id} model={model} onDelete={() => deleteModel(model)} />
@@ -64,6 +62,10 @@ const JobList = ({ jobs }: { jobs: SchemaTrainJob[] }) => {
 
     return (
         <View marginBottom={'size-600'}>
+            <Heading level={4} marginBottom={'size-100'}>
+                Current Training
+            </Heading>
+
             <TrainingHeader />
             { sortedJobs.map((job) => <TrainingRow trainJob={job} onInterrupt={() => onInterrupt(job)} />) }
         </View>
@@ -95,11 +97,6 @@ export const Index = () => {
             return old.map((m) => m.id === job.id ? job : m);
         })
     }
-    const clearJob = (job: SchemaJob) => {
-        client.setQueryData<SchemaJob[]>(["get", "/api/jobs"], (old = []) => {
-            return old.filter((m) => m.id !== job.id);
-        })
-    }
 
     const onMessage = ({ data }: WebSocketEventMap['message']) => {
         const message_data = JSON.parse(data);
@@ -112,11 +109,6 @@ export const Index = () => {
             updateJob(message.data as SchemaTrainJob)
             if (message.data.status === 'completed') {
                 client.invalidateQueries({ queryKey: ['get', '/api/projects/{project_id}/models'] });
-            } else if (message.data.status === 'running') {
-                //setTrainJob(message.data as SchemaTrainJob);
-            } else {
-                // clearJob(message.data as SchemaTrainJob)
-                //setTrainJob(undefined);
             }
         }
     };
@@ -158,7 +150,7 @@ export const Index = () => {
                                 }
                             </DialogTrigger>
                         </Flex>
-                        {<JobList jobs={jobs.filter((m) => m.type === "training") as SchemaTrainJob[]} />}
+                        <JobList jobs={jobs.filter((m) => m.type === "training") as SchemaTrainJob[]} />
                         {hasModels && <ModelList models={models} />}
                     </View>
                 )}
