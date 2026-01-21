@@ -130,6 +130,11 @@ class ProjectBaseRepository(BaseRepository, metaclass=abc.ABCMeta):
         return item
 
     async def update(self, item: ModelType, partial_update: dict) -> ModelType:
+        # Remove None values and timestamp fields from partial_update
+        partial_update = {
+            k: v for k, v in partial_update.items() if v is not None and k not in {"created_at", "updated_at"}
+        }
+
         to_update = item.model_copy(update=partial_update, deep=True)
         # Re-validate to convert dicts back to their proper model types
         to_update = item.__class__.model_validate(to_update.model_dump())

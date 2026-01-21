@@ -1,14 +1,16 @@
 from functools import lru_cache
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import status
+from fastapi import Depends, status
 from fastapi.exceptions import HTTPException
 from fastapi.requests import HTTPConnection
 
 from core.scheduler import Scheduler
-from services import DatasetService, JobService, ModelService, ProjectService, RobotService
+from services import DatasetService, JobService, ModelService, ProjectCameraService, ProjectService, RobotService
 from services.event_processor import EventProcessor
 from webrtc.manager import WebRTCManager
+from workers.camera_worker_registry import CameraWorkerRegistry
 
 
 def is_valid_uuid(identifier: str) -> bool:
@@ -43,6 +45,12 @@ def get_robot_service() -> RobotService:
 
 
 @lru_cache
+def get_camera_service() -> ProjectCameraService:
+    """Provide a ProjectCameraService instance for managing cameras in a project."""
+    return ProjectCameraService()
+
+
+@lru_cache
 def get_dataset_service() -> DatasetService:
     """Provides a DatasetService instance for managing datasets."""
     return DatasetService()
@@ -74,6 +82,13 @@ def get_robot_id(robot_id: str) -> UUID:
     return UUID(robot_id)
 
 
+def get_camera_id(camera_id: str) -> UUID:
+    """Initialize and validates a camera ID."""
+    if not is_valid_uuid(camera_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid camera ID")
+    return UUID(camera_id)
+
+
 def validate_uuid(uuid: str) -> UUID:
     """Initialize and validates UUID."""
     if not is_valid_uuid(uuid):
@@ -94,3 +109,14 @@ def get_scheduler_ws(request: HTTPConnection) -> Scheduler:
 def get_event_processor_ws(request: HTTPConnection) -> EventProcessor:
     """Provide the global event_processor instance for WebSocket."""
     return request.app.state.event_processor
+
+
+def get_camera_registry(request: HTTPConnection) -> CameraWorkerRegistry:
+    """Dependency to get camera worker registry."""
+    registry = getattr(request.app.state, "camera_registry", None)
+    if registry is None:
+        raise RuntimeError("Camera worker registry not initialized")
+    return registry
+
+
+CameraRegistryDep = Annotated[CameraWorkerRegistry, Depends(get_camera_registry)]

@@ -3,6 +3,7 @@ import base64
 import copy
 import shutil
 import time
+import uuid
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
 
@@ -21,7 +22,7 @@ from pydantic import BaseModel
 from schemas import TeleoperationConfig
 from schemas.dataset import Episode, EpisodeVideo
 from utils.camera import build_camera_config
-from utils.dataset import check_repository_exists
+from utils.dataset import check_repository_exists, load_local_lerobot_dataset
 from utils.framesource_bridge import FrameSourceCameraBridge
 from utils.robot import make_lerobot_robot_config_from_robot, make_lerobot_teleoperator_config_from_robot
 
@@ -101,6 +102,24 @@ class TeleoperateWorker(BaseThreadWorker):
                     use_videos=True,
                 ),
             )
+
+            # After setting up the robot, instantiate the FrameSource using a bridge
+            # This can be done directly once switched over to LeRobotDataset V3.
+            # We do need to first instantiate using the lerobot dict because a follower requires cameras.
+            self.robot.cameras = {camera.name: FrameSourceCameraBridge(camera) for camera in self.config.cameras}
+
+            if check_repository_exists(self.config.dataset.path):
+                self.dataset = load_local_lerobot_dataset(self.config.dataset.path, batch_encoding_size=1)
+            else:
+                self.dataset = LeRobotDataset.create(
+                    repo_id=str(uuid.uuid4()),
+                    root=self.config.dataset.path,
+                    fps=self.config.fps,
+                    features=self.dataset_features,
+                    robot_type=self.robot.name,
+                    use_videos=True,
+                    image_writer_threads=4,
+                )
 
             # After setting up the robot, instantiate the FrameSource using a bridge
             # This can be done directly once switched over to LeRobotDataset V3.

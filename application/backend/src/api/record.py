@@ -122,7 +122,6 @@ async def inference_websocket(
             while True:
                 try:
                     message = queue.get_nowait()
-                    logger.info(f"got message for outgoing: {message}")
                     await websocket.send_json(message)
                 except Empty:
                     await asyncio.sleep(0.05)

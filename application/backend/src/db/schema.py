@@ -43,6 +43,11 @@ class ProjectDB(Base):
         back_populates="project",
         cascade="all, delete-orphan",
     )
+    cameras: Mapped[list["ProjectCameraDB"]] = relationship(
+        "ProjectCameraDB",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
 
 
 class ProjectRobotDB(Base):
@@ -53,11 +58,26 @@ class ProjectRobotDB(Base):
     name: Mapped[str] = mapped_column(String(255))
     serial_id: Mapped[str] = mapped_column(String(255))
     type: Mapped[RobotType] = mapped_column(Enum(RobotType))
-    cameras: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
 
     project: Mapped["ProjectDB"] = relationship(back_populates="robots")
+
+
+class ProjectCameraDB(Base):
+    __tablename__ = "project_cameras"
+
+    id: Mapped[UUID] = mapped_column(Text, primary_key=True, default=uuid4)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(String(255))
+    driver: Mapped[str] = mapped_column(String(50))
+    fingerprint: Mapped[str] = mapped_column(String(255))
+    hardware_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+
+    project: Mapped["ProjectDB"] = relationship(back_populates="cameras")
 
 
 class ProjectConfigDB(Base):

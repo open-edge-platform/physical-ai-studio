@@ -4,6 +4,8 @@ Architecture and implementation details for GetiAction.
 
 ## Modules
 
+**[Benchmark](benchmark/overview.md)** - Policy evaluation and benchmarking
+
 **[CLI](cli/overview.md)** - Command-line interface using PyTorch Lightning CLI
 
 **[Config](config/overview.md)** - Configuration system (dataclasses, Pydantic, YAML)
@@ -25,12 +27,13 @@ Architecture and implementation details for GetiAction.
 ```mermaid
 graph TD
     A["getiaction"]
-    A --> B["cli/"]
-    A --> C["config/"]
-    A --> D["data/"]
-    A --> E["gyms/"]
-    A --> F["policy/"]
-    A --> G["train/"]
-    A --> H["export/"]
-    A --> I["inference/"]
+    A --> B["benchmark/"]
+    A --> C["cli/"]
+    A --> D["config/"]
+    A --> E["data/"]
+    A --> F["gyms/"]
+    A --> G["policy/"]
+    A --> H["train/"]
+    A --> I["export/"]
+    A --> J["inference/"]
 ```

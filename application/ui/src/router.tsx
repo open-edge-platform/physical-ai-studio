@@ -6,8 +6,10 @@ import { createBrowserRouter } from 'react-router-dom';
 import { path } from 'static-path';
 
 import { ErrorPage } from './components/error-page/error-page';
-import { Camera, CameraOverview } from './routes/cameras/camera';
+import { Camera } from './routes/cameras/camera';
+import { Edit as CameraEdit } from './routes/cameras/edit';
 import { Layout as CamerasLayout } from './routes/cameras/layout';
+import { New as CamerasNew } from './routes/cameras/new';
 import { CameraWebcam } from './routes/cameras/webcam';
 import { Index as Datasets } from './routes/datasets/index';
 import { Index as Models } from './routes/models/index';
@@ -22,6 +24,7 @@ import { Layout as RobotsLayout } from './routes/robots/layout';
 import { New as RobotsNew } from './routes/robots/new';
 import { Robot } from './routes/robots/robot';
 import { SetupMotors } from './routes/robots/setup-motors';
+import { TabNavigation as RobotsTabNavigation } from './routes/robots/tab-navigation';
 
 const root = path('/');
 const projects = root.path('/projects');
@@ -31,6 +34,7 @@ const robot = robots.path(':robot_id');
 const datasets = project.path('/datasets');
 const models = project.path('/models');
 const cameras = project.path('cameras');
+const environments = project.path('environments');
 
 export const paths = {
     root,
@@ -43,13 +47,6 @@ export const paths = {
         datasets: {
             index: datasets,
         },
-        cameras: {
-            index: cameras,
-            webcam: cameras.path('/webcam'),
-            overview: cameras.path('/overview'),
-            new: cameras.path('/new'),
-            show: cameras.path(':camera_id'),
-        },
         robots: {
             index: robots,
             new: robots.path('new'),
@@ -58,6 +55,16 @@ export const paths = {
             controller: robot.path('/controller'),
             calibration: robot.path('/calibration'),
             setupMotors: robot.path('/setup-motors'),
+        },
+        cameras: {
+            index: cameras,
+            webcam: cameras.path('/webcam'),
+            new: cameras.path('/new'),
+            edit: cameras.path(':camera_id/edit'),
+            show: cameras.path(':camera_id'),
+        },
+        environments: {
+            index: environments,
         },
         models: {
             index: models,
@@ -127,75 +134,88 @@ export const router = createBrowserRouter([
                         ],
                     },
                     {
-                        path: paths.project.robots.new.pattern,
-                        element: <RobotsNew />,
-                    },
-                    {
-                        path: paths.project.robots.edit.pattern,
-                        element: <RobotEdit />,
-                    },
-                    {
-                        path: paths.project.robots.index.pattern,
-                        element: <RobotsLayout />,
+                        // robots
+                        element: (
+                            <>
+                                <RobotsTabNavigation />
+                                <Outlet />
+                            </>
+                        ),
                         children: [
+                            // Robots
                             {
-                                index: true,
-                                element: <div>Illustration to persuade user to select robot</div>,
+                                path: paths.project.robots.new.pattern,
+                                element: <RobotsNew />,
                             },
                             {
-                                path: paths.project.robots.show.pattern,
-                                element: <Robot />,
+                                path: paths.project.robots.edit.pattern,
+                                element: <RobotEdit />,
+                            },
+                            {
+                                path: paths.project.robots.index.pattern,
+                                element: <RobotsLayout />,
                                 children: [
                                     {
                                         index: true,
-                                        loader: ({ params }) => {
-                                            return redirect(
-                                                paths.project.robots.controller({
-                                                    project_id: params.project_id ?? '',
-                                                    robot_id: params.robot_id ?? '',
-                                                })
-                                            );
-                                        },
+                                        element: <div>Illustration to persuade user to select robot</div>,
                                     },
                                     {
-                                        path: paths.project.robots.controller.pattern,
-                                        element: <Controller />,
-                                    },
-                                    {
-                                        path: paths.project.robots.calibration.pattern,
-                                        element: <Calibration />,
-                                    },
-                                    {
-                                        path: paths.project.robots.setupMotors.pattern,
-                                        element: <SetupMotors />,
+                                        path: paths.project.robots.show.pattern,
+                                        element: <Robot />,
+                                        children: [
+                                            {
+                                                index: true,
+                                                loader: ({ params }) => {
+                                                    return redirect(
+                                                        paths.project.robots.controller({
+                                                            project_id: params.project_id ?? '',
+                                                            robot_id: params.robot_id ?? '',
+                                                        })
+                                                    );
+                                                },
+                                            },
+                                            {
+                                                path: paths.project.robots.controller.pattern,
+                                                element: <Controller />,
+                                            },
+                                            {
+                                                path: paths.project.robots.calibration.pattern,
+                                                element: <Calibration />,
+                                            },
+                                            {
+                                                path: paths.project.robots.setupMotors.pattern,
+                                                element: <SetupMotors />,
+                                            },
+                                        ],
                                     },
                                 ],
                             },
-                        ],
-                    },
-                    {
-                        path: paths.project.cameras.index.pattern,
-                        element: <CamerasLayout />,
-                        children: [
-                            {
-                                index: true,
-                                element: <div>Select a camera or create a new one</div>,
-                            },
+                            // Cameras
                             {
                                 path: paths.project.cameras.new.pattern,
-                                element: <div>New</div>,
+                                element: <CamerasNew />,
                             },
                             {
-                                path: paths.project.cameras.show.pattern,
-                                element: <Camera />,
+                                path: paths.project.cameras.edit.pattern,
+                                element: <CameraEdit />,
                             },
                             {
-                                path: paths.project.cameras.overview.pattern,
-                                element: <CameraOverview />,
-                            },
-                            {
-                                path: paths.project.cameras.webcam.pattern,
-                                element: <CameraWebcam />,
+                                path: paths.project.cameras.index.pattern,
+                                element: <CamerasLayout />,
+                                children: [
+                                    {
+                                        index: true,
+                                        element: <div>Select a camera or create a new one</div>,
+                                    },
+                                    {
+                                        path: paths.project.cameras.show.pattern,
+                                        element: <Camera />,
+                                    },
+                                    {
+                                        path: paths.project.cameras.webcam.pattern,
+                                        element: <CameraWebcam />,
+                                    },
+                                ],
                             },
                         ],
                     },

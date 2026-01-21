@@ -9,7 +9,8 @@ import cv2
 import numpy as np
 import torch
 from getiaction.data import Observation
-from getiaction.policies import ACT, ACTModel
+from getiaction.inference import InferenceModel
+from getiaction.policies import ACT
 from lerobot.robots.utils import make_robot_from_config
 from lerobot.utils.robot_utils import precise_sleep
 from loguru import logger
@@ -81,14 +82,15 @@ class InferenceWorker(BaseThreadWorker):
             follower_config = make_lerobot_robot_config_from_robot(self.config.robot, cameras)
             # follower_config.max_relative_target = 1
 
-            model_path = self.config.model.path
+            model_path = Path(self.config.model.path)
             self.robot = make_robot_from_config(follower_config)
             logger.info(f"loading model: {model_path}")
-            self.model = ACTModel.load_from_checkpoint(Path(model_path))
-            self.model.eval()
+            policy = ACT.load_from_checkpoint(str(model_path / "model.ckpt"))
+            export_dir = model_path / "exports" / self.config.backend
+            if not export_dir.is_dir():
+                policy.export(export_dir, backend=self.config.backend)
 
-            self.policy = ACT(self.model)
-            self.policy.eval()
+            self.model = InferenceModel(export_dir=export_dir, policy_name="act", backend=self.config.backend)
 
             # TODO: Define this somehow
             # LeRobot tends to return the robot arm to root position on reset.
@@ -105,6 +107,7 @@ class InferenceWorker(BaseThreadWorker):
             self.action_keys = [f"{key}.pos" for key in self.robot.bus.sync_read("Present_Position")]
             self.camera_keys = [camera.name for camera in self.config.cameras]
 
+            self.state.initialized = True
             logger.info("inference all setup, reporting state")
         except Exception as e:
             self.state.error = True
@@ -143,6 +146,7 @@ class InferenceWorker(BaseThreadWorker):
                     action_queue.clear()
                     precise_sleep(0.3)  # TODO check if neccesary
                     self.state.is_running = False
+                    action_queue.clear()
                     self._report_state()
 
                 lerobot_obs = self.robot.get_observation()
@@ -150,17 +154,15 @@ class InferenceWorker(BaseThreadWorker):
                 if self.state.is_running:
                     observation = self._build_geti_action_observation(lerobot_obs)
                     if not action_queue:
-                        action_queue = self.model(observation.to_dict())[0].tolist()
+                        action_queue = self.model.select_action(observation)[0].tolist()
                     action = action_queue.pop(0)
 
                     # print(observation)
-                    # actions = self.policy.select_action(observation)
                     formatted_actions = dict(zip(self.action_keys, action))
                     self.robot.send_action(formatted_actions)
                     self._report_action(formatted_actions, lerobot_obs, timestamp)
                 else:
                     self._report_action({}, lerobot_obs, timestamp)
-
                 dt_s = time.perf_counter() - start_loop_t
                 wait_time = 1 / self.config.fps - dt_s
 

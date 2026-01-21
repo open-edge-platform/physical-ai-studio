@@ -1,6 +1,5 @@
 import { Content, Flex, Heading, IllustratedMessage, Text, View } from '@geti/ui';
 
-import { CameraThumbnail } from '../camera-thumbnail';
 import { RobotViewer } from '../controller/robot-viewer';
 import { ReactComponent as RobotIllustration } from './../../../assets/illustrations/INTEL_08_NO-TESTS.svg';
 import { useRobotForm } from './provider';
@@ -13,7 +12,7 @@ const EmptyPreview = () => {
             <Flex direction='column' gap='size-200'>
                 <Content>
                     <Text>
-                        Choose the robot you&aposd like to add using the form on the left. After connecting the camera,
+                        Choose the robot you&apos; like to add using the form on the left. After connecting the robot,
                         the preview will appear here.
                     </Text>
                 </Content>
@@ -40,20 +39,6 @@ export const Preview = () => {
             position={'relative'}
         >
             {form.type !== null ? <RobotViewer /> : <EmptyPreview />}
-
-            <View position='absolute' padding='size-100' top={'-20px'} left={'-20px'}>
-                <Flex direction='column' gap='size-100'>
-                    {form.cameras.map((camera, idx) => {
-                        return (
-                            <CameraThumbnail
-                                key={`${idx}-${camera.fingerprint}`}
-                                name={camera.name}
-                                fingerprint={camera.fingerprint}
-                            />
-                        );
-                    })}
-                </Flex>
-            </View>
         </View>
     );
 };

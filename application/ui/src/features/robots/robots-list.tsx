@@ -35,7 +35,7 @@ const MenuActions = ({ robot_id }: { robot_id: string }) => {
     );
 };
 
-const ConnectionStatus = ({ status }: { status: 'connected' | 'disconnected' }) => {
+export const ConnectionStatus = ({ status }: { status: 'connected' | 'disconnected' }) => {
     return (
         <StatusLight
             variant={status === 'connected' ? 'positive' : 'negative'}

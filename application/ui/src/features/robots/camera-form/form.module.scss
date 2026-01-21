@@ -1,0 +1,6 @@
+.actionButton {
+    border-color: var(
+        --spectrum-high-contrast-button-text,
+        var(--spectrum-actionbutton-border-color, var(--spectrum-alias-border-color))
+    ) !important;
+}
