@@ -38,6 +38,18 @@ Geti Action lets you teach robots new tasks through demonstration. Record yourse
 
 ## Quick Start
 
+### Application (GUI)
+
+For users who prefer a visual interface for end-to-end workflow:
+
+- Visual demonstration recording
+- Real-time training monitoring
+- One-click model deployment
+
+![Application demo](docs/assets/application.gif)
+
+[Application Documentation →](./application/README.md)
+
 ### Library (Python/CLI)
 
 ```bash
@@ -89,18 +101,6 @@ getiaction export --ckpt_path model.ckpt --export_path ./policy --backend openvi
 </details>
 
 [Library Documentation →](./library/README.md)
-
-### Application (GUI)
-
-For users who prefer a visual interface for end-to-end workflow:
-
-- Visual demonstration recording
-- Real-time training monitoring
-- One-click model deployment
-
-[![Application demo (GIF)](docs/assets/application.gif)](docs/assets/application.mp4)
-
-[Application Documentation →](./application/README.md)
 
 ## Documentation
 
