@@ -46,7 +46,7 @@ class Settings(BaseSettings):
         return self.storage_dir / "robots"
 
     # Server
-    host: str = Field(default="0.0.0.0", alias="HOST")  # noqa: S104
+    host: str = Field(default="0.0.0.0", alias="HOST")  # noqa: S104 # nosec B104
     port: int = Field(default=7860, alias="PORT")
 
     # Database
