@@ -20,14 +20,6 @@
 
 ---
 
-## What is Geti Action?
-
-Geti Action lets you teach robots new tasks through demonstration. Record yourself performing a task, train a policy, and deploy it to your robot - all with a few lines of code or through our visual interface.
-
-<p align="center">
-  <img src="docs/assets/architecture.svg" alt="Architecture" width="100%">
-</p>
-
 ## Key Features
 
 - **End-to-End Pipeline** - From demonstration recording to robot deployment
@@ -54,42 +46,75 @@ For users who prefer a visual interface for end-to-end workflow:
 
 [Application Documentation →](./application/README.md)
 
+#### Installation
+
+```bash
+# Backend
+cd application/backend && uv sync
+# UI
+cd application/ui && npm install
+```
+
 ### Library (Python/CLI)
 
 ```bash
 pip install getiaction
 ```
 
+<details open>
+<summary>Training</summary>
+
 ```python
 from getiaction.data import LeRobotDataModule
 from getiaction.policies import ACT
 from getiaction.train import Trainer
-from getiaction.benchmark import LiberoBenchmark
-from getiaction.inference import InferenceModel
 
-# 1. Train a policy
 datamodule = LeRobotDataModule(repo_id="lerobot/aloha_sim_transfer_cube_human")
 model = ACT()
 trainer = Trainer(max_epochs=100)
 trainer.fit(model=model, datamodule=datamodule)
+```
 
-# 2. Evaluate on benchmark
+</details>
+
+<details>
+<summary>Benchmark</summary>
+
+```python
+from getiaction.benchmark import LiberoBenchmark
+
 benchmark = LiberoBenchmark(task_suite="libero_10", num_episodes=20)
 results = benchmark.evaluate(model)
 print(f"Success rate: {results.success_rate:.1%}")
+```
 
-# 3. Export for deployment
+</details>
+
+<details>
+<summary>Export</summary>
+
+```python
 model.export("./policy", backend="openvino")
+```
 
-# 4. Deploy and run inference
+</details>
+
+<details>
+<summary>Inference</summary>
+
+```python
+from getiaction.inference import InferenceModel
+
 policy = InferenceModel.load("./policy")
 while not done:
     action = policy.select_action(observation)
     observation, reward, done, info = env.step(action)
 ```
 
+</details>
+
 <details>
-<summary>Or use the CLI</summary>
+<summary>CLI Usage</summary>
 
 ```bash
 # Train
