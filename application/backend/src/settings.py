@@ -40,6 +40,11 @@ class Settings(BaseSettings):
         """Storage directory for models."""
         return self.storage_dir / "models"
 
+    @property
+    def robots_dir(self) -> Path:
+        """Storage directory for robots."""
+        return self.storage_dir / "robots"
+
     # Server
     host: str = Field(default="0.0.0.0", alias="HOST")  # noqa: S104
     port: int = Field(default=7860, alias="PORT")
