@@ -14,6 +14,7 @@ from settings import get_settings
 from utils.robot import RobotConnectionManager
 from webrtc.manager import WebRTCManager
 from workers.camera_worker_registry import CameraWorkerRegistry
+from workers.robot_worker_registry import RobotWorkerRegistry
 
 
 def is_valid_uuid(identifier: str) -> bool:
@@ -150,4 +151,13 @@ def get_camera_registry(request: HTTPConnection) -> CameraWorkerRegistry:
     return registry
 
 
+def get_robot_registry(request: HTTPConnection) -> RobotWorkerRegistry:
+    """Dependency to get robot worker registry."""
+    registry = getattr(request.app.state, "robot_registry", None)
+    if registry is None:
+        raise RuntimeError("Robot worker registry not initialized")
+    return registry
+
+
 CameraRegistryDep = Annotated[CameraWorkerRegistry, Depends(get_camera_registry)]
+RobotRegistryDep = Annotated[RobotWorkerRegistry, Depends(get_robot_registry)]
