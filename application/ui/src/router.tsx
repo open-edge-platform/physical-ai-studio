@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 
-import { Loading } from '@geti/ui';
+import { Grid, Loading, View } from '@geti/ui';
 import { Outlet, redirect } from 'react-router';
 import { createBrowserRouter } from 'react-router-dom';
 import { path } from 'static-path';
@@ -136,10 +136,19 @@ export const router = createBrowserRouter([
                     {
                         // robots
                         element: (
-                            <>
+                            <Grid
+                                areas={['header', 'content']}
+                                UNSAFE_style={{
+                                    gridTemplateRows: 'min-content auto',
+                                }}
+                                minHeight={0}
+                                height={'100%'}
+                            >
                                 <RobotsTabNavigation />
-                                <Outlet />
-                            </>
+                                <View gridArea='content'>
+                                    <Outlet />
+                                </View>
+                            </Grid>
                         ),
                         children: [
                             // Robots
