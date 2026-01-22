@@ -8,12 +8,16 @@ import classes from './model-table.module.scss';
 
 const timeSince = (dateString: string) => {
     const date = new Date(dateString);
-    const diff = (new Date().getTime() - date.getTime()) / 1000;
+    const diff = (new Date().getTime() - date.getTime());
 
-    const hours = Math.floor(diff / 3600);
-    const minutes = Math.floor((diff % 3600) / 60);
-    const seconds = Math.floor(diff % 60);
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    const duration = new Date(diff);
+    return new Intl.DateTimeFormat('en',{
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        timeZone: "UTC",
+        hour12: false
+    }).format(duration);
 };
 
 export const TrainingHeader = () => {
