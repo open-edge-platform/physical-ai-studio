@@ -8,15 +8,15 @@ import classes from './model-table.module.scss';
 
 const timeSince = (dateString: string) => {
     const date = new Date(dateString);
-    const diff = (new Date().getTime() - date.getTime());
+    const diff = new Date().getTime() - date.getTime();
 
     const duration = new Date(diff);
-    return new Intl.DateTimeFormat('en',{
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        timeZone: "UTC",
-        hour12: false
+    return new Intl.DateTimeFormat('en', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        timeZone: 'UTC',
+        hour12: false,
     }).format(duration);
 };
 
