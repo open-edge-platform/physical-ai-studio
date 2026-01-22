@@ -25,6 +25,8 @@ dependencies = [
   "getiaction[pi0,smolvla]",
   "greenlet>=3.2.4",
   "tenacity>=9.1.2",
+  "aiofiles>=25.1.0",
+  "types-aiofiles>=25.1.0.20251011",
 ]
 
 [tool.uv.sources]

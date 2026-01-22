@@ -6,6 +6,7 @@ from loguru import logger
 
 from services.event_processor import EventProcessor
 from settings import get_settings
+from utils.robot import RobotConnectionManager
 from webrtc.manager import WebRTCManager
 from workers.camera_worker_registry import CameraWorkerRegistry
 
@@ -23,6 +24,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         max_workers=10,
         shutdown_timeout_s=10.0,
     )
+
     logger.info("Starting %s application...", settings.app_name)
     webrtc_manager = WebRTCManager()
     app.state.webrtc_manager = webrtc_manager
@@ -33,14 +35,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.event_processor = EventProcessor(app_scheduler.event_queue)
     logger.info("Application startup completed")
 
+    # Initialize RobotHardwareManager
+    app.state.robot_hardware_manager = RobotConnectionManager()
+    await app.state.robot_manager.find_robots()
+
     yield
 
     # Shutdown
     logger.info("Shutting down %s application...", settings.app_name)
+
     await webrtc_manager.cleanup()
 
     camera_registry: CameraWorkerRegistry = app.state.camera_registry
     await camera_registry.shutdown_all()
+
+    # We might want to shutdown the hardware manager too, though releasing workers should handle it.
+    # But a global cleanup is safe.
+    # Ideally RobotHardwareManager would have a shutdown_all method too.
+    # For now, we assume active workers unregistering will trigger releases.
 
     app_scheduler.shutdown()
     app.state.event_processor.shutdown()

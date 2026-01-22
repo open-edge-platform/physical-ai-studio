@@ -12,6 +12,7 @@ from api.models import router as models_router
 from api.project import router as project_router
 from api.project_camera import router as project_cameras_router
 from api.record import router as record_router
+from api.robot_calibration import router as robot_calibration_router
 from api.robots import router as project_robots_router
 from api.settings import router as settings_router
 from core import lifespan
@@ -30,6 +31,7 @@ app = FastAPI(
 app.include_router(project_router)
 app.include_router(project_robots_router)
 app.include_router(project_cameras_router)
+app.include_router(robot_calibration_router)
 app.include_router(hardware_router)
 app.include_router(camera_router)
 app.include_router(dataset_router)
