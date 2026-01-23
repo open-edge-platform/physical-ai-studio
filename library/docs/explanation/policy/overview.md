@@ -20,6 +20,7 @@ graph TD
     A[Policy] --> B[Model]
     A --> C[Export Mixin]
     A --> D[FromCheckpoint Mixin]
+    A --> K[FromConfig Mixin]
 
     B --> E[forward - training]
     B --> F[predict_action_chunk - inference]
@@ -132,7 +133,7 @@ The config → model → policy workflow:
 3. **Policy also has explicit args** (`policy.py`):
 
    ```python
-   class MyPolicy(FromCheckpoint, Export, Policy):
+   class MyPolicy(FromConfig, FromCheckpoint, Export, Policy):
        model_type = MyModel
        model_config_type = MyConfig
 
@@ -143,11 +144,12 @@ The config → model → policy workflow:
        # ... Lightning methods (training_step, configure_optimizers, etc.)
    ```
 
+   **FromConfig mixin enables**: `MyPolicy.from_config(config)` creates policy directly from config
    **FromCheckpoint mixin enables**: `MyPolicy.load_from_checkpoint(path)` reconstructs policy from saved checkpoint
 
    ```python
    # Example implementation
-   class MyPolicy(FromCheckpoint, Export, Policy):
+   class MyPolicy(FromConfig, FromCheckpoint, Export, Policy):
        model_type = MyModel
        model_config_type = MyConfig
 
@@ -178,23 +180,26 @@ The config → model → policy workflow:
 ### Instantiation Patterns
 
 ```python
-# Pattern 1: Direct instantiation (explicit control)
-config = MyConfig(hidden_dim=512, chunk_size=100)
+# Pattern 1: Policy from config (recommended)
+config = MyConfig(
+    hidden_dim=512,
+    chunk_size=100,
+    input_features=dataset.observation_features,
+    output_features=dataset.action_features,
+)
+policy = MyPolicy.from_config(config)  # FromConfig mixin
+
+# Pattern 2: Load from checkpoint (inference)
+policy = MyPolicy.load_from_checkpoint("checkpoint.ckpt")  # FromCheckpoint mixin
+
+# Pattern 3: Direct instantiation (advanced users)
 model = MyModel(
     input_features=dataset.observation_features,
     output_features=dataset.action_features,
-    hidden_dim=config.hidden_dim,
-    chunk_size=config.chunk_size,
+    hidden_dim=512,
+    chunk_size=100,
 )
 policy = MyPolicy(model=model)
-
-# Pattern 2: Model from config (recommended)
-config = MyConfig(hidden_dim=512, chunk_size=100)
-model = MyModel.from_config(config)  # FromConfig mixin
-policy = MyPolicy(model=model)
-
-# Pattern 3: Load from checkpoint (inference)
-policy = MyPolicy.load_from_checkpoint("checkpoint.ckpt")  # FromCheckpoint mixin
 ```
 
 ## Mixins
@@ -203,8 +208,9 @@ Policies compose functionality through mixins:
 
 | Mixin            | Purpose                                                  |
 | ---------------- | -------------------------------------------------------- |
-| `Export`         | Adds `export()`, `to_onnx()`, `to_openvino()` methods    |
+| `FromConfig`     | Adds `from_config()` for creating policy from config     |
 | `FromCheckpoint` | Adds `load_from_checkpoint()` with config reconstruction |
+| `Export`         | Adds `export()`, `to_onnx()`, `to_openvino()` methods    |
 
 ## See Also
 
