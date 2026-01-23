@@ -134,6 +134,6 @@ trainer = Trainer(overfit_batches=10)
 
 ## See Also
 
-- [CLI Guide](../../guides/cli.md) - Training via command line
+- [CLI Guide](../cli/overview.md) - Training via command line
 - [Policy Design](../policy/overview.md) - Policy implementation
 - [Data Module](../data/overview.md) - Dataset management
