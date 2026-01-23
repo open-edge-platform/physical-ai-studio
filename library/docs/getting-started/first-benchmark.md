@@ -80,11 +80,11 @@ AGGREGATE:  75.5% success rate    mean reward: 0.76 ± 0.43
 
 ### What the Metrics Mean
 
-| Metric | Description |
-|--------|-------------|
+| Metric           | Description                                |
+| ---------------- | ------------------------------------------ |
 | **Success Rate** | % of episodes where the task was completed |
-| **Mean Reward** | Average reward across episodes |
-| **± value** | Standard deviation (consistency measure) |
+| **Mean Reward**  | Average reward across episodes             |
+| **± value**      | Standard deviation (consistency measure)   |
 
 ### Save Results
 
@@ -115,24 +115,24 @@ getiaction benchmark \
 
 Recording modes:
 
-| Mode | Records |
-|------|---------|
-| `all` | Every episode |
-| `failures` | Failed episodes only |
+| Mode        | Records                  |
+| ----------- | ------------------------ |
+| `all`       | Every episode            |
+| `failures`  | Failed episodes only     |
 | `successes` | Successful episodes only |
-| `none` | No videos (default) |
+| `none`      | No videos (default)      |
 
 ## Available Benchmarks
 
 ### LIBERO Suites
 
-| Suite | Tasks | Description |
-|-------|-------|-------------|
-| `libero_spatial` | 10 | Spatial reasoning tasks |
-| `libero_object` | 10 | Object manipulation |
-| `libero_goal` | 10 | Goal-conditioned tasks |
-| `libero_10` | 10 | Mixed evaluation (recommended for quick tests) |
-| `libero_90` | 90 | Full benchmark |
+| Suite            | Tasks | Description                                    |
+| ---------------- | ----- | ---------------------------------------------- |
+| `libero_spatial` | 10    | Spatial reasoning tasks                        |
+| `libero_object`  | 10    | Object manipulation                            |
+| `libero_goal`    | 10    | Goal-conditioned tasks                         |
+| `libero_10`      | 10    | Mixed evaluation (recommended for quick tests) |
+| `libero_90`      | 90    | Full benchmark                                 |
 
 ### PushT
 

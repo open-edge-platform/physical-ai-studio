@@ -27,6 +27,7 @@ getiaction fit \
 ```
 
 This command:
+
 - Downloads the `aloha_sim_transfer_cube_human` dataset from HuggingFace Hub
 - Initializes an ACT (Action Chunking Transformer) policy
 - Trains for 10 epochs
@@ -146,11 +147,11 @@ This runs one batch through training and validation.
 
 ## Common Datasets
 
-| Dataset | Robot | Task | Size |
-|---------|-------|------|------|
-| `lerobot/aloha_sim_transfer_cube_human` | ALOHA | Pick and place cube | ~2GB |
-| `lerobot/pusht` | 2D pusher | Push T-block to target | ~500MB |
-| `lerobot/aloha_sim_insertion_human` | ALOHA | Peg insertion | ~2GB |
+| Dataset                                 | Robot     | Task                   | Size   |
+| --------------------------------------- | --------- | ---------------------- | ------ |
+| `lerobot/aloha_sim_transfer_cube_human` | ALOHA     | Pick and place cube    | ~2GB   |
+| `lerobot/pusht`                         | 2D pusher | Push T-block to target | ~500MB |
+| `lerobot/aloha_sim_insertion_human`     | ALOHA     | Peg insertion          | ~2GB   |
 
 Browse more at [huggingface.co/lerobot](https://huggingface.co/lerobot).
 

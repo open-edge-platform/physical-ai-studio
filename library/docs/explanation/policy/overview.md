@@ -74,13 +74,13 @@ Both `Policy` and `InferenceModel` satisfy this protocol, enabling:
 
 ## Implemented Policies
 
-| Policy | Description | Source |
-|--------|-------------|--------|
-| **ACT** | Action Chunking Transformer | Native implementation |
-| **Diffusion** | Diffusion Policy | LeRobot wrapper |
-| **GROOT** | Vision-language policy | Native implementation |
-| **Pi0** | Physical Intelligence model | Native implementation |
-| **SmolVLA** | Small Vision-Language-Action | Native + LeRobot |
+| Policy        | Description                  | Source                |
+| ------------- | ---------------------------- | --------------------- |
+| **ACT**       | Action Chunking Transformer  | Native implementation |
+| **Diffusion** | Diffusion Policy             | LeRobot wrapper       |
+| **GROOT**     | Vision-language policy       | Native implementation |
+| **Pi0**       | Physical Intelligence model  | Native implementation |
+| **SmolVLA**   | Small Vision-Language-Action | Native + LeRobot      |
 
 ## Creating a New Policy
 
@@ -140,9 +140,9 @@ class MyPolicy(FromCheckpoint, Export, Policy):
 
 Policies compose functionality through mixins:
 
-| Mixin | Purpose |
-|-------|---------|
-| `Export` | Adds `export()`, `to_onnx()`, `to_openvino()` methods |
+| Mixin            | Purpose                                                  |
+| ---------------- | -------------------------------------------------------- |
+| `Export`         | Adds `export()`, `to_onnx()`, `to_openvino()` methods    |
 | `FromCheckpoint` | Adds `load_from_checkpoint()` with config reconstruction |
 
 ## See Also

@@ -4,12 +4,12 @@ Learn Geti Action through hands-on tutorials. Each guide builds on the previous 
 
 ## Tutorials
 
-| Tutorial | Time | Description |
-|----------|------|-------------|
-| [Installation](installation.md) | 5 min | Install the library and prerequisites |
-| [Quickstart](quickstart.md) | 5 min | Train your first policy |
-| [First Benchmark](first-benchmark.md) | 10 min | Evaluate your trained policy |
-| [First Deployment](first-deployment.md) | 10 min | Export and deploy to production |
+| Tutorial                                | Time   | Description                           |
+| --------------------------------------- | ------ | ------------------------------------- |
+| [Installation](installation.md)         | 5 min  | Install the library and prerequisites |
+| [Quickstart](quickstart.md)             | 5 min  | Train your first policy               |
+| [First Benchmark](first-benchmark.md)   | 10 min | Evaluate your trained policy          |
+| [First Deployment](first-deployment.md) | 10 min | Export and deploy to production       |
 
 ## Learning Path
 

@@ -17,11 +17,11 @@ Export your trained policy and run inference in production.
 
 ### Choose a Backend
 
-| Backend | Best For | Install |
-|---------|----------|---------|
-| **OpenVINO** | Intel CPUs, GPUs, NPUs | `pip install openvino` |
-| **ONNX** | NVIDIA GPUs (via TensorRT), cross-platform | `pip install onnx` |
-| **Torch** | Edge devices, mobile | Built-in |
+| Backend      | Best For                                   | Install                |
+| ------------ | ------------------------------------------ | ---------------------- |
+| **OpenVINO** | Intel CPUs, GPUs, NPUs                     | `pip install openvino` |
+| **ONNX**     | NVIDIA GPUs (via TensorRT), cross-platform | `pip install onnx`     |
+| **Torch**    | Edge devices, mobile                       | Built-in               |
 
 ### Export with Python
 

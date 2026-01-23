@@ -65,10 +65,10 @@ class Trainer(lightning.Trainer):
 
 ## Key Differences from Lightning
 
-| Parameter | Lightning Default | getiaction Default | Reason |
-|-----------|------------------|-------------------|--------|
-| `default_root_dir` | Current directory | `"experiments"` | Cleaner project structure |
-| `num_sanity_val_steps` | 2 | 0 | Embodied AI typically doesn't need sanity checks |
+| Parameter              | Lightning Default | getiaction Default | Reason                                           |
+| ---------------------- | ----------------- | ------------------ | ------------------------------------------------ |
+| `default_root_dir`     | Current directory | `"experiments"`    | Cleaner project structure                        |
+| `num_sanity_val_steps` | 2                 | 0                  | Embodied AI typically doesn't need sanity checks |
 
 ## Callbacks
 
