@@ -22,32 +22,22 @@
 
 ## What is Geti Action?
 
-Geti Action helps you teach robots to perform tasks by learning from human demonstrations. Instead of manually programming every robot movement, you:
-
-1. **Record** demonstrations of a task (e.g., picking up objects)
-2. **Train** a policy on those observations
-3. **Deploy** the trained policy to your robot
-
-This approach is called **imitation learning** - the robot learns by imitating what you showed it.
+Geti Action is an end-to-end framework for teaching robots to perform tasks through imitation learning from human demonstrations.
 
 ## Key Features
 
 - **End-to-End Pipeline** - From demonstration recording to robot deployment
-- **State-of-the-Art Policies** - Native ACT, Pi0, SmolVLA, GR00T implementations plus full LeRobot policy zoo
+- **State-of-the-Art Policies** - Native policy implementations such as [ACT](https://arxiv.org/abs/2304.13705), [Pi0](https://www.physicalintelligence.company/download/pi0.pdf), [SmolVLA](https://huggingface.co/lerobot/smolvla_base), [GR00T](https://arxiv.org/abs/2503.14734) and [Pi0.5](https://arxiv.org/pdf/2504.16054), plus full [LeRobot](https://github.com/huggingface/lerobot) policy zoo
 - **Flexible Interface** - Use Python API, CLI, or GUI
-- **Production Export** - Deploy to OpenVINO, ONNX, or Torch for any hardware
-- **Standardized Benchmarks** - Evaluate on benchmarks such as LIBERO and PushT
-- **Built on Lightning** - Distributed training, mixed precision, and more
+- **Production Export** - Deploy to [OpenVINO](https://docs.openvino.ai/), [ONNX](https://onnx.ai/), or [Torch](https://docs.pytorch.org/executorch/stable/index.html) for any hardware
+- **Standardized Benchmarks** - Evaluate on benchmarks such as [LIBERO](https://libero-project.github.io/) and [PushT](https://diffusion-policy.cs.columbia.edu/)
+- **Built on Lightning** - [PyTorch Lightning](https://lightning.ai/docs/pytorch/stable/) for distributed training, mixed precision, and more
 
 ## Quick Start
 
 ### Application (GUI)
 
 For users who prefer a visual interface for end-to-end workflow:
-
-- Visual demonstration recording
-- Real-time training monitoring
-- One-click model deployment
 
 <!-- markdownlint-disable MD033 -->
 <p align="center">
@@ -78,11 +68,7 @@ Open http://localhost:3000 in your browser.
 
 ### Library (Python/CLI)
 
-For programmatic control over training, benchmarking, and deployment:
-
-- Full Python API for scripting and automation
-- CLI for quick experiments
-- Integrate into existing ML pipelines
+For programmatic control over training, benchmarking, and deployment with both API and CLI
 
 ```bash
 pip install getiaction
