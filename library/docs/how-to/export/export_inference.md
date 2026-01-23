@@ -38,7 +38,7 @@ policy.export("./exports", backend="openvino")
 
 **Output structure:**
 
-```
+```text
 exports/
 ├── model.xml / model.onnx / model.pt
 ├── metadata.yaml

@@ -19,5 +19,16 @@ MD024:
 
 MD033: false
 
+# MD036/no-emphasis-as-heading - Emphasis used instead of a heading
+# Allow emphasis in README for taglines/descriptions
+MD036: false
+
+# MD040/fenced-code-language - Fenced code blocks should have a language specified
+MD040: true
+
+# MD041/first-line-heading - First line in a file should be a top-level heading
+# Allow HTML banners in README files
+MD041: false
+
 # If a page is printed, it helps if the URL is viewable.
 MD034: false # Bare URL used

@@ -61,7 +61,7 @@ trainer.fit(model=policy, datamodule=datamodule)
 
 Training logs are saved to `experiments/lightning_logs/version_N/`:
 
-```
+```text
 experiments/lightning_logs/version_0/
 ├── checkpoints/
 │   ├── last.ckpt          # Latest checkpoint

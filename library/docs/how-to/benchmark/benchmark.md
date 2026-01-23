@@ -122,7 +122,7 @@ getiaction benchmark --config configs/benchmark/my_eval.yaml
 
 ### Console
 
-```
+```text
 ================================================================================
                            BENCHMARK RESULTS SUMMARY
 ================================================================================

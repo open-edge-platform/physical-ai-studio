@@ -6,7 +6,7 @@ Policies are Lightning modules that wrap PyTorch models for training and inferen
 
 Each policy follows a consistent structure:
 
-```
+```text
 policy_name/
 ├── config.py   # Dataclass configuration
 ├── model.py    # PyTorch nn.Module
@@ -86,27 +86,27 @@ Both `Policy` and `InferenceModel` satisfy this protocol, enabling:
 
 1. **Define config** (`config.py`):
 
-```python
-@dataclass
-class MyConfig:
-    hidden_dim: int = 256
-    chunk_size: int = 100
-```
+   ```python
+   @dataclass
+   class MyConfig:
+       hidden_dim: int = 256
+       chunk_size: int = 100
+   ```
 
 2. **Implement model** (`model.py`):
 
-```python
-class MyModel(nn.Module):
-    def __init__(self, config: MyConfig, input_features, output_features):
-        self.config = config
-        # ... build network
+   ```python
+   class MyModel(nn.Module):
+       def __init__(self, config: MyConfig, input_features, output_features):
+           self.config = config
+           # ... build network
 
-    def forward(self, batch: dict) -> tuple[Tensor, dict]:
-        """Training: returns (loss, loss_dict)"""
+       def forward(self, batch: dict) -> tuple[Tensor, dict]:
+           """Training: returns (loss, loss_dict)"""
 
-    def predict_action_chunk(self, batch: dict) -> Tensor:
-        """Inference: returns action chunk [B, T, D]"""
-```
+       def predict_action_chunk(self, batch: dict) -> Tensor:
+           """Inference: returns action chunk [B, T, D]"""
+   ```
 
 3. **Create policy wrapper** (`policy.py`):
 

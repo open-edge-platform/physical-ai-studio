@@ -25,7 +25,7 @@ New to Geti Action? Start here:
 
 This documentation follows the [Diátaxis framework](https://diataxis.fr/):
 
-```
+```text
 docs/
 ├── getting-started/    # Tutorials - learning-oriented
 ├── how-to/             # How-to guides - goal-oriented

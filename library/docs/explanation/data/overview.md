@@ -4,7 +4,7 @@ Dataset management and data loading for robot learning.
 
 ## Components
 
-```
+```text
 data/
 ├── dataset.py       # Abstract Dataset base class
 ├── observation.py   # Observation dataclass and Feature types

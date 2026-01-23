@@ -86,7 +86,7 @@ This enables policies to be created without specifying input/output shapes, defe
 
 ## Output Structure
 
-```
+```text
 experiments/
 ├── lightning_logs/           # Default (no experiment_name)
 │   └── version_0/

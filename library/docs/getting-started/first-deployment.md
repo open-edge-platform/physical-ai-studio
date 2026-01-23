@@ -49,7 +49,7 @@ getiaction export \
 
 ### Exported Files
 
-```
+```text
 policy_export/
 ├── model.xml          # OpenVINO model (or .onnx/.pt for other backends)
 ├── model.bin          # Model weights
