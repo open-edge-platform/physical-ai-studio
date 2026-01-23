@@ -2,13 +2,6 @@
 
 Understanding-oriented documentation that explains why things work the way they do.
 
-## Architecture
-
-High-level explanations of Geti Action's design:
-
-- [Why Action Chunking?](why-action-chunking.md) - The key insight behind modern imitation learning
-- [Architecture Overview](architecture.md) - How the components fit together
-
 ## Design Documentation
 
 Detailed design documentation for each module (for contributors and advanced users):
