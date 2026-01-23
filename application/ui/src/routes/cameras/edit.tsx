@@ -5,7 +5,6 @@ import { Flex, Grid, Loading, minmax, View } from '@geti/ui';
 import { CameraForm } from '../../features/robots/camera-form/form';
 import { Preview } from '../../features/robots/camera-form/preview';
 import { CameraFormProvider } from '../../features/robots/camera-form/provider';
-import { UpdateCameraButton } from '../../features/robots/camera-form/update-camera-button';
 import { useCamera } from '../../features/robots/use-camera';
 
 const CenteredLoading = () => {
@@ -24,7 +23,7 @@ export const Edit = () => {
             <Grid areas={['robot controls']} columns={[minmax('size-6000', 'auto'), '1fr']} height={'100%'}>
                 <View gridArea='robot' backgroundColor={'gray-100'} padding='size-400'>
                     <Suspense fallback={<CenteredLoading />}>
-                        <CameraForm heading='Update camera' submitButton={<UpdateCameraButton />} />
+                        <CameraForm isEdit />
                     </Suspense>
                 </View>
                 <View gridArea='controls' backgroundColor={'gray-50'} padding='size-400'>
