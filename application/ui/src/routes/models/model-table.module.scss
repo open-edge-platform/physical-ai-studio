@@ -1,0 +1,43 @@
+.modelHeader {
+    border-radius: 4px 4px 0px 0px;
+    background-color: var(--spectrum-global-color-gray-200);
+    padding: var(--spectrum-global-dimension-size-150);
+    padding-left: var(--spectrum-global-dimension-size-1000);
+    text-transform: uppercase;
+    border-left: 4px solid transparent;
+
+    font-size: var(--spectrum-global-dimension-font-size-50);
+}
+
+.modelRow {
+    background-color: var(--spectrum-global-color-gray-75);
+    padding: var(--spectrum-global-dimension-size-150);
+    padding-left: var(--spectrum-global-dimension-size-1000);
+    border-top: 1px solid var(--spectrum-global-color-gray-200);
+    border-left: 4px solid transparent;
+    height: var(--spectrum-global-dimension-size-1000);
+}
+
+.modelRow.selected {
+    background-color: #0c1e29;
+    border: 1px dotted var(--energy-blue);
+    border-left: 4px solid var(--energy-blue);
+    padding: var(--spectrum-global-dimension-size-150);
+    padding-left: var(--spectrum-global-dimension-size-1000);
+}
+
+.modelRow:hover {
+    background-color: var(--spectrum-global-color-gray-100);
+}
+
+.modelInfo {
+    color: var(--spectrum-global-color-gray-700);
+}
+
+.progressBar div {
+    border-radius: 0px !important;
+}
+
+.progressBar div[class*='spectrum-BarLoader-fill'] {
+    background-color: var(--energy-blue);
+}
