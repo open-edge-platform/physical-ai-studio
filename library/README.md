@@ -218,10 +218,9 @@ The inference API is consistent across all export backends, making it easy to sw
 
 # Documentation
 
-- [Getting Started](docs/getting-started/) - Installation, quickstart, first benchmark, first deployment
-- [How-To Guides](docs/how-to/) - Goal-oriented guides for specific tasks
-- [Reference](docs/reference/) - API documentation and CLI reference
-- [Explanation](docs/explanation/) - Architecture and design documentation
+- [Getting Started](docs/getting-started/README.md) - Installation, quickstart, first benchmark, first deployment
+- [How-To Guides](docs/how-to/README.md) - Goal-oriented guides for specific tasks
+- [Explanation](docs/explanation/README.md) - Architecture and design documentation
 
 # See Also
 
