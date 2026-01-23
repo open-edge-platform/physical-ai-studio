@@ -1,7 +1,8 @@
 name: Backend
 on:
   push:
-    branches: ["main"]
+    branches:
+      - "main"
   pull_request:
 
 permissions: {} # No permissions by default on workflow level
@@ -12,15 +13,17 @@ jobs:
     permissions:
       contents: read # to checkout code
     steps:
-      - name: Checkout repository
+      - &checkout
+        name: Checkout repository
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
-      - name: Set up Python
+      - &set-up-python
+        name: Set up Python
         uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
         with:
-          python-version: "3.13"
+          python-version-file: "./application/backend/.python-version"
 
       - name: Run prek
         uses: j178/prek-action@91fd7d7cf70ae1dee9f4f44e7dfa5d1073fe6623 # v1
@@ -33,15 +36,9 @@ jobs:
     permissions:
       contents: read # to checkout code
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: false
+      - *checkout
 
-      - name: Set up Python
-        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
-        with:
-          python-version: "3.13"
+      - *set-up-python
 
       - name: Install uv
         uses: astral-sh/setup-uv@61cb8a9741eeb8a550a1b8544337180c0fc8476b # v7.2.0
