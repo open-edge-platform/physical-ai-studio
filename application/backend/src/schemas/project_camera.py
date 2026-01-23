@@ -68,7 +68,6 @@ class BaslerCameraPayload(BaseModel):
 class RealsenseCameraPayload(BaseModel):
     """Configuration for RealsenseCapture."""
 
-    device_index: int = Field(0, ge=0, le=10, description="Camera device index")
     width: int = Field(640, ge=424, le=1920, description="Frame width in pixels")
     height: int = Field(480, ge=240, le=1080, description="Frame height in pixels")
     fps: int = Field(30, ge=6, le=90, description="Frames per second")
@@ -179,7 +178,6 @@ class RealsenseCamera(BaseCamera):
                 "fingerprint": "123456789",
                 "hardware_name": "Intel RealSense D435",
                 "payload": {
-                    "device_index": 0,
                     "width": 640,
                     "height": 480,
                     "fps": 30,

@@ -11,7 +11,6 @@ import { DriverFormSchema } from '../provider';
 export const initialRealsenseState: DriverFormSchema<'realsense'> = {
     driver: 'realsense',
     payload: {
-        device_index: 0,
         depth_range_min: 0.3,
         depth_range_max: 3,
         output_type: 'color',
@@ -24,8 +23,7 @@ export const validateRealsense = (formData: DriverFormSchema<'realsense'>): form
         !!formData.fingerprint &&
         !!formData.payload?.width &&
         !!formData.payload?.height &&
-        !!formData.payload?.fps &&
-        formData.payload?.device_index !== undefined
+        !!formData.payload?.fps
     );
 };
 
