@@ -14,7 +14,7 @@
 [Benchmark](#benchmark) •
 [Export](#export) •
 [Inference](#inference) •
-[Docs](docs/)
+[Docs](docs/README.md)
 
 </div>
 
@@ -32,7 +32,21 @@ Geti Action Library is a Python SDK for training, evaluating, and deploying Visi
 - Benchmark policies on standardized environments like LIBERO and PushT.
 - Unified inference API across all export backends.
 
+## Supported Policies
+
+| Policy       | Description                                                 | Paper                                                                          |
+| ------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| **ACT**      | Action Chunking with Transformers                           | [Zhao et al. 2023](https://arxiv.org/abs/2304.13705)                           |
+| **SmolVLA**  | Lightweight vision-language-action model                    | [Cadene et al. 2024](https://huggingface.co/lerobot/smolvla_base)              |
+| **Pi0**      | Physical Intelligence foundation model                      | [Black et al. 2024](https://www.physicalintelligence.company/download/pi0.pdf) |
+| **GR00T N1** | Vision-language grounded policy                             | [Bjork et al. 2025](https://arxiv.org/abs/2503.14734)                          |
+| **Pi0.5**    | Vision-Language-Action Model with Open-World Generalization | [Black et al. 2025](https://arxiv.org/pdf/2504.16054)                          |
+
 # Installation
+
+```bash
+pip install getiaction
+```
 
 <details>
 <summary><strong>Prerequisites</strong></summary>
@@ -52,7 +66,7 @@ brew install ffmpeg
 </details>
 
 <details>
-<summary><strong>Install from Source</strong></summary>
+<summary><strong>Install from Source (for development)</strong></summary>
 
 ```bash
 git clone https://github.com/open-edge-platform/geti-action.git
@@ -66,17 +80,13 @@ uv sync --all-extras
 
 </details>
 
-```bash
-pip install getiaction
-```
-
 # Training
 
-Geti Action supports both API and CLI-based training.
+Geti Action supports both API and CLI-based training. Checkpoints are saved to `experiments/lightning_logs/` by default.
 
 ## API
 
-```python
+```python test="skip" reason="requires dataset download"
 from getiaction.data import LeRobotDataModule
 from getiaction.policies import ACT
 from getiaction.train import Trainer
@@ -115,12 +125,12 @@ Evaluate trained policies on standardized simulation environments.
 
 ## API
 
-```python
+```python test="skip" reason="requires checkpoint and libero"
 from getiaction.benchmark import LiberoBenchmark
 from getiaction.policies import ACT
 
-# Load trained policy
-policy = ACT.load_from_checkpoint("checkpoints/model.ckpt")
+# Load trained policy (path from training output)
+policy = ACT.load_from_checkpoint("experiments/lightning_logs/version_0/checkpoints/last.ckpt")
 policy.eval()
 
 # Run benchmark
@@ -158,7 +168,7 @@ Export trained policies to optimized formats for deployment.
 
 ## API
 
-```python
+```python test="skip" reason="requires checkpoint"
 from getiaction.policies import ACT
 
 # Load and export
@@ -169,11 +179,8 @@ policy.export("./exports", backend="openvino")
 ## CLI
 
 ```bash
-getiaction export \
-    --model getiaction.policies.ACT \
-    --ckpt_path ./checkpoints/model.ckpt \
-    --export_path ./exports \
-    --backend openvino
+# CLI coming soon - use Python API for now
+# See API section above for export usage
 ```
 
 ### Supported Backends
@@ -190,27 +197,31 @@ Deploy exported models with a unified inference API.
 
 ## API
 
-```python
+```python test="skip" reason="requires exported model and environment"
 from getiaction.inference import InferenceModel
 
 # Load exported model (auto-detects backend)
 policy = InferenceModel.load("./exports")
 
 # Run inference loop
-obs = env.reset()
+obs, info = env.reset()
 policy.reset()
+done = False
 
 while not done:
     action = policy.select_action(obs)
-    obs, reward, done, info = env.step(action)
+    obs, reward, terminated, truncated, info = env.step(action)
+    done = terminated or truncated
 ```
 
 The inference API is consistent across all export backends, making it easy to switch between OpenVINO, ONNX, and Torch depending on your deployment target.
 
 # Documentation
 
-- [User Guides](docs/guides/) - CLI usage, benchmarking, export and inference
-- [Design Docs](docs/design/) - Architecture and implementation details
+- [Getting Started](docs/getting-started/) - Installation, quickstart, first benchmark, first deployment
+- [How-To Guides](docs/how-to/) - Goal-oriented guides for specific tasks
+- [Reference](docs/reference/) - API documentation and CLI reference
+- [Explanation](docs/explanation/) - Architecture and design documentation
 
 # See Also
 
