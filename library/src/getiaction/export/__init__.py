@@ -5,4 +5,20 @@
 
 from .mixin_export import Export, ExportBackend
 
-__all__ = ["Export", "ExportBackend"]
+
+def get_available_backends() -> list[str]:
+    """Get list of available export backends.
+
+    Returns:
+        List of backend names as strings.
+
+    Examples:
+        >>> from getiaction.export import get_available_backends
+        >>> backends = get_available_backends()
+        >>> print(backends)
+        ['onnx', 'openvino', 'torch', 'torch_export_ir']
+    """
+    return [backend.value for backend in ExportBackend]
+
+
+__all__ = ["Export", "ExportBackend", "get_available_backends"]
