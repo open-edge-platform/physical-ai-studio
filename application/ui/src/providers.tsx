@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 
+import { ToastContainer } from '@geti/ui';
 import { ThemeProvider } from '@geti/ui/theme';
 import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouterProps, RouterProvider } from 'react-router';
@@ -32,6 +33,7 @@ export const Providers = () => {
             <ThemeProvider router={router}>
                 <ZoomProvider>
                     <RouterProvider router={router} />
+                    <ToastContainer />
                 </ZoomProvider>
             </ThemeProvider>
         </QueryClientProvider>

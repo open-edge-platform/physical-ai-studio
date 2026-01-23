@@ -1,4 +1,4 @@
-import { Button, ButtonGroup, Flex, Heading, ProgressCircle } from '@geti/ui';
+import { Button, ButtonGroup, Flex, Heading, ProgressCircle, ToastQueue } from '@geti/ui';
 
 import { SchemaEpisode, SchemaTeleoperationConfig } from '../../api/openapi-spec';
 import { RobotViewer } from '../../features/robots/controller/robot-viewer';
@@ -19,7 +19,8 @@ const formatActionDictToArray = (actions: { [key: string]: number }): number[] =
 export const RecordingViewer = ({ recordingConfig, addEpisode }: RecordingViewerProps) => {
     const { startEpisode, saveEpisode, cancelEpisode, observation, state, disconnect } = useTeleoperation(
         recordingConfig,
-        addEpisode
+        addEpisode,
+        ToastQueue.negative
     );
 
     const { setIsRecording } = useRecording();
@@ -29,10 +30,21 @@ export const RecordingViewer = ({ recordingConfig, addEpisode }: RecordingViewer
     };
 
     if (!state.initialized) {
-        <Flex width='100%' height={'100%'} alignItems={'center'} justifyContent={'center'}>
-            <Heading>Initializing</Heading>
-            <ProgressCircle isIndeterminate />
-        </Flex>;
+        return (
+            <Flex
+                width='100%'
+                height={'100%'}
+                direction='column'
+                gap={'size-100'}
+                alignItems={'center'}
+                justifyContent={'center'}
+            >
+                <Heading>Initializing</Heading>
+                <ProgressCircle isIndeterminate />
+
+                <Button onPress={onStop}>Cancel</Button>
+            </Flex>
+        );
     }
 
     const actions =

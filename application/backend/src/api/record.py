@@ -4,6 +4,7 @@ from queue import Empty
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from loguru import logger
 
 from api.dependencies import get_dataset_service, get_scheduler_ws
 from core.scheduler import Scheduler
@@ -52,7 +53,7 @@ async def teleoperate_websocket(
                     process.stop()
                     break
         except WebSocketDisconnect:
-            print("Except: disconnected!")
+            logger.info("Except: disconnected!")
             if process is not None:
                 process.stop()
 
@@ -65,7 +66,7 @@ async def teleoperate_websocket(
                 except Empty:
                     await asyncio.sleep(0.05)
         except Exception as e:
-            print(f"Outgoing task stopped: {e}")
+            logger.info(f"Outgoing task stopped: {e}")
 
     incoming_task = asyncio.create_task(handle_incoming())
     outgoing_task = asyncio.create_task(handle_outgoing())
@@ -79,7 +80,7 @@ async def teleoperate_websocket(
     for task in pending:
         task.cancel()
 
-    print("websocket handling done...")
+    logger.info("websocket handling done...")
 
 
 @router.websocket("/inference/ws")
@@ -108,13 +109,11 @@ async def inference_websocket(
                     process.start_task(task_index)
                 if data["event"] == "stop":
                     process.stop()
-                if data["event"] == "calculate_trajectory":
-                    process.calculate_trajectory()
                 if data["event"] == "disconnect":
                     process.disconnect()
                     break
         except WebSocketDisconnect:
-            print("Except: disconnected!")
+            logger.info("Except: disconnected!")
             if process is not None:
                 process.disconnect()
 
@@ -127,7 +126,7 @@ async def inference_websocket(
                 except Empty:
                     await asyncio.sleep(0.05)
         except Exception as e:
-            print(f"Outgoing task stopped: {e}")
+            logger.info(f"Outgoing task stopped: {e}")
 
     incoming_task = asyncio.create_task(handle_incoming())
     outgoing_task = asyncio.create_task(handle_outgoing())
@@ -137,8 +136,6 @@ async def inference_websocket(
         return_when=asyncio.FIRST_COMPLETED,
     )
 
-    # cancel whichever task is still running
     for task in pending:
         task.cancel()
-
-    print("websocket handling done...")
+    logger.info("websocket handling done...")
