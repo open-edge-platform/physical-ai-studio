@@ -84,22 +84,41 @@ Both `Policy` and `InferenceModel` satisfy this protocol, enabling:
 
 ## Creating a New Policy
 
-1. **Define config** (`config.py`):
+The config → model → policy workflow:
+
+1. **Config contains all parameters** (`config.py`):
 
    ```python
    @dataclass
-   class MyConfig:
+   class MyConfig(Config):
+       # Model architecture params
        hidden_dim: int = 256
        chunk_size: int = 100
+       # I/O structure
+       input_features: dict[str, Feature] = field(default_factory=dict)
+       output_features: dict[str, Feature] = field(default_factory=dict)
    ```
 
-2. **Implement model** (`model.py`):
+2. **Model has explicit constructor args** (`model.py`):
 
    ```python
-   class MyModel(nn.Module):
-       def __init__(self, config: MyConfig, input_features, output_features):
-           self.config = config
-           # ... build network
+   class MyModel(nn.Module, FromConfig):
+       def __init__(
+           self,
+           input_features: dict[str, Feature],
+           output_features: dict[str, Feature],
+           *,
+           hidden_dim: int = 256,
+           chunk_size: int = 100,
+       ):
+           super().__init__()
+           self.config = MyConfig(
+               hidden_dim=hidden_dim,
+               chunk_size=chunk_size,
+               input_features=input_features,
+               output_features=output_features,
+           )
+           # ... build network using params
 
        def forward(self, batch: dict) -> tuple[Tensor, dict]:
            """Training: returns (loss, loss_dict)"""
@@ -108,32 +127,74 @@ Both `Policy` and `InferenceModel` satisfy this protocol, enabling:
            """Inference: returns action chunk [B, T, D]"""
    ```
 
-3. **Create policy wrapper** (`policy.py`):
+   **FromConfig mixin enables**: `MyModel.from_config(config)` creates model from config object
+
+3. **Policy also has explicit args** (`policy.py`):
+
+   ```python
+   class MyPolicy(FromCheckpoint, Export, Policy):
+       model_type = MyModel
+       model_config_type = MyConfig
+
+       def __init__(self, model: MyModel | None = None, optimizer_fn=None):
+           super().__init__(n_action_steps=model.config.chunk_size if model else 1)
+           self.model = model
+
+       # ... Lightning methods (training_step, configure_optimizers, etc.)
+   ```
+
+   **FromCheckpoint mixin enables**: `MyPolicy.load_from_checkpoint(path)` reconstructs policy from saved checkpoint
+
+   ```python
+   # Example implementation
+   class MyPolicy(FromCheckpoint, Export, Policy):
+       model_type = MyModel
+       model_config_type = MyConfig
+
+       def __init__(self, model: MyModel | None = None, optimizer_fn=None):
+           super().__init__(n_action_steps=model.config.chunk_size if model else 1)
+           self.model = model
+           self.optimizer_fn = optimizer_fn
+
+       def forward(self, batch: Observation):
+           if self.training:
+               return self.model(batch.to_dict())
+           return self.predict_action_chunk(batch)
+
+       def predict_action_chunk(self, batch: Observation) -> Tensor:
+           return self.model.predict_action_chunk(batch.to(self.device).to_dict())
+
+       def training_step(self, batch, batch_idx):
+           loss, _ = self.model(batch.to_dict())
+           self.log("train/loss", loss)
+           return {"loss": loss}
+
+       def configure_optimizers(self):
+           if self.optimizer_fn:
+               return self.optimizer_fn(self.model.parameters())
+           return torch.optim.Adam(self.model.parameters(), lr=1e-4)
+   ```
+
+### Instantiation Patterns
 
 ```python
-class MyPolicy(FromCheckpoint, Export, Policy):
-    model_type = MyModel
-    model_config_type = MyConfig
+# Pattern 1: Direct instantiation (explicit control)
+config = MyConfig(hidden_dim=512, chunk_size=100)
+model = MyModel(
+    input_features=dataset.observation_features,
+    output_features=dataset.action_features,
+    hidden_dim=config.hidden_dim,
+    chunk_size=config.chunk_size,
+)
+policy = MyPolicy(model=model)
 
-    def __init__(self, model: MyModel | None = None, optimizer_fn=None):
-        super().__init__(n_action_steps=model.config.chunk_size if model else 1)
-        self.model = model
+# Pattern 2: Model from config (recommended)
+config = MyConfig(hidden_dim=512, chunk_size=100)
+model = MyModel.from_config(config)  # FromConfig mixin
+policy = MyPolicy(model=model)
 
-    def forward(self, batch: Observation):
-        if self.training:
-            return self.model(batch.to_dict())
-        return self.predict_action_chunk(batch)
-
-    def predict_action_chunk(self, batch: Observation) -> Tensor:
-        return self.model.predict_action_chunk(batch.to(self.device).to_dict())
-
-    def training_step(self, batch, batch_idx):
-        loss, _ = self.model(batch.to_dict())
-        self.log("train/loss", loss)
-        return {"loss": loss}
-
-    def configure_optimizers(self):
-        return torch.optim.Adam(self.model.parameters(), lr=1e-4)
+# Pattern 3: Load from checkpoint (inference)
+policy = MyPolicy.load_from_checkpoint("checkpoint.ckpt")  # FromCheckpoint mixin
 ```
 
 ## Mixins
