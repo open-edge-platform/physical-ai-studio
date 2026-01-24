@@ -163,7 +163,7 @@ export const useCameraFormBody = (camera_id: string): SchemaProjectCamera | null
 
     return {
         ...cameraForm,
-        hardware_name: hardware?.name ?? cameraForm.hardware_name,
+        hardware_name: hardware?.name ?? cameraForm.hardware_name ?? cameraForm.name,
         id: camera_id,
     };
 };
