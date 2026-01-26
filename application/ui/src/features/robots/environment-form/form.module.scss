@@ -1,0 +1,21 @@
+.actionButton {
+    border-color: var(
+        --spectrum-high-contrast-button-text,
+        var(--spectrum-actionbutton-border-color, var(--spectrum-alias-border-color))
+    ) !important;
+}
+
+.addNewButton {
+    padding: var(--spectrum-global-dimension-size-200) 0 !important;
+    border-radius: var(--spectrum-alias-border-radius-regular) !important;
+    border-width: 1px;
+    border-style: dashed;
+
+    border-color: var(--spectrum-global-color-gray-500) !important;
+    background-color: var(--spectrum-global-color-gray-75) !important;
+
+    &:hover {
+        border-color: var(--spectrum-global-color-gray-600) !important;
+        background-color: var(--spectrum-global-color-gray-100) !important;
+    }
+}
