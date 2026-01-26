@@ -83,12 +83,32 @@ ui/src/
 
 ## Configuration
 
-Environment variables (create `.env.local`):
+### Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `VITE_API_URL` | Backend API URL | `http://localhost:8000` |
-| `VITE_WS_URL` | WebSocket URL | `ws://localhost:8000/ws` |
+Create `.env.local` for custom configuration:
+
+| Variable              | Description          | Default                    |
+|-----------------------|----------------------|----------------------------|
+| `PUBLIC_API_BASE_URL` | Backend API base URL | `http://localhost:3000`    |
+
+### Development Proxy
+
+The dev server proxies `/api` requests to the backend:
+
+```typescript
+// rsbuild.config.ts
+server: {
+  proxy: {
+    '/api': {
+      target: 'http://localhost:7860',  // Backend server
+      changeOrigin: true,
+      ws: true,  // WebSocket support
+    },
+  },
+}
+```
+
+This allows the UI to make API calls to `/api/*` which are automatically forwarded to the backend at `http://localhost:7860`.
 
 ## See Also
 
