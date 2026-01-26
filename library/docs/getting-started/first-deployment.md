@@ -214,8 +214,8 @@ See your robot's documentation for specific observation and action formats.
 ## What's Next?
 
 - [How-To Guides](../how-to/) for advanced deployment scenarios
-- [Export Design](../explanation/design/export/overview.md) for backend details
-- [Inference Design](../explanation/design/inference/overview.md) for architecture
+- [Export Design](../explanation/export/README.md) for backend details
+- [Inference Design](../explanation/inference/README.md) for architecture
 
 ## Troubleshooting
 
