@@ -58,13 +58,13 @@ graph LR
 
 ## Supported Policies
 
-| Policy               | Description                              | Paper                                                                          |
-| -------------------- | ---------------------------------------- | ------------------------------------------------------------------------------ |
-| **ACT**              | Action Chunking with Transformers        | [Zhao et al. 2023](https://arxiv.org/abs/2304.13705)                           |
-| **Diffusion Policy** | Diffusion-based action generation        | [Chi et al. 2023](https://arxiv.org/abs/2303.04137)                            |
-| **GROOT**            | Vision-language grounded policy          | -                                                                              |
-| **Pi0**              | Physical Intelligence foundation model   | [Black et al. 2024](https://www.physicalintelligence.company/download/pi0.pdf) |
-| **SmolVLA**          | Lightweight vision-language-action model | [Cadene et al. 2024](https://huggingface.co/lerobot/smolvla_base)              |
+| Policy       | Description                                                 | Paper                                                                          |
+| ------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| **ACT**      | Action Chunking with Transformers                           | [Zhao et al. 2023](https://arxiv.org/abs/2304.13705)                           |
+| **SmolVLA**  | Lightweight vision-language-action model                    | [Cadene et al. 2024](https://huggingface.co/lerobot/smolvla_base)              |
+| **Pi0**      | Physical Intelligence foundation model                      | [Black et al. 2024](https://www.physicalintelligence.company/download/pi0.pdf) |
+| **GR00T N1** | Vision-language grounded policy                             | [Bjork et al. 2025](https://arxiv.org/abs/2503.14734)                          |
+| **Pi0.5**    | Vision-Language-Action Model with Open-World Generalization | [Black et al. 2025](https://arxiv.org/pdf/2504.16054)                          |
 
 ## Need Help?
 
