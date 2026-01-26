@@ -1,6 +1,6 @@
 # Quickstart
 
-Train your first policy in 5 minutes.
+Setup your training pipeline within 5 minutes.
 
 ## What You'll Do
 
@@ -11,12 +11,11 @@ Train your first policy in 5 minutes.
 ## Prerequisites
 
 - [Geti Action installed](installation.md)
-- ~2GB disk space for demo dataset
-- GPU recommended (CPU works but is slower)
+- GPU recommended (CPU would technically work but remember the waiting skeleton meme)
 
-## Step 1: Train with CLI (Easiest)
+## Step 1: Train with CLI
 
-The fastest way to train a policy:
+Use the CLI if you prefer training via terminal without diving into the code base
 
 ```bash
 getiaction fit \
@@ -76,7 +75,7 @@ experiments/lightning_logs/version_0/
 tensorboard --logdir experiments/lightning_logs
 ```
 
-Open http://localhost:6006 in your browser.
+Open http://localhost:<port> in your browser.
 
 ## What's Happening?
 
