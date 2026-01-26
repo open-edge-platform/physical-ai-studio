@@ -183,7 +183,7 @@ getiaction fit --config configs/getiaction/act.yaml --trainer.fast_dev_run=true
 **Import errors**: Test imports manually:
 
 ```bash
-python -c "from getiaction.policies.dummy.policy import Dummy"
+python -c "from getiaction.policies.pi0.policy import Pi0"
 ```
 
 **Type errors**: Check config matches class signature
