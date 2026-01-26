@@ -19,10 +19,9 @@ Goal-oriented guides for specific tasks. Each guide assumes you've completed the
 
 ## Export
 
-| Guide                                            | Description                     |
-| ------------------------------------------------ | ------------------------------- |
-| [Export & Inference](export/export_inference.md) | Deploy models to production     |
-| [Backend Comparison](export/backends.md)         | Choose the right export backend |
+| Guide                                            | Description                 |
+| ------------------------------------------------ | --------------------------- |
+| [Export & Inference](export/export_inference.md) | Deploy models to production |
 
 ## Deployment
 
