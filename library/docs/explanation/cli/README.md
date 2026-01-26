@@ -24,7 +24,6 @@ policies using PyTorch Lightning CLI and jsonargparse.
 
 ## Quick Links
 
-- [CLI User Guide](../../guides/cli.md) - User-facing documentation
 - [Configuration Examples](../../../../configs/) - Example YAML configurations
 - [Config System Design](../config/overview.md) - Configuration system details
 
