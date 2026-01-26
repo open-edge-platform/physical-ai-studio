@@ -26,12 +26,12 @@ class RuntimeAdapter(ABC):
 
 ## Adapters
 
-| Adapter                | Hardware       | Features                    |
-| ---------------------- | -------------- | --------------------------- |
-| **OpenVINOAdapter**    | Intel CPU/GPU  | Hardware opts, quantization |
-| **ONNXAdapter**        | Cross-platform | CUDA/TensorRT               |
-| **TorchExportAdapter** | Edge/mobile    | PyTorch export              |
-| **TorchAdapter**       | CPU/GPU        | Native PyTorch              |
+| Adapter                | Hardware       |
+| ---------------------- | -------------- |
+| **OpenVINOAdapter**    | Intel CPU/GPU  |
+| **ONNXAdapter**        | Cross-platform |
+| **TorchExportAdapter** | Edge/mobile    |
+| **TorchAdapter**       | CPU/GPU        |
 
 ## InferenceModel
 
