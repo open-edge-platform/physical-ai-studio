@@ -12,6 +12,10 @@ import { Layout as CamerasLayout } from './routes/cameras/layout';
 import { New as CamerasNew } from './routes/cameras/new';
 import { CameraWebcam } from './routes/cameras/webcam';
 import { Index as Datasets } from './routes/datasets/index';
+import { Edit as EnvironmentEdit } from './routes/environments/edit';
+import { Layout as EnvironmentsLayout } from './routes/environments/layout';
+import { New as EnvironmentNew } from './routes/environments/new';
+import { EnvironmentShow } from './routes/environments/show';
 import { Index as Models } from './routes/models/index';
 import { Index as Inference } from './routes/models/inference/index';
 import { OpenApi } from './routes/openapi';
@@ -35,6 +39,7 @@ const datasets = project.path('/datasets');
 const models = project.path('/models');
 const cameras = project.path('cameras');
 const environments = project.path('environments');
+const environment = environments.path(':environment_id');
 
 export const paths = {
     root,
@@ -65,6 +70,12 @@ export const paths = {
         },
         environments: {
             index: environments,
+            new: environments.path('/new'),
+            edit: environments.path(':environment_id/edit'),
+            show: environments.path(':environment_id'),
+            overview: environment,
+            datasets: environment.path('/datasets'),
+            models: environment.path('/models'),
         },
         models: {
             index: models,
@@ -223,6 +234,37 @@ export const router = createBrowserRouter([
                                     {
                                         path: paths.project.cameras.webcam.pattern,
                                         element: <CameraWebcam />,
+                                    },
+                                ],
+                            },
+                            // Environments
+                            {
+                                path: paths.project.environments.new.pattern,
+                                element: <EnvironmentNew />,
+                            },
+                            {
+                                path: paths.project.environments.edit.pattern,
+                                element: <EnvironmentEdit />,
+                            },
+                            {
+                                path: paths.project.environments.index.pattern,
+                                element: <EnvironmentsLayout />,
+                                children: [
+                                    {
+                                        index: true,
+                                        element: <div>Select an environment or create a new one</div>,
+                                    },
+                                    {
+                                        path: paths.project.environments.show.pattern,
+                                        element: <EnvironmentShow />,
+                                    },
+                                    {
+                                        path: paths.project.environments.datasets.pattern,
+                                        element: <EnvironmentShow />,
+                                    },
+                                    {
+                                        path: paths.project.environments.models.pattern,
+                                        element: <EnvironmentShow />,
                                     },
                                 ],
                             },

@@ -50,7 +50,6 @@ export const TabNavigation = () => {
                 pathname.includes('cameras') ? 'cameras' : pathname.includes('environments') ? 'environments' : 'robots'
             }
             width='100%'
-            disabledKeys={['environments']}
             gridArea='header'
         >
             <Header project_id={project_id} />
