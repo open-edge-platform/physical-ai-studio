@@ -1,3 +1,5 @@
+@import './../node_modules/dockview-react/dist/styles/dockview.css';
+
 :root {
     --background: #313236;
     --background-inverse: #3c3e42;

@@ -252,3 +252,4 @@ class JobDB(Base):
     start_time: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     end_time: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     payload: Mapped[str] = mapped_column(JSON, nullable=False)
+    extra_info: Mapped[str] = mapped_column(JSON, nullable=True)

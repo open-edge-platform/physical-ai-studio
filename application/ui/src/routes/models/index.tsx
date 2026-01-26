@@ -1,40 +1,13 @@
-import { useState } from 'react';
-
-import { ActionButton } from '@adobe/react-spectrum';
-import {
-    Button,
-    Cell,
-    Column,
-    Content,
-    DialogTrigger,
-    Divider,
-    Flex,
-    Heading,
-    IllustratedMessage,
-    Item,
-    Key,
-    Link,
-    Menu,
-    MenuTrigger,
-    ProgressBar,
-    Row,
-    TableBody,
-    TableHeader,
-    TableView,
-    Text,
-    View,
-    Well,
-} from '@geti/ui';
-import { MoreMenu } from '@geti/ui/icons';
+import { Button, Content, DialogTrigger, Divider, Flex, Heading, IllustratedMessage, Text, View, Well } from '@geti/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import useWebSocket from 'react-use-websocket';
-import { v4 as uuidv4 } from 'uuid';
 
 import { $api } from '../../api/client';
 import { SchemaJob, SchemaModel } from '../../api/openapi-spec';
 import { useProjectId } from '../../features/projects/use-project';
-import { paths } from '../../router';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
+import { TrainingHeader, TrainingRow } from './job-table.component';
+import { ModelHeader, ModelRow } from './model-table.component';
 import { SchemaTrainJob, TrainModelModal } from './train-model';
 
 const ModelList = ({ models }: { models: SchemaModel[] }) => {
@@ -44,109 +17,56 @@ const ModelList = ({ models }: { models: SchemaModel[] }) => {
 
     const deleteModelMutation = $api.useMutation('delete', '/api/models');
 
-    const onAction = (key: Key, model: SchemaModel) => {
-        const action = key.toString();
-        if (action === 'delete') {
-            deleteModelMutation.mutate({ params: { query: { uuid: model.id! } } });
-        }
+    const deleteModel = (model: SchemaModel) => {
+        deleteModelMutation.mutate({ params: { query: { uuid: model.id! } } });
     };
 
     return (
-        <View borderTopWidth='thin' borderTopColor='gray-400' backgroundColor={'gray-300'}>
-            <TableView aria-label='Models' overflowMode='wrap' selectionStyle='highlight' selectionMode='single'>
-                <TableHeader>
-                    <Column>MODEL NAME</Column>
-                    <Column>TRAINED</Column>
-                    <Column>ARCHITECTURE</Column>
-                    <Column>{''}</Column>
-                    <Column>{''}</Column>
-                </TableHeader>
-                <TableBody>
-                    {sortedModels.map((model) => (
-                        <Row key={model.id}>
-                            <Cell>{model.name}</Cell>
-                            <Cell>{new Date(model.created_at!).toLocaleString()}</Cell>
-                            <Cell>{model.policy}</Cell>
-                            <Cell>
-                                <Link
-                                    href={paths.project.models.inference({
-                                        project_id: model.project_id,
-                                        model_id: model.id!,
-                                    })}
-                                >
-                                    Run model
-                                </Link>
-                            </Cell>
-                            <Cell>
-                                <MenuTrigger>
-                                    <ActionButton
-                                        isQuiet
-                                        UNSAFE_style={{ fill: 'var(--spectrum-gray-900)' }}
-                                        aria-label='options'
-                                    >
-                                        <MoreMenu />
-                                    </ActionButton>
-                                    <Menu onAction={(key) => onAction(key, model)}>
-                                        <Item key='delete'>Delete</Item>
-                                    </Menu>
-                                </MenuTrigger>
-                            </Cell>
-                        </Row>
-                    ))}
-                </TableBody>
-            </TableView>
+        <View marginBottom={'size-600'}>
+            <ModelHeader />
+            {sortedModels.map((model) => (
+                <ModelRow key={model.id} model={model} onDelete={() => deleteModel(model)} />
+            ))}
         </View>
     );
 };
 
-const ModelInTraining = ({ trainJob }: { trainJob: SchemaTrainJob }) => {
+const JobList = ({ jobs }: { jobs: SchemaTrainJob[] }) => {
+    const sortedJobs = jobs
+        .filter((m) => m.status !== 'completed')
+        .toSorted((a, b) => new Date(b.created_at!).getTime() - new Date(a.created_at!).getTime());
+
     const interruptMutation = $api.useMutation('post', '/api/jobs/{job_id}:interrupt');
-    const onInterrupt = () => {
-        if (trainJob?.id !== undefined) {
+    const onInterrupt = (job: SchemaTrainJob) => {
+        if (job.id !== undefined) {
             interruptMutation.mutate({
                 params: {
                     query: {
-                        uuid: trainJob.id!,
+                        uuid: job.id,
                     },
                 },
             });
         }
     };
 
-    if (trainJob === undefined) {
-        return <></>;
-    }
-
     return (
         <View marginBottom={'size-600'}>
             <Heading level={4} marginBottom={'size-100'}>
                 Current Training
             </Heading>
-            <View borderTopWidth='thin' borderTopColor='gray-400' backgroundColor={'gray-300'}>
-                <TableView aria-label='Models' overflowMode='wrap' selectionStyle='highlight' selectionMode='single'>
-                    <TableHeader>
-                        <Column>MODEL NAME</Column>
-                        <Column>TRAINED</Column>
-                        <Column>ARCHITECTURE</Column>
-                        <Column>{''}</Column>
-                    </TableHeader>
-                    <TableBody>
-                        <Row key={trainJob.id ?? uuidv4()}>
-                            <Cell>{trainJob.payload.model_name}</Cell>
-                            <Cell>...</Cell>
-                            <Cell>{trainJob.payload.policy}</Cell>
-                            <Cell>
-                                <Button variant='secondary' onPress={onInterrupt}>
-                                    Interrupt
-                                </Button>
-                            </Cell>
-                        </Row>
-                    </TableBody>
-                </TableView>
-            </View>
-            {trainJob.status === 'running' && <ProgressBar width={'100%'} value={trainJob.progress} />}
+
+            <TrainingHeader />
+            {sortedJobs.map((job) => (
+                <TrainingRow key={job.id} trainJob={job} onInterrupt={() => onInterrupt(job)} />
+            ))}
         </View>
     );
+};
+
+const useProjectJobs = (project_id: string): SchemaJob[] => {
+    const { data: allJobs } = $api.useQuery('get', '/api/jobs');
+
+    return allJobs?.filter((j) => j.project_id === project_id) ?? [];
 };
 
 export const Index = () => {
@@ -155,13 +75,25 @@ export const Index = () => {
         params: { path: { project_id } },
     });
 
+    const jobs = useProjectJobs(project_id);
+
     const {} = useWebSocket(`/api/jobs/ws`, {
         shouldReconnect: () => true,
         onMessage: (event: WebSocketEventMap['message']) => onMessage(event),
     });
     const client = useQueryClient();
 
-    const [trainJob, setTrainJob] = useState<SchemaTrainJob>();
+    const updateJob = (job: SchemaJob) => {
+        client.setQueryData<SchemaJob[]>(['get', '/api/jobs'], (old = []) => {
+            return old.map((m) => (m.id === job.id ? job : m));
+        });
+    };
+
+    const addJob = (job: SchemaJob) => {
+        client.setQueryData<SchemaJob[]>(['get', '/api/jobs'], (old = []) => {
+            return [...old, job];
+        });
+    };
 
     const onMessage = ({ data }: WebSocketEventMap['message']) => {
         const message_data = JSON.parse(data);
@@ -171,19 +103,16 @@ export const Index = () => {
                 return;
             }
 
+            updateJob(message.data as SchemaTrainJob);
             if (message.data.status === 'completed') {
                 client.invalidateQueries({ queryKey: ['get', '/api/projects/{project_id}/models'] });
-                setTrainJob(undefined);
-            } else if (message.data.status === 'running') {
-                setTrainJob(message.data as SchemaTrainJob);
-            } else {
-                setTrainJob(undefined);
             }
         }
     };
 
     const hasModels = models.length > 0;
-    const showIllustratedMessage = !hasModels && !trainJob;
+    const hasJobs = jobs.length > 0;
+    const showIllustratedMessage = !hasModels && !hasJobs;
 
     return (
         <Flex height='100%'>
@@ -212,13 +141,13 @@ export const Index = () => {
                                 <Button variant='secondary'>Train model</Button>
                                 {(close) =>
                                     TrainModelModal((job) => {
-                                        setTrainJob(job);
+                                        if (job) addJob(job);
                                         close();
                                     })
                                 }
                             </DialogTrigger>
                         </Flex>
-                        {trainJob && <ModelInTraining trainJob={trainJob} />}
+                        <JobList jobs={jobs.filter((m) => m.type === 'training') as SchemaTrainJob[]} />
                         {hasModels && <ModelList models={models} />}
                     </View>
                 )}

@@ -26,9 +26,11 @@ class Job(BaseIDModel):
     progress: int = Field(default=0, ge=0, le=100, description="Progress percentage from 0 to 100")
     status: JobStatus = JobStatus.PENDING
     payload: dict
+    extra_info: dict | None = None
     message: str = "Job created"
     start_time: datetime | None = None
     end_time: datetime | None = None
+    created_at: datetime | None = Field(None)
 
     @field_serializer("project_id")
     def serialize_project_id(self, project_id: UUID, _info: Any) -> str:
