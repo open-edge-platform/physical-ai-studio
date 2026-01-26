@@ -21,11 +21,11 @@ action = model.select_action(observation)
 
 ## Backends
 
-| Backend             | Best For                               | Install                |
-| ------------------- | -------------------------------------- | ---------------------- |
-| **OpenVINO**        | Intel hardware (CPU/GPU/NPU)           | `pip install openvino` |
-| **ONNX**            | NVIDIA GPUs (TensorRT), cross-platform | `pip install onnx`     |
-| **Torch Export IR** | Edge/mobile devices                    | Built-in               |
+| Backend             | Best For                     | Install                |
+| ------------------- | ---------------------------- | ---------------------- |
+| **OpenVINO**        | Intel hardware (CPU/GPU/NPU) | `pip install openvino` |
+| **ONNX**            | Cross-platform               | `pip install onnx`     |
+| **Torch Export IR** | Edge/mobile devices          | Built-in               |
 
 ## Export
 
@@ -84,6 +84,5 @@ print(f"{(time.time()-start)/1000*1000:.2f}ms per action")
 
 ## See Also
 
-- [Inference Design](../design/inference/overview.md) - Architecture details
-- [Export Design](../design/export/overview.md) - Export system design
-- [CLI Guide](cli.md) - Training via command line
+- [Inference Design](../design/inference/README.md) - Architecture details
+- [Export Design](../design/export/README.md) - Export system design
