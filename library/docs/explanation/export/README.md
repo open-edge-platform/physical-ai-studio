@@ -120,7 +120,7 @@ loaded_program = torch.export.load("model.ptir")
 output = loaded_program.module()(policy.model.sample_input)
 ```
 
-**OpenVINO Benefits:**
+**Torch IR Benefits:**
 
 - Cross-platform inference
 - Hardware acceleration support via executorch
@@ -245,8 +245,8 @@ policy.to_onnx("model.onnx", input_sample=input_sample)
 
 ## Related Documentation
 
-- [Configuration System](../config/overview.md) - Configuration serialization
-- [Policy Base Class](../policy/overview.md) - Policy interface
+- [Configuration System](../config/README.md) - Configuration serialization
+- [Policy Base Class](../policy/README.md) - Policy interface
 
 This design provides a consistent, flexible interface for model export across
 the entire GetiAction codebase.
