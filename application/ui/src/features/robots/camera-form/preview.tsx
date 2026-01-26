@@ -1,10 +1,8 @@
 import { Content, Flex, Heading, IllustratedMessage, Text, View } from '@geti/ui';
 
-import { $api } from '../../../api/client';
-import { SchemaProjectCamera } from '../../../api/types';
 import { CameraFeed } from '../../cameras/camera-feed';
 import { ReactComponent as RobotIllustration } from './../../../assets/illustrations/INTEL_08_NO-TESTS.svg';
-import { useCameraForm } from './provider';
+import { isValid, useCameraForm } from './provider';
 
 const EmptyPreview = () => {
     return (
@@ -25,34 +23,20 @@ const EmptyPreview = () => {
 };
 
 export const Preview = () => {
-    const form = useCameraForm();
+    const { getFormData, state } = useCameraForm();
+    const cameraForm = getFormData(state.activeDriver);
 
-    const { data: hardwareCameras } = $api.useSuspenseQuery('get', '/api/hardware/cameras');
-    const actualCamera = useCameraForm();
-    const hardwareCamera = hardwareCameras.find(({ fingerprint }) => {
-        return actualCamera.fingerprint === fingerprint;
-    });
-
-    const camera: SchemaProjectCamera = {
-        name: actualCamera.name ?? '',
-        hardware_name: hardwareCamera?.name ?? '',
-        driver: (hardwareCamera?.driver as undefined | 'usb_camera') ?? 'usb_camera',
-        fingerprint: hardwareCamera?.fingerprint ?? '',
-        payload: {
-            fps: actualCamera.payload?.fps ?? 30,
-            width: actualCamera.payload?.width ?? 640,
-            height: actualCamera.payload?.height ?? 480,
-        },
+    const camera = {
+        // Ingore the camera names as this is not important for connection
+        hardware_name: cameraForm.hardware_name ?? null,
+        // Our server reuses validation requirements that says a camera must have a name
+        name: cameraForm.name ?? '_',
+        ...cameraForm,
     };
 
-    const isEnabled =
-        actualCamera.payload?.fps &&
-        actualCamera.payload?.width &&
-        actualCamera.payload?.height &&
-        actualCamera.fingerprint;
-
-    // Make sure we completely refresh the camera preview when changing resolution
-    const key = `${camera.fingerprint}-${form.payload?.fps}-${form.payload?.height}-${form.payload?.width}`;
+    // Make sure we completely refresh the camera preview when changing camera or resolution
+    // eslint-disable-next-line max-len
+    const key = `${camera.driver}-${camera.fingerprint}-${camera.payload?.fps}-${camera.payload?.height}-${camera.payload?.width}`;
 
     return (
         <View
@@ -67,7 +51,7 @@ export const Preview = () => {
             }}
             position={'relative'}
         >
-            {isEnabled ? <CameraFeed key={key} camera={camera} /> : <EmptyPreview />}
+            {isValid(camera) ? <CameraFeed key={key} camera={camera} /> : <EmptyPreview />}
         </View>
     );
 };

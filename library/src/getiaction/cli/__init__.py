@@ -3,6 +3,6 @@
 
 """CLI module for getiaction."""
 
-from getiaction.cli.cli import cli
+from getiaction.cli.cli import CLI, cli
 
-__all__ = ["cli"]
+__all__ = ["CLI", "cli"]

@@ -17,12 +17,20 @@ from schemas import CameraConfig, Dataset, Episode, EpisodeVideo, LeRobotDataset
 from settings import get_settings
 
 
-def get_dataset_episodes(repo_id: str, root: str | None) -> list[Episode]:
+def load_local_lerobot_dataset(path: str | None, **kwargs) -> LeRobotDataset:
+    """Load local LeRobot Dataset
+
+    Using unique repo id to prevent side effects from lerobot.
+    """
+    return LeRobotDataset(str(uuid.uuid4()), path, **kwargs)
+
+
+def get_dataset_episodes(root: str | None) -> list[Episode]:
     """Load dataset from LeRobot cache and get info"""
     if root and not check_repository_exists(Path(root)):
         return []
     try:
-        dataset = LeRobotDataset(repo_id, root)
+        dataset = load_local_lerobot_dataset(root)
         metadata = dataset.meta
         episodes = metadata.episodes
         result = []

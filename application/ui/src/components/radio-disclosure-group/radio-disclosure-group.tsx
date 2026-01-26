@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 
-import { Disclosure, DisclosurePanel, DisclosureTitle, Flex, Radio, RadioGroup, View } from '@geti/ui';
+import { Disclosure, DisclosurePanel, DisclosureTitle, Flex, Radio, RadioGroup, Text, View } from '@geti/ui';
+import { clsx } from 'clsx';
 
 import classes from './radio-disclosure-group.module.scss';
 
@@ -15,6 +16,7 @@ export const RadioDisclosure = <ValueType extends string>({
     items: Array<{
         value: ValueType;
         label: ReactNode;
+        icon?: ReactNode;
         content: ReactNode;
     }>;
     ariaLabel?: string;
@@ -29,27 +31,29 @@ export const RadioDisclosure = <ValueType extends string>({
             aria-label={ariaLabel}
             value={value}
         >
-            <Flex direction='column' gap='size-200' minWidth={'size-6000'}>
+            <Flex direction='column' gap='size-100'>
                 {items.map((item) => {
+                    const isExpanded = item.value === value;
+
                     return (
                         <Disclosure
                             key={item.value}
                             onExpandedChange={(expanded) => expanded && setValue(item.value)}
-                            isExpanded={item.value === value}
-                            UNSAFE_className={classes.disclosure}
+                            isExpanded={isExpanded}
+                            UNSAFE_className={clsx(classes.disclosure, { [classes.selected]: isExpanded })}
                         >
-                            <DisclosureTitle UNSAFE_className={classes.disclosureTitle}>
-                                <View padding='size-200'>
+                            <DisclosureTitle UNSAFE_className={classes.disclosureTitleContainer}>
+                                <View>
                                     <Radio value={item.value} UNSAFE_className={classes.radio}>
                                         <Flex alignItems='center' gap='size-200'>
-                                            {item.label}
+                                            {item.icon}
+
+                                            <Text UNSAFE_className={classes.disclosureTitle}>{item.label}</Text>
                                         </Flex>
                                     </Radio>
                                 </View>
                             </DisclosureTitle>
-                            <DisclosurePanel UNSAFE_className={classes.disclosurePanel}>
-                                <View padding='size-200'>{item.content}</View>
-                            </DisclosurePanel>
+                            <DisclosurePanel marginX={'size-100'}>{item.content}</DisclosurePanel>
                         </Disclosure>
                     );
                 })}

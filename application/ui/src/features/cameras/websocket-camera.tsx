@@ -65,7 +65,11 @@ export const WebsocketCamera = ({ camera }: { camera: SchemaProjectCamera }) => 
 
     useWebSocket(CAMERA_WS_URL, {
         queryParams: {
-            camera: JSON.stringify(camera),
+            camera: JSON.stringify({
+                ...camera,
+                // Prevent the stream from resetting anytime the user changes the camera name
+                name: camera.hardware_name ?? '_',
+            }),
         },
         shouldReconnect: () => true,
         reconnectAttempts: 5,
@@ -84,8 +88,8 @@ export const WebsocketCamera = ({ camera }: { camera: SchemaProjectCamera }) => 
             )}
             <canvas
                 ref={canvasRef}
-                width={camera.payload.width}
-                height={camera.payload.height}
+                width={Number(camera.payload?.width)}
+                height={Number(camera.payload?.height)}
                 style={{
                     display: isLoading ? 'none' : 'block',
                     objectFit: 'contain',

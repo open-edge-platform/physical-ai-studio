@@ -9,11 +9,12 @@ interface InferenceState {
     initialized: boolean;
     is_running: boolean;
     task_index: number;
+    error: boolean;
 }
 
-interface InferenceApiJsonResponse<Object> {
+interface InferenceApiJsonResponse<T> {
     event: string;
-    data: Object;
+    data: T;
 }
 
 export interface Observation {
@@ -28,10 +29,11 @@ const createInferenceState = (): InferenceState => {
         initialized: false,
         is_running: false,
         task_index: 0,
+        error: false,
     };
 };
 
-export const useInference = (setup: SchemaInferenceConfig) => {
+export const useInference = (setup: SchemaInferenceConfig, onError: (error: string) => void) => {
     const [state, setState] = useState<InferenceState>(createInferenceState());
     const observation = useRef<Observation | undefined>(undefined);
 
@@ -52,12 +54,16 @@ export const useInference = (setup: SchemaInferenceConfig) => {
     });
 
     const onMessage = ({ data }: WebSocketEventMap['message']) => {
-        const message = JSON.parse(data) as InferenceApiJsonResponse<object>;
+        const message = JSON.parse(data) as InferenceApiJsonResponse<unknown>;
         if (message['event'] === 'observations') {
             observation.current = message['data'] as Observation;
         }
         if (message['event'] === 'state') {
             setState(message['data'] as InferenceState);
+        }
+
+        if (message['event'] === 'error') {
+            onError(message['data'] as string);
         }
     };
 
@@ -67,16 +73,6 @@ export const useInference = (setup: SchemaInferenceConfig) => {
             data: { task_index: taskIndex },
         });
     };
-
-    const calculateTrajectory = useMutation({
-        mutationFn: async () => {
-            const { data } = await sendJsonMessageAndWait<InferenceApiJsonResponse<{ trajectory: number[][] }>>(
-                { event: 'calculate_trajectory', data: {} },
-                ({ event }) => event === 'trajectory'
-            );
-            return data['trajectory'];
-        },
-    });
 
     const disconnect = () => {
         sendJsonMessage({
@@ -97,6 +93,5 @@ export const useInference = (setup: SchemaInferenceConfig) => {
         stop,
         disconnect,
         observation,
-        calculateTrajectory,
     };
 };

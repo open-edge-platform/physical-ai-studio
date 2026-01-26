@@ -20,7 +20,11 @@ class FrameSourceCameraBridge(LeRobotCamera):
         self.rotation: Cv2Rotation = Cv2Rotation.NO_ROTATION
         self.warmup_s: int = 1
         self.camera = FrameSourceFactory.create(
-            config.driver, source=config.fingerprint, width=config.width, height=config.height, fps=config.fps
+            "webcam" if config.driver == "usb_camera" else config.driver,
+            source=config.fingerprint,
+            width=config.width,
+            height=config.height,
+            fps=config.fps,
         )
 
     @property

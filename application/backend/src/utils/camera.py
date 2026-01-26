@@ -20,7 +20,7 @@ def build_camera_config(camera_config: CameraConfig) -> LeRobotCameraConfig:
             height=camera_config.height,
             use_depth=camera_config.use_depth,
         )
-    if camera_config.driver == "webcam":
+    if camera_config.driver in ["webcam", "usb_camera"]:
         path = camera_config.fingerprint.split(":")[0]
         return OpenCVCameraConfig(
             index_or_path=Path(path),

@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 from uuid import UUID
 
@@ -42,8 +43,7 @@ class ModelService:
             repo = ModelRepository(session)
             await repo.delete_by_id(model.id)
             model_path = Path(model.path).expanduser()
-            model_path.unlink()
-            model_path.parent.rmdir()
+            shutil.rmtree(model_path)
 
     @staticmethod
     async def get_project_models(project_id: UUID) -> list[Model]:

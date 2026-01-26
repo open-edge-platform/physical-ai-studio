@@ -6,7 +6,7 @@ import { paths } from '../../router';
 
 const Header = ({ project_id }: { project_id: string }) => {
     return (
-        <View backgroundColor={'gray-200'} gridArea={'header'}>
+        <View backgroundColor={'gray-200'}>
             <Flex height='100%' alignItems={'center'} marginX='1rem' gap='size-200'>
                 <TabList height={'100%'} width='100%'>
                     <Item
@@ -21,15 +21,6 @@ const Header = ({ project_id }: { project_id: string }) => {
                     <Item textValue='Cameras' key={'cameras'} href={paths.project.cameras.index({ project_id })}>
                         <Flex alignItems='center' gap='size-100'>
                             Cameras
-                        </Flex>
-                    </Item>
-                    <Item
-                        textValue='Tele operation controller'
-                        key={'teleoperators'}
-                        href={paths.project.cameras.index({ project_id })}
-                    >
-                        <Flex alignItems='center' gap='size-100'>
-                            Tele operation controller
                         </Flex>
                     </Item>
                     <Item
@@ -59,7 +50,7 @@ export const TabNavigation = () => {
                 pathname.includes('cameras') ? 'cameras' : pathname.includes('environments') ? 'environments' : 'robots'
             }
             width='100%'
-            disabledKeys={['teleoperators', 'environments']}
+            gridArea='header'
         >
             <Header project_id={project_id} />
         </Tabs>
