@@ -84,5 +84,6 @@ print(f"{(time.time()-start)/1000*1000:.2f}ms per action")
 
 ## See Also
 
-- [Inference Design](../design/inference/README.md) - Architecture details
-- [Export Design](../design/export/README.md) - Export system design
+- [Inference Design](../../explanation/inference/README.md) - Architecture details
+- [Export Design](../../explanation/export/README.md) - Export system design
+- [CLI Guide](../training/cli.md) - Training via command line
