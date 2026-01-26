@@ -56,11 +56,11 @@ pip install getiaction
 To install with specific backend support:
 
 ```bash
-# With OpenVINO export support
-pip install getiaction[openvino]
+# With PI0 policy support
+pip install getiaction[pi0]
 
-# With ONNX export support
-pip install getiaction[onnx]
+# With SmolVLA policy support
+pip install getiaction[smolvla]
 
 # With all optional dependencies
 pip install getiaction[all]
@@ -83,10 +83,6 @@ source .venv/bin/activate  # Linux/macOS
 # Install with all development dependencies
 uv sync --all-extras
 ```
-
-### Method 3: Docker
-
-Coming soon.
 
 ## Verify Installation
 
@@ -116,6 +112,15 @@ You should see the CLI help menu with available commands.
 
 Geti Action uses PyTorch Lightning, which automatically detects and uses available GPUs.
 
+### Intel GPUs
+
+Ensure you have the correct XPU version for your PyTorch installation:
+
+```bash
+# Check PyTorch CUDA support
+python -c "import torch; print(f'CUDA available: {torch.xpu.is_available()}')"
+```
+
 ### NVIDIA GPUs
 
 Ensure you have the correct CUDA version for your PyTorch installation:
@@ -123,14 +128,6 @@ Ensure you have the correct CUDA version for your PyTorch installation:
 ```bash
 # Check PyTorch CUDA support
 python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
-```
-
-### Intel GPUs (with OpenVINO)
-
-For inference on Intel hardware:
-
-```bash
-pip install openvino
 ```
 
 ## Troubleshooting
@@ -148,7 +145,7 @@ pip list | grep getiaction
 
 LeRobot datasets require FFMPEG. Install it using your system package manager (see Prerequisites above).
 
-### CUDA out of memory
+### XPU/CUDA out of memory
 
 Reduce batch size in your training config:
 
