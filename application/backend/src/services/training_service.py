@@ -1,5 +1,6 @@
 import asyncio
 import multiprocessing as mp
+from collections.abc import Mapping
 from multiprocessing.synchronize import Event
 from queue import Empty
 from typing import TYPE_CHECKING, Any
@@ -48,14 +49,16 @@ class TrainingTrackingDispatcher(BaseThreadWorker):
     async def run_loop(self) -> None:
         while not self.interrupt_event.is_set():
             try:
-                progress = self.queue.get_nowait()
-                job = await JobService.update_job_status(self.job_id, JobStatus.RUNNING, progress=progress)
+                progress, extra_info = self.queue.get_nowait()
+                job = await JobService.update_job_status(
+                    self.job_id, JobStatus.RUNNING, progress=progress, extra_info=extra_info
+                )
                 self.event_queue.put((EventType.JOB_UPDATE, job))
             except Empty:
                 await asyncio.sleep(0.05)
 
-    def update_progress(self, progress: int) -> None:
-        self.queue.put(progress)
+    def update_progress(self, progress: int, extra_info: dict) -> None:
+        self.queue.put((progress, extra_info))
 
 
 class TrainingTrackingCallback(Callback):
@@ -74,12 +77,21 @@ class TrainingTrackingCallback(Callback):
         self,
         trainer: "pl.Trainer",
         pl_module: "pl.LightningModule",  # noqa ARG002
-        outputs: STEP_OUTPUT,  # noqa ARG002
+        outputs: STEP_OUTPUT,
         batch: Any,  # noqa ARG002
         batch_idx: int,  # noqa ARG002
     ) -> None:
+        if isinstance(outputs, Mapping):
+            loss_tensor = outputs.get("loss")
+            if loss_tensor is not None:
+                loss_val = loss_tensor.detach().cpu().item()
+            else:
+                loss_val = None  # safety fallback
+        else:
+            loss_val = None  # safety fallback
+
         progress = round((trainer.global_step) / trainer.max_steps * 100)
-        self.dispatcher.update_progress(progress)
+        self.dispatcher.update_progress(progress, extra_info={"train/loss_step": loss_val})
         if self.shutdown_event.is_set() or self.interrupt_event.is_set():
             trainer.should_stop = True
 

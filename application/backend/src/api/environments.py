@@ -36,7 +36,7 @@ async def get_project_environment(
     project_id: Annotated[UUID, Depends(get_project_id)],
     environment_id: Annotated[UUID, Depends(get_environment_id)],
     environment_service: Annotated[EnvironmentService, Depends(get_environment_service)],
-) -> EnvironmentWithRelations | None:
+) -> EnvironmentWithRelations:
     """Get environment by id with eager loaded robots and cameras."""
     return await environment_service.get_environment_by_id(project_id, environment_id)
 

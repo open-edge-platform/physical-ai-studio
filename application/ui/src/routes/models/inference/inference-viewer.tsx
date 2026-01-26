@@ -1,10 +1,11 @@
 import { useState } from 'react';
 
-import { Button, ButtonGroup, ComboBox, Flex, Heading, Item, Link, ProgressCircle } from '@geti/ui';
+import { Button, ButtonGroup, ComboBox, Flex, Heading, Item, Link, ProgressCircle, ToastQueue } from '@geti/ui';
 import { Back, Pause, Play, StepBackward } from '@geti/ui/icons';
 
 import { $api } from '../../../api/client';
 import { SchemaInferenceConfig } from '../../../api/openapi-spec';
+import { ErrorMessage } from '../../../components/error-page/error-page';
 import { RobotViewer } from '../../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
 import { paths } from '../../../router';
@@ -28,13 +29,17 @@ export const InferenceViewer = ({ config }: InferenceViewerProps) => {
     });
     const [task, setTask] = useState<string>(tasks[0] ?? '');
 
-    const { startTask, stop, state, observation } = useInference(config);
+    const { startTask, stop, state, observation } = useInference(config, ToastQueue.negative);
 
     const formatActionDictToArray = (actions: { [key: string]: number }): number[] => {
         return SO_101_JOINT_NAMES.map((name) => actions[`${name}.pos`]);
     };
 
     const actions = observation.current === undefined ? undefined : formatActionDictToArray(observation.current.state);
+
+    if (state.error) {
+        return <ErrorMessage message={'An error occured during inference setup'} />;
+    }
 
     if (!state.initialized) {
         return (
