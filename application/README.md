@@ -13,12 +13,18 @@ The application provides a graphical interface to:
 - **Train** policies using the Geti Action library
 - **Deploy** trained models to production
 
+<!-- markdownlint-disable MD033 -->
+<p align="center">
+  <img src="../docs/assets/application.gif" alt="Application demo" width="100%">
+</p>
+<!-- markdownlint-enable MD033 -->
+
 ## Components
 
-| Component | Description | Documentation |
-|-----------|-------------|---------------|
+| Component                 | Description                                                   | Documentation                         |
+| ------------------------- | ------------------------------------------------------------- | ------------------------------------- |
 | **[Backend](./backend/)** | FastAPI server for data management and training orchestration | [Backend README](./backend/README.md) |
-| **[UI](./ui/)** | React web application | [UI README](./ui/README.md) |
+| **[UI](./ui/)**           | React web application                                         | [UI README](./ui/README.md)           |
 
 ## Quick Start
 
