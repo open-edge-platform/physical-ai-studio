@@ -37,16 +37,6 @@ policy = ACT.load_from_checkpoint(
 policy.export("./policy_export", backend="openvino")
 ```
 
-### Export with CLI
-
-```bash
-getiaction export \
-    --model getiaction.policies.ACT \
-    --ckpt_path experiments/lightning_logs/version_0/checkpoints/last.ckpt \
-    --export_path ./policy_export \
-    --backend openvino
-```
-
 ### Exported Files
 
 ```text
