@@ -383,7 +383,7 @@ class Pi0(Export, Policy):
             msg = "Model is not initialized"
             raise ValueError(msg)
 
-        processed_batch = self._preprocessor(batch.to_dict())
+        processed_batch = self._preprocessor(batch.to(self.device).to_dict())
         chunk = self.model.predict_action_chunk(processed_batch, use_bf16=self.hparams["use_bf16"])
         return self._postprocessor({ACTION: chunk})[ACTION]
 

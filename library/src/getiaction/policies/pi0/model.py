@@ -625,13 +625,13 @@ class Pi0Model(nn.Module):
         device = next(self.parameters()).device
 
         observation = {
-            "images": {k: v.to(device) for k, v in batch["images"].items()},
-            "image_masks": {k: v.to(device) for k, v in batch["image_masks"].items()},
-            "state": batch["state"].to(device),
+            "images": batch["images"],
+            "image_masks": batch["image_masks"],
+            "state": batch["state"],
             "tokenized_prompt": batch["tokenized_prompt"].to(device),
             "tokenized_prompt_mask": batch["tokenized_prompt_mask"].to(device),
         }
-        actions = batch["actions"].to(device)
+        actions = batch["actions"]
 
         # Forward pass
         with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=use_bf16):
@@ -659,18 +659,10 @@ class Pi0Model(nn.Module):
                 action dimensions from the dataset statistics.
         """
         device = next(self.parameters()).device
-
-        observation = {
-            "images": {k: v.to(device) for k, v in batch["images"].items()},
-            "image_masks": {k: v.to(device) for k, v in batch["image_masks"].items()},
-            "state": batch["state"].to(device),
-            "tokenized_prompt": batch["tokenized_prompt"].to(device),
-            "tokenized_prompt_mask": batch["tokenized_prompt_mask"].to(device),
-        }
-
         self.eval()
+
         with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=use_bf16):
-            return self.sample_actions(device, observation)
+            return self.sample_actions(device, batch)
 
     @property
     def extra_export_args(self) -> dict:
@@ -696,7 +688,7 @@ class Pi0Model(nn.Module):
         }
         extra_args["torch_export_ir"] = {}
         extra_args["torch"] = {
-            "input_names": ["observation"],
+            "input_names": ["Observation"],
             "output_names": ["action"],
         }
 
