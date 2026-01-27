@@ -140,7 +140,7 @@ class Export:
         elif hasattr(self, "hparams"):
             checkpoint["epoch"] = 0
             checkpoint["global_step"] = 0
-            checkpoint["lightning_version"] = lightning.__version__
+            checkpoint["pytorch-lightning_version"] = lightning.__version__
             checkpoint["loops"] = {}
             checkpoint["hparams_name"] = "kwargs"
             checkpoint["hyper_parameters"] = dict(self.hparams)
