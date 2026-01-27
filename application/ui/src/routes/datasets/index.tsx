@@ -18,18 +18,19 @@ import {
 
 import { SchemaDatasetOutput, SchemaProjectConfigOutput } from '../../api/openapi-spec';
 import { TeleoperationSetupModal } from '../../features/configuration/teleoperation/teleoperation';
-import { useProject } from '../../features/projects/use-project';
+import { useProject, useProjectId } from '../../features/projects/use-project';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
 import { DatasetViewer } from './dataset-viewer';
-import { ProjectSetupModal } from './record/project-setup';
 import { RecordingProvider, useRecording } from './recording-provider';
+import { NewDatasetLink } from './new-dataset.component';
 
 interface DatasetsProps {
     datasets: SchemaDatasetOutput[];
     projectConfig?: SchemaProjectConfigOutput;
 }
 
-const Datasets = ({ datasets, projectConfig }: DatasetsProps) => {
+const Datasets = ({ datasets }: DatasetsProps) => {
+    const { project_id } = useProjectId();
     const { isRecording, setRecordingConfig } = useRecording();
     const [dataset, setDataset] = useState<SchemaDatasetOutput | undefined>(
         datasets.length > 0 ? datasets[0] : undefined
@@ -45,24 +46,6 @@ const Datasets = ({ datasets, projectConfig }: DatasetsProps) => {
         }
     };
 
-    if (!projectConfig) {
-        return (
-            <Flex margin={'size-200'} direction={'column'} flex>
-                <IllustratedMessage>
-                    <EmptyIllustration />
-                    <Content> Please setup your project. </Content>
-                    <Heading>No Project Setup.</Heading>
-                    <View margin={'size-100'}>
-                        <DialogTrigger>
-                            <Button variant='accent'>Setup project</Button>
-                            {ProjectSetupModal}
-                        </DialogTrigger>
-                    </View>
-                </IllustratedMessage>
-            </Flex>
-        );
-    }
-
     if (datasets.length === 0) {
         return (
             <Flex margin={'size-200'} direction={'column'} flex>
@@ -72,15 +55,7 @@ const Datasets = ({ datasets, projectConfig }: DatasetsProps) => {
                     <Text>It&apos;s time to begin recording a dataset. </Text>
                     <Heading>No datasets yet</Heading>
                     <View margin={'size-100'}>
-                        <DialogTrigger>
-                            <Button variant='accent'>Start recording a new dataset</Button>
-                            {(close) =>
-                                TeleoperationSetupModal((config) => {
-                                    setRecordingConfig(config);
-                                    close();
-                                }, undefined)
-                            }
-                        </DialogTrigger>
+                        <NewDatasetLink project_id={project_id}/>
                     </View>
                 </IllustratedMessage>
             </Flex>
@@ -98,27 +73,18 @@ const Datasets = ({ datasets, projectConfig }: DatasetsProps) => {
                     </TabList>
 
                     {!isRecording && (
-                        <View padding={'size-30'}>
-                            <DialogTrigger>
-                                <Button variant='secondary'>New Dataset</Button>
-                                {(close) =>
-                                    TeleoperationSetupModal((config) => {
-                                        setRecordingConfig(config);
-                                        close();
-                                    }, undefined)
-                                }
-                            </DialogTrigger>
-
+                        <Flex gap="size-200">
+                            <NewDatasetLink project_id={project_id}/>
                             <DialogTrigger>
                                 <Button variant='accent'>Start recording</Button>
                                 {(close) =>
                                     TeleoperationSetupModal((config) => {
                                         setRecordingConfig(config);
                                         close();
-                                    }, dataset?.id)
+                                    }, dataset!)
                                 }
                             </DialogTrigger>
-                        </View>
+                        </Flex>
                     )}
                 </Flex>
                 <TabPanels UNSAFE_style={{ border: 'none' }} marginTop={'size-200'}>
@@ -139,7 +105,6 @@ const Datasets = ({ datasets, projectConfig }: DatasetsProps) => {
 
 export const Index = () => {
     const project = useProject();
-
     return (
         <RecordingProvider>
             <Datasets

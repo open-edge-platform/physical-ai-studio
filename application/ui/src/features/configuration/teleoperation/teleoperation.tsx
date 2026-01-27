@@ -2,6 +2,7 @@ import { Suspense, useState } from 'react';
 
 import {
     Button,
+    Text,
     ButtonGroup,
     ComboBox,
     Content,
@@ -18,26 +19,28 @@ import {
     Tabs,
     TextField,
     View,
+    IllustratedMessage
 } from '@geti/ui';
 
+import { ReactComponent as EmptyIllustration } from './../../../assets/illustration.svg';
 import { $api } from '../../../api/client';
-import { SchemaRobotConfig, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
+import { SchemaDatasetOutput, SchemaRobotConfig, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
 import { useSettings } from '../../../components/settings/use-settings';
 import {
     initialTeleoperationConfig,
     makeNameSafeForPath,
-    storeConfigToCache,
 } from '../../../routes/datasets/record/utils';
 import { useProject } from '../../projects/use-project';
 import { CameraSetup } from '../shared/camera-setup';
 import { RobotSetup } from '../shared/robot-setup';
+import { paths } from '../../../router';
 
 interface TeleoperationSetupProps {
     onDone: (config: SchemaTeleoperationConfig | undefined) => void;
-    dataset_id: string | undefined;
+    dataset: SchemaDatasetOutput;
 }
 
-export const TeleoperationSetup = ({ dataset_id, onDone }: TeleoperationSetupProps) => {
+export const TeleoperationSetup = ({ dataset, onDone }: TeleoperationSetupProps) => {
     const [activeTab, setActiveTab] = useState<string>('cameras');
     const project = useProject();
     const { data: projectTasks } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/tasks', {
@@ -45,6 +48,23 @@ export const TeleoperationSetup = ({ dataset_id, onDone }: TeleoperationSetupPro
             path: { project_id: project.id! },
         },
     });
+
+    const { data: environments } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/environments', {
+        params: {
+            path: {
+                project_id: project.id
+            }
+        }
+    })
+    const { data: environment } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/environments/{environment_id}', {
+        params: {
+            path: {
+                project_id: project.id,
+                environment_id: environments[0].id
+            }
+        }
+    });
+
     const { data: availableCameras, refetch: refreshCameras } = $api.useSuspenseQuery('get', '/api/hardware/cameras');
     const { data: foundRobots, refetch: refreshRobots } = $api.useSuspenseQuery('get', '/api/hardware/robots');
     const { data: availableCalibrations, refetch: refreshCalibrations } = $api.useSuspenseQuery(
@@ -52,30 +72,32 @@ export const TeleoperationSetup = ({ dataset_id, onDone }: TeleoperationSetupPro
         '/api/hardware/calibrations'
     );
 
-    const createDatasetMutation = $api.useMutation('post', '/api/dataset');
     const { geti_action_dataset_path } = useSettings();
 
-    const isNewDataset = !dataset_id;
     const initialTask = Object.values(projectTasks).flat()[0];
 
     const [config, setConfig] = useState<SchemaTeleoperationConfig>(
-        initialTeleoperationConfig(initialTask, project, dataset_id, foundRobots)
+        {
+            task: initialTask,
+            dataset,
+            environment,
+        }
     );
 
-    const updateCamera = (name: string, id: string, oldId: string, driver: string, oldDriver: string) => {
-        setConfig({
-            ...config,
-            cameras: config.cameras.map((c) => {
-                if (c.name === name) {
-                    return { ...c, fingerprint: id, driver };
-                } else if (c.fingerprint === id && c.driver === (driver === 'webcam' ? 'usb_camera' : driver)) {
-                    return { ...c, fingerprint: oldId, driver: oldDriver };
-                } else {
-                    return c;
-                }
-            }),
-        });
-    };
+    //const updateCamera = (name: string, id: string, oldId: string, driver: string, oldDriver: string) => {
+    //    setConfig({
+    //        ...config,
+    //        cameras: config.cameras.map((c) => {
+    //            if (c.name === name) {
+    //                return { ...c, fingerprint: id, driver };
+    //            } else if (c.fingerprint === id && c.driver === (driver === 'webcam' ? 'usb_camera' : driver)) {
+    //                return { ...c, fingerprint: oldId, driver: oldDriver };
+    //            } else {
+    //                return c;
+    //            }
+    //        }),
+    //    });
+    //};
 
     const updateRobot = (type: 'leader' | 'follower', robot_config: SchemaRobotConfig) => {
         setConfig((c) => ({
@@ -103,10 +125,6 @@ export const TeleoperationSetup = ({ dataset_id, onDone }: TeleoperationSetupPro
         if (activeTab === 'cameras') {
             setActiveTab('robots');
         } else {
-            if (isNewDataset) {
-                await createDatasetMutation.mutateAsync({ body: config.dataset });
-            }
-            storeConfigToCache(config);
             onDone(config);
         }
     };
@@ -131,6 +149,20 @@ export const TeleoperationSetup = ({ dataset_id, onDone }: TeleoperationSetupPro
         refreshCalibrations();
     };
 
+    if (environments.length === 0) {
+        return (
+            <Flex margin={'size-200'} direction={'column'} flex>
+                <IllustratedMessage>
+                    <Content>Currently there has not been a environment setup yet.</Content>
+                    <Heading>No environment set up yet.</Heading>
+                    <View margin={'size-100'}>
+                        <Button variant='accent' href={paths.project.environments.new({ project_id: project.id })}>Setup environment</Button>
+                    </View>
+                </IllustratedMessage>
+            </Flex>
+        )
+    }
+
     return (
         <View>
             <TextField
@@ -139,7 +171,7 @@ export const TeleoperationSetup = ({ dataset_id, onDone }: TeleoperationSetupPro
                 label='Dataset Name'
                 width={'100%'}
                 value={config.dataset.name}
-                isDisabled={!isNewDataset}
+                isDisabled={true}
                 onChange={updateDataset}
             />
             <ComboBox
@@ -159,46 +191,6 @@ export const TeleoperationSetup = ({ dataset_id, onDone }: TeleoperationSetupPro
                     </Section>
                 ))}
             </ComboBox>
-            <View height={'330px'}>
-                <Tabs onSelectionChange={onTabSwitch} selectedKey={activeTab}>
-                    <TabList>
-                        <Item key='cameras'>Cameras</Item>
-                        <Item key='robots'>Robots</Item>
-                    </TabList>
-                    <TabPanels>
-                        <Item key='cameras'>
-                            <Flex gap='40px'>
-                                {config.cameras.map((camera) => (
-                                    <CameraSetup
-                                        key={camera.name}
-                                        camera={camera}
-                                        availableCameras={availableCameras ?? []}
-                                        updateCamera={updateCamera}
-                                    />
-                                ))}
-                            </Flex>
-                        </Item>
-                        <Item key='robots'>
-                            <Flex gap='40px'>
-                                <RobotSetup
-                                    key={'leader'}
-                                    config={config.leader}
-                                    portInfos={foundRobots ?? []}
-                                    calibrations={availableCalibrations ?? []}
-                                    setConfig={(c) => updateRobot('leader', c)}
-                                />
-                                <RobotSetup
-                                    key={'follower'}
-                                    config={config.follower}
-                                    portInfos={foundRobots ?? []}
-                                    calibrations={availableCalibrations ?? []}
-                                    setConfig={(c) => updateRobot('follower', c)}
-                                />
-                            </Flex>
-                        </Item>
-                    </TabPanels>
-                </Tabs>
-            </View>
             <Flex justifyContent={'end'}>
                 <View paddingTop={'size-300'}>
                     <ButtonGroup>
@@ -220,7 +212,7 @@ export const TeleoperationSetup = ({ dataset_id, onDone }: TeleoperationSetupPro
 
 export const TeleoperationSetupModal = (
     close: (config: SchemaTeleoperationConfig | undefined) => void,
-    dataset_id: string | undefined
+    dataset: SchemaDatasetOutput
 ) => {
     return (
         <Dialog>
@@ -228,7 +220,7 @@ export const TeleoperationSetupModal = (
             <Divider />
             <Content>
                 <Suspense fallback={<Loading mode='overlay' />}>
-                    <TeleoperationSetup dataset_id={dataset_id} onDone={close} />
+                    <TeleoperationSetup dataset={dataset} onDone={close} />
                 </Suspense>
             </Content>
         </Dialog>

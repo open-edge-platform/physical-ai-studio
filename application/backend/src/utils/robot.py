@@ -59,10 +59,10 @@ class RobotConnectionManager:
             for name in [
                 "so-100",
             ]:
-                logger.debug(f"Trying to connect to {name} on {port.device}.")
+                # logger.debug(f"Trying to connect to {name} on {port.device}.")
                 robot = from_port(port, robot_type=name)
                 if robot is None:
-                    logger.debug(f"Failed to create robot from {name} on {port.device}.")
+                    # logger.debug(f"Failed to create robot from {name} on {port.device}.")
                     continue
                 logger.debug(f"Robot created: {robot}")
                 # await robot.connect()

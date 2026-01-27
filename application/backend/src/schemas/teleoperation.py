@@ -4,15 +4,13 @@ from .camera import CameraConfig
 from .dataset import Dataset
 from .model import Model
 from .robot import RobotConfig
+from .environment import EnvironmentWithRelations
 
 
 class TeleoperationConfig(BaseModel):
     task: str
     dataset: Dataset
-    fps: int
-    cameras: list[CameraConfig]
-    follower: RobotConfig
-    leader: RobotConfig
+    environment: EnvironmentWithRelations
 
 
 class InferenceConfig(BaseModel):

@@ -5,7 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
-from api.dependencies import get_dataset_service, get_scheduler_ws
+from api.dependencies import get_dataset_service, get_scheduler_ws,  RobotConnectionManagerDep, RobotCalibrationServiceDep
 from core.scheduler import Scheduler
 from exceptions import ResourceNotFoundError
 from schemas import InferenceConfig, TeleoperationConfig
@@ -19,6 +19,8 @@ router = APIRouter(prefix="/api/record")
 async def teleoperate_websocket(
     websocket: WebSocket,
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
+    robot_manager: RobotConnectionManagerDep,
+    calibration_service: RobotCalibrationServiceDep,
     scheduler: Annotated[Scheduler, Depends(get_scheduler_ws)],
 ) -> None:
     """Robot control websocket."""
@@ -33,6 +35,8 @@ async def teleoperate_websocket(
     queue: mp.Queue = mp.Queue()
     process = TeleoperateWorker(
         stop_event=scheduler.mp_stop_event,
+        robot_manager=robot_manager,
+        calibration_service=calibration_service,
         config=config,
         queue=queue,
     )

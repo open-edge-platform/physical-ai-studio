@@ -2,15 +2,19 @@ import { RefObject, useState } from 'react';
 
 import { Flex, ProgressCircle, View, Well } from '@geti/ui';
 
-import { SchemaCameraConfigOutput } from '../../api/openapi-spec';
+import { components, SchemaEnvironmentWithRelations } from '../../api/openapi-spec';
 import { Observation } from './record/use-teleoperation';
 import { useInterval } from './use-interval';
 
 import classes from './episode-viewer.module.scss';
 
+
+
+type SchemaCamera = components["schemas"]["USBCamera-Output"] | components["schemas"]["IPCamera-Output"] | components["schemas"]["BaslerCamera-Output"] | components["schemas"]["RealsenseCamera-Output"] | components["schemas"]["GenicamCamera-Output"]
+
 interface CameraViewProps {
     observation: RefObject<Observation | undefined>;
-    camera: SchemaCameraConfigOutput;
+    camera: SchemaCamera;
 }
 
 export const CameraView = ({ camera, observation }: CameraViewProps) => {
@@ -20,9 +24,9 @@ export const CameraView = ({ camera, observation }: CameraViewProps) => {
         if (observation.current?.cameras[camera.name]) {
             setImg(observation.current.cameras[camera.name]);
         }
-    }, 1000 / camera.fps);
+    }, 1000 / 30); //TODO: Change hardcoding
 
-    const aspectRatio = camera.width / camera.height;
+    const aspectRatio = 640 / 480; //Change hardcoding
 
     return (
         <Flex UNSAFE_style={{ aspectRatio }}>
