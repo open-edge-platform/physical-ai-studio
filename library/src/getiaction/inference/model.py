@@ -231,8 +231,8 @@ class InferenceModel:
 
         expected_inputs = set(expected_input_names)
 
-        if expected_inputs == {"Observation"}:
-            return {"Observation": observation}
+        if expected_inputs == {"observation"}:
+            return {"observation": observation}
 
         # Build mapping from observation fields to expected input names
         # This handles different naming conventions:

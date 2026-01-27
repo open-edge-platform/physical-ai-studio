@@ -696,7 +696,7 @@ class Pi0Model(nn.Module):
         }
         extra_args["torch_export_ir"] = {}
         extra_args["torch"] = {
-            "input_names": ["Observation"],
+            "input_names": ["observation"],
             "output_names": ["action"],
         }
 
