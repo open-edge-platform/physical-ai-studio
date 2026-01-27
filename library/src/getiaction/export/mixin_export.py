@@ -10,8 +10,8 @@ from os import PathLike
 from pathlib import Path
 from typing import Any
 
-import openvino
 import lightning
+import openvino
 import torch
 import yaml
 
