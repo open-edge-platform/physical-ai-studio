@@ -33,6 +33,11 @@
 
   enabledManagers: ["github-actions", "pep621", "dockerfile", "npm"],
 
+  // ignore FrameSource dependencies
+  ignoreDeps: [
+    "FrameSource"
+  ],
+
   // Set limit to 10
   ignorePresets: [":prHourlyLimit2"],
   prHourlyLimit: 10,
@@ -50,6 +55,12 @@
       matchDatasources: ["python-version"],
       matchDepTypes: ["requires-python"],
       matchDepNames: ["python"],
+    },
+
+    // Exclude root level pyproject.toml and uv.lock from renovate
+    {
+      enabled: false,
+      matchFileNames: ["pyproject.toml", "uv.lock"],
     },
 
     // Group GitHub Actions updates
