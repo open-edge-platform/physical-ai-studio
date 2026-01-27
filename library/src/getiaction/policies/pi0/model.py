@@ -635,7 +635,7 @@ class Pi0Model(nn.Module):
 
         # Forward pass
         with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=use_bf16):
-            loss_per_sample = self._forward_train(observation, actions)
+            loss_per_sample = self._compute_loss(observation, actions)
 
         # Average loss
         loss = loss_per_sample.mean()
@@ -723,7 +723,7 @@ class Pi0Model(nn.Module):
         """
         return None
 
-    def _forward_train(  # noqa: PLR0914
+    def _compute_loss(  # noqa: PLR0914
         self,
         observation: Mapping[str, Any],
         actions: torch.Tensor,
