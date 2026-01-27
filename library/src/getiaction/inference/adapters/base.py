@@ -46,11 +46,11 @@ class RuntimeAdapter(ABC):
         """
 
     @abstractmethod
-    def predict(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def predict(self, inputs: dict[str, Any]) -> dict[str, np.ndarray]:
         """Run inference on the model.
 
         Args:
-            inputs: Dictionary mapping input names to numpy arrays
+            inputs: Dictionary mapping input names to actual inputs
 
         Returns:
             Dictionary mapping output names to numpy arrays

@@ -9,6 +9,7 @@ import numpy as np
 import torch
 import yaml
 
+from getiaction.data.observation import Observation
 from getiaction.policies import get_getiaction_policy_class as get_policy_class
 
 from .base import RuntimeAdapter
@@ -72,18 +73,18 @@ class TorchAdapter(RuntimeAdapter):
 
             self._policy = policy_class.load_from_checkpoint(model_path, map_location="cpu").to(self.device).eval()
 
-            self._input_names = list(self._policy.model.sample_input.keys())
+            self._input_names = list(self._policy.model.extra_export_args["torch"]["input_names"])
             self._output_names = self._policy.model.extra_export_args["torch"]["output_names"]
 
         except Exception as e:
             msg = f"Failed to load Torch model from {model_path}: {e}"
             raise RuntimeError(msg) from e
 
-    def predict(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def predict(self, inputs: dict[str, Observation]) -> dict[str, np.ndarray]:
         """Run inference using Torch.
 
         Args:
-            inputs: Dictionary mapping input names to numpy arrays
+            inputs: Dictionary mapping input names to inputs
 
         Returns:
             Dictionary mapping output names to numpy arrays
@@ -96,10 +97,7 @@ class TorchAdapter(RuntimeAdapter):
             raise RuntimeError(msg)
 
         try:
-            # Convert numpy arrays to torch tensors
-            torch_inputs = {k: torch.from_numpy(v).to(self.device) for k, v in inputs.items()}
-            torch_outputs = self._policy.model(torch_inputs)
-            # Handle different output formats
+            torch_outputs = self._policy(inputs["Observation"].to(self.device))
             return self._convert_outputs_to_numpy(torch_outputs)
 
         except Exception as e:
