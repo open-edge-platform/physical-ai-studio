@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import openvino
-import pytorch_lightning as pl
+import lightning
 import torch
 import yaml
 
@@ -140,7 +140,7 @@ class Export:
         elif hasattr(self, "hparams"):
             checkpoint["epoch"] = 0
             checkpoint["global_step"] = 0
-            checkpoint["pytorch-lightning_version"] = pl.__version__
+            checkpoint["lightning_version"] = lightning.__version__
             checkpoint["loops"] = {}
             checkpoint["hparams_name"] = "kwargs"
             checkpoint["hyper_parameters"] = dict(self.hparams)
