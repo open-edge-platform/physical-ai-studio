@@ -20,64 +20,128 @@
 
 ---
 
-<p align="center">
-  <img src="docs/assets/getiaction-demo.gif" alt="Geti Action Demo" width="100%">
-</p>
-
 ## What is Geti Action?
 
-Geti Action lets you teach robots new tasks through demonstration. Record yourself performing a task, train a policy, and deploy it to your robot - all with a few lines of code or through our visual interface.
-
-<p align="center">
-  <img src="docs/assets/architecture.svg" alt="Architecture" width="100%">
-</p>
+Geti Action is an end-to-end framework for teaching robots to perform tasks through imitation learning from human demonstrations.
 
 ## Key Features
 
 - **End-to-End Pipeline** - From demonstration recording to robot deployment
-- **Flexible Interface** - Use Python API, CLI, or the visual Application
-- **Production Export** - Deploy to OpenVINO, ONNX, or Torch for any hardware
-- **Standardized Benchmarks** - Evaluate on LIBERO and PushT environments
-- **Built on Lightning** - Distributed training, mixed precision, and more
+- **State-of-the-Art Policies** - Native policy implementations such as [ACT](https://arxiv.org/abs/2304.13705), [Pi0](https://www.physicalintelligence.company/download/pi0.pdf), [SmolVLA](https://huggingface.co/lerobot/smolvla_base), [GR00T](https://arxiv.org/abs/2503.14734) and [Pi0.5](https://arxiv.org/pdf/2504.16054), plus full [LeRobot](https://github.com/huggingface/lerobot) policy zoo
+- **Flexible Interface** - Use Python API, CLI, or GUI
+- **Production Export** - Deploy to [OpenVINO](https://docs.openvino.ai/), [ONNX](https://onnx.ai/), or [Torch](https://docs.pytorch.org/executorch/stable/index.html) for any hardware
+- **Standardized Benchmarks** - Evaluate on benchmarks such as [LIBERO](https://libero-project.github.io/) and [PushT](https://diffusion-policy.cs.columbia.edu/)
+- **Built on Lightning** - [PyTorch Lightning](https://lightning.ai/docs/pytorch/stable/) for distributed training, mixed precision, and more
 
 ## Quick Start
 
+### Application (GUI)
+
+For users who prefer a visual interface for end-to-end workflow:
+
+<!-- markdownlint-disable MD033 -->
+<p align="center">
+  <img src="docs/assets/application.gif" alt="Application demo" width="100%">
+</p>
+<!-- markdownlint-enable MD033 -->
+
+[Application Documentation →](./application/README.md)
+
+#### Installation & Running
+
+```bash
+# Clone the repository
+git clone https://github.com/open-edge-platform/geti-action.git
+cd geti-action
+
+# Install and run backend
+cd application/backend && uv sync
+source .venv/bin/activate
+uvicorn src.main:app --reload
+
+# In a new terminal: install and run UI
+cd application/ui && npm install
+npm run start
+```
+
+Open http://localhost:3000 in your browser.
+
 ### Library (Python/CLI)
+
+For programmatic control over training, benchmarking, and deployment with both API and CLI
 
 ```bash
 pip install getiaction
 ```
 
-```python
+<details open>
+<summary>Training</summary>
+
+```python test="skip" reason="requires dataset download"
 from getiaction.data import LeRobotDataModule
 from getiaction.policies import ACT
 from getiaction.train import Trainer
-from getiaction.benchmark import LiberoBenchmark
-from getiaction.inference import InferenceModel
 
-# 1. Train a policy
 datamodule = LeRobotDataModule(repo_id="lerobot/aloha_sim_transfer_cube_human")
 model = ACT()
 trainer = Trainer(max_epochs=100)
 trainer.fit(model=model, datamodule=datamodule)
-
-# 2. Evaluate on benchmark
-benchmark = LiberoBenchmark(task_suite="libero_10", num_episodes=20)
-results = benchmark.evaluate(model)
-print(f"Success rate: {results.success_rate:.1%}")
-
-# 3. Export for deployment
-model.export("./policy", backend="openvino")
-
-# 4. Deploy and run inference
-policy = InferenceModel.load("./policy")
-while not done:
-    action = policy.select_action(observation)
-    observation, reward, done, info = env.step(action)
 ```
 
+</details>
+
 <details>
-<summary>Or use the CLI</summary>
+<summary>Benchmark</summary>
+
+```python test="skip" reason="requires checkpoint and libero"
+from getiaction.benchmark import LiberoBenchmark
+from getiaction.policies import ACT
+
+policy = ACT.load_from_checkpoint("experiments/lightning_logs/version_0/checkpoints/last.ckpt")
+benchmark = LiberoBenchmark(task_suite="libero_10", num_episodes=20)
+results = benchmark.evaluate(policy)
+print(f"Success rate: {results.aggregate_success_rate:.1f}%")
+```
+
+</details>
+
+<details>
+<summary>Export</summary>
+
+```python test="skip" reason="requires checkpoint"
+from getiaction.export import get_available_backends
+from getiaction.policies import ACT
+
+# See available backends
+print(get_available_backends())  # ['onnx', 'openvino', 'torch', 'torch_export_ir']
+
+# Export to OpenVINO
+policy = ACT.load_from_checkpoint("experiments/lightning_logs/version_0/checkpoints/last.ckpt")
+policy.export("./policy", backend="openvino")
+```
+
+</details>
+
+<details>
+<summary>Inference</summary>
+
+```python test="skip" reason="requires exported model and environment"
+from getiaction.inference import InferenceModel
+
+policy = InferenceModel.load("./policy")
+obs, info = env.reset()
+done = False
+
+while not done:
+    action = policy.select_action(obs)
+    obs, reward, terminated, truncated, info = env.step(action)
+    done = terminated or truncated
+```
+
+</details>
+
+<details>
+<summary>CLI Usage</summary>
 
 ```bash
 # Train
@@ -86,38 +150,21 @@ getiaction fit --config configs/getiaction/act.yaml
 # Evaluate
 getiaction benchmark --config configs/benchmark/libero.yaml --ckpt_path model.ckpt
 
-# Export
-getiaction export --ckpt_path model.ckpt --export_path ./policy --backend openvino
+# Export (Python API only - CLI coming soon)
+# Use: policy.export("./policy", backend="openvino")
 ```
 
 </details>
 
 [Library Documentation →](./library/README.md)
 
-### Application (GUI)
-
-For users who prefer a visual interface for data collection and training.
-
-<!-- TODO: Add screenshot -->
-<!--
-<p align="center">
-  <img src="docs/assets/app-screenshot.png" alt="Application" width="600">
-</p>
--->
-
-- Visual demonstration recording
-- Real-time training monitoring
-- One-click model deployment
-
-[Application Documentation →](./application/README.md)
-
 ## Documentation
 
-| Resource                                     | Description                         |
-| -------------------------------------------- | ----------------------------------- |
-| [Library Docs](./library/docs/)              | API reference, guides, and examples |
-| [Application Docs](./application/README.md)  | GUI setup and usage                 |
-| [Developer Guide](./docs/developer_guide.md) | Contributing and development setup  |
+| Resource                                    | Description                         |
+| ------------------------------------------- | ----------------------------------- |
+| [Library Docs](./library/README.md)         | API reference, guides, and examples |
+| [Application Docs](./application/README.md) | GUI setup and usage                 |
+| [Contributing](./CONTRIBUTING.md)           | Contributing and development setup  |
 
 ## Contributing
 
