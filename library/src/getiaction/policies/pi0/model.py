@@ -612,7 +612,118 @@ class Pi0Model(nn.Module):
 
         return embeddings, pad_masks, att_masks, adarms_cond
 
-    def forward(  # noqa: PLR0914
+    def forward(self, batch: Mapping[str, Any], *, use_bf16: bool = True) -> tuple[torch.Tensor, dict[str, float]]:
+        """Training forward pass.
+
+        Args:
+            batch: Input batch with observations and actions.
+            use_bf16: Whether to use bfloat16 autocasting.
+
+        Returns:
+            Tuple of (loss, loss_dict).
+        """
+        device = next(self.parameters()).device
+
+        observation = {
+            "images": batch["images"],
+            "image_masks": batch["image_masks"],
+            "state": batch["state"],
+            "tokenized_prompt": batch["tokenized_prompt"].to(device),
+            "tokenized_prompt_mask": batch["tokenized_prompt_mask"].to(device),
+        }
+        actions = batch["actions"]
+
+        # Forward pass
+        with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=use_bf16):
+            loss_per_sample = self._compute_loss(observation, actions)
+
+        # Average loss
+        loss = loss_per_sample.mean()
+        loss_dict = {"loss": loss.item()}
+
+        return loss, loss_dict
+
+    def predict_action_chunk(self, batch: Mapping[str, Any], *, use_bf16: bool = True) -> torch.Tensor:
+        """Predict a chunk of actions from input batch.
+
+        This method processes the input batch, prepares images, state, and language tokens,
+        then uses the model to sample actions.
+
+        Args:
+            batch: A dictionary containing input tensors including images, state information,
+                and tokenized prompts with their masks.
+            use_bf16: Whether to use bfloat16 autocasting.
+
+        Returns:
+            torch.Tensor: A tensor of predicted actions with shape matching the original
+                action dimensions from the dataset statistics.
+        """
+        device = next(self.parameters()).device
+        self.eval()
+
+        with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=use_bf16):
+            return self.sample_actions(device, batch)
+
+    @property
+    def extra_export_args(self) -> dict:
+        """Additional export arguments for model conversion.
+
+        This property provides extra configuration parameters needed when exporting
+        the model to different formats, particularly ONNX format.
+
+        Returns:
+            dict: A dictionary containing format-specific export arguments.
+
+        Example:
+            >>> extra_args = model.extra_export_args()
+            >>> print(extra_args)
+            {'onnx': {'output_names': ['action']}}
+        """
+        extra_args = {}
+        extra_args["onnx"] = {
+            "output_names": ["action"],
+        }
+        extra_args["openvino"] = {
+            "output": ["action"],
+        }
+        extra_args["torch_export_ir"] = {}
+        extra_args["torch"] = {
+            "input_names": ["Observation"],
+            "output_names": ["action"],
+        }
+
+        return extra_args
+
+    @property
+    def reward_delta_indices(self) -> None:
+        """Return reward indices.
+
+        Currently returns `None` as rewards are not implemented.
+
+        Returns:
+            None
+        """
+        return None
+
+    @property
+    def action_delta_indices(self) -> list[int]:
+        """Get indices of actions relative to the current timestep.
+
+        Returns:
+            list[int]: A list of relative action indices.
+        """
+        return list(range(self.action_horizon))
+
+    @property
+    def observation_delta_indices(self) -> None:
+        """Get indices of observations relative to the current timestep.
+
+        Returns:
+            list[int]: A list of relative observation indices.
+        """
+        return None
+
+    def _compute_loss(  # noqa: PLR0914
         self,
         observation: Mapping[str, Any],
         actions: torch.Tensor,

@@ -12,6 +12,7 @@ import torch
 
 from getiaction.export.mixin_export import ExportBackend
 from getiaction.inference.adapters import ONNXAdapter, OpenVINOAdapter, RuntimeAdapter, TorchExportAdapter, TorchAdapter, get_adapter
+from getiaction.data.observation import Observation
 
 
 class TestGetAdapter:
@@ -166,7 +167,7 @@ class TestTorchAdapter:
         mock_model.eval.return_value = mock_model
         mock_model.to.return_value = mock_model
         mock_model.model.sample_input = {"input": torch.tensor([[0.0]])}
-        mock_model.model.extra_export_args = {"torch": {"output_names": ["output"]}}
+        mock_model.model.extra_export_args = {"torch": {"output_names": ["output"], "input_names": ["Observation"]}}
 
         with patch("getiaction.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
             adapter = TorchAdapter(device="cpu")
@@ -175,8 +176,10 @@ class TestTorchAdapter:
 
             adapter.load(model_path)
 
-            outputs = adapter.predict({"input": np.array([[1.0, 2.0]])})
-            assert "output" in outputs and isinstance(outputs["output"], np.ndarray)
+            with patch("getiaction.inference.adapters.torch.TorchAdapter._convert_outputs_to_numpy",
+                        return_value={"output": np.array([[1.0, 2.0]])}):
+                outputs = adapter.predict({"Observation": Observation(images=torch.randn(1, 3, 224, 224), state=torch.randn(1, 2))})
+                assert "output" in outputs and isinstance(outputs["output"], np.ndarray)
 
     def test_error_cases(self, tmp_path: Path) -> None:
         """Test error handling for file not found and predict without load."""

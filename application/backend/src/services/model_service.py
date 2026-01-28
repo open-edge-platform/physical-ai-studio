@@ -43,8 +43,7 @@ class ModelService:
             repo = ModelRepository(session)
             await repo.delete_by_id(model.id)
             model_path = Path(model.path).expanduser()
-            model_path.unlink()
-            shutil.rmtree(model_path.parent)
+            shutil.rmtree(model_path)
 
     @staticmethod
     async def get_project_models(project_id: UUID) -> list[Model]:

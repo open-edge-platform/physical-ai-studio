@@ -34,6 +34,10 @@ on:
     branches:
       - main
       - releases/**
+  pull_request:
+    branches:
+      - main
+      - releases/**
 
 permissions: {} # No permissions by default
 
@@ -43,17 +47,20 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Checkout code
+      - &checkout
+        name: Checkout code
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
-          persist-credentials: false
+          # FIXME: needed for tj-actions/changed-files to gather changed files, once repository becomes public this argument should be set to false
+          persist-credentials: true
+
       - name: Run Zizmor scan
         uses: open-edge-platform/geti-ci/actions/zizmor@d12afacb644860a6971f0ff3dc63b460b127b6ac
         with:
-          scan-scope: "all"
-          severity-level: "LOW"
-          confidence-level: "LOW"
-          fail-on-findings: false # reports only
+          scan-scope: ${{ github.event_name == 'pull_request' && 'changed' || 'all' }}
+          severity-level: ${{ github.event_name == 'pull_request' && 'MEDIUM' || 'LOW' }}
+          confidence-level: ${{ github.event_name == 'pull_request' && 'MEDIUM' || 'LOW' }}
+          fail-on-findings: ${{ github.event_name == 'pull_request' && 'true' || 'false' }} # reports only
           output-format: "plain" # Use plain text output format to omit uploading code scanning results to Security tab
 
   bandit-scan:
@@ -61,22 +68,21 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Checkout code
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: false
+      - *checkout
+
       - name: Run Bandit scan
         uses: open-edge-platform/geti-ci/actions/bandit@d12afacb644860a6971f0ff3dc63b460b127b6ac
         with:
-          scan-scope: "all"
-          severity-level: "LOW"
-          confidence-level: "LOW"
+          scan-scope: ${{ github.event_name == 'pull_request' && 'changed' || 'all' }}
+          severity-level: ${{ github.event_name == 'pull_request' && 'MEDIUM' || 'LOW' }}
+          confidence-level: ${{ github.event_name == 'pull_request' && 'MEDIUM' || 'LOW' }}
           config_file: ".github/bandit_config.yml"
-          fail-on-findings: false # reports only
+          fail-on-findings: ${{ github.event_name == 'pull_request' && 'true' || 'false' }} # reports only
           output-format: "txt" # Use plain text output format to omit uploading code scanning results to Security tab
 
   trivy-scan:
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
     permissions:
       contents: read
     steps:
@@ -84,6 +90,7 @@ jobs:
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
+
       - name: Run Trivy scan
         id: trivy
         uses: open-edge-platform/geti-ci/actions/trivy@d12afacb644860a6971f0ff3dc63b460b127b6ac
@@ -105,10 +112,12 @@ jobs:
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
+
       - name: Run Semgrep scan
         uses: open-edge-platform/geti-ci/actions/semgrep@d12afacb644860a6971f0ff3dc63b460b127b6ac
         with:
-          scan-scope: "all"
-          severity: "LOW"
-          fail-on-findings: false # reports only
+          scan-scope: ${{ github.event_name == 'pull_request' && 'changed' || 'all' }}
+          severity: ${{ github.event_name == 'pull_request' && 'HIGH' || 'LOW' }}
+          fail-on-findings: ${{ github.event_name == 'pull_request' && 'true' || 'false' }} # reports only
           output-format: "text" # Use plain text output format to omit uploading code scanning results to Security tab

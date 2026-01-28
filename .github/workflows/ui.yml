@@ -3,13 +3,9 @@ permissions: {} # No permissions by default on workflow level
 
 on:
   push:
-    branches: [main]
+    branches:
+      - "main"
   pull_request:
-    types:
-      - opened
-      - reopened
-      - synchronize
-      - ready_for_review
   workflow_dispatch: # run on request (no need for PR)
 
 jobs:
@@ -28,7 +24,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
         with:
-          python-version: "3.13"
+          python-version-file: "./application/backend/.python-version"
 
       - name: Install uv
         uses: astral-sh/setup-uv@61cb8a9741eeb8a550a1b8544337180c0fc8476b # v7.2.0
@@ -65,28 +61,33 @@ jobs:
     permissions:
       contents: read # to checkout code
     steps:
-      - name: Checkout code
+      - &checkout
+        name: Checkout code
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+      - &setup-node
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         id: setup-node
         with:
           node-version-file: application/ui/.nvmrc
 
-      - name: Install dependencies
+      - &install-dependencies
+        name: Install dependencies
         working-directory: "application/ui"
         run: npm ci
 
 
-      - name: Download OpenAPI spec artifact
+      - &download-openapi-spec
+        name: Download OpenAPI spec artifact
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: openapi-spec
           path: application/ui/src/api
 
-      - name: Build OpenAPI type definitions
+      - &build-openapi-types-definitions
+        name: Build OpenAPI type definitions
         working-directory: "application/ui"
         run: npm run build:api
 
@@ -111,33 +112,15 @@ jobs:
     permissions:
       contents: read # to checkout code
     steps:
-      - name: Checkout code
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: false
+      - *checkout
 
-      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
-        id: setup-node
-        with:
-          node-version-file: application/ui/.nvmrc
+      - *setup-node
 
-      - name: Install dependencies
-        working-directory: "application/ui"
-        run: npm ci
+      - *install-dependencies
 
-      - name: Download OpenAPI spec artifact
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          name: openapi-spec
-          path: application/ui/src/api
+      - *download-openapi-spec
 
-      - name: Build OpenAPI type definitions
-        working-directory: "application/ui"
-        run: npm run build:api
-
-      - name: Build OpenAPI type definitions
-        working-directory: "application/ui"
-        run: npm run build:api
+      - *build-openapi-types-definitions
 
       - name: Prettier
         working-directory: "application/ui"
@@ -163,33 +146,15 @@ jobs:
     permissions:
       contents: read # to checkout code
     steps:
-      - name: Checkout code
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: false
+      - *checkout
 
-      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
-        id: setup-node
-        with:
-          node-version-file: application/ui/.nvmrc
+      - *setup-node
 
-      - name: Install dependencies
-        working-directory: "application/ui"
-        run: npm ci
+      - *install-dependencies
 
-      - name: Download OpenAPI spec artifact
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          name: openapi-spec
-          path: application/ui/src/api
+      - *download-openapi-spec
 
-      - name: Build OpenAPI type definitions
-        working-directory: "application/ui"
-        run: npm run build:api
-
-      - name: Build OpenAPI type definitions
-        working-directory: "application/ui"
-        run: npm run build:api
+      - *build-openapi-types-definitions
 
       - name: UI Unit tests
         working-directory: "application/ui"
@@ -207,20 +172,11 @@ jobs:
     container:
       image: mcr.microsoft.com/playwright:v1.57.0-jammy@sha256:6aca677c27a967caf7673d108ac67ffaf8fed134f27e17b27a05464ca0ace831
     steps:
-      - name: Checkout code
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ inputs.ref || '' }}
+      - *checkout
 
-      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
-        id: setup-node
-        with:
-          node-version-file: application/ui/.nvmrc
+      - *setup-node
 
-      - name: Install dependencies
-        working-directory: "application/ui"
-        run: npm ci
+      - *install-dependencies
 
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
@@ -231,19 +187,9 @@ jobs:
         working-directory: "application/ui"
         run: tar -xzf dist.tar.gz
 
-      - name: Download OpenAPI spec artifact
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          name: openapi-spec
-          path: application/ui/src/api
+      - *download-openapi-spec
 
-      - name: Build OpenAPI type definitions
-        working-directory: "application/ui"
-        run: npm run build:api
-
-      - name: Build OpenAPI type definitions
-        working-directory: "application/ui"
-        run: npm run build:api
+      - *build-openapi-types-definitions
 
       - name: Run Playwright tests
         working-directory: "application/ui"

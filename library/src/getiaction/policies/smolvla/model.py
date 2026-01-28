@@ -17,7 +17,7 @@ import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import nn
 
-from getiaction.data.observation import ACTION, EXTRA, IMAGES, STATE, FeatureType, Observation
+from getiaction.data.observation import ACTION, EXTRA, IMAGES, STATE, TASK, FeatureType, Observation
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -231,7 +231,7 @@ class SmolVLAModel(nn.Module):
         return actions
 
     @property
-    def sample_input(self) -> dict[str, torch.Tensor]:
+    def sample_input(self) -> dict[str, torch.Tensor | str]:
         """Generate a sample input dictionary for the model with random tensors.
 
         This method creates a dictionary containing sample input tensors that match the expected
@@ -269,7 +269,39 @@ class SmolVLAModel(nn.Module):
                         device=device,
                     )
 
+        sample_input[TASK] = "sample_task"
+
         return sample_input
+
+    @property
+    def extra_export_args(self) -> dict:
+        """Additional export arguments for model conversion.
+
+        This property provides extra configuration parameters needed when exporting
+        the model to different formats, particularly ONNX format.
+
+        Returns:
+            dict: A dictionary containing format-specific export arguments.
+
+        Example:
+            >>> extra_args = model.extra_export_args()
+            >>> print(extra_args)
+            {'onnx': {'output_names': ['action']}}
+        """
+        extra_args = {}
+        extra_args["onnx"] = {
+            "output_names": ["action"],
+        }
+        extra_args["openvino"] = {
+            "output": ["action"],
+        }
+        extra_args["torch_export_ir"] = {}
+        extra_args["torch"] = {
+            "input_names": ["observation"],
+            "output_names": ["action"],
+        }
+
+        return extra_args
 
     @property
     def reward_delta_indices(self) -> None:

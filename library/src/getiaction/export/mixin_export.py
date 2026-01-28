@@ -10,6 +10,7 @@ from os import PathLike
 from pathlib import Path
 from typing import Any
 
+import lightning
 import openvino
 import torch
 import yaml
@@ -132,8 +133,17 @@ class Export:
 
         checkpoint = {}
         checkpoint["state_dict"] = self.state_dict() if hasattr(self, "state_dict") else {}
-        config_dict = self.model.config.to_dict() if hasattr(self.model, "config") else {}
-        checkpoint[CONFIG_KEY] = config_dict
+
+        if hasattr(self.model, "config"):
+            config_dict = self.model.config.to_dict()
+            checkpoint[CONFIG_KEY] = config_dict
+        elif hasattr(self, "hparams"):
+            checkpoint["epoch"] = 0
+            checkpoint["global_step"] = 0
+            checkpoint["pytorch-lightning_version"] = lightning.__version__
+            checkpoint["loops"] = {}
+            checkpoint["hparams_name"] = "kwargs"
+            checkpoint["hyper_parameters"] = dict(self.hparams)
 
         # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         torch.save(checkpoint, str(model_path))  # nosec B614

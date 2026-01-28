@@ -23,7 +23,7 @@ from getiaction.policies.base.policy import Policy
 from getiaction.train import Trainer
 
 # Export backend constants
-EXPORT_BACKENDS = ["openvino", "onnx", "torch", "torch_export_ir"]
+EXPORT_BACKENDS = ["openvino", "onnx", "torch_export_ir"]
 
 # Policy names for parametrization
 FIRST_PARTY_VLA_POLICIES = ["groot", "pi0", "smolvla"]
@@ -200,6 +200,44 @@ class TestE2ECore(CoreE2ETests):
             episodes=list(range(2)),
         )
 
+    def test_export_to_torch(self, trained_policy: Policy, tmp_path: Path) -> None:
+        """Test that trained policy can be exported to torch."""
+        if self.policy_name == "groot":
+            pytest.skip("Groot export to torch is not supported yet.")
+
+        export_dir = tmp_path / f"{trained_policy.__class__.__name__.lower()}_torch"
+        trained_policy.export(export_dir, "torch")
+
+        assert export_dir.exists()
+        assert (export_dir / "metadata.yaml").exists()
+        assert any(export_dir.glob("*.pt"))
+
+    def test_inference_with_exported_model(
+        self,
+        trained_policy: Policy,
+        datamodule: LeRobotDataModule,
+        tmp_path: Path,
+    ) -> None:
+        if self.policy_name == "groot":
+            pytest.skip("Groot export to torch is not supported yet.")
+
+        backend = "torch"
+        """Test that exported model can be loaded and used for inference."""
+        export_dir = tmp_path / f"{trained_policy.__class__.__name__.lower()}_{backend}"
+        trained_policy.export(export_dir, backend)
+
+        inference_model = InferenceModel.load(export_dir)
+        assert inference_model.backend.value == backend
+
+        sample_batch = next(iter(datamodule.train_dataloader()))
+
+        from getiaction.data.lerobot import FormatConverter
+
+        batch_observation = FormatConverter.to_observation(sample_batch)
+        inference_input = batch_observation[0:1]
+        inference_output = inference_model.select_action(inference_input)
+
+        assert len(inference_output.shape) in {1, 2, 3}, f"Expected 1-3D tensor, got {inference_output.shape}"
 
 @pytest.mark.parametrize("policy_name", FIRST_PARTY_POLICIES_WITH_EXPORT, indirect=True)
 class TestE2E(CoreE2ETests, ExportE2ETests):
