@@ -1,3 +1,4 @@
+from frame_source.video_capture_base import VideoCaptureBase
 import asyncio
 import time
 from collections.abc import Awaitable, Callable
@@ -15,12 +16,23 @@ from workers.transport.worker_transport import WorkerTransport
 from workers.transport_worker import TransportWorker, WorkerState, WorkerStatus
 
 
+def create_frames_source_from_camera(camera: Camera) -> VideoCaptureBase:
+    """Very FrameSource factory call from camera schema object."""
+    return FrameSourceFactory.create(
+        "webcam" if camera.driver == "usb_camera" else camera.driver,
+        camera.fingerprint,
+        **camera.payload.model_dump(),
+    )
+
+
 class CameraConnectionManager:
     """Handles camera connection."""
 
     MAX_ATTEMPTS = 3
     INITIAL_BACKOFF = 1.0
     MAX_BACKOFF = 10.0
+
+    camera_connection: VideoCaptureBase | None
 
     def __init__(self, camera: Camera):
         self.camera = camera
@@ -35,11 +47,7 @@ class CameraConnectionManager:
         """Connect to camera (with automatic retry via tenacity)."""
 
         logger.info("Connecting to camera: {}", self.camera.name)
-        self.camera_connection = FrameSourceFactory.create(
-            "webcam" if self.camera.driver == "usb_camera" else self.camera.driver,
-            self.camera.fingerprint,
-            **self.camera.payload.model_dump(),
-        )
+        self.camera_connection = create_frames_source_from_camera(self.camera)
         self.camera_connection.connect()
         return self.camera_connection
 

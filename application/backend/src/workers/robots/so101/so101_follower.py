@@ -8,6 +8,7 @@ from workers.robots.robot_client import RobotClient
 
 class SO101Follower(RobotClient):
     robot: LeSO101Follower
+    name = "so101_follower"
 
     def __init__(self, config: SO101FollowerConfig):
         self.robot = LeSO101Follower(config)
@@ -29,7 +30,8 @@ class SO101Follower(RobotClient):
 
     async def set_joints_state(self, joints: dict) -> dict:
         """Set joint positions. Returns event dict with timestamp."""
-        self.robot.send_action(joints)
+        action = {f"{key}.pos": value for key, value in joints.items()}
+        self.robot.send_action(action)
         return self._create_event(
             "joints_state_was_set",
             joints=joints,
@@ -49,10 +51,16 @@ class SO101Follower(RobotClient):
         self.robot.bus.disable_torque()
         return self._create_event("torque_was_disabled")
 
+    def features(self) -> list[str]:
+        """Get Robot features. Returns list with joints."""
+        return list(self.robot.action_features.keys())
+
     async def read_state(self, *, normalize: bool = True) -> dict:
         """Read current robot state. Returns state dict with timestamp."""
         try:
-            state = self.robot.get_observation()
+            observation = self.robot.get_observation()
+            state= {key.removesuffix(".pos"): value for key, value in observation.items()}
+
             return self._create_event(
                 "state_was_updated",
                 state=state,
@@ -61,17 +69,3 @@ class SO101Follower(RobotClient):
         except Exception as e:
             logger.error(f"Robot read error: {e}")
             raise
-
-    @staticmethod
-    def _timestamp() -> float:
-        """Get current timestamp in seconds since epoch."""
-        return datetime.now().timestamp()
-
-    @staticmethod
-    def _create_event(event: str, **kwargs) -> dict:
-        """Create an event dict with timestamp."""
-        return {
-            "event": event,
-            "timestamp": RobotClient._timestamp(),
-            **kwargs,
-        }

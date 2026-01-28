@@ -48,8 +48,7 @@ class RobotWorker(TransportWorker):
         try:
             await self.transport.connect()
 
-            config = await get_robot_config(self.robot, self.robot_manager, self.calibration_service)
-            self.client = FeetechRobotClient(config, self.normalize)
+            self.client = await get_robot_client(self.robot, self.robot_manager, self.calibration_service)
 
             try:
                 await self.client.connect()
@@ -158,7 +157,7 @@ async def get_robot_client(
 
 async def get_robot_config(
     robot: Robot, robot_manager: RobotConnectionManager, calibration_service: RobotCalibrationService
-) -> RobotConfig:
+) -> SO101FollowerConfig:
     """
     Load robot configuration with calibration data.
 

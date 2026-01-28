@@ -8,6 +8,7 @@ from workers.robots.robot_client import RobotClient
 
 class SO101Leader(RobotClient):
     robot: LeSO101Leader
+    name = "so101_leader"
     is_controlled: bool = False
 
     def __init__(self, config: SO101LeaderConfig):
@@ -45,10 +46,15 @@ class SO101Leader(RobotClient):
         self.robot.bus.disable_torque()
         return self._create_event("torque_was_disabled")
 
+    def features(self) -> list[str]:
+        """Get Robot features. Returns list with joints."""
+        return list(self.robot.action_features.keys())
+
     async def read_state(self, *, normalize: bool = True) -> dict:
         """Read current robot state. Returns state dict with timestamp."""
         try:
-            state = self.robot.get_action()
+            observation = self.robot.get_action()
+            state = {key.removesuffix(".pos"): value for key, value in observation.items()}
             return self._create_event(
                 "state_was_updated",
                 state=state,
@@ -57,17 +63,3 @@ class SO101Leader(RobotClient):
         except Exception as e:
             logger.error(f"Robot read error: {e}")
             raise
-
-    @staticmethod
-    def _timestamp() -> float:
-        """Get current timestamp in seconds since epoch."""
-        return datetime.now().timestamp()
-
-    @staticmethod
-    def _create_event(event: str, **kwargs) -> dict:
-        """Create an event dict with timestamp."""
-        return {
-            "event": event,
-            "timestamp": RobotClient._timestamp(),
-            **kwargs,
-        }

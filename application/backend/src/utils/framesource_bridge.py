@@ -1,30 +1,28 @@
+from frame_source.video_capture_base import VideoCaptureBase
 import time
-from typing import Any
 
 import cv2
 import numpy as np
 from frame_source import FrameSourceFactory
-from lerobot.cameras import Camera as LeRobotCamera
-from lerobot.cameras import CameraConfig as LeRobotCameraConfig
 from lerobot.cameras import ColorMode, Cv2Rotation
 
-from schemas import CameraConfig
+from schemas.project_camera import Camera
 
 
-class FrameSourceCameraBridge(LeRobotCamera):
-    def __init__(self, config: CameraConfig):
-        lerobot_config = LeRobotCameraConfig(fps=config.fps, width=config.width, height=config.height)
-        super().__init__(lerobot_config)
-
+class FrameSourceCameraBridge:
+    def __init__(self, config: Camera):
         self.color_mode: ColorMode = ColorMode.RGB
         self.rotation: Cv2Rotation = Cv2Rotation.NO_ROTATION
         self.warmup_s: int = 1
-        self.camera = FrameSourceFactory.create(
-            "webcam" if config.driver == "usb_camera" else config.driver,
-            source=config.fingerprint,
-            width=config.width,
-            height=config.height,
-            fps=config.fps,
+        self.camera = self.create_frames_source_from_camera(config)
+
+    @staticmethod
+    def create_frames_source_from_camera(camera: Camera) -> VideoCaptureBase:
+        """Very FrameSource factory call from camera schema object."""
+        return FrameSourceFactory.create(
+            "webcam" if camera.driver == "usb_camera" else camera.driver,
+            camera.fingerprint,
+            **camera.payload.model_dump(),
         )
 
     @property
@@ -36,15 +34,6 @@ class FrameSourceCameraBridge(LeRobotCamera):
                   False otherwise.
         """
         return self.camera.is_connected
-
-    @staticmethod
-    def find_cameras() -> list[dict[str, Any]]:
-        """Detects available cameras connected to the system.
-        Returns:
-            List[Dict[str, Any]]: A list of dictionaries,
-            where each dictionary contains information about a detected camera.
-        """
-        return FrameSourceFactory.discover_devices(sources=["webcam", "realsense", "genicam", "basler"])
 
     def connect(self, warmup: bool = True) -> None:
         """Establish connection to the camera.
@@ -61,8 +50,9 @@ class FrameSourceCameraBridge(LeRobotCamera):
                 self.read()
                 time.sleep(0.1)
 
-        # No async reading since syncing is hard.
-        # self.camera.start_async()
+    def start_async(self) -> None:
+        """Start async task of reading camera frames."""
+        self.camera.start_async()
 
     def read(self, color_mode: ColorMode | None = None) -> np.ndarray:
         """Capture and return a single frame from the camera.

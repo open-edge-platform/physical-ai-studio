@@ -1,41 +1,43 @@
+from frame_source.video_capture_base import VideoCaptureBase
 from workers.robots.robot_worker import get_robot_client
 from workers.robots.robot_client import RobotClient
-from workers.camera_worker import CameraConnectionManager, FrameCapture
+from workers.camera_worker import create_frames_source_from_camera
 import asyncio
 import base64
 import copy
 import shutil
 import time
 import uuid
+from pathlib import Path
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
-
 
 
 import cv2
 import numpy as np
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
-from lerobot.datasets.pipeline_features import aggregate_pipeline_dataset_features, create_initial_features
-from lerobot.datasets.utils import build_dataset_frame, combine_feature_dicts
-from lerobot.processor import make_default_processors
-from lerobot.robots.utils import make_robot_from_config
-from lerobot.teleoperators.utils import make_teleoperator_from_config
 from lerobot.utils.robot_utils import precise_sleep
 from loguru import logger
 
 
 from schemas import TeleoperationConfig
 from schemas.dataset import Episode, EpisodeVideo
-from utils.camera import build_camera_config
 from utils.dataset import check_repository_exists, load_local_lerobot_dataset
-from utils.framesource_bridge import FrameSourceCameraBridge
-from utils.robot import make_lerobot_robot_config_from_robot, make_lerobot_teleoperator_config_from_robot, RobotConnectionManager
-from .robots.robot_worker import get_robot_config
-from .robots.feetech_robot_client import FeetechRobotClient
-
+from utils.robot import (
+    RobotConnectionManager,
+)
 from services.robot_calibration_service import RobotCalibrationService
 
 from .base import BaseThreadWorker
+
+OBSERVATION_IMAGES_PREFIX = "observation.images."
+
+class CameraFrameProcessor:
+    @staticmethod
+    def process(frame: np.ndarray) -> np.ndarray:
+        """Post process camera frame."""
+        logger.info("processing frame...")
+        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
 
 class TeleoperateWorker(BaseThreadWorker):
@@ -53,14 +55,16 @@ class TeleoperateWorker(BaseThreadWorker):
 
     follower: RobotClient
     leader: RobotClient
-    cameras: list[FrameCapture]
+    cameras: dict[str, VideoCaptureBase]
 
-    def __init__(self,
-                 stop_event: EventClass,
-                 queue: Queue,
-                 config: TeleoperationConfig,
-                 calibration_service: RobotCalibrationService,
-                 robot_manager: RobotConnectionManager):
+    def __init__(
+        self,
+        stop_event: EventClass,
+        queue: Queue,
+        config: TeleoperationConfig,
+        calibration_service: RobotCalibrationService,
+        robot_manager: RobotConnectionManager,
+    ):
         super().__init__(stop_event=stop_event)
         self.config = config
         self.queue = queue
@@ -89,73 +93,79 @@ class TeleoperateWorker(BaseThreadWorker):
         """Reset the dataset recording buffer."""
         self.events["reset"].set()
 
+    @staticmethod
+    def _camera_frame_postprocessing(frame: np.ndarray) -> np.ndarray:
+        """Post process camera frame."""
+        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
     async def setup_environment(self) -> None:
         """Setup environment."""
 
-        robot = self.config.environment.robots[0] #Assume 1 arm for now.
-        print(robot)
+        robot = self.config.environment.robots[0]  # Assume 1 arm for now.
         if robot.tele_operator.robot is None:
             raise ValueError("No teleoperator given.")
         self.follower = await get_robot_client(robot.robot, self.robot_manager, self.calibration_service)
         self.leader = await get_robot_client(robot.tele_operator.robot, self.robot_manager, self.calibration_service)
 
-        self.cameras = [FrameCapture(CameraConnectionManager(camera), 30) for camera in self.config.environment.cameras]
-        for camera in self.cameras:
-            await camera.connection.connect_async()
+        self.cameras = {
+            camera.name: create_frames_source_from_camera(camera) for camera in self.config.environment.cameras
+        }
+        for camera in self.cameras.values():
+            #camera.attach_processor(CameraFrameProcessor()) # TODO Not working. Fix in framesource
+            camera.connect()
 
         await self.follower.connect()
         await self.leader.connect()
-
 
     def setup(self) -> None:
         """Set up robots, cameras and dataset."""
         logger.info("connect to robot, cameras and setup dataset")
         asyncio.run(self.setup_environment())
-        (
-            self.teleop_action_processor,
-            self.robot_action_processor,
-            self.robot_observation_processor,
-        ) = make_default_processors()
-        #self.dataset_features = combine_feature_dicts(
-        #    aggregate_pipeline_dataset_features(
-        #        pipeline=self.teleop_action_processor,
-        #        initial_features=create_initial_features(action=self.follower.action_features),
-        #        use_videos=True,
-        #    ),
-        #    aggregate_pipeline_dataset_features(
-        #        pipeline=self.robot_observation_processor,
-        #        initial_features=create_initial_features(observation=self.robot.action_features), #should be
-        #        use_videos=True,
-        #    ),
-        #)
 
-        #if check_repository_exists(self.config.dataset.path):
-        #    self.dataset = load_local_lerobot_dataset(self.config.dataset.path, batch_encoding_size=1)
-        #else:
-        #    self.dataset = LeRobotDataset.create(
-        #        repo_id=str(uuid.uuid4()),
-        #        root=self.config.dataset.path,
-        #        fps=30, #TODO: Implement in Environment
-        #        features=self.dataset_features,
-        #        robot_type=self.robot.name,
-        #        use_videos=True,
-        #        image_writer_threads=4,
-        #    )
+        features = self._build_dataset_features()
+        self.action_keys = features["action"]["names"]
+        self.camera_keys = [f"{OBSERVATION_IMAGES_PREFIX}{name}" for name in self.cameras]
+        if check_repository_exists(Path(self.config.dataset.path)):
+            self.dataset = load_local_lerobot_dataset(self.config.dataset.path, batch_encoding_size=1)
+        else:
+            self.dataset = LeRobotDataset.create(
+                repo_id=str(uuid.uuid4()),
+                root=self.config.dataset.path,
+                fps=30,  # TODO: Implement in Environment
+                features=features,
+                robot_type=self.follower.name,
+                use_videos=True,
+                image_writer_threads=4,
+            )
 
-        #self.dataset.start_image_writer(
-        #    num_processes=0,
-        #    num_threads=4 * len(self.robot.cameras),
-        #)
+        self.dataset.start_image_writer(
+            num_processes=0,
+            num_threads=4 * len(self.cameras),
+        )
 
-        logger.info("before robot connection")
-        logger.info("between robot and teleoperator connection")
-        logger.info("after robot connection")
-
-        #self.action_keys = [f"{key}.pos" for key in self.robot.bus.sync_read("Present_Position")]
-        #self.camera_keys = [camera.name for camera in self.config.cameras]
+        logger.info("dataset loaded, starting cameras")
+        for camera in self.cameras.values():
+            camera.start_async()
 
         logger.info("teleoperation all setup, reporting state")
         self._report_state()
+
+    def _build_dataset_features(self) -> dict:
+        features = self.follower.features()
+        dataset_features = {
+            "action": {"dtype": "float32", "names": features, "shape": (len(features),)},
+            "observation.state": {"dtype": "float32", "names": features, "shape": (len(features),)},
+        }
+
+        for camera_name, camera in self.cameras.items():
+            _success, camera_frame = camera.read()  # HWC
+            dataset_features[f"observation.images.{camera_name}"] = {
+                "dtype": "video",
+                "shape": camera_frame.shape,
+                "names": ["height", "width", "channels"],
+            }
+
+        return dataset_features
 
     def _report_state(self):
         state = {"event": "state", "data": {"initialized": True, "is_recording": self.is_recording}}
@@ -170,7 +180,8 @@ class TeleoperateWorker(BaseThreadWorker):
                 "data": {
                     "actions": {key: observation.get(key, 0) for key in self.action_keys},
                     "cameras": {
-                        key: self._base_64_encode_observation(cv2.cvtColor(observation[key], cv2.COLOR_RGB2BGR))
+                        key.removeprefix(OBSERVATION_IMAGES_PREFIX): self._base_64_encode_observation(cv2.cvtColor(observation[key], cv2.COLOR_RGB2BGR))
+                        #key.removeprefix(OBSERVATION_IMAGES_PREFIX): self._base_64_encode_observation(observation[key])
                         for key in self.camera_keys
                         if key in observation
                     },
@@ -199,72 +210,82 @@ class TeleoperateWorker(BaseThreadWorker):
         self.is_recording = False
         while not self.should_stop() and not self.events["stop"].is_set():
             start_loop_t = time.perf_counter()
-            #if self.events["save"].is_set():
-            #    logger.info("save")
-            #    self.events["save"].clear()
-            #    precise_sleep(0.3)  # TODO check if neccesary
-            #    new_episode = self._build_episode_from_buffer(self.dataset.meta.latest_episode)
-            #    if new_episode is not None:
-            #        self._report_episode(new_episode)
-            #    self.dataset.save_episode()
-            #    self.is_recording = False
-            #    self._report_state()
+            if self.events["save"].is_set():
+                logger.info("save")
+                self.events["save"].clear()
+                precise_sleep(0.3)  # TODO check if neccesary
+                new_episode = self._build_episode_from_buffer(self.dataset.meta.latest_episode)
+                if new_episode is not None:
+                    self._report_episode(new_episode)
+                self.dataset.save_episode()
+                self.is_recording = False
+                self._report_state()
 
-            #if self.events["reset"].is_set():
-            #    logger.info("reset")
-            #    self.events["reset"].clear()
-            #    precise_sleep(0.3)  # TODO check if neccesary
-            #    self.dataset.clear_episode_buffer()
-            #    self.is_recording = False
-            #    self._report_state()
+            if self.events["reset"].is_set():
+                logger.info("reset")
+                self.events["reset"].clear()
+                precise_sleep(0.3)  # TODO check if neccesary
+                self.dataset.clear_episode_buffer()
+                self.is_recording = False
+                self._report_state()
 
-            #if self.events["start"].is_set():
-            #    logger.info("start")
-            #    self.events["start"].clear()
-            #    self.is_recording = True
-            #    start_episode_t = time.perf_counter()
-            #    self._report_state()
+            if self.events["start"].is_set():
+                logger.info("start")
+                self.events["start"].clear()
+                self.is_recording = True
+                self._report_state()
 
+            # Trossen notes:
+            # Add force feedback
             action = (await self.leader.read_state())["state"]
+            state = (await self.follower.read_state())["state"]
             await self.follower.set_joints_state(action)
 
-            print(action)
-            #self.follower.write_state(action)
-            #observation = self.robot.get_observation()
-            #actions_processed = self.teleop_action_processor((action, observation))
-            #obs_processed = self.robot_observation_processor(observation)
+            frame = {
+                "task": self.config.task,
+                "observation.state": np.array(list(state.values()), dtype=np.float32),
+                "action": np.array(list(action.values()), dtype=np.float32),
+            }
+            for camera_name, camera in self.cameras.items():
+                _success, camera_frame = camera.get_latest_frame()  # HWC
+                if camera_frame is None:
+                    raise Exception("Camera frame is None")
+                frame[f"observation.images.{camera_name}"] = CameraFrameProcessor.process(camera_frame)
 
-            #timestamp = time.perf_counter() - start_episode_t
-            #self._report_observation(observation, timestamp)
-            #if self.is_recording:
-            #    observation_frame = build_dataset_frame(self.dataset.features, obs_processed, prefix="observation")
-            #    action_frame = build_dataset_frame(self.dataset.features, actions_processed, prefix="action")
-            #    frame = {**observation_frame, **action_frame, "task": self.config.task}
-            #    self.dataset.add_frame(frame)
+
+            timestamp = time.perf_counter() - start_episode_t
+            self._report_observation(frame, timestamp)
+
+            if self.is_recording:
+                self.dataset.add_frame(frame)
 
             dt_s = time.perf_counter() - start_loop_t
-            wait_time = 1 / 30 - dt_s # TODO: Remove hardcoded fps
+            wait_time = 1 / 30 - dt_s  # TODO: Remove hardcoded fps
 
             precise_sleep(wait_time)
 
     def teardown(self) -> None:
         """Disconnect robots and close queue."""
-
+        logger.info("Teardown")
         try:
             self.queue.cancel_join_thread()
         except Exception as e:
             logger.warning(f"Failed cancelling queue join thread: {e}")
 
-        # must happen
-        #self.dataset.finalize()
-
-        # Ensure the dataset is removed if there are episodes
-        # This is because lerobot dataset needs episodes otherwise it will be in an invalid state
-        #if self.dataset.num_episodes == 0:
-        #    shutil.rmtree(self.dataset.root)
+        if self.dataset:
+            if self.dataset.num_episodes == 0:
+                # Ensure the dataset is removed if there are episodes
+                # This is because lerobot dataset needs episodes otherwise it will be in an invalid state
+                logger.info("Removing dataset since it has no episodes")
+                shutil.rmtree(self.dataset.root)
+            else:
+                logger.info("Finalizing")
+                self.dataset.finalize()
 
         asyncio.run(self.leader.disconnect())
         asyncio.run(self.follower.disconnect())
+        for camera in self.cameras.values():
+            camera.disconnect()
         self.queue.close()
 
     def _base_64_encode_observation(self, observation: np.ndarray | None) -> str:
