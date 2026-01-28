@@ -97,7 +97,7 @@ class TorchAdapter(RuntimeAdapter):
             raise RuntimeError(msg)
 
         try:
-            torch_outputs = self._policy(inputs["Observation"].to(self.device))
+            torch_outputs = self._policy(inputs["observation"].to(self.device))
             return self._convert_outputs_to_numpy(torch_outputs)
 
         except Exception as e:
