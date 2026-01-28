@@ -11,6 +11,7 @@ import { TimelineControls } from './timeline-controls';
 import { usePlayer } from './use-player';
 
 import classes from './episode-viewer.module.scss';
+import { useProjectEnvironment } from '../../features/projects/use-project-environment';
 
 const joints = ['shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex', 'wrist_roll', 'gripper'];
 
@@ -53,6 +54,7 @@ interface EpisodeViewerProps {
 
 export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
     const project = useProject();
+    const environment = useProjectEnvironment();
     const player = usePlayer(episode);
     const frameIndex = Math.floor(player.time * episode.fps);
 
@@ -61,10 +63,10 @@ export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
             <Flex direction={'column'} height={'100%'} position={'relative'}>
                 <Flex direction={'row'} flex gap={'size-100'}>
                     <Flex direction={'column'} alignContent={'start'} flex gap={'size-30'}>
-                        {project.config!.cameras.map((camera) => (
+                        {environment.cameras!.map((camera) => (
                             <VideoView
                                 key={camera.name}
-                                aspectRatio={camera.width / camera.height}
+                                aspectRatio={640 / 480}
                                 cameraName={camera.name}
                                 episodeIndex={episode.episode_index}
                                 dataset_id={dataset_id}
