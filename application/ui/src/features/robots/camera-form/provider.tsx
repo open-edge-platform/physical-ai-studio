@@ -1,74 +1,141 @@
-import { createContext, Dispatch, ReactNode, SetStateAction, useContext, useState } from 'react';
+import { createContext, ReactNode, SetStateAction, useContext, useState } from 'react';
 
 import { $api } from '../../../api/client';
+import {
+    SchemaBaslerCameraInput,
+    SchemaGenicamCameraInput,
+    SchemaIpCameraInput,
+    SchemaRealsenseCameraInput,
+    SchemaUsbCameraInput,
+} from '../../../api/openapi-spec';
 import { SchemaProjectCamera } from '../../../api/types';
+import { initialBaslerState, validateBasler } from './drivers/basler';
+import { initialGenicamState, validateGenicam } from './drivers/genicam';
+import { initialIpCamState, validateIpCam } from './drivers/ipcam';
+import { initialRealsenseState, validateRealsense } from './drivers/realsense';
+import { initialUsbCameraState, validateUsbCamera } from './drivers/usb-camera';
 
-export type CameraFormProps = Partial<Exclude<SchemaProjectCamera, 'id' | 'driver' | 'hardware_name'>>;
-export type CameraFormState = CameraFormProps | null;
+// Utility type to make all properties (including nested) optional
+type DeepPartial<T> = {
+    [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
+};
 
-export const CameraFormContext = createContext<CameraFormState>(null);
-export const SetCameraFormContext = createContext<Dispatch<SetStateAction<CameraFormProps>> | null>(null);
+export type CameraDriver = SchemaProjectCamera['driver']; //'usb_camera' | 'ipcam' | 'basler' | 'realsense' | 'genicam';
 
-export const useCameraFormBody = (camera_id: string): SchemaProjectCamera | null => {
-    const availableCamerasQuery = $api.useQuery('get', '/api/hardware/cameras');
+type DriverSchemaMap = {
+    usb_camera: SchemaUsbCameraInput;
+    ipcam: SchemaIpCameraInput;
+    basler: SchemaBaslerCameraInput;
+    realsense: SchemaRealsenseCameraInput;
+    genicam: SchemaGenicamCameraInput;
+};
 
-    const cameraForm = useCameraForm();
-    const hardwareCamera = availableCamerasQuery.data?.find((camera) => {
-        return cameraForm.fingerprint === camera.fingerprint;
-    });
+export type DriverFormSchema<K extends CameraDriver> = DeepPartial<DriverSchemaMap[K]> & {
+    driver: K;
+};
 
-    if (cameraForm === undefined) {
-        return null;
+export const isValid = (schema: DriverFormSchema<CameraDriver>): schema is SchemaProjectCamera => {
+    switch (schema.driver) {
+        case 'usb_camera':
+            return validateUsbCamera(schema);
+        case 'ipcam':
+            return validateIpCam(schema);
+        case 'realsense':
+            return validateRealsense(schema);
+        case 'basler':
+            return validateBasler(schema);
+        case 'genicam':
+            return validateGenicam(schema);
+        default:
+            return false;
     }
+};
 
-    if (
-        cameraForm.fingerprint === undefined ||
-        cameraForm.name === undefined ||
-        cameraForm.payload?.fps === undefined ||
-        cameraForm.payload?.width === undefined ||
-        cameraForm.payload?.height === undefined
-    ) {
-        return null;
+interface CameraFormState {
+    activeDriver: CameraDriver;
+    formData: {
+        [K in CameraDriver]: DriverFormSchema<K>;
+    };
+}
+
+interface CameraFormContextType {
+    state: CameraFormState;
+    getFormData: <T extends CameraDriver>(driver: T) => DriverFormSchema<T>;
+}
+interface SetCameraFormContextType {
+    setActiveDriver: (driver: CameraDriver) => void;
+    updateFormData: <T extends CameraDriver>(driver: T, update: SetStateAction<DriverFormSchema<T>>) => void;
+}
+
+const CameraFormContext = createContext<CameraFormContextType | null>(null);
+export const SetCameraFormContext = createContext<SetCameraFormContextType | null>(null);
+
+const getInitialCameraFormState = (camera?: SchemaProjectCamera): CameraFormState => {
+    const formData = {
+        usb_camera: initialUsbCameraState,
+        basler: initialBaslerState,
+        genicam: initialGenicamState,
+        ipcam: initialIpCamState,
+        realsense: initialRealsenseState,
+    } satisfies CameraFormState['formData'];
+
+    if (camera === undefined) {
+        return {
+            activeDriver: 'usb_camera',
+            formData,
+        };
     }
 
     return {
-        id: camera_id,
-        name: cameraForm.name,
-        fingerprint: cameraForm.fingerprint,
-        // @ts-expect-error The discovery endpoint needs to be backward compatible for now
-        driver: hardwareCamera?.driver === 'webcam' ? 'usb_camera' : (hardwareCamera?.driver ?? ''),
-        hardware_name: hardwareCamera?.name ?? '',
-
-        payload: {
-            fps: cameraForm.payload.fps,
-            width: cameraForm.payload.width,
-            height: cameraForm.payload.height,
+        activeDriver: camera.driver,
+        formData: {
+            ...formData,
+            [camera.driver]: camera,
         },
     };
 };
 
-export const CameraFormProvider = ({ children, camera }: { children: ReactNode; camera?: SchemaProjectCamera }) => {
-    const [value, setValue] = useState<CameraFormProps>({
-        name: camera?.name ?? '',
-        fingerprint: camera?.fingerprint ?? '',
-        payload: camera?.payload,
-    });
+export function CameraFormProvider({ children, camera }: { children: ReactNode; camera?: SchemaProjectCamera }) {
+    const [state, setState] = useState<CameraFormState>(() => getInitialCameraFormState(camera));
+
+    const value: CameraFormContextType = {
+        state,
+        getFormData: <T extends CameraDriver>(driver: T): DriverFormSchema<T> => {
+            return (state.formData[driver] || {}) as DriverFormSchema<T>;
+        },
+    };
+
+    const setValue = {
+        setActiveDriver: (driver: CameraDriver) => {
+            setState((prev) => ({ ...prev, activeDriver: driver }));
+        },
+
+        updateFormData: <T extends CameraDriver>(driver: T, update: SetStateAction<DriverFormSchema<T>>) => {
+            setState((prev) => {
+                const current = (prev.formData[driver] || {}) as DriverFormSchema<T>;
+                const next = typeof update === 'function' ? update(current) : update;
+                return {
+                    ...prev,
+                    formData: {
+                        ...prev.formData,
+                        [driver]: next,
+                    },
+                };
+            });
+        },
+    };
 
     return (
         <CameraFormContext.Provider value={value}>
             <SetCameraFormContext.Provider value={setValue}>{children}</SetCameraFormContext.Provider>
         </CameraFormContext.Provider>
     );
-};
+}
 
 export const useCameraForm = () => {
-    const context = useContext(CameraFormContext);
-
-    if (context === null) {
-        throw new Error('useCameraForm was used outside of CameraFormProvider');
-    }
-
-    return context;
+    const ctx = useContext(CameraFormContext);
+    if (!ctx) throw new Error('useCameraForm must be used within CameraFormProvider');
+    return ctx;
 };
 
 export const useSetCameraForm = () => {
@@ -79,4 +146,24 @@ export const useSetCameraForm = () => {
     }
 
     return context;
+};
+
+export const useCameraFormBody = (camera_id: string): SchemaProjectCamera | null => {
+    const availableCamerasQuery = $api.useQuery('get', '/api/hardware/cameras');
+
+    const { getFormData, state } = useCameraForm();
+
+    const cameraForm = getFormData(state.activeDriver);
+
+    if (!isValid(cameraForm)) {
+        return null;
+    }
+
+    const hardware = availableCamerasQuery.data?.find((h) => h.fingerprint === cameraForm.fingerprint);
+
+    return {
+        ...cameraForm,
+        hardware_name: hardware?.name ?? cameraForm.hardware_name,
+        id: camera_id,
+    };
 };

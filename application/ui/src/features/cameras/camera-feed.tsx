@@ -5,7 +5,17 @@ import { Flex, Grid, Heading, minmax, repeat, View, Well } from '@geti/ui';
 import { SchemaProjectCamera } from '../../api/types';
 import { WebsocketCamera } from './websocket-camera';
 
-const CameraWell = ({ children, aspectRatio }: { children: ReactNode; aspectRatio: number }) => {
+const CameraWell = ({
+    children,
+    width,
+    height,
+}: {
+    children: ReactNode;
+    width?: number | null;
+    height?: number | null;
+}) => {
+    const aspectRatio = width && height ? width / height : undefined;
+
     return (
         <Flex direction='column' alignContent='start' flex gap='size-30'>
             <Flex UNSAFE_style={{ aspectRatio }}>
@@ -25,49 +35,53 @@ const CameraWell = ({ children, aspectRatio }: { children: ReactNode; aspectRati
     );
 };
 
-export const CameraFeed = ({ camera, empty = false }: { camera: SchemaProjectCamera; empty?: boolean }) => {
-    const aspectRatio = camera.payload.width / camera.payload.height;
-
+const CameraHeading = ({ camera }: { camera: SchemaProjectCamera }) => {
     return (
-        <Flex direction='column' gap='size-200'>
-            {empty === false && camera && (
-                <Flex gap='size-100' direction='column'>
-                    <Heading level={3}>{camera.name}</Heading>
-                    <Flex gap='size-100'>
-                        <span style={{ fontSize: '10px', fontWeight: 'bold' }}>
-                            <Flex gap='size-150'>
-                                <span
-                                    style={{
-                                        backgroundColor: 'var(--spectrum-global-color-gray-300)',
-                                        padding: '4px',
-                                        borderRadius: '2px',
-                                    }}
-                                >
-                                    {camera.hardware_name}
-                                </span>
-                                <span
-                                    style={{
-                                        backgroundColor: 'var(--spectrum-global-color-gray-300)',
-                                        padding: '4px',
-                                        borderRadius: '2px',
-                                    }}
-                                >
-                                    {camera.fingerprint}
-                                </span>
-                                <span
-                                    style={{
-                                        backgroundColor: 'var(--spectrum-global-color-gray-300)',
-                                        padding: '4px',
-                                        borderRadius: '2px',
-                                    }}
-                                >
-                                    {camera.payload.width} x {camera.payload.height} @ {camera.payload.fps}
-                                </span>
-                            </Flex>
+        <Flex gap='size-100' direction='column'>
+            <Heading level={3}>{camera.name}</Heading>
+            <Flex gap='size-100'>
+                <span style={{ fontSize: '10px', fontWeight: 'bold' }}>
+                    <Flex gap='size-150'>
+                        {camera.hardware_name && (
+                            <span
+                                style={{
+                                    backgroundColor: 'var(--spectrum-global-color-gray-300)',
+                                    padding: '4px',
+                                    borderRadius: '2px',
+                                }}
+                            >
+                                {camera.hardware_name}
+                            </span>
+                        )}
+                        <span
+                            style={{
+                                backgroundColor: 'var(--spectrum-global-color-gray-300)',
+                                padding: '4px',
+                                borderRadius: '2px',
+                            }}
+                        >
+                            {camera.fingerprint}
+                        </span>
+                        <span
+                            style={{
+                                backgroundColor: 'var(--spectrum-global-color-gray-300)',
+                                padding: '4px',
+                                borderRadius: '2px',
+                            }}
+                        >
+                            {camera.payload.width} x {camera.payload.height} @ {camera.payload.fps}
                         </span>
                     </Flex>
-                </Flex>
-            )}
+                </span>
+            </Flex>
+        </Flex>
+    );
+};
+
+export const CameraFeed = ({ camera, empty = false }: { camera: SchemaProjectCamera; empty?: boolean }) => {
+    return (
+        <Flex direction='column' gap='size-200'>
+            {empty === false && camera && <CameraHeading camera={camera} />}
 
             <Grid
                 columns={repeat('auto-fit', minmax('size-6000', '1fr'))}
@@ -75,7 +89,7 @@ export const CameraFeed = ({ camera, empty = false }: { camera: SchemaProjectCam
                 gap='size-400'
                 width='100%'
             >
-                <CameraWell aspectRatio={aspectRatio}>
+                <CameraWell width={camera.payload.width} height={camera.payload.height}>
                     <WebsocketCamera camera={camera} />
                 </CameraWell>
             </Grid>

@@ -39,3 +39,4 @@ repos:
         additional_dependencies:
           - types-PyYAML
           - types-setuptools
+          - types-aiofiles

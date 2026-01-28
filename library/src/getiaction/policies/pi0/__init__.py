@@ -26,6 +26,6 @@ Example:
 
 from .config import Pi0Config
 from .model import Pi0Model
-from .policy import Pi0
+from .policy import Pi0, Pi05
 
-__all__ = ["Pi0", "Pi0Config", "Pi0Model"]
+__all__ = ["Pi0", "Pi0Config", "Pi0Model", "Pi05"]

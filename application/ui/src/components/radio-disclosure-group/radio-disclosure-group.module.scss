@@ -1,24 +1,27 @@
-.disclosureTitle > button {
-    flex-direction: row-reverse;
-    justify-content: space-between;
-}
-
 .disclosure {
-    border: var(--spectrum-global-dimension-size-40) solid var(--spectrum-global-color-gray-200);
-    border-radius: var(--spectrum-global-dimension-size-50);
-
     background-color: var(--spectrum-global-color-gray-75);
+    border: var(--spectrum-alias-border-size-thin) solid var(--spectrum-global-color-gray-200) !important;
+    border-radius: var(--spectrum-alias-border-radius-regular);
 }
 
-.disclosure[data-expanded='true'] {
-    border-color: var(--energy-blue);
+.selected {
+    border: var(--spectrum-alias-border-size-thick) solid var(--energy-blue) !important;
 }
 
-.disclosurePanel {
-    padding: 0;
+.disclosureTitleContainer {
+    width: 100%;
+}
+
+.disclosureTitle {
+    font-size: var(--spectrum-global-dimension-font-size-75);
 }
 
 .radio {
     display: flex;
     align-items: center;
+
+    /* Hide the radio button, we emphasize the selected radio button via its emphasized disclosure */
+    --spectrum-radio-circle-diameter: 0;
+    --spectrum-radio-border-width-checked: 0px;
+    --spectrum-radio-circle-border-size: 0px;
 }

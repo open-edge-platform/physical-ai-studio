@@ -68,7 +68,7 @@ const CameraSetup = ({ camera, updateCamera, removeCamera }: CameraSetupProps) =
 
 const emptyCamera = (): SchemaCameraConfigInput => {
     return {
-        driver: 'webcam',
+        driver: 'usb_camera',
         fps: 30,
         width: 640,
         height: 480,
