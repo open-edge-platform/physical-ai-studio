@@ -1,11 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Export types - torch-free enums and constants.
-
-This module contains types used for export configuration that can be
-imported without requiring torch dependencies.
-"""
+"""Export backend types."""
 
 from __future__ import annotations
 
