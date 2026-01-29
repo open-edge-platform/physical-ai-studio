@@ -1,16 +1,6 @@
 import { useState } from 'react';
 
-import {
-    Button,
-    ButtonGroup,
-    Content,
-    Dialog,
-    DialogTrigger,
-    Divider,
-    Form,
-    Heading,
-    TextField,
-} from '@geti/ui';
+import { Button, ButtonGroup, Content, Dialog, DialogTrigger, Divider, Form, Heading, TextField } from '@geti/ui';
 import { v4 as uuidv4 } from 'uuid';
 
 import { $api } from '../../api/client';

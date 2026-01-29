@@ -106,9 +106,7 @@ export const Index = () => {
     const project = useProject();
     return (
         <RecordingProvider>
-            <Datasets
-                datasets={project.datasets}
-            />
+            <Datasets datasets={project.datasets} />
         </RecordingProvider>
     );
 };

@@ -1,18 +1,6 @@
 import { Suspense, useState } from 'react';
 
-import {
-    Button,
-    ButtonGroup,
-    Content,
-    Dialog,
-    Divider,
-    Flex,
-    Heading,
-    Item,
-    Loading,
-    Picker,
-    View,
-} from '@geti/ui';
+import { Button, ButtonGroup, Content, Dialog, Divider, Flex, Heading, Item, Loading, Picker, View } from '@geti/ui';
 
 import { $api, fetchClient } from '../../../api/client';
 import { SchemaInferenceConfig } from '../../../api/openapi-spec';

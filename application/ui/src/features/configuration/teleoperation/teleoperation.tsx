@@ -55,7 +55,7 @@ export const TeleoperationSetup = ({ dataset, onDone }: TeleoperationSetupProps)
 
     const onCancel = () => {
         onDone(undefined);
-    }
+    };
 
     const onStart = async () => {
         const { data: environment } = await fetchClient.request(
@@ -80,7 +80,7 @@ export const TeleoperationSetup = ({ dataset, onDone }: TeleoperationSetupProps)
             task,
             environment,
         });
-    }
+    };
 
     if (environmentId === undefined) {
         return (

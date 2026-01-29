@@ -53,7 +53,7 @@ interface EpisodeViewerProps {
 export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
     const player = usePlayer(episode);
     const frameIndex = Math.floor(player.time * episode.fps);
-    const cameras = Object.keys(episode.videos).map((m) => m.replace("observation.images.", ""))
+    const cameras = Object.keys(episode.videos).map((m) => m.replace('observation.images.', ''));
 
     return (
         <RobotModelsProvider>
