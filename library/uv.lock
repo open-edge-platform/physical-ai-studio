@@ -1031,6 +1031,10 @@ tests = [
     { name = "pytest" },
     { name = "pytest-mock" },
 ]
+torch = [
+    { name = "lightning" },
+    { name = "lightning-utilities" },
+]
 train = [
     { name = "gym-pusht" },
     { name = "gymnasium" },
@@ -1097,6 +1101,7 @@ requires-dist = [
     { name = "lightning", marker = "extra == 'groot'", specifier = ">=2.0" },
     { name = "lightning", marker = "extra == 'pi0'", specifier = ">=2.0" },
     { name = "lightning", marker = "extra == 'smolvla'", specifier = ">=2.0" },
+    { name = "lightning", marker = "extra == 'torch'", specifier = ">=2.0" },
     { name = "lightning", marker = "extra == 'train'", specifier = ">=2.0" },
     { name = "lightning-utilities", marker = "extra == 'all'" },
     { name = "lightning-utilities", marker = "extra == 'dev'" },
@@ -1104,6 +1109,7 @@ requires-dist = [
     { name = "lightning-utilities", marker = "extra == 'groot'" },
     { name = "lightning-utilities", marker = "extra == 'pi0'" },
     { name = "lightning-utilities", marker = "extra == 'smolvla'" },
+    { name = "lightning-utilities", marker = "extra == 'torch'" },
     { name = "lightning-utilities", marker = "extra == 'train'" },
     { name = "mypy", marker = "extra == 'dev'" },
     { name = "mypy", marker = "extra == 'tests'" },
@@ -1179,7 +1185,7 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'pi0'", specifier = ">=4.54.0,<5.0.0" },
     { name = "transformers", marker = "extra == 'smolvla'", specifier = ">=4.53.0,<5.0.0" },
 ]
-provides-extras = ["all", "dev", "full", "groot", "inference", "libero", "onnx", "openvino", "pi0", "smolvla", "tests", "train"]
+provides-extras = ["all", "dev", "full", "groot", "inference", "libero", "onnx", "openvino", "pi0", "smolvla", "tests", "torch", "train"]
 
 [[package]]
 name = "gitdb"
