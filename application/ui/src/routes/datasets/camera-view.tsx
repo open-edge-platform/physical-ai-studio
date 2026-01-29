@@ -2,15 +2,18 @@ import { RefObject, useState } from 'react';
 
 import { Flex, ProgressCircle, View, Well } from '@geti/ui';
 
-import { components, SchemaEnvironmentWithRelations } from '../../api/openapi-spec';
+import { components } from '../../api/openapi-spec';
 import { Observation } from './record/use-teleoperation';
 import { useInterval } from './use-interval';
 
 import classes from './episode-viewer.module.scss';
 
-
-
-type SchemaCamera = components["schemas"]["USBCamera-Output"] | components["schemas"]["IPCamera-Output"] | components["schemas"]["BaslerCamera-Output"] | components["schemas"]["RealsenseCamera-Output"] | components["schemas"]["GenicamCamera-Output"]
+type SchemaCamera =
+    | components['schemas']['USBCamera-Output']
+    | components['schemas']['IPCamera-Output']
+    | components['schemas']['BaslerCamera-Output']
+    | components['schemas']['RealsenseCamera-Output']
+    | components['schemas']['GenicamCamera-Output'];
 
 interface CameraViewProps {
     observation: RefObject<Observation | undefined>;

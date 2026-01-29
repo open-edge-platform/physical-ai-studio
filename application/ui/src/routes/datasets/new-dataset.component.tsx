@@ -1,7 +1,6 @@
 import { useState } from 'react';
 
 import {
-    ActionButton,
     Button,
     ButtonGroup,
     Content,
@@ -12,9 +11,8 @@ import {
     Heading,
     TextField,
 } from '@geti/ui';
-
 import { v4 as uuidv4 } from 'uuid';
-import { AddCircle } from '@geti/ui/icons';
+
 import { $api } from '../../api/client';
 import { useSettings } from '../../components/settings/use-settings';
 import { makeNameSafeForPath } from './record/utils';
@@ -24,24 +22,19 @@ export const NewDatasetLink = ({ project_id }: { project_id: string }) => {
     const [name, setName] = useState<string>('');
     const { geti_action_dataset_path } = useSettings();
 
-
     const save = (e: React.FormEvent<HTMLFormElement>) => {
-
         e.preventDefault();
 
         const id = uuidv4();
-        saveMutation.mutateAsync(
-            {
-                body: {
-                    id,
-                    name,
-                    project_id,
-                    path: `${geti_action_dataset_path}/${makeNameSafeForPath(name)}`,
-                }
-            }
-        );
+        saveMutation.mutateAsync({
+            body: {
+                id,
+                name,
+                project_id,
+                path: `${geti_action_dataset_path}/${makeNameSafeForPath(name)}`,
+            },
+        });
     };
-
 
     return (
         <DialogTrigger>
@@ -79,6 +72,5 @@ export const NewDatasetLink = ({ project_id }: { project_id: string }) => {
                 </Form>
             )}
         </DialogTrigger>
-
-    )
-}
+    );
+};

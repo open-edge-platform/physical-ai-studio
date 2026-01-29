@@ -16,17 +16,16 @@ import {
     View,
 } from '@geti/ui';
 
-import { SchemaDatasetOutput, SchemaProjectConfigOutput } from '../../api/openapi-spec';
+import { SchemaDatasetOutput } from '../../api/openapi-spec';
 import { TeleoperationSetupModal } from '../../features/configuration/teleoperation/teleoperation';
 import { useProject, useProjectId } from '../../features/projects/use-project';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
 import { DatasetViewer } from './dataset-viewer';
-import { RecordingProvider, useRecording } from './recording-provider';
 import { NewDatasetLink } from './new-dataset.component';
+import { RecordingProvider, useRecording } from './recording-provider';
 
 interface DatasetsProps {
     datasets: SchemaDatasetOutput[];
-    projectConfig?: SchemaProjectConfigOutput;
 }
 
 const Datasets = ({ datasets }: DatasetsProps) => {
@@ -55,7 +54,7 @@ const Datasets = ({ datasets }: DatasetsProps) => {
                     <Text>It&apos;s time to begin recording a dataset. </Text>
                     <Heading>No datasets yet</Heading>
                     <View margin={'size-100'}>
-                        <NewDatasetLink project_id={project_id}/>
+                        <NewDatasetLink project_id={project_id} />
                     </View>
                 </IllustratedMessage>
             </Flex>
@@ -73,8 +72,8 @@ const Datasets = ({ datasets }: DatasetsProps) => {
                     </TabList>
 
                     {!isRecording && (
-                        <Flex gap="size-200">
-                            <NewDatasetLink project_id={project_id}/>
+                        <Flex gap='size-200'>
+                            <NewDatasetLink project_id={project_id} />
                             <DialogTrigger>
                                 <Button variant='accent'>Start recording</Button>
                                 {(close) =>
@@ -109,7 +108,6 @@ export const Index = () => {
         <RecordingProvider>
             <Datasets
                 datasets={project.datasets}
-                projectConfig={project.config === null ? undefined : project.config}
             />
         </RecordingProvider>
     );

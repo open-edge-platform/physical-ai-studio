@@ -2,7 +2,6 @@ import { Suspense, useState } from 'react';
 
 import {
     Button,
-    Text,
     ButtonGroup,
     ComboBox,
     Content,
@@ -10,26 +9,20 @@ import {
     Divider,
     Flex,
     Heading,
+    IllustratedMessage,
     Item,
-    Key,
     Loading,
     Section,
-    TabList,
-    TabPanels,
-    Tabs,
     TextField,
     View,
-    IllustratedMessage
 } from '@geti/ui';
 
 import { $api } from '../../../api/client';
 import { SchemaDatasetOutput, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
 import { useSettings } from '../../../components/settings/use-settings';
-import {
-    makeNameSafeForPath,
-} from '../../../routes/datasets/record/utils';
-import { useProject } from '../../projects/use-project';
 import { paths } from '../../../router';
+import { makeNameSafeForPath } from '../../../routes/datasets/record/utils';
+import { useProject } from '../../projects/use-project';
 import { useProjectEnvironment } from '../../projects/use-project-environment';
 
 interface TeleoperationSetupProps {
@@ -51,13 +44,11 @@ export const TeleoperationSetup = ({ dataset, onDone }: TeleoperationSetupProps)
 
     const initialTask = Object.values(projectTasks).flat()[0];
 
-    const [config, setConfig] = useState<SchemaTeleoperationConfig>(
-        {
-            task: initialTask,
-            dataset,
-            environment,
-        }
-    );
+    const [config, setConfig] = useState<SchemaTeleoperationConfig>({
+        task: initialTask,
+        dataset,
+        environment,
+    });
 
     const updateDataset = (name: string) => {
         setConfig((c) => ({
@@ -83,11 +74,13 @@ export const TeleoperationSetup = ({ dataset, onDone }: TeleoperationSetupProps)
                     <Content>Currently there has not been a environment setup yet.</Content>
                     <Heading>No environment set up yet.</Heading>
                     <View margin={'size-100'}>
-                        <Button variant='accent' href={paths.project.environments.new({ project_id: project.id })}>Setup environment</Button>
+                        <Button variant='accent' href={paths.project.environments.new({ project_id: project.id })}>
+                            Setup environment
+                        </Button>
                     </View>
                 </IllustratedMessage>
             </Flex>
-        )
+        );
     }
 
     return (

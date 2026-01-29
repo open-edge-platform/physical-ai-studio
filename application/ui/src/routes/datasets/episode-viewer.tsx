@@ -4,14 +4,13 @@ import { Disclosure, DisclosurePanel, DisclosureTitle, Flex, View, Well } from '
 
 import { SchemaEpisode, SchemaEpisodeVideo } from '../../api/openapi-spec';
 import EpisodeChart from '../../components/episode-chart/episode-chart';
-import { useProject } from '../../features/projects/use-project';
+import { useProjectEnvironment } from '../../features/projects/use-project-environment';
 import { RobotViewer } from '../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 import { TimelineControls } from './timeline-controls';
 import { usePlayer } from './use-player';
 
 import classes from './episode-viewer.module.scss';
-import { useProjectEnvironment } from '../../features/projects/use-project-environment';
 
 const joints = ['shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex', 'wrist_roll', 'gripper'];
 
@@ -53,7 +52,6 @@ interface EpisodeViewerProps {
 }
 
 export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
-    const project = useProject();
     const environment = useProjectEnvironment();
     const player = usePlayer(episode);
     const frameIndex = Math.floor(player.time * episode.fps);

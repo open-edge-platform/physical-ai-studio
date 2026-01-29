@@ -9,12 +9,8 @@ import {
     Flex,
     Heading,
     Item,
-    Key,
     Loading,
     Picker,
-    TabList,
-    TabPanels,
-    Tabs,
     View,
 } from '@geti/ui';
 
@@ -33,9 +29,9 @@ export const InferenceSetup = ({ model_id, onDone }: InferenceSetupProps) => {
     const { data: model } = $api.useSuspenseQuery('get', '/api/models/{model_id}', {
         params: { query: { uuid: model_id } },
     });
-    const {data: environments} = $api.useSuspenseQuery('get','/api/projects/{project_id}/environments', {
+    const { data: environments } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/environments', {
         params: { path: { project_id } },
-    })
+    });
 
     const [environmentId, setEnvironmentId] = useState<string | undefined>(environments[0]?.id);
     const [backend, setBackend] = useState<string>(availableBackends[0].id);
@@ -49,30 +45,32 @@ export const InferenceSetup = ({ model_id, onDone }: InferenceSetupProps) => {
 
     const onStart = async () => {
         if (environmentId === undefined) {
-            return
+            return;
         }
-        const { data: environment } = await fetchClient.request("get", "/api/projects/{project_id}/environments/{environment_id}",
+        const { data: environment } = await fetchClient.request(
+            'get',
+            '/api/projects/{project_id}/environments/{environment_id}',
             {
                 params: {
                     path: {
                         environment_id: environmentId,
-                        project_id
-                    }
-                }
+                        project_id,
+                    },
+                },
             }
-        )
+        );
 
         if (environment === undefined) {
-            return
+            return;
         }
 
         onDone({
             backend,
             model,
             task_index: 0,
-            environment: environment,
-        })
-    }
+            environment,
+        });
+    };
 
     return (
         <View>
@@ -89,10 +87,7 @@ export const InferenceSetup = ({ model_id, onDone }: InferenceSetupProps) => {
             </View>
             <Flex justifyContent={'space-between'}>
                 <View>
-                    <BackendSelection
-                        backend={backend}
-                        setBackend={setBackend}
-                    />
+                    <BackendSelection backend={backend} setBackend={setBackend} />
                 </View>
                 <View paddingTop={'size-300'}>
                     <ButtonGroup>
