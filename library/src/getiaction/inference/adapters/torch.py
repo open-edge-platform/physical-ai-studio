@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """Torch runtime adapter for inference."""
@@ -97,28 +97,20 @@ class TorchAdapter(RuntimeAdapter):
             msg = "Model not loaded. Call load() first."
             raise RuntimeError(msg)
 
-        # Extract observation data from inputs dict
-        # Handle both "observation" (lowercase) and "Observation" (uppercase) keys
         if "observation" in inputs:
             obs_data = inputs["observation"]
         elif "Observation" in inputs:
             obs_data = inputs["Observation"]
         else:
-            # If no observation key, assume the entire dict is the observation
             obs_data = inputs
 
-        # Validate obs_data is a dict
         if not isinstance(obs_data, dict):
             msg = f"Expected dict for observation data, got {type(obs_data)}"
             raise TypeError(msg)
 
-        # Reconstruct Observation from numpy dict
         observation = Observation.from_dict(obs_data)
-
-        # Convert numpy arrays to torch tensors and move to device
         observation = observation.to_torch(self.device)
 
-        # Run policy inference
         torch_outputs = self._policy(observation)
         return self._convert_outputs_to_numpy(torch_outputs)
 
