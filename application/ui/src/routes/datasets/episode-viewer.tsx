@@ -4,7 +4,6 @@ import { Disclosure, DisclosurePanel, DisclosureTitle, Flex, View, Well } from '
 
 import { SchemaEpisode, SchemaEpisodeVideo } from '../../api/openapi-spec';
 import EpisodeChart from '../../components/episode-chart/episode-chart';
-import { useProjectEnvironment } from '../../features/projects/use-project-environment';
 import { RobotViewer } from '../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 import { TimelineControls } from './timeline-controls';
@@ -52,24 +51,24 @@ interface EpisodeViewerProps {
 }
 
 export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
-    const environment = useProjectEnvironment();
     const player = usePlayer(episode);
     const frameIndex = Math.floor(player.time * episode.fps);
+    const cameras = Object.keys(episode.videos).map((m) => m.replace("observation.images.", ""))
 
     return (
         <RobotModelsProvider>
             <Flex direction={'column'} height={'100%'} position={'relative'}>
                 <Flex direction={'row'} flex gap={'size-100'}>
                     <Flex direction={'column'} alignContent={'start'} flex gap={'size-30'}>
-                        {environment.cameras!.map((camera) => (
+                        {cameras.map((camera) => (
                             <VideoView
-                                key={camera.name}
+                                key={camera}
                                 aspectRatio={640 / 480}
-                                cameraName={camera.name}
+                                cameraName={camera}
                                 episodeIndex={episode.episode_index}
                                 dataset_id={dataset_id}
                                 time={player.time}
-                                episodeVideo={episode.videos[`observation.images.${camera.name}`]}
+                                episodeVideo={episode.videos[`observation.images.${camera}`]}
                             />
                         ))}
                     </Flex>

@@ -12,18 +12,16 @@ import {
     IllustratedMessage,
     Item,
     Loading,
+    Picker,
     Section,
     TextField,
     View,
 } from '@geti/ui';
 
-import { $api } from '../../../api/client';
+import { $api, fetchClient } from '../../../api/client';
 import { SchemaDatasetOutput, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
-import { useSettings } from '../../../components/settings/use-settings';
 import { paths } from '../../../router';
-import { makeNameSafeForPath } from '../../../routes/datasets/record/utils';
-import { useProject } from '../../projects/use-project';
-import { useProjectEnvironment } from '../../projects/use-project-environment';
+import { useProjectId } from '../../projects/use-project';
 
 interface TeleoperationSetupProps {
     onDone: (config: SchemaTeleoperationConfig | undefined) => void;
@@ -31,43 +29,60 @@ interface TeleoperationSetupProps {
 }
 
 export const TeleoperationSetup = ({ dataset, onDone }: TeleoperationSetupProps) => {
-    const project = useProject();
+    const { project_id } = useProjectId();
     const { data: projectTasks } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/tasks', {
         params: {
-            path: { project_id: project.id! },
+            path: { project_id },
         },
     });
 
-    const environment = useProjectEnvironment();
-
-    const { geti_action_dataset_path } = useSettings();
-
     const initialTask = Object.values(projectTasks).flat()[0];
 
-    const [config, setConfig] = useState<SchemaTeleoperationConfig>({
-        task: initialTask,
-        dataset,
-        environment,
-    });
-
-    const updateDataset = (name: string) => {
-        setConfig((c) => ({
-            ...c,
-            dataset: {
-                ...c.dataset,
-                name,
-                path: `${geti_action_dataset_path}/${makeNameSafeForPath(name)}`,
+    const { data: environments } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/environments', {
+        params: {
+            path: {
+                project_id,
             },
-        }));
-    };
+        },
+    });
+    const [environmentId, setEnvironmentId] = useState<string | undefined>(environments[0]?.id);
+    const [task, setTask] = useState<string>(initialTask);
 
     const isValid = () => {
-        const datasetNameValid = config.dataset !== null;
-        const taskValid = config.task !== '';
-        return datasetNameValid && taskValid;
+        const taskValid = task !== '';
+        return taskValid && environmentId !== undefined;
     };
 
-    if (environment === undefined) {
+    const onCancel = () => {
+        onDone(undefined);
+    }
+
+    const onStart = async () => {
+        const { data: environment } = await fetchClient.request(
+            'get',
+            '/api/projects/{project_id}/environments/{environment_id}',
+            {
+                params: {
+                    path: {
+                        environment_id: environmentId!,
+                        project_id,
+                    },
+                },
+            }
+        );
+
+        if (environment === undefined) {
+            return;
+        }
+
+        onDone({
+            dataset,
+            task,
+            environment,
+        });
+    }
+
+    if (environmentId === undefined) {
         return (
             <Flex margin={'size-200'} direction={'column'} flex>
                 <IllustratedMessage>
@@ -86,22 +101,30 @@ export const TeleoperationSetup = ({ dataset, onDone }: TeleoperationSetupProps)
     return (
         <View>
             <TextField
-                validationState={config.dataset.name == '' ? 'invalid' : 'valid'}
+                validationState={dataset.name == '' ? 'invalid' : 'valid'}
                 isRequired
                 label='Dataset Name'
                 width={'100%'}
-                value={config.dataset.name}
+                value={dataset.name}
                 isDisabled={true}
-                onChange={updateDataset}
             />
+            <Picker
+                items={environments}
+                selectedKey={environmentId}
+                label='Environment'
+                onSelectionChange={(m) => setEnvironmentId(m === null ? undefined : m.toString())}
+                flex={1}
+            >
+                {(item) => <Item key={item.id}>{item.name}</Item>}
+            </Picker>
             <ComboBox
-                validationState={config.task === '' ? 'invalid' : 'valid'}
+                validationState={task === '' ? 'invalid' : 'valid'}
                 isRequired
                 width={'100%'}
                 label='Task'
                 allowsCustomValue
-                inputValue={config.task}
-                onInputChange={(task) => setConfig((c) => ({ ...c, task }))}
+                inputValue={task}
+                onInputChange={setTask}
             >
                 {Object.keys(projectTasks).map((datasetName) => (
                     <Section key={datasetName} title={datasetName}>
@@ -114,10 +137,10 @@ export const TeleoperationSetup = ({ dataset, onDone }: TeleoperationSetupProps)
             <Flex justifyContent={'end'}>
                 <View paddingTop={'size-300'}>
                     <ButtonGroup>
-                        <Button onPress={() => onDone(undefined)} variant='secondary'>
+                        <Button onPress={onCancel} variant='secondary'>
                             Cancel
                         </Button>
-                        <Button onPress={() => onDone(config)} isDisabled={!isValid()}>
+                        <Button onPress={onStart} isDisabled={!isValid()}>
                             Start
                         </Button>
                     </ButtonGroup>

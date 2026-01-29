@@ -34,7 +34,6 @@ class CameraFrameProcessor:
     @staticmethod
     def process(frame: np.ndarray) -> np.ndarray:
         """Post process camera frame."""
-        logger.info("processing frame...")
         return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
 
