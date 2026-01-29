@@ -58,7 +58,7 @@ class SO101Follower(RobotClient):
         """Get Robot features. Returns list with joints."""
         return list(self.robot.action_features.keys())
 
-    async def read_state(self, *, normalize: bool = True) -> dict:
+    async def read_state(self, *, normalize: bool = True) -> dict:  # noqa: ARG002
         """Read current robot state. Returns state dict with timestamp."""
         try:
             observation = self.robot.get_observation()

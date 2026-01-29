@@ -1,6 +1,3 @@
-from workers.camera_worker import create_frames_source_from_camera
-from robots.robot_client import RobotClient
-from robots.utils import get_robot_client
 import asyncio
 import base64
 import time
@@ -18,9 +15,12 @@ from lerobot.utils.robot_utils import precise_sleep
 from loguru import logger
 from pydantic import BaseModel
 
+from robots.robot_client import RobotClient
+from robots.utils import get_robot_client
 from schemas import InferenceConfig
-from utils.robot import RobotConnectionManager
 from services.robot_calibration_service import RobotCalibrationService
+from utils.robot import RobotConnectionManager
+from workers.camera_worker import create_frames_source_from_camera
 
 from .base import BaseThreadWorker
 
@@ -44,7 +44,6 @@ class InferenceState(BaseModel):
 class InferenceWorker(BaseThreadWorker):
     ROLE: str = "InferenceWorker"
 
-
     robot_manager: RobotConnectionManager
     calibration_service: RobotCalibrationService
 
@@ -56,13 +55,14 @@ class InferenceWorker(BaseThreadWorker):
     action_keys: list[str] = []
     camera_keys: list[str] = []
 
-
-    def __init__(self,
-                 stop_event: EventClass,
-                 queue: Queue,
-                 config: InferenceConfig,
-                 calibration_service: RobotCalibrationService,
-                 robot_manager: RobotConnectionManager):
+    def __init__(
+        self,
+        stop_event: EventClass,
+        queue: Queue,
+        config: InferenceConfig,
+        calibration_service: RobotCalibrationService,
+        robot_manager: RobotConnectionManager,
+    ):
         super().__init__(stop_event=stop_event)
         self.config = config
         self.queue = queue
@@ -97,7 +97,7 @@ class InferenceWorker(BaseThreadWorker):
             camera.name: create_frames_source_from_camera(camera) for camera in self.config.environment.cameras
         }
         for camera in self.cameras.values():
-            #camera.attach_processor(CameraFrameProcessor()) # TODO Not working. Fix in framesource
+            # camera.attach_processor(CameraFrameProcessor()) # TODO Not working. Fix in framesource
             camera.connect()
 
         await self.follower.connect()
@@ -116,9 +116,7 @@ class InferenceWorker(BaseThreadWorker):
                 policy.export(export_dir, backend=self.config.backend)
 
             self.model = InferenceModel(
-                export_dir=export_dir,
-                policy_name=self.config.model.policy,
-                backend=self.config.backend
+                export_dir=export_dir, policy_name=self.config.model.policy, backend=self.config.backend
             )
 
             self.follower.set_joints_state(SO_101_REST_POSITION)
@@ -174,18 +172,18 @@ class InferenceWorker(BaseThreadWorker):
                 if self.state.is_running:
                     # TODO: Implement for new environment
                     pass
-                    #observation = self._build_geti_action_observation(lerobot_obs)
-                    #if not action_queue:
+                    # observation = self._build_geti_action_observation(lerobot_obs)
+                    # if not action_queue:
                     #    action_queue = self.model.select_action(observation)[0].tolist()
-                    #action = action_queue.pop(0)
+                    # action = action_queue.pop(0)
 
                     # print(observation)
-                    #formatted_actions = dict(zip(self.action_keys, action))
-                    #self.robot.send_action(formatted_actions)
-                    #self._report_action(formatted_actions, lerobot_obs, timestamp)
+                    # formatted_actions = dict(zip(self.action_keys, action))
+                    # self.robot.send_action(formatted_actions)
+                    # self._report_action(formatted_actions, lerobot_obs, timestamp)
                 else:
                     pass
-                    #self._report_action({}, lerobot_obs, timestamp)
+                    # self._report_action({}, lerobot_obs, timestamp)
                 dt_s = time.perf_counter() - start_loop_t
                 wait_time = 1 / 30 - dt_s
 

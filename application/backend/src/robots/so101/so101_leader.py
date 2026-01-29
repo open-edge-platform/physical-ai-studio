@@ -31,7 +31,7 @@ class SO101Leader(RobotClient):
         """Send ping command. Returns event dict with timestamp."""
         return self._create_event("pong")
 
-    async def set_joints_state(self, joints: dict) -> dict:
+    async def set_joints_state(self, joints: dict) -> dict:  # noqa: ARG002
         """Set joint positions. Returns event dict with timestamp."""
         raise Exception("Not implemented for leaders")
 
@@ -53,7 +53,7 @@ class SO101Leader(RobotClient):
         """Get Robot features. Returns list with joints."""
         return list(self.robot.action_features.keys())
 
-    async def read_state(self, *, normalize: bool = True) -> dict:
+    async def read_state(self, *, normalize: bool = True) -> dict:  # noqa: ARG002
         """Read current robot state. Returns state dict with timestamp."""
         try:
             observation = self.robot.get_action()

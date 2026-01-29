@@ -1,14 +1,14 @@
-from robots.utils import get_robot_client
 import asyncio
 import time
 
 from loguru import logger
 
+from robots.robot_client import RobotClient
+from robots.utils import get_robot_client
 from schemas.robot import Robot
-from services.robot_calibration_service import RobotCalibrationService, find_robot_port
+from services.robot_calibration_service import RobotCalibrationService
 from utils.robot import RobotConnectionManager
 from workers.robots.commands import handle_command, parse_command
-from robots.robot_client import RobotClient
 from workers.transport.worker_transport import WorkerTransport
 from workers.transport_worker import TransportWorker, WorkerState, WorkerStatus
 
@@ -124,5 +124,3 @@ class RobotWorker(TransportWorker):
         """Graceful shutdown."""
         logger.info(f"Shutting down robot worker: {self.robot.id}")
         await super().shutdown()
-
-

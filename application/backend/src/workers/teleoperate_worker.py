@@ -1,35 +1,34 @@
-from frame_source.video_capture_base import VideoCaptureBase
-from robots.utils import get_robot_client
-from robots.robot_client import RobotClient
-from workers.camera_worker import create_frames_source_from_camera
 import asyncio
 import base64
 import copy
 import shutil
 import time
 import uuid
-from pathlib import Path
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
-
+from pathlib import Path
 
 import cv2
 import numpy as np
+from frame_source.video_capture_base import VideoCaptureBase
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.utils.robot_utils import precise_sleep
 from loguru import logger
 from pydantic import BaseModel
 
-
+from robots.robot_client import RobotClient
+from robots.utils import get_robot_client
 from schemas import TeleoperationConfig
 from schemas.dataset import Episode, EpisodeVideo
+from services.robot_calibration_service import RobotCalibrationService
 from utils.dataset import check_repository_exists, load_local_lerobot_dataset
 from utils.robot import RobotConnectionManager
-from services.robot_calibration_service import RobotCalibrationService
+from workers.camera_worker import create_frames_source_from_camera
 
 from .base import BaseThreadWorker
 
 OBSERVATION_IMAGES_PREFIX = "observation.images."
+
 
 class CameraFrameProcessor:
     @staticmethod
@@ -118,7 +117,7 @@ class TeleoperateWorker(BaseThreadWorker):
             camera.name: create_frames_source_from_camera(camera) for camera in self.config.environment.cameras
         }
         for camera in self.cameras.values():
-            #camera.attach_processor(CameraFrameProcessor()) # TODO Not working. Fix in framesource
+            # camera.attach_processor(CameraFrameProcessor()) # TODO Not working. Fix in framesource
             camera.connect()
 
         await self.follower.connect()
@@ -200,8 +199,9 @@ class TeleoperateWorker(BaseThreadWorker):
                 "data": {
                     "actions": {key: observation.get(key, 0) for key in self.action_keys},
                     "cameras": {
-                        key.removeprefix(OBSERVATION_IMAGES_PREFIX): self._base_64_encode_observation(cv2.cvtColor(observation[key], cv2.COLOR_RGB2BGR))
-                        #key.removeprefix(OBSERVATION_IMAGES_PREFIX): self._base_64_encode_observation(observation[key])
+                        key.removeprefix(OBSERVATION_IMAGES_PREFIX): self._base_64_encode_observation(
+                            cv2.cvtColor(observation[key], cv2.COLOR_RGB2BGR)
+                        )
                         for key in self.camera_keys
                         if key in observation
                     },
@@ -232,29 +232,13 @@ class TeleoperateWorker(BaseThreadWorker):
             while not self.should_stop() and not self.events["stop"].is_set():
                 start_loop_t = time.perf_counter()
                 if self.events["start"].is_set():
-                    logger.info("start")
-                    self.events["start"].clear()
-                    self.state.is_recording = True
-                    self._report_state()
+                    self._on_start()
 
                 if self.events["save"].is_set():
-                    logger.info("save")
-                    self.events["save"].clear()
-                    precise_sleep(0.3)  # TODO check if neccesary
-                    new_episode = self._build_episode_from_buffer(self.dataset.meta.latest_episode)
-                    if new_episode is not None:
-                        self._report_episode(new_episode)
-                    self.dataset.save_episode()
-                    self.state.is_recording = False
-                    self._report_state()
+                    self._on_save()
 
                 if self.events["reset"].is_set():
-                    logger.info("reset")
-                    self.events["reset"].clear()
-                    precise_sleep(0.3)  # TODO check if neccesary
-                    self.dataset.clear_episode_buffer()
-                    self.state.is_recording = False
-                    self._report_state()
+                    self._on_reset()
 
                 # Trossen notes:
                 # Add force feedback
@@ -286,6 +270,30 @@ class TeleoperateWorker(BaseThreadWorker):
             self.error = True
             self._report_error(e)
 
+    def _on_start(self) -> None:
+        logger.info("start")
+        self.events["start"].clear()
+        self.state.is_recording = True
+        self._report_state()
+
+    def _on_save(self) -> None:
+        logger.info("save")
+        self.events["save"].clear()
+        precise_sleep(0.3)  # TODO check if neccesary
+        new_episode = self._build_episode_from_buffer(self.dataset.meta.latest_episode)
+        if new_episode is not None:
+            self._report_episode(new_episode)
+        self.dataset.save_episode()
+        self.state.is_recording = False
+        self._report_state()
+
+    def _on_reset(self) -> None:
+        logger.info("reset")
+        self.events["reset"].clear()
+        precise_sleep(0.3)  # TODO check if neccesary
+        self.dataset.clear_episode_buffer()
+        self.state.is_recording = False
+        self._report_state()
 
     def teardown(self) -> None:
         """Disconnect robots and close queue."""

@@ -6,7 +6,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from loguru import logger
 
-from api.dependencies import get_dataset_service, get_scheduler_ws,  RobotConnectionManagerDep, RobotCalibrationServiceDep
+from api.dependencies import (
+    RobotCalibrationServiceDep,
+    RobotConnectionManagerDep,
+    get_dataset_service,
+    get_scheduler_ws,
+)
 from core.scheduler import Scheduler
 from exceptions import ResourceNotFoundError
 from schemas import InferenceConfig, TeleoperationConfig

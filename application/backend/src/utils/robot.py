@@ -1,14 +1,8 @@
-import asyncio
-
-from lerobot.cameras import CameraConfig
-from lerobot.robots.config import RobotConfig as LeRobotConfig
-from lerobot.robots.so101_follower import SO101Follower, SO101FollowerConfig
-from lerobot.teleoperators.config import TeleoperatorConfig as LeRobotTeleoperatorConfig
 from loguru import logger
 from serial.tools import list_ports
 from serial.tools.list_ports_common import ListPortInfo
 
-from schemas import RobotConfig, RobotPortInfo
+from schemas import RobotPortInfo
 
 available_ports = list_ports.comports()
 
@@ -87,28 +81,28 @@ async def find_robots() -> list[RobotPortInfo]:
     return manager.robots
 
 
-async def identify_robot_visually(robot: RobotPortInfo, joint: str | None = None) -> None:
+async def identify_robot_visually(_robot: RobotPortInfo, _joint: str | None = None) -> None:
     """Identify the robot by moving the joint from current to min to max to initial position"""
     raise Exception("Not implemented right now.")
-    #if robot.robot_type != "so-100":
+    # if robot.robot_type != "so-100":
     #    raise ValueError(f"Trying to identify unsupported robot: {robot.robot_type}")
 
-    #if joint is None:
+    # if joint is None:
     #    joint = "gripper"
 
     ## Assume follower since leader shares same FeetechMotorBus layout
-    #robot = SO101Follower(SO101FollowerConfig(port=robot.port))
-    #robot.bus.connect()
+    # robot = SO101Follower(SO101FollowerConfig(port=robot.port))
+    # robot.bus.connect()
 
-    #PRESENT_POSITION_KEY = "Present_Position"
-    #GOAL_POSITION_KEY = "Goal_Position"
+    # PRESENT_POSITION_KEY = "Present_Position"
+    # GOAL_POSITION_KEY = "Goal_Position"
 
-    #current_position = robot.bus.sync_read(PRESENT_POSITION_KEY, normalize=False)
-    #gripper_calibration = robot.bus.read_calibration()[joint]
-    #robot.bus.write(GOAL_POSITION_KEY, joint, gripper_calibration.range_min, normalize=False)
-    #await asyncio.sleep(1)
-    #robot.bus.write(GOAL_POSITION_KEY, joint, gripper_calibration.range_max, normalize=False)
-    #await asyncio.sleep(1)
-    #robot.bus.write(GOAL_POSITION_KEY, joint, current_position[joint], normalize=False)
-    #await asyncio.sleep(1)
-    #robot.bus.disconnect()
+    # current_position = robot.bus.sync_read(PRESENT_POSITION_KEY, normalize=False)
+    # gripper_calibration = robot.bus.read_calibration()[joint]
+    # robot.bus.write(GOAL_POSITION_KEY, joint, gripper_calibration.range_min, normalize=False)
+    # await asyncio.sleep(1)
+    # robot.bus.write(GOAL_POSITION_KEY, joint, gripper_calibration.range_max, normalize=False)
+    # await asyncio.sleep(1)
+    # robot.bus.write(GOAL_POSITION_KEY, joint, current_position[joint], normalize=False)
+    # await asyncio.sleep(1)
+    # robot.bus.disconnect()

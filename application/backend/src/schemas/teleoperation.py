@@ -1,8 +1,8 @@
 from pydantic import BaseModel
 
 from .dataset import Dataset
-from .model import Model
 from .environment import EnvironmentWithRelations
+from .model import Model
 
 
 class TeleoperationConfig(BaseModel):

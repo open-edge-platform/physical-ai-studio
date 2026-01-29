@@ -1,17 +1,17 @@
 from loguru import logger
 
-from utils.robot import RobotConnectionManager
 from exceptions import ResourceNotFoundError, ResourceType
 from robots.robot_client import RobotClient
 from robots.so101.so101_follower import SO101Follower
 from robots.so101.so101_leader import SO101Leader
 from schemas.robot import Robot, RobotType
 from services.robot_calibration_service import RobotCalibrationService, find_robot_port
+from utils.robot import RobotConnectionManager
 
 
-async def get_robot_client(robot: Robot,
-                           robot_manager: RobotConnectionManager,
-                           _calibration_service: RobotCalibrationService) -> RobotClient:
+async def get_robot_client(
+    robot: Robot, robot_manager: RobotConnectionManager, _calibration_service: RobotCalibrationService
+) -> RobotClient:
     """
     Get RobotClient based on robot-type.
 

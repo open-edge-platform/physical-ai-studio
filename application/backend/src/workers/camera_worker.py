@@ -1,4 +1,3 @@
-from frame_source.video_capture_base import VideoCaptureBase
 import asyncio
 import time
 from collections.abc import Awaitable, Callable
@@ -7,6 +6,7 @@ import cv2
 import numpy as np
 from fastapi.websockets import WebSocketDisconnect
 from frame_source import FrameSourceFactory
+from frame_source.video_capture_base import VideoCaptureBase
 from loguru import logger
 from tenacity import RetryError, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
