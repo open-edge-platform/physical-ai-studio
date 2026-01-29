@@ -1,6 +1,6 @@
 from frame_source.video_capture_base import VideoCaptureBase
-from workers.robots.robot_worker import get_robot_client
-from workers.robots.robot_client import RobotClient
+from robots.utils import get_robot_client
+from robots.robot_client import RobotClient
 from workers.camera_worker import create_frames_source_from_camera
 import asyncio
 import base64
@@ -24,9 +24,7 @@ from pydantic import BaseModel
 from schemas import TeleoperationConfig
 from schemas.dataset import Episode, EpisodeVideo
 from utils.dataset import check_repository_exists, load_local_lerobot_dataset
-from utils.robot import (
-    RobotConnectionManager,
-)
+from utils.robot import RobotConnectionManager
 from services.robot_calibration_service import RobotCalibrationService
 
 from .base import BaseThreadWorker

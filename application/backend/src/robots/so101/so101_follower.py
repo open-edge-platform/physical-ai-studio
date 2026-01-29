@@ -1,27 +1,30 @@
-from lerobot.teleoperators.so101_leader import SO101Leader as LeSO101Leader, SO101LeaderConfig
-from schemas import Robot
-from datetime import datetime
+from lerobot.robots.so101_follower import SO101Follower as LeSO101Follower
+from lerobot.robots.so101_follower import SO101FollowerConfig
 from loguru import logger
 
-from workers.robots.robot_client import RobotClient
+from robots.robot_client import RobotClient
 
 
-class SO101Leader(RobotClient):
-    robot: LeSO101Leader
-    name = "so101_leader"
-    is_controlled: bool = False
+class SO101Follower(RobotClient):
+    robot: LeSO101Follower
+    name = "so101_follower"
 
-    def __init__(self, config: SO101LeaderConfig):
-        self.robot = LeSO101Leader(config)
+    def __init__(self, port: str, id: str):
+        config = SO101FollowerConfig(port=port, id=id)
+        self.robot = LeSO101Follower(config)
+        self.is_controlled = False
+
+    async def is_connected(self) -> bool:
+        return self.robot.is_connected
 
     async def connect(self) -> None:
         """Connect to the robot."""
-        logger.info(f"Connecting to SO101Leader on port {self.robot.config.port}")
+        logger.info(f"Connecting to SO101Follower on port {self.robot.config.port}")
         self.robot.connect()
 
     async def disconnect(self) -> None:
         """Disconnect from the robot."""
-        logger.info(f"Disconnecting to SO101Leader on port {self.robot.config.port}")
+        logger.info(f"Disconnecting to SO101Follower on port {self.robot.config.port}")
         self.robot.disconnect()
 
     async def ping(self) -> dict:
@@ -30,7 +33,12 @@ class SO101Leader(RobotClient):
 
     async def set_joints_state(self, joints: dict) -> dict:
         """Set joint positions. Returns event dict with timestamp."""
-        raise Exception("Not implemented for leaders")
+        action = {f"{key}.pos": value for key, value in joints.items()}
+        self.robot.send_action(action)
+        return self._create_event(
+            "joints_state_was_set",
+            joints=joints,
+        )
 
     async def enable_torque(self) -> dict:
         """Enable torque. Returns event dict with timestamp."""
@@ -53,8 +61,9 @@ class SO101Leader(RobotClient):
     async def read_state(self, *, normalize: bool = True) -> dict:
         """Read current robot state. Returns state dict with timestamp."""
         try:
-            observation = self.robot.get_action()
+            observation = self.robot.get_observation()
             state = {key.removesuffix(".pos"): value for key, value in observation.items()}
+
             return self._create_event(
                 "state_was_updated",
                 state=state,

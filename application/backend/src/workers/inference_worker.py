@@ -1,3 +1,6 @@
+from workers.camera_worker import create_frames_source_from_camera
+from robots.robot_client import RobotClient
+from robots.utils import get_robot_client
 import asyncio
 import base64
 import time
@@ -11,15 +14,13 @@ import torch
 from getiaction.data import Observation
 from getiaction.inference import InferenceModel
 from getiaction.policies import ACT
-from lerobot.robots.utils import make_robot_from_config
 from lerobot.utils.robot_utils import precise_sleep
 from loguru import logger
 from pydantic import BaseModel
 
 from schemas import InferenceConfig
-from utils.camera import build_camera_config
-from utils.framesource_bridge import FrameSourceCameraBridge
-from utils.robot import make_lerobot_robot_config_from_robot
+from utils.robot import RobotConnectionManager
+from services.robot_calibration_service import RobotCalibrationService
 
 from .base import BaseThreadWorker
 
@@ -43,18 +44,31 @@ class InferenceState(BaseModel):
 class InferenceWorker(BaseThreadWorker):
     ROLE: str = "InferenceWorker"
 
+
+    robot_manager: RobotConnectionManager
+    calibration_service: RobotCalibrationService
+
     events: dict[str, EventClass]
     queue: Queue
     state: InferenceState
 
+    follower: RobotClient
     action_keys: list[str] = []
     camera_keys: list[str] = []
 
-    def __init__(self, stop_event: EventClass, queue: Queue, config: InferenceConfig):
+
+    def __init__(self,
+                 stop_event: EventClass,
+                 queue: Queue,
+                 config: InferenceConfig,
+                 calibration_service: RobotCalibrationService,
+                 robot_manager: RobotConnectionManager):
         super().__init__(stop_event=stop_event)
         self.config = config
         self.queue = queue
         self.state = InferenceState()
+        self.calibration_service = calibration_service
+        self.robot_manager = robot_manager
         self.events = {
             "stop": Event(),
             "start": Event(),
@@ -74,38 +88,43 @@ class InferenceWorker(BaseThreadWorker):
         """Stop inference and teardown."""
         self.events["disconnect"].set()
 
+    async def setup_environment(self) -> None:
+        """Setup environment."""
+
+        robot = self.config.environment.robots[0]  # Assume 1 arm for now.
+        self.follower = await get_robot_client(robot.robot, self.robot_manager, self.calibration_service)
+        self.cameras = {
+            camera.name: create_frames_source_from_camera(camera) for camera in self.config.environment.cameras
+        }
+        for camera in self.cameras.values():
+            #camera.attach_processor(CameraFrameProcessor()) # TODO Not working. Fix in framesource
+            camera.connect()
+
+        await self.follower.connect()
+
     def setup(self) -> None:
         """Set up robots, cameras and dataset."""
         logger.info("connect to robot, cameras and setup dataset")
         try:
-            cameras = {camera.name: build_camera_config(camera) for camera in self.config.cameras}
-            follower_config = make_lerobot_robot_config_from_robot(self.config.robot, cameras)
-            # follower_config.max_relative_target = 1
+            asyncio.run(self.setup_environment())
 
             model_path = Path(self.config.model.path)
-            self.robot = make_robot_from_config(follower_config)
             logger.info(f"loading model: {model_path}")
             policy = ACT.load_from_checkpoint(str(model_path / "model.ckpt"))
             export_dir = model_path / "exports" / self.config.backend
             if not export_dir.is_dir():
                 policy.export(export_dir, backend=self.config.backend)
 
-            self.model = InferenceModel(export_dir=export_dir, policy_name="act", backend=self.config.backend)
+            self.model = InferenceModel(
+                export_dir=export_dir,
+                policy_name=self.config.model.policy,
+                backend=self.config.backend
+            )
 
-            # TODO: Define this somehow
-            # LeRobot tends to return the robot arm to root position on reset.
-            # This seems to work better for act when I change the environment mid inference
+            self.follower.set_joints_state(SO_101_REST_POSITION)
 
-            # After setting up the robot, instantiate the FrameSource using a bridge
-            # This can be done directly once switched over to LeRobotDataset V3.
-            # We do need to first instantiate using the lerobot dict because a follower requires cameras.
-            self.robot.cameras = {camera.name: FrameSourceCameraBridge(camera) for camera in self.config.cameras}
-            self.robot.connect()
-
-            self.robot.send_action(SO_101_REST_POSITION)
-
-            self.action_keys = [f"{key}.pos" for key in self.robot.bus.sync_read("Present_Position")]
-            self.camera_keys = [camera.name for camera in self.config.cameras]
+            self.action_keys = self.follower.features()
+            self.camera_keys = list(self.cameras)
 
             self.state.initialized = True
             logger.info("inference all setup, reporting state")
@@ -134,7 +153,7 @@ class InferenceWorker(BaseThreadWorker):
                 if self.events["start"].is_set():
                     logger.info("start")
                     self.events["start"].clear()
-                    self.robot.send_action(SO_101_REST_POSITION)
+                    self.follower.set_joints_state(SO_101_REST_POSITION)
                     precise_sleep(0.3)  # TODO check if neccesary
                     self.state.is_running = True
                     start_episode_t = time.perf_counter()
@@ -149,22 +168,26 @@ class InferenceWorker(BaseThreadWorker):
                     action_queue.clear()
                     self._report_state()
 
-                lerobot_obs = self.robot.get_observation()
+                state = (await self.follower.read_state())["state"]
                 timestamp = time.perf_counter() - start_episode_t
+                logger.info(f"{timestamp}, {state}")
                 if self.state.is_running:
-                    observation = self._build_geti_action_observation(lerobot_obs)
-                    if not action_queue:
-                        action_queue = self.model.select_action(observation)[0].tolist()
-                    action = action_queue.pop(0)
+                    # TODO: Implement for new environment
+                    pass
+                    #observation = self._build_geti_action_observation(lerobot_obs)
+                    #if not action_queue:
+                    #    action_queue = self.model.select_action(observation)[0].tolist()
+                    #action = action_queue.pop(0)
 
                     # print(observation)
-                    formatted_actions = dict(zip(self.action_keys, action))
-                    self.robot.send_action(formatted_actions)
-                    self._report_action(formatted_actions, lerobot_obs, timestamp)
+                    #formatted_actions = dict(zip(self.action_keys, action))
+                    #self.robot.send_action(formatted_actions)
+                    #self._report_action(formatted_actions, lerobot_obs, timestamp)
                 else:
-                    self._report_action({}, lerobot_obs, timestamp)
+                    pass
+                    #self._report_action({}, lerobot_obs, timestamp)
                 dt_s = time.perf_counter() - start_loop_t
-                wait_time = 1 / self.config.fps - dt_s
+                wait_time = 1 / 30 - dt_s
 
                 precise_sleep(wait_time)
         except Exception as e:
@@ -172,8 +195,8 @@ class InferenceWorker(BaseThreadWorker):
 
     def teardown(self) -> None:
         """Disconnect robots and close queue."""
-        if self.robot.is_connected:
-            self.robot.disconnect()
+        if self.follower.is_connected:
+            asyncio.run(self.follower.disconnect())
 
         # Wait for .5 seconds before closing queue to allow messages thru
         asyncio.run(asyncio.sleep(0.5))

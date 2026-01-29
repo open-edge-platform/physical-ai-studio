@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, TypeAdapter, ValidationError, field_valid
 
 from exceptions import GetiBaseException
 from workers.robots.calibratable_client import Calibratable
-from workers.robots.robot_client import RobotClient
+from robots.robot_client import RobotClient
 
 
 class UnknownCommandError(GetiBaseException):

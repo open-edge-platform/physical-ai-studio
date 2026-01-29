@@ -89,7 +89,7 @@ export const InferenceViewer = ({ config }: InferenceViewerProps) => {
                 </Flex>
                 <Flex direction={'row'} flex gap={'size-100'} margin='size-200'>
                     <Flex direction={'column'} alignContent={'start'} flex gap={'size-30'}>
-                        {config.cameras.map((camera) => (
+                        {config.environment.cameras!.map((camera) => (
                             <CameraView key={camera.id} camera={camera} observation={observation} />
                         ))}
                     </Flex>
