@@ -7,7 +7,11 @@
 
 from typing import Any
 
-import lightning
+try:
+    import lightning
+except ImportError as e:
+    msg = "Lightning not installed. Trainer requires Lightning.\nInstall with: pip install getiaction[train]"
+    raise ImportError(msg) from e
 
 from getiaction.train.callbacks import PolicyDatasetInteraction
 

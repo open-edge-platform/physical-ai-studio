@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 
@@ -10,9 +10,14 @@ from dataclasses import fields
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import torch
-from lightning.pytorch import LightningDataModule
-from torch.utils.data import DataLoader, Dataset
+
+try:
+    import torch
+    from lightning.pytorch import LightningDataModule
+    from torch.utils.data import DataLoader, Dataset
+except ImportError as e:
+    msg = "DataModule requires PyTorch and Lightning. Install with: pip install getiaction[train]"
+    raise ImportError(msg) from e
 
 from getiaction.data.gym import GymDataset
 from getiaction.data.observation import Observation

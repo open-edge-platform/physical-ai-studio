@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """Lightning accelerator for XPU device."""
@@ -7,9 +7,13 @@ from __future__ import annotations
 
 from typing import Any
 
-import torch
-from lightning.pytorch.accelerators import AcceleratorRegistry
-from lightning.pytorch.accelerators.accelerator import Accelerator
+try:
+    import torch
+    from lightning.pytorch.accelerators import AcceleratorRegistry
+    from lightning.pytorch.accelerators.accelerator import Accelerator
+except ImportError as e:
+    msg = "XPUAccelerator requires PyTorch and Lightning. Install with: pip install getiaction[torch]"
+    raise ImportError(msg) from e
 
 
 class XPUAccelerator(Accelerator):

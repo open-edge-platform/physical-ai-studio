@@ -1,7 +1,9 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Devices managing utilities for getiaction."""
+"""Device utilities - requires getiaction[torch]."""
+
+from __future__ import annotations
 
 from .utils import (
     get_available_device,

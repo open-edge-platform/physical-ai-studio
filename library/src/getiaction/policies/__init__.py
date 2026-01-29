@@ -1,7 +1,7 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Action trainer policies."""
+"""Policy implementations - requires getiaction[train]."""
 
 from __future__ import annotations
 

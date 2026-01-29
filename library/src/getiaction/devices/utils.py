@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """Device detection and management utilities.
@@ -14,7 +14,11 @@ from __future__ import annotations
 import logging
 from typing import Literal
 
-import torch
+try:
+    import torch
+except ImportError as e:
+    msg = "PyTorch not installed. Device utilities require PyTorch.\nInstall with: pip install getiaction[torch]"
+    raise ImportError(msg) from e
 
 logger = logging.getLogger(__name__)
 
