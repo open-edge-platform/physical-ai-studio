@@ -196,7 +196,7 @@ class TeleoperateWorker(BaseThreadWorker):
             {
                 "event": "observations",
                 "data": {
-                    "actions": {key: observation.get(key, 0) for key in self.action_keys},
+                    "actions": {key: observation["action"][index] for index, key in enumerate(self.action_keys)},
                     "cameras": {
                         key.removeprefix(OBSERVATION_IMAGES_PREFIX): self._base_64_encode_observation(
                             cv2.cvtColor(observation[key], cv2.COLOR_RGB2BGR)

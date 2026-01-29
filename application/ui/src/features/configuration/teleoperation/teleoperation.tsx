@@ -89,7 +89,7 @@ export const TeleoperationSetup = ({ dataset, onDone }: TeleoperationSetupProps)
                     <Content>Currently there has not been a environment setup yet.</Content>
                     <Heading>No environment set up yet.</Heading>
                     <View margin={'size-100'}>
-                        <Button variant='accent' href={paths.project.environments.new({ project_id: project.id })}>
+                        <Button variant='accent' href={paths.project.environments.new({ project_id })}>
                             Setup environment
                         </Button>
                     </View>
@@ -128,8 +128,8 @@ export const TeleoperationSetup = ({ dataset, onDone }: TeleoperationSetupProps)
             >
                 {Object.keys(projectTasks).map((datasetName) => (
                     <Section key={datasetName} title={datasetName}>
-                        {projectTasks[datasetName].map((task) => (
-                            <Item key={`${datasetName}-${task}`}>{task}</Item>
+                        {projectTasks[datasetName].map((taskName) => (
+                            <Item key={`${datasetName}-${taskName}`}>{taskName}</Item>
                         ))}
                     </Section>
                 ))}
