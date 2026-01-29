@@ -192,6 +192,8 @@ class InferenceModel:
         expected_inputs = set(expected_input_names)
 
         if expected_inputs == {"observation"}:
+            # Return dict with lowercase "observation" key
+            # TorchAdapter will reconstruct Observation object from this dict
             return {"observation": obs_dict}
 
         field_mapping = self._build_field_mapping(obs_dict, expected_inputs)

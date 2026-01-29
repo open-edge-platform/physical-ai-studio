@@ -11,7 +11,14 @@ import pytest
 import torch
 
 from getiaction.export.mixin_export import ExportBackend
-from getiaction.inference.adapters import ONNXAdapter, OpenVINOAdapter, RuntimeAdapter, TorchExportAdapter, TorchAdapter, get_adapter
+from getiaction.inference.adapters import (
+    ONNXAdapter,
+    OpenVINOAdapter,
+    RuntimeAdapter,
+    TorchExportAdapter,
+    TorchAdapter,
+    get_adapter,
+)
 from getiaction.data.observation import Observation
 
 
@@ -176,9 +183,14 @@ class TestTorchAdapter:
 
             adapter.load(model_path)
 
-            with patch("getiaction.inference.adapters.torch.TorchAdapter._convert_outputs_to_numpy",
-                        return_value={"output": np.array([[1.0, 2.0]])}):
-                outputs = adapter.predict({"observation": Observation(images=torch.randn(1, 3, 224, 224), state=torch.randn(1, 2))})
+            with patch(
+                "getiaction.inference.adapters.torch.TorchAdapter._convert_outputs_to_numpy",
+                return_value={"output": np.array([[1.0, 2.0]])},
+            ):
+                # Test with numpy arrays (standard adapter interface)
+                outputs = adapter.predict({
+                    "observation": {"images": np.random.randn(1, 3, 224, 224), "state": np.random.randn(1, 2)}
+                })
                 assert "output" in outputs and isinstance(outputs["output"], np.ndarray)
 
     def test_error_cases(self, tmp_path: Path) -> None:
@@ -189,7 +201,42 @@ class TestTorchAdapter:
             adapter.load(Path("/nonexistent/model.pt"))
 
         with pytest.raises(RuntimeError, match="Model not loaded"):
-            adapter.predict({"input": np.array([1.0])})
+            adapter.predict({"observation": {"state": np.array([1.0])}})
+
+    def test_predict_with_different_key_formats(self, tmp_path: Path) -> None:
+        """Test predict accepts different observation key formats."""
+        model_path = tmp_path / "model.pt"
+        metadata_path = tmp_path / "metadata.yaml"
+        model_path.touch()
+        metadata_path.touch()
+
+        with metadata_path.open("w") as f:
+            f.write("policy_class: getiaction.policies.act.ACT\n")
+
+        mock_model = MagicMock()
+        mock_model.eval.return_value = mock_model
+        mock_model.to.return_value = mock_model
+        mock_model.model.extra_export_args = {"torch": {"output_names": ["output"], "input_names": ["observation"]}}
+
+        with patch("getiaction.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
+            adapter = TorchAdapter(device="cpu")
+            adapter.load(model_path)
+
+            with patch(
+                "getiaction.inference.adapters.torch.TorchAdapter._convert_outputs_to_numpy",
+                return_value={"output": np.array([[1.0, 2.0]])},
+            ):
+                # Test lowercase "observation" key
+                outputs = adapter.predict({"observation": {"state": np.array([[1.0]])}})
+                assert "output" in outputs
+
+                # Test uppercase "Observation" key (legacy compatibility)
+                outputs = adapter.predict({"Observation": {"state": np.array([[1.0]])}})
+                assert "output" in outputs
+
+                # Test direct dict (no observation key wrapper)
+                outputs = adapter.predict({"state": np.array([[1.0]])})
+                assert "output" in outputs
 
     def test_load_failure(self, tmp_path: Path) -> None:
         """Test error handling when torch.load fails."""

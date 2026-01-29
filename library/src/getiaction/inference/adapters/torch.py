@@ -80,29 +80,47 @@ class TorchAdapter(RuntimeAdapter):
             msg = f"Failed to load Torch model from {model_path}: {e}"
             raise RuntimeError(msg) from e
 
-    def predict(self, inputs: dict[str, Observation]) -> dict[str, np.ndarray]:
+    def predict(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         """Run inference using Torch.
 
         Args:
-            inputs: Dictionary mapping input names to inputs
+            inputs: Dictionary mapping input names to numpy arrays
 
         Returns:
             Dictionary mapping output names to numpy arrays
 
         Raises:
-            RuntimeError: If model is not loaded or inference fails
+            RuntimeError: If model is not loaded
+            TypeError: If observation data is not a dict
         """
         if self._policy is None:
             msg = "Model not loaded. Call load() first."
             raise RuntimeError(msg)
 
-        try:
-            torch_outputs = self._policy(inputs["observation"].to(self.device))
-            return self._convert_outputs_to_numpy(torch_outputs)
+        # Extract observation data from inputs dict
+        # Handle both "observation" (lowercase) and "Observation" (uppercase) keys
+        if "observation" in inputs:
+            obs_data = inputs["observation"]
+        elif "Observation" in inputs:
+            obs_data = inputs["Observation"]
+        else:
+            # If no observation key, assume the entire dict is the observation
+            obs_data = inputs
 
-        except Exception as e:
-            msg = f"Inference failed: {e}"
-            raise RuntimeError(msg) from e
+        # Validate obs_data is a dict
+        if not isinstance(obs_data, dict):
+            msg = f"Expected dict for observation data, got {type(obs_data)}"
+            raise TypeError(msg)
+
+        # Reconstruct Observation from numpy dict
+        observation = Observation.from_dict(obs_data)
+
+        # Convert numpy arrays to torch tensors and move to device
+        observation = observation.to_torch(self.device)
+
+        # Run policy inference
+        torch_outputs = self._policy(observation)
+        return self._convert_outputs_to_numpy(torch_outputs)
 
     def _convert_outputs_to_numpy(self, torch_outputs: torch.Tensor | dict | list | tuple) -> dict[str, np.ndarray]:
         """Convert model outputs to numpy format.
