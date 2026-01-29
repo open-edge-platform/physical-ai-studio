@@ -55,7 +55,7 @@ export const RecordingViewer = ({ recordingConfig, addEpisode }: RecordingViewer
             <Flex direction={'column'} height={'100%'} position={'relative'}>
                 <Flex direction={'row'} flex gap={'size-100'}>
                     <Flex direction={'column'} alignContent={'start'} flex gap={'size-30'}>
-                        {recordingConfig.cameras.map((camera) => (
+                        {recordingConfig.environment.cameras!.map((camera) => (
                             <CameraView key={camera.id} camera={camera} observation={observation} />
                         ))}
                     </Flex>

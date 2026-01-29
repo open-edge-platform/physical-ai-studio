@@ -5,7 +5,7 @@ interface BackendSelectionProps {
     setBackend: (backend: string) => void;
 }
 
-const availableBackends = [
+export const availableBackends = [
     { id: 'torch', name: 'Torch' },
     { id: 'openvino', name: 'OpenVINO' },
     { id: 'onnx', name: 'ONNX' },

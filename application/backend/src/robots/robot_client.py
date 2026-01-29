@@ -5,6 +5,13 @@ from datetime import datetime
 class RobotClient(ABC):
     """Abstract interface for robot communication (commands only)."""
 
+    name: str
+
+    @property
+    @abstractmethod
+    async def is_connected(self) -> bool:
+        """Check if robot is connected."""
+
     @abstractmethod
     async def connect(self) -> None:
         """Connect to the robot."""
@@ -32,6 +39,10 @@ class RobotClient(ABC):
     @abstractmethod
     async def read_state(self, *, normalize: bool = True) -> dict:
         """Read current robot state. Returns state dict with timestamp."""
+
+    @abstractmethod
+    def features(self) -> list[str]:
+        """Get Robot features. Returns list with joints."""
 
     @staticmethod
     def _timestamp() -> float:

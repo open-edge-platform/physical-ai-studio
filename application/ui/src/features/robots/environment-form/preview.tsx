@@ -66,6 +66,7 @@ const ActualPreview = () => {
             event.api.addPanel({
                 id: robot.robot_id,
                 params: { title: 'Follower', robot_id: robot.robot_id },
+                title: 'Follower',
                 component: 'follower',
 
                 position: {
@@ -79,6 +80,7 @@ const ActualPreview = () => {
                     id: robot.teleoperator.robot_id,
                     params: { title: 'Leader', robot_id: robot.teleoperator.robot_id },
                     component: 'leader',
+                    title: 'Leader',
 
                     position: {
                         direction: 'right',

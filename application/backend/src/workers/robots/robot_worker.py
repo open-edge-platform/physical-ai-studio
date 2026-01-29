@@ -1,17 +1,14 @@
 import asyncio
 import time
-from pathlib import Path
 
-from lerobot.robots.so101_follower import SO101FollowerConfig
 from loguru import logger
 
-from exceptions import ResourceNotFoundError, ResourceType
+from robots.robot_client import RobotClient
+from robots.utils import get_robot_client
 from schemas.robot import Robot
-from services.robot_calibration_service import RobotCalibrationService, find_robot_port
+from services.robot_calibration_service import RobotCalibrationService
 from utils.robot import RobotConnectionManager
 from workers.robots.commands import handle_command, parse_command
-from workers.robots.feetech_robot_client import FeetechRobotClient
-from workers.robots.robot_client import RobotClient
 from workers.transport.worker_transport import WorkerTransport
 from workers.transport_worker import TransportWorker, WorkerState, WorkerStatus
 
@@ -43,8 +40,7 @@ class RobotWorker(TransportWorker):
         try:
             await self.transport.connect()
 
-            config = await get_robot_config(self.robot, self.robot_manager, self.calibration_service)
-            self.client = FeetechRobotClient(config, self.normalize)
+            self.client = await get_robot_client(self.robot, self.robot_manager, self.calibration_service)
 
             try:
                 await self.client.connect()
@@ -128,32 +124,3 @@ class RobotWorker(TransportWorker):
         """Graceful shutdown."""
         logger.info(f"Shutting down robot worker: {self.robot.id}")
         await super().shutdown()
-
-
-async def get_robot_config(
-    robot: Robot, robot_manager: RobotConnectionManager, calibration_service: RobotCalibrationService
-) -> SO101FollowerConfig:
-    """
-    Load robot configuration with calibration data.
-
-    Args:
-        robot: The robot to configure
-        robot_manager: Service for discovering robot ports
-        calibration_service: Service for loading calibration data
-
-    Returns:
-        SO101FollowerConfig configured with port and calibration
-
-    Raises:
-        ResourceNotFoundError: If robot port cannot be found
-    """
-    port = await find_robot_port(robot_manager, robot)
-    if port is None:
-        raise ResourceNotFoundError(ResourceType.ROBOT, robot.serial_id)
-
-    if robot.active_calibration_id is None:
-        return SO101FollowerConfig(port=port, id="follower")
-
-    calibration = await calibration_service.get_calibration(robot.active_calibration_id)
-
-    return SO101FollowerConfig(port=port, id=str(calibration.id), calibration_dir=Path(calibration.file_path).parent)
