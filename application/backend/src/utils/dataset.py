@@ -13,7 +13,7 @@ from lerobot.utils.constants import HF_LEROBOT_HOME
 from loguru import logger
 
 from exceptions import ResourceInUseError, ResourceType
-from schemas import CameraConfig, Dataset, Episode, EpisodeVideo, LeRobotDatasetInfo, ProjectConfig
+from schemas import Dataset, Episode, EpisodeVideo, LeRobotDatasetInfo
 from settings import get_settings
 
 
@@ -132,37 +132,6 @@ def get_local_repositories(
             print(f"Could not parse local repository: {repo_id}")
 
     return result
-
-
-def camera_config_from_dataset_features(
-    dataset: LeRobotDatasetMetadata,
-) -> list[CameraConfig]:
-    """Build camera configs from existing LeRobotDatasetMetadata features."""
-    return [
-        CameraConfig(
-            name=name.split(".")[-1],
-            width=feature["info"]["video.width"],
-            height=feature["info"]["video.height"],
-            fps=feature["info"]["video.fps"],
-            driver="webcam",
-            use_depth=False,
-            fingerprint="",
-            id=uuid.uuid4(),
-        )
-        for name, feature in dataset.features.items()
-        if feature["dtype"] == "video"
-    ]
-
-
-def build_project_config_from_dataset(dataset: LeRobotDatasetInfo) -> ProjectConfig:
-    """Build Project Config from LeRobotDatasetInfo."""
-    metadata = LeRobotDatasetMetadata(dataset.repo_id, dataset.root)
-    return ProjectConfig(
-        fps=dataset.fps,
-        cameras=camera_config_from_dataset_features(metadata),
-        robot_type=dataset.robot_type,
-        id=uuid.uuid4(),
-    )
 
 
 def build_dataset_from_lerobot_dataset(dataset: LeRobotDatasetInfo, project_id: uuid.UUID) -> Dataset:

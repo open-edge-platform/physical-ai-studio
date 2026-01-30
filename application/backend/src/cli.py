@@ -5,7 +5,16 @@ import sys
 import click
 
 from db import MigrationManager, sync_engine
-from db.schema import CameraConfigDB, DatasetDB, ProjectConfigDB, ProjectDB
+from db.schema import (
+    CalibrationValuesDB,
+    DatasetDB,
+    JobDB,
+    ProjectCameraDB,
+    ProjectDB,
+    ProjectEnvironmentDB,
+    ProjectRobotDB,
+    SnapshotDB,
+)
 from settings import get_settings
 
 settings = get_settings()
@@ -51,9 +60,13 @@ def clean_db() -> None:
     """Remove all data from the database (clean but don't drop tables)."""
     with sync_engine as db:
         db.query(ProjectDB).delete()
-        db.query(ProjectConfigDB).delete()
+        db.query(ProjectRobotDB).delete()
+        db.query(CalibrationValuesDB).delete()
+        db.query(ProjectCameraDB).delete()
+        db.query(ProjectEnvironmentDB).delete()
         db.query(DatasetDB).delete()
-        db.query(CameraConfigDB).delete()
+        db.query(SnapshotDB).delete()
+        db.query(JobDB).delete()
         db.commit()
     click.echo("✓ Database cleaned successfully!")
 

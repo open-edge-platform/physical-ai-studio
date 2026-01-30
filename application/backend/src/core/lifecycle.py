@@ -7,7 +7,6 @@ from loguru import logger
 from services.event_processor import EventProcessor
 from settings import get_settings
 from utils.robot import RobotConnectionManager
-from webrtc.manager import WebRTCManager
 from workers.camera_worker_registry import CameraWorkerRegistry
 from workers.robot_worker_registry import RobotWorkerRegistry
 
@@ -31,9 +30,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     )
 
     logger.info("Starting %s application...", settings.app_name)
-    webrtc_manager = WebRTCManager()
-    app.state.webrtc_manager = webrtc_manager
-
     app_scheduler = Scheduler()
     app_scheduler.start_workers()
     app.state.scheduler = app_scheduler
@@ -48,8 +44,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     # Shutdown
     logger.info("Shutting down %s application...", settings.app_name)
-
-    await webrtc_manager.cleanup()
 
     camera_registry: CameraWorkerRegistry = app.state.camera_registry
     await camera_registry.shutdown_all()
