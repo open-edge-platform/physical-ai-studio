@@ -47,7 +47,7 @@ async def get_lerobot_calibrations() -> list[CalibrationConfig]:
 @router.post("/identify")
 async def identify_robot(robot: Robot, joint: str | None = None) -> None:
     """Visually identify the robot by moving given joint on robot"""
-    if robot.type in { RobotType.SO101_LEADER, RobotType.SO101_FOLLOWER }:
+    if robot.type in {RobotType.SO101_LEADER, RobotType.SO101_FOLLOWER}:
         await identify_so101_robot_visually(robot, joint)
 
     if robot.type in {RobotType.TROSSEN_WIDOWXAI_LEADER, RobotType.TROSSEN_WIDOWXAI_FOLLOWER}:

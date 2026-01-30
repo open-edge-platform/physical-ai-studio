@@ -68,7 +68,7 @@ async def teleoperate_websocket(
                 process.stop()
 
     def to_python_primitive(obj: Any) -> Any:
-        """ Replace numpy values to primitive types. """
+        """Replace numpy values to primitive types."""
         if isinstance(obj, dict):
             return {k: to_python_primitive(v) for k, v in obj.items()}
         if isinstance(obj, list):

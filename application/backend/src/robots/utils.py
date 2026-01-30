@@ -33,14 +33,14 @@ async def get_robot_client(
             raise ResourceNotFoundError(ResourceType.ROBOT, robot.serial_number)
         return SO101Leader(port=port, id=robot.name.lower())
     if robot.type == RobotType.TROSSEN_WIDOWXAI_LEADER:
-        config = NetworkIpRobotConfig(type="leader",
-                                      robot_type=RobotType.TROSSEN_WIDOWXAI_LEADER,
-                                      connection_string=robot.connection_string)
+        config = NetworkIpRobotConfig(
+            type="leader", robot_type=RobotType.TROSSEN_WIDOWXAI_LEADER, connection_string=robot.connection_string
+        )
         return TrossenWidowXAILeader(config=config)
     if robot.type == RobotType.TROSSEN_WIDOWXAI_FOLLOWER:
-        config = NetworkIpRobotConfig(type="follower",
-                                      robot_type=RobotType.TROSSEN_WIDOWXAI_FOLLOWER,
-                                      connection_string=robot.connection_string)
+        config = NetworkIpRobotConfig(
+            type="follower", robot_type=RobotType.TROSSEN_WIDOWXAI_FOLLOWER, connection_string=robot.connection_string
+        )
         return TrossenWidowXAIFollower(config=config)
 
     raise ValueError(f"No implementation for {robot.type}")

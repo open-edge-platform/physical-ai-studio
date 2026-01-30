@@ -16,7 +16,7 @@ async def identify_trossen_robot_visually(robot: Robot) -> None:
         trossen_arm.StandardEndEffector.wxai_v0_leader,
         robot.connection_string,
         True,
-        timeout=5
+        timeout=5,
     )
 
     driver.set_gripper_mode(trossen_arm.Mode.position)

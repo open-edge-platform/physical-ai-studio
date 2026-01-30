@@ -67,5 +67,6 @@ class Robot(ABC, BaseModel):
         },
     )
 
+
 class RobotWithConnectionState(Robot):
     connection_status: Literal["online", "offline", "unknown"] = "unknown"

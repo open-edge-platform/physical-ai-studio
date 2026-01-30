@@ -1,4 +1,3 @@
-
 import numpy as np
 import trossen_arm
 from loguru import logger
@@ -15,7 +14,7 @@ class TrossenWidowXAIFollower(RobotClient):
             trossen_arm.StandardEndEffector.wxai_v0_follower,
             config.connection_string,
             True,
-            timeout=30
+            timeout=30,
         )
         self.driver.set_all_modes(trossen_arm.Mode.position)
 
@@ -142,7 +141,7 @@ class TrossenWidowXAIFollower(RobotClient):
         # eff = [f"{motor}.eff" for motor in self.motor_names.values()]
         return pos + vel
 
-    async def connect(self, calibrate: bool = False) -> None: # noqa: ARG002
+    async def connect(self, calibrate: bool = False) -> None:  # noqa: ARG002
         self.driver.set_all_modes(trossen_arm.Mode.position)
         self.driver.set_all_positions(np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), 2.0, True)
 

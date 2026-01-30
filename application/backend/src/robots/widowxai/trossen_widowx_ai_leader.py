@@ -43,7 +43,7 @@ class TrossenWidowXAILeader(RobotClient):
     async def ping(self) -> dict:
         return self._create_event("pong")
 
-    async def connect(self, calibrate: bool = False) -> None: # noqa: ARG002
+    async def connect(self, calibrate: bool = False) -> None:  # noqa: ARG002
         self.driver.set_all_modes(trossen_arm.Mode.position)
         self.driver.set_all_positions(np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), 2.0, True)
         self.driver.set_all_modes(trossen_arm.Mode.external_effort)
@@ -52,7 +52,6 @@ class TrossenWidowXAILeader(RobotClient):
             0.0,
             False,
         )
-
 
     async def set_joints_state(self, joints: dict) -> dict:  # noqa: ARG002
         raise Exception("Not implemented for leaders")

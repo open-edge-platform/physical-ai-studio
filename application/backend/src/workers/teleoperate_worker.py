@@ -81,9 +81,9 @@ class TeleoperateWorker(BaseThreadWorker):
             "save": Event(),
             "start": Event(),
         }
-        self.dataset : LeRobotDataset | None = None
-        self.leader : RobotClient | None = None
-        self.follower : RobotClient | None = None
+        self.dataset: LeRobotDataset | None = None
+        self.leader: RobotClient | None = None
+        self.follower: RobotClient | None = None
 
     def stop(self) -> None:
         """Stop teleoperation and stop loop."""

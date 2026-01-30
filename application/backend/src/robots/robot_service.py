@@ -50,7 +50,7 @@ class RobotService:
         async with get_async_db_session_ctx() as session:
             repo = ProjectRobotRepository(session, project_id)
 
-            if robot.type in { RobotType.SO101_LEADER, RobotType.SO101_FOLLOWER}:
+            if robot.type in {RobotType.SO101_LEADER, RobotType.SO101_FOLLOWER}:
                 robot.connection_string = ""
 
             return await repo.save(robot)
@@ -60,7 +60,7 @@ class RobotService:
         async with get_async_db_session_ctx() as session:
             repo = ProjectRobotRepository(session, project_id)
 
-            if robot.type in { RobotType.SO101_LEADER, RobotType.SO101_FOLLOWER}:
+            if robot.type in {RobotType.SO101_LEADER, RobotType.SO101_FOLLOWER}:
                 robot.connection_string = ""
 
             return await repo.update(robot, partial_update=robot.model_dump(exclude={"id"}))
