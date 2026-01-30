@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api/record")
 
 
 @router.websocket("/teleoperate/ws")
-async def teleoperate_websocket(
+async def teleoperate_websocket( # noqa: C901
     websocket: WebSocket,
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
     robot_manager: RobotConnectionManagerDep,
