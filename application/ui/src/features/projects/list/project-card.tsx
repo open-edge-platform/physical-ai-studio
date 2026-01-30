@@ -1,4 +1,4 @@
-import { Flex, Heading, Key, Tag, Text, View } from '@geti/ui';
+import { Flex, Heading, Key, Text, View } from '@geti/ui';
 import { clsx } from 'clsx';
 import { NavLink } from 'react-router-dom';
 
