@@ -747,11 +747,11 @@ class Pi0Model(nn.Module):
         Returns:
             Per-sample MSE loss of shape (batch, horizon, action_dim).
         """
-        # Preprocess observation
-        images, image_masks, lang_tokens, lang_masks, state = self._preprocess_observation(observation)
-
         device = actions.device
         batch_size = actions.shape[0]
+
+        # Preprocess observation - move all tensors to target device
+        images, image_masks, lang_tokens, lang_masks, state = self._preprocess_observation(observation, device)
 
         # Sample noise and time if not provided
         if noise is None:
@@ -823,8 +823,8 @@ class Pi0Model(nn.Module):
         if num_steps is None:
             num_steps = self.num_inference_steps
 
-        # Preprocess observation
-        images, image_masks, lang_tokens, lang_masks, state = self._preprocess_observation(observation)
+        # Preprocess observation - move all tensors to target device
+        images, image_masks, lang_tokens, lang_masks, state = self._preprocess_observation(observation, device)
 
         batch_size = state.shape[0]
         action_shape = (batch_size, self.action_horizon, self.max_action_dim)
@@ -843,12 +843,17 @@ class Pi0Model(nn.Module):
         prefix_position_ids = torch.cumsum(prefix_pad.long(), dim=1) - 1
 
         # Get cached prefix
-        (_, _), past_key_values = self.paligemma_with_expert(
+        (_, _), past_key_values_dynamic = self.paligemma_with_expert(
             inputs_embeds=[prefix_emb, None],
             attention_mask=prefix_att_4d,
             position_ids=prefix_position_ids,
             use_cache=True,
         )
+
+        # Convert DynamicCache to tuple format to prevent in-place mutation during denoising.
+        # HuggingFace's DynamicCache extends in-place when passed to forward(), which causes
+        # shape mismatches in the Euler integration loop where we reuse the same prefix cache.
+        past_key_values = past_key_values_dynamic.to_legacy_cache()
 
         # Euler integration: t goes from 1 (noise) to 0 (target)
         # Using for loop instead of while for ONNX/OpenVINO export compatibility
@@ -876,6 +881,9 @@ class Pi0Model(nn.Module):
             prefix_offsets = prefix_pad.sum(dim=-1)[:, None]
             suffix_position_ids = prefix_offsets + torch.cumsum(suffix_pad.long(), dim=1) - 1
 
+            # Use eager attention to avoid SDPA shape constraints with KV cache
+            self.paligemma_with_expert.action_expert.model.config._attn_implementation = "eager"
+
             # Forward (suffix only, using cached prefix KV)
             (_, suffix_out), _ = self.paligemma_with_expert(
                 inputs_embeds=[None, suffix_emb],
@@ -897,30 +905,43 @@ class Pi0Model(nn.Module):
 
         return x_t
 
-    @staticmethod
     def _preprocess_observation(
+        self,
         observation: Mapping[str, Any],
+        device: torch.device | str,
     ) -> tuple[list[torch.Tensor], list[torch.Tensor], torch.Tensor, torch.Tensor, torch.Tensor]:
         """Extract and preprocess observation components.
 
         Args:
             observation: Raw observation dict.
+            device: Target device for tensors.
 
         Returns:
             Tuple of (images, image_masks, lang_tokens, lang_masks, state).
         """
-        # Extract images and masks
-        images = list(observation.get("images", {}).values())
-        image_masks = list(observation.get("image_masks", {}).values())
+        # Extract images and masks, moving to device
+        images_dict = observation.get("images", {})
+        image_masks_dict = observation.get("image_masks", {})
 
-        # Ensure masks are tensors
-        image_masks = [m if isinstance(m, torch.Tensor) else torch.tensor(m, dtype=torch.bool) for m in image_masks]
+        images = [img.to(device) if isinstance(img, torch.Tensor) else img for img in images_dict.values()]
+        image_masks = []
+        for m in image_masks_dict.values():
+            if isinstance(m, torch.Tensor):
+                image_masks.append(m.to(device))
+            else:
+                image_masks.append(torch.tensor(m, dtype=torch.bool, device=device))
 
-        # Extract language
+        # Extract language tokens and masks, moving to device
         lang_tokens = observation.get("tokenized_prompt")
         lang_masks = observation.get("tokenized_prompt_mask")
+        if lang_tokens is not None:
+            lang_tokens = lang_tokens.to(device)
+        if lang_masks is not None:
+            lang_masks = lang_masks.to(device)
 
-        # Extract state
+        # Extract state, moving to device
         state = observation.get("state")
+        if state is not None:
+            state = state.to(device)
 
         return images, image_masks, lang_tokens, lang_masks, state
