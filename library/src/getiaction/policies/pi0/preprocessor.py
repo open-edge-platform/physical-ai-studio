@@ -26,6 +26,8 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import torch
 
+from getiaction.data.observation import ACTION
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
@@ -178,8 +180,16 @@ class Pi0Preprocessor:
         images = {}
         image_masks = {}
 
-        # Find image keys (exclude metadata keys starting with underscore)
-        image_keys = [k for k in batch if "image" in k.lower() and "mask" not in k.lower() and not k.startswith("_")]
+        # Find image keys (exclude metadata keys, masks, and padding indicators)
+        image_keys = [
+            k
+            for k in batch
+            if "image" in k.lower()
+            and "mask" not in k.lower()
+            and "is_pad" not in k.lower()
+            and not k.startswith("_")
+            and not k.startswith("extra.")
+        ]
 
         for key in image_keys:
             img = batch[key]
@@ -210,8 +220,8 @@ class Pi0Preprocessor:
             # Normalize to [-1, 1]
             img = img * 2.0 - 1.0
 
-            # Extract clean name for output
-            clean_name = key.replace("observation.images.", "").replace("observation.", "")
+            # Extract clean name for output - remove any prefix like "observation.images.", "images.", etc.
+            clean_name = key.replace("observation.images.", "").replace("observation.", "").replace("images.", "")
             images[clean_name] = img
             image_masks[clean_name] = torch.ones(img.shape[0], dtype=torch.bool, device=img.device)
 
@@ -262,7 +272,7 @@ class Pi0Preprocessor:
             state: State tensor (B, D) or (B, T, D).
 
         Returns:
-            Processed state tensor.
+            Processed state tensor (B, max_state_dim).
         """
         # Convert to tensor
         if isinstance(state, np.ndarray):
@@ -270,6 +280,11 @@ class Pi0Preprocessor:
 
         # Ensure float
         state = state.float()
+
+        # Squeeze time dimension if T=1 (e.g., [B, 1, D] -> [B, D])
+        batched_with_time_ndim = 3
+        if state.ndim == batched_with_time_ndim and state.shape[1] == 1:
+            state = state.squeeze(1)
 
         # Get original dimension
         orig_dim = state.shape[-1]
@@ -380,12 +395,30 @@ class Pi0Preprocessor:
 
         Returns:
             Tuple of (token_ids, attention_mask).
+
+        Note:
+            We return an all-ones attention mask instead of the actual tokenizer mask.
+            This is critical to prevent NaN propagation in the transformer layers.
+
+            The issue: When using sparse attention masks (e.g., 5 valid tokens out of 48),
+            padding positions have all-False attention masks, causing softmax to produce
+            NaN (since exp(-inf)/0 = NaN). These NaN values then propagate through
+            subsequent transformer layers via the key/value computations, eventually
+            corrupting all positions including the valid action outputs.
+
+            The solution: Use all-ones mask so all positions (including padding) can
+            attend to valid tokens. The padding token embeddings are valid (non-zero,
+            non-NaN), so they won't cause numerical issues. The model learns to handle
+            padding tokens through training, similar to how language models handle them.
         """
         # Handle single string
         if isinstance(text, str):
             text = [text]
 
-        # Tokenize
+        # Use right padding for consistency
+        original_padding_side = self.tokenizer.padding_side
+        self.tokenizer.padding_side = "right"
+
         encoded = self.tokenizer(
             text,
             padding="max_length",
@@ -394,7 +427,12 @@ class Pi0Preprocessor:
             return_tensors="pt",
         )
 
-        return encoded["input_ids"], encoded["attention_mask"].bool()
+        self.tokenizer.padding_side = original_padding_side
+
+        batch_size = encoded["input_ids"].shape[0]
+        all_ones_mask = torch.ones(batch_size, self.max_token_len, dtype=torch.bool)
+
+        return encoded["input_ids"], all_ones_mask
 
 
 @dataclass
@@ -421,24 +459,23 @@ class Pi0Postprocessor:
         """Postprocess model outputs.
 
         Args:
-            outputs: Model output dict with "actions" key.
+            outputs: Model output dict with action key.
 
         Returns:
             Postprocessed outputs with denormalized actions.
         """
         result = dict(outputs)
 
-        if "actions" in result:
-            actions = result["actions"]
+        action_key = ACTION if ACTION in result else "actions" if "actions" in result else None
+        if action_key is not None:
+            actions = result[action_key]
 
-            # Truncate to actual dimension
             actions = actions[..., : self.action_dim]
 
-            # Denormalize
             if self.stats is not None and "actions" in self.stats:
                 actions = self._denormalize(actions, self.stats["actions"])
 
-            result["actions"] = actions
+            result[action_key] = actions
 
         return result
 
