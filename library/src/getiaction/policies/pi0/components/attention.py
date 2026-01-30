@@ -7,8 +7,10 @@
 """Attention utilities for Pi0/Pi0.5 models.
 
 This module provides attention-related utilities including:
-- AdaRMSNorm: Adaptive RMSNorm for Pi0.5 timestep conditioning
 - Attention mask construction utilities
+
+Note: AdaRMSNorm has been moved to gemma.py for consistency with lerobot's
+implementation which requires returning (output, gate) tuple for gated residuals.
 
 Based on OpenPI implementation with PyTorch-only support.
 """
@@ -16,76 +18,6 @@ Based on OpenPI implementation with PyTorch-only support.
 from __future__ import annotations
 
 import torch
-from torch import nn
-
-
-class AdaRMSNorm(nn.Module):
-    """Adaptive RMSNorm for Pi0.5 timestep conditioning.
-
-    Modulates the RMSNorm output based on a conditioning signal (timestep embedding).
-    Used in Pi0.5 to inject flow matching timestep information into the action expert.
-
-    Args:
-        hidden_size: Dimension of the input features.
-        eps: Small constant for numerical stability.
-
-    Example:
-        >>> norm = AdaRMSNorm(hidden_size=1024)
-        >>> x = torch.randn(2, 10, 1024)
-        >>> cond = torch.randn(2, 1024)  # timestep embedding
-        >>> output = norm(x, cond)
-    """
-
-    def __init__(self, hidden_size: int, eps: float = 1e-6) -> None:
-        """Initialize AdaRMSNorm.
-
-        Args:
-            hidden_size: Dimension of the input features.
-            eps: Small constant for numerical stability.
-        """
-        super().__init__()
-        self.weight = nn.Parameter(torch.ones(hidden_size))
-        self.eps = eps
-
-        # Conditioning projection: maps conditioning to scale factor
-        self.ada_linear = nn.Linear(hidden_size, hidden_size)
-
-    def _rms_norm(self, x: torch.Tensor) -> torch.Tensor:
-        """Apply RMS normalization.
-
-        Args:
-            x: Input tensor.
-
-        Returns:
-            RMS-normalized tensor.
-        """
-        variance = x.pow(2).mean(-1, keepdim=True)
-        x *= torch.rsqrt(variance + self.eps)
-        return x * self.weight
-
-    def forward(self, hidden_states: torch.Tensor, conditioning: torch.Tensor | None = None) -> torch.Tensor:
-        """Apply adaptive RMSNorm.
-
-        Args:
-            hidden_states: Input tensor of shape (batch, seq_len, hidden_size).
-            conditioning: Optional conditioning tensor of shape (batch, hidden_size).
-                If None, applies standard RMSNorm without adaptation.
-
-        Returns:
-            Normalized tensor with optional adaptive scaling.
-        """
-        # Standard RMSNorm
-        output = self._rms_norm(hidden_states.float()).to(hidden_states.dtype)
-
-        # Apply adaptive scaling if conditioning provided
-        if conditioning is not None:
-            # Project conditioning to scale factor
-            scale = self.ada_linear(conditioning)
-            # Expand for broadcasting: (batch, hidden) -> (batch, 1, hidden)
-            scale = scale.unsqueeze(1)
-            output *= 1.0 + scale
-
-        return output
 
 
 def make_attention_mask_2d(

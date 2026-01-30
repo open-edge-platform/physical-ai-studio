@@ -10,8 +10,8 @@ import pytest
 import torch
 
 from getiaction.policies.pi0 import Pi0, Pi0Config
+from getiaction.policies.pi0.components import AdaRMSNorm
 from getiaction.policies.pi0.components.attention import (
-    AdaRMSNorm,
     make_attention_mask_2d,
     prepare_4d_attention_mask,
 )
@@ -90,11 +90,13 @@ class TestAdaRMSNorm:
         x = torch.randn(2, 10, 128)
         cond = torch.randn(2, 128)
 
-        output_no_cond = norm(x)
-        output_with_cond = norm(x, conditioning=cond)
+        output_no_cond, gate_no_cond = norm(x)
+        output_with_cond, gate_with_cond = norm(x, cond=cond)
 
         assert output_no_cond.shape == x.shape
         assert output_with_cond.shape == x.shape
+        assert gate_no_cond is None
+        assert gate_with_cond is not None
         assert not torch.allclose(output_no_cond, output_with_cond)
 
 
@@ -256,12 +258,15 @@ def mock_paligemma_load():
     This mocks _ensure_loaded and set_trainable_parameters to avoid downloading
     large models in unit tests. Integration tests should use real models.
     """
-    with patch(
-        "getiaction.policies.pi0.components.gemma.PaliGemmaWithExpert._ensure_loaded",
-        return_value=None,
-    ), patch(
-        "getiaction.policies.pi0.components.gemma.PaliGemmaWithExpert.set_trainable_parameters",
-        return_value=None,
+    with (
+        patch(
+            "getiaction.policies.pi0.components.gemma.PaliGemmaWithExpert._ensure_loaded",
+            return_value=None,
+        ),
+        patch(
+            "getiaction.policies.pi0.components.gemma.PaliGemmaWithExpert.set_trainable_parameters",
+            return_value=None,
+        ),
     ):
         yield
 
