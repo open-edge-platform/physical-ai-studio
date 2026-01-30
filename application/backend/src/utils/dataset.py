@@ -1,4 +1,5 @@
 import os
+import shutil
 import traceback
 import uuid
 from json.decoder import JSONDecodeError
@@ -53,6 +54,8 @@ def get_dataset_episodes(root: str | None) -> list[Episode]:
         return result
     except DatasetGenerationError as e:
         raise ResourceInUseError(ResourceType.DATASET, str(e))
+    except RepositoryNotFoundError:
+        return []
     except Exception as e:
         logger.error(e)
         logger.error(traceback.format_exc())

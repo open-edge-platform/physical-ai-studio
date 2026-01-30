@@ -3,6 +3,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
+from huggingface_hub.errors import RepositoryNotFoundError
 from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
 
 from api.dependencies import get_model_service, get_project_id, get_project_service
@@ -110,8 +111,15 @@ async def get_tasks_for_dataset(
 ) -> dict[str, list[str]]:
     """Get all dataset tasks of a project."""
     project = await project_service.get_project_by_id(project_id)
-    return {
-        dataset.name: list(LeRobotDatasetMetadata(dataset.name, dataset.path).tasks.to_dict()["task_index"].keys())
-        for dataset in project.datasets
-        if check_repository_exists(Path(dataset.path))
-    }
+    res = {}
+
+    for dataset in project.datasets:
+        try:
+            if check_repository_exists(Path(dataset.path)):
+                res[dataset.name] = list(
+                    LeRobotDatasetMetadata(dataset.name, dataset.path).tasks.to_dict()["task_index"].keys()
+                )
+        except RepositoryNotFoundError:
+            pass
+
+    return res

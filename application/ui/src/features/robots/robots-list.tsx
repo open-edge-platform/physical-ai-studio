@@ -35,13 +35,17 @@ const MenuActions = ({ robot_id }: { robot_id: string }) => {
     );
 };
 
-export const ConnectionStatus = ({ status }: { status: 'connected' | 'disconnected' }) => {
+export const ConnectionStatus = ({ status }: { status: 'online' | 'offline' | 'unknown' }) => {
+    const Capitalize = (str: string) => {
+        return str.charAt(0).toUpperCase() + str.slice(1);
+    };
+
     return (
         <StatusLight
-            variant={status === 'connected' ? 'positive' : 'negative'}
+            variant={status === 'online' ? 'positive' : status == 'unknown' ? 'notice' : 'negative'}
             UNSAFE_className={classes.connectionStatus}
         >
-            {status === 'connected' ? 'Online' : 'Offline'}
+            {status === 'unknown' ? <View>Loading...</View> : <View>{Capitalize(status)}</View>}
         </StatusLight>
     );
 };
@@ -52,13 +56,15 @@ const RobotListItem = ({
     status,
     isActive,
     type,
-    port,
+    connectionString,
+    serialNumber,
 }: {
     id: string;
     name: string;
     type: string;
-    status: 'connected' | 'disconnected';
-    port: string | undefined;
+    status: 'online' | 'offline' | 'unknown';
+    connectionString: string | undefined;
+    serialNumber: string | undefined;
     isActive: boolean;
 }) => {
     return (
@@ -78,7 +84,7 @@ const RobotListItem = ({
                         {name}
                     </Heading>
                     <View gridArea='type' UNSAFE_style={{ fontSize: '14px' }}>
-                        {type}
+                        {type.replaceAll('_', ' ')}
                     </View>
                     <View gridArea='status'>
                         <ConnectionStatus status={status} />
@@ -95,12 +101,18 @@ const RobotListItem = ({
                                 fontSize: '10px',
                             }}
                         >
-                            <li style={{ marginLeft: 'var(--spectrum-global-dimension-size-200)' }}>
-                                Port:{' '}
-                                <pre style={{ margin: 0, display: 'inline' }}>
-                                    {port === undefined ? 'Unknown' : port}
-                                </pre>
-                            </li>
+                            {connectionString !== undefined && connectionString !== '' ? (
+                                <li style={{ marginLeft: 'var(--spectrum-global-dimension-size-200)' }}>
+                                    Connection string:{' '}
+                                    <pre style={{ margin: 0, display: 'inline' }}>{connectionString}</pre>
+                                </li>
+                            ) : null}
+
+                            {serialNumber !== undefined && serialNumber !== '' ? (
+                                <li style={{ marginLeft: 'var(--spectrum-global-dimension-size-200)' }}>
+                                    Serial number: <pre style={{ margin: 0, display: 'inline' }}>{serialNumber}</pre>
+                                </li>
+                            ) : null}
                             <li style={{ marginLeft: 'var(--spectrum-global-dimension-size-200)' }}>
                                 ID: <pre style={{ margin: 0, display: 'inline' }}>{id}</pre>
                             </li>
@@ -120,9 +132,13 @@ const RobotListItem = ({
 
 export const RobotsList = () => {
     const { project_id } = useProjectId();
-    const { data: robots } = $api.useSuspenseQuery('get', '/api/hardware/robots');
     const { data: projectRobots } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/robots', {
         params: { path: { project_id } },
+    });
+
+    const { data: onlineProjectRobots } = $api.useQuery('get', '/api/projects/{project_id}/robots/online', {
+        params: { path: { project_id } },
+        suspense: false,
     });
 
     return (
@@ -139,11 +155,14 @@ export const RobotsList = () => {
             </Button>
 
             {projectRobots.map((robot) => {
-                const hardwareRobot = robots.find((hardware) => {
-                    return hardware.serial_id === robot.serial_id;
-                });
+                const onlineRobot = onlineProjectRobots?.find((r) => r.id === robot.id);
 
-                const to = paths.project.robots.show({ project_id, robot_id: robot.id });
+                const status = onlineRobot?.connection_status ?? 'unknown';
+
+                const to = paths.project.robots.show({
+                    project_id,
+                    robot_id: robot.id,
+                });
 
                 return (
                     <NavLink key={robot.id} to={to}>
@@ -152,9 +171,10 @@ export const RobotsList = () => {
                                 <RobotListItem
                                     id={robot.id}
                                     name={robot.name}
-                                    port={hardwareRobot?.port}
+                                    connectionString={robot.connection_string}
+                                    serialNumber={robot.serial_number}
                                     type={robot.type}
-                                    status={hardwareRobot !== undefined ? 'connected' : 'disconnected'}
+                                    status={onlineProjectRobots === undefined ? 'unknown' : status}
                                     isActive={isActive}
                                 />
                             );

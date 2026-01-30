@@ -995,7 +995,7 @@ dependencies = [
     { name = "framesource" },
     { name = "getiaction", extra = ["pi0", "smolvla"] },
     { name = "greenlet" },
-    { name = "harvesters" },
+    { name = "harvesters", marker = "sys_platform != 'darwin'" },
     { name = "lerobot", extra = ["feetech"] },
     { name = "loguru" },
     { name = "numpy" },
@@ -1005,6 +1005,7 @@ dependencies = [
     { name = "pyrealsense2-macosx", marker = "sys_platform == 'darwin'" },
     { name = "sqlalchemy" },
     { name = "tenacity" },
+    { name = "trossen-arm" },
     { name = "types-aiofiles" },
     { name = "websockets" },
 ]
@@ -1034,7 +1035,7 @@ requires-dist = [
     { name = "framesource", git = "https://github.com/ArendJanKramer/FrameSource.git?rev=4d51da9bc2f8f9353562e1641ddbf87d3045baf6" },
     { name = "getiaction", extras = ["pi0", "smolvla"], editable = "../../library" },
     { name = "greenlet", specifier = ">=3.2.4" },
-    { name = "harvesters" },
+    { name = "harvesters", marker = "sys_platform != 'darwin'" },
     { name = "lerobot", extras = ["feetech"], specifier = "==0.4.2" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "numpy" },
@@ -1044,6 +1045,7 @@ requires-dist = [
     { name = "pyrealsense2-macosx", marker = "sys_platform == 'darwin'" },
     { name = "sqlalchemy", specifier = ">=2.0.43" },
     { name = "tenacity", specifier = ">=9.1.2" },
+    { name = "trossen-arm", specifier = "==1.9.0" },
     { name = "types-aiofiles", specifier = ">=25.1.0.20251011" },
     { name = "websockets" },
 ]
@@ -1280,8 +1282,8 @@ name = "harvesters"
 version = "1.4.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "genicam" },
-    { name = "numpy" },
+    { name = "genicam", marker = "sys_platform != 'darwin'" },
+    { name = "numpy", marker = "sys_platform != 'darwin'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d3/18/ee45d896fee51dee2e35df9d371e2d213ed4488ddea4dd4bd1df6f92a5fb/harvesters-1.4.3.tar.gz", hash = "sha256:c237dd402735a66ebd570865113a3e80ae19161a21706aed80691627a8cb7da2", size = 104391, upload-time = "2024-05-16T17:09:41.805Z" }
 wheels = [
@@ -4092,6 +4094,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/24/5f/950fb373bf9c01ad4eb5a8cd5eaf32cdf9e238c02f9293557a2129b9c4ac/triton-3.3.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:9999e83aba21e1a78c1f36f21bce621b77bcaa530277a50484a7cb4a822f6e43", size = 155669138, upload-time = "2025-05-29T23:39:51.771Z" },
     { url = "https://files.pythonhosted.org/packages/74/1f/dfb531f90a2d367d914adfee771babbd3f1a5b26c3f5fbc458dee21daa78/triton-3.3.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:b89d846b5a4198317fec27a5d3a609ea96b6d557ff44b56c23176546023c4240", size = 155673035, upload-time = "2025-05-29T23:40:02.468Z" },
     { url = "https://files.pythonhosted.org/packages/28/71/bd20ffcb7a64c753dc2463489a61bf69d531f308e390ad06390268c4ea04/triton-3.3.1-cp313-cp313t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:a3198adb9d78b77818a5388bff89fa72ff36f9da0bc689db2f0a651a67ce6a42", size = 155735832, upload-time = "2025-05-29T23:40:10.522Z" },
+]
+
+[[package]]
+name = "trossen-arm"
+version = "1.9.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7a/53/31154daca8c4d7481e8638c6c2984da4f483967f0de81c2c2b3977ed505c/trossen_arm-1.9.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:f6ce500a48d29f372764718526771e857a92029658dc3bcd3b311683d49a44d9", size = 750207, upload-time = "2025-09-10T21:57:07.115Z" },
+    { url = "https://files.pythonhosted.org/packages/0a/2e/913a9888e30f42ca197dcfce74eb611b36cf07d89591c1e35b96dd5f7dbd/trossen_arm-1.9.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:e9d0fbaadba04cb2dc6676667f45a9c9c27808f70c6ebaaa1a866132d00186cc", size = 1114970, upload-time = "2025-09-10T21:57:08.583Z" },
+    { url = "https://files.pythonhosted.org/packages/62/aa/4c4aee012dc10825eb41f6b5bea522cf67f86b34f39a40209f2333999de9/trossen_arm-1.9.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:685ad5e769ca0030b5adec48d12c3c4d3bf0590cd011aab9972b1ec8f3daeb9f", size = 1220924, upload-time = "2025-09-10T21:57:09.654Z" },
 ]
 
 [[package]]

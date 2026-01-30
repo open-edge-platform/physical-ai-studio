@@ -1,0 +1,169 @@
+from typing import Any
+
+import numpy as np
+import trossen_arm
+from loguru import logger
+
+from robots.robot_client import RobotClient
+from schemas import NetworkIpRobotConfig
+
+
+class TrossenWidowXAIFollower(RobotClient):
+    def __init__(self, config: NetworkIpRobotConfig):
+        self.driver = trossen_arm.TrossenArmDriver()
+        self.driver.configure(
+            trossen_arm.Model.wxai_v0,
+            trossen_arm.StandardEndEffector.wxai_v0_follower,
+            config.connection_string,
+            True,
+            timeout=30
+        )
+        self.driver.set_all_modes(trossen_arm.Mode.position)
+
+        self.config: NetworkIpRobotConfig = config
+        self.motor_names = {
+            0: "shoulder_pan",
+            1: "shoulder_lift",
+            2: "elbow_flex",
+            3: "wrist_flex",
+            4: "wrist_roll",
+            5: "wrist_yaw",
+            6: "gripper",
+        }
+        self.name = "trossen_widowx_ai_follower"
+
+    @property
+    def _motors_ft(self):
+        pos = {f"{motor}.pos": float for motor in self.motor_names.values()}
+        vel = {f"{motor}.vel": float for motor in self.motor_names.values()}
+        return {**pos, **vel}
+
+    @property
+    def is_connected(self) -> bool:
+        return self.driver.get_is_configured()
+
+    async def ping(self) -> dict:
+        return self._create_event("pong")
+
+    async def set_joints_state(self, joints: dict) -> dict:
+        positions = {key.removesuffix(".pos"): val for key, val in joints.items() if key.endswith(".pos")}
+        velocities = {key.removesuffix(".vel"): val for key, val in joints.items() if key.endswith(".vel")}
+
+        ps = [0] * len(self.motor_names)
+        vs = [0] * len(self.motor_names)
+
+        # Map motor name / value pair into the right position of list
+        for p, v in positions.items():
+            i = next((k for k, v in self.motor_names.items() if v == p), None)
+            if i is not None:
+                ps[i] = np.deg2rad(v)
+
+        # Map motor name / value pair into the right position of list
+        for p, v in velocities.items():
+            i = next((k for k, v in self.motor_names.items() if v == p), None)
+            if i is not None:
+                vs[i] = v
+
+        self.driver.set_all_positions(
+            ps,
+            0.0,
+            False,
+            vs,
+        )
+
+        return joints
+
+    async def enable_torque(self) -> dict:
+        pass
+
+    async def disable_torque(self) -> dict:
+        pass
+
+    async def read_state(self, *, normalize: bool = True) -> dict:
+        """Read current robot state. Returns state dict with timestamp."""
+        try:
+            observation = self.get_action()
+            state = {key: value for key, value in observation.items()}
+            return self._create_event(
+                "state_was_updated",
+                state=state,
+                is_controlled=False,
+            )
+        except Exception as e:
+            logger.error(f"Robot read error: {e}")
+            raise
+
+    async def read_forces(self) -> dict | None:
+        try:
+            observation = self.get_forces()
+            state = {key: value for key, value in observation.items()}
+            return self._create_event(
+                "state_was_updated",
+                state=state,
+                is_controlled=False,
+            )
+        except Exception as e:
+            logger.error(f"Robot read error: {e}")
+            raise
+
+    async def set_forces(self, forces: dict) -> dict:
+        pass
+
+    def get_action(self) -> dict:
+        positions = self.driver.get_all_positions()
+        velocities = self.driver.get_all_velocities()
+        # efforts = self.driver.get_all_external_efforts()
+
+        obs_dict = {}
+        for index, name in self.motor_names.items():
+            if index >= len(positions) or index >= len(velocities):
+                continue
+            pos = np.rad2deg(positions[index])
+            vel = velocities[index]
+            # eff = efforts[index]
+            obs_dict[f"{name}.pos"] = pos
+            obs_dict[f"{name}.vel"] = vel
+            # obs_dict[f"{name}.eff"] = eff
+
+        return obs_dict
+
+    def get_forces(self) -> dict:
+        efforts = self.driver.get_all_external_efforts()
+
+        obs_dict = {}
+        for index, name in self.motor_names.items():
+            if index >= len(efforts) or index >= len(efforts):
+                continue
+            eff = efforts[index]
+            obs_dict[f"{name}.eff"] = eff
+
+        return obs_dict
+
+    def features(self) -> list[str]:
+        pos = [f"{motor}.pos" for motor in self.motor_names.values()]
+        vel = [f"{motor}.vel" for motor in self.motor_names.values()]
+        # eff = [f"{motor}.eff" for motor in self.motor_names.values()]
+        return pos + vel
+
+    async def connect(self, calibrate: bool = False) -> None: # noqa: ARG002
+        self.driver.set_all_modes(trossen_arm.Mode.position)
+        self.driver.set_all_positions(np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), 2.0, True)
+
+    @property
+    def is_calibrated(self) -> bool:
+        return True
+
+    def calibrate(self) -> None:
+        pass
+
+    def configure(self) -> None:
+        pass
+
+    async def disconnect(self) -> None:
+        try:
+            self.driver.set_all_modes(trossen_arm.Mode.position)
+            self.driver.set_all_positions(np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), 2.0, True)
+        except Exception:
+            logger.error("Failed to home trossen WidowX AI follower")
+        finally:
+            self.driver.cleanup()

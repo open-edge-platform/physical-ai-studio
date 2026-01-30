@@ -3,6 +3,7 @@ import multiprocessing as mp
 from queue import Empty
 from typing import Annotated
 
+import numpy as np
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from loguru import logger
 
@@ -66,15 +67,26 @@ async def teleoperate_websocket(
             if process is not None:
                 process.stop()
 
+    def to_python(obj):
+        if isinstance(obj, dict):
+            return {k: to_python(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [to_python(v) for v in obj]
+        elif isinstance(obj, np.generic):  # catches np.float32, np.int64, etc.
+            return obj.item()
+        else:
+            return obj
+
     async def handle_outgoing():
         try:
             while True:
                 try:
-                    message = queue.get_nowait()
+                    message = to_python(queue.get_nowait())
                     await websocket.send_json(message)
                 except Empty:
                     await asyncio.sleep(0.05)
         except Exception as e:
+            raise e
             logger.info(f"Outgoing task stopped: {e}")
 
     incoming_task = asyncio.create_task(handle_incoming())
@@ -139,6 +151,7 @@ async def inference_websocket(
                 except Empty:
                     await asyncio.sleep(0.05)
         except Exception as e:
+            raise e
             logger.info(f"Outgoing task stopped: {e}")
 
     incoming_task = asyncio.create_task(handle_incoming())

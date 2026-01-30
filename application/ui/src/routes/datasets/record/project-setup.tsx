@@ -169,6 +169,16 @@ const ProjectSetup = ({ onDone }: ProjectSetupProps) => {
                                     >
                                         SO 101
                                     </Button>
+                                    <Button
+                                        variant={
+                                            config.robot_type === 'trossen_widowxai_follower' ? 'primary' : 'secondary'
+                                        }
+                                        width='size-2000'
+                                        height='size-2000'
+                                        onPress={() => selectRobot('trossen_widowxai_follower')}
+                                    >
+                                        Trossen WidowX AI
+                                    </Button>
                                     <Button variant='secondary' width='size-2000' height='size-2000'>
                                         More coming soon
                                     </Button>
