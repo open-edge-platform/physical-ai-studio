@@ -123,10 +123,14 @@ class Pi0Config(Config):
     gradient_checkpointing: bool = False
 
     # Optimizer/training hyperparameters
-    learning_rate: float = 1.0e-4
-    weight_decay: float = 1.0e-5
-    warmup_ratio: float = 0.05  # Warmup ratio (0.0-1.0) of total training steps
+    learning_rate: float = 2.5e-5
+    weight_decay: float = 0.01
     grad_clip_norm: float = 1.0  # Gradient clipping norm (0.0 = disabled)
+
+    # Scheduler hyperparameters (cosine decay with warmup, matches lerobot)
+    scheduler_warmup_steps: int = 1000  # Linear warmup steps (absolute, not ratio)
+    scheduler_decay_steps: int = 30000  # Total decay period for cosine schedule
+    scheduler_decay_lr: float = 2.5e-6  # Final LR after cosine decay
 
     def __post_init__(self) -> None:
         """Set defaults based on variant.

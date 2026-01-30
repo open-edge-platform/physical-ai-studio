@@ -127,10 +127,13 @@ class Pi0(Export, Policy):
         lora_alpha: int = 16,
         lora_dropout: float = 0.1,
         # Optimizer
-        learning_rate: float = 1.0e-4,
-        weight_decay: float = 1.0e-5,
-        warmup_ratio: float = 0.05,  # Warmup ratio (0.0-1.0) of total training steps
+        learning_rate: float = 2.5e-5,
+        weight_decay: float = 0.01,
         grad_clip_norm: float = 1.0,
+        # Scheduler (cosine decay with warmup)
+        scheduler_warmup_steps: int = 1000,
+        scheduler_decay_steps: int = 30000,
+        scheduler_decay_lr: float = 2.5e-6,
         # Precision
         use_bf16: bool = True,
         # Memory optimization
@@ -165,8 +168,10 @@ class Pi0(Export, Policy):
             dtype="bfloat16" if use_bf16 else "float32",
             learning_rate=learning_rate,
             weight_decay=weight_decay,
-            warmup_ratio=warmup_ratio,
             grad_clip_norm=grad_clip_norm,
+            scheduler_warmup_steps=scheduler_warmup_steps,
+            scheduler_decay_steps=scheduler_decay_steps,
+            scheduler_decay_lr=scheduler_decay_lr,
         )
 
         # Save config as hyperparameters for checkpoint restoration
@@ -431,6 +436,8 @@ class Pi0(Export, Policy):
         Returns:
             Optimizer configuration dict.
         """
+        import math
+
         # Get trainable parameters
         params = [p for p in self.parameters() if p.requires_grad]
 
@@ -442,23 +449,43 @@ class Pi0(Export, Policy):
             betas=(0.9, 0.95),
         )
 
-        # Create scheduler with warmup
-        # Calculate warmup_steps from warmup_ratio and total training steps
-        warmup_ratio = self.config.warmup_ratio
-        # Get total training steps from trainer (if available) or use a default
+        # Cosine decay with warmup scheduler (matches lerobot exactly)
+        peak_lr = self.config.learning_rate
+        decay_lr = self.config.scheduler_decay_lr
+        warmup_steps = self.config.scheduler_warmup_steps
+        decay_steps = self.config.scheduler_decay_steps
+
+        # Get total training steps from trainer (if available)
         if hasattr(self, "trainer") and self.trainer is not None:
-            total_steps = getattr(self.trainer, "estimated_stepping_batches", 10000)
+            num_training_steps = getattr(self.trainer, "estimated_stepping_batches", decay_steps)
         else:
-            # Default for unit tests or when trainer not attached
-            total_steps = 10000
-        warmup_steps = max(1, int(total_steps * warmup_ratio))
+            num_training_steps = decay_steps
 
-        def lr_lambda(step: int) -> float:
-            if step < warmup_steps:
-                return step / max(1, warmup_steps)
-            return 1.0
+        # Auto-scale if training is shorter than decay_steps (matches lerobot behavior)
+        if num_training_steps < decay_steps:
+            scale_factor = num_training_steps / decay_steps
+            actual_warmup_steps = int(warmup_steps * scale_factor)
+            actual_decay_steps = num_training_steps
+        else:
+            actual_warmup_steps = warmup_steps
+            actual_decay_steps = decay_steps
 
-        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+        # Compute alpha (ratio of final LR to peak LR)
+        alpha = decay_lr / peak_lr
+
+        def lr_lambda(current_step: int) -> float:
+            if current_step < actual_warmup_steps:
+                # Linear warmup: 0 -> 1 over warmup_steps
+                if current_step <= 0:
+                    return 1 / (actual_warmup_steps + 1)
+                frac = 1 - current_step / actual_warmup_steps
+                return (1 / (actual_warmup_steps + 1) - 1) * frac + 1
+            # Cosine decay: peak_lr -> decay_lr over decay_steps
+            step = min(current_step, actual_decay_steps)
+            cosine_decay = 0.5 * (1 + math.cos(math.pi * step / actual_decay_steps))
+            return (1 - alpha) * cosine_decay + alpha
+
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda, last_epoch=-1)
 
         return {
             "optimizer": optimizer,
