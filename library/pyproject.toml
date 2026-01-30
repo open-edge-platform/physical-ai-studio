@@ -146,7 +146,7 @@ all = ["getiaction[full]"]
 # SCRIPTS CONFIGURATION                                                        #
 # ---------------------------------------------------------------------------- #
 [project.scripts]
-getiaction = "getiaction.cli.cli:cli"
+getiaction = "getiaction.cli:cli"
 
 # ---------------------------------------------------------------------------- #
 # PROJECT URLS                                                                 #
