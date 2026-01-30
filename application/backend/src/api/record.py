@@ -1,7 +1,7 @@
 import asyncio
 import multiprocessing as mp
 from queue import Empty
-from typing import Annotated
+from typing import Annotated, Any
 
 import numpy as np
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
@@ -67,21 +67,21 @@ async def teleoperate_websocket(
             if process is not None:
                 process.stop()
 
-    def to_python(obj):
+    def to_python_primitive(obj: Any) -> Any:
+        """ Replace numpy values to primitive types. """
         if isinstance(obj, dict):
-            return {k: to_python(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
-            return [to_python(v) for v in obj]
-        elif isinstance(obj, np.generic):  # catches np.float32, np.int64, etc.
+            return {k: to_python_primitive(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [to_python_primitive(v) for v in obj]
+        if isinstance(obj, np.generic):  # catches np.float32, np.int64, etc.
             return obj.item()
-        else:
-            return obj
+        return obj
 
     async def handle_outgoing():
         try:
             while True:
                 try:
-                    message = to_python(queue.get_nowait())
+                    message = to_python_primitive(queue.get_nowait())
                     await websocket.send_json(message)
                 except Empty:
                     await asyncio.sleep(0.05)

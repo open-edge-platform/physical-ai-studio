@@ -54,23 +54,22 @@ class TrossenWidowXAILeader(RobotClient):
         )
 
 
-    async def set_joints_state(self, joints: dict) -> dict:
+    async def set_joints_state(self, joints: dict) -> dict:  # noqa: ARG002
         raise Exception("Not implemented for leaders")
 
     async def enable_torque(self) -> dict:
-        pass
+        return {}
 
     async def disable_torque(self) -> dict:
-        pass
+        return {}
 
-    async def read_state(self, *, normalize: bool = True) -> dict:
+    async def read_state(self, *, normalize: bool = True) -> dict:  # noqa: ARG002
         """Read current robot state. Returns state dict with timestamp."""
         try:
             observation = self.get_action()
-            state = {key: value for key, value in observation.items()}
             return self._create_event(
                 "state_was_updated",
-                state=state,
+                state=observation,
                 is_controlled=False,
             )
         except Exception as e:

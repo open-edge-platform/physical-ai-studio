@@ -7,11 +7,6 @@ import uuid
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from lerobot.robots import Robot as LeRobotRobot
-    from lerobot.teleoperators import Teleoperator as LeRobotTeleoperator
 
 import cv2
 import numpy as np
@@ -270,7 +265,7 @@ class TeleoperateWorker(BaseThreadWorker):
 
                 timestamp = time.perf_counter() - self.start_episode_t
                 self._report_observation(frame, timestamp)
-                if self.state.is_recording:
+                if self.state.is_recording and self.dataset is not None:
                     self.dataset.add_frame(frame)
 
                 dt_s = time.perf_counter() - start_loop_t
@@ -290,10 +285,11 @@ class TeleoperateWorker(BaseThreadWorker):
         logger.info("save")
         self.events["save"].clear()
         precise_sleep(0.3)  # TODO check if neccesary
-        new_episode = self._build_episode_from_buffer(self.dataset.meta.latest_episode)
-        if new_episode is not None:
-            self._report_episode(new_episode)
-        self.dataset.save_episode()
+        if self.dataset is not None:
+            new_episode = self._build_episode_from_buffer(self.dataset.meta.latest_episode)
+            if new_episode is not None:
+                self._report_episode(new_episode)
+            self.dataset.save_episode()
         self.state.is_recording = False
         self._report_state()
 
@@ -301,7 +297,8 @@ class TeleoperateWorker(BaseThreadWorker):
         logger.info("reset")
         self.events["reset"].clear()
         precise_sleep(0.3)  # TODO check if neccesary
-        self.dataset.clear_episode_buffer()
+        if self.dataset is not None:
+            self.dataset.clear_episode_buffer()
         self.state.is_recording = False
         self._report_state()
 

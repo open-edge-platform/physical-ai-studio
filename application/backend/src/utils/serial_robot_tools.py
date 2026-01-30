@@ -1,7 +1,7 @@
-from loguru import logger
 import asyncio
 
 from lerobot.robots.so101_follower import SO101Follower, SO101FollowerConfig
+from loguru import logger
 from serial.tools import list_ports
 from serial.tools.list_ports_common import ListPortInfo
 

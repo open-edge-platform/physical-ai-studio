@@ -124,7 +124,8 @@ class RobotWorker(TransportWorker):
         """Graceful shutdown."""
         logger.info(f"Shutting down robot worker: {self.robot.id}")
         try:
-            await self.client.disconnect()
+            if self.client is not None:
+                await self.client.disconnect()
         except Exception as e:
             logger.error(f"Failed to disconnect robot client: {e}")
         await super().shutdown()

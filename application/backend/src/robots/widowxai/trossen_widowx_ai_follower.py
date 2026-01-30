@@ -1,4 +1,3 @@
-from typing import Any
 
 import numpy as np
 import trossen_arm
@@ -74,19 +73,18 @@ class TrossenWidowXAIFollower(RobotClient):
         return joints
 
     async def enable_torque(self) -> dict:
-        pass
+        return {}
 
     async def disable_torque(self) -> dict:
-        pass
+        return {}
 
-    async def read_state(self, *, normalize: bool = True) -> dict:
+    async def read_state(self, *, normalize: bool = True) -> dict:  # noqa: ARG002
         """Read current robot state. Returns state dict with timestamp."""
         try:
             observation = self.get_action()
-            state = {key: value for key, value in observation.items()}
             return self._create_event(
                 "state_was_updated",
-                state=state,
+                state=observation,
                 is_controlled=False,
             )
         except Exception as e:
@@ -95,11 +93,10 @@ class TrossenWidowXAIFollower(RobotClient):
 
     async def read_forces(self) -> dict | None:
         try:
-            observation = self.get_forces()
-            state = {key: value for key, value in observation.items()}
+            forces = self.get_forces()
             return self._create_event(
                 "state_was_updated",
-                state=state,
+                state=forces,
                 is_controlled=False,
             )
         except Exception as e:
@@ -107,7 +104,7 @@ class TrossenWidowXAIFollower(RobotClient):
             raise
 
     async def set_forces(self, forces: dict) -> dict:
-        pass
+        return forces
 
     def get_action(self) -> dict:
         positions = self.driver.get_all_positions()
