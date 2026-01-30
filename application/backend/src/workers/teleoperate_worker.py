@@ -196,7 +196,7 @@ class TeleoperateWorker(BaseThreadWorker):
             {
                 "event": "observations",
                 "data": {
-                    "actions": {key: observation["action"][index] for index, key in enumerate(self.action_keys)},
+                    "actions": {key: float(observation["action"][index]) for index, key in enumerate(self.action_keys)},
                     "cameras": {
                         key.removeprefix(OBSERVATION_IMAGES_PREFIX): self._base_64_encode_observation(
                             cv2.cvtColor(observation[key], cv2.COLOR_RGB2BGR)
@@ -302,7 +302,7 @@ class TeleoperateWorker(BaseThreadWorker):
         except Exception as e:
             logger.warning(f"Failed cancelling queue join thread: {e}")
 
-        if self.dataset:
+        if hasattr(self, "dataset"):
             if self.dataset.num_episodes == 0:
                 # Ensure the dataset is removed if there are episodes
                 # This is because lerobot dataset needs episodes otherwise it will be in an invalid state
