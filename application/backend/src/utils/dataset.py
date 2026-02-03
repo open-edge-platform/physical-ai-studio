@@ -14,6 +14,7 @@ from loguru import logger
 
 from exceptions import ResourceInUseError, ResourceType
 from schemas import CameraConfig, Dataset, Episode, EpisodeVideo, LeRobotDatasetInfo, ProjectConfig
+from schemas.robot import RobotType
 from settings import get_settings
 
 
@@ -25,6 +26,13 @@ def load_local_lerobot_dataset(path: str | None, **kwargs) -> LeRobotDataset:
     return LeRobotDataset(str(uuid.uuid4()), path, **kwargs)
 
 
+def robot_for_action_features(action_features: list[str]) -> RobotType:
+    """Todo: Do this proper. This is a bad idea"""
+    if len(action_features) >= 7:
+        return RobotType.TROSSEN_WIDOWXAI_FOLLOWER
+    return RobotType.SO101_FOLLOWER
+
+
 def get_dataset_episodes(root: str | None) -> list[Episode]:
     """Load dataset from LeRobot cache and get info"""
     if root and not check_repository_exists(Path(root)):
@@ -34,14 +42,22 @@ def get_dataset_episodes(root: str | None) -> list[Episode]:
         metadata = dataset.meta
         episodes = metadata.episodes
         result = []
+        action_feature_names = dataset.features.get("action", {}).get("names", [])
+        follower_robot = robot_for_action_features(action_feature_names)
+
         for episode in episodes:
             full_path = path.join(metadata.root, metadata.get_data_file_path(episode["episode_index"]))
             stat_result = stat(full_path)
+
+            actions_tensor = get_episode_actions(dataset, episode).tolist()
+
             result.append(
                 Episode(
-                    actions=get_episode_actions(dataset, episode).tolist(),
+                    actions=actions_tensor,
+                    action_keys=action_feature_names,
                     fps=metadata.fps,
                     modification_timestamp=stat_result.st_mtime_ns // 1e6,
+                    follower_robot_types=[follower_robot],
                     videos={
                         video_key: build_episode_video_from_lerobot_episode_dict(episode, video_key)
                         for video_key in dataset.meta.video_keys

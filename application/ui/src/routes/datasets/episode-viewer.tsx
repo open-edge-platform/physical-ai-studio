@@ -11,8 +11,6 @@ import { usePlayer } from './use-player';
 
 import classes from './episode-viewer.module.scss';
 
-const joints = ['shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex', 'wrist_roll', 'gripper'];
-
 interface VideoView {
     dataset_id: string;
     episodeIndex: number;
@@ -60,6 +58,7 @@ export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
     const player = usePlayer(episode);
     const frameIndex = Math.floor(player.time * episode.fps);
     const cameras = Object.keys(episode.videos).map((m) => m.replace('observation.images.', ''));
+    const follower_robot_type = episode.follower_robot_types?.[0] ?? 'SO101_Follower';
 
     return (
         <RobotModelsProvider>
@@ -79,7 +78,11 @@ export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
                         ))}
                     </Flex>
                     <Flex flex={3} minWidth={0}>
-                        <RobotViewer jointValues={episode.actions[frameIndex]} />
+                        <RobotViewer
+                            featureValues={episode.actions[frameIndex]}
+                            featureNames={episode.action_keys}
+                            robotType={follower_robot_type}
+                        />
                     </Flex>
                 </Flex>
                 <div className={classes.timeline}>
@@ -88,7 +91,7 @@ export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
                         <DisclosurePanel>
                             <EpisodeChart
                                 actions={episode.actions}
-                                joints={joints}
+                                joints={episode.action_keys}
                                 fps={episode.fps}
                                 time={player.time}
                                 seek={player.seek}

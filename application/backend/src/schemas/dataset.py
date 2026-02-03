@@ -4,6 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from .base import BaseIDModel
+from .robot import RobotType
 
 
 class EpisodeInfo(BaseModel):
@@ -23,8 +24,10 @@ class Episode(BaseModel):
     fps: int
     tasks: list[str]
     actions: list[list[float]]
+    action_keys: list[str]
     videos: dict[str, EpisodeVideo]
     modification_timestamp: int
+    follower_robot_types: list[RobotType]
 
 
 class LeRobotDatasetInfo(BaseModel):

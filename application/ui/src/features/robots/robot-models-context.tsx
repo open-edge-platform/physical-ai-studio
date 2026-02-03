@@ -36,6 +36,11 @@ export const useLoadModelMutation = () => {
     return useMutation({
         mutationFn: async (path: string) => {
             const loader = new URDFLoader();
+
+            loader.packages = {
+                trossen_arm_description: '/widowx',
+            };
+
             return new Promise<URDFRobot>((resolve, reject) => {
                 loader.load(path, resolve, console.info, reject);
             });

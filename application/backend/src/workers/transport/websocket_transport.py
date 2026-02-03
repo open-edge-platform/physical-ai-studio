@@ -26,7 +26,7 @@ class WebSocketTransport(WorkerTransport):
         try:
             await self.websocket.send_json(data)
         except Exception as e:
-            logger.warning(f"Failed to send JSON: {e}")
+            logger.exception(f"Failed to send JSON: {e}")
 
     async def send_bytes(self, data: bytes) -> None:
         """Send binary data over WebSocket."""

@@ -4,6 +4,7 @@ from loguru import logger
 
 from robots.robot_client import RobotClient
 from schemas import NetworkIpRobotConfig
+from schemas.robot import RobotType
 
 
 class TrossenWidowXAIFollower(RobotClient):
@@ -24,11 +25,15 @@ class TrossenWidowXAIFollower(RobotClient):
             1: "shoulder_lift",
             2: "elbow_flex",
             3: "wrist_flex",
-            4: "wrist_roll",
-            5: "wrist_yaw",
+            4: "wrist_yaw",
+            5: "wrist_roll",
             6: "gripper",
         }
         self.name = "trossen_widowx_ai_follower"
+
+    @property
+    def robot_type(self) -> RobotType:
+        return RobotType.TROSSEN_WIDOWXAI_FOLLOWER
 
     @property
     def _motors_ft(self):
@@ -54,7 +59,7 @@ class TrossenWidowXAIFollower(RobotClient):
         for p, v in positions.items():
             i = next((k for k, v in self.motor_names.items() if v == p), None)
             if i is not None:
-                ps[i] = np.deg2rad(v)
+                ps[i] = np.deg2rad(v) if "gripper" not in p else v
 
         # Map motor name / value pair into the right position of list
         for p, v in velocities.items():
@@ -111,15 +116,17 @@ class TrossenWidowXAIFollower(RobotClient):
         # efforts = self.driver.get_all_external_efforts()
 
         obs_dict = {}
+        # First: all positions
         for index, name in self.motor_names.items():
-            if index >= len(positions) or index >= len(velocities):
+            if index >= len(positions):
                 continue
-            pos = np.rad2deg(positions[index])
-            vel = velocities[index]
-            # eff = efforts[index]
-            obs_dict[f"{name}.pos"] = pos
-            obs_dict[f"{name}.vel"] = vel
-            # obs_dict[f"{name}.eff"] = eff
+            obs_dict[f"{name}.pos"] = np.rad2deg(positions[index]) if "gripper" not in name else positions[index]
+
+        # Then: all velocities
+        for index, name in self.motor_names.items():
+            if index >= len(velocities):
+                continue
+            obs_dict[f"{name}.vel"] = velocities[index]
 
         return obs_dict
 
