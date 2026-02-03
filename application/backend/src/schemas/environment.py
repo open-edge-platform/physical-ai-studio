@@ -119,7 +119,7 @@ class RobotWithTeleoperator(BaseModel):
                 "robot": {
                     "id": "a5e2cde6-936b-4a9e-a213-08dda0afa453",
                     "name": "Assembly Line Robot 1",
-                    "serial_id": "SO101-2024-001",
+                    "serial_number": "SO101-2024-001",
                     "type": "SO101_Leader",
                     "cameras": [],
                 },
@@ -129,7 +129,7 @@ class RobotWithTeleoperator(BaseModel):
                     "robot": {
                         "id": "b6f3def7-047c-5b0f-b324-19eeb1bgb564",
                         "name": "Teleoperator Robot",
-                        "serial_id": "SO101-2024-002",
+                        "serial_number": "SO101-2024-002",
                         "type": "SO101_Follower",
                         "cameras": [],
                     },
@@ -164,7 +164,7 @@ class EnvironmentWithRelations(BaseModel):
                         "robot": {
                             "id": "a5e2cde6-936b-4a9e-a213-08dda0afa453",
                             "name": "Assembly Line Robot 1",
-                            "serial_id": "SO101-2024-001",
+                            "serial_number": "SO101-2024-001",
                             "type": "SO101_Leader",
                         },
                         "tele_operator": {
@@ -173,7 +173,7 @@ class EnvironmentWithRelations(BaseModel):
                             "robot": {
                                 "id": "b6f3def7-047c-5b0f-b324-19eeb1bgb564",
                                 "name": "Teleoperator Robot",
-                                "serial_id": "SO101-2024-002",
+                                "serial_number": "SO101-2024-002",
                                 "type": "SO101_Follower",
                             },
                         },

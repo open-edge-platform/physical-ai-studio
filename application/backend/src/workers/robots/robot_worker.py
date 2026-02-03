@@ -7,7 +7,7 @@ from robots.robot_client import RobotClient
 from robots.utils import get_robot_client
 from schemas.robot import Robot
 from services.robot_calibration_service import RobotCalibrationService
-from utils.robot import RobotConnectionManager
+from utils.serial_robot_tools import RobotConnectionManager
 from workers.robots.commands import handle_command, parse_command
 from workers.transport.worker_transport import WorkerTransport
 from workers.transport_worker import TransportWorker, WorkerState, WorkerStatus
@@ -60,7 +60,7 @@ class RobotWorker(TransportWorker):
         except Exception as e:
             self.state = WorkerState.ERROR
             self.error_message = str(e)
-            logger.error(f"Worker error: {e}")
+            logger.exception(f"Worker error: {e}")
             await self.transport.send_json(WorkerStatus(state=self.state, message=str(e)).to_json())
         finally:
             await self.shutdown()
@@ -123,4 +123,9 @@ class RobotWorker(TransportWorker):
     async def shutdown(self) -> None:
         """Graceful shutdown."""
         logger.info(f"Shutting down robot worker: {self.robot.id}")
+        try:
+            if self.client is not None:
+                await self.client.disconnect()
+        except Exception as e:
+            logger.error(f"Failed to disconnect robot client: {e}")
         await super().shutdown()

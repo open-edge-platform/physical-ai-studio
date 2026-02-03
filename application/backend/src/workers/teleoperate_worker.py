@@ -22,7 +22,7 @@ from schemas import TeleoperationConfig
 from schemas.dataset import Episode, EpisodeVideo
 from services.robot_calibration_service import RobotCalibrationService
 from utils.dataset import check_repository_exists, load_local_lerobot_dataset
-from utils.robot import RobotConnectionManager
+from utils.serial_robot_tools import RobotConnectionManager
 from workers.camera_worker import create_frames_source_from_camera
 
 from .base import BaseThreadWorker
@@ -81,6 +81,9 @@ class TeleoperateWorker(BaseThreadWorker):
             "save": Event(),
             "start": Event(),
         }
+        self.dataset: LeRobotDataset | None = None
+        self.leader: RobotClient | None = None
+        self.follower: RobotClient | None = None
 
     def stop(self) -> None:
         """Stop teleoperation and stop loop."""
@@ -187,7 +190,7 @@ class TeleoperateWorker(BaseThreadWorker):
             "event": "error",
             "data": str(error),
         }
-        logger.error(f"error: {data}")
+        logger.exception(f"error: {data}")
         self.queue.put(data)
 
     def _report_observation(self, observation: dict, timestamp: float):
@@ -243,7 +246,10 @@ class TeleoperateWorker(BaseThreadWorker):
                 # Add force feedback
                 action = (await self.leader.read_state())["state"]
                 state = (await self.follower.read_state())["state"]
+                forces = (await self.follower.read_forces())["state"]
                 await self.follower.set_joints_state(action)
+                if forces is not None:
+                    await self.leader.set_forces(forces)
 
                 frame = {
                     "task": self.config.task,
@@ -259,7 +265,7 @@ class TeleoperateWorker(BaseThreadWorker):
 
                 timestamp = time.perf_counter() - self.start_episode_t
                 self._report_observation(frame, timestamp)
-                if self.state.is_recording:
+                if self.state.is_recording and self.dataset is not None:
                     self.dataset.add_frame(frame)
 
                 dt_s = time.perf_counter() - start_loop_t
@@ -279,10 +285,11 @@ class TeleoperateWorker(BaseThreadWorker):
         logger.info("save")
         self.events["save"].clear()
         precise_sleep(0.3)  # TODO check if neccesary
-        new_episode = self._build_episode_from_buffer(self.dataset.meta.latest_episode)
-        if new_episode is not None:
-            self._report_episode(new_episode)
-        self.dataset.save_episode()
+        if self.dataset is not None:
+            new_episode = self._build_episode_from_buffer(self.dataset.meta.latest_episode)
+            if new_episode is not None:
+                self._report_episode(new_episode)
+            self.dataset.save_episode()
         self.state.is_recording = False
         self._report_state()
 
@@ -290,7 +297,8 @@ class TeleoperateWorker(BaseThreadWorker):
         logger.info("reset")
         self.events["reset"].clear()
         precise_sleep(0.3)  # TODO check if neccesary
-        self.dataset.clear_episode_buffer()
+        if self.dataset is not None:
+            self.dataset.clear_episode_buffer()
         self.state.is_recording = False
         self._report_state()
 
@@ -312,8 +320,18 @@ class TeleoperateWorker(BaseThreadWorker):
                 logger.info("Finalizing")
                 self.dataset.finalize()
 
-        asyncio.run(self.leader.disconnect())
-        asyncio.run(self.follower.disconnect())
+        if self.follower is not None:
+            try:
+                asyncio.run(self.follower.disconnect())
+            except Exception:
+                logger.info(f"Failed disconnecting follower: {self.follower}")
+
+        if self.leader is not None:
+            try:
+                asyncio.run(self.leader.disconnect())
+            except Exception:
+                logger.info(f"Failed disconnecting leader: {self.leader}")
+
         for camera in self.cameras.values():
             camera.disconnect()
 
@@ -331,7 +349,7 @@ class TeleoperateWorker(BaseThreadWorker):
     def _build_episode_from_buffer(self, episode: dict | None) -> Episode | None:
         """Build Episode object from buffer and episode dict."""
         data = self._build_episode_data_from_buffer()
-        if data is None:
+        if data is None or self.dataset is None:
             return None
 
         end = data["timestamp"][-1]
@@ -358,6 +376,8 @@ class TeleoperateWorker(BaseThreadWorker):
         LeRobotDataset V3 doesnt update episode data on save.
         In order to get the episode data we duplicate the actions that happen inside.
         """
+        if self.dataset is None:
+            return None
 
         episode_buffer = copy.deepcopy(self.dataset.episode_buffer)
         if episode_buffer is not None:

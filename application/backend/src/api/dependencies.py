@@ -12,15 +12,14 @@ from services.environment_service import EnvironmentService
 from services.event_processor import EventProcessor
 from services.robot_calibration_service import RobotCalibrationService
 from settings import get_settings
-from utils.robot import RobotConnectionManager
+from utils.serial_robot_tools import RobotConnectionManager
 from webrtc.manager import WebRTCManager
 from workers.camera_worker_registry import CameraWorkerRegistry
 from workers.robot_worker_registry import RobotWorkerRegistry
 
 
 def is_valid_uuid(identifier: str) -> bool:
-    """
-    Check if a given string identifier is formatted as a valid UUID.
+    """Check if a given string identifier is formatted as a valid UUID.
 
     :param identifier: String to check
     :return: True if valid UUID, False otherwise
