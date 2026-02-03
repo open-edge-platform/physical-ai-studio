@@ -10,14 +10,7 @@ from schemas.robot import RobotType
 class TrossenWidowXAIFollower(RobotClient):
     def __init__(self, config: NetworkIpRobotConfig):
         self.driver = trossen_arm.TrossenArmDriver()
-        self.driver.configure(
-            trossen_arm.Model.wxai_v0,
-            trossen_arm.StandardEndEffector.wxai_v0_follower,
-            config.connection_string,
-            True,
-            timeout=30,
-        )
-        self.driver.set_all_modes(trossen_arm.Mode.position)
+        self.connection_string = config.connection_string
 
         self.config: NetworkIpRobotConfig = config
         self.motor_names = {
@@ -168,6 +161,15 @@ class TrossenWidowXAIFollower(RobotClient):
         return pos + vel
 
     async def connect(self, calibrate: bool = False) -> None:  # noqa: ARG002
+        self.driver.configure(
+            trossen_arm.Model.wxai_v0,
+            trossen_arm.StandardEndEffector.wxai_v0_follower,
+            self.connection_string,
+            True,
+            timeout=5,
+        )
+        self.driver.set_all_modes(trossen_arm.Mode.position)
+
         self.driver.set_all_modes(trossen_arm.Mode.position)
         self.driver.set_all_positions(np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), 2.0, True)
 

@@ -52,9 +52,9 @@ class TeleoperateWorker(BaseThreadWorker):
     camera_keys: list[str] = []
 
     dataset: DatasetClient | None = None
-    leader: RobotClient
-    follower: RobotClient
-    cameras: dict[str, VideoCaptureBase]
+    leader: RobotClient | None = None
+    follower: RobotClient | None = None
+    cameras: dict[str, VideoCaptureBase] = {}
 
     def __init__(
         self,
@@ -122,12 +122,17 @@ class TeleoperateWorker(BaseThreadWorker):
         """Set up robots, cameras and dataset."""
         try:
             logger.info("connect to robot, cameras and setup dataset")
-            asyncio.run(self.setup_environment())
+            if self.loop is None:
+                raise RuntimeError("The event loop must be set.")
+            self.loop.run_until_complete(self.setup_environment())
+
+            if self.leader is None or self.follower is None or self.dataset is None:
+                raise RuntimeError("Environment setup failed.")
 
             self.action_keys = self.follower.features()
             self.camera_keys = [camera.name.lower() for camera in self.config.environment.cameras]
             self.dataset = get_internal_dataset(self.config.dataset)
-            features = asyncio.run(
+            features = self.loop.run_until_complete(
                 build_lerobot_dataset_features(self.config.environment, self.robot_manager, self.calibration_service)
             )
 
@@ -202,6 +207,10 @@ class TeleoperateWorker(BaseThreadWorker):
 
             self.start_episode_t = time.perf_counter()
             self.state.is_recording = False
+
+            if self.leader is None or self.follower is None or self.dataset is None:
+                raise RuntimeError("Environment setup failed.")
+
             while not self.should_stop() and not self.events["stop"].is_set():
                 start_loop_t = time.perf_counter()
                 if self.events["start"].is_set():
@@ -266,7 +275,7 @@ class TeleoperateWorker(BaseThreadWorker):
         self.state.is_recording = False
         self._report_state()
 
-    def teardown(self) -> None:
+    async def teardown(self) -> None:
         """Disconnect robots and close queue."""
         logger.info("Teardown")
         try:
@@ -279,23 +288,31 @@ class TeleoperateWorker(BaseThreadWorker):
 
         if self.follower is not None:
             try:
-                asyncio.run(self.follower.disconnect())
+                await self.follower.disconnect()
             except Exception:
                 logger.info(f"Failed disconnecting follower: {self.follower}")
 
         if self.leader is not None:
             try:
-                asyncio.run(self.leader.disconnect())
+                await self.leader.disconnect()
             except Exception:
                 logger.info(f"Failed disconnecting leader: {self.leader}")
 
         for camera in self.cameras.values():
-            camera.disconnect()
+            try:
+                camera.stop()
+                camera.disconnect()
+            except Exception:
+                logger.info("Failed disconnecting a camera. Ignoring")
 
-        # Wait for .5 seconds before closing queue to allow messages thru
-        asyncio.run(asyncio.sleep(0.5))
+        # Wait for .5 seconds before closing queue to allow messages through
+        await asyncio.sleep(0.5)
 
         self.queue.close()
+
+        import threading
+
+        logger.error("THREADS AFTER TELEOP TEARDOWN:\n" + "\n".join(t.name for t in threading.enumerate()))
 
     def _base_64_encode_observation(self, observation: np.ndarray | None) -> str:
         if observation is None:
