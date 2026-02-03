@@ -6,7 +6,7 @@ from loguru import logger
 
 from services.event_processor import EventProcessor
 from settings import get_settings
-from utils.robot import RobotConnectionManager
+from utils.serial_robot_tools import RobotConnectionManager
 from webrtc.manager import WebRTCManager
 from workers.camera_worker_registry import CameraWorkerRegistry
 from workers.robot_worker_registry import RobotWorkerRegistry

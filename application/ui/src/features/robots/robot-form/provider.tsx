@@ -5,7 +5,8 @@ import { SchemaRobot, SchemaRobotType } from '../../../api/openapi-spec';
 type RobotForm = {
     name: string;
     type: SchemaRobotType | null;
-    serial_id: string | null;
+    connection_string: string;
+    serial_number: string;
 };
 
 export type RobotFormState = RobotForm | null;
@@ -20,7 +21,11 @@ export const useRobotFormBody = (robot_id: string): SchemaRobot | null => {
         return null;
     }
 
-    if (robotForm.type === null || robotForm.name === null || robotForm.serial_id === null) {
+    if (
+        robotForm.type === null ||
+        robotForm.name === null ||
+        (robotForm.connection_string === null && robotForm.serial_number === null)
+    ) {
         return null;
     }
 
@@ -28,7 +33,8 @@ export const useRobotFormBody = (robot_id: string): SchemaRobot | null => {
         id: robot_id,
         name: robotForm.name,
         type: robotForm.type,
-        serial_id: robotForm.serial_id,
+        connection_string: robotForm.connection_string ?? '',
+        serial_number: robotForm.serial_number ?? '',
     };
 };
 
@@ -36,7 +42,8 @@ export const RobotFormProvider = ({ children, robot }: { children: ReactNode; ro
     const [value, setValue] = useState<RobotForm>({
         name: robot?.name ?? '',
         type: robot?.type ?? null,
-        serial_id: robot?.serial_id ?? null,
+        connection_string: robot?.connection_string ?? '',
+        serial_number: robot?.serial_number ?? '',
     });
 
     return (

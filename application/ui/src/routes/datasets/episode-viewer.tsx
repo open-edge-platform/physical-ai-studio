@@ -26,11 +26,17 @@ const VideoView = ({ cameraName, dataset_id, episodeIndex, aspectRatio, time, ep
 
     const videoRef = useRef<HTMLVideoElement>(null);
 
+    // Make sure webpage renders when video doesn't load correctly
     useEffect(() => {
-        if (videoRef.current) {
-            videoRef.current.currentTime = time + episodeVideo.start;
-        }
-    }, [time, episodeVideo.start]);
+        const video = videoRef.current;
+        const start = episodeVideo?.start;
+
+        if (!video) return;
+        if (video.readyState < 1) return;
+        if (!Number.isFinite(time) || !Number.isFinite(start)) return;
+
+        video.currentTime = time + start;
+    }, [time, episodeVideo?.start]);
 
     /* eslint-disable jsx-a11y/media-has-caption */
     return (

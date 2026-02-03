@@ -87,7 +87,7 @@ const CameraListItem = ({
                         </View>
                     </View>
                     <View gridArea='status'>
-                        <ConnectionStatus status={status} />
+                        <ConnectionStatus status={status == 'connected' ? 'online' : 'offline'} />
                     </View>
                     <View gridArea='menu' alignSelf={'end'} justifySelf={'end'}>
                         <MenuActions camera_id={camera.id ?? 'undefined'} />
