@@ -1,11 +1,10 @@
-from typing import Any
-
 import numpy as np
 import trossen_arm
 from loguru import logger
 
 from robots.robot_client import RobotClient
 from schemas import NetworkIpRobotConfig
+from schemas.robot import RobotType
 
 
 class TrossenWidowXAILeader(RobotClient):
@@ -26,11 +25,15 @@ class TrossenWidowXAILeader(RobotClient):
             1: "shoulder_lift",
             2: "elbow_flex",
             3: "wrist_flex",
-            4: "wrist_roll",
-            5: "wrist_yaw",
+            4: "wrist_yaw",
+            5: "wrist_roll",
             6: "gripper",
         }
         self.name = "trossen_widowx_ai_leader"
+
+    @property
+    def robot_type(self) -> RobotType:
+        return RobotType.TROSSEN_WIDOWXAI_LEADER
 
     @property
     def feedback_features(self) -> dict:
@@ -103,20 +106,24 @@ class TrossenWidowXAILeader(RobotClient):
         vel = [f"{motor}.vel" for motor in self.motor_names.values()]
         return pos + vel
 
-    def get_action(self) -> dict[str, Any]:
+    def get_action(self) -> dict:
         positions = self.driver.get_all_positions()
         velocities = self.driver.get_all_velocities()
 
-        action = {}
+        obs_dict = {}
+        # First: all positions
         for index, name in self.motor_names.items():
-            if index >= len(positions) or index >= len(velocities):
+            if index >= len(positions):
                 continue
-            pos = np.rad2deg(positions[index])
-            vel = velocities[index]
-            action[f"{name}.pos"] = pos
-            action[f"{name}.vel"] = vel
+            obs_dict[f"{name}.pos"] = np.rad2deg(positions[index]) if "gripper" not in name else positions[index]
 
-        return action
+        # Then: all velocities
+        for index, name in self.motor_names.items():
+            if index >= len(velocities):
+                continue
+            obs_dict[f"{name}.vel"] = velocities[index]
+
+        return obs_dict
 
     async def disconnect(self) -> None:
         try:

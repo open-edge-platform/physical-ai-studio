@@ -132,12 +132,11 @@ class TeleoperateWorker(BaseThreadWorker):
             ]
             print(self.camera_keys)
             self.dataset = get_internal_dataset(self.config.dataset)
+            features = asyncio.run(
+                build_lerobot_dataset_features(self.config.environment, self.robot_manager, self.calibration_service)
+            )
+
             if not self.dataset.exists_on_disk:
-                features = asyncio.run(
-                    build_lerobot_dataset_features(
-                        self.config.environment, self.robot_manager, self.calibration_service
-                    )
-                )
                 self.dataset.create(
                     fps=30,  # TODO: Implement in Environment
                     features=features,

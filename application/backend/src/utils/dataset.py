@@ -5,16 +5,9 @@ from lerobot.processor import make_default_processors
 from robots.utils import get_robot_client
 from schemas.environment import EnvironmentWithRelations
 from schemas.project_camera import Camera
+from schemas.robot import RobotType
 from services.robot_calibration_service import RobotCalibrationService
 from utils.serial_robot_tools import RobotConnectionManager
-
-
-async def get_camera_features(camera: Camera) -> tuple[int, int, int]:
-    """Get features of a camera.
-
-    Note: This works for 'now', but ip cameras etc should probably just get a frame before returning this.
-    """
-    return (camera.payload.height, camera.payload.width, 3)
 
 
 async def build_observation_features(
@@ -27,12 +20,18 @@ async def build_observation_features(
         # TODO: Implement, should probably prefix feature the robots only when len(robots) > 1
         # One issue is that you need to know which is which, so probably need a name identifier for robots
         raise ValueError("Environments with multiple robots not implemented yet")
-
     output_features = await build_action_features(environment, robot_manager, calibration_service)
     for camera in environment.cameras:
         output_features[camera.name.lower()] = await get_camera_features(camera)
 
     return output_features
+
+
+def robot_for_action_features(action_features: list[str]) -> RobotType:
+    """Todo: Do this proper. This is a bad idea"""
+    if len(action_features) >= 7:
+        return RobotType.TROSSEN_WIDOWXAI_FOLLOWER
+    return RobotType.SO101_FOLLOWER
 
 
 async def build_action_features(
@@ -72,3 +71,13 @@ async def build_lerobot_dataset_features(
             use_videos=use_videos,
         ),
     )
+
+
+async def get_camera_features(camera: Camera) -> tuple[int, int, int]:
+    """Get features of a camera.
+
+    Note: This works for 'now', but ip cameras etc should probably just get a frame before returning this.
+    """
+    if camera.payload is None or camera.payload.height is None or camera.payload.width is None:
+        raise ValueError("Cannot get features of camera without payload.")
+    return (camera.payload.height, camera.payload.width, 3)

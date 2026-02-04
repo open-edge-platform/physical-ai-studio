@@ -3,6 +3,7 @@ from lerobot.teleoperators.so101_leader import SO101LeaderConfig
 from loguru import logger
 
 from robots.robot_client import RobotClient
+from schemas.robot import RobotType
 
 
 class SO101Leader(RobotClient):
@@ -13,6 +14,10 @@ class SO101Leader(RobotClient):
     def __init__(self, port: str, id: str):
         config = SO101LeaderConfig(port=port, id=id)
         self.robot = LeSO101Leader(config)
+
+    @property
+    def robot_type(self) -> RobotType:
+        return RobotType.SO101_LEADER
 
     async def is_connected(self) -> bool:
         return self.robot.is_connected
