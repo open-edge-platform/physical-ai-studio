@@ -3,6 +3,8 @@ import shutil
 import time
 from pathlib import Path
 from uuid import uuid4
+from os import path, stat
+import torch
 
 import numpy as np
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -50,12 +52,51 @@ class InternalLeRobotDataset(DatasetClient):
         self.exists_on_disk = True
         self.has_episodes = False
 
+    def get_tasks(self) -> list[str]:
+        """Get Tasks in dataset."""
+        return list(self._dataset.meta.tasks.to_dict()["task_index"].keys())
+
+    def get_video_path(self, episode: int, camera: str) -> Path:
+        """Get Video path of specific episode and camera."""
+        metadata = self._dataset.meta
+        full_camera_name = f"observation.images.{camera}"
+        return Path(metadata.root) / Path(metadata.get_video_file_path(episode, full_camera_name))
+
+
     def prepare_for_writing(self, number_of_threads: int) -> None:
         """Start image writer & """
         self._dataset.start_image_writer(
             num_processes=0,
             num_threads=number_of_threads,
         )
+
+    def get_episodes(self) -> list[Episode]:
+        """Get episodes of dataset."""
+        result = []
+
+        metadata = self._dataset.meta
+        episodes = metadata.episodes
+
+        for episode in episodes:
+            full_path = path.join(metadata.root, metadata.get_data_file_path(episode["episode_index"]))
+            stat_result = stat(full_path)
+            result.append(
+                Episode(
+                    actions=self._get_episode_actions(episode).tolist(),
+                    fps=metadata.fps,
+                    modification_timestamp=stat_result.st_mtime_ns // 1e6,
+                    videos={
+                        video_key: EpisodeVideo(
+                            start=episode[f"videos/{video_key}/from_timestamp"],
+                            end=episode[f"videos/{video_key}/to_timestamp"],
+                        )
+                        for video_key in self._dataset.meta.video_keys
+                    },
+                    **episode,
+                )
+            )
+
+        return result
 
     def add_frame(self, obs: dict, act: dict, task: str) -> None:
         """Add frame to recording buffer."""
@@ -157,3 +198,10 @@ class InternalLeRobotDataset(DatasetClient):
             episode_buffer[key] = np.stack(episode_buffer[key])
 
         return episode_buffer
+
+    def _get_episode_actions(self, episode: dict) -> torch.Tensor:
+        """Get episode actions tensor from specific episode."""
+        from_idx = episode["dataset_from_index"]
+        to_idx = episode["dataset_to_index"]
+        actions = self._dataset.hf_dataset["action"][from_idx:to_idx]
+        return torch.stack(actions)

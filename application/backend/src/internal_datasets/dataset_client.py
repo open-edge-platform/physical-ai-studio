@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+from pathlib import Path
 from schemas import Episode
 
 
@@ -11,6 +12,18 @@ class DatasetClient(ABC):
     @abstractmethod
     def prepare_for_writing(self, number_of_threads: int) -> None:
         """Processes for writing episodes."""
+
+    @abstractmethod
+    def get_episodes(self) -> list[Episode]:
+        """Get episodes of dataset."""
+
+    @abstractmethod
+    def get_tasks(self) -> list[str]:
+        """Get Tasks in dataset."""
+
+    @abstractmethod
+    def get_video_path(self, episode: int, camera: str) -> Path:
+        """Get Video path of specific episode and camera."""
 
     @abstractmethod
     def create(self, fps: int, features: dict, robot_type: str) -> None:

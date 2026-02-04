@@ -3,14 +3,11 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
-from huggingface_hub.errors import RepositoryNotFoundError
-from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
 
 from api.dependencies import get_model_service, get_project_id, get_project_service
-from exceptions import ResourceAlreadyExistsError
-from schemas import InferenceConfig, LeRobotDatasetInfo, Model, Project, ProjectConfig, TeleoperationConfig
+from internal_datasets.utils import get_internal_dataset
+from schemas import InferenceConfig, Model, Project, ProjectConfig, TeleoperationConfig
 from services import ModelService, ProjectService
-from utils.dataset import build_dataset_from_lerobot_dataset, build_project_config_from_dataset, check_repository_exists
 
 router = APIRouter(prefix="/api/projects", tags=["Projects"])
 
@@ -43,25 +40,6 @@ async def set_project_config(
     update = {
         "config": project_config,
     }
-    return await project_service.update_project(project, update)
-
-
-@router.post("/{project_id}/import_dataset", status_code=status.HTTP_201_CREATED)
-async def import_dataset(
-    project_id: Annotated[UUID, Depends(get_project_id)],
-    lerobot_dataset: LeRobotDatasetInfo,
-    project_service: Annotated[ProjectService, Depends(get_project_service)],
-) -> Project:
-    """Set the project from a dataset, only available when config is None."""
-    project = await project_service.get_project_by_id(project_id)
-    update = {}
-    if project.config is not None:
-        raise ResourceAlreadyExistsError("project config", "Import disabled when project already has config.")
-    if project.datasets:
-        raise ResourceAlreadyExistsError("dataset", "Import disabled when project already has a dataset.")
-
-    update["config"] = build_project_config_from_dataset(lerobot_dataset)
-    update["datasets"] = [build_dataset_from_lerobot_dataset(lerobot_dataset, project_id)]
     return await project_service.update_project(project, update)
 
 
@@ -114,12 +92,6 @@ async def get_tasks_for_dataset(
     res = {}
 
     for dataset in project.datasets:
-        try:
-            if check_repository_exists(Path(dataset.path)):
-                res[dataset.name] = list(
-                    LeRobotDatasetMetadata(dataset.name, dataset.path).tasks.to_dict()["task_index"].keys()
-                )
-        except RepositoryNotFoundError:
-            pass
+        res[dataset.name] = get_internal_dataset(dataset).get_tasks()
 
     return res
