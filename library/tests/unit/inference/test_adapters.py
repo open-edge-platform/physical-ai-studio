@@ -4,6 +4,7 @@
 """Unit tests for inference adapters."""
 
 from pathlib import Path
+import inspect
 from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np
@@ -19,7 +20,6 @@ from getiaction.inference.adapters import (
     TorchAdapter,
     get_adapter,
 )
-from getiaction.data.observation import Observation
 
 
 class TestGetAdapter:
@@ -189,7 +189,10 @@ class TestTorchAdapter:
             ):
                 # Test with numpy arrays (standard adapter interface)
                 outputs = adapter.predict({
-                    "observation": {"images": np.random.randn(1, 3, 224, 224), "state": np.random.randn(1, 2)}
+                    "observation": {
+                        "images": np.random.randn(1, 3, 224, 224),
+                        "state": np.random.randn(1, 2),
+                    }
                 })
                 assert "output" in outputs and isinstance(outputs["output"], np.ndarray)
 
@@ -228,10 +231,6 @@ class TestTorchAdapter:
             ):
                 # Test lowercase "observation" key
                 outputs = adapter.predict({"observation": {"state": np.array([[1.0]])}})
-                assert "output" in outputs
-
-                # Test uppercase "Observation" key (legacy compatibility)
-                outputs = adapter.predict({"Observation": {"state": np.array([[1.0]])}})
                 assert "output" in outputs
 
                 # Test direct dict (no observation key wrapper)
@@ -384,5 +383,20 @@ class TestRuntimeAdapter:
 
     def test_abstract_methods_required(self) -> None:
         """Test that abstract methods must be implemented."""
-        with pytest.raises(TypeError):
-            RuntimeAdapter()  # type: ignore[abstract]
+
+        class IncompleteAdapter(RuntimeAdapter):
+            def load(self, model_path: Path) -> None:
+                raise NotImplementedError
+
+            def predict(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+                raise NotImplementedError
+
+            @property
+            def input_names(self) -> list[str]:
+                raise NotImplementedError
+
+            @property
+            def output_names(self) -> list[str]:
+                raise NotImplementedError
+
+        assert inspect.isabstract(RuntimeAdapter)
