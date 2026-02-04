@@ -1,12 +1,12 @@
 import copy
 import shutil
 import time
+from os import path, stat
 from pathlib import Path
 from uuid import uuid4
-from os import path, stat
-import torch
 
 import numpy as np
+import torch
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import build_dataset_frame
 from lerobot.processor import make_default_processors
@@ -23,7 +23,6 @@ class InternalLeRobotDataset(DatasetClient):
     _path: Path
     _dataset: LeRobotDataset
 
-
     _teleop_action_processor: RobotProcessorPipeline
     _robot_action_processor: RobotProcessorPipeline
     _robot_observation_processor: RobotProcessorPipeline
@@ -35,19 +34,16 @@ class InternalLeRobotDataset(DatasetClient):
             self.exists_on_disk = True
             self.has_episodes = self._dataset.num_episodes > 0
 
-        self._teleop_action_processor, self._robot_action_processor, self._robot_observation_processor = make_default_processors()
+        self._teleop_action_processor, self._robot_action_processor, self._robot_observation_processor = (
+            make_default_processors()
+        )
 
     def create(self, fps: int, features: dict, robot_type: str) -> None:
         """Create LeRobot dataset."""
         if self._check_repository_exists(self._path):
             raise Exception(f"Dataset already exists at {self._path}")
         self._dataset = LeRobotDataset.create(
-            repo_id=str(uuid4()),
-            root=self._path,
-            fps=fps,
-            features=features,
-            robot_type=robot_type,
-            use_videos=True
+            repo_id=str(uuid4()), root=self._path, fps=fps, features=features, robot_type=robot_type, use_videos=True
         )
         self.exists_on_disk = True
         self.has_episodes = False
@@ -62,9 +58,8 @@ class InternalLeRobotDataset(DatasetClient):
         full_camera_name = f"observation.images.{camera}"
         return Path(metadata.root) / Path(metadata.get_video_file_path(episode, full_camera_name))
 
-
     def prepare_for_writing(self, number_of_threads: int) -> None:
-        """Start image writer & """
+        """Start image writer &"""
         self._dataset.start_image_writer(
             num_processes=0,
             num_threads=number_of_threads,
@@ -123,7 +118,6 @@ class InternalLeRobotDataset(DatasetClient):
             logger.info("Finalizing")
             self._dataset.finalize()
 
-
     def _process_frame(self, obs: dict, act: dict, task: str) -> dict:
         obs_processed = self._robot_observation_processor(obs)
         act_processed_teleop = self._teleop_action_processor((act, obs))
@@ -161,7 +155,7 @@ class InternalLeRobotDataset(DatasetClient):
             modification_timestamp=int(time.time()),
         )
 
-    def _build_episode_data_from_buffer(self) -> dict :
+    def _build_episode_data_from_buffer(self) -> dict:
         """Build episode data from the buffer.
 
         LeRobotDataset V3 doesnt update episode data on save.

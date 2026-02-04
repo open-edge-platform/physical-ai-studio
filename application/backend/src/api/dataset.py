@@ -1,5 +1,3 @@
-from internal_datasets.utils import get_internal_dataset
-import os
 from typing import Annotated
 from uuid import UUID
 
@@ -7,6 +5,7 @@ from fastapi import APIRouter, Depends, status
 from fastapi.responses import FileResponse
 
 from api.dependencies import get_dataset_service
+from internal_datasets.utils import get_internal_dataset
 from schemas import Dataset, Episode
 from services import DatasetService
 

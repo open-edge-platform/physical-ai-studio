@@ -1,12 +1,11 @@
-from internal_datasets.utils import get_internal_dataset
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
-from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
 
 from api.dependencies import get_dataset_service, get_model_service, validate_uuid
 from exceptions import ResourceNotFoundError, ResourceType
+from internal_datasets.utils import get_internal_dataset
 from schemas import Model
 from services import DatasetService, ModelService
 

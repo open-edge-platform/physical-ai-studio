@@ -53,13 +53,10 @@ class TeleoperateWorker(BaseThreadWorker):
     action_keys: list[str] = []
     camera_keys: list[str] = []
 
-    follower: RobotClient
-    leader: RobotClient
-    cameras: dict[str, VideoCaptureBase]
-
     dataset: DatasetClient | None = None
-    leader: RobotClient | None = None
-    follower: RobotClient | None = None
+    leader: RobotClient
+    follower: RobotClient
+    cameras: dict[str, VideoCaptureBase]
 
     def __init__(
         self,
@@ -130,11 +127,17 @@ class TeleoperateWorker(BaseThreadWorker):
             asyncio.run(self.setup_environment())
 
             self.action_keys = self.follower.features()
-            self.camera_keys = [f"{OBSERVATION_IMAGES_PREFIX}{camera.name.lower()}" for camera in self.config.environment.cameras]
+            self.camera_keys = [
+                f"{OBSERVATION_IMAGES_PREFIX}{camera.name.lower()}" for camera in self.config.environment.cameras
+            ]
             print(self.camera_keys)
             self.dataset = get_internal_dataset(self.config.dataset)
             if not self.dataset.exists_on_disk:
-                features = asyncio.run(build_lerobot_dataset_features(self.config.environment, self.robot_manager, self.calibration_service))
+                features = asyncio.run(
+                    build_lerobot_dataset_features(
+                        self.config.environment, self.robot_manager, self.calibration_service
+                    )
+                )
                 self.dataset.create(
                     fps=30,  # TODO: Implement in Environment
                     features=features,
@@ -315,4 +318,3 @@ class TeleoperateWorker(BaseThreadWorker):
             return ""
         _, imagebytes = cv2.imencode(".jpg", observation)
         return base64.b64encode(imagebytes).decode()
-
