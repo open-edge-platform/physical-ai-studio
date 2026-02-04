@@ -108,18 +108,18 @@ async def identify_so101_robot_visually(robot: Robot, joint: str | None = None) 
     if robot.connection_string == "":
         raise ValueError(f"Could not find the serial port for serial number {robot.serial_number}")
     # Assume follower since leader shares same FeetechMotorBus layout
-    robot = SO101Follower(SO101FollowerConfig(port=robot.connection_string))
-    robot.bus.connect()
+    connection = SO101Follower(SO101FollowerConfig(port=robot.connection_string))
+    connection.bus.connect()
 
     PRESENT_POSITION_KEY = "Present_Position"
     GOAL_POSITION_KEY = "Goal_Position"
 
-    current_position = robot.bus.sync_read(PRESENT_POSITION_KEY, normalize=False)
-    gripper_calibration = robot.bus.read_calibration()[joint]
-    robot.bus.write(GOAL_POSITION_KEY, joint, gripper_calibration.range_min, normalize=False)
+    current_position = connection.bus.sync_read(PRESENT_POSITION_KEY, normalize=False)
+    gripper_calibration = connection.bus.read_calibration()[joint]
+    connection.bus.write(GOAL_POSITION_KEY, joint, gripper_calibration.range_min, normalize=False)
     await asyncio.sleep(1)
-    robot.bus.write(GOAL_POSITION_KEY, joint, gripper_calibration.range_max, normalize=False)
+    connection.bus.write(GOAL_POSITION_KEY, joint, gripper_calibration.range_max, normalize=False)
     await asyncio.sleep(1)
-    robot.bus.write(GOAL_POSITION_KEY, joint, current_position[joint], normalize=False)
+    connection.bus.write(GOAL_POSITION_KEY, joint, current_position[joint], normalize=False)
     await asyncio.sleep(1)
-    robot.bus.disconnect()
+    connection.bus.disconnect()

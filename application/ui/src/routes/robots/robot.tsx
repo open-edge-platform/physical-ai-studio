@@ -1,6 +1,7 @@
 import { Button, ButtonGroup, Flex, Item, TabList, TabPanels, Tabs } from '@geti/ui';
 import { Outlet, useLocation, useParams } from 'react-router-dom';
 
+import { $api } from '../../api/client';
 import { paths } from '../../router';
 import { getPathSegment } from '../../utils';
 
@@ -10,6 +11,17 @@ export const Robot = () => {
         project_id: string;
         robot_id: string;
     };
+
+    const { data: robot } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/robots/{robot_id}', {
+        params: { path: { project_id: params.project_id, robot_id: params.robot_id } },
+    });
+    const identifyMutation = $api.useMutation('post', '/api/hardware/identify');
+
+    const onIdentify = identifyMutation.isPending
+        ? undefined
+        : () => {
+              identifyMutation.mutate({ body: robot });
+          };
 
     return (
         <Tabs aria-label='Robot configuration navigation' selectedKey={getPathSegment(pathname, 5)} height='100%'>
@@ -45,7 +57,9 @@ export const Robot = () => {
                     }}
                 >
                     <ButtonGroup>
-                        <Button variant='secondary'>Identify</Button>
+                        <Button variant='secondary' onPress={onIdentify}>
+                            Identify
+                        </Button>
                         <Button variant='secondary'>Connect</Button>
                     </ButtonGroup>
                 </div>

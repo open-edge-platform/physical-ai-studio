@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Generic, Protocol, TypeVar
 
+from utils.serialize_utils import to_python_primitive
 from workers.transport.worker_transport import WorkerTransport
 
 
@@ -36,7 +37,7 @@ class WorkerStatus(Generic[ConfigT]):
             "event": "status",
             "state": self.state.value,
             "message": self.message,
-            "config": self._serialize_config(),
+            "config": to_python_primitive(self._serialize_config()),
         }
 
     def _serialize_config(self) -> dict | None:

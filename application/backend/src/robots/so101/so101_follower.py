@@ -3,6 +3,7 @@ from lerobot.robots.so101_follower import SO101FollowerConfig
 from loguru import logger
 
 from robots.robot_client import RobotClient
+from schemas.robot import RobotType
 
 
 class SO101Follower(RobotClient):
@@ -13,6 +14,10 @@ class SO101Follower(RobotClient):
         config = SO101FollowerConfig(port=port, id=id)
         self.robot = LeSO101Follower(config)
         self.is_controlled = False
+
+    @property
+    def robot_type(self) -> RobotType:
+        return RobotType.SO101_FOLLOWER
 
     async def is_connected(self) -> bool:
         return self.robot.is_connected
@@ -72,3 +77,15 @@ class SO101Follower(RobotClient):
         except Exception as e:
             logger.error(f"Robot read error: {e}")
             raise
+
+    async def read_forces(self) -> dict | None:
+        """Read current robot forces. Returns state dict with timestamp."""
+        return self._create_event(
+            "force_was_updated",
+            state=None,
+            is_controlled=self.is_controlled,
+        )
+
+    async def set_forces(self, forces: dict) -> dict:  # noqa: ARG002
+        """Set current robot forces. Returns event dict with timestamp."""
+        raise Exception("Not implemented for SO101")

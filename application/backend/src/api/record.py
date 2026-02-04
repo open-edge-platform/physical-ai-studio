@@ -1,9 +1,8 @@
 import asyncio
 import multiprocessing as mp
 from queue import Empty
-from typing import Annotated, Any
+from typing import Annotated
 
-import numpy as np
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from loguru import logger
 
@@ -17,13 +16,14 @@ from core.scheduler import Scheduler
 from exceptions import ResourceNotFoundError
 from schemas import InferenceConfig, TeleoperationConfig
 from services import DatasetService
+from utils.serialize_utils import to_python_primitive
 from workers import InferenceWorker, TeleoperateWorker
 
 router = APIRouter(prefix="/api/record")
 
 
 @router.websocket("/teleoperate/ws")
-async def teleoperate_websocket(  # noqa: C901
+async def teleoperate_websocket(
     websocket: WebSocket,
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
     robot_manager: RobotConnectionManagerDep,
@@ -66,16 +66,6 @@ async def teleoperate_websocket(  # noqa: C901
             logger.info("Except: disconnected!")
             if process is not None:
                 process.stop()
-
-    def to_python_primitive(obj: Any) -> Any:
-        """Replace numpy values to primitive types."""
-        if isinstance(obj, dict):
-            return {k: to_python_primitive(v) for k, v in obj.items()}
-        if isinstance(obj, list):
-            return [to_python_primitive(v) for v in obj]
-        if isinstance(obj, np.generic):  # catches np.float32, np.int64, etc.
-            return obj.item()
-        return obj
 
     async def handle_outgoing():
         try:
