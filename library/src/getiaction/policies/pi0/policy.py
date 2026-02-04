@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import torch
@@ -40,7 +41,7 @@ class Pi0(Export, Policy, FromConfig):
         variant: Model variant ("pi0" or "pi05"). Default: "pi0".
         paligemma_variant: PaliGemma backbone variant. Default: "gemma_2b".
         action_expert_variant: Action expert variant. Default: "gemma_300m".
-        dtype: Data type for model. Default: "float32".
+        dtype: Data type for model. Default: "bfloat16".
         n_obs_steps: Number of observation steps to use. Default: 1.
         chunk_size: Size of action chunks for prediction. Default: 50.
         n_action_steps: Number of action steps to execute. Default: 50.
@@ -56,7 +57,7 @@ class Pi0(Export, Policy, FromConfig):
         time_min_period: Minimum period for sinusoidal encoding. Default: 4e-3.
         time_max_period: Maximum period for sinusoidal encoding. Default: 4.0.
         tune_paligemma: Whether to tune PaliGemma weights. Default: False.
-        tune_action_expert: Whether to tune action expert weights. Default: False.
+        tune_action_expert: Whether to tune action expert weights. Default: True.
         tune_vision_encoder: Whether to tune vision encoder weights. Default: False.
         lora_rank: LoRA rank (0 disables LoRA). Default: 0.
         lora_alpha: LoRA alpha parameter. Default: 16.
@@ -64,8 +65,10 @@ class Pi0(Export, Policy, FromConfig):
         lora_target_modules: Target modules for LoRA. Default: ("q_proj", "v_proj", "k_proj", "o_proj").
         gradient_checkpointing: Whether to enable gradient checkpointing. Default: False.
         learning_rate: Learning rate for optimizer. Default: 2.5e-5.
-        weight_decay: Weight decay for optimizer. Default: 0.01.
-        warmup_ratio: Warmup ratio for scheduler. Default: 0.05.
+        weight_decay: Weight decay for optimizer. Default: 1e-10.
+        warmup_steps: Number of warmup steps. Default: 1000.
+        decay_steps: Number of decay steps after warmup. Default: 30000.
+        decay_lr: Target learning rate after decay. Default: 2.5e-6.
         grad_clip_norm: Gradient clipping norm value. Default: 1.0.
         dataset_stats: Dataset normalization statistics for eager initialization. Default: None.
 
@@ -88,7 +91,7 @@ class Pi0(Export, Policy, FromConfig):
         variant: Literal["pi0", "pi05"] = "pi0",
         paligemma_variant: str = "gemma_2b",
         action_expert_variant: str = "gemma_300m",
-        dtype: str = "float32",
+        dtype: str = "bfloat16",
         # Input / output structure
         n_obs_steps: int = 1,
         chunk_size: int = 50,
@@ -109,7 +112,7 @@ class Pi0(Export, Policy, FromConfig):
         time_max_period: float = 4.0,
         # Finetuning settings
         tune_paligemma: bool = False,  # noqa: FBT001, FBT002
-        tune_action_expert: bool = False,  # noqa: FBT001, FBT002
+        tune_action_expert: bool = True,  # noqa: FBT001, FBT002
         tune_vision_encoder: bool = False,  # noqa: FBT001, FBT002
         # LoRA settings
         lora_rank: int = 0,
@@ -120,8 +123,10 @@ class Pi0(Export, Policy, FromConfig):
         gradient_checkpointing: bool = False,  # noqa: FBT001, FBT002
         # Training presets
         learning_rate: float = 2.5e-5,
-        weight_decay: float = 0.01,
-        warmup_ratio: float = 0.05,
+        weight_decay: float = 1e-10,
+        warmup_steps: int = 1000,
+        decay_steps: int = 30000,
+        decay_lr: float = 2.5e-6,
         grad_clip_norm: float = 1.0,
         *,
         # Eager initialization (for checkpoint loading)
@@ -163,7 +168,9 @@ class Pi0(Export, Policy, FromConfig):
             gradient_checkpointing=gradient_checkpointing,
             learning_rate=learning_rate,
             weight_decay=weight_decay,
-            warmup_ratio=warmup_ratio,
+            warmup_steps=warmup_steps,
+            decay_steps=decay_steps,
+            decay_lr=decay_lr,
             grad_clip_norm=grad_clip_norm,
         )
 
@@ -377,14 +384,18 @@ class Pi0(Export, Policy, FromConfig):
             weight_decay=self.config.weight_decay,
         )
 
-        # Calculate warmup steps based on trainer's estimated stepping batches
-        total_steps = self.trainer.estimated_stepping_batches
-        warmup_steps = int(total_steps * self.config.warmup_ratio)
-
+        # Define learning rate schedule with warmup + cosine decay
         def lr_lambda(step: int) -> float:
-            if step < warmup_steps:
-                return step / max(1, warmup_steps)
-            return 1.0
+            if step < self.config.warmup_steps:
+                # Warmup phase: linear increase from 0 to 1
+                return step / max(1, self.config.warmup_steps)
+            if step < self.config.warmup_steps + self.config.decay_steps:
+                # Cosine decay phase: from 1 to decay_lr/learning_rate
+                decay_progress = (step - self.config.warmup_steps) / self.config.decay_steps
+                decay_min = self.config.decay_lr / self.config.learning_rate
+                return (1 - decay_min) * 0.5 * (1 + math.cos(math.pi * decay_progress)) + decay_min
+            # After decay: stay at decay_lr
+            return self.config.decay_lr / self.config.learning_rate
 
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
@@ -450,7 +461,7 @@ class Pi05(Pi0):
         *,
         paligemma_variant: str = "gemma_2b",
         action_expert_variant: str = "gemma_300m",
-        dtype: str = "float32",
+        dtype: str = "bfloat16",
         n_obs_steps: int = 1,
         chunk_size: int = 50,
         n_action_steps: int = 50,
@@ -466,7 +477,7 @@ class Pi05(Pi0):
         time_min_period: float = 4e-3,
         time_max_period: float = 4.0,
         tune_paligemma: bool = False,
-        tune_action_expert: bool = False,
+        tune_action_expert: bool = True,
         tune_vision_encoder: bool = False,
         lora_rank: int = 0,
         lora_alpha: int = 16,
@@ -474,8 +485,10 @@ class Pi05(Pi0):
         lora_target_modules: tuple[str, ...] = ("q_proj", "v_proj", "k_proj", "o_proj"),
         gradient_checkpointing: bool = False,
         learning_rate: float = 2.5e-5,
-        weight_decay: float = 0.01,
-        warmup_ratio: float = 0.05,
+        weight_decay: float = 1e-10,
+        warmup_steps: int = 1000,
+        decay_steps: int = 30000,
+        decay_lr: float = 2.5e-6,
         grad_clip_norm: float = 1.0,
         dataset_stats: dict[str, dict[str, list[float] | str | tuple[int, ...]]] | None = None,
     ) -> None:
@@ -509,7 +522,9 @@ class Pi05(Pi0):
             gradient_checkpointing=gradient_checkpointing,
             learning_rate=learning_rate,
             weight_decay=weight_decay,
-            warmup_ratio=warmup_ratio,
+            warmup_steps=warmup_steps,
+            decay_steps=decay_steps,
+            decay_lr=decay_lr,
             grad_clip_norm=grad_clip_norm,
             dataset_stats=dataset_stats,
         )

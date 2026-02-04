@@ -23,6 +23,8 @@ class TestPi0Config:
         assert config.paligemma_variant == "gemma_2b"
         assert config.action_expert_variant == "gemma_300m"
         assert config.variant == "pi0"
+        assert config.dtype == "bfloat16"
+        assert config.tune_action_expert is True
 
     def test_custom_config(self) -> None:
         """Test custom configuration values."""
@@ -45,8 +47,10 @@ class TestPi0Config:
         """Test training-related configuration values."""
         config = Pi0Config()
         assert config.learning_rate == 2.5e-5
-        assert config.weight_decay == 0.01
-        assert config.warmup_ratio == 0.05
+        assert config.weight_decay == 1e-10
+        assert config.warmup_steps == 1000
+        assert config.decay_steps == 30000
+        assert config.decay_lr == 2.5e-6
         assert config.grad_clip_norm == 1.0
 
     def test_flow_matching_config_values(self) -> None:

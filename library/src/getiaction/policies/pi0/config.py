@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, cast
 
 from getiaction.config import Config
 
@@ -15,11 +15,15 @@ from getiaction.config import Config
 class Pi0Config(Config):
     """Configuration for Pi0/Pi0.5 flow matching model."""
 
+    DEFAULT_MAX_TOKEN_LEN_PI0: int = 48
+    DEFAULT_MAX_TOKEN_LEN_PI05: int = 200
+    _AUTO_MAX_TOKEN_LEN: object = object()
+
     variant: Literal["pi0", "pi05"] = "pi0"
 
     paligemma_variant: str = "gemma_2b"
     action_expert_variant: str = "gemma_300m"
-    dtype: str = "float32"
+    dtype: str = "bfloat16"
 
     n_obs_steps: int = 1
     chunk_size: int = 50
@@ -27,7 +31,7 @@ class Pi0Config(Config):
 
     max_state_dim: int = 32
     max_action_dim: int = 32
-    max_token_len: int | None = None
+    max_token_len: int | None = field(default_factory=lambda: cast("int | None", Pi0Config._AUTO_MAX_TOKEN_LEN))
 
     image_resolution: tuple[int, int] = (224, 224)
 
@@ -41,7 +45,7 @@ class Pi0Config(Config):
     time_max_period: float = 4.0
 
     tune_paligemma: bool = False
-    tune_action_expert: bool = False
+    tune_action_expert: bool = True
     tune_vision_encoder: bool = False
 
     lora_rank: int = 0
@@ -54,14 +58,18 @@ class Pi0Config(Config):
     gradient_checkpointing: bool = False
 
     learning_rate: float = 2.5e-5
-    weight_decay: float = 0.01
-    warmup_ratio: float = 0.05
+    weight_decay: float = 1e-10
+    warmup_steps: int = 1000
+    decay_steps: int = 30000
+    decay_lr: float = 2.5e-6
     grad_clip_norm: float = 1.0
 
     def __post_init__(self) -> None:
         """Validate and apply default values."""  # noqa: DOC501
-        if self.max_token_len is None:
-            self.max_token_len = 200 if self.variant == "pi05" else 48
+        if self.max_token_len is self._AUTO_MAX_TOKEN_LEN or self.max_token_len is None:
+            self.max_token_len = (
+                self.DEFAULT_MAX_TOKEN_LEN_PI05 if self.variant == "pi05" else self.DEFAULT_MAX_TOKEN_LEN_PI0
+            )
 
         if self.variant not in {"pi0", "pi05"}:
             msg = f"variant must be 'pi0' or 'pi05', got '{self.variant}'"
