@@ -178,7 +178,7 @@ class TestTorchAdapter:
 
         with patch("getiaction.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
             adapter = TorchAdapter(device="cpu")
-            assert adapter.device == torch.device("cpu")
+            assert adapter.torch_device == torch.device("cpu")
             assert "cpu" in repr(adapter)
 
             adapter.load(model_path)
@@ -255,10 +255,10 @@ class TestTorchAdapter:
     def test_device_selection(self) -> None:
         """Test device selection for Torch adapter."""
         adapter_cpu = TorchAdapter(device="cpu")
-        assert adapter_cpu.device == torch.device("cpu")
+        assert adapter_cpu.torch_device == torch.device("cpu")
 
         adapter_cuda = TorchAdapter(device="cuda")
-        assert adapter_cuda.device == torch.device("cuda")
+        assert adapter_cuda.torch_device == torch.device("cuda")
 
     def test_input_output_names_before_load(self) -> None:
         """Test input/output names return empty lists before model is loaded."""

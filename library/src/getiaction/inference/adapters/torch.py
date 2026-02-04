@@ -3,17 +3,19 @@
 
 """Torch runtime adapter for inference."""
 
+import importlib
 from pathlib import Path
 from typing import Any, Protocol, cast
 
 import numpy as np
 import torch
-import yaml
 
 from getiaction.data.observation import Observation
 from getiaction.policies import get_getiaction_policy_class as get_policy_class
 
 from .base import RuntimeAdapter
+
+yaml: Any = importlib.import_module("yaml")
 
 
 class _ExportModel(Protocol):
@@ -48,6 +50,11 @@ class TorchAdapter(RuntimeAdapter):
         self._policy: torch.nn.Module | None = None
         self._input_names: list[str] = []
         self._output_names: list[str] = []
+
+    @property
+    def torch_device(self) -> torch.device:
+        """Get torch device used for inference."""
+        return self._torch_device
 
     def load(self, model_path: Path | str) -> None:
         """Load Torch model from file.
