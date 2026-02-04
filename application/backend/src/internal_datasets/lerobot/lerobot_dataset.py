@@ -16,6 +16,7 @@ from loguru import logger
 
 from internal_datasets.dataset_client import DatasetClient
 from schemas import Episode, EpisodeVideo
+from utils.dataset import robot_for_action_features
 
 
 class InternalLeRobotDataset(DatasetClient):
@@ -72,6 +73,8 @@ class InternalLeRobotDataset(DatasetClient):
         metadata = self._dataset.meta
         episodes = metadata.episodes
 
+        action_feature_names = self._dataset.features.get("action", {}).get("names", [])
+        follower_robot = robot_for_action_features(action_feature_names)
         for episode in episodes:
             full_path = path.join(metadata.root, metadata.get_data_file_path(episode["episode_index"]))
             stat_result = stat(full_path)
@@ -87,6 +90,8 @@ class InternalLeRobotDataset(DatasetClient):
                         )
                         for video_key in self._dataset.meta.video_keys
                     },
+                    follower_robot_types=[follower_robot],
+                    action_keys=action_feature_names,
                     **episode,
                 )
             )

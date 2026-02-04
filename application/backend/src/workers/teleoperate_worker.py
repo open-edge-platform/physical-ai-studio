@@ -130,7 +130,6 @@ class TeleoperateWorker(BaseThreadWorker):
             self.camera_keys = [
                 f"{OBSERVATION_IMAGES_PREFIX}{camera.name.lower()}" for camera in self.config.environment.cameras
             ]
-            print(self.camera_keys)
             self.dataset = get_internal_dataset(self.config.dataset)
             features = asyncio.run(
                 build_lerobot_dataset_features(self.config.environment, self.robot_manager, self.calibration_service)
@@ -235,7 +234,6 @@ class TeleoperateWorker(BaseThreadWorker):
 
                 actions = {f"{key}.pos": value for key, value in action.items()}
                 observations = {f"{key}.pos": value for key, value in state.items()}
-                print(observations)
                 for camera_name, camera in self.cameras.items():
                     _success, camera_frame = camera.get_latest_frame()  # HWC
                     if camera_frame is None:
