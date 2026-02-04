@@ -7,6 +7,7 @@ import { Canvas } from '@react-three/fiber';
 import { degToRad } from 'three/src/math/MathUtils.js';
 import { URDFRobot } from 'urdf-loader';
 
+import { SchemaRobotType } from '../../../api/openapi-spec';
 import { useContainerSize } from '../../../components/zoom/use-container-size';
 import { useLoadModelMutation, useRobotModels } from './../robot-models-context';
 
@@ -23,11 +24,15 @@ const ActualURDFModel = ({ model }: { model: URDFRobot }) => {
     );
 };
 
-const useLoadSO101 = () => {
+const useLoadURDF = (robotType: SchemaRobotType) => {
     const loadModelMutation = useLoadModelMutation();
     const { models } = useRobotModels();
 
-    const PATH = '/SO101/so101_new_calib.urdf';
+    let PATH = '/SO101/so101_new_calib.urdf';
+
+    if (robotType !== undefined && robotType.toLowerCase().includes('trossen')) {
+        PATH = '/widowx/urdf/generated/wxai/wxai_follower.urdf';
+    }
 
     const ref = useRef(false);
     useEffect(() => {
@@ -45,29 +50,37 @@ const useLoadSO101 = () => {
 
         ref.current = true;
         loadModelMutation.mutate(PATH);
-    }, [models, loadModelMutation]);
+    }, [models, PATH, loadModelMutation]);
 };
 
 interface RobotViewerProps {
-    jointValues?: number[];
+    robotType: SchemaRobotType;
+    featureValues?: number[];
+    featureNames?: string[];
 }
-export const RobotViewer = ({ jointValues }: RobotViewerProps) => {
+export const RobotViewer = ({ robotType, featureValues, featureNames }: RobotViewerProps) => {
     const angle = degToRad(-45);
-    useLoadSO101();
+    useLoadURDF(robotType);
     const ref = useRef<HTMLDivElement>(null);
     const size = useContainerSize(ref);
     const { models } = useRobotModels();
     const model = models.at(0);
 
     useEffect(() => {
-        if (jointValues !== undefined && model !== undefined) {
-            const jointNames = ['shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex', 'wrist_roll', 'gripper'];
-            const actionValues = jointValues.map(degToRad);
-            jointNames.forEach((name, index) => {
-                model.joints[name].setJointValue(actionValues[index]);
+        if (featureValues !== undefined && featureNames !== undefined && model !== undefined) {
+            featureNames.forEach((name, index) => {
+                if (index < featureValues.length && name.endsWith('.pos')) {
+                    const joint_name = name.replace('.pos', '');
+
+                    if (joint_name === 'gripper' && model.robotName == 'wxai') {
+                        model.setJointValue('left_carriage_joint', featureValues[index]); // meters
+                    } else if (model.joints[joint_name] != undefined) {
+                        model.joints[joint_name].setJointValue(degToRad(featureValues[index]));
+                    }
+                }
             });
         }
-    }, [jointValues, model]);
+    }, [featureValues, featureNames, model]);
 
     return (
         <div ref={ref} style={{ width: '100%', height: '100%' }}>
