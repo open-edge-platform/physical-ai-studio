@@ -170,7 +170,7 @@ class ExportE2ETests:
 @pytest.mark.slow
 @pytest.mark.parametrize("policy_name", FIRST_PARTY_VLA_POLICIES, indirect=True)
 class TestE2ECore(CoreE2ETests):
-    """E2E core tests for VLA policies without export support (Groot, Pi0, etc.)."""
+    """E2E core tests for VLA policies without export support (Groot, SmolVLA, etc.)."""
 
     @pytest.fixture(scope="class")
     def policy(self, policy_name: str) -> Policy:
@@ -188,7 +188,7 @@ class TestE2ECore(CoreE2ETests):
                 tune_projector=True,
                 tune_diffusion_model=False,
             )
-        # Pi0 and other VLA policies use defaults (already memory-efficient)
+        # Other VLA policies use defaults (already memory-efficient)
         return get_policy(policy_name, source="getiaction")
 
     @pytest.fixture(scope="class")
@@ -238,6 +238,7 @@ class TestE2ECore(CoreE2ETests):
         inference_output = inference_model.select_action(inference_input)
 
         assert len(inference_output.shape) in {1, 2, 3}, f"Expected 1-3D tensor, got {inference_output.shape}"
+
 
 @pytest.mark.parametrize("policy_name", FIRST_PARTY_POLICIES_WITH_EXPORT, indirect=True)
 class TestE2E(CoreE2ETests, ExportE2ETests):
