@@ -1,34 +1,28 @@
-from internal_datasets.dataset_client import DatasetClient
 import asyncio
 import base64
-import copy
-import shutil
 import time
-import uuid
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
-from pathlib import Path
 
 import cv2
 import numpy as np
 from frame_source.video_capture_base import VideoCaptureBase
-from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.utils.robot_utils import precise_sleep
 from loguru import logger
 from pydantic import BaseModel
 
+from internal_datasets.dataset_client import DatasetClient
+from internal_datasets.utils import get_internal_dataset
 from robots.robot_client import RobotClient
 from robots.utils import get_robot_client
 from schemas import TeleoperationConfig
-from schemas.dataset import Episode, EpisodeVideo
+from schemas.dataset import Episode
 from services.robot_calibration_service import RobotCalibrationService
-from utils.dataset import check_repository_exists, load_local_lerobot_dataset, build_lerobot_dataset_features
+from utils.dataset import build_lerobot_dataset_features
 from utils.serial_robot_tools import RobotConnectionManager
 from workers.camera_worker import create_frames_source_from_camera
 
 from .base import BaseThreadWorker
-
-from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
 
 OBSERVATION_IMAGES_PREFIX = "observation.images."
 
@@ -138,14 +132,13 @@ class TeleoperateWorker(BaseThreadWorker):
             self.action_keys = self.follower.features()
             self.camera_keys = [f"{OBSERVATION_IMAGES_PREFIX}{camera.name.lower()}" for camera in self.config.environment.cameras]
             print(self.camera_keys)
-            self.dataset = InternalLeRobotDataset(Path(self.config.dataset.path))
-            features = asyncio.run(build_lerobot_dataset_features(self.config.environment, self.robot_manager, self.calibration_service))
+            self.dataset = get_internal_dataset(self.config.dataset)
             if not self.dataset.exists_on_disk:
+                features = asyncio.run(build_lerobot_dataset_features(self.config.environment, self.robot_manager, self.calibration_service))
                 self.dataset.create(
                     fps=30,  # TODO: Implement in Environment
                     features=features,
                     robot_type=self.follower.name,
-                    use_videos=True,
                 )
 
             self.dataset.prepare_for_writing(number_of_threads=4 * len(self.cameras))

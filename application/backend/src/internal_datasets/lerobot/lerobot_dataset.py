@@ -35,7 +35,7 @@ class InternalLeRobotDataset(DatasetClient):
 
         self._teleop_action_processor, self._robot_action_processor, self._robot_observation_processor = make_default_processors()
 
-    def create(self, fps: int, features: dict, robot_type: str, use_videos: bool = True) -> None:
+    def create(self, fps: int, features: dict, robot_type: str) -> None:
         """Create LeRobot dataset."""
         if self._check_repository_exists(self._path):
             raise Exception(f"Dataset already exists at {self._path}")
@@ -45,7 +45,7 @@ class InternalLeRobotDataset(DatasetClient):
             fps=fps,
             features=features,
             robot_type=robot_type,
-            use_videos=use_videos
+            use_videos=True
         )
         self.exists_on_disk = True
         self.has_episodes = False

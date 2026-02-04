@@ -13,6 +13,10 @@ class DatasetClient(ABC):
         """Processes for writing episodes."""
 
     @abstractmethod
+    def create(self, fps: int, features: dict, robot_type: str) -> None:
+        """Create dataset."""
+
+    @abstractmethod
     def add_frame(self, obs: dict, act: dict, task: str) -> None:
         """Add frame to recording buffer."""
 
