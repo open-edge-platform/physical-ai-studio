@@ -19,7 +19,7 @@ async def find_robot_port(manager: RobotConnectionManager, robot: Robot) -> str 
     """Find the port associated with a robot."""
     for managed_robot in manager.robots:
         if managed_robot.serial_number == robot.serial_number:
-            return managed_robot.port
+            return managed_robot.connection_string
 
     return None
 

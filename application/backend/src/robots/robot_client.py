@@ -46,7 +46,7 @@ class RobotClient(ABC):
 
     @abstractmethod
     async def set_forces(self, forces: dict) -> dict:
-        """Read current robot forces. Returns event dict with timestamp."""
+        """Set current robot forces. Returns event dict with timestamp."""
 
     @abstractmethod
     def features(self) -> list[str]:

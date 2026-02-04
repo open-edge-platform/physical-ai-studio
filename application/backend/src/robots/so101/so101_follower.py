@@ -72,3 +72,15 @@ class SO101Follower(RobotClient):
         except Exception as e:
             logger.error(f"Robot read error: {e}")
             raise
+
+    async def read_forces(self) -> dict | None:
+        """Read current robot forces. Returns state dict with timestamp."""
+        return self._create_event(
+            "force_was_updated",
+            state=None,
+            is_controlled=self.is_controlled,
+        )
+
+    async def set_forces(self, forces: dict) -> dict:  # noqa: ARG002
+        """Set current robot forces. Returns event dict with timestamp."""
+        raise Exception("Not implemented for SO101")
