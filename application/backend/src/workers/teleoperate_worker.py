@@ -360,14 +360,17 @@ class TeleoperateWorker(BaseThreadWorker):
                 video_timestamps[video_key].start += offset
                 video_timestamps[video_key].end += offset
 
+        action_keys = self.dataset.meta.names["action"]
         return Episode(
             episode_index=data["episode_index"].tolist()[0],
             length=len(data["frame_index"]),
             fps=self.dataset.fps,
             tasks=[self.config.task],
             actions=data["action"].tolist(),
+            action_keys=action_keys,
             videos=video_timestamps,
             modification_timestamp=int(time.time()),
+            follower_robot_types=[self.follower.robot_type],
         )
 
     def _build_episode_data_from_buffer(self) -> dict | None:

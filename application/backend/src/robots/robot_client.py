@@ -1,11 +1,18 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
 
+from schemas.robot import RobotType
+
 
 class RobotClient(ABC):
     """Abstract interface for robot communication (commands only)."""
 
     name: str
+
+    @property
+    @abstractmethod
+    def robot_type(self) -> RobotType:
+        """Specify the RobotType"""
 
     @property
     @abstractmethod
