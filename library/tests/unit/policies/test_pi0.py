@@ -32,14 +32,14 @@ class TestPi0Config:
             n_action_steps=50,
             learning_rate=1e-4,
             tune_vision_encoder=True,
-            paligemma_variant="gemma_300m",
+            paligemma_variant="gemma_2b",
         )
         assert config.variant == "pi05"
         assert config.chunk_size == 100
         assert config.n_action_steps == 50
         assert config.learning_rate == 1e-4
         assert config.tune_vision_encoder is True
-        assert config.paligemma_variant == "gemma_300m"
+        assert config.paligemma_variant == "gemma_2b"
 
     def test_training_config_values(self) -> None:
         """Test training-related configuration values."""
@@ -71,7 +71,9 @@ class TestPi0Config:
             Pi0Config(variant="invalid")  # type: ignore[arg-type]
 
     def test_paligemma_variant_validation(self) -> None:
-        """Test paligemma_variant must be valid."""
+        """Test paligemma_variant must be gemma_2b."""
+        with pytest.raises(ValueError, match="paligemma_variant"):
+            Pi0Config(paligemma_variant="gemma_300m")
         with pytest.raises(ValueError, match="paligemma_variant"):
             Pi0Config(paligemma_variant="invalid")
 

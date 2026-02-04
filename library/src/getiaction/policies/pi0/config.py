@@ -67,8 +67,11 @@ class Pi0Config(Config):
             msg = f"variant must be 'pi0' or 'pi05', got '{self.variant}'"
             raise ValueError(msg)
 
-        if self.paligemma_variant not in {"gemma_300m", "gemma_2b"}:
-            msg = f"paligemma_variant must be 'gemma_300m' or 'gemma_2b', got '{self.paligemma_variant}'"
+        if self.paligemma_variant != "gemma_2b":
+            msg = (
+                "paligemma_variant must be 'gemma_2b' because PaliGemma only ships with the 3B "
+                f"backbone. Got '{self.paligemma_variant}'."
+            )
             raise ValueError(msg)
 
         if self.action_expert_variant not in {"gemma_300m", "gemma_2b"}:

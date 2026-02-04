@@ -82,7 +82,18 @@ class PaliGemmaWithExpert(nn.Module):
         dtype: str = "float32",
         paligemma_model_id: str | None = None,
     ) -> None:
-        """Initialize PaliGemma with action expert."""
+        """Initialize PaliGemma with action expert.
+
+        Args:
+            paligemma_variant: width variant for the PaliGemma backbone.
+            action_expert_variant: width variant for the action-expert Gemma.
+            use_adarms: whether to enable AdaRMS scaling.
+            dtype: floating point backend used for kernel weights.
+            paligemma_model_id: optional override for the HuggingFace model ID.
+
+        Raises:
+            ValueError: if an unsupported paligemma_variant is requested.
+        """
         super().__init__()
 
         self.paligemma_variant = paligemma_variant
@@ -90,7 +101,14 @@ class PaliGemmaWithExpert(nn.Module):
         self.use_adarms = use_adarms
         self._dtype_str = dtype
 
-        self._paligemma_config = _get_gemma_config(paligemma_variant)
+        if paligemma_variant != "gemma_2b":
+            msg = (
+                "PaliGemma is only available for the 3B backbone (Gemma-2B width). "
+                f"Got paligemma_variant='{paligemma_variant}'."
+            )
+            raise ValueError(msg)
+
+        self._paligemma_config = _get_gemma_config("gemma_2b")
         self._action_expert_config = _get_gemma_config(action_expert_variant)
 
         self.paligemma_hidden_size = self._paligemma_config.width
