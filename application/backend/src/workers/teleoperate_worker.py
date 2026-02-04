@@ -21,7 +21,7 @@ from robots.utils import get_robot_client
 from schemas import TeleoperationConfig
 from schemas.dataset import Episode, EpisodeVideo
 from services.robot_calibration_service import RobotCalibrationService
-from utils.dataset import check_repository_exists, load_local_lerobot_dataset, build_lerobot_dataset_features
+from utils.dataset import build_lerobot_dataset_features, check_repository_exists, load_local_lerobot_dataset
 from utils.serial_robot_tools import RobotConnectionManager
 from workers.camera_worker import create_frames_source_from_camera
 
@@ -132,12 +132,18 @@ class TeleoperateWorker(BaseThreadWorker):
             asyncio.run(self.setup_environment())
 
             self.action_keys = self.follower.features()
-            self.camera_keys = [f"{OBSERVATION_IMAGES_PREFIX}{camera.name.lower()}" for camera in self.config.environment.cameras]
+            self.camera_keys = [
+                f"{OBSERVATION_IMAGES_PREFIX}{camera.name.lower()}" for camera in self.config.environment.cameras
+            ]
             print(self.camera_keys)
             if check_repository_exists(Path(self.config.dataset.path)):
                 self.dataset = load_local_lerobot_dataset(self.config.dataset.path, batch_encoding_size=1)
             else:
-                features = asyncio.run(build_lerobot_dataset_features(self.config.environment, self.robot_manager, self.calibration_service))
+                features = asyncio.run(
+                    build_lerobot_dataset_features(
+                        self.config.environment, self.robot_manager, self.calibration_service
+                    )
+                )
                 self.dataset = LeRobotDataset.create(
                     repo_id=str(uuid.uuid4()),
                     root=self.config.dataset.path,

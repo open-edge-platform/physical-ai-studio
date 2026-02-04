@@ -1,6 +1,3 @@
-from robots.utils import get_robot_client
-from utils.serial_robot_tools import RobotConnectionManager
-from services.robot_calibration_service import RobotCalibrationService
 import os
 import traceback
 import uuid
@@ -12,18 +9,20 @@ import torch
 from datasets.exceptions import DatasetGenerationError
 from huggingface_hub.errors import RepositoryNotFoundError
 from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
+from lerobot.datasets.pipeline_features import aggregate_pipeline_dataset_features, create_initial_features
+from lerobot.datasets.utils import combine_feature_dicts
+from lerobot.processor import make_default_processors
 from lerobot.utils.constants import HF_LEROBOT_HOME
 from loguru import logger
 
 from exceptions import ResourceInUseError, ResourceType
+from robots.utils import get_robot_client
 from schemas import CameraConfig, Dataset, Episode, EpisodeVideo, LeRobotDatasetInfo, ProjectConfig
-from settings import get_settings
-from schemas.project_camera import Camera
 from schemas.environment import EnvironmentWithRelations
-
-from lerobot.processor import make_default_processors
-from lerobot.datasets.utils import combine_feature_dicts
-from lerobot.datasets.pipeline_features import aggregate_pipeline_dataset_features, create_initial_features
+from schemas.project_camera import Camera
+from services.robot_calibration_service import RobotCalibrationService
+from settings import get_settings
+from utils.serial_robot_tools import RobotConnectionManager
 
 
 def load_local_lerobot_dataset(path: str | None, **kwargs) -> LeRobotDataset:
@@ -191,21 +190,17 @@ async def get_camera_features(camera: Camera) -> tuple[int, int, int]:
 
     Note: This works for 'now', but ip cameras etc should probably just get a frame before returning this.
     """
-    return (
-        camera.payload.height,
-        camera.payload.width,
-        3
-    )
+    return (camera.payload.height, camera.payload.width, 3)
 
 
 async def build_observation_features(
-        environment: EnvironmentWithRelations,
-        robot_manager: RobotConnectionManager,
-        calibration_service: RobotCalibrationService
-):
+    environment: EnvironmentWithRelations,
+    robot_manager: RobotConnectionManager,
+    calibration_service: RobotCalibrationService,
+) -> dict:
     """Return dict of action features of environment."""
     if len(environment.robots) > 1:
-        #TODO: Implement, should probably prefix feature the robots only when len(robots) > 1
+        # TODO: Implement, should probably prefix feature the robots only when len(robots) > 1
         # One issue is that you need to know which is which, so probably need a name identifier for robots
         raise ValueError("Environments with multiple robots not implemented yet")
 
@@ -215,10 +210,11 @@ async def build_observation_features(
 
     return output_features
 
+
 async def build_action_features(
-        environment: EnvironmentWithRelations,
-        robot_manager: RobotConnectionManager,
-        calibration_service: RobotCalibrationService
+    environment: EnvironmentWithRelations,
+    robot_manager: RobotConnectionManager,
+    calibration_service: RobotCalibrationService,
 ) -> dict:
     """Return dict of action features of environment."""
     output_features = {}
@@ -228,12 +224,13 @@ async def build_action_features(
             output_features[feature] = float
     return output_features
 
+
 async def build_lerobot_dataset_features(
-        environment: EnvironmentWithRelations,
-        robot_manager: RobotConnectionManager,
-        calibration_service: RobotCalibrationService,
-        use_videos: bool = True
-):
+    environment: EnvironmentWithRelations,
+    robot_manager: RobotConnectionManager,
+    calibration_service: RobotCalibrationService,
+    use_videos: bool = True,
+) -> dict:
     """Build lerobot dataset features."""
     teleop_action_processor, _robot_action_processor, robot_observation_processor = make_default_processors()
     observation_features = await build_observation_features(environment, robot_manager, calibration_service)
@@ -242,9 +239,7 @@ async def build_lerobot_dataset_features(
     return combine_feature_dicts(
         aggregate_pipeline_dataset_features(
             pipeline=teleop_action_processor,
-            initial_features=create_initial_features(
-                action=action_features
-            ),
+            initial_features=create_initial_features(action=action_features),
             use_videos=use_videos,
         ),
         aggregate_pipeline_dataset_features(
