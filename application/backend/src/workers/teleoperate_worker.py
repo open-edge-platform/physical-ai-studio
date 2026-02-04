@@ -1,3 +1,4 @@
+from internal_datasets.dataset_client import DatasetClient
 import asyncio
 import base64
 import copy
@@ -26,6 +27,8 @@ from utils.serial_robot_tools import RobotConnectionManager
 from workers.camera_worker import create_frames_source_from_camera
 
 from .base import BaseThreadWorker
+
+from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
 
 OBSERVATION_IMAGES_PREFIX = "observation.images."
 
@@ -60,6 +63,10 @@ class TeleoperateWorker(BaseThreadWorker):
     leader: RobotClient
     cameras: dict[str, VideoCaptureBase]
 
+    dataset: DatasetClient | None = None
+    leader: RobotClient | None = None
+    follower: RobotClient | None = None
+
     def __init__(
         self,
         stop_event: EventClass,
@@ -81,9 +88,6 @@ class TeleoperateWorker(BaseThreadWorker):
             "save": Event(),
             "start": Event(),
         }
-        self.dataset: LeRobotDataset | None = None
-        self.leader: RobotClient | None = None
-        self.follower: RobotClient | None = None
 
     def stop(self) -> None:
         """Stop teleoperation and stop loop."""
@@ -134,24 +138,17 @@ class TeleoperateWorker(BaseThreadWorker):
             self.action_keys = self.follower.features()
             self.camera_keys = [f"{OBSERVATION_IMAGES_PREFIX}{camera.name.lower()}" for camera in self.config.environment.cameras]
             print(self.camera_keys)
-            if check_repository_exists(Path(self.config.dataset.path)):
-                self.dataset = load_local_lerobot_dataset(self.config.dataset.path, batch_encoding_size=1)
-            else:
-                features = asyncio.run(build_lerobot_dataset_features(self.config.environment, self.robot_manager, self.calibration_service))
-                self.dataset = LeRobotDataset.create(
-                    repo_id=str(uuid.uuid4()),
-                    root=self.config.dataset.path,
+            self.dataset = InternalLeRobotDataset(Path(self.config.dataset.path))
+            features = asyncio.run(build_lerobot_dataset_features(self.config.environment, self.robot_manager, self.calibration_service))
+            if not self.dataset.exists_on_disk:
+                self.dataset.create(
                     fps=30,  # TODO: Implement in Environment
                     features=features,
                     robot_type=self.follower.name,
                     use_videos=True,
-                    image_writer_threads=4,
                 )
 
-            self.dataset.start_image_writer(
-                num_processes=0,
-                num_threads=4 * len(self.cameras),
-            )
+            self.dataset.prepare_for_writing(number_of_threads=4 * len(self.cameras))
 
             logger.info("dataset loaded, starting cameras")
             for camera in self.cameras.values():
@@ -241,16 +238,21 @@ class TeleoperateWorker(BaseThreadWorker):
                     "action": np.array(list(action.values()), dtype=np.float32),
                 }
 
+                actions = {f"{key}.pos": value for key, value in action.items()}
+                observations = {f"{key}.pos": value for key, value in state.items()}
+                print(observations)
                 for camera_name, camera in self.cameras.items():
                     _success, camera_frame = camera.get_latest_frame()  # HWC
                     if camera_frame is None:
                         raise Exception("Camera frame is None")
-                    frame[f"observation.images.{camera_name}"] = CameraFrameProcessor.process(camera_frame)
+                    processed_frame = CameraFrameProcessor.process(camera_frame)
+                    frame[f"observation.images.{camera_name}"] = processed_frame
+                    observations[camera_name] = processed_frame
 
                 timestamp = time.perf_counter() - self.start_episode_t
                 self._report_observation(frame, timestamp)
                 if self.state.is_recording and self.dataset is not None:
-                    self.dataset.add_frame(frame)
+                    self.dataset.add_frame(observations, actions, self.config.task)
 
                 dt_s = time.perf_counter() - start_loop_t
                 wait_time = 1 / 30 - dt_s
@@ -270,10 +272,8 @@ class TeleoperateWorker(BaseThreadWorker):
         self.events["save"].clear()
         precise_sleep(0.3)  # TODO check if neccesary
         if self.dataset is not None:
-            new_episode = self._build_episode_from_buffer(self.dataset.meta.latest_episode)
-            if new_episode is not None:
-                self._report_episode(new_episode)
-            self.dataset.save_episode()
+            new_episode = self.dataset.save_episode(self.config.task)
+            self._report_episode(new_episode)
         self.state.is_recording = False
         self._report_state()
 
@@ -282,7 +282,7 @@ class TeleoperateWorker(BaseThreadWorker):
         self.events["reset"].clear()
         precise_sleep(0.3)  # TODO check if neccesary
         if self.dataset is not None:
-            self.dataset.clear_episode_buffer()
+            self.dataset.discard_buffer()
         self.state.is_recording = False
         self._report_state()
 
@@ -295,14 +295,7 @@ class TeleoperateWorker(BaseThreadWorker):
             logger.warning(f"Failed cancelling queue join thread: {e}")
 
         if self.dataset:
-            if self.dataset.num_episodes == 0:
-                # Ensure the dataset is removed if there are episodes
-                # This is because lerobot dataset needs episodes otherwise it will be in an invalid state
-                logger.info("Removing dataset since it has no episodes")
-                shutil.rmtree(self.dataset.root)
-            else:
-                logger.info("Finalizing")
-                self.dataset.finalize()
+            self.dataset.teardown()
 
         if self.follower is not None:
             try:
@@ -330,63 +323,3 @@ class TeleoperateWorker(BaseThreadWorker):
         _, imagebytes = cv2.imencode(".jpg", observation)
         return base64.b64encode(imagebytes).decode()
 
-    def _build_episode_from_buffer(self, episode: dict | None) -> Episode | None:
-        """Build Episode object from buffer and episode dict."""
-        data = self._build_episode_data_from_buffer()
-        if data is None or self.dataset is None:
-            return None
-
-        end = data["timestamp"][-1]
-        video_timestamps = {video_key: EpisodeVideo(start=0, end=end) for video_key in self.dataset.meta.video_keys}
-        if episode is not None:
-            for video_key in self.dataset.meta.video_keys:
-                offset = episode[f"videos/{video_key}/to_timestamp"][-1]
-                video_timestamps[video_key].start += offset
-                video_timestamps[video_key].end += offset
-
-        return Episode(
-            episode_index=data["episode_index"].tolist()[0],
-            length=len(data["frame_index"]),
-            fps=self.dataset.fps,
-            tasks=[self.config.task],
-            actions=data["action"].tolist(),
-            videos=video_timestamps,
-            modification_timestamp=int(time.time()),
-        )
-
-    def _build_episode_data_from_buffer(self) -> dict | None:
-        """Build episode data from the buffer.
-
-        LeRobotDataset V3 doesnt update episode data on save.
-        In order to get the episode data we duplicate the actions that happen inside.
-        """
-        if self.dataset is None:
-            return None
-
-        episode_buffer = copy.deepcopy(self.dataset.episode_buffer)
-        if episode_buffer is not None:
-            episode_length = episode_buffer.pop("size")
-            tasks = episode_buffer.pop("task")
-            episode_tasks = list(set(tasks))
-            episode_index = episode_buffer["episode_index"]
-
-            episode_buffer["index"] = np.arange(
-                self.dataset.meta.total_frames, self.dataset.meta.total_frames + episode_length
-            )
-            episode_buffer["episode_index"] = np.full((episode_length,), episode_index)
-
-            # Update tasks and task indices with new tasks if any
-            self.dataset.meta.save_episode_tasks(episode_tasks)
-
-            # Given tasks in natural language, find their corresponding task indices
-            episode_buffer["task_index"] = np.array([self.dataset.meta.get_task_index(task) for task in tasks])
-
-            for key, ft in self.dataset.features.items():
-                # index, episode_index, task_index are already processed above, and image and video
-                # are processed separately by storing image path and frame info as meta data
-                if key in ["index", "episode_index", "task_index"] or ft["dtype"] in ["image", "video"]:
-                    continue
-                episode_buffer[key] = np.stack(episode_buffer[key])
-
-            return episode_buffer
-        return None
