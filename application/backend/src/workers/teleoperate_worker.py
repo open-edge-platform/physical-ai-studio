@@ -21,7 +21,7 @@ from robots.utils import get_robot_client
 from schemas import TeleoperationConfig
 from schemas.dataset import Episode, EpisodeVideo
 from services.robot_calibration_service import RobotCalibrationService
-from utils.dataset import check_repository_exists, load_local_lerobot_dataset
+from utils.dataset import build_lerobot_dataset_features, check_repository_exists, load_local_lerobot_dataset
 from utils.serial_robot_tools import RobotConnectionManager
 from workers.camera_worker import create_frames_source_from_camera
 
@@ -131,12 +131,19 @@ class TeleoperateWorker(BaseThreadWorker):
             logger.info("connect to robot, cameras and setup dataset")
             asyncio.run(self.setup_environment())
 
-            features = self._build_dataset_features()
-            self.action_keys = features["action"]["names"]
-            self.camera_keys = [f"{OBSERVATION_IMAGES_PREFIX}{name}" for name in self.cameras]
+            self.action_keys = self.follower.features()
+            self.camera_keys = [
+                f"{OBSERVATION_IMAGES_PREFIX}{camera.name.lower()}" for camera in self.config.environment.cameras
+            ]
+            print(self.camera_keys)
             if check_repository_exists(Path(self.config.dataset.path)):
                 self.dataset = load_local_lerobot_dataset(self.config.dataset.path, batch_encoding_size=1)
             else:
+                features = asyncio.run(
+                    build_lerobot_dataset_features(
+                        self.config.environment, self.robot_manager, self.calibration_service
+                    )
+                )
                 self.dataset = LeRobotDataset.create(
                     repo_id=str(uuid.uuid4()),
                     root=self.config.dataset.path,
@@ -162,23 +169,6 @@ class TeleoperateWorker(BaseThreadWorker):
             self.error = True
             self._report_error(e)
         self._report_state()
-
-    def _build_dataset_features(self) -> dict:
-        features = self.follower.features()
-        dataset_features = {
-            "action": {"dtype": "float32", "names": features, "shape": (len(features),)},
-            "observation.state": {"dtype": "float32", "names": features, "shape": (len(features),)},
-        }
-
-        for camera_name, camera in self.cameras.items():
-            _success, camera_frame = camera.read()  # HWC
-            dataset_features[f"observation.images.{camera_name}"] = {
-                "dtype": "video",
-                "shape": camera_frame.shape,
-                "names": ["height", "width", "channels"],
-            }
-
-        return dataset_features
 
     def _report_state(self):
         state = {"event": "state", "data": self.state.model_dump()}
