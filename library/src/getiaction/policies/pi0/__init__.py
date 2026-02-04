@@ -6,8 +6,8 @@
 
 """Pi0/Pi0.5 Policy - Physical Intelligence's flow matching VLA model."""
 
-from .config import Pi0Config
+from .config import Pi0Config, Pi05Config
 from .model import Pi0Model
 from .policy import Pi0, Pi05
 
-__all__ = ["Pi0", "Pi0Config", "Pi0Model", "Pi05"]
+__all__ = ["Pi0", "Pi0Config", "Pi0Model", "Pi05", "Pi05Config"]

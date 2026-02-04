@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 import torch
 
+from getiaction.config.mixin import FromConfig
 from getiaction.export.mixin_export import Export
 from getiaction.policies.base import Policy
 from getiaction.train.utils import reformat_dataset_to_match_policy
@@ -26,7 +27,7 @@ if TYPE_CHECKING:
     from .preprocessor import Pi0Postprocessor, Pi0Preprocessor
 
 
-class Pi0(Export, Policy):
+class Pi0(Export, Policy, FromConfig):
     """Pi0 Policy - Physical Intelligence's flow matching VLA model.
 
     Lightning wrapper for training and inference with Pi0 model.
@@ -246,7 +247,7 @@ class Pi0(Export, Policy):
         )
 
         if self.model is not None:
-            self.model.set_preprocessors(self._preprocessor, self._postprocessor)
+            cast("Pi0Model", self.model).set_preprocessors(self._preprocessor, self._postprocessor)
 
     def setup(self, stage: str) -> None:
         """Set up model from datamodule (lazy initialization path).
@@ -324,7 +325,8 @@ class Pi0(Export, Policy):
             msg = "Model is not initialized"
             raise ValueError(msg)
 
-        return self.model.predict_action_chunk(batch)
+        model = cast("Pi0Model", self.model)
+        return model.predict_action_chunk(batch)
 
     def training_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
         """Lightning training step.
@@ -443,7 +445,71 @@ class Pi05(Pi0):
         >>> trainer.fit(policy, datamodule)
     """
 
-    def __init__(self, **kwargs: Any) -> None:  # noqa: ANN401
-        """Initialize Pi0.5 policy with variant="pi05"."""
-        kwargs["variant"] = "pi05"
-        super().__init__(**kwargs)
+    def __init__(  # noqa: PLR0913
+        self,
+        *,
+        paligemma_variant: str = "gemma_2b",
+        action_expert_variant: str = "gemma_300m",
+        dtype: str = "float32",
+        n_obs_steps: int = 1,
+        chunk_size: int = 50,
+        n_action_steps: int = 50,
+        max_state_dim: int = 32,
+        max_action_dim: int = 32,
+        max_token_len: int | None = 200,
+        image_resolution: tuple[int, int] = (224, 224),
+        num_inference_steps: int = 10,
+        time_beta_alpha: float = 1.5,
+        time_beta_beta: float = 1.0,
+        time_scale: float = 0.999,
+        time_offset: float = 0.001,
+        time_min_period: float = 4e-3,
+        time_max_period: float = 4.0,
+        tune_paligemma: bool = False,
+        tune_action_expert: bool = False,
+        tune_vision_encoder: bool = False,
+        lora_rank: int = 0,
+        lora_alpha: int = 16,
+        lora_dropout: float = 0.1,
+        lora_target_modules: tuple[str, ...] = ("q_proj", "v_proj", "k_proj", "o_proj"),
+        gradient_checkpointing: bool = False,
+        learning_rate: float = 2.5e-5,
+        weight_decay: float = 0.01,
+        warmup_ratio: float = 0.05,
+        grad_clip_norm: float = 1.0,
+        dataset_stats: dict[str, dict[str, list[float] | str | tuple[int, ...]]] | None = None,
+    ) -> None:
+        """Initialize Pi0.5 policy with explicit arguments."""
+        super().__init__(
+            variant="pi05",
+            paligemma_variant=paligemma_variant,
+            action_expert_variant=action_expert_variant,
+            dtype=dtype,
+            n_obs_steps=n_obs_steps,
+            chunk_size=chunk_size,
+            n_action_steps=n_action_steps,
+            max_state_dim=max_state_dim,
+            max_action_dim=max_action_dim,
+            max_token_len=max_token_len,
+            image_resolution=image_resolution,
+            num_inference_steps=num_inference_steps,
+            time_beta_alpha=time_beta_alpha,
+            time_beta_beta=time_beta_beta,
+            time_scale=time_scale,
+            time_offset=time_offset,
+            time_min_period=time_min_period,
+            time_max_period=time_max_period,
+            tune_paligemma=tune_paligemma,
+            tune_action_expert=tune_action_expert,
+            tune_vision_encoder=tune_vision_encoder,
+            lora_rank=lora_rank,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            lora_target_modules=lora_target_modules,
+            gradient_checkpointing=gradient_checkpointing,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            warmup_ratio=warmup_ratio,
+            grad_clip_norm=grad_clip_norm,
+            dataset_stats=dataset_stats,
+        )

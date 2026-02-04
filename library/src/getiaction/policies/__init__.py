@@ -13,7 +13,7 @@ from .base import PolicyLike
 from .dummy import Dummy, DummyConfig
 from .groot import Groot, GrootConfig, GrootModel
 from .lerobot import get_lerobot_policy
-from .pi0 import Pi0, Pi0Config, Pi0Model, Pi05
+from .pi0 import Pi0, Pi0Config, Pi0Model, Pi05, Pi05Config
 from .smolvla import SmolVLA, SmolVLAConfig, SmolVLAModel
 
 if TYPE_CHECKING:
@@ -36,6 +36,7 @@ __all__ = [
     "Pi0Config",
     "Pi0Model",
     "Pi05",
+    "Pi05Config",
     # Protocol
     "PolicyLike",
     # SmolVLA

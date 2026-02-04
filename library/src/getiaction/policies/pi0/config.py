@@ -98,3 +98,16 @@ class Pi0Config(Config):
     def use_lora(self) -> bool:
         """Return True if LoRA is enabled."""
         return self.lora_rank > 0
+
+
+@dataclass
+class Pi05Config(Pi0Config):
+    """Configuration for Pi0.5 flow matching model.
+
+    Inherits from Pi0Config with Pi0.5-specific defaults:
+    - variant: "pi05" (uses discrete state encoding and AdaRMS)
+    - max_token_len: 200 (larger context window)
+    """
+
+    variant: Literal["pi0", "pi05"] = "pi05"
+    max_token_len: int | None = 200
