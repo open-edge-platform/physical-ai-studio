@@ -848,9 +848,8 @@ class VLAFlowMatching(nn.Module):
             mean=0.0,
             std=1.0,
             size=shape,
-            dtype=torch.float32,
             device=device,
-        )
+        ).to(dtype=torch.float32)
 
     @staticmethod
     def _sample_time(bsize: int, device: torch.device) -> torch.Tensor:
