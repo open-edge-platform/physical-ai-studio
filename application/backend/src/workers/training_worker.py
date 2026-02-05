@@ -34,7 +34,7 @@ SCHEDULE_INTERVAL_SEC = 5
 
 
 class TrainingWorker(BaseProcessWorker):
-    ROLE = "Training"
+    ROLE = "TrainingWorker"
 
     def __init__(self, stop_event: EventClass, interrupt_event: EventClass, event_queue: mp.Queue):
         super().__init__(stop_event=stop_event)

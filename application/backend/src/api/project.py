@@ -1,15 +1,12 @@
-from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
-from huggingface_hub.errors import RepositoryNotFoundError
-from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
 
 from api.dependencies import get_model_service, get_project_id, get_project_service
+from internal_datasets.utils import get_internal_dataset
 from schemas import InferenceConfig, Model, Project, TeleoperationConfig
 from services import ModelService, ProjectService
-from utils.dataset import check_repository_exists
 
 router = APIRouter(prefix="/api/projects", tags=["Projects"])
 
@@ -80,12 +77,6 @@ async def get_tasks_for_dataset(
     res = {}
 
     for dataset in project.datasets:
-        try:
-            if check_repository_exists(Path(dataset.path)):
-                res[dataset.name] = list(
-                    LeRobotDatasetMetadata(dataset.name, dataset.path).tasks.to_dict()["task_index"].keys()
-                )
-        except RepositoryNotFoundError:
-            pass
+        res[dataset.name] = get_internal_dataset(dataset).get_tasks()
 
     return res

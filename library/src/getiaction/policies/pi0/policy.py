@@ -1,100 +1,82 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
 # Copyright (C) 2025 Physical Intelligence
 # SPDX-License-Identifier: Apache-2.0
 
-"""Pi0/Pi0.5 Policy - Lightning wrapper for training and inference.
-
-This module provides PyTorch Lightning policies for Pi0 and Pi0.5 models,
-enabling easy training, checkpoint management, and inference.
-
-Example:
-    >>> from getiaction.policies.pi0 import Pi0
-    >>> from getiaction.data.lerobot import LeRobotDataModule
-    >>> import lightning as L
-
-    >>> # Create Pi0 policy
-    >>> policy = Pi0(
-    ...     variant="pi0",
-    ...     chunk_size=50,
-    ...     learning_rate=2.5e-5,
-    ... )
-
-    >>> # Create datamodule
-    >>> datamodule = LeRobotDataModule(
-    ...     repo_id="lerobot/aloha_sim_transfer_cube_human",
-    ...     train_batch_size=4,
-    ... )
-
-    >>> # Train
-    >>> trainer = L.Trainer(max_epochs=100, precision="bf16-mixed")
-    >>> trainer.fit(policy, datamodule)
-
-    >>> # Load from checkpoint
-    >>> policy = Pi0.load_from_checkpoint("checkpoint.ckpt")
-"""
+"""Pi0 Policy - Lightning wrapper for training and inference."""
 
 from __future__ import annotations
 
-import logging
-from typing import TYPE_CHECKING, Any, Literal
+import math
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import torch
 
-from getiaction.data.observation import ACTION
+from getiaction.config.mixin import FromConfig
 from getiaction.export.mixin_export import Export
 from getiaction.policies.base import Policy
 from getiaction.train.utils import reformat_dataset_to_match_policy
 
 from .config import Pi0Config
-from .model import Pi0Model
+from .model import GemmaVariant, Pi0Model
 
 if TYPE_CHECKING:
     from getiaction.data import Observation
     from getiaction.gyms import Gym
 
-logger = logging.getLogger(__name__)
+    from .preprocessor import Pi0Postprocessor, Pi0Preprocessor
 
 
-class Pi0(Export, Policy):
-    """Pi0/Pi0.5 Policy - Physical Intelligence's flow matching VLA model.
+class Pi0(Export, Policy, FromConfig):
+    """Pi0 Policy - Physical Intelligence's flow matching VLA model.
 
-    Lightning wrapper for training and inference with Pi0/Pi0.5 models.
-    Supports both variants via the `variant` parameter.
+    Lightning wrapper for training and inference with Pi0 model.
 
     Uses dual-path initialization:
     - **Lazy path**: `Pi0()` + `trainer.fit()` - model built in setup()
     - **Eager path**: `Pi0.load_from_checkpoint()` - model built immediately
 
     Args:
-        variant: Model variant ("pi0" or "pi05").
-        chunk_size: Number of action predictions per forward pass.
-        n_action_steps: Number of action steps to execute per chunk.
-        max_state_dim: Maximum state dimension for padding.
-        max_action_dim: Maximum action dimension for padding.
-        paligemma_variant: PaliGemma backbone size.
-        action_expert_variant: Action expert size.
-        num_inference_steps: Number of denoising steps during inference.
-        tune_paligemma: Whether to fine-tune PaliGemma backbone.
-        tune_action_expert: Whether to fine-tune action expert.
-        tune_vision_encoder: Whether to fine-tune vision encoder.
-        lora_rank: LoRA rank. 0 disables LoRA.
-        lora_alpha: LoRA alpha scaling factor.
-        lora_dropout: LoRA dropout rate.
-        learning_rate: Learning rate for optimizer.
-        weight_decay: Weight decay for optimizer.
-        warmup_steps: Number of warmup steps for scheduler.
-        use_bf16: Whether to use bfloat16 precision.
-        gradient_checkpointing: Enable gradient checkpointing for memory.
-        env_action_dim: Environment action dimension. If provided, enables eager initialization.
-        dataset_stats: Dataset normalization statistics.
+        variant: Model variant ("pi0" or "pi05"). Default: "pi0".
+        paligemma_variant: PaliGemma backbone variant. Default: "gemma_2b".
+        action_expert_variant: Action expert variant. Default: "gemma_300m".
+        dtype: Data type for model. Default: "bfloat16".
+        n_obs_steps: Number of observation steps to use. Default: 1.
+        chunk_size: Size of action chunks for prediction. Default: 50.
+        n_action_steps: Number of action steps to execute. Default: 50.
+        max_state_dim: Maximum state dimension (shorter vectors are padded). Default: 32.
+        max_action_dim: Maximum action dimension (shorter vectors are padded). Default: 32.
+        max_token_len: Maximum length for tokenizer. Default: None (auto-computed).
+        image_resolution: Target image resolution (height, width). Default: (224, 224).
+        num_inference_steps: Number of flow matching inference steps. Default: 10.
+        time_beta_alpha: Beta distribution alpha parameter. Default: 1.5.
+        time_beta_beta: Beta distribution beta parameter. Default: 1.0.
+        time_scale: Time scaling factor. Default: 0.999.
+        time_offset: Time offset. Default: 0.001.
+        time_min_period: Minimum period for sinusoidal encoding. Default: 4e-3.
+        time_max_period: Maximum period for sinusoidal encoding. Default: 4.0.
+        tune_paligemma: Whether to tune PaliGemma weights. Default: False.
+        tune_action_expert: Whether to tune action expert weights. Default: True.
+        tune_vision_encoder: Whether to tune vision encoder weights. Default: False.
+        lora_rank: LoRA rank (0 disables LoRA). Default: 0.
+        lora_alpha: LoRA alpha parameter. Default: 16.
+        lora_dropout: LoRA dropout rate. Default: 0.1.
+        lora_target_modules: Target modules for LoRA. Default: ("q_proj", "v_proj", "k_proj", "o_proj").
+        gradient_checkpointing: Whether to enable gradient checkpointing. Default: False.
+        learning_rate: Learning rate for optimizer. Default: 2.5e-5.
+        weight_decay: Weight decay for optimizer. Default: 1e-10.
+        warmup_steps: Number of warmup steps. Default: 1000.
+        decay_steps: Number of decay steps after warmup. Default: 30000.
+        decay_lr: Target learning rate after decay. Default: 2.5e-6.
+        grad_clip_norm: Gradient clipping norm value. Default: 1.0.
+        dataset_stats: Dataset normalization statistics for eager initialization. Default: None.
 
     Example:
         Training:
 
-        >>> policy = Pi0(variant="pi0", learning_rate=2.5e-5)
-        >>> trainer = L.Trainer(max_epochs=100)
+        >>> policy = Pi0(paligemma_variant="gemma_300m")
+        >>> trainer = getiaction.Trainer(max_epochs=100)
         >>> trainer.fit(policy, datamodule)
 
         Inference:
@@ -103,40 +85,51 @@ class Pi0(Export, Policy):
         >>> action = policy.select_action(obs)
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(  # noqa: PLR0913, PLR0917
         self,
         # Model variant
         variant: Literal["pi0", "pi05"] = "pi0",
-        # Model architecture
-        chunk_size: int = 50,
-        n_action_steps: int = 50,
-        max_state_dim: int = 32,
-        max_action_dim: int = 32,
-        # Backbone configuration
         paligemma_variant: str = "gemma_2b",
         action_expert_variant: str = "gemma_300m",
-        # Inference
+        dtype: str = "bfloat16",
+        # Input / output structure
+        n_obs_steps: int = 1,
+        chunk_size: int = 50,
+        n_action_steps: int = 50,
+        # Shorter state and action vectors will be padded
+        max_state_dim: int = 32,
+        max_action_dim: int = 32,
+        max_token_len: int | None = None,
+        # Image preprocessing
+        image_resolution: tuple[int, int] = (224, 224),
+        # Flow matching parameters
         num_inference_steps: int = 10,
-        # Fine-tuning control
-        *,
-        tune_paligemma: bool = False,
-        tune_action_expert: bool = True,
-        tune_vision_encoder: bool = False,
-        # LoRA
+        time_beta_alpha: float = 1.5,
+        time_beta_beta: float = 1.0,
+        time_scale: float = 0.999,
+        time_offset: float = 0.001,
+        time_min_period: float = 4e-3,
+        time_max_period: float = 4.0,
+        # Finetuning settings
+        tune_paligemma: bool = False,  # noqa: FBT001, FBT002
+        tune_action_expert: bool = True,  # noqa: FBT001, FBT002
+        tune_vision_encoder: bool = False,  # noqa: FBT001, FBT002
+        # LoRA settings
         lora_rank: int = 0,
         lora_alpha: int = 16,
         lora_dropout: float = 0.1,
-        # Optimizer
-        learning_rate: float = 1.0e-4,
-        weight_decay: float = 1.0e-5,
-        warmup_ratio: float = 0.05,  # Warmup ratio (0.0-1.0) of total training steps
+        lora_target_modules: tuple[str, ...] = ("q_proj", "v_proj", "k_proj", "o_proj"),
+        # Gradient checkpointing
+        gradient_checkpointing: bool = False,  # noqa: FBT001, FBT002
+        # Training presets
+        learning_rate: float = 2.5e-5,
+        weight_decay: float = 1e-10,
+        warmup_steps: int = 1000,
+        decay_steps: int = 30000,
+        decay_lr: float = 2.5e-6,
         grad_clip_norm: float = 1.0,
-        # Precision
-        use_bf16: bool = True,
-        # Memory optimization
-        gradient_checkpointing: bool = False,
+        *,
         # Eager initialization (for checkpoint loading)
-        env_action_dim: int | None = None,
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
     ) -> None:
         """Initialize Pi0 policy.
@@ -146,26 +139,38 @@ class Pi0(Export, Policy):
         super().__init__(n_action_steps=n_action_steps)
 
         # Create config from explicit args (policy-level config)
-        self.config = Pi0Config(
+        self.config: Pi0Config = Pi0Config(
             variant=variant,
             paligemma_variant=paligemma_variant,
             action_expert_variant=action_expert_variant,
-            action_dim=max_action_dim,  # Use max_action_dim as action_dim
-            action_horizon=chunk_size,
+            dtype=dtype,
+            n_obs_steps=n_obs_steps,
+            chunk_size=chunk_size,
+            n_action_steps=n_action_steps,
             max_state_dim=max_state_dim,
             max_action_dim=max_action_dim,
+            max_token_len=max_token_len,
+            image_resolution=image_resolution,
             num_inference_steps=num_inference_steps,
+            time_beta_alpha=time_beta_alpha,
+            time_beta_beta=time_beta_beta,
+            time_scale=time_scale,
+            time_offset=time_offset,
+            time_min_period=time_min_period,
+            time_max_period=time_max_period,
             tune_paligemma=tune_paligemma,
             tune_action_expert=tune_action_expert,
             tune_vision_encoder=tune_vision_encoder,
             lora_rank=lora_rank,
             lora_alpha=lora_alpha,
             lora_dropout=lora_dropout,
+            lora_target_modules=lora_target_modules,
             gradient_checkpointing=gradient_checkpointing,
-            dtype="bfloat16" if use_bf16 else "float32",
             learning_rate=learning_rate,
             weight_decay=weight_decay,
-            warmup_ratio=warmup_ratio,
+            warmup_steps=warmup_steps,
+            decay_steps=decay_steps,
+            decay_lr=decay_lr,
             grad_clip_norm=grad_clip_norm,
         )
 
@@ -174,123 +179,84 @@ class Pi0(Export, Policy):
         # Also save config dict for compatibility
         self.hparams["config"] = self.config.to_dict()
 
-        # Model pre/post-processors will be built in setup() or _initialize_model()
-        self.model: Pi0Model | None = None
-        self._preprocessor: Any = None
-        self._postprocessor: Any = None
+        # Model will be built in setup() or immediately if dataset_stats provided
+        self.model: torch.nn.Module | None = None
 
-        # Eager initialization if env_action_dim is provided
-        if env_action_dim is not None:
-            self._initialize_model(env_action_dim, dataset_stats)
+        # Preprocessor/postprocessor set in setup() or _initialize_model()
+        self._preprocessor: Pi0Preprocessor | None = None
+        self._postprocessor: Pi0Postprocessor | None = None
 
-        # Track initialization state
-        self._is_setup_complete: bool = False
+        # Eager initialization if dataset_stats is provided
+        if dataset_stats is not None:
+            self._initialize_model(dataset_stats)
+
+        self._dataset_stats = dataset_stats
 
     def _initialize_model(
         self,
-        env_action_dim: int,
-        dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
+        dataset_stats: dict[str, dict[str, list[float] | str | tuple[int, ...]]],
     ) -> None:
         """Initialize model and preprocessors.
 
         Called by both lazy (setup) and eager (checkpoint) paths.
 
         Args:
-            env_action_dim: Environment action dimension.
             dataset_stats: Dataset normalization statistics.
-
-        Raises:
-            ValueError: If max_token_len is not set in config.
         """
         from .preprocessor import make_pi0_preprocessors  # noqa: PLC0415
 
-        # Use config (policy-level config created in __init__)
-        config = self.config
+        # Determine action dimension from stats
+        action_key = next((k for k in dataset_stats if "action" in k.lower()), None)
+        env_action_dim: int | None = None
+        if action_key and "shape" in dataset_stats[action_key]:
+            shape = dataset_stats[action_key]["shape"]
+            if isinstance(shape, (list, tuple)):
+                env_action_dim = int(shape[-1])
 
-        # Derived values
-        is_pi05 = config.is_pi05
-        use_lora = config.use_lora
-
-        # Create model with explicit args (no config dependency)
-        # Type cast: config stores as str, but Pi0Model expects GemmaVariant Literal
         self.model = Pi0Model(
-            variant=config.variant,
-            paligemma_variant=config.paligemma_variant,  # type: ignore[arg-type]
-            action_expert_variant=config.action_expert_variant,  # type: ignore[arg-type]
-            max_action_dim=config.max_action_dim,
-            max_state_dim=config.max_state_dim,
-            action_horizon=config.action_horizon,
-            num_inference_steps=config.num_inference_steps,
-            dtype=config.dtype,
+            variant=self.config.variant,
+            paligemma_variant=cast("GemmaVariant", self.config.paligemma_variant),
+            action_expert_variant=cast("GemmaVariant", self.config.action_expert_variant),
+            max_action_dim=self.config.max_action_dim,
+            max_state_dim=self.config.max_state_dim,
+            chunk_size=self.config.chunk_size,
+            num_inference_steps=self.config.num_inference_steps,
+            dtype=self.config.dtype,
+            time_beta_alpha=self.config.time_beta_alpha,
+            time_beta_beta=self.config.time_beta_beta,
+            time_scale=self.config.time_scale,
+            time_offset=self.config.time_offset,
+            time_min_period=self.config.time_min_period,
+            time_max_period=self.config.time_max_period,
         )
 
-        # Apply LoRA if enabled
-        if use_lora:
-            self._apply_lora(config)
-
-        # Set trainable parameters (including projection heads)
+        # Set trainable parameters
         self.model.set_trainable_parameters(
-            tune_paligemma=config.tune_paligemma,
-            tune_action_expert=config.tune_action_expert,
-            tune_vision_encoder=config.tune_vision_encoder,
-            tune_projection_heads=True,  # Always train projection heads
+            tune_paligemma=self.config.tune_paligemma,
+            tune_action_expert=self.config.tune_action_expert,
+            tune_vision_encoder=self.config.tune_vision_encoder,
+            tune_projection_heads=True,
         )
 
         # Enable gradient checkpointing if requested
-        if config.gradient_checkpointing:
+        if self.config.gradient_checkpointing:
             self.model.gradient_checkpointing_enable()
 
-        # Create preprocessor/postprocessor
-        # Pi0.5 uses max_token_len=200, Pi0 uses 48
-        max_token_len = config.max_token_len
-        if max_token_len is None:
-            msg = "max_token_len must be set in config"
-            raise ValueError(msg)
         self._preprocessor, self._postprocessor = make_pi0_preprocessors(
-            max_state_dim=config.max_state_dim,
-            max_action_dim=config.max_action_dim,
-            action_horizon=config.action_horizon,
+            max_state_dim=self.config.max_state_dim,
+            max_action_dim=self.config.max_action_dim,
+            chunk_size=self.config.chunk_size,
             env_action_dim=env_action_dim,
             stats=dataset_stats,
-            use_quantile_norm=is_pi05,  # Pi0.5 uses quantile normalization
-            image_resolution=config.image_resolution,
-            max_token_len=max_token_len,
+            use_quantile_norm=self.config.is_pi05,
+            image_resolution=self.config.image_resolution,
+            max_token_len=self.config.max_token_len or 48,
         )
 
-        self._is_setup_complete = True
-        logger.info("Pi0 model initialized (variant=%s, action_dim=%d)", config.variant, env_action_dim)
+        if self.model is not None:
+            cast("Pi0Model", self.model).set_preprocessors(self._preprocessor, self._postprocessor)
 
-    def _apply_lora(self, config: Pi0Config) -> None:
-        """Apply LoRA to the model.
-
-        Args:
-            config: Model configuration with LoRA settings.
-        """
-        from .components.lora import apply_lora  # noqa: PLC0415
-
-        # Apply LoRA to PaliGemma if tuning
-        if config.tune_paligemma and self.model is not None:
-            self.model.paligemma_with_expert._paligemma = apply_lora(  # noqa: SLF001
-                self.model.paligemma_with_expert.paligemma,
-                rank=config.lora_rank,
-                alpha=config.lora_alpha,
-                dropout=config.lora_dropout,
-                target_modules=config.lora_target_modules,
-            )
-
-        # Apply LoRA to action expert if tuning
-        if config.tune_action_expert and self.model is not None:
-            self.model.paligemma_with_expert._action_expert = apply_lora(  # noqa: SLF001
-                self.model.paligemma_with_expert.action_expert,
-                rank=config.lora_rank,
-                alpha=config.lora_alpha,
-                dropout=config.lora_dropout,
-                target_modules=config.lora_target_modules,
-            )
-
-        logger.info("LoRA applied (rank=%d, alpha=%d)", config.lora_rank, config.lora_alpha)
-
-    def setup(self, stage: str) -> None:  # noqa: ARG002
+    def setup(self, stage: str) -> None:
         """Set up model from datamodule (lazy initialization path).
 
         Called by Lightning before fit/validate/test/predict.
@@ -300,43 +266,27 @@ class Pi0(Export, Policy):
 
         Raises:
             TypeError: If train dataset is not a getiaction Dataset.
-            ValueError: If dataset lacks action features.
         """
-        if self._is_setup_complete or self.model is not None:
-            return  # Already initialized
+        del stage  # Unused argument
+
+        if self.model is not None:
+            return
 
         from getiaction.data.dataset import Dataset  # noqa: PLC0415
 
         datamodule = self.trainer.datamodule  # type: ignore[attr-defined]
         train_dataset = datamodule.train_dataset
 
-        # Use getiaction dataset interface
         if not isinstance(train_dataset, Dataset):
             msg = f"Expected getiaction Dataset, got {type(train_dataset)}"
             raise TypeError(msg)
 
-        # Extract action dimension from features
-        action_features = train_dataset.action_features
-        if not action_features:
-            msg = "Dataset must have action features"
-            raise ValueError(msg)
-
-        # Get action feature (typically "action")
-        action_feature = next(iter(action_features.values()))
-        if action_feature.shape is None:
-            msg = "Action feature must have shape defined"
-            raise ValueError(msg)
-        env_action_dim = action_feature.shape[-1]
-
-        # Extract stats from dataset
         stats_dict = train_dataset.stats
 
         # Save to hparams for checkpoint
-        self.hparams["env_action_dim"] = env_action_dim
         self.hparams["dataset_stats"] = stats_dict
 
-        # Initialize model
-        self._initialize_model(env_action_dim, stats_dict)
+        self._initialize_model(stats_dict)
 
         reformat_dataset_to_match_policy(self, datamodule)
 
@@ -350,8 +300,8 @@ class Pi0(Export, Policy):
             batch: An Observation object containing the input data for the model.
 
         Returns:
-            If training: Returns the model output, either a tensor or a tuple
-                containing a tensor and a dictionary of loss metrics.
+            If training: Returns the model output as a tuple
+                containing a loss tensor and a dictionary of loss metrics.
             If not training: Returns the predicted action chunk as a tensor.
 
         Raises:
@@ -362,8 +312,7 @@ class Pi0(Export, Policy):
                 msg = "Model is not initialized"
                 raise ValueError(msg)
 
-            processed_batch = self._preprocessor(batch.to_dict())
-            return self.model(processed_batch, use_bf16=self.hparams["use_bf16"])
+            return self.model(batch)
         return self.predict_action_chunk(batch)
 
     @torch.no_grad()
@@ -383,11 +332,8 @@ class Pi0(Export, Policy):
             msg = "Model is not initialized"
             raise ValueError(msg)
 
-        processed_batch = self._preprocessor(batch.to(self.device).to_dict())
-        chunk = self.model.predict_action_chunk(processed_batch, use_bf16=self.hparams["use_bf16"])
-        return self._postprocessor({ACTION: chunk})[ACTION]
-
-    # select_action() is inherited from Policy base class - uses queue with predict_action_chunk()
+        model = cast("Pi0Model", self.model)
+        return model.predict_action_chunk(batch)
 
     def training_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
         """Lightning training step.
@@ -402,6 +348,7 @@ class Pi0(Export, Policy):
         del batch_idx
         loss, loss_dict = self(batch)
 
+        # Log metrics
         self.log("train/loss", loss_dict["loss"], prog_bar=True)
 
         return loss
@@ -421,11 +368,7 @@ class Pi0(Export, Policy):
         """
         return self.evaluate_gym(batch, batch_idx, stage="val")
 
-    def reset(self) -> None:
-        """Reset policy state for new episode."""
-        super().reset()  # Clears action queue
-
-    def configure_optimizers(self) -> dict[str, Any]:
+    def configure_optimizers(self) -> Any:  # noqa: ANN401
         """Configure optimizer and scheduler.
 
         Returns:
@@ -434,29 +377,25 @@ class Pi0(Export, Policy):
         # Get trainable parameters
         params = [p for p in self.parameters() if p.requires_grad]
 
-        # Create optimizer (use config values)
+        # Create optimizer
         optimizer = torch.optim.AdamW(
             params,
             lr=self.config.learning_rate,
             weight_decay=self.config.weight_decay,
-            betas=(0.9, 0.95),
         )
 
-        # Create scheduler with warmup
-        # Calculate warmup_steps from warmup_ratio and total training steps
-        warmup_ratio = self.config.warmup_ratio
-        # Get total training steps from trainer (if available) or use a default
-        if hasattr(self, "trainer") and self.trainer is not None:
-            total_steps = getattr(self.trainer, "estimated_stepping_batches", 10000)
-        else:
-            # Default for unit tests or when trainer not attached
-            total_steps = 10000
-        warmup_steps = max(1, int(total_steps * warmup_ratio))
-
+        # Define learning rate schedule with warmup + cosine decay
         def lr_lambda(step: int) -> float:
-            if step < warmup_steps:
-                return step / max(1, warmup_steps)
-            return 1.0
+            if step < self.config.warmup_steps:
+                # Warmup phase: linear increase from 0 to 1
+                return step / max(1, self.config.warmup_steps)
+            if step < self.config.warmup_steps + self.config.decay_steps:
+                # Cosine decay phase: from 1 to decay_lr/learning_rate
+                decay_progress = (step - self.config.warmup_steps) / self.config.decay_steps
+                decay_min = self.config.decay_lr / self.config.learning_rate
+                return (1 - decay_min) * 0.5 * (1 + math.cos(math.pi * decay_progress)) + decay_min
+            # After decay: stay at decay_lr
+            return self.config.decay_lr / self.config.learning_rate
 
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
@@ -466,18 +405,6 @@ class Pi0(Export, Policy):
                 "scheduler": scheduler,
                 "interval": "step",
             },
-        }
-
-    def get_optim_params(self) -> dict[str, Any]:
-        """Get optimizer parameters for external configuration.
-
-        Returns:
-            Dict with trainable parameters grouped.
-        """
-        return {
-            "params": [p for p in self.parameters() if p.requires_grad],
-            "lr": self.config.learning_rate,
-            "weight_decay": self.config.weight_decay,
         }
 
     def configure_gradient_clipping(
@@ -506,18 +433,98 @@ class Pi0(Export, Policy):
                 gradient_clip_algorithm=gradient_clip_algorithm or "norm",
             )
 
+    @property
+    def metadata_extra(self) -> dict[str, Any]:
+        """Return extra metadata for policy export."""
+        return {
+            "chunk_size": self.config.chunk_size,
+            "use_action_queue": True,
+        }
+
 
 class Pi05(Pi0):
-    """Pi0.5 Policy - Alias for Pi0 with variant set to "pi05".
+    """Pi0.5 Policy - Physical Intelligence's improved flow matching VLA model.
 
-    This class is a convenience alias for creating a Pi0 policy
-    configured as Pi0.5.
+    This is a convenience alias for Pi0 with variant="pi05".
+    Pi0.5 uses AdaRMS conditioning and quantile normalization.
 
     Example:
-        >>> from getiaction.policies.pi0 import Pi05
-        >>> policy = Pi05(learning_rate=2.5e-5)
+        Training:
+
+        >>> policy = Pi05(paligemma_variant="gemma_300m")
+        >>> trainer = getiaction.Trainer(max_epochs=100)
+        >>> trainer.fit(policy, datamodule)
     """
 
-    def __init__(self, **kwargs: Any) -> None:  # noqa: ANN401
-        """Initialize Pi0.5 policy with variant set to "pi05"."""
-        super().__init__(variant="pi05", **kwargs)
+    def __init__(  # noqa: PLR0913
+        self,
+        *,
+        paligemma_variant: str = "gemma_2b",
+        action_expert_variant: str = "gemma_300m",
+        dtype: str = "bfloat16",
+        n_obs_steps: int = 1,
+        chunk_size: int = 50,
+        n_action_steps: int = 50,
+        max_state_dim: int = 32,
+        max_action_dim: int = 32,
+        max_token_len: int | None = 200,
+        image_resolution: tuple[int, int] = (224, 224),
+        num_inference_steps: int = 10,
+        time_beta_alpha: float = 1.5,
+        time_beta_beta: float = 1.0,
+        time_scale: float = 0.999,
+        time_offset: float = 0.001,
+        time_min_period: float = 4e-3,
+        time_max_period: float = 4.0,
+        tune_paligemma: bool = False,
+        tune_action_expert: bool = True,
+        tune_vision_encoder: bool = False,
+        lora_rank: int = 0,
+        lora_alpha: int = 16,
+        lora_dropout: float = 0.1,
+        lora_target_modules: tuple[str, ...] = ("q_proj", "v_proj", "k_proj", "o_proj"),
+        gradient_checkpointing: bool = False,
+        learning_rate: float = 2.5e-5,
+        weight_decay: float = 1e-10,
+        warmup_steps: int = 1000,
+        decay_steps: int = 30000,
+        decay_lr: float = 2.5e-6,
+        grad_clip_norm: float = 1.0,
+        dataset_stats: dict[str, dict[str, list[float] | str | tuple[int, ...]]] | None = None,
+    ) -> None:
+        """Initialize Pi0.5 policy with explicit arguments."""
+        super().__init__(
+            variant="pi05",
+            paligemma_variant=paligemma_variant,
+            action_expert_variant=action_expert_variant,
+            dtype=dtype,
+            n_obs_steps=n_obs_steps,
+            chunk_size=chunk_size,
+            n_action_steps=n_action_steps,
+            max_state_dim=max_state_dim,
+            max_action_dim=max_action_dim,
+            max_token_len=max_token_len,
+            image_resolution=image_resolution,
+            num_inference_steps=num_inference_steps,
+            time_beta_alpha=time_beta_alpha,
+            time_beta_beta=time_beta_beta,
+            time_scale=time_scale,
+            time_offset=time_offset,
+            time_min_period=time_min_period,
+            time_max_period=time_max_period,
+            tune_paligemma=tune_paligemma,
+            tune_action_expert=tune_action_expert,
+            tune_vision_encoder=tune_vision_encoder,
+            lora_rank=lora_rank,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            lora_target_modules=lora_target_modules,
+            gradient_checkpointing=gradient_checkpointing,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            warmup_steps=warmup_steps,
+            decay_steps=decay_steps,
+            decay_lr=decay_lr,
+            grad_clip_norm=grad_clip_norm,
+            dataset_stats=dataset_stats,
+        )

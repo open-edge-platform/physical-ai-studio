@@ -13,7 +13,7 @@ from .base import PolicyLike
 from .dummy import Dummy, DummyConfig
 from .groot import Groot, GrootConfig, GrootModel
 from .lerobot import get_lerobot_policy
-from .pi0 import Pi0, Pi0Config, Pi0Model, Pi05
+from .pi0 import Pi0, Pi0Config, Pi0Model, Pi05, Pi05Config
 from .smolvla import SmolVLA, SmolVLAConfig, SmolVLAModel
 
 if TYPE_CHECKING:
@@ -36,6 +36,7 @@ __all__ = [
     "Pi0Config",
     "Pi0Model",
     "Pi05",
+    "Pi05Config",
     # Protocol
     "PolicyLike",
     # SmolVLA
@@ -57,8 +58,8 @@ def get_policy(policy_name: str, *, source: str = "getiaction", **kwargs) -> Pol
 
     Args:
         policy_name: Name of the policy to create. Supported values depend on source:
-            - getiaction: "act", "dummy", "groot", "pi0", "pi05"
-            - lerobot: "act", "diffusion", "vqbet", "tdmpc", "sac", "pi0", etc.
+            - getiaction: "act", "dummy", "groot", "pi0", "pi05", "smolvla"
+            - lerobot: "act", "diffusion", "vqbet", "tdmpc", "sac", etc.
         source: Where the policy implementation comes from. Options:
             - "getiaction": First-party implementations (default)
             - "lerobot": LeRobot framework wrappers
@@ -76,13 +77,13 @@ def get_policy(policy_name: str, *, source: str = "getiaction", **kwargs) -> Pol
             >>> from getiaction.policies import get_policy
             >>> policy = get_policy("act", learning_rate=1e-4)
 
+        Create first-party Groot policy:
+
+            >>> policy = get_policy("groot", learning_rate=1e-4)
+
         Create first-party Pi0 policy:
 
-            >>> policy = get_policy("pi0", learning_rate=2.5e-5)
-
-        Create Pi0.5 variant:
-
-            >>> policy = get_policy("pi05", learning_rate=2.5e-5)
+            >>> policy = get_policy("pi0", paligemma_variant="gemma_300m")
 
         Create LeRobot ACT policy explicitly:
 
@@ -96,7 +97,7 @@ def get_policy(policy_name: str, *, source: str = "getiaction", **kwargs) -> Pol
 
             >>> @pytest.mark.parametrize(
             ...     ("policy_name", "source"),
-            ...     [("act", "getiaction"), ("pi0", "getiaction"), ("diffusion", "lerobot")],
+            ...     [("act", "getiaction"), ("groot", "getiaction"), ("diffusion", "lerobot")],
             ... )
             >>> def test_policy(policy_name, source):
             ...     policy = get_policy(policy_name, source=source)
@@ -148,5 +149,5 @@ def get_getiaction_policy_class(policy_name: str) -> type[Policy]:
     if policy_name == "smolvla":
         return SmolVLA
 
-    msg = f"Unknown getiaction policy: {policy_name}. Supported policies: act, dummy, groot, pi0, pi05"
+    msg = f"Unknown getiaction policy: {policy_name}. Supported policies: act, dummy, groot, pi0, pi05, smolvla"
     raise ValueError(msg)
