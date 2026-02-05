@@ -4,7 +4,7 @@ from .dataset import Dataset, Episode, EpisodeInfo, EpisodeVideo, LeRobotDataset
 from .job import Job
 from .model import Model
 from .project import Project
-from .robot import Robot, RobotConfig, RobotPortInfo
+from .robot import LeRobotConfig, NetworkIpRobotConfig, Robot, SerialPortInfo
 from .teleoperation import InferenceConfig, TeleoperationConfig
 
 __all__ = [
@@ -17,12 +17,13 @@ __all__ = [
     "EpisodeVideo",
     "InferenceConfig",
     "Job",
+    "LeRobotConfig",
     "LeRobotDatasetInfo",
     "Model",
+    "NetworkIpRobotConfig",
     "Project",
     "Robot",
-    "RobotConfig",
-    "RobotPortInfo",
+    "SerialPortInfo",
     "Snapshot",
     "TeleoperationConfig",
 ]

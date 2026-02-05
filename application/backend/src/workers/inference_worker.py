@@ -19,7 +19,7 @@ from robots.robot_client import RobotClient
 from robots.utils import get_robot_client
 from schemas import InferenceConfig
 from services.robot_calibration_service import RobotCalibrationService
-from utils.robot import RobotConnectionManager
+from utils.serial_robot_tools import RobotConnectionManager
 from workers.camera_worker import create_frames_source_from_camera
 
 from .base import BaseThreadWorker

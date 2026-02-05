@@ -52,6 +52,7 @@ class EventProcessor:
                     await asyncio.sleep(0.05)
 
         except Exception as e:
+            raise e
             logger.error(f"Outgoing task stopped: {e}")
 
     def shutdown(self) -> None:

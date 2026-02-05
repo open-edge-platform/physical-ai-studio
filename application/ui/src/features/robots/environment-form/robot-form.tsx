@@ -122,7 +122,7 @@ export const AddRobotForm = ({
                 }}
             >
                 {availableRobots
-                    .filter((robot) => robot.type === 'SO101_Follower')
+                    .filter((robot) => robot.type === 'SO101_Follower' || robot.type === 'Trossen_WidowXAI_Follower')
                     .map((robot) => {
                         return (
                             <Item textValue={robot.name} key={robot.id}>
@@ -151,7 +151,9 @@ export const AddRobotForm = ({
                             }}
                         >
                             {availableRobots
-                                .filter((robot) => robot.type === 'SO101_Leader')
+                                .filter(
+                                    (robot) => robot.type === 'SO101_Leader' || robot.type === 'Trossen_WidowXAI_Leader'
+                                )
                                 .map((robot) => {
                                     return (
                                         <Item textValue={robot.name} key={robot.id}>

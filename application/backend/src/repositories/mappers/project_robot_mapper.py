@@ -12,7 +12,8 @@ class ProjectRobotMapper(IBaseMapper):
         return ProjectRobotDB(
             id=str(db_schema.id),
             name=db_schema.name,
-            serial_id=db_schema.serial_id,
+            serial_number=db_schema.serial_number,
+            connection_string=db_schema.connection_string,
             type=db_schema.type,
             active_calibration_id=str(db_schema.active_calibration_id) if db_schema.active_calibration_id else None,
         )
@@ -23,7 +24,8 @@ class ProjectRobotMapper(IBaseMapper):
         return Robot(
             id=model.id,
             name=model.name,
-            serial_id=model.serial_id,
+            connection_string=model.connection_string,
+            serial_number=model.serial_number,
             type=model.type,
             active_calibration_id=model.active_calibration_id,
             created_at=model.created_at,
