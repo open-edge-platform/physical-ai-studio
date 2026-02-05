@@ -59,10 +59,19 @@ class SO101Leader(RobotClient):
         return list(self.robot.action_features.keys())
 
     async def read_state(self, *, normalize: bool = True) -> dict:  # noqa: ARG002
-        """Read current robot state. Returns state dict with timestamp."""
+        """Read current robot state. Returns state dict with timestamp.
+
+        Example state: {
+            'shoulder_pan.pos': -8.744968898646178,
+            'shoulder_lift.pos': -97.84142797841427,
+            'elbow_flex.pos': 96.39877031181379,
+            'wrist_flex.pos': 74.32374409617861,
+            'wrist_roll.pos': -13.854951910579672,
+            'gripper.pos': 27.050359712230215
+        }
+        """
         try:
-            observation = self.robot.get_action()
-            state = {key.removesuffix(".pos"): value for key, value in observation.items()}
+            state = self.robot.get_action()
             return self._create_event(
                 "state_was_updated",
                 state=state,

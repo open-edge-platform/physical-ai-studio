@@ -66,7 +66,25 @@ class TrossenWidowXAILeader(RobotClient):
         return {}
 
     async def read_state(self, *, normalize: bool = True) -> dict:  # noqa: ARG002
-        """Read current robot state. Returns state dict with timestamp."""
+        """Read current robot state. Returns state dict with timestamp.
+
+        Example state: {
+            'elbow_flex.pos': 4.535314764553813,
+            'elbow_flex.vel': -0.0024420025292783976,
+            'gripper.pos': -2.8371810913085938e-05,
+            'gripper.vel': -0.0001923076924867928,
+            'shoulder_lift.pos': 0.4917811441211757,
+            'shoulder_lift.vel': -0.0024420025292783976,
+            'shoulder_pan.pos': 0.03278540827405706,
+            'shoulder_pan.vel': -0.0024420025292783976,
+            'wrist_flex.pos': 4.273031658443915,
+            'wrist_flex.vel': -0.007326007355004549,
+            'wrist_roll.pos': -0.09835622482217117,
+            'wrist_roll.vel': -0.007326007355004549,
+            'wrist_yaw.pos': 0.1420700958508073,
+            'wrist_yaw.vel': -0.007326007355004549
+        }`
+        """
         try:
             observation = self.get_action()
             return self._create_event(
