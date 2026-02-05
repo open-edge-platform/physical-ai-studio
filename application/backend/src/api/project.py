@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, status
 
 from api.dependencies import get_model_service, get_project_id, get_project_service
 from internal_datasets.utils import get_internal_dataset
-from schemas import InferenceConfig, Model, Project, ProjectConfig, TeleoperationConfig
+from schemas import InferenceConfig, Model, Project, TeleoperationConfig
 from services import ModelService, ProjectService
 
 router = APIRouter(prefix="/api/projects", tags=["Projects"])
@@ -26,20 +26,6 @@ async def create_project(
 ) -> Project:
     """Create a new project."""
     return await project_service.create_project(project)
-
-
-@router.put("/{project_id}/project_config")
-async def set_project_config(
-    project_id: Annotated[UUID, Depends(get_project_id)],
-    project_config: ProjectConfig,
-    project_service: Annotated[ProjectService, Depends(get_project_service)],
-) -> Project:
-    """Set project config."""
-    project = await project_service.get_project_by_id(project_id)
-    update = {
-        "config": project_config,
-    }
-    return await project_service.update_project(project, update)
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)

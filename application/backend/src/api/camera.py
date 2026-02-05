@@ -6,42 +6,14 @@ from fastapi import APIRouter, Depends, WebSocket, status
 from frame_source import FrameSourceFactory
 from loguru import logger
 
-from api.dependencies import CameraRegistryDep, get_webrtc_manager
-from schemas import Camera, CameraProfile
+from api.dependencies import CameraRegistryDep
 from schemas.camera import SupportedCameraFormat
 from schemas.project_camera import Camera as ProjectCamera
 from schemas.project_camera import CameraAdapter
-from webrtc.manager import Answer, Offer, WebRTCManager
 from workers.camera_worker import CameraWorker
 from workers.transport.websocket_transport import WebSocketTransport
 
 router = APIRouter(prefix="/api/cameras", tags=["Cameras"])
-
-
-@router.post("/offer/camera")
-async def offer_camera(
-    offer: Offer,
-    driver: str,
-    camera: str,
-    width: int,
-    height: int,
-    fps: int,
-    webrtc_manager: Annotated[WebRTCManager, Depends(get_webrtc_manager)],
-) -> Answer:
-    """Create a WebRTC offer"""
-    config = Camera(
-        name=camera,
-        fingerprint=camera,
-        driver=driver,
-        default_stream_profile=CameraProfile(
-            width=width,
-            height=height,
-            fps=fps,
-        ),
-    )
-    return await webrtc_manager.handle_offer(
-        offer.sdp, offer.type, offer.webrtc_id, config, config.default_stream_profile
-    )
 
 
 @router.get("/supported_formats/{driver}")
