@@ -973,7 +973,7 @@ class VLAFlowMatching(nn.Module):
         embs = torch.cat(embs, dim=1)
         pad_masks = torch.cat(pad_masks, dim=1)
         att_masks = torch.tensor(att_masks, dtype=embs.dtype, device=embs.device)
-        att_masks = att_masks[None, :].expand(bsize, len(att_masks))
+        att_masks = att_masks[None, :].expand(bsize, att_masks.shape[0])
         return embs, pad_masks, att_masks
 
     def forward(  # noqa: PLR0914
