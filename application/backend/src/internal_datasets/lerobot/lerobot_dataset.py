@@ -51,6 +51,8 @@ class InternalLeRobotDataset(DatasetClient):
 
     def get_tasks(self) -> list[str]:
         """Get Tasks in dataset."""
+        if not self.exists_on_disk:
+            return []
         return list(self._dataset.meta.tasks.to_dict()["task_index"].keys())
 
     def get_video_path(self, episode: int, camera: str) -> Path:
@@ -68,11 +70,13 @@ class InternalLeRobotDataset(DatasetClient):
 
     def get_episodes(self) -> list[Episode]:
         """Get episodes of dataset."""
-        result = []
 
+        if not self.exists_on_disk:
+            return []
         metadata = self._dataset.meta
         episodes = metadata.episodes
 
+        result = []
         action_feature_names = self._dataset.features.get("action", {}).get("names", [])
         follower_robot = robot_for_action_features(action_feature_names)
         for episode in episodes:
@@ -150,6 +154,9 @@ class InternalLeRobotDataset(DatasetClient):
                 video_timestamps[video_key].start += offset
                 video_timestamps[video_key].end += offset
 
+        action_feature_names = self._dataset.features.get("action", {}).get("names", [])
+        follower_robot = robot_for_action_features(action_feature_names)
+
         return Episode(
             episode_index=data["episode_index"].tolist()[0],
             length=len(data["frame_index"]),
@@ -158,6 +165,8 @@ class InternalLeRobotDataset(DatasetClient):
             actions=data["action"].tolist(),
             videos=video_timestamps,
             modification_timestamp=int(time.time()),
+            action_keys=action_feature_names,
+            follower_robot_types=[follower_robot],
         )
 
     def _build_episode_data_from_buffer(self) -> dict:
