@@ -77,12 +77,16 @@ class TrainingWorker(BaseProcessWorker):
     def setup(self) -> None:
         super().setup()
         with logger.contextualize(worker=self.__class__.__name__):
-            asyncio.run(TrainingService.abort_orphan_jobs())
+            if self.loop is None:
+                raise RuntimeError("The event loop must be set.")
+            self.loop.run_until_complete(TrainingService.abort_orphan_jobs())
 
     def teardown(self) -> None:
         super().teardown()
         with logger.contextualize(worker=self.__class__.__name__):
-            asyncio.run(TrainingService.abort_orphan_jobs())
+            if self.loop is None:
+                raise RuntimeError("The event loop must be set.")
+            self.loop.run_until_complete(TrainingService.abort_orphan_jobs())
 
     async def _train_model(self, job: Job, model: Model, snapshot: Snapshot):
         await JobService.update_job_status(job_id=job.id, status=JobStatus.RUNNING, message="Training started")

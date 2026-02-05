@@ -76,6 +76,7 @@ class BaseProcessWorker(mp.Process, StoppableMixin, ABC):
         self._stop_event = stop_event
         self._parent_pid = os.getpid()
         self._queues_to_cancel = list(queues_to_cancel or [])
+        self.loop: asyncio.AbstractEventLoop | None = None
 
         # Platforms that use "spawn" for multiprocessing (e.g. Windows) cause logging concurrency issues.
         # Therefore, we need to copy the logger with enqueue=True in child processes.
@@ -134,19 +135,27 @@ class BaseProcessWorker(mp.Process, StoppableMixin, ABC):
             except Exception as e:
                 logger.warning(f"Failed cancelling queue join thread: {e}")
 
-    def run(self) -> None:  # final orchestration; should not be overridden in subclasses
+    def run(self) -> None:
         self.setup()
         with logger.contextualize(worker=self.__class__.__name__):
             self._install_signal_policy()
             self.name = self._auto_name()
             logger.info(f"Starting {self.name}...")
+
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+
             try:
-                asyncio.run(self.run_loop())
+                self.loop.run_until_complete(self.run_loop())
+            except Exception:
+                logger.exception(f"Unhandled exception in {self.name}")
             finally:
                 try:
                     self.teardown()
                 finally:
-                    # always try to cancel any declared queues
+                    self.loop.run_until_complete(self.loop.shutdown_asyncgens())
+                    self.loop.close()
+
                     self._cancel_queue_join_threads()
                     log_threads()
                     logger.info(f"Stopped {self.name}.")
@@ -159,6 +168,7 @@ class BaseThreadWorker(threading.Thread, StoppableMixin, abc.ABC):
         super().__init__(daemon=daemon)
         self._stop_event = stop_event
         self.name = f"{self.ROLE}-{os.getpid()}-thread"
+        self.loop: asyncio.AbstractEventLoop | None = None
 
     # hooks
     def setup(self) -> None:
@@ -167,20 +177,26 @@ class BaseThreadWorker(threading.Thread, StoppableMixin, abc.ABC):
     @abstractmethod
     async def run_loop(self) -> None: ...
 
-    def teardown(self) -> None:
+    async def teardown(self) -> None:
         pass
 
     # final run orchestration
-    def run(self) -> None:  # final orchestrator
+    def run(self) -> None:
         with logger.contextualize(worker=self.__class__.__name__):
             logger.info(f"Starting {self.name}")
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+
             try:
                 self.setup()
-                asyncio.run(self.run_loop())
+                self.loop.run_until_complete(self.run_loop())
             except Exception:
                 logger.exception(f"Unhandled exception in {self.name}")
             finally:
                 try:
-                    self.teardown()
+                    self.loop.run_until_complete(self.teardown())
                 finally:
+                    self.loop.run_until_complete(self.loop.shutdown_asyncgens())
+                    self.loop.close()
+                    log_threads()
                     logger.info(f"Stopped {self.name}")
