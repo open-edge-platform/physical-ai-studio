@@ -38,8 +38,7 @@ class SO101Follower(RobotClient):
 
     async def set_joints_state(self, joints: dict) -> dict:
         """Set joint positions. Returns event dict with timestamp."""
-        action = {f"{key}.pos": value for key, value in joints.items()}
-        self.robot.send_action(action)
+        self.robot.send_action(joints)
         return self._create_event(
             "joints_state_was_set",
             joints=joints,
@@ -64,11 +63,19 @@ class SO101Follower(RobotClient):
         return list(self.robot.action_features.keys())
 
     async def read_state(self, *, normalize: bool = True) -> dict:  # noqa: ARG002
-        """Read current robot state. Returns state dict with timestamp."""
-        try:
-            observation = self.robot.get_observation()
-            state = {key.removesuffix(".pos"): value for key, value in observation.items()}
+        """Read current robot state. Returns state dict with timestamp.
 
+        Example state: {
+            'shoulder_pan.pos': -8.705526116578355,
+            'shoulder_lift.pos': -98.16753926701571,
+            'elbow_flex.pos': 95.98393574297188,
+            'wrist_flex.pos': 73.85993485342019,
+            'wrist_roll.pos': -13.84615384615384,
+            'gripper.pos': 26.885644768856448
+        }
+        """
+        try:
+            state = self.robot.get_observation()
             return self._create_event(
                 "state_was_updated",
                 state=state,

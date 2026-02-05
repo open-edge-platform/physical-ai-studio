@@ -24,8 +24,6 @@ from workers.camera_worker import create_frames_source_from_camera
 
 from .base import BaseThreadWorker
 
-OBSERVATION_IMAGES_PREFIX = "observation.images."
-
 
 class CameraFrameProcessor:
     @staticmethod
@@ -127,9 +125,7 @@ class TeleoperateWorker(BaseThreadWorker):
             asyncio.run(self.setup_environment())
 
             self.action_keys = self.follower.features()
-            self.camera_keys = [
-                f"{OBSERVATION_IMAGES_PREFIX}{camera.name.lower()}" for camera in self.config.environment.cameras
-            ]
+            self.camera_keys = [camera.name.lower() for camera in self.config.environment.cameras]
             self.dataset = get_internal_dataset(self.config.dataset)
             features = asyncio.run(
                 build_lerobot_dataset_features(self.config.environment, self.robot_manager, self.calibration_service)
@@ -170,18 +166,18 @@ class TeleoperateWorker(BaseThreadWorker):
 
     def _report_observation(self, observation: dict, timestamp: float):
         """Report observation to queue."""
-        self.queue.put(
+
+        camera_images = {
+            key: self._base_64_encode_observation(cv2.cvtColor(observation[key], cv2.COLOR_RGB2BGR))
+            for key in self.camera_keys
+            if key in observation
+        }
+        self.queue.put(  # Mimicing the dataset features format.
             {
                 "event": "observations",
                 "data": {
-                    "actions": {key: observation["action"][index] for index, key in enumerate(self.action_keys)},
-                    "cameras": {
-                        key.removeprefix(OBSERVATION_IMAGES_PREFIX): self._base_64_encode_observation(
-                            cv2.cvtColor(observation[key], cv2.COLOR_RGB2BGR)
-                        )
-                        for key in self.camera_keys
-                        if key in observation
-                    },
+                    "actions": {key: observation[key] for key in self.action_keys},
+                    "cameras": camera_images,
                     "timestamp": timestamp,
                 },
             }
@@ -219,31 +215,22 @@ class TeleoperateWorker(BaseThreadWorker):
 
                 # Trossen notes:
                 # Add force feedback
-                action = (await self.leader.read_state())["state"]
-                state = (await self.follower.read_state())["state"]
+                actions = (await self.leader.read_state())["state"]
+                observations = (await self.follower.read_state())["state"]
                 forces = (await self.follower.read_forces())["state"]
-                await self.follower.set_joints_state(action)
+                await self.follower.set_joints_state(actions)
                 if forces is not None:
                     await self.leader.set_forces(forces)
 
-                frame = {
-                    "task": self.config.task,
-                    "observation.state": np.array(list(state.values()), dtype=np.float32),
-                    "action": np.array(list(action.values()), dtype=np.float32),
-                }
-
-                actions = {f"{key}.pos": value for key, value in action.items()}
-                observations = {f"{key}.pos": value for key, value in state.items()}
                 for camera_name, camera in self.cameras.items():
                     _success, camera_frame = camera.get_latest_frame()  # HWC
                     if camera_frame is None:
                         raise Exception("Camera frame is None")
                     processed_frame = CameraFrameProcessor.process(camera_frame)
-                    frame[f"observation.images.{camera_name}"] = processed_frame
                     observations[camera_name] = processed_frame
 
                 timestamp = time.perf_counter() - self.start_episode_t
-                self._report_observation(frame, timestamp)
+                self._report_observation(observations, timestamp)
                 if self.state.is_recording and self.dataset is not None:
                     self.dataset.add_frame(observations, actions, self.config.task)
 
