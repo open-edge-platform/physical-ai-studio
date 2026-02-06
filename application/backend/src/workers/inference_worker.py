@@ -106,7 +106,9 @@ class InferenceWorker(BaseThreadWorker):
         """Set up robots, cameras and dataset."""
         logger.info("connect to robot, cameras and setup dataset")
         try:
-            asyncio.run(self.setup_environment())
+            if self.loop is None:
+                raise RuntimeError("The event loop must be set.")
+            self.loop.run_until_complete(self.setup_environment())
 
             model_path = Path(self.config.model.path)
             logger.info(f"loading model: {model_path}")
@@ -191,13 +193,13 @@ class InferenceWorker(BaseThreadWorker):
         except Exception as e:
             self._report_error(e)
 
-    def teardown(self) -> None:
+    async def teardown(self) -> None:
         """Disconnect robots and close queue."""
         if self.follower.is_connected:
-            asyncio.run(self.follower.disconnect())
+            await self.follower.disconnect()
 
-        # Wait for .5 seconds before closing queue to allow messages thru
-        asyncio.run(asyncio.sleep(0.5))
+        # Wait for .5 seconds before closing queue to allow messages through
+        await asyncio.sleep(0.5)
         self.queue.close()
         self.queue.cancel_join_thread()
 

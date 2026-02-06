@@ -33,7 +33,7 @@ class ProgressCallback(ProgressBar):
         super().on_train_batch_end(trainer, pl_module, outputs, batch, batch_idx)
         progress = round((trainer.global_step) / self.total_steps * 100)
         if progress < 100:
-            asyncio.run(JobService().update_job_status(job_id=self.job_id, status=JobStatus.RUNNING, progress=progress))
+            asyncio.run(JobService.update_job_status(job_id=self.job_id, status=JobStatus.RUNNING, progress=progress))
 
 
 class TrainingTrackingDispatcher(BaseThreadWorker):

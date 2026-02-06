@@ -1,4 +1,4 @@
-import { Flex, Heading, Key, Tag, Text, View } from '@geti/ui';
+import { Flex, Heading, Key, Text, View } from '@geti/ui';
 import { clsx } from 'clsx';
 import { NavLink } from 'react-router-dom';
 
@@ -15,17 +15,17 @@ type ProjectCardProps = {
     isActive: boolean;
 };
 
-const robotNameFromTypeMap: { [key: string]: string } = {
-    so100_follower: 'SO-100',
-    so101_follower: 'SO-101',
-    koch_follower: 'Koch',
-    stretch3: 'Stretch 3',
-    lekiwi: 'LeKiwi',
-    viperx: 'ViperX',
-    hope_jr_arm: 'HopeJrArm',
-    bi_so100_follower: 'Bi SO-100',
-    reachy2: 'Reachy2 Robot',
-};
+//const robotNameFromTypeMap: { [key: string]: string } = {
+//    so100_follower: 'SO-100',
+//    so101_follower: 'SO-101',
+//    koch_follower: 'Koch',
+//    stretch3: 'Stretch 3',
+//    lekiwi: 'LeKiwi',
+//    viperx: 'ViperX',
+//    hope_jr_arm: 'HopeJrArm',
+//    bi_so100_follower: 'Bi SO-100',
+//    reachy2: 'Reachy2 Robot',
+//};
 
 export const ProjectCard = ({ item, isActive }: ProjectCardProps) => {
     const deleteMutation = $api.useMutation('delete', '/api/projects/{project_id}');
@@ -55,21 +55,10 @@ export const ProjectCard = ({ item, isActive }: ProjectCardProps) => {
                         <MenuActions onAction={onAction} />
                     </Flex>
 
-                    <Flex marginBottom={'size-200'} gap={'size-50'}>
-                        {isActive && item.config && (
-                            <Tag
-                                withDot={false}
-                                text={robotNameFromTypeMap[item.config.robot_type] ?? item.config.robot_type}
-                                className={clsx(classes.tag, classes.activeTag)}
-                            />
-                        )}
-                    </Flex>
-
                     <Flex alignItems={'center'} gap={'size-100'} direction={'row'} wrap='wrap'>
                         {item.updated_at !== undefined && (
                             <Text>• Edited: {new Date(item.updated_at!).toLocaleString()}</Text>
                         )}
-                        {item.config && <Text>• Cameras: {item.config.cameras.map((c) => c.name).join(', ')}</Text>}
                         {item.datasets.length > 0 && (
                             <Text>• Datasets: {item.datasets.map((d) => d.name).join(', ')}</Text>
                         )}
