@@ -101,7 +101,6 @@ class TeleoperateWorker(BaseThreadWorker):
 
     async def setup_environment(self) -> None:
         """Setup environment."""
-
         robot = self.config.environment.robots[0]  # Assume 1 arm for now.
         if robot.tele_operator.robot is None:
             raise ValueError("No teleoperator given.")
@@ -125,13 +124,13 @@ class TeleoperateWorker(BaseThreadWorker):
             if self.loop is None:
                 raise RuntimeError("The event loop must be set.")
             self.loop.run_until_complete(self.setup_environment())
+            self.dataset = get_internal_dataset(self.config.dataset)
 
             if self.leader is None or self.follower is None or self.dataset is None:
                 raise RuntimeError("Environment setup failed.")
 
             self.action_keys = self.follower.features()
             self.camera_keys = [camera.name.lower() for camera in self.config.environment.cameras]
-            self.dataset = get_internal_dataset(self.config.dataset)
             features = self.loop.run_until_complete(
                 build_lerobot_dataset_features(self.config.environment, self.robot_manager, self.calibration_service)
             )
