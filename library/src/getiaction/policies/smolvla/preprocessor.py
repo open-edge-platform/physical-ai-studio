@@ -67,8 +67,6 @@ class SmolVLAPreprocessor(torch.nn.Module):
         >>> batch = preprocessor(raw_batch)
     """
 
-    TOKENIZER_PROMPT_KEY = "tokenized_prompt"
-
     def __init__(
         self,
         max_state_dim: int = 32,
