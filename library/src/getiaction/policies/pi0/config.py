@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal, cast
+from typing import ClassVar, Literal, cast
 
 from getiaction.config import Config
 
@@ -15,9 +15,9 @@ from getiaction.config import Config
 class Pi0Config(Config):
     """Configuration for Pi0/Pi0.5 flow matching model."""
 
-    DEFAULT_MAX_TOKEN_LEN_PI0: int = 48
-    DEFAULT_MAX_TOKEN_LEN_PI05: int = 200
-    _AUTO_MAX_TOKEN_LEN: object = object()
+    DEFAULT_MAX_TOKEN_LEN_PI0: ClassVar[int] = 48
+    DEFAULT_MAX_TOKEN_LEN_PI05: ClassVar[int] = 200
+    _AUTO_MAX_TOKEN_LEN: ClassVar[object] = object()
 
     variant: Literal["pi0", "pi05"] = "pi0"
 

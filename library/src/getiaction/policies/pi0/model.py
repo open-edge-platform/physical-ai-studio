@@ -274,7 +274,7 @@ class Pi0Model(nn.Module):
         batch_size = noisy_actions.shape[0]
 
         if not self.is_pi05:
-            state_emb = self.state_proj(state.float())
+            state_emb = self.state_proj(state.to(dtype=self.state_proj.weight.dtype))
             embeddings.append(state_emb[:, None, :])
             pad_masks.append(torch.ones(batch_size, 1, dtype=torch.bool, device=device))
             att_masks.append(1)
@@ -287,7 +287,7 @@ class Pi0Model(nn.Module):
         )
         time_emb = time_emb.to(dtype=noisy_actions.dtype)
 
-        action_emb = self.action_in_proj(noisy_actions)
+        action_emb = self.action_in_proj(noisy_actions.to(dtype=self.action_in_proj.weight.dtype))
 
         if self.is_pi05:
             time_emb = self.time_mlp_in(time_emb)
