@@ -136,7 +136,6 @@ class BaseProcessWorker(mp.Process, StoppableMixin, ABC):
                 logger.warning(f"Failed cancelling queue join thread: {e}")
 
     def run(self) -> None:
-        self.setup()
         with logger.contextualize(worker=self.__class__.__name__):
             self._install_signal_policy()
             self.name = self._auto_name()
@@ -146,6 +145,7 @@ class BaseProcessWorker(mp.Process, StoppableMixin, ABC):
             asyncio.set_event_loop(self.loop)
 
             try:
+                self.setup()
                 self.loop.run_until_complete(self.run_loop())
             except Exception:
                 logger.exception(f"Unhandled exception in {self.name}")
