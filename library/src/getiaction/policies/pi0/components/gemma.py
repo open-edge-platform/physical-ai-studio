@@ -205,6 +205,7 @@ class PaliGemmaWithExpert(nn.Module):
     def embed_image(self, pixel_values: torch.Tensor) -> torch.Tensor:
         """Embed images using PaliGemma's vision encoder."""  # noqa: DOC201
         self._ensure_loaded()
+        pixel_values = pixel_values.to(dtype=self.dtype)
         vision_outputs = self.paligemma.vision_tower(pixel_values)
         image_features = vision_outputs.last_hidden_state
         return self.paligemma.multi_modal_projector(image_features)
@@ -228,6 +229,10 @@ class PaliGemmaWithExpert(nn.Module):
         self._ensure_loaded()
 
         prefix_embeds, suffix_embeds = inputs_embeds
+        if prefix_embeds is not None:
+            prefix_embeds = prefix_embeds.to(self.dtype)
+        if suffix_embeds is not None:
+            suffix_embeds = suffix_embeds.to(self.dtype)
 
         prefix_len = prefix_embeds.shape[1] if prefix_embeds is not None else 0
         suffix_len = suffix_embeds.shape[1] if suffix_embeds is not None else 0
