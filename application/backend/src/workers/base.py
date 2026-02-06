@@ -65,6 +65,8 @@ class BaseProcessWorker(mp.Process, StoppableMixin, ABC):
     # Override in subclasses for a nicer auto-name:
     ROLE: str = "Worker"
 
+    loop: asyncio.AbstractEventLoop | None = None
+
     def __init__(
         self,
         *,
@@ -76,7 +78,6 @@ class BaseProcessWorker(mp.Process, StoppableMixin, ABC):
         self._stop_event = stop_event
         self._parent_pid = os.getpid()
         self._queues_to_cancel = list(queues_to_cancel or [])
-        self.loop: asyncio.AbstractEventLoop | None = None
 
         # Platforms that use "spawn" for multiprocessing (e.g. Windows) cause logging concurrency issues.
         # Therefore, we need to copy the logger with enqueue=True in child processes.
