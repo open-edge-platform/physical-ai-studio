@@ -5,7 +5,6 @@ from getiaction.export import Export
 from getiaction.inference import InferenceModel
 from getiaction.policies import ACT, ACTModel, Pi0, SmolVLA
 from getiaction.policies.base import Policy
-from loguru import logger
 
 from schemas import Model
 
@@ -23,14 +22,8 @@ def load_policy(model: Model) -> Export | Policy:
 
 
 def load_inference_model(model: Model, backend: str) -> InferenceModel:
-    """Loads inference model if available, otherwise generates it."""
+    """Loads inference model."""
     export_dir = Path(model.path) / "exports" / backend
-
-    if not export_dir.is_dir():
-        logger.info(f"Export not available yet. Loading model and exporting {backend}")
-        policy = load_policy(model)
-        policy.export(export_dir, backend=backend)
-
     return InferenceModel(export_dir=export_dir, policy_name=model.policy, backend=backend)
 
 

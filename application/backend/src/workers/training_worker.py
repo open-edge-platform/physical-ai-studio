@@ -87,6 +87,7 @@ class TrainingWorker(BaseProcessWorker):
             self.loop.run_until_complete(TrainingService.abort_orphan_jobs())
 
     async def _train_model(self, job: Job, model: Model, snapshot: Snapshot):
+        settings = get_settings()
         await JobService.update_job_status(job_id=job.id, status=JobStatus.RUNNING, message="Training started")
         dispatcher = TrainingTrackingDispatcher(
             job_id=job.id,
@@ -127,7 +128,10 @@ class TrainingWorker(BaseProcessWorker):
 
             dispatcher.start()
             trainer.fit(model=policy, datamodule=l_dm)
-            print(policy.example_input_array)
+
+            for backend in settings.supported_backends:
+                export_dir = path / "exports" / backend
+                policy.export(export_dir, backend=backend)
 
             job = await JobService.update_job_status(
                 job_id=job.id, status=JobStatus.COMPLETED, message="Training finished"
