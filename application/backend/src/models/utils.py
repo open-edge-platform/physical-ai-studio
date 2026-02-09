@@ -1,13 +1,14 @@
-from getiaction.data import DataModule
-from getiaction.policies import ACT, ACTModel, Pi0, SmolVLA
-from getiaction.policies.base import Policy
-from getiaction.inference import InferenceModel
-from getiaction.export import Export
-
-from schemas import Model
 from pathlib import Path
 
+from getiaction.data import DataModule
+from getiaction.export import Export
+from getiaction.inference import InferenceModel
+from getiaction.policies import ACT, ACTModel, Pi0, SmolVLA
+from getiaction.policies.base import Policy
 from loguru import logger
+
+from schemas import Model
+
 
 def load_policy(model: Model) -> Export | Policy:
     """Load existing model."""
