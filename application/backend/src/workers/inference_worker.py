@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 import asyncio
 import base64
 import time
@@ -19,6 +22,7 @@ from robots.robot_client import RobotClient
 from robots.utils import get_robot_client
 from schemas import InferenceConfig
 from services.robot_calibration_service import RobotCalibrationService
+from utils.device import get_torch_device
 from utils.serial_robot_tools import RobotConnectionManager
 from workers.camera_worker import create_frames_source_from_camera
 
@@ -117,8 +121,15 @@ class InferenceWorker(BaseThreadWorker):
             if not export_dir.is_dir():
                 policy.export(export_dir, backend=self.config.backend)
 
+            inference_device = "auto"
+            if self.config.backend == "torch":
+                inference_device = get_torch_device()
+
             self.model = InferenceModel(
-                export_dir=export_dir, policy_name=self.config.model.policy, backend=self.config.backend
+                export_dir=export_dir,
+                policy_name=self.config.model.policy,
+                backend=self.config.backend,
+                device=inference_device,
             )
 
             self.follower.set_joints_state(SO_101_REST_POSITION)
