@@ -1,9 +1,8 @@
 import base64
 import copy
 import shutil
-import time
 import cv2
-from os import path, stat
+from os import path
 from pathlib import Path
 from uuid import uuid4
 
@@ -85,18 +84,18 @@ class InternalLeRobotDataset(DatasetClient):
         action_feature_names = self._dataset.features.get("action", {}).get("names", [])
         follower_robot = robot_for_action_features(action_feature_names)
         for episode in episodes:
-            full_path = path.join(metadata.root, metadata.get_data_file_path(episode["episode_index"]))
-            stat_result = stat(full_path)
+            episode_index = episode["episode_index"]
+            full_path = path.join(metadata.root, metadata.get_data_file_path(episode_index))
             thumbnail = self._build_thumbnail(episode, image_key) if len(image_keys) > 0 else None
             result.append(
                 Episode(
                     actions=self._get_episode_actions(episode).tolist(),
                     fps=metadata.fps,
-                    modification_timestamp=stat_result.st_mtime_ns // 1e6,
                     videos={
                         video_key: EpisodeVideo(
                             start=episode[f"videos/{video_key}/from_timestamp"],
                             end=episode[f"videos/{video_key}/to_timestamp"],
+                            path=str(Path(metadata.root).stem / metadata.get_video_file_path(episode_index, video_key))
                         )
                         for video_key in self._dataset.meta.video_keys
                     },
@@ -154,7 +153,10 @@ class InternalLeRobotDataset(DatasetClient):
             raise Exception("No dataset loaded.")
 
         end = data["timestamp"][-1]
-        video_timestamps = {video_key: EpisodeVideo(start=0, end=end) for video_key in self._dataset.meta.video_keys}
+        video_timestamps = {
+            video_key: EpisodeVideo(start=0, end=end, path="") # TODO: Implement path
+            for video_key in self._dataset.meta.video_keys
+        }
         if episode is not None:
             for video_key in self._dataset.meta.video_keys:
                 offset = episode[f"videos/{video_key}/to_timestamp"][-1]
@@ -173,7 +175,6 @@ class InternalLeRobotDataset(DatasetClient):
             tasks=[task],
             actions=data["action"].tolist(),
             videos=video_timestamps,
-            modification_timestamp=int(time.time()),
             action_keys=action_feature_names,
             follower_robot_types=[follower_robot],
             thumbnail=thumbnail
