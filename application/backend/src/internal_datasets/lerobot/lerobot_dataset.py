@@ -163,7 +163,9 @@ class InternalLeRobotDataset(DatasetClient):
 
         action_feature_names = self._dataset.features.get("action", {}).get("names", [])
         follower_robot = robot_for_action_features(action_feature_names)
+        camera_key = self._dataset.meta.camera_keys[-1]
 
+        thumbnail = self._build_thumbnail_from_buffer(data, camera_key)
         return Episode(
             episode_index=data["episode_index"].tolist()[0],
             length=len(data["frame_index"]),
@@ -174,6 +176,7 @@ class InternalLeRobotDataset(DatasetClient):
             modification_timestamp=int(time.time()),
             action_keys=action_feature_names,
             follower_robot_types=[follower_robot],
+            thumbnail=thumbnail
         )
 
     def _build_episode_data_from_buffer(self) -> dict:
@@ -193,6 +196,7 @@ class InternalLeRobotDataset(DatasetClient):
         tasks = episode_buffer.pop("task")
         episode_tasks = list(set(tasks))
         episode_index = episode_buffer["episode_index"]
+
 
         episode_buffer["index"] = np.arange(
             self._dataset.meta.total_frames, self._dataset.meta.total_frames + episode_length
@@ -220,6 +224,17 @@ class InternalLeRobotDataset(DatasetClient):
         to_idx = episode["dataset_to_index"]
         actions = self._dataset.hf_dataset["action"][from_idx:to_idx]
         return torch.stack(actions)
+
+    def _build_thumbnail_from_buffer(self, episode_buffer: dict, image_key: str) -> str | None:
+        thumbnail_size = (320,240)
+
+        image_path = episode_buffer[image_key][-1]
+        image = cv2.imread(image_path)
+        if image is None:
+            return None
+        thumbnail = cv2.resize(image, thumbnail_size)
+        _, imagebytes = cv2.imencode(".jpg", thumbnail)
+        return base64.b64encode(imagebytes).decode()
 
     def _build_thumbnail(self, episode: dict, image_key: str) -> str:
         thumbnail_size = (320,240)
