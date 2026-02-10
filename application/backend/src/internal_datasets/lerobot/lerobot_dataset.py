@@ -1,6 +1,8 @@
+import base64
 import copy
 import shutil
 import time
+import cv2
 from os import path, stat
 from pathlib import Path
 from uuid import uuid4
@@ -76,12 +78,16 @@ class InternalLeRobotDataset(DatasetClient):
         metadata = self._dataset.meta
         episodes = metadata.episodes
 
+        image_keys = self._dataset.meta.camera_keys
+        image_key = image_keys[-1]
+
         result = []
         action_feature_names = self._dataset.features.get("action", {}).get("names", [])
         follower_robot = robot_for_action_features(action_feature_names)
         for episode in episodes:
             full_path = path.join(metadata.root, metadata.get_data_file_path(episode["episode_index"]))
             stat_result = stat(full_path)
+            thumbnail = self._build_thumbnail(episode, image_key) if len(image_keys) > 0 else None
             result.append(
                 Episode(
                     actions=self._get_episode_actions(episode).tolist(),
@@ -96,6 +102,7 @@ class InternalLeRobotDataset(DatasetClient):
                     },
                     follower_robot_types=[follower_robot],
                     action_keys=action_feature_names,
+                    thumbnail=thumbnail,
                     **episode,
                 )
             )
@@ -213,3 +220,14 @@ class InternalLeRobotDataset(DatasetClient):
         to_idx = episode["dataset_to_index"]
         actions = self._dataset.hf_dataset["action"][from_idx:to_idx]
         return torch.stack(actions)
+
+    def _build_thumbnail(self, episode: dict, image_key: str) -> str:
+        thumbnail_size = (320,240)
+
+        from_idx = episode["dataset_from_index"]
+        image = self._dataset[from_idx][image_key].permute(1, 2, 0).detach().numpy()
+        rescaled = (image * 255).clip(0, 255).astype(np.uint8)
+        resized = cv2.resize(rescaled, thumbnail_size)
+        thumbnail = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        _, imagebytes = cv2.imencode(".jpg", thumbnail)
+        return base64.b64encode(imagebytes).decode()

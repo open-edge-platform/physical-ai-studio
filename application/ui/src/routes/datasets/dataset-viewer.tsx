@@ -7,6 +7,7 @@ import { SchemaEpisode } from '../../api/openapi-spec';
 import { EpisodeViewer } from './episode-viewer';
 import { useRecording } from './recording-provider';
 import { RecordingViewer } from './recording-viewer';
+import { EpisodeList } from './episode-list';
 
 interface DatasetViewerProps {
     id: string;
@@ -23,16 +24,13 @@ export const DatasetViewer = ({ id: dataset_id }: DatasetViewerProps) => {
 
     const [episodes, setEpisodes] = useState<SchemaEpisode[]>(existingEpisodes);
 
-    const [episodeIndexKey, setEpisodeIndexKey] = useState<Selection>(new Set(episodes.length > 0 ? [0] : undefined));
-    const [currentEpisode] = episodeIndexKey as Set<number>;
+    const [currentEpisode, setCurrentEpisode] = useState<number>(0);
 
     const showEpisodeViewer = !isRecording;
 
-    const items = episodes.map((_, index) => ({ id: index, name: `Episode ${index + 1}` })).toReversed();
-
     const addEpisode = (episode: SchemaEpisode) => {
         setEpisodes((current) => [...current, episode]);
-        setEpisodeIndexKey(new Set([episode.episode_index]));
+        setCurrentEpisode(episode.episode_index);
     };
 
     if (currentEpisode === undefined && !isRecording) {
@@ -43,7 +41,7 @@ export const DatasetViewer = ({ id: dataset_id }: DatasetViewerProps) => {
         );
     }
     return (
-        <Flex direction={'row'} height='100%' flex gap={'size-100'}>
+        <Flex direction={'row'} height={'100%'} flex gap={'size-100'}>
             <View flex={1}>
                 {showEpisodeViewer ? (
                     <EpisodeViewer episode={episodes[currentEpisode]} dataset_id={dataset_id} />
@@ -52,19 +50,7 @@ export const DatasetViewer = ({ id: dataset_id }: DatasetViewerProps) => {
                 )}
             </View>
             <Divider orientation='vertical' size='S' />
-            <Flex flex direction='column' maxWidth='size-2000'>
-                <ListView
-                    disallowEmptySelection={!isRecording}
-                    selectedKeys={isRecording ? [] : episodeIndexKey}
-                    selectionMode='single'
-                    items={items}
-                    selectionStyle='highlight'
-                    onSelectionChange={setEpisodeIndexKey}
-                    flex={'1 0 0'}
-                >
-                    {(item) => <Item>{item.name}</Item>}
-                </ListView>
-            </Flex>
+            <EpisodeList episodes={episodes} onSelect={setCurrentEpisode} currentEpisode={currentEpisode} />
         </Flex>
     );
 };

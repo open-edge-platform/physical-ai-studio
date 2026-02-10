@@ -28,6 +28,7 @@ class Episode(BaseModel):
     videos: dict[str, EpisodeVideo]
     modification_timestamp: int
     follower_robot_types: list[RobotType]
+    thumbnail: str | None
 
 
 class LeRobotDatasetInfo(BaseModel):
