@@ -10,7 +10,7 @@ class DatasetClient(ABC):
     has_episodes: bool = False
 
     @abstractmethod
-    def prepare_for_writing(self, number_of_threads: int) -> None:
+    def prepare_for_writing(self) -> None:
         """Processes for writing episodes."""
 
     @abstractmethod
@@ -44,3 +44,11 @@ class DatasetClient(ABC):
     @abstractmethod
     def teardown(self) -> None:
         """Clean up dataset and delete if no episodes."""
+
+    @abstractmethod
+    def delete(self) -> None:
+        """Delete dataset."""
+
+    @abstractmethod
+    def finalize(self) -> None:
+        """Finalize changes to dataset."""

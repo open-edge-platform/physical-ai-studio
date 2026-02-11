@@ -1,6 +1,10 @@
+from internal_datasets.mutations.recording_mutation import RecordingMutation
+from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
+import traceback
 import asyncio
 import base64
 import time
+from pathlib import Path
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
 
@@ -11,8 +15,6 @@ from lerobot.utils.robot_utils import precise_sleep
 from loguru import logger
 from pydantic import BaseModel
 
-from internal_datasets.dataset_client import DatasetClient
-from internal_datasets.utils import get_internal_dataset
 from robots.robot_client import RobotClient
 from robots.utils import get_robot_client
 from schemas import TeleoperationConfig
@@ -51,7 +53,8 @@ class TeleoperateWorker(BaseThreadWorker):
     action_keys: list[str] = []
     camera_keys: list[str] = []
 
-    dataset: DatasetClient | None = None
+    dataset: InternalLeRobotDataset | None = None
+    mutation: RecordingMutation | None = None
     leader: RobotClient | None = None
     follower: RobotClient | None = None
     cameras: dict[str, VideoCaptureBase] = {}
@@ -124,25 +127,27 @@ class TeleoperateWorker(BaseThreadWorker):
             if self.loop is None:
                 raise RuntimeError("The event loop must be set.")
             self.loop.run_until_complete(self.setup_environment())
-            self.dataset = get_internal_dataset(self.config.dataset)
+            self.dataset = InternalLeRobotDataset(Path(self.config.dataset.path))
 
             if self.leader is None or self.follower is None or self.dataset is None:
                 raise RuntimeError("Environment setup failed.")
 
             self.action_keys = self.follower.features()
             self.camera_keys = [camera.name.lower() for camera in self.config.environment.cameras]
-            features = self.loop.run_until_complete(
-                build_lerobot_dataset_features(self.config.environment, self.robot_manager, self.calibration_service)
-            )
+            if self.dataset.exists_on_disk:
+                self.recording_mutation = RecordingMutation.from_existing_dataset(self.dataset.path)
+            else:
+                features = self.loop.run_until_complete(
+                    build_lerobot_dataset_features(self.config.environment, self.robot_manager, self.calibration_service)
+                )
 
-            if not self.dataset.exists_on_disk:
-                self.dataset.create(
+                self.recording_mutation = RecordingMutation.from_new_dataset(
+                    source_path=self.dataset.path,
                     fps=30,  # TODO: Implement in Environment
                     features=features,
                     robot_type=self.follower.name,
                 )
 
-            self.dataset.prepare_for_writing(number_of_threads=4 * len(self.cameras))
 
             logger.info("dataset loaded, starting cameras")
             for camera in self.cameras.values():
@@ -239,14 +244,15 @@ class TeleoperateWorker(BaseThreadWorker):
 
                 timestamp = time.perf_counter() - self.start_episode_t
                 self._report_observation(observations, timestamp)
-                if self.state.is_recording and self.dataset is not None:
-                    self.dataset.add_frame(observations, actions, self.config.task)
+                if self.state.is_recording and self.recording_mutation is not None:
+                    self.recording_mutation.add_frame(observations, actions, self.config.task)
 
                 dt_s = time.perf_counter() - start_loop_t
                 wait_time = 1 / 30 - dt_s
                 precise_sleep(wait_time)
         except Exception as e:
             self.error = True
+            traceback.print_exception(e)
             self._report_error(e)
 
     def _on_start(self) -> None:
@@ -259,8 +265,8 @@ class TeleoperateWorker(BaseThreadWorker):
         logger.info("save")
         self.events["save"].clear()
         precise_sleep(0.3)  # TODO check if neccesary
-        if self.dataset is not None:
-            new_episode = self.dataset.save_episode(self.config.task)
+        if self.recording_mutation is not None:
+            new_episode = self.recording_mutation.save_episode(self.config.task)
             self._report_episode(new_episode)
         self.state.is_recording = False
         self._report_state()
@@ -269,8 +275,8 @@ class TeleoperateWorker(BaseThreadWorker):
         logger.info("reset")
         self.events["reset"].clear()
         precise_sleep(0.3)  # TODO check if neccesary
-        if self.dataset is not None:
-            self.dataset.discard_buffer()
+        if self.recording_mutation is not None:
+            self.recording_mutation.discard_buffer()
         self.state.is_recording = False
         self._report_state()
 
@@ -282,8 +288,8 @@ class TeleoperateWorker(BaseThreadWorker):
         except Exception as e:
             logger.warning(f"Failed cancelling queue join thread: {e}")
 
-        if self.dataset:
-            self.dataset.teardown()
+        if self.recording_mutation:
+            self.recording_mutation.teardown()
 
         if self.follower is not None:
             try:

@@ -36,6 +36,11 @@ class Settings(BaseSettings):
         return self.storage_dir / "datasets"
 
     @property
+    def cache_dir(self) -> Path:
+        """Storage directory for cache."""
+        return self.storage_dir / "cache"
+
+    @property
     def models_dir(self) -> Path:
         """Storage directory for models."""
         return self.storage_dir / "models"

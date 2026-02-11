@@ -22,7 +22,7 @@ from utils.dataset import robot_for_action_features
 
 class InternalLeRobotDataset(DatasetClient):
     type: str = "lerobot"
-    _path: Path
+    path: Path
     _dataset: LeRobotDataset
 
     _teleop_action_processor: RobotProcessorPipeline
@@ -30,7 +30,7 @@ class InternalLeRobotDataset(DatasetClient):
     _robot_observation_processor: RobotProcessorPipeline
 
     def __init__(self, path: Path):
-        self._path = path
+        self.path = path
         if self._check_repository_exists(path):
             self._dataset = LeRobotDataset(str(uuid4()), path)
             self.exists_on_disk = True
@@ -42,10 +42,10 @@ class InternalLeRobotDataset(DatasetClient):
 
     def create(self, fps: int, features: dict, robot_type: str) -> None:
         """Create LeRobot dataset."""
-        if self._check_repository_exists(self._path):
-            raise Exception(f"Dataset already exists at {self._path}")
+        if self._check_repository_exists(self.path):
+            raise Exception(f"Dataset already exists at {self.path}")
         self._dataset = LeRobotDataset.create(
-            repo_id=str(uuid4()), root=self._path, fps=fps, features=features, robot_type=robot_type, use_videos=True
+            repo_id=str(uuid4()), root=self.path, fps=fps, features=features, robot_type=robot_type, use_videos=True
         )
         self.exists_on_disk = True
         self.has_episodes = False
@@ -62,11 +62,12 @@ class InternalLeRobotDataset(DatasetClient):
         full_camera_name = f"observation.images.{camera}"
         return Path(metadata.root) / Path(metadata.get_video_file_path(episode, full_camera_name))
 
-    def prepare_for_writing(self, number_of_threads: int) -> None:
+    def prepare_for_writing(self) -> None:
         """Start image writer &"""
+        num_threads = 4 * len(self._dataset.meta.camera_keys)
         self._dataset.start_image_writer(
             num_processes=0,
-            num_threads=number_of_threads,
+            num_threads=num_threads,
         )
 
     def get_episodes(self) -> list[Episode]:
@@ -78,14 +79,13 @@ class InternalLeRobotDataset(DatasetClient):
         episodes = metadata.episodes
 
         image_keys = self._dataset.meta.camera_keys
-        image_key = image_keys[-1]
+        image_key = image_keys[0]
 
         result = []
         action_feature_names = self._dataset.features.get("action", {}).get("names", [])
         follower_robot = robot_for_action_features(action_feature_names)
         for episode in episodes:
             episode_index = episode["episode_index"]
-            full_path = path.join(metadata.root, metadata.get_data_file_path(episode_index))
             thumbnail = self._build_thumbnail(episode, image_key) if len(image_keys) > 0 else None
             result.append(
                 Episode(
@@ -128,10 +128,18 @@ class InternalLeRobotDataset(DatasetClient):
         # TODO: Implement a wait for when an episode is still being written, but teardown is called.
         if self._dataset.num_episodes == 0:
             logger.info("Removing dataset since it has no episodes")
-            shutil.rmtree(self._path)
+            self.delete()
         else:
             logger.info("Finalizing")
-            self._dataset.finalize()
+            self.finalize()
+
+    def delete(self) -> None:
+        """Delete dataset."""
+        shutil.rmtree(self.path)
+
+    def finalize(self) -> None:
+        """Finalize changes to dataset."""
+        self._dataset.finalize()
 
     def _process_frame(self, obs: dict, act: dict, task: str) -> dict:
         obs_processed = self._robot_observation_processor(obs)
@@ -142,9 +150,9 @@ class InternalLeRobotDataset(DatasetClient):
         return {**observation_frame, **action_frame, "task": task}
 
     @staticmethod
-    def _check_repository_exists(path: Path) -> bool:
+    def _check_repository_exists(repo_path: Path) -> bool:
         """Check if repository path contains info and therefor exists."""
-        return (path / Path("meta/info.json")).is_file()
+        return (repo_path / "meta/info.json").is_file()
 
     def _build_episode_from_buffer(self, episode: dict | None, task: str) -> Episode:
         """Build Episode object from buffer and episode dict."""
@@ -153,6 +161,8 @@ class InternalLeRobotDataset(DatasetClient):
             raise Exception("No dataset loaded.")
 
         end = data["timestamp"][-1]
+        print(episode)
+        #self._dataset.meta.get_video_file_path(episode_index, video_key)
         video_timestamps = {
             video_key: EpisodeVideo(start=0, end=end, path="") # TODO: Implement path
             for video_key in self._dataset.meta.video_keys
@@ -165,8 +175,7 @@ class InternalLeRobotDataset(DatasetClient):
 
         action_feature_names = self._dataset.features.get("action", {}).get("names", [])
         follower_robot = robot_for_action_features(action_feature_names)
-        camera_key = self._dataset.meta.camera_keys[-1]
-
+        camera_key = self._dataset.meta.camera_keys[0]
         thumbnail = self._build_thumbnail_from_buffer(data, camera_key)
         return Episode(
             episode_index=data["episode_index"].tolist()[0],
