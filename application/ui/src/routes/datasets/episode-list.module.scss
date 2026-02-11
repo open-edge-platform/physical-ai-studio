@@ -1,12 +1,14 @@
 .episodePreviewList {
-    padding: 20px;
+    padding: 0px;
+    overflow-y: auto;
+    max-height: '100%';
 }
 
 .episodeItem {
     background-color: var(--spectrum-global-color-gray-200);
     padding: 8px;
-    padding-bottom: 2px;
-    margin-bottom: 8px;
+    margin: 0 var(--spectrum-global-dimension-size-250);
+    margin-bottom: var(--spectrum-global-dimension-size-125);
     border: 2px solid transparent;
     border-radius: 4px;
 }

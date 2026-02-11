@@ -1,11 +1,10 @@
 import { useState } from 'react';
 
 import {
-    Button,
     Content,
-    DialogTrigger,
     Flex,
     Heading,
+    Icon,
     IllustratedMessage,
     Item,
     Key,
@@ -17,12 +16,12 @@ import {
 } from '@geti/ui';
 
 import { SchemaDatasetOutput } from '../../api/openapi-spec';
-import { TeleoperationSetupModal } from '../../features/configuration/teleoperation/teleoperation';
 import { useProject, useProjectId } from '../../features/projects/use-project';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
 import { DatasetViewer } from './dataset-viewer';
-import { NewDatasetLink } from './new-dataset.component';
-import { RecordingProvider, useRecording } from './recording-provider';
+import { NewDatasetDialogContainer, NewDatasetLink } from './new-dataset.component';
+import { RecordingProvider } from './recording-provider';
+import { Add } from '@geti/ui/icons';
 
 interface DatasetsProps {
     datasets: SchemaDatasetOutput[];
@@ -30,16 +29,15 @@ interface DatasetsProps {
 
 const Datasets = ({ datasets }: DatasetsProps) => {
     const { project_id } = useProjectId();
-    const { isRecording, setRecordingConfig } = useRecording();
     const [dataset, setDataset] = useState<SchemaDatasetOutput | undefined>(
         datasets.length > 0 ? datasets[0] : undefined
     );
 
+    const [showDialog, setShowDialog] = useState<boolean>(false);
+
     const onSelectionChange = (key: Key) => {
         if (key.toString() === '#new-dataset') {
-            if (datasets.length === 0) {
-                setDataset(undefined);
-            }
+            setShowDialog(true);
         } else {
             setDataset(datasets.find((d) => d.id === key.toString()));
         }
@@ -63,28 +61,24 @@ const Datasets = ({ datasets }: DatasetsProps) => {
 
     return (
         <Flex height='100%'>
-            <Tabs onSelectionChange={onSelectionChange} flex='1' margin={'size-200'}>
+            <Tabs onSelectionChange={onSelectionChange} selectedKey={dataset?.id} flex='1' margin={'size-200'}>
                 <Flex alignItems={'end'}>
                     <TabList flex={1}>
-                        {datasets.map((data) => (
-                            <Item key={data.id}>{data.name}</Item>
-                        ))}
+                        {
+                            [
+                                ...datasets.map((data) => (
+                                    <Item key={data.id}>
+                                        <Text UNSAFE_style={{fontSize: '16px'}}>{data.name}</Text>
+                                    </Item>
+                                )),
+                                <Item key='#new-dataset'>
+                                    <Icon>
+                                        <Add />
+                                    </Icon>
+                                </Item>
+                            ]
+                        }
                     </TabList>
-
-                    {!isRecording && (
-                        <Flex gap='size-200'>
-                            <NewDatasetLink project_id={project_id} />
-                            <DialogTrigger>
-                                <Button variant='accent'>Start recording</Button>
-                                {(close) =>
-                                    TeleoperationSetupModal((config) => {
-                                        setRecordingConfig(config);
-                                        close();
-                                    }, dataset!)
-                                }
-                            </DialogTrigger>
-                        </Flex>
-                    )}
                 </Flex>
                 <TabPanels UNSAFE_style={{ border: 'none' }} marginTop={'size-200'}>
                     <Item key={dataset?.id}>
@@ -92,12 +86,13 @@ const Datasets = ({ datasets }: DatasetsProps) => {
                             {dataset === undefined ? (
                                 <Text>No datasets yet...</Text>
                             ) : (
-                                <DatasetViewer id={dataset.id!} />
+                                <DatasetViewer dataset={dataset} />
                             )}
                         </Flex>
                     </Item>
                 </TabPanels>
             </Tabs>
+            <NewDatasetDialogContainer project_id={project_id} show={showDialog} onDismiss={() => setShowDialog(false)} />
         </Flex>
     );
 };
