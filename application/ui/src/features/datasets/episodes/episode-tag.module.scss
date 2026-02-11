@@ -3,10 +3,15 @@
     border-radius: 4px;
     padding: 0 4px;
     color: var(--spectrum-global-color-gray-50);
+}
+
+.episodeIndex.variantSmall {
     font-size: var(--spectrum-global-dimension-font-size-50);
 }
 
 .episodeDuration {
-    font-size: var(--spectrum-global-dimension-font-size-50);
     font-weight: 500;
+}
+.episodeDuration.variantSmall {
+    font-size: var(--spectrum-global-dimension-font-size-50);
 }

@@ -30,7 +30,7 @@ export const EpisodeList = ({ episodes, onSelect, currentEpisode }: EpisodeListP
                                 }}
                                 onClick={() => onSelect(episode.episode_index)}
                             />
-                            <EpisodeTag episode={episode}/>
+                            <EpisodeTag episode={episode} variant="small"/>
                         </View>
                     ))}
                 </View>

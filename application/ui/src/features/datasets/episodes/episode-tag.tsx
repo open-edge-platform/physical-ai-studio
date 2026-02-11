@@ -3,12 +3,18 @@ import { SchemaEpisode } from "../../../api/openapi-spec";
 
 import classes from './episode-tag.module.scss';
 import { toMMSS } from '../../../utils';
+import clsx from 'clsx';
 
-export const EpisodeTag = ({ episode }: { episode: SchemaEpisode }) => {
+interface EpisodeTagProps {
+    episode: SchemaEpisode;
+    variant: 'small' | 'medium';
+}
+
+export const EpisodeTag = ({ episode, variant }: EpisodeTagProps) => {
     return (
         <Flex gap="size-100">
-            <div className={classes.episodeIndex}>E{episode.episode_index + 1}</div>
-          <div className={classes.episodeDuration}>{toMMSS(episode.length / episode.fps)}</div>
+            <div className={clsx(classes.episodeIndex, { [classes.variantSmall]: variant === 'small' })}>E{episode.episode_index + 1}</div>
+            <div className={clsx(classes.episodeDuration, { [classes.variantSmall]: variant === 'small' })}>{toMMSS(episode.length / episode.fps)}</div>
         </Flex>
     )
 }
