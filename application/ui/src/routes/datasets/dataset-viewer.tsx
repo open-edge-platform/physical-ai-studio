@@ -4,7 +4,7 @@ import { ReactComponent as EmptyIllustration } from './../../assets/illustration
 import { Divider, Flex, Button, Content, Heading, Text, View, DialogTrigger, IllustratedMessage } from '@geti/ui';
 
 import { $api } from '../../api/client';
-import { SchemaDatasetOutput, SchemaEpisode } from '../../api/openapi-spec';
+import { SchemaDatasetOutput } from '../../api/openapi-spec';
 import { EpisodeViewer } from './episode-viewer';
 import { useRecording } from './recording-provider';
 import { RecordingViewer } from './recording-viewer';
@@ -18,7 +18,7 @@ interface DatasetViewerProps {
 
 export const DatasetViewer = ({ dataset }: DatasetViewerProps) => {
     const { isRecording, recordingConfig, setRecordingConfig } = useRecording();
-    const { data: existingEpisodes } = $api.useSuspenseQuery('get', '/api/dataset/{dataset_id}/episodes', {
+    const { data: episodes } = $api.useSuspenseQuery('get', '/api/dataset/{dataset_id}/episodes', {
         params: {
             path: {
                 dataset_id: dataset.id!,
@@ -26,16 +26,11 @@ export const DatasetViewer = ({ dataset }: DatasetViewerProps) => {
         },
     });
 
-    const [episodes, setEpisodes] = useState<SchemaEpisode[]>(existingEpisodes);
-
     const [currentEpisode, setCurrentEpisode] = useState<number>(0);
 
-    const showEpisodeViewer = !isRecording;
-
-    const addEpisode = (episode: SchemaEpisode) => {
-        setEpisodes((current) => [...current, episode]);
-        setCurrentEpisode(episode.episode_index);
-    };
+    if (isRecording && recordingConfig) {
+        return <RecordingViewer recordingConfig={recordingConfig} />
+    }
 
     if (episodes.length === 0 && !isRecording) {
         return (
@@ -65,11 +60,7 @@ export const DatasetViewer = ({ dataset }: DatasetViewerProps) => {
     return (
         <Flex direction={'row'} height={'100%'} flex gap={'size-100'}>
             <View flex={1}>
-                {showEpisodeViewer ? (
-                    <EpisodeViewer episode={episodes[currentEpisode]} dataset_id={dataset.id!} />
-                ) : (
-                    <RecordingViewer recordingConfig={recordingConfig!} addEpisode={addEpisode} />
-                )}
+                <EpisodeViewer episode={episodes[currentEpisode]} dataset_id={dataset.id!} />
             </View>
             <Divider orientation='vertical' size='S' />
             <Flex direction='column'>

@@ -1,6 +1,6 @@
 import { Button, ButtonGroup, Flex, Heading, ProgressCircle, ToastQueue } from '@geti/ui';
 
-import { SchemaEpisode, SchemaTeleoperationConfig } from '../../api/openapi-spec';
+import { SchemaTeleoperationConfig } from '../../api/openapi-spec';
 import { RobotViewer } from '../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 import { CameraView } from './camera-view';
@@ -9,13 +9,11 @@ import { useRecording } from './recording-provider';
 
 interface RecordingViewerProps {
     recordingConfig: SchemaTeleoperationConfig;
-    addEpisode: (episode: SchemaEpisode) => void;
 }
 
-export const RecordingViewer = ({ recordingConfig, addEpisode }: RecordingViewerProps) => {
+export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
     const { startEpisode, saveEpisode, cancelEpisode, observation, state, disconnect } = useTeleoperation(
         recordingConfig,
-        addEpisode,
         ToastQueue.negative
     );
 

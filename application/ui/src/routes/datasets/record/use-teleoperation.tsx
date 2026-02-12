@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { SchemaEpisode, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
 import useWebSocketWithResponse from '../../../components/websockets/use-websocket-with-response';
@@ -35,9 +35,9 @@ export interface Observation {
 
 export const useTeleoperation = (
     setup: SchemaTeleoperationConfig,
-    onEpisode: (episode: SchemaEpisode) => void,
     onError: (error: string) => void
 ) => {
+    const client = useQueryClient();
     const [state, setState] = useState<TeleoperationState>(createTeleoperationState());
     const { sendJsonMessage, readyState, sendJsonMessageAndWait } = useWebSocketWithResponse(
         `/api/record/teleoperate/ws`,
@@ -45,7 +45,7 @@ export const useTeleoperation = (
             shouldReconnect: () => true,
             onMessage: (event: WebSocketEventMap['message']) => onMessage(event),
             onOpen: () => init.mutate(),
-            onClose: () => setState(createTeleoperationState()),
+            onClose: () => onClose(),
         }
     );
 
@@ -69,6 +69,24 @@ export const useTeleoperation = (
         }
     };
 
+    const invalidateEpisodesData = () => {
+        if (setup.dataset.id) {
+            const queryKey = [
+                "get",
+                "/api/dataset/{dataset_id}/episodes",
+                {
+                    "params": {
+                        "path": {
+                            "dataset_id": setup.dataset.id
+                        }
+                    }
+                }
+            ];
+
+            client.invalidateQueries({ queryKey });
+        }
+    }
+
     const init = useMutation({
         mutationFn: async () =>
             await sendJsonMessageAndWait<RecordApiJsonResponse<TeleoperationState>>(
@@ -83,6 +101,11 @@ export const useTeleoperation = (
             data: {},
         });
     };
+
+    const onClose = () => {
+       invalidateEpisodesData()
+       setState(createTeleoperationState())
+    }
 
     const saveEpisode = useMutation({
         mutationFn: async () => {
