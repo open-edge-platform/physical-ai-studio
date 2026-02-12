@@ -1,14 +1,14 @@
-from settings import get_settings
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import FileResponse
 
-from api.dependencies import get_dataset_service, HTTPException
+from api.dependencies import HTTPException, get_dataset_service
 from internal_datasets.utils import get_internal_dataset
 from schemas import Dataset, Episode
 from services import DatasetService
+from settings import get_settings
 
 router = APIRouter(prefix="/api/dataset", tags=["Dataset"])
 
@@ -34,17 +34,11 @@ async def dataset_video_endpoint(
 
     # Verify that the resolved path is still under the base directory
     if not str(requested_path).startswith(str(settings.datasets_dir)):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access to the requested file is forbidden."
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access to the requested file is forbidden.")
 
     # Optional: confirm the file exists and is a regular file
     if not requested_path.is_file():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="File not found."
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
 
     return FileResponse(requested_path)
 

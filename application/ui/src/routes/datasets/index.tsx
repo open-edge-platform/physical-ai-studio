@@ -14,6 +14,7 @@ import {
     Text,
     View,
 } from '@geti/ui';
+import { Add } from '@geti/ui/icons';
 
 import { SchemaDatasetOutput } from '../../api/openapi-spec';
 import { useProject, useProjectId } from '../../features/projects/use-project';
@@ -21,7 +22,6 @@ import { ReactComponent as EmptyIllustration } from './../../assets/illustration
 import { DatasetViewer } from './dataset-viewer';
 import { NewDatasetDialogContainer, NewDatasetLink } from './new-dataset.component';
 import { RecordingProvider } from './recording-provider';
-import { Add } from '@geti/ui/icons';
 
 interface DatasetsProps {
     datasets: SchemaDatasetOutput[];
@@ -64,20 +64,18 @@ const Datasets = ({ datasets }: DatasetsProps) => {
             <Tabs onSelectionChange={onSelectionChange} selectedKey={dataset?.id} flex='1' margin={'size-200'}>
                 <Flex alignItems={'end'}>
                     <TabList flex={1}>
-                        {
-                            [
-                                ...datasets.map((data) => (
-                                    <Item key={data.id}>
-                                        <Text UNSAFE_style={{fontSize: '16px'}}>{data.name}</Text>
-                                    </Item>
-                                )),
-                                <Item key='#new-dataset'>
-                                    <Icon>
-                                        <Add />
-                                    </Icon>
+                        {[
+                            ...datasets.map((data) => (
+                                <Item key={data.id}>
+                                    <Text UNSAFE_style={{ fontSize: '16px' }}>{data.name}</Text>
                                 </Item>
-                            ]
-                        }
+                            )),
+                            <Item key='#new-dataset'>
+                                <Icon>
+                                    <Add />
+                                </Icon>
+                            </Item>,
+                        ]}
                     </TabList>
                 </Flex>
                 <TabPanels UNSAFE_style={{ border: 'none' }} marginTop={'size-200'}>
@@ -92,7 +90,11 @@ const Datasets = ({ datasets }: DatasetsProps) => {
                     </Item>
                 </TabPanels>
             </Tabs>
-            <NewDatasetDialogContainer project_id={project_id} show={showDialog} onDismiss={() => setShowDialog(false)} />
+            <NewDatasetDialogContainer
+                project_id={project_id}
+                show={showDialog}
+                onDismiss={() => setShowDialog(false)}
+            />
         </Flex>
     );
 };

@@ -1,9 +1,8 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from schemas import Episode
-
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from internal_datasets.mutations.recording_mutation import RecordingMutation

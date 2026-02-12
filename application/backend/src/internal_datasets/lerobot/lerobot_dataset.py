@@ -1,16 +1,13 @@
-from git import rmtree
-from settings import get_settings
-from internal_datasets.mutations.recording_mutation import RecordingMutation
 import base64
 import copy
 import shutil
-import cv2
-from os import path
 from pathlib import Path
 from uuid import uuid4
 
+import cv2
 import numpy as np
 import torch
+from git import rmtree
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import build_dataset_frame
 from lerobot.processor import make_default_processors
@@ -19,7 +16,9 @@ from lerobot.utils.constants import ACTION, OBS_STR
 from loguru import logger
 
 from internal_datasets.dataset_client import DatasetClient
+from internal_datasets.mutations.recording_mutation import RecordingMutation
 from schemas import Episode, EpisodeVideo
+from settings import get_settings
 from utils.dataset import robot_for_action_features
 
 
@@ -106,7 +105,7 @@ class InternalLeRobotDataset(DatasetClient):
                         video_key: EpisodeVideo(
                             start=episode[f"videos/{video_key}/from_timestamp"],
                             end=episode[f"videos/{video_key}/to_timestamp"],
-                            path=str(Path(metadata.root).stem / metadata.get_video_file_path(episode_index, video_key))
+                            path=str(Path(metadata.root).stem / metadata.get_video_file_path(episode_index, video_key)),
                         )
                         for video_key in self._dataset.meta.video_keys
                     },
@@ -195,7 +194,7 @@ class InternalLeRobotDataset(DatasetClient):
         end = data["timestamp"][-1]
         episode_index = data["episode_index"].tolist()[0]
         video_timestamps = {
-            video_key: EpisodeVideo(start=0, end=end, path="") # TODO: Implement path
+            video_key: EpisodeVideo(start=0, end=end, path="")  # TODO: Implement path
             for video_key in self._dataset.meta.video_keys
         }
         if episode is not None:
@@ -217,7 +216,7 @@ class InternalLeRobotDataset(DatasetClient):
             videos=video_timestamps,
             action_keys=action_feature_names,
             follower_robot_types=[follower_robot],
-            thumbnail=thumbnail
+            thumbnail=thumbnail,
         )
 
     def _build_episode_data_from_buffer(self) -> dict:
@@ -237,7 +236,6 @@ class InternalLeRobotDataset(DatasetClient):
         tasks = episode_buffer.pop("task")
         episode_tasks = list(set(tasks))
         episode_index = episode_buffer["episode_index"]
-
 
         episode_buffer["index"] = np.arange(
             self._dataset.meta.total_frames, self._dataset.meta.total_frames + episode_length
@@ -267,7 +265,7 @@ class InternalLeRobotDataset(DatasetClient):
         return torch.stack(actions)
 
     def _build_thumbnail_from_buffer(self, episode_buffer: dict, image_key: str) -> str | None:
-        thumbnail_size = (320,240)
+        thumbnail_size = (320, 240)
 
         image_path = episode_buffer[image_key][-1]
         image = cv2.imread(image_path)
@@ -278,7 +276,7 @@ class InternalLeRobotDataset(DatasetClient):
         return base64.b64encode(imagebytes).decode()
 
     def _build_thumbnail(self, episode: dict, image_key: str) -> str:
-        thumbnail_size = (320,240)
+        thumbnail_size = (320, 240)
 
         from_idx = episode["dataset_from_index"]
         image = self._dataset[from_idx][image_key].permute(1, 2, 0).detach().numpy()

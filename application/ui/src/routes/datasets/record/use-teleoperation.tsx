@@ -33,10 +33,7 @@ export interface Observation {
     cameras: { [key: string]: string };
 }
 
-export const useTeleoperation = (
-    setup: SchemaTeleoperationConfig,
-    onError: (error: string) => void
-) => {
+export const useTeleoperation = (setup: SchemaTeleoperationConfig, onError: (error: string) => void) => {
     const client = useQueryClient();
     const [state, setState] = useState<TeleoperationState>(createTeleoperationState());
     const { sendJsonMessage, readyState, sendJsonMessageAndWait } = useWebSocketWithResponse(
@@ -62,7 +59,7 @@ export const useTeleoperation = (
                 observation.current = message['data'] as Observation;
                 break;
             case 'episode':
-                onEpisode(message['data'] as SchemaEpisode);
+                //onEpisode(message['data'] as SchemaEpisode);
                 break;
             case 'error':
                 onError(message['data'] as string);
@@ -72,20 +69,20 @@ export const useTeleoperation = (
     const invalidateEpisodesData = () => {
         if (setup.dataset.id) {
             const queryKey = [
-                "get",
-                "/api/dataset/{dataset_id}/episodes",
+                'get',
+                '/api/dataset/{dataset_id}/episodes',
                 {
-                    "params": {
-                        "path": {
-                            "dataset_id": setup.dataset.id
-                        }
-                    }
-                }
+                    params: {
+                        path: {
+                            dataset_id: setup.dataset.id,
+                        },
+                    },
+                },
             ];
 
             client.invalidateQueries({ queryKey });
         }
-    }
+    };
 
     const init = useMutation({
         mutationFn: async () =>
@@ -103,9 +100,9 @@ export const useTeleoperation = (
     };
 
     const onClose = () => {
-       invalidateEpisodesData()
-       setState(createTeleoperationState())
-    }
+        invalidateEpisodesData();
+        setState(createTeleoperationState());
+    };
 
     const saveEpisode = useMutation({
         mutationFn: async () => {

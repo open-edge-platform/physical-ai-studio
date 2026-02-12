@@ -1,13 +1,10 @@
-from internal_datasets.dataset_client import DatasetClient
-from internal_datasets.mutations.recording_mutation import RecordingMutation
-from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
-import traceback
 import asyncio
 import base64
 import time
-from pathlib import Path
+import traceback
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -16,6 +13,9 @@ from lerobot.utils.robot_utils import precise_sleep
 from loguru import logger
 from pydantic import BaseModel
 
+from internal_datasets.dataset_client import DatasetClient
+from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
+from internal_datasets.mutations.recording_mutation import RecordingMutation
 from robots.robot_client import RobotClient
 from robots.utils import get_robot_client
 from schemas import TeleoperationConfig
@@ -123,7 +123,7 @@ class TeleoperateWorker(BaseThreadWorker):
 
         for camera in self.cameras.values():
             camera.start_async()
-        await asyncio.sleep(1) #  warmup cameras
+        await asyncio.sleep(1)  #  warmup cameras
 
     def setup(self) -> None:
         """Set up robots, cameras and dataset."""

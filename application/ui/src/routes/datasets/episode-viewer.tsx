@@ -1,16 +1,16 @@
 import { useEffect, useRef } from 'react';
 
-import { Disclosure, DisclosurePanel, Divider, Text, DisclosureTitle, Flex, View, Well } from '@geti/ui';
+import { Disclosure, DisclosurePanel, DisclosureTitle, Divider, Flex, Text, View, Well } from '@geti/ui';
 
 import { SchemaEpisode, SchemaEpisodeVideo } from '../../api/openapi-spec';
 import EpisodeChart from '../../components/episode-chart/episode-chart';
+import { EpisodeTag } from '../../features/datasets/episodes/episode-tag';
 import { RobotViewer } from '../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 import { TimelineControls } from './timeline-controls';
 import { usePlayer } from './use-player';
 
 import classes from './episode-viewer.module.scss';
-import { EpisodeTag } from '../../features/datasets/episodes/episode-tag';
 
 interface VideoView {
     cameraName: string;
@@ -62,10 +62,10 @@ export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
     return (
         <RobotModelsProvider>
             <Flex direction={'column'} height={'100%'} position={'relative'}>
-                <Flex gap="size-100" marginBottom='size-100'>
-                    <EpisodeTag episode={episode} variant="medium"/>
+                <Flex gap='size-100' marginBottom='size-100'>
+                    <EpisodeTag episode={episode} variant='medium' />
                     <Divider orientation='vertical' size='S' />
-                    <Text>{episode.tasks.join(", ")}</Text>
+                    <Text>{episode.tasks.join(', ')}</Text>
                 </Flex>
                 <Flex direction={'row'} flex gap={'size-100'}>
                     <Flex direction={'column'} alignContent={'start'} flex gap={'size-30'}>

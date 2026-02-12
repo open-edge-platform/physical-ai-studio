@@ -1,8 +1,8 @@
 import { ActionButton, Flex, Text } from '@geti/ui';
 import { Play, StepBackward, Close as Stop } from '@geti/ui/icons';
 
+import { toMMSS } from '../../utils';
 import { Player } from './use-player';
-import { toMMSS } from '../../utils'
 
 interface TimelineControlsProps {
     player: Player;

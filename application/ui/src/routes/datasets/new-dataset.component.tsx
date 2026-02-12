@@ -1,6 +1,17 @@
 import { useState } from 'react';
 
-import { Button, ButtonGroup, Content, Dialog, DialogContainer, DialogTrigger, Divider, Form, Heading, TextField } from '@geti/ui';
+import {
+    Button,
+    ButtonGroup,
+    Content,
+    Dialog,
+    DialogContainer,
+    DialogTrigger,
+    Divider,
+    Form,
+    Heading,
+    TextField,
+} from '@geti/ui';
 import { v4 as uuidv4 } from 'uuid';
 
 import { $api } from '../../api/client';
@@ -28,9 +39,8 @@ const NewDatasetForm = ({ project_id, onDone }: NewDatasetFormProps) => {
                 path: `${geti_action_dataset_path}/${makeNameSafeForPath(name)}`,
             },
         });
-        onDone()
+        onDone();
     };
-
 
     return (
         <Form onSubmit={save} width={'size-6000'} validationBehavior='native'>
@@ -52,27 +62,19 @@ const NewDatasetForm = ({ project_id, onDone }: NewDatasetFormProps) => {
                     <Button variant='secondary' onPress={onDone}>
                         Cancel
                     </Button>
-                    <Button
-                        variant='accent'
-                        type='submit'
-                        isDisabled={name === ''}
-                        isPending={saveMutation.isPending}
-                    >
+                    <Button variant='accent' type='submit' isDisabled={name === ''} isPending={saveMutation.isPending}>
                         Save
                     </Button>
                 </ButtonGroup>
             </Dialog>
         </Form>
-    )
-
-}
+    );
+};
 export const NewDatasetLink = ({ project_id }: { project_id: string }) => {
     return (
         <DialogTrigger>
             <Button variant='accent'>New Dataset</Button>
-            {(close) => (
-                <NewDatasetForm project_id={project_id} onDone={close} />
-            )}
+            {(close) => <NewDatasetForm project_id={project_id} onDone={close} />}
         </DialogTrigger>
     );
 };
@@ -85,9 +87,7 @@ interface NewDatasetDialogContainerProps {
 export const NewDatasetDialogContainer = ({ project_id, show, onDismiss }: NewDatasetDialogContainerProps) => {
     return (
         <DialogContainer onDismiss={onDismiss}>
-            {show && (
-                <NewDatasetForm project_id={project_id} onDone={onDismiss} />
-            )}
+            {show && <NewDatasetForm project_id={project_id} onDone={onDismiss} />}
         </DialogContainer>
     );
 };

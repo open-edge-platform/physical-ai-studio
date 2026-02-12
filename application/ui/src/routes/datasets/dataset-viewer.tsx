@@ -1,16 +1,16 @@
 import { useState } from 'react';
-import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
 
-import { Divider, Flex, Button, Content, Heading, Text, View, DialogTrigger, IllustratedMessage } from '@geti/ui';
+import { Button, Content, DialogTrigger, Divider, Flex, Heading, IllustratedMessage, Text, View } from '@geti/ui';
+import { Add } from '@geti/ui/icons';
 
 import { $api } from '../../api/client';
 import { SchemaDatasetOutput } from '../../api/openapi-spec';
+import { TeleoperationSetupModal } from '../../features/configuration/teleoperation/teleoperation';
+import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
+import { EpisodeList } from './episode-list';
 import { EpisodeViewer } from './episode-viewer';
 import { useRecording } from './recording-provider';
 import { RecordingViewer } from './recording-viewer';
-import { EpisodeList } from './episode-list';
-import { Add } from '@geti/ui/icons';
-import { TeleoperationSetupModal } from '../../features/configuration/teleoperation/teleoperation';
 
 interface DatasetViewerProps {
     dataset: SchemaDatasetOutput;
@@ -29,7 +29,7 @@ export const DatasetViewer = ({ dataset }: DatasetViewerProps) => {
     const [currentEpisode, setCurrentEpisode] = useState<number>(0);
 
     if (isRecording && recordingConfig) {
-        return <RecordingViewer recordingConfig={recordingConfig} />
+        return <RecordingViewer recordingConfig={recordingConfig} />;
     }
 
     if (episodes.length === 0 && !isRecording) {
