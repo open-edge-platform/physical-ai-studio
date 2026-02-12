@@ -1,9 +1,8 @@
 from pathlib import Path
 
-from getiaction.data import DataModule
 from getiaction.export import Export
 from getiaction.inference import InferenceModel
-from getiaction.policies import ACT, ACTModel, Pi0, SmolVLA
+from getiaction.policies import ACT, Pi0, SmolVLA
 from getiaction.policies.base import Policy
 
 from schemas import Model
@@ -27,15 +26,10 @@ def load_inference_model(model: Model, backend: str) -> InferenceModel:
     return InferenceModel(export_dir=export_dir, policy_name=model.policy, backend=backend)
 
 
-def setup_policy(model: Model, l_dm: DataModule) -> Policy:
+def setup_policy(model: Model) -> Policy:
     """Setup policy for Model training."""
     if model.policy == "act":
-        lib_model = ACTModel(
-            input_features=l_dm.train_dataset.observation_features,
-            output_features=l_dm.train_dataset.action_features,
-        )
-
-        return ACT(model=lib_model)
+        return ACT()
     if model.policy == "pi0":
         return Pi0(
             variant="pi0",

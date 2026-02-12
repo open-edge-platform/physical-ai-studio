@@ -102,7 +102,7 @@ class TrainingWorker(BaseProcessWorker):
                 root=snapshot.path,
                 train_batch_size=8,
             )
-            policy = setup_policy(model, l_dm)
+            policy = setup_policy(model)
 
             checkpoint_callback = ModelCheckpoint(
                 dirpath=path,
