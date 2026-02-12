@@ -23,14 +23,6 @@ from workers.camera_worker import create_frames_source_from_camera
 
 from .base import BaseThreadWorker
 
-
-class CameraFrameProcessor:
-    @staticmethod
-    def process(frame: np.ndarray) -> np.ndarray:
-        """Post process camera frame."""
-        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-
 SO_101_REST_POSITION = {
     "shoulder_pan.pos": -2,
     "shoulder_lift.pos": -90,
@@ -39,6 +31,13 @@ SO_101_REST_POSITION = {
     "wrist_roll.pos": 0,
     "gripper.pos": 25,
 }
+
+
+class CameraFrameProcessor:
+    @staticmethod
+    def process(frame: np.ndarray) -> np.ndarray:
+        """Post process camera frame."""
+        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
 
 class InferenceState(BaseModel):
@@ -125,6 +124,9 @@ class InferenceWorker(BaseThreadWorker):
             self.action_keys = self.follower.features()
             self.camera_keys = list(self.cameras)
 
+            for camera in self.cameras.values():
+                camera.start_async()
+
             self.state.initialized = True
             logger.info("inference all setup, reporting state")
         except Exception as e:
@@ -141,6 +143,7 @@ class InferenceWorker(BaseThreadWorker):
             self.events["disconnect"].clear()
 
             self.state.is_running = False
+            start_episode_t = time.perf_counter()
 
             while not self.should_stop() and not self.events["disconnect"].is_set():
                 if not self.state.initialized or self.state.error:
@@ -148,37 +151,32 @@ class InferenceWorker(BaseThreadWorker):
 
                 start_loop_t = time.perf_counter()
                 if self.events["start"].is_set():
+                    start_episode_t = time.perf_counter()
                     await self._on_start()
 
                 if self.events["stop"].is_set():
                     await self._on_stop()
 
-                observations = (await self.follower.read_state())["state"]
-
+                state = (await self.follower.read_state())["state"]
                 for camera_name, camera in self.cameras.items():
                     _success, camera_frame = camera.get_latest_frame()  # HWC
                     if camera_frame is None:
                         raise Exception("Camera frame is None")
                     processed_frame = CameraFrameProcessor.process(camera_frame)
-                    observations[camera_name] = processed_frame
-                logger.info(observations)
-                if self.state.is_running:
-                    logger.info(self.state.is_running)
-                    # TODO: Implement for new environment
-                    observation = self._build_geti_action_observation(observations)
-                    logger.info(observation)
-                    if not self.action_queue:
-                        self.action_queue = self.model.select_action(observation).tolist()
-                    action = self.action_queue.pop(0)
-                    logger.info(action)
+                    state[camera_name] = processed_frame
 
-                    # print(observation)
-                    # formatted_actions = dict(zip(self.action_keys, action))
-                    # self.robot.send_action(formatted_actions)
-                    # self._report_action(formatted_actions, lerobot_obs, timestamp)
+                timestamp = time.perf_counter() - start_episode_t
+                observation = self._build_geti_action_observation(state)
+                if self.state.is_running:
+                    if not self.action_queue:
+                        self.action_queue = self.model.select_action(observation)[0].tolist()
+                    action = self.action_queue.pop(0)
+
+                    formatted_actions = dict(zip(self.action_keys, action))
+                    await self.follower.set_joints_state(formatted_actions)
+                    self._report_action(formatted_actions, state, timestamp)
                 else:
-                    pass
-                    # self._report_action({}, lerobot_obs, timestamp)
+                    self._report_action({}, state, timestamp)
                 dt_s = time.perf_counter() - start_loop_t
                 wait_time = 1 / 30 - dt_s
 
@@ -250,7 +248,9 @@ class InferenceWorker(BaseThreadWorker):
         )
 
     def _build_geti_action_observation(self, robot_observation: dict):
-        state = torch.tensor([value for key, value in robot_observation.items() if key in self.action_keys])
+        state = torch.tensor([value for key, value in robot_observation.items() if key in self.action_keys]).unsqueeze(
+            0
+        )
         images: dict = {}
         for name in self.camera_keys:
             frame = robot_observation[name]

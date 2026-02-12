@@ -135,7 +135,8 @@ async def inference_websocket(
         except WebSocketDisconnect:
             logger.info("Except: disconnected!")
             if process is not None:
-                process.disconnect()
+                process.stop()
+                process.join(timeout=5)
 
     async def handle_outgoing():
         try:
