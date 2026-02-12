@@ -189,15 +189,14 @@ class InferenceWorker(BaseThreadWorker):
         logger.info("start")
         self.events["start"].clear()
         await self.follower.set_joints_state(SO_101_REST_POSITION)
-        self.action_queue.clear()
         precise_sleep(0.3)  # TODO check if neccesary
+        self.action_queue.clear()
         self.state.is_running = True
         self._report_state()
 
     async def _on_stop(self) -> None:
         logger.info("stop")
         self.events["stop"].clear()
-        self.action_queue.clear()
         precise_sleep(0.3)  # TODO check if neccesary
         self.state.is_running = False
         self.action_queue.clear()
