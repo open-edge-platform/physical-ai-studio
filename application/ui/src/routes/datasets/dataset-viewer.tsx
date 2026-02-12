@@ -38,11 +38,7 @@ export const DatasetViewer = () => {
                     <Text>It&apos;s time to begin recording a dataset. </Text>
                     <Heading>No episodes yet</Heading>
                     <View margin={'size-100'}>
-                        <Button
-                            href={recordPath}
-                            alignSelf='end'
-                            marginBottom={'size-200'}
-                        >
+                        <Button href={recordPath} alignSelf='end' marginBottom={'size-200'}>
                             <Text>Start recording</Text>
                         </Button>
                     </View>
