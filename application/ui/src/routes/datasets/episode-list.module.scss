@@ -11,6 +11,7 @@
     margin-bottom: var(--spectrum-global-dimension-size-125);
     border: 2px solid transparent;
     border-radius: 4px;
+    position: relative;
 }
 
 .episodeItem:hover {
@@ -20,4 +21,10 @@
 
 .episodeItem.active {
     border: 2px solid var(--energy-blue);
+}
+
+.episodeCheckbox {
+    position: absolute;
+    bottom: 0px;
+    right: 0px;
 }

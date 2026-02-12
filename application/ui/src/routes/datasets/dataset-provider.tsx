@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useContext } from 'react';
+import { createContext, Dispatch, ReactNode, SetStateAction, useContext, useState } from 'react';
 
 import { SchemaDatasetOutput, SchemaEpisode } from '../../api/openapi-spec';
 import { $api } from '../../api/client';
@@ -9,6 +9,9 @@ type DatasetContextValue = null | {
     dataset: SchemaDatasetOutput;
     episodes: SchemaEpisode[];
     deleteEpisodes: (episodeIndices: number[]) => void;
+    setSelectedEpisodes: Dispatch<SetStateAction<number[]>>;
+    selectedEpisodes: number[];
+    isPending: boolean;
 };
 const DatasetContext = createContext<DatasetContextValue>(null);
 
@@ -18,8 +21,9 @@ interface DatasetProviderProps {
 }
 export const DatasetProvider = ({ dataset_id, children }: DatasetProviderProps) => {
     const queryClient = useQueryClient();
+    const [selectedEpisodes, setSelectedEpisodes] = useState<number[]>([])
 
-    const { data: dataset } = $api.useSuspenseQuery('get', '/api/dataset/{dataset_id}', {
+    const { data: dataset, isPending: datasetPending } = $api.useSuspenseQuery('get', '/api/dataset/{dataset_id}', {
         params: {
             path: {
                 dataset_id
@@ -27,7 +31,7 @@ export const DatasetProvider = ({ dataset_id, children }: DatasetProviderProps) 
         }
     })
 
-    const { data: episodes } = $api.useSuspenseQuery('get', '/api/dataset/{dataset_id}/episodes', {
+    const { data: episodes, isPending: episodesPending } = $api.useSuspenseQuery('get', '/api/dataset/{dataset_id}/episodes', {
         params: {
             path: {
                 dataset_id,
@@ -49,6 +53,7 @@ export const DatasetProvider = ({ dataset_id, children }: DatasetProviderProps) 
                 }
             ]
             queryClient.setQueryData(query_key, data)
+            setSelectedEpisodes([])
         }
     })
 
@@ -64,12 +69,17 @@ export const DatasetProvider = ({ dataset_id, children }: DatasetProviderProps) 
 
     }
 
+    const isPending = deleteEpisodesMutation.isPending || episodesPending || datasetPending;
+
     return (
         <DatasetContext.Provider value={{
             dataset_id,
             dataset,
             deleteEpisodes,
             episodes,
+            setSelectedEpisodes,
+            selectedEpisodes,
+            isPending
         }}>
             {children}
         </DatasetContext.Provider>
