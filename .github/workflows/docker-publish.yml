@@ -1,11 +1,9 @@
-name: Docker
+name: Docker Publish
 
 on:
   push:
     branches: [main]
     tags: ["v*"]
-  pull_request:
-    branches: [main]
 
 permissions: {} # No permissions by default on workflow level
 
@@ -14,11 +12,11 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build:
-    name: Build (${{ matrix.device }})
+  publish:
+    name: Publish (${{ matrix.device }})
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: read # Checkout code
       packages: write # Push images to GHCR
 
     strategy:
@@ -45,7 +43,6 @@ jobs:
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Log in to Container Registry
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ${{ env.REGISTRY }}
@@ -59,7 +56,6 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=ref,event=branch,suffix=-${{ matrix.device }}
-            type=ref,event=pr,suffix=-${{ matrix.device }}
             type=semver,pattern={{version}},suffix=-${{ matrix.device }}
             type=semver,pattern={{major}}.{{minor}},suffix=-${{ matrix.device }}
             type=semver,pattern={{major}},suffix=-${{ matrix.device }}
@@ -73,7 +69,7 @@ jobs:
           build-contexts: libs=library
           target: geti-action-${{ matrix.device }}
           platforms: linux/amd64
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: GIT_SHA=${{ github.sha }}
