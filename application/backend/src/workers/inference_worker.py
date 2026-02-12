@@ -4,25 +4,23 @@
 import asyncio
 import base64
 import time
+import traceback
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
-from pathlib import Path
 
 import cv2
 import numpy as np
 import torch
 from getiaction.data import Observation
-from getiaction.inference import InferenceModel
-from getiaction.policies import ACT
 from lerobot.utils.robot_utils import precise_sleep
 from loguru import logger
 from pydantic import BaseModel
 
+from models.utils import load_inference_model
 from robots.robot_client import RobotClient
 from robots.utils import get_robot_client
 from schemas import InferenceConfig
 from services.robot_calibration_service import RobotCalibrationService
-from utils.device import get_torch_device
 from utils.serial_robot_tools import RobotConnectionManager
 from workers.camera_worker import create_frames_source_from_camera
 
@@ -36,6 +34,13 @@ SO_101_REST_POSITION = {
     "wrist_roll.pos": 0,
     "gripper.pos": 25,
 }
+
+
+class CameraFrameProcessor:
+    @staticmethod
+    def process(frame: np.ndarray) -> np.ndarray:
+        """Post process camera frame."""
+        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
 
 class InferenceState(BaseModel):
@@ -78,6 +83,7 @@ class InferenceWorker(BaseThreadWorker):
             "start": Event(),
             "disconnect": Event(),
         }
+        self.action_queue: list[list[float]] = []
 
     def start_task(self, task_index: int) -> None:
         """Start specific task index"""
@@ -103,7 +109,9 @@ class InferenceWorker(BaseThreadWorker):
         for camera in self.cameras.values():
             # camera.attach_processor(CameraFrameProcessor()) # TODO Not working. Fix in framesource
             camera.connect()
+            camera.start_async()
 
+        await asyncio.sleep(1)  # sleep for camera warmup. TODO: Refactor start_async to proper camera wrapper
         await self.follower.connect()
 
     def setup(self) -> None:
@@ -114,28 +122,13 @@ class InferenceWorker(BaseThreadWorker):
                 raise RuntimeError("The event loop must be set.")
             self.loop.run_until_complete(self.setup_environment())
 
-            model_path = Path(self.config.model.path)
-            logger.info(f"loading model: {model_path}")
-            policy = ACT.load_from_checkpoint(str(model_path / "model.ckpt"))
-            export_dir = model_path / "exports" / self.config.backend
-            if not export_dir.is_dir():
-                policy.export(export_dir, backend=self.config.backend)
-
-            inference_device = "auto"
-            if self.config.backend == "torch":
-                inference_device = get_torch_device()
-
-            self.model = InferenceModel(
-                export_dir=export_dir,
-                policy_name=self.config.model.policy,
-                backend=self.config.backend,
-                device=inference_device,
-            )
-
-            self.follower.set_joints_state(SO_101_REST_POSITION)
+            self.model = load_inference_model(self.config.model, backend=self.config.backend)
 
             self.action_keys = self.follower.features()
             self.camera_keys = list(self.cameras)
+
+            for camera in self.cameras.values():
+                camera.start_async()
 
             self.state.initialized = True
             logger.info("inference all setup, reporting state")
@@ -153,56 +146,64 @@ class InferenceWorker(BaseThreadWorker):
             self.events["disconnect"].clear()
 
             self.state.is_running = False
-
             start_episode_t = time.perf_counter()
-            action_queue: list[list[float]] = []
+
             while not self.should_stop() and not self.events["disconnect"].is_set():
                 if not self.state.initialized or self.state.error:
                     return
 
                 start_loop_t = time.perf_counter()
                 if self.events["start"].is_set():
-                    logger.info("start")
-                    self.events["start"].clear()
-                    self.follower.set_joints_state(SO_101_REST_POSITION)
-                    precise_sleep(0.3)  # TODO check if neccesary
-                    self.state.is_running = True
                     start_episode_t = time.perf_counter()
-                    self._report_state()
+                    await self._on_start()
 
                 if self.events["stop"].is_set():
-                    logger.info("stop")
-                    self.events["stop"].clear()
-                    action_queue.clear()
-                    precise_sleep(0.3)  # TODO check if neccesary
-                    self.state.is_running = False
-                    action_queue.clear()
-                    self._report_state()
+                    await self._on_stop()
 
                 state = (await self.follower.read_state())["state"]
-                timestamp = time.perf_counter() - start_episode_t
-                logger.info(f"{timestamp}, {state}")
-                if self.state.is_running:
-                    # TODO: Implement for new environment
-                    pass
-                    # observation = self._build_geti_action_observation(lerobot_obs)
-                    # if not action_queue:
-                    #    action_queue = self.model.select_action(observation)[0].tolist()
-                    # action = action_queue.pop(0)
+                for camera_name, camera in self.cameras.items():
+                    _success, camera_frame = camera.get_latest_frame()  # HWC
+                    if camera_frame is None:
+                        raise Exception("Camera frame is None")
+                    processed_frame = CameraFrameProcessor.process(camera_frame)
+                    state[camera_name] = processed_frame
 
-                    # print(observation)
-                    # formatted_actions = dict(zip(self.action_keys, action))
-                    # self.robot.send_action(formatted_actions)
-                    # self._report_action(formatted_actions, lerobot_obs, timestamp)
+                timestamp = time.perf_counter() - start_episode_t
+                observation = self._build_geti_action_observation(state)
+                if self.state.is_running:
+                    if not self.action_queue:
+                        self.action_queue = self.model.select_action(observation)[0].tolist()
+                    action = self.action_queue.pop(0)
+
+                    formatted_actions = dict(zip(self.action_keys, action))
+                    await self.follower.set_joints_state(formatted_actions)
+                    self._report_action(formatted_actions, state, timestamp)
                 else:
-                    pass
-                    # self._report_action({}, lerobot_obs, timestamp)
+                    self._report_action({}, state, timestamp)
                 dt_s = time.perf_counter() - start_loop_t
                 wait_time = 1 / 30 - dt_s
 
                 precise_sleep(wait_time)
         except Exception as e:
+            traceback.print_exception(e)
             self._report_error(e)
+
+    async def _on_start(self) -> None:
+        logger.info("start")
+        self.events["start"].clear()
+        await self.follower.set_joints_state(SO_101_REST_POSITION)
+        precise_sleep(0.3)  # TODO check if neccesary
+        self.action_queue.clear()
+        self.state.is_running = True
+        self._report_state()
+
+    async def _on_stop(self) -> None:
+        logger.info("stop")
+        self.events["stop"].clear()
+        precise_sleep(0.3)  # TODO check if neccesary
+        self.state.is_running = False
+        self.action_queue.clear()
+        self._report_state()
 
     async def teardown(self) -> None:
         """Disconnect robots and close queue."""
