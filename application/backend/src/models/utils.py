@@ -31,11 +31,7 @@ def setup_policy(model: Model) -> Policy:
     if model.policy == "act":
         return ACT()
     if model.policy == "pi0":
-        return Pi0(
-            variant="pi0",
-            chunk_size=50,
-            learning_rate=2.5e-5,
-        )
+        return Pi0()
     if model.policy == "smolvla":
         return SmolVLA()
 
