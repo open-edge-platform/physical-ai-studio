@@ -9,6 +9,7 @@ from uuid import uuid4
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import CSVLogger
 
+from models.utils import setup_policy
 from services.snapshot_service import SnapshotService
 from settings import get_settings
 
@@ -16,10 +17,7 @@ if TYPE_CHECKING:
     import multiprocessing as mp
     from multiprocessing.synchronize import Event as EventClass
 
-    from getiaction.policies.base import Policy
-
-from getiaction.data import DataModule, LeRobotDataModule
-from getiaction.policies import ACT, ACTModel, Pi0
+from getiaction.data import LeRobotDataModule
 from getiaction.train import Trainer
 from loguru import logger
 
@@ -89,6 +87,7 @@ class TrainingWorker(BaseProcessWorker):
             self.loop.run_until_complete(TrainingService.abort_orphan_jobs())
 
     async def _train_model(self, job: Job, model: Model, snapshot: Snapshot):
+        settings = get_settings()
         await JobService.update_job_status(job_id=job.id, status=JobStatus.RUNNING, message="Training started")
         dispatcher = TrainingTrackingDispatcher(
             job_id=job.id,
@@ -103,7 +102,7 @@ class TrainingWorker(BaseProcessWorker):
                 root=snapshot.path,
                 train_batch_size=8,
             )
-            policy = self._setup_policy(model, l_dm)
+            policy = setup_policy(model)
 
             checkpoint_callback = ModelCheckpoint(
                 dirpath=path,
@@ -130,6 +129,10 @@ class TrainingWorker(BaseProcessWorker):
             dispatcher.start()
             trainer.fit(model=policy, datamodule=l_dm)
 
+            for backend in settings.supported_backends:
+                export_dir = path / "exports" / backend
+                policy.export(export_dir, backend=backend)
+
             job = await JobService.update_job_status(
                 job_id=job.id, status=JobStatus.COMPLETED, message="Training finished"
             )
@@ -144,20 +147,3 @@ class TrainingWorker(BaseProcessWorker):
         self.interrupt_event.set()
         dispatcher.join(timeout=10)
         self.queue.put((EventType.JOB_UPDATE, job))
-
-    def _setup_policy(self, model: Model, l_dm: DataModule) -> Policy:
-        if model.policy == "act":
-            lib_model = ACTModel(
-                input_features=l_dm.train_dataset.observation_features,
-                output_features=l_dm.train_dataset.action_features,
-            )
-
-            return ACT(model=lib_model)
-        if model.policy == "pi0":
-            return Pi0(
-                variant="pi0",
-                chunk_size=50,
-                learning_rate=2.5e-5,
-            )
-
-        raise ValueError(f"Policy not implemented yet: {model.policy}")
