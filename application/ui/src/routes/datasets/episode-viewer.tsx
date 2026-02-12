@@ -50,10 +50,9 @@ const VideoView = ({ cameraName, aspectRatio, time, episodeVideo }: VideoView) =
 
 interface EpisodeViewerProps {
     episode: SchemaEpisode;
-    dataset_id: string;
 }
 
-export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
+export const EpisodeViewer = ({ episode }: EpisodeViewerProps) => {
     const player = usePlayer(episode);
     const frameIndex = Math.floor(player.time * episode.fps);
     const cameras = Object.keys(episode.videos).map((m) => m.replace('observation.images.', ''));

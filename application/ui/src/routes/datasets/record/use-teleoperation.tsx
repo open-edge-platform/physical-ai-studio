@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
-import { SchemaEpisode, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
+import { SchemaTeleoperationConfig } from '../../../api/openapi-spec';
 import useWebSocketWithResponse from '../../../components/websockets/use-websocket-with-response';
 
 interface TeleoperationState {

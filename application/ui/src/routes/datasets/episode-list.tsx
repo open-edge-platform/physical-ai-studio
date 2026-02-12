@@ -1,11 +1,11 @@
 import { Checkbox, Flex, View } from '@geti/ui';
-import clsx from 'clsx';
+import { clsx } from 'clsx';
 
 import { SchemaEpisode } from '../../api/openapi-spec';
 import { EpisodeTag } from '../../features/datasets/episodes/episode-tag';
+import { useDataset } from './dataset-provider';
 
 import classes from './episode-list.module.scss';
-import { useDataset } from './dataset-provider';
 
 interface EpisodeListProps {
     episodes: SchemaEpisode[];
@@ -17,8 +17,10 @@ export const EpisodeList = ({ episodes, onSelect, currentEpisode }: EpisodeListP
     const { selectedEpisodes, setSelectedEpisodes } = useDataset();
 
     const toggleSelection = (episodeIndex: number) => {
-        setSelectedEpisodes((list) => list.includes(episodeIndex) ? list.filter((m) => m !== episodeIndex) : [...list, episodeIndex])
-    }
+        setSelectedEpisodes((list) =>
+            list.includes(episodeIndex) ? list.filter((m) => m !== episodeIndex) : [...list, episodeIndex]
+        );
+    };
 
     return (
         <Flex flex height='100%' direction='column' maxWidth={256}>
@@ -46,7 +48,8 @@ export const EpisodeList = ({ episodes, onSelect, currentEpisode }: EpisodeListP
                             <Checkbox
                                 isSelected={selectedEpisodes.includes(episode.episode_index)}
                                 onPress={() => toggleSelection(episode.episode_index)}
-                                UNSAFE_className={classes.episodeCheckbox} />
+                                UNSAFE_className={classes.episodeCheckbox}
+                            />
                         </View>
                     ))}
                 </View>

@@ -8,8 +8,8 @@ import cv2
 import numpy as np
 import torch
 from git import rmtree
-from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.dataset_tools import delete_episodes as lerobot_delete_episodes
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import build_dataset_frame
 from lerobot.processor import make_default_processors
 from lerobot.processor.pipeline import RobotProcessorPipeline
@@ -45,7 +45,6 @@ class InternalLeRobotDataset(DatasetClient):
         if self._check_repository_exists(self.path):
             self._dataset = LeRobotDataset(str(uuid4()), self.path)
             self.has_episodes = self._dataset.num_episodes > 0
-
 
     def create(self, fps: int, features: dict, robot_type: str) -> None:
         """Create LeRobot dataset."""

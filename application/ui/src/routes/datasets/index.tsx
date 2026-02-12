@@ -15,16 +15,15 @@ import {
     View,
 } from '@geti/ui';
 import { Add } from '@geti/ui/icons';
+import { useParams } from 'react-router';
 
 import { SchemaDatasetOutput } from '../../api/openapi-spec';
 import { useProject, useProjectId } from '../../features/projects/use-project';
+import { paths } from '../../router';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
+import { DatasetProvider } from './dataset-provider';
 import { DatasetViewer } from './dataset-viewer';
 import { NewDatasetDialogContainer, NewDatasetLink } from './new-dataset.component';
-import { RecordingProvider } from './recording-provider';
-import { useParams } from 'react-router';
-import { paths } from '../../router';
-import { DatasetProvider } from './dataset-provider';
 
 interface DatasetsProps {
     datasets: SchemaDatasetOutput[];
@@ -33,11 +32,7 @@ interface DatasetsProps {
 const Datasets = ({ datasets }: DatasetsProps) => {
     const { project_id } = useProjectId();
     const params = useParams();
-    const dataset_id = params.dataset_id ?? datasets[0]?.id
-
-    //const [dataset, setDataset] = useState<SchemaDatasetOutput | undefined>(
-    //    datasets.length > 0 ? datasets[0] : undefined
-    //);
+    const dataset_id = params.dataset_id ?? datasets[0]?.id;
 
     const [showDialog, setShowDialog] = useState<boolean>(false);
 
@@ -70,7 +65,10 @@ const Datasets = ({ datasets }: DatasetsProps) => {
                     <TabList flex={1}>
                         {[
                             ...datasets.map((data) => (
-                                <Item key={data.id} href={paths.project.datasets.show({ project_id, dataset_id: data.id! })}>
+                                <Item
+                                    key={data.id}
+                                    href={paths.project.datasets.show({ project_id, dataset_id: data.id! })}
+                                >
                                     <Text UNSAFE_style={{ fontSize: '16px' }}>{data.name}</Text>
                                 </Item>
                             )),
@@ -107,9 +105,5 @@ const Datasets = ({ datasets }: DatasetsProps) => {
 
 export const Index = () => {
     const project = useProject();
-    return (
-        <RecordingProvider>
-            <Datasets datasets={project.datasets} />
-        </RecordingProvider>
-    );
+    return <Datasets datasets={project.datasets} />;
 };

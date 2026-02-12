@@ -1,6 +1,6 @@
 import { createContext, ReactNode, useContext, useState } from 'react';
 
-import { SchemaTeleoperationConfig } from '../../api/openapi-spec';
+import { SchemaTeleoperationConfig } from '../../../api/openapi-spec';
 
 type RecordingContextValue = null | {
     isRecording: boolean;

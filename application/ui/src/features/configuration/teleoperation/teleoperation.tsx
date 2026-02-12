@@ -1,17 +1,14 @@
-import { Suspense, useState } from 'react';
+import { useState } from 'react';
 
 import {
     Button,
     ButtonGroup,
     ComboBox,
     Content,
-    Dialog,
-    Divider,
     Flex,
     Heading,
     IllustratedMessage,
     Item,
-    Loading,
     Picker,
     Section,
     TextField,
@@ -147,22 +144,5 @@ export const TeleoperationSetup = ({ dataset, onDone }: TeleoperationSetupProps)
                 </View>
             </Flex>
         </View>
-    );
-};
-
-export const TeleoperationSetupModal = (
-    close: (config: SchemaTeleoperationConfig | undefined) => void,
-    dataset: SchemaDatasetOutput
-) => {
-    return (
-        <Dialog>
-            <Heading>Teleoperate Setup</Heading>
-            <Divider />
-            <Content>
-                <Suspense fallback={<Loading mode='overlay' />}>
-                    <TeleoperationSetup dataset={dataset} onDone={close} />
-                </Suspense>
-            </Content>
-        </Dialog>
     );
 };

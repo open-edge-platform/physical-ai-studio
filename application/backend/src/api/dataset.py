@@ -1,4 +1,3 @@
-from internal_datasets.mutations.delete_episode_mutation import DeleteEpisodesMutation
 from typing import Annotated
 from uuid import UUID
 
@@ -6,6 +5,7 @@ from fastapi import APIRouter, Depends, status
 from fastapi.responses import FileResponse
 
 from api.dependencies import HTTPException, get_dataset_service
+from internal_datasets.mutations.delete_episode_mutation import DeleteEpisodesMutation
 from internal_datasets.utils import get_internal_dataset
 from schemas import Dataset, Episode
 from services import DatasetService
@@ -22,6 +22,7 @@ async def get_dataset(
     """Get dataset by id"""
     return await dataset_service.get_dataset_by_id(UUID(dataset_id))
 
+
 @router.get("/{dataset_id}/episodes")
 async def get_episodes_of_dataset(
     dataset_id: str,
@@ -31,6 +32,7 @@ async def get_episodes_of_dataset(
     dataset = await dataset_service.get_dataset_by_id(UUID(dataset_id))
     internal_dataset = get_internal_dataset(dataset)
     return internal_dataset.get_episodes()
+
 
 @router.delete("/{dataset_id}/episodes")
 async def delete_episodes_of_dataset(

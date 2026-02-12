@@ -1,5 +1,5 @@
-import { Divider, Flex, Item, ListView, Selection, Tag, Text, View } from '@geti/ui';
-import clsx from 'clsx';
+import { Flex } from '@geti/ui';
+import { clsx } from 'clsx';
 
 import { SchemaEpisode } from '../../../api/openapi-spec';
 import { toMMSS } from '../../../utils';

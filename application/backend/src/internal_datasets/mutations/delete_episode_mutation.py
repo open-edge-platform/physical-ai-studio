@@ -10,6 +10,7 @@ from settings import get_settings
 class DeleteEpisodesMutation:
     cache_dir: Path
     source_dataset: DatasetClient
+
     def __init__(self, source_dataset: DatasetClient):
         settings = get_settings()
         self.cache_dir = settings.cache_dir / str(uuid4())

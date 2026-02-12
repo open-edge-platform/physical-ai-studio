@@ -12,6 +12,7 @@ import { Layout as CamerasLayout } from './routes/cameras/layout';
 import { New as CamerasNew } from './routes/cameras/new';
 import { CameraWebcam } from './routes/cameras/webcam';
 import { Index as Datasets } from './routes/datasets/index';
+import { Index as RecordingPage } from './routes/datasets/record/index';
 import { Edit as EnvironmentEdit } from './routes/environments/edit';
 import { Layout as EnvironmentsLayout } from './routes/environments/layout';
 import { New as EnvironmentNew } from './routes/environments/new';
@@ -36,7 +37,7 @@ const project = root.path('/projects/:project_id');
 const robots = project.path('robots');
 const robot = robots.path(':robot_id');
 const datasets = project.path('/datasets');
-const dataset = datasets.path(":dataset_id")
+const dataset = datasets.path(':dataset_id');
 const models = project.path('/models');
 const cameras = project.path('cameras');
 const environments = project.path('environments');
@@ -52,7 +53,8 @@ export const paths = {
         index: project,
         datasets: {
             index: datasets,
-            show: dataset
+            show: dataset,
+            record: dataset.path('record'),
         },
         robots: {
             index: robots,
@@ -139,6 +141,10 @@ export const router = createBrowserRouter([
                             {
                                 path: paths.project.datasets.show.pattern,
                                 element: <Datasets />,
+                            },
+                            {
+                                path: paths.project.datasets.record.pattern,
+                                element: <RecordingPage />,
                             },
                         ],
                     },
