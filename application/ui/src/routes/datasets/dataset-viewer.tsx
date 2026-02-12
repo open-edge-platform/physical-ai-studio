@@ -3,57 +3,19 @@ import { useState } from 'react';
 import { Button, Content, DialogTrigger, Divider, Flex, Heading, IllustratedMessage, Text, View } from '@geti/ui';
 import { Add } from '@geti/ui/icons';
 
-import { $api } from '../../api/client';
-import { SchemaDatasetOutput } from '../../api/openapi-spec';
 import { TeleoperationSetupModal } from '../../features/configuration/teleoperation/teleoperation';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
 import { EpisodeList } from './episode-list';
 import { EpisodeViewer } from './episode-viewer';
 import { useRecording } from './recording-provider';
 import { RecordingViewer } from './recording-viewer';
-import { useQueryClient } from '@tanstack/react-query';
+import { useDataset } from './dataset-provider';
 
-interface DatasetViewerProps {
-    dataset: SchemaDatasetOutput;
-}
-
-export const DatasetViewer = ({ dataset }: DatasetViewerProps) => {
+export const DatasetViewer = () => {
     const { isRecording, recordingConfig, setRecordingConfig } = useRecording();
-    const { data: episodes } = $api.useSuspenseQuery('get', '/api/dataset/{dataset_id}/episodes', {
-        params: {
-            path: {
-                dataset_id: dataset.id!,
-            },
-        },
-    });
-    const queryClient = useQueryClient();
-    const deleteEpisodesMutation = $api.useMutation('delete', '/api/dataset/{dataset_id}/episodes', {
-        onSuccess: (data) => {
-            const query_key = [
-                "get",
-                "/api/dataset/{dataset_id}/episodes",
-                {
-                    "params": {
-                        "path": {
-                            "dataset_id": dataset.id!
-                        }
-                    }
-                }
-            ]
-            queryClient.setQueryData(query_key, data)
-        }
-    })
-
+    const { dataset, episodes, deleteEpisodes } = useDataset();
     const deleteFirstEpisode = () => {
-        deleteEpisodesMutation.mutate({
-            params: {
-                path: {
-                    dataset_id: dataset.id!
-                }
-            },
-            body: [0]
-        })
-
+        deleteEpisodes([0]);
     }
 
     const [currentEpisode, setCurrentEpisode] = useState<number>(0);

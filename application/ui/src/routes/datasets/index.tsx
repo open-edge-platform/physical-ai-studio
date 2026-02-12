@@ -22,6 +22,9 @@ import { ReactComponent as EmptyIllustration } from './../../assets/illustration
 import { DatasetViewer } from './dataset-viewer';
 import { NewDatasetDialogContainer, NewDatasetLink } from './new-dataset.component';
 import { RecordingProvider } from './recording-provider';
+import { useParams } from 'react-router';
+import { paths } from '../../router';
+import { DatasetProvider } from './dataset-provider';
 
 interface DatasetsProps {
     datasets: SchemaDatasetOutput[];
@@ -29,17 +32,18 @@ interface DatasetsProps {
 
 const Datasets = ({ datasets }: DatasetsProps) => {
     const { project_id } = useProjectId();
-    const [dataset, setDataset] = useState<SchemaDatasetOutput | undefined>(
-        datasets.length > 0 ? datasets[0] : undefined
-    );
+    const params = useParams();
+    const dataset_id = params.dataset_id ?? datasets[0]?.id
+
+    //const [dataset, setDataset] = useState<SchemaDatasetOutput | undefined>(
+    //    datasets.length > 0 ? datasets[0] : undefined
+    //);
 
     const [showDialog, setShowDialog] = useState<boolean>(false);
 
     const onSelectionChange = (key: Key) => {
         if (key.toString() === '#new-dataset') {
             setShowDialog(true);
-        } else {
-            setDataset(datasets.find((d) => d.id === key.toString()));
         }
     };
 
@@ -61,12 +65,12 @@ const Datasets = ({ datasets }: DatasetsProps) => {
 
     return (
         <Flex height='100%'>
-            <Tabs onSelectionChange={onSelectionChange} selectedKey={dataset?.id} flex='1' margin={'size-200'}>
+            <Tabs onSelectionChange={onSelectionChange} selectedKey={dataset_id} flex='1' margin={'size-200'}>
                 <Flex alignItems={'end'}>
                     <TabList flex={1}>
                         {[
                             ...datasets.map((data) => (
-                                <Item key={data.id}>
+                                <Item key={data.id} href={paths.project.datasets.show({ project_id, dataset_id: data.id! })}>
                                     <Text UNSAFE_style={{ fontSize: '16px' }}>{data.name}</Text>
                                 </Item>
                             )),
@@ -79,12 +83,14 @@ const Datasets = ({ datasets }: DatasetsProps) => {
                     </TabList>
                 </Flex>
                 <TabPanels UNSAFE_style={{ border: 'none' }} marginTop={'size-200'}>
-                    <Item key={dataset?.id}>
+                    <Item key={dataset_id}>
                         <Flex height='100%' flex>
-                            {dataset === undefined ? (
+                            {dataset_id === undefined ? (
                                 <Text>No datasets yet...</Text>
                             ) : (
-                                <DatasetViewer dataset={dataset} />
+                                <DatasetProvider dataset_id={dataset_id}>
+                                    <DatasetViewer />
+                                </DatasetProvider>
                             )}
                         </Flex>
                     </Item>

@@ -14,6 +14,14 @@ from settings import get_settings
 router = APIRouter(prefix="/api/dataset", tags=["Dataset"])
 
 
+@router.get("/{dataset_id}")
+async def get_dataset(
+    dataset_id: str,
+    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
+) -> Dataset:
+    """Get dataset by id"""
+    return await dataset_service.get_dataset_by_id(UUID(dataset_id))
+
 @router.get("/{dataset_id}/episodes")
 async def get_episodes_of_dataset(
     dataset_id: str,

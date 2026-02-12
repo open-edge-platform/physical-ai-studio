@@ -36,6 +36,7 @@ const project = root.path('/projects/:project_id');
 const robots = project.path('robots');
 const robot = robots.path(':robot_id');
 const datasets = project.path('/datasets');
+const dataset = datasets.path(":dataset_id")
 const models = project.path('/models');
 const cameras = project.path('cameras');
 const environments = project.path('environments');
@@ -51,6 +52,7 @@ export const paths = {
         index: project,
         datasets: {
             index: datasets,
+            show: dataset
         },
         robots: {
             index: robots,
@@ -129,7 +131,16 @@ export const router = createBrowserRouter([
                     },
                     {
                         path: paths.project.datasets.index.pattern,
-                        element: <Datasets />,
+                        children: [
+                            {
+                                index: true,
+                                element: <Datasets />,
+                            },
+                            {
+                                path: paths.project.datasets.show.pattern,
+                                element: <Datasets />,
+                            },
+                        ],
                     },
                     {
                         path: paths.project.models.index.pattern,
