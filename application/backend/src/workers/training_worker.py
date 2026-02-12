@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 from __future__ import annotations
 
 import asyncio
@@ -26,6 +29,7 @@ from schemas.job import JobStatus, TrainJobPayload
 from services import DatasetService, JobService, ModelService
 from services.event_processor import EventType
 from services.training_service import TrainingService, TrainingTrackingCallback, TrainingTrackingDispatcher
+from utils.device import get_lightning_strategy, get_torch_device
 from workers.base import BaseProcessWorker
 
 SCHEDULE_INTERVAL_SEC = 5
@@ -123,6 +127,8 @@ class TrainingWorker(BaseProcessWorker):
                         dispatcher=dispatcher,
                     ),
                 ],
+                accelerator=get_torch_device(),
+                strategy=get_lightning_strategy(),
                 max_steps=10000,
             )
 

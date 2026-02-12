@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 from pathlib import Path
 
 from getiaction.export import Export
@@ -6,6 +9,7 @@ from getiaction.policies import ACT, Pi0, SmolVLA
 from getiaction.policies.base import Policy
 
 from schemas import Model
+from utils.device import get_torch_device
 
 
 def load_policy(model: Model) -> Export | Policy:
@@ -22,8 +26,12 @@ def load_policy(model: Model) -> Export | Policy:
 
 def load_inference_model(model: Model, backend: str) -> InferenceModel:
     """Loads inference model."""
+    inference_device = "auto"
+    if backend == "torch":
+        inference_device = get_torch_device()
+
     export_dir = Path(model.path) / "exports" / backend
-    return InferenceModel(export_dir=export_dir, policy_name=model.policy, backend=backend)
+    return InferenceModel(export_dir=export_dir, policy_name=model.policy, backend=backend, device=inference_device)
 
 
 def setup_policy(model: Model) -> Policy:

@@ -1,3 +1,7 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+import multiprocessing as mp
 import os
 
 import uvicorn
@@ -20,6 +24,7 @@ from api.settings import router as settings_router
 from core import lifespan
 from exception_handlers import register_application_exception_handlers
 from settings import get_settings
+from utils.device import get_torch_device
 
 settings = get_settings()
 app = FastAPI(
@@ -58,5 +63,7 @@ async def health_check(camera_registry: CameraRegistryDep, robot_registry: Robot
 
 
 if __name__ == "__main__":
+    if get_torch_device() == "xpu" and mp.get_start_method(allow_none=True) != "spawn":
+        mp.set_start_method("spawn", force=True)
     uvicorn_port = int(os.environ.get("HTTP_SERVER_PORT", settings.port))
     uvicorn.run("main:app", host=settings.host, port=uvicorn_port)
