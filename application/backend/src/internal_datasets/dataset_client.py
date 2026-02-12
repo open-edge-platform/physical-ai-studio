@@ -34,8 +34,8 @@ class DatasetClient(ABC):
         """Create dataset."""
 
     @abstractmethod
-    def start_recording_mutation(self, fps: int, features: dict, robot_type: str) -> "RecordingMutation":
-        """Start recording mutation."""
+    def delete_episodes(self, episode_indices: list[int], output_path: Path) -> "DatasetClient":
+        """Copy over repo without given episode_indices to output_path."""
 
     @abstractmethod
     def add_frame(self, obs: dict, act: dict, task: str) -> None:
@@ -64,3 +64,7 @@ class DatasetClient(ABC):
     @abstractmethod
     def overwrite(self, source: "DatasetClient") -> None:
         """Overwrite dataset with given dataset."""
+
+    @abstractmethod
+    def start_recording_mutation(self, fps: int, features: dict, robot_type: str) -> "RecordingMutation":
+        """Start recording mutation."""

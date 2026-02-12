@@ -11,6 +11,7 @@ import { EpisodeList } from './episode-list';
 import { EpisodeViewer } from './episode-viewer';
 import { useRecording } from './recording-provider';
 import { RecordingViewer } from './recording-viewer';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface DatasetViewerProps {
     dataset: SchemaDatasetOutput;
@@ -25,6 +26,35 @@ export const DatasetViewer = ({ dataset }: DatasetViewerProps) => {
             },
         },
     });
+    const queryClient = useQueryClient();
+    const deleteEpisodesMutation = $api.useMutation('delete', '/api/dataset/{dataset_id}/episodes', {
+        onSuccess: (data) => {
+            const query_key = [
+                "get",
+                "/api/dataset/{dataset_id}/episodes",
+                {
+                    "params": {
+                        "path": {
+                            "dataset_id": dataset.id!
+                        }
+                    }
+                }
+            ]
+            queryClient.setQueryData(query_key, data)
+        }
+    })
+
+    const deleteFirstEpisode = () => {
+        deleteEpisodesMutation.mutate({
+            params: {
+                path: {
+                    dataset_id: dataset.id!
+                }
+            },
+            body: [0]
+        })
+
+    }
 
     const [currentEpisode, setCurrentEpisode] = useState<number>(0);
 
@@ -64,6 +94,10 @@ export const DatasetViewer = ({ dataset }: DatasetViewerProps) => {
             </View>
             <Divider orientation='vertical' size='S' />
             <Flex direction='column'>
+                <Button variant='secondary' alignSelf='end' marginEnd='size-400' marginBottom={'size-200'} onPress={deleteFirstEpisode}>
+                    Delete first episode
+                </Button>
+
                 <DialogTrigger>
                     <Button variant='secondary' alignSelf='end' marginEnd='size-400' marginBottom={'size-200'}>
                         <Add fill='white' style={{ marginRight: '4px' }} />

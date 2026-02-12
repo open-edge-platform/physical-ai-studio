@@ -1,3 +1,4 @@
+from internal_datasets.mutations.delete_episode_mutation import DeleteEpisodesMutation
 from typing import Annotated
 from uuid import UUID
 
@@ -22,6 +23,19 @@ async def get_episodes_of_dataset(
     dataset = await dataset_service.get_dataset_by_id(UUID(dataset_id))
     internal_dataset = get_internal_dataset(dataset)
     return internal_dataset.get_episodes()
+
+@router.delete("/{dataset_id}/episodes")
+async def delete_episodes_of_dataset(
+    dataset_id: str,
+    episode_indices: list[int],
+    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
+) -> list[Episode]:
+    """Get dataset episodes of dataset by id."""
+    dataset = await dataset_service.get_dataset_by_id(UUID(dataset_id))
+    dataset_client = get_internal_dataset(dataset)
+    mutation = DeleteEpisodesMutation(dataset_client)
+    result = mutation.delete_episodes(episode_indices)
+    return result.get_episodes()
 
 
 @router.get("/video/{video_path:path}")

@@ -9,6 +9,7 @@ import numpy as np
 import torch
 from git import rmtree
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.datasets.dataset_tools import delete_episodes as lerobot_delete_episodes
 from lerobot.datasets.utils import build_dataset_frame
 from lerobot.processor import make_default_processors
 from lerobot.processor.pipeline import RobotProcessorPipeline
@@ -33,13 +34,18 @@ class InternalLeRobotDataset(DatasetClient):
 
     def __init__(self, dataset_path: Path):
         self.path = dataset_path
-        if self._check_repository_exists(dataset_path):
-            self._dataset = LeRobotDataset(str(uuid4()), dataset_path)
-            self.has_episodes = self._dataset.num_episodes > 0
+        self.load_dataset()
 
         self._teleop_action_processor, self._robot_action_processor, self._robot_observation_processor = (
             make_default_processors()
         )
+
+    def load_dataset(self) -> None:
+        """Load dataset."""
+        if self._check_repository_exists(self.path):
+            self._dataset = LeRobotDataset(str(uuid4()), self.path)
+            self.has_episodes = self._dataset.num_episodes > 0
+
 
     def create(self, fps: int, features: dict, robot_type: str) -> None:
         """Create LeRobot dataset."""
@@ -49,6 +55,11 @@ class InternalLeRobotDataset(DatasetClient):
             repo_id=str(uuid4()), root=self.path, fps=fps, features=features, robot_type=robot_type, use_videos=True
         )
         self.has_episodes = False
+
+    def delete_episodes(self, episode_indices: list[int], output_path: Path) -> DatasetClient:
+        """Copy over repo without given episode_indices to output_path."""
+        lerobot_delete_episodes(dataset=self._dataset, episode_indices=episode_indices, output_dir=output_path)
+        return InternalLeRobotDataset(output_path)
 
     def get_tasks(self) -> list[str]:
         """Get Tasks in dataset."""
@@ -79,6 +90,7 @@ class InternalLeRobotDataset(DatasetClient):
             rmtree(self.path)
 
         shutil.copytree(source.path, self.path)
+        self.load_dataset()
 
     def get_episodes(self) -> list[Episode]:
         """Get episodes of dataset."""
