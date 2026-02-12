@@ -1,3 +1,6 @@
+from git import rmtree
+from settings import get_settings
+from internal_datasets.mutations.recording_mutation import RecordingMutation
 import base64
 import copy
 import shutil
@@ -29,11 +32,10 @@ class InternalLeRobotDataset(DatasetClient):
     _robot_action_processor: RobotProcessorPipeline
     _robot_observation_processor: RobotProcessorPipeline
 
-    def __init__(self, path: Path):
-        self.path = path
-        if self._check_repository_exists(path):
-            self._dataset = LeRobotDataset(str(uuid4()), path)
-            self.exists_on_disk = True
+    def __init__(self, dataset_path: Path):
+        self.path = dataset_path
+        if self._check_repository_exists(dataset_path):
+            self._dataset = LeRobotDataset(str(uuid4()), dataset_path)
             self.has_episodes = self._dataset.num_episodes > 0
 
         self._teleop_action_processor, self._robot_action_processor, self._robot_observation_processor = (
@@ -47,7 +49,6 @@ class InternalLeRobotDataset(DatasetClient):
         self._dataset = LeRobotDataset.create(
             repo_id=str(uuid4()), root=self.path, fps=fps, features=features, robot_type=robot_type, use_videos=True
         )
-        self.exists_on_disk = True
         self.has_episodes = False
 
     def get_tasks(self) -> list[str]:
@@ -69,6 +70,16 @@ class InternalLeRobotDataset(DatasetClient):
             num_processes=0,
             num_threads=num_threads,
         )
+
+    def overwrite(self, source: DatasetClient) -> None:
+        """Overwrite this dataset with the given dataset."""
+        if not isinstance(source, InternalLeRobotDataset):
+            raise ValueError(f"Cannot overwrite lerobot dataset with {source.__class__}")
+
+        if self.path.is_dir():
+            rmtree(self.path)
+
+        shutil.copytree(source.path, self.path)
 
     def get_episodes(self) -> list[Episode]:
         """Get episodes of dataset."""
@@ -139,6 +150,7 @@ class InternalLeRobotDataset(DatasetClient):
 
     def finalize(self) -> None:
         """Finalize changes to dataset."""
+        logger.info(f"Finalizing dataset {self.path}")
         self._dataset.finalize()
 
     def _process_frame(self, obs: dict, act: dict, task: str) -> dict:
@@ -148,6 +160,26 @@ class InternalLeRobotDataset(DatasetClient):
         observation_frame = build_dataset_frame(self._dataset.features, obs_processed, prefix=OBS_STR)
 
         return {**observation_frame, **action_frame, "task": task}
+
+    def start_recording_mutation(self, fps: int, features: dict, robot_type: str) -> RecordingMutation:
+        """Start recording mutation."""
+        settings = get_settings()
+        cache_dir = settings.cache_dir / str(uuid4())
+
+        print(f"Creating cache dataset {cache_dir}")
+        if self.exists_on_disk:
+            shutil.copytree(self.path, cache_dir)
+            cache_dataset = InternalLeRobotDataset(cache_dir)
+        else:
+            cache_dataset = InternalLeRobotDataset(cache_dir)
+            cache_dataset.create(fps, features, robot_type)
+
+        return RecordingMutation(self, cache_dataset)
+
+    @property
+    def exists_on_disk(self) -> bool:
+        """Check if repo exists."""
+        return self._check_repository_exists(self.path)
 
     @staticmethod
     def _check_repository_exists(repo_path: Path) -> bool:
@@ -161,8 +193,7 @@ class InternalLeRobotDataset(DatasetClient):
             raise Exception("No dataset loaded.")
 
         end = data["timestamp"][-1]
-        print(episode)
-        #self._dataset.meta.get_video_file_path(episode_index, video_key)
+        episode_index = data["episode_index"].tolist()[0]
         video_timestamps = {
             video_key: EpisodeVideo(start=0, end=end, path="") # TODO: Implement path
             for video_key in self._dataset.meta.video_keys
@@ -178,7 +209,7 @@ class InternalLeRobotDataset(DatasetClient):
         camera_key = self._dataset.meta.camera_keys[0]
         thumbnail = self._build_thumbnail_from_buffer(data, camera_key)
         return Episode(
-            episode_index=data["episode_index"].tolist()[0],
+            episode_index=episode_index,
             length=len(data["frame_index"]),
             fps=self._dataset.fps,
             tasks=[task],

@@ -3,6 +3,11 @@ from pathlib import Path
 
 from schemas import Episode
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from internal_datasets.mutations.recording_mutation import RecordingMutation
+
 
 class DatasetClient(ABC):
     type: str
@@ -30,6 +35,10 @@ class DatasetClient(ABC):
         """Create dataset."""
 
     @abstractmethod
+    def start_recording_mutation(self, fps: int, features: dict, robot_type: str) -> "RecordingMutation":
+        """Start recording mutation."""
+
+    @abstractmethod
     def add_frame(self, obs: dict, act: dict, task: str) -> None:
         """Add frame to recording buffer."""
 
@@ -52,3 +61,7 @@ class DatasetClient(ABC):
     @abstractmethod
     def finalize(self) -> None:
         """Finalize changes to dataset."""
+
+    @abstractmethod
+    def overwrite(self, source: "DatasetClient") -> None:
+        """Overwrite dataset with given dataset."""

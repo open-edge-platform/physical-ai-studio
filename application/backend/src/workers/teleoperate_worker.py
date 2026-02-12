@@ -1,3 +1,4 @@
+from internal_datasets.dataset_client import DatasetClient
 from internal_datasets.mutations.recording_mutation import RecordingMutation
 from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
 import traceback
@@ -53,7 +54,7 @@ class TeleoperateWorker(BaseThreadWorker):
     action_keys: list[str] = []
     camera_keys: list[str] = []
 
-    dataset: InternalLeRobotDataset | None = None
+    dataset: DatasetClient | None = None
     mutation: RecordingMutation | None = None
     leader: RobotClient | None = None
     follower: RobotClient | None = None
@@ -120,6 +121,10 @@ class TeleoperateWorker(BaseThreadWorker):
         await self.follower.connect()
         await self.leader.connect()
 
+        for camera in self.cameras.values():
+            camera.start_async()
+        await asyncio.sleep(1) #  warmup cameras
+
     def setup(self) -> None:
         """Set up robots, cameras and dataset."""
         try:
@@ -134,24 +139,18 @@ class TeleoperateWorker(BaseThreadWorker):
 
             self.action_keys = self.follower.features()
             self.camera_keys = [camera.name.lower() for camera in self.config.environment.cameras]
-            if self.dataset.exists_on_disk:
-                self.recording_mutation = RecordingMutation.from_existing_dataset(self.dataset.path)
-            else:
-                features = self.loop.run_until_complete(
-                    build_lerobot_dataset_features(self.config.environment, self.robot_manager, self.calibration_service)
-                )
 
-                self.recording_mutation = RecordingMutation.from_new_dataset(
-                    source_path=self.dataset.path,
-                    fps=30,  # TODO: Implement in Environment
-                    features=features,
-                    robot_type=self.follower.name,
-                )
+            features = self.loop.run_until_complete(
+                build_lerobot_dataset_features(self.config.environment, self.robot_manager, self.calibration_service)
+            )
 
+            self.recording_mutation = self.dataset.start_recording_mutation(
+                fps=30,  # TODO: Implement in Environment
+                features=features,
+                robot_type=self.follower.name,
+            )
 
-            logger.info("dataset loaded, starting cameras")
-            for camera in self.cameras.values():
-                camera.start_async()
+            logger.info("dataset loaded")
 
             self.state.initialized = True
             logger.info("teleoperation all setup, reporting state")
