@@ -1,0 +1,84 @@
+x-proxy-list: &proxy-list
+  - HTTP_PROXY=${HTTP_PROXY}
+  - HTTPS_PROXY=${HTTPS_PROXY}
+  - NO_PROXY=${NO_PROXY}
+  - http_proxy=${http_proxy}
+  - https_proxy=${https_proxy}
+  - no_proxy=${no_proxy}
+
+x-proxies: &proxies
+  args: *proxy-list
+
+
+services:
+  geti-action:
+    image: ${REGISTRY:-ghcr.io/markredeman/}geti-action:${IMAGE_TAG:-latest}-${AI_DEVICE:-cpu}
+    build:
+      context: ../../
+      dockerfile: application/docker/Dockerfile
+      target: geti-action-${AI_DEVICE:-cpu}
+      additional_contexts:
+        libs: ../../library
+      <<: *proxies
+    ports:
+      - "${PORT:-7860}:7860"
+    environment:
+      - HOST=${HOST:-0.0.0.0}
+      - PORT=${PORT:-7860}
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
+    stop_grace_period: 35s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${PORT:-7860}/api/health')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+
+    # ============================================================
+    # HARDWARE ACCESS
+    #
+    # Choose ONE of the two modes below by commenting/uncommenting.
+    # Both modes require group_add for device permissions.
+    # ============================================================
+
+    group_add:
+      - dialout
+      - plugdev
+      - video
+
+    # Persisted data and storage volumes + shared robot calibration
+    volumes:
+      - geti-data:/app/data
+      - geti-storage:/app/storage
+      - ${HOME}/.cache/huggingface/lerobot/calibration:/home/appuser/.cache/huggingface/lerobot/calibration:ro
+
+    # --- Option 1: Privileged mode (active by default) ---
+    # Grants full access to all host devices. Easiest setup, but the
+    # container runs with elevated privileges.
+    # Also covers Intel RealSense cameras via /dev/bus/usb.
+    privileged: true
+
+    # --- Option 2: Non-privileged mode (more secure) ---
+    # Map only the specific devices the robot needs. More secure since
+    # the container cannot access arbitrary host devices, but you must
+    # update the device list whenever hardware changes.
+    # To switch: comment out "privileged: true" above and uncomment below.
+    # privileged: false
+    # devices:
+    #    # Feetech servo USB connection (e.g., /dev/ttyUSB0)
+    #    - /dev/ttyACM0:/dev/ttyACM0
+    #    - /dev/ttyACM1:/dev/ttyACM1
+    #    - /dev/ttyACM2:/dev/ttyACM2
+    #    # Standard USB cameras (v4l2)
+    #    - /dev/video0:/dev/video0
+    #    - /dev/video2:/dev/video2
+    #    - /dev/video4:/dev/video4
+    #    # Intel RealSense cameras
+    #    # - /dev/bus/usb:/dev/bus/usb
+
+volumes:
+  geti-data:
+  geti-storage:
