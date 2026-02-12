@@ -26,15 +26,6 @@ from workers.camera_worker import create_frames_source_from_camera
 
 from .base import BaseThreadWorker
 
-SO_101_REST_POSITION = {
-    "shoulder_pan.pos": -2,
-    "shoulder_lift.pos": -90,
-    "elbow_flex.pos": 100,
-    "wrist_flex.pos": 60,
-    "wrist_roll.pos": 0,
-    "gripper.pos": 25,
-}
-
 
 class CameraFrameProcessor:
     @staticmethod
@@ -176,7 +167,7 @@ class InferenceWorker(BaseThreadWorker):
                     action = self.action_queue.pop(0)
 
                     formatted_actions = dict(zip(self.action_keys, action))
-                    await self.follower.set_joints_state(formatted_actions)
+                    await self.follower.set_joints_state(formatted_actions, 1 / 30)
                     self._report_action(formatted_actions, state, timestamp)
                 else:
                     self._report_action({}, state, timestamp)
@@ -191,7 +182,6 @@ class InferenceWorker(BaseThreadWorker):
     async def _on_start(self) -> None:
         logger.info("start")
         self.events["start"].clear()
-        await self.follower.set_joints_state(SO_101_REST_POSITION)
         precise_sleep(0.3)  # TODO check if neccesary
         self.action_queue.clear()
         self.state.is_running = True
