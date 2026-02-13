@@ -167,7 +167,7 @@ class TestTorchAdapter:
         mock_model.eval.return_value = mock_model
         mock_model.to.return_value = mock_model
         mock_model.model.sample_input = {"input": torch.tensor([[0.0]])}
-        mock_model.model.extra_export_args = {"torch": {"output_names": ["output"], "input_names": ["Observation"]}}
+        mock_model.model.extra_export_args = {"torch": {"output_names": ["output"], "input_names": ["observation"]}}
 
         with patch("getiaction.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
             adapter = TorchAdapter(device="cpu")
@@ -178,7 +178,7 @@ class TestTorchAdapter:
 
             with patch("getiaction.inference.adapters.torch.TorchAdapter._convert_outputs_to_numpy",
                         return_value={"output": np.array([[1.0, 2.0]])}):
-                outputs = adapter.predict({"Observation": Observation(images=torch.randn(1, 3, 224, 224), state=torch.randn(1, 2))})
+                outputs = adapter.predict({"observation": Observation(images=torch.randn(1, 3, 224, 224), state=torch.randn(1, 2))})
                 assert "output" in outputs and isinstance(outputs["output"], np.ndarray)
 
     def test_error_cases(self, tmp_path: Path) -> None:

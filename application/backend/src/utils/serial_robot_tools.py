@@ -1,37 +1,35 @@
 import asyncio
 
-from lerobot.cameras import CameraConfig
-from lerobot.robots.config import RobotConfig as LeRobotConfig
 from lerobot.robots.so101_follower import SO101Follower, SO101FollowerConfig
-from lerobot.teleoperators.config import TeleoperatorConfig as LeRobotTeleoperatorConfig
 from loguru import logger
 from serial.tools import list_ports
 from serial.tools.list_ports_common import ListPortInfo
 
-from schemas import RobotConfig, RobotPortInfo
+from schemas import Robot, SerialPortInfo
+from schemas.robot import RobotType
 
 available_ports = list_ports.comports()
 
 
-def from_port(port: ListPortInfo, robot_type: str) -> RobotPortInfo | None:
-    """Detect if the device is a SO-100 robot.π"""
+def from_port(port: ListPortInfo, robot_type: str) -> SerialPortInfo | None:
+    """Detect if the device is a SO-100 robot."""
     # The Feetech UART board CH340 has PID 29987
     if port.pid in {21971, 29987}:
         # The serial number is not always available
         serial_number = port.serial_number or "no_serial"
-        return RobotPortInfo(port=port.device, serial_id=serial_number, robot_type=robot_type)
+        return SerialPortInfo(connection_string=port.device, serial_number=serial_number, robot_type=robot_type)
     return None
 
 
 class RobotConnectionManager:
-    _all_robots: list[RobotPortInfo] = []
+    _all_robots: list[SerialPortInfo] = []
     available_ports: list[ListPortInfo]
 
     def __init__(self):
         self.available_ports = list_ports.comports()
 
     @property
-    def robots(self) -> list[RobotPortInfo]:
+    def robots(self) -> list[SerialPortInfo]:
         return self._all_robots
 
     async def find_robots(self) -> None:
@@ -40,7 +38,6 @@ class RobotConnectionManager:
 
         Use self.scan_ports() before to update self.available_ports and self.available_can_ports
         """
-
         self._all_robots = []
 
         # If we are only simulating, we can just use the SO100Hardware class
@@ -59,10 +56,10 @@ class RobotConnectionManager:
             for name in [
                 "so-100",
             ]:
-                logger.debug(f"Trying to connect to {name} on {port.device}.")
+                # logger.debug(f"Trying to connect to {name} on {port.device}.")
                 robot = from_port(port, robot_type=name)
                 if robot is None:
-                    logger.debug(f"Failed to create robot from {name} on {port.device}.")
+                    # logger.debug(f"Failed to create robot from {name} on {port.device}.")
                     continue
                 logger.debug(f"Robot created: {robot}")
                 # await robot.connect()
@@ -80,71 +77,49 @@ class RobotConnectionManager:
             logger.debug("No robot connected.")
 
 
-async def find_robots() -> list[RobotPortInfo]:
+async def find_robots() -> list[SerialPortInfo]:
     """Find all robots connected via serial"""
     manager = RobotConnectionManager()
     await manager.find_robots()
     return manager.robots
 
 
-async def identify_robot_visually(robot: RobotPortInfo, joint: str | None = None) -> None:
+def find_port_for_serial(serial_number: str) -> str:
+    """Find the serial port path given the serial number of the device"""
+    ports = list_ports.comports()
+    for port in ports:
+        serial_num = getattr(port, "serial_number", None)
+        if serial_num == serial_number:
+            return port.device
+    return ""
+
+
+async def identify_so101_robot_visually(robot: Robot, joint: str | None = None) -> None:
     """Identify the robot by moving the joint from current to min to max to initial position"""
-    if robot.robot_type != "so-100":
-        raise ValueError(f"Trying to identify unsupported robot: {robot.robot_type}")
+    if robot.type not in {RobotType.SO101_LEADER, RobotType.SO101_FOLLOWER}:
+        raise ValueError(f"Trying to identify unsupported robot: {robot.type}")
 
     if joint is None:
         joint = "gripper"
 
+    if robot.connection_string == "" and robot.serial_number != "":
+        robot.connection_string = find_port_for_serial(robot.serial_number)
+
+    if robot.connection_string == "":
+        raise ValueError(f"Could not find the serial port for serial number {robot.serial_number}")
     # Assume follower since leader shares same FeetechMotorBus layout
-    robot = SO101Follower(SO101FollowerConfig(port=robot.port))
-    robot.bus.connect()
+    connection = SO101Follower(SO101FollowerConfig(port=robot.connection_string))
+    connection.bus.connect()
 
     PRESENT_POSITION_KEY = "Present_Position"
     GOAL_POSITION_KEY = "Goal_Position"
 
-    current_position = robot.bus.sync_read(PRESENT_POSITION_KEY, normalize=False)
-    gripper_calibration = robot.bus.read_calibration()[joint]
-    robot.bus.write(GOAL_POSITION_KEY, joint, gripper_calibration.range_min, normalize=False)
+    current_position = connection.bus.sync_read(PRESENT_POSITION_KEY, normalize=False)
+    gripper_calibration = connection.bus.read_calibration()[joint]
+    connection.bus.write(GOAL_POSITION_KEY, joint, gripper_calibration.range_min, normalize=False)
     await asyncio.sleep(1)
-    robot.bus.write(GOAL_POSITION_KEY, joint, gripper_calibration.range_max, normalize=False)
+    connection.bus.write(GOAL_POSITION_KEY, joint, gripper_calibration.range_max, normalize=False)
     await asyncio.sleep(1)
-    robot.bus.write(GOAL_POSITION_KEY, joint, current_position[joint], normalize=False)
+    connection.bus.write(GOAL_POSITION_KEY, joint, current_position[joint], normalize=False)
     await asyncio.sleep(1)
-    robot.bus.disconnect()
-
-
-def make_lerobot_robot_config_from_robot(config: RobotConfig, cameras: dict[str, CameraConfig]) -> LeRobotConfig:
-    """Build LeRobot Follower Config from our RobotConfig."""
-    le_config = {
-        "id": config.id,
-        "port": config.port,
-        "cameras": cameras,
-    }
-
-    if config.robot_type == "so100_follower":
-        from lerobot.robots.so100_follower import SO100FollowerConfig
-
-        return SO100FollowerConfig(**le_config)
-    if config.robot_type == "so101_follower":
-        from lerobot.robots.so101_follower import SO101FollowerConfig
-
-        return SO101FollowerConfig(**le_config)
-    raise ValueError(config.type)
-
-
-def make_lerobot_teleoperator_config_from_robot(config: RobotConfig) -> LeRobotTeleoperatorConfig:
-    """Build LeRobot Teleoperator Config from our RobotConfig."""
-    le_config = {
-        "id": config.id,
-        "port": config.port,
-        "calibration_dir": None,
-    }
-    if config.robot_type == "so100_follower":
-        from lerobot.teleoperators.so100_leader import SO100LeaderConfig
-
-        return SO100LeaderConfig(**le_config)
-    if config.robot_type == "so101_follower":
-        from lerobot.teleoperators.so101_leader import SO101LeaderConfig
-
-        return SO101LeaderConfig(**le_config)
-    raise ValueError(config.type)
+    connection.bus.disconnect()

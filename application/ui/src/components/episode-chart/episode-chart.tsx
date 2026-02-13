@@ -10,7 +10,7 @@ function buildChartData(actions: number[][], joints: string[], fps: number) {
     }));
 }
 
-const lineColors = ['#ff7300', '#387908', '#8884d8', '#82ca9d', '#ffbb28', '#a83279'];
+const lineColors = ['#ff7300', '#387908', '#8884d8', '#82ca9d', '#ffbb28', '#a83279', '#aaffff'];
 
 function toCapitalizedWords(name: string) {
     const words = name.match(/[A-Za-z][a-z]*/g) || [];
@@ -22,6 +22,13 @@ function capitalize(word: string) {
     return word.charAt(0).toUpperCase() + word.substring(1);
 }
 
+function isPosJoint(name: string) {
+    return name.endsWith('.pos');
+}
+
+function stripPosSuffix(name: string) {
+    return name.replace(/\.pos$/, '');
+}
 interface EpisodeChartProps {
     actions: number[][];
     joints: string[];
@@ -36,7 +43,8 @@ interface EpisodeChartProps {
 export default function EpisodeChart({ actions, joints, fps, time, seek, play, pause, isPlaying }: EpisodeChartProps) {
     const [hoverPosition, setHoverPosition] = useState<number | undefined>(undefined);
     const [mouseDown, setMouseDown] = useState<boolean>(false);
-    const chartData = buildChartData(actions, joints, fps);
+    const posJoints = joints.filter(isPosJoint);
+    const chartData = buildChartData(actions, posJoints, fps);
     const ticks = [...Array(Math.floor((actions.length / fps) * 2)).keys()].map((m) => m / 2);
 
     const continuePlayingOnRelease = useRef<boolean>(false);
@@ -94,14 +102,14 @@ export default function EpisodeChart({ actions, joints, fps, time, seek, play, p
                 )}
                 <ReferenceLine x={time} stroke='#ffffff' label='' strokeWidth={2} />
 
-                {joints.map((joint, i) => (
+                {posJoints.map((joint, i) => (
                     <Line
                         isAnimationActive={false}
                         key={joint}
                         type='monotone'
                         dataKey={joint}
                         stroke={lineColors[i]}
-                        name={toCapitalizedWords(joint)}
+                        name={toCapitalizedWords(stripPosSuffix(joint))}
                         dot={false}
                         strokeWidth={2}
                     />

@@ -13,8 +13,6 @@ import { CameraView } from '../../datasets/camera-view';
 import { useInference } from './use-inference';
 import { useInferenceParams } from './use-inference-params';
 
-const SO_101_JOINT_NAMES = ['shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex', 'wrist_roll', 'gripper'];
-
 interface InferenceViewerProps {
     config: SchemaInferenceConfig;
 }
@@ -31,14 +29,13 @@ export const InferenceViewer = ({ config }: InferenceViewerProps) => {
 
     const { startTask, stop, state, observation } = useInference(config, ToastQueue.negative);
 
-    const formatActionDictToArray = (actions: { [key: string]: number }): number[] => {
-        return SO_101_JOINT_NAMES.map((name) => actions[`${name}.pos`]);
-    };
+    const robotType = config.environment.robots?.[0].robot.type ?? 'SO101_Follower';
 
-    const actions = observation.current === undefined ? undefined : formatActionDictToArray(observation.current.state);
+    const action_values = observation.current === undefined ? undefined : Object.values(observation.current['actions']);
+    const action_keys = observation.current === undefined ? undefined : Object.keys(observation.current['actions']);
 
     if (state.error) {
-        return <ErrorMessage message={'An error occured during inference setup'} />;
+        return <ErrorMessage message={'An error occurred during inference setup'} />;
     }
 
     if (!state.initialized) {
@@ -89,12 +86,12 @@ export const InferenceViewer = ({ config }: InferenceViewerProps) => {
                 </Flex>
                 <Flex direction={'row'} flex gap={'size-100'} margin='size-200'>
                     <Flex direction={'column'} alignContent={'start'} flex gap={'size-30'}>
-                        {config.cameras.map((camera) => (
+                        {config.environment.cameras!.map((camera) => (
                             <CameraView key={camera.id} camera={camera} observation={observation} />
                         ))}
                     </Flex>
                     <Flex flex={3} minWidth={0}>
-                        <RobotViewer jointValues={actions} />
+                        <RobotViewer featureValues={action_values} featureNames={action_keys} robotType={robotType} />
                     </Flex>
                 </Flex>
             </Flex>

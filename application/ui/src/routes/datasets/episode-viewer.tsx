@@ -4,15 +4,12 @@ import { Disclosure, DisclosurePanel, DisclosureTitle, Flex, View, Well } from '
 
 import { SchemaEpisode, SchemaEpisodeVideo } from '../../api/openapi-spec';
 import EpisodeChart from '../../components/episode-chart/episode-chart';
-import { useProject } from '../../features/projects/use-project';
 import { RobotViewer } from '../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 import { TimelineControls } from './timeline-controls';
 import { usePlayer } from './use-player';
 
 import classes from './episode-viewer.module.scss';
-
-const joints = ['shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex', 'wrist_roll', 'gripper'];
 
 interface VideoView {
     dataset_id: string;
@@ -27,11 +24,17 @@ const VideoView = ({ cameraName, dataset_id, episodeIndex, aspectRatio, time, ep
 
     const videoRef = useRef<HTMLVideoElement>(null);
 
+    // Make sure webpage renders when video doesn't load correctly
     useEffect(() => {
-        if (videoRef.current) {
-            videoRef.current.currentTime = time + episodeVideo.start;
-        }
-    }, [time, episodeVideo.start]);
+        const video = videoRef.current;
+        const start = episodeVideo?.start;
+
+        if (!video) return;
+        if (video.readyState < 1) return;
+        if (!Number.isFinite(time) || !Number.isFinite(start)) return;
+
+        video.currentTime = time + start;
+    }, [time, episodeVideo?.start]);
 
     /* eslint-disable jsx-a11y/media-has-caption */
     return (
@@ -52,29 +55,34 @@ interface EpisodeViewerProps {
 }
 
 export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
-    const project = useProject();
     const player = usePlayer(episode);
     const frameIndex = Math.floor(player.time * episode.fps);
+    const cameras = Object.keys(episode.videos).map((m) => m.replace('observation.images.', ''));
+    const follower_robot_type = episode.follower_robot_types?.[0] ?? 'SO101_Follower';
 
     return (
         <RobotModelsProvider>
             <Flex direction={'column'} height={'100%'} position={'relative'}>
                 <Flex direction={'row'} flex gap={'size-100'}>
                     <Flex direction={'column'} alignContent={'start'} flex gap={'size-30'}>
-                        {project.config!.cameras.map((camera) => (
+                        {cameras.map((camera) => (
                             <VideoView
-                                key={camera.name}
-                                aspectRatio={camera.width / camera.height}
-                                cameraName={camera.name}
+                                key={camera}
+                                aspectRatio={640 / 480}
+                                cameraName={camera}
                                 episodeIndex={episode.episode_index}
                                 dataset_id={dataset_id}
                                 time={player.time}
-                                episodeVideo={episode.videos[`observation.images.${camera.name}`]}
+                                episodeVideo={episode.videos[`observation.images.${camera}`]}
                             />
                         ))}
                     </Flex>
                     <Flex flex={3} minWidth={0}>
-                        <RobotViewer jointValues={episode.actions[frameIndex]} />
+                        <RobotViewer
+                            featureValues={episode.actions[frameIndex]}
+                            featureNames={episode.action_keys}
+                            robotType={follower_robot_type}
+                        />
                     </Flex>
                 </Flex>
                 <div className={classes.timeline}>
@@ -83,7 +91,7 @@ export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
                         <DisclosurePanel>
                             <EpisodeChart
                                 actions={episode.actions}
-                                joints={joints}
+                                joints={episode.action_keys}
                                 fps={episode.fps}
                                 time={player.time}
                                 seek={player.seek}

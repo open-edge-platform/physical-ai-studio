@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 from __future__ import annotations
 
 import asyncio
@@ -9,6 +12,7 @@ from uuid import uuid4
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import CSVLogger
 
+from models.utils import setup_policy
 from services.snapshot_service import SnapshotService
 from settings import get_settings
 
@@ -16,10 +20,7 @@ if TYPE_CHECKING:
     import multiprocessing as mp
     from multiprocessing.synchronize import Event as EventClass
 
-    from getiaction.policies.base import Policy
-
-from getiaction.data import DataModule, LeRobotDataModule
-from getiaction.policies import ACT, ACTModel, Pi0
+from getiaction.data import LeRobotDataModule
 from getiaction.train import Trainer
 from loguru import logger
 
@@ -28,13 +29,14 @@ from schemas.job import JobStatus, TrainJobPayload
 from services import DatasetService, JobService, ModelService
 from services.event_processor import EventType
 from services.training_service import TrainingService, TrainingTrackingCallback, TrainingTrackingDispatcher
+from utils.device import get_lightning_strategy, get_torch_device
 from workers.base import BaseProcessWorker
 
 SCHEDULE_INTERVAL_SEC = 5
 
 
 class TrainingWorker(BaseProcessWorker):
-    ROLE = "Training"
+    ROLE = "TrainingWorker"
 
     def __init__(self, stop_event: EventClass, interrupt_event: EventClass, event_queue: mp.Queue):
         super().__init__(stop_event=stop_event)
@@ -77,14 +79,19 @@ class TrainingWorker(BaseProcessWorker):
     def setup(self) -> None:
         super().setup()
         with logger.contextualize(worker=self.__class__.__name__):
-            asyncio.run(TrainingService.abort_orphan_jobs())
+            if self.loop is None:
+                raise RuntimeError("The event loop must be set.")
+            self.loop.run_until_complete(TrainingService.abort_orphan_jobs())
 
     def teardown(self) -> None:
         super().teardown()
         with logger.contextualize(worker=self.__class__.__name__):
-            asyncio.run(TrainingService.abort_orphan_jobs())
+            if self.loop is None:
+                raise RuntimeError("The event loop must be set.")
+            self.loop.run_until_complete(TrainingService.abort_orphan_jobs())
 
     async def _train_model(self, job: Job, model: Model, snapshot: Snapshot):
+        settings = get_settings()
         await JobService.update_job_status(job_id=job.id, status=JobStatus.RUNNING, message="Training started")
         dispatcher = TrainingTrackingDispatcher(
             job_id=job.id,
@@ -99,7 +106,7 @@ class TrainingWorker(BaseProcessWorker):
                 root=snapshot.path,
                 train_batch_size=8,
             )
-            policy = self._setup_policy(model, l_dm)
+            policy = setup_policy(model)
 
             checkpoint_callback = ModelCheckpoint(
                 dirpath=path,
@@ -120,11 +127,17 @@ class TrainingWorker(BaseProcessWorker):
                         dispatcher=dispatcher,
                     ),
                 ],
+                accelerator=get_torch_device(),
+                strategy=get_lightning_strategy(),
                 max_steps=10000,
             )
 
             dispatcher.start()
             trainer.fit(model=policy, datamodule=l_dm)
+
+            for backend in settings.supported_backends:
+                export_dir = path / "exports" / backend
+                policy.export(export_dir, backend=backend)
 
             job = await JobService.update_job_status(
                 job_id=job.id, status=JobStatus.COMPLETED, message="Training finished"
@@ -140,20 +153,3 @@ class TrainingWorker(BaseProcessWorker):
         self.interrupt_event.set()
         dispatcher.join(timeout=10)
         self.queue.put((EventType.JOB_UPDATE, job))
-
-    def _setup_policy(self, model: Model, l_dm: DataModule) -> Policy:
-        if model.policy == "act":
-            lib_model = ACTModel(
-                input_features=l_dm.train_dataset.observation_features,
-                output_features=l_dm.train_dataset.action_features,
-            )
-
-            return ACT(model=lib_model)
-        if model.policy == "pi0":
-            return Pi0(
-                variant="pi0",
-                chunk_size=50,
-                learning_rate=2.5e-5,
-            )
-
-        raise ValueError(f"Policy not implemented yet: {model.policy}")

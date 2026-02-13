@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, status
 
 from api.dependencies import get_project_id, get_robot_id, get_robot_service
 from schemas import Robot
+from schemas.robot import RobotWithConnectionState
 from services import RobotService
 
 router = APIRouter(prefix="/api/projects/{project_id}/robots", tags=["Project Robots"])
@@ -19,6 +20,15 @@ async def list_project_robots(
 ) -> list[Robot]:
     """Fetch all robots."""
     return await robot_service.get_robot_list(project_id)
+
+
+@router.get("/online")
+async def list_online_project_robots(
+    project_id: ProjectID,
+    robot_service: Annotated[RobotService, Depends(get_robot_service)],
+) -> list[RobotWithConnectionState]:
+    """Fetch all robots."""
+    return await robot_service.find_online_robots(project_id)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

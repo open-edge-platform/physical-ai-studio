@@ -1,16 +1,15 @@
 from .calibration import CalibrationConfig
-from .camera import Camera, CameraConfig, CameraProfile
+from .camera import Camera, CameraProfile
 from .dataset import Dataset, Episode, EpisodeInfo, EpisodeVideo, LeRobotDatasetInfo, Snapshot
 from .job import Job
 from .model import Model
-from .project import Project, ProjectConfig
-from .robot import Robot, RobotConfig, RobotPortInfo
+from .project import Project
+from .robot import LeRobotConfig, NetworkIpRobotConfig, Robot, SerialPortInfo
 from .teleoperation import InferenceConfig, TeleoperationConfig
 
 __all__ = [
     "CalibrationConfig",
     "Camera",
-    "CameraConfig",
     "CameraProfile",
     "Dataset",
     "Episode",
@@ -18,13 +17,13 @@ __all__ = [
     "EpisodeVideo",
     "InferenceConfig",
     "Job",
+    "LeRobotConfig",
     "LeRobotDatasetInfo",
     "Model",
+    "NetworkIpRobotConfig",
     "Project",
-    "ProjectConfig",
     "Robot",
-    "RobotConfig",
-    "RobotPortInfo",
+    "SerialPortInfo",
     "Snapshot",
     "TeleoperationConfig",
 ]

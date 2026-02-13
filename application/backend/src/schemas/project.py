@@ -3,40 +3,11 @@ from datetime import datetime
 from pydantic import Field
 
 from schemas import Dataset
-from schemas.base import BaseIDModel, BaseIDNameModel
-
-from .camera import CameraConfig
-
-
-class ProjectConfig(BaseIDModel):
-    fps: int = Field(30, description="Recording FPS for datasets")
-    cameras: list[CameraConfig] = Field([], description="Project cameras")
-    robot_type: str = Field(description="Robot type")
-
-    model_config = {
-        "json_schema_extra": {
-            "example": {
-                "fps": "30",
-                "robot_type": "so101_follower",
-                "cameras": [
-                    {
-                        "fingerprint": "/dev/video0",
-                        "name": "WebCam",
-                        "driver": "webcam",
-                        "width": 640,
-                        "height": 480,
-                        "fps": 30,
-                        "use_depth": False,
-                    }
-                ],
-            }
-        }
-    }
+from schemas.base import BaseIDNameModel
 
 
 class Project(BaseIDNameModel):
     updated_at: datetime | None = Field(None)
-    config: ProjectConfig | None = Field(None, description="Project config")
     datasets: list[Dataset] = Field([], description="Datasets")
     model_config = {
         "json_schema_extra": {
@@ -51,21 +22,6 @@ class Project(BaseIDNameModel):
                         "path": "/some/path/to/dataset",
                     }
                 ],
-                "config": {
-                    "fps": "30",
-                    "robot_type": "so101_follower",
-                    "cameras": [
-                        {
-                            "fingerprint": "/dev/video0",
-                            "name": "WebCam",
-                            "driver": "webcam",
-                            "width": 640,
-                            "height": 480,
-                            "fps": 30,
-                            "use_depth": False,
-                        }
-                    ],
-                },
             }
         }
     }

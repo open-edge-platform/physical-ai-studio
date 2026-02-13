@@ -12,16 +12,14 @@ interface RecordingViewerProps {
     addEpisode: (episode: SchemaEpisode) => void;
 }
 
-const formatActionDictToArray = (actions: { [key: string]: number }): number[] => {
-    const jointNames = ['shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex', 'wrist_roll', 'gripper'];
-    return jointNames.map((name) => actions[`${name}.pos`]);
-};
 export const RecordingViewer = ({ recordingConfig, addEpisode }: RecordingViewerProps) => {
     const { startEpisode, saveEpisode, cancelEpisode, observation, state, disconnect } = useTeleoperation(
         recordingConfig,
         addEpisode,
         ToastQueue.negative
     );
+
+    const robotType = recordingConfig.environment.robots?.[0].robot.type ?? 'SO101_Follower';
 
     const { setIsRecording } = useRecording();
     const onStop = () => {
@@ -47,20 +45,20 @@ export const RecordingViewer = ({ recordingConfig, addEpisode }: RecordingViewer
         );
     }
 
-    const actions =
-        observation.current === undefined ? undefined : formatActionDictToArray(observation.current['actions']);
+    const action_values = observation.current === undefined ? undefined : Object.values(observation.current['actions']);
+    const action_keys = observation.current === undefined ? undefined : Object.keys(observation.current['actions']);
 
     return (
         <RobotModelsProvider>
             <Flex direction={'column'} height={'100%'} position={'relative'}>
                 <Flex direction={'row'} flex gap={'size-100'}>
                     <Flex direction={'column'} alignContent={'start'} flex gap={'size-30'}>
-                        {recordingConfig.cameras.map((camera) => (
+                        {recordingConfig.environment.cameras!.map((camera) => (
                             <CameraView key={camera.id} camera={camera} observation={observation} />
                         ))}
                     </Flex>
                     <Flex flex={3} minWidth={0}>
-                        <RobotViewer jointValues={actions} />
+                        <RobotViewer featureValues={action_values} featureNames={action_keys} robotType={robotType} />
                     </Flex>
                 </Flex>
                 <Button onPress={onStop} alignSelf={'start'}>

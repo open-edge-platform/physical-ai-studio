@@ -5,11 +5,11 @@ interface BackendSelectionProps {
     setBackend: (backend: string) => void;
 }
 
-const availableBackends = [
+export const availableBackends = [
     { id: 'torch', name: 'Torch' },
-    { id: 'openvino', name: 'OpenVINO' },
-    { id: 'onnx', name: 'ONNX' },
-    { id: 'torch_export_ir', name: 'Torch Export IR' },
+    //{ id: 'openvino', name: 'OpenVINO' },
+    //{ id: 'onnx', name: 'ONNX' },
+    //{ id: 'torch_export_ir', name: 'Torch Export IR' },
 ];
 
 export const BackendSelection = ({ backend, setBackend }: BackendSelectionProps) => {

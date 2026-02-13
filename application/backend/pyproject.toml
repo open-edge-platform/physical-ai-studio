@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
   "opencv-python",
   "cv2-enumerate-cameras",
-  "harvesters",
+  'harvesters; sys_platform != "darwin"',
   "fastapi[standard]",
   "lerobot[feetech]==0.4.2",
   "numpy",
@@ -27,6 +27,7 @@ dependencies = [
   "tenacity>=9.1.2",
   "aiofiles>=25.1.0",
   "types-aiofiles>=25.1.0.20251011",
+  "trossen-arm==1.9.0"
 ]
 
 [tool.uv.sources]

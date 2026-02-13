@@ -1,9 +1,11 @@
 from fastapi import APIRouter
 from frame_source import FrameSourceFactory
 
-from schemas import CalibrationConfig, Camera, CameraProfile, RobotPortInfo
+from schemas import CalibrationConfig, Camera, CameraProfile, Robot, SerialPortInfo
+from schemas.robot import RobotType
 from utils.calibration import get_calibrations
-from utils.robot import find_robots, identify_robot_visually
+from utils.serial_robot_tools import find_robots, identify_so101_robot_visually
+from utils.trossen_robot_tools import identify_trossen_robot_visually
 
 router = APIRouter(prefix="/api/hardware", tags=["Hardware"])
 
@@ -25,13 +27,13 @@ async def get_cameras() -> list[Camera]:
                     fingerprint=id,
                     driver=driver if driver != "webcam" else "usb_camera",
                     default_stream_profile=sp,
-                )
+                ),
             )
     return res
 
 
-@router.get("/robots")
-async def get_robots() -> list[RobotPortInfo]:
+@router.get("/serial_devices")
+async def get_robots() -> list[SerialPortInfo]:
     """Get all connected Robots"""
     return await find_robots()
 
@@ -43,6 +45,10 @@ async def get_lerobot_calibrations() -> list[CalibrationConfig]:
 
 
 @router.post("/identify")
-async def identify_robot(robot: RobotPortInfo, joint: str | None = None) -> None:
+async def identify_robot(robot: Robot, joint: str | None = None) -> None:
     """Visually identify the robot by moving given joint on robot"""
-    await identify_robot_visually(robot, joint)
+    if robot.type in {RobotType.SO101_LEADER, RobotType.SO101_FOLLOWER}:
+        await identify_so101_robot_visually(robot, joint)
+
+    if robot.type in {RobotType.TROSSEN_WIDOWXAI_LEADER, RobotType.TROSSEN_WIDOWXAI_FOLLOWER}:
+        await identify_trossen_robot_visually(robot)

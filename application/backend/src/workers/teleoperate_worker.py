@@ -1,32 +1,35 @@
 import asyncio
 import base64
-import copy
-import shutil
 import time
-import uuid
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
 
 import cv2
 import numpy as np
-from lerobot.datasets.lerobot_dataset import LeRobotDataset
-from lerobot.datasets.pipeline_features import aggregate_pipeline_dataset_features, create_initial_features
-from lerobot.datasets.utils import build_dataset_frame, combine_feature_dicts
-from lerobot.processor import make_default_processors
-from lerobot.robots.utils import make_robot_from_config
-from lerobot.teleoperators.utils import make_teleoperator_from_config
+from frame_source.video_capture_base import VideoCaptureBase
 from lerobot.utils.robot_utils import precise_sleep
 from loguru import logger
 from pydantic import BaseModel
 
+from internal_datasets.dataset_client import DatasetClient
+from internal_datasets.utils import get_internal_dataset
+from robots.robot_client import RobotClient
+from robots.utils import get_robot_client
 from schemas import TeleoperationConfig
-from schemas.dataset import Episode, EpisodeVideo
-from utils.camera import build_camera_config
-from utils.dataset import check_repository_exists, load_local_lerobot_dataset
-from utils.framesource_bridge import FrameSourceCameraBridge
-from utils.robot import make_lerobot_robot_config_from_robot, make_lerobot_teleoperator_config_from_robot
+from schemas.dataset import Episode
+from services.robot_calibration_service import RobotCalibrationService
+from utils.dataset import build_lerobot_dataset_features
+from utils.serial_robot_tools import RobotConnectionManager
+from workers.camera_worker import create_frames_source_from_camera
 
 from .base import BaseThreadWorker
+
+
+class CameraFrameProcessor:
+    @staticmethod
+    def process(frame: np.ndarray) -> np.ndarray:
+        """Post process camera frame."""
+        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
 
 class TeleoperateState(BaseModel):
@@ -42,15 +45,32 @@ class TeleoperateWorker(BaseThreadWorker):
     queue: Queue
     state: TeleoperateState
 
+    config: TeleoperationConfig
+    robot_manager: RobotConnectionManager
+
     action_keys: list[str] = []
     camera_keys: list[str] = []
 
-    def __init__(self, stop_event: EventClass, queue: Queue, config: TeleoperationConfig):
+    dataset: DatasetClient | None = None
+    leader: RobotClient | None = None
+    follower: RobotClient | None = None
+    cameras: dict[str, VideoCaptureBase] = {}
+
+    def __init__(
+        self,
+        stop_event: EventClass,
+        queue: Queue,
+        config: TeleoperationConfig,
+        calibration_service: RobotCalibrationService,
+        robot_manager: RobotConnectionManager,
+    ):
         super().__init__(stop_event=stop_event)
 
         self.state = TeleoperateState()
         self.config = config
         self.queue = queue
+        self.robot_manager = robot_manager
+        self.calibration_service = calibration_service
         self.events = {
             "stop": Event(),
             "reset": Event(),
@@ -74,86 +94,60 @@ class TeleoperateWorker(BaseThreadWorker):
         """Reset the dataset recording buffer."""
         self.events["reset"].set()
 
+    @staticmethod
+    def _camera_frame_postprocessing(frame: np.ndarray) -> np.ndarray:
+        """Post process camera frame."""
+        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+    async def setup_environment(self) -> None:
+        """Setup environment."""
+        robot = self.config.environment.robots[0]  # Assume 1 arm for now.
+        if robot.tele_operator.robot is None:
+            raise ValueError("No teleoperator given.")
+        self.follower = await get_robot_client(robot.robot, self.robot_manager, self.calibration_service)
+        self.leader = await get_robot_client(robot.tele_operator.robot, self.robot_manager, self.calibration_service)
+
+        self.cameras = {
+            camera.name: create_frames_source_from_camera(camera) for camera in self.config.environment.cameras
+        }
+        for camera in self.cameras.values():
+            # camera.attach_processor(CameraFrameProcessor()) # TODO Not working. Fix in framesource
+            camera.connect()
+
+        await self.follower.connect()
+        await self.leader.connect()
+
     def setup(self) -> None:
         """Set up robots, cameras and dataset."""
         try:
             logger.info("connect to robot, cameras and setup dataset")
-            cameras = {camera.name: build_camera_config(camera) for camera in self.config.cameras}
-            follower_config = make_lerobot_robot_config_from_robot(self.config.follower, cameras)
-            leader_config = make_lerobot_teleoperator_config_from_robot(self.config.leader)
+            if self.loop is None:
+                raise RuntimeError("The event loop must be set.")
+            self.loop.run_until_complete(self.setup_environment())
+            self.dataset = get_internal_dataset(self.config.dataset)
 
-            self.robot = make_robot_from_config(follower_config)
-            self.teleoperator = make_teleoperator_from_config(leader_config)
+            if self.leader is None or self.follower is None or self.dataset is None:
+                raise RuntimeError("Environment setup failed.")
 
-            (
-                self.teleop_action_processor,
-                self.robot_action_processor,
-                self.robot_observation_processor,
-            ) = make_default_processors()
-            self.dataset_features = combine_feature_dicts(
-                aggregate_pipeline_dataset_features(
-                    pipeline=self.teleop_action_processor,
-                    initial_features=create_initial_features(action=self.robot.action_features),
-                    use_videos=True,
-                ),
-                aggregate_pipeline_dataset_features(
-                    pipeline=self.robot_observation_processor,
-                    initial_features=create_initial_features(observation=self.robot.observation_features),
-                    use_videos=True,
-                ),
+            self.action_keys = self.follower.features()
+            self.camera_keys = [camera.name.lower() for camera in self.config.environment.cameras]
+            features = self.loop.run_until_complete(
+                build_lerobot_dataset_features(self.config.environment, self.robot_manager, self.calibration_service)
             )
 
-            # After setting up the robot, instantiate the FrameSource using a bridge
-            # This can be done directly once switched over to LeRobotDataset V3.
-            # We do need to first instantiate using the lerobot dict because a follower requires cameras.
-            self.robot.cameras = {camera.name: FrameSourceCameraBridge(camera) for camera in self.config.cameras}
-
-            if check_repository_exists(self.config.dataset.path):
-                self.dataset = load_local_lerobot_dataset(self.config.dataset.path, batch_encoding_size=1)
-            else:
-                self.dataset = LeRobotDataset.create(
-                    repo_id=str(uuid.uuid4()),
-                    root=self.config.dataset.path,
-                    fps=self.config.fps,
-                    features=self.dataset_features,
-                    robot_type=self.robot.name,
-                    use_videos=True,
-                    image_writer_threads=4,
+            if not self.dataset.exists_on_disk:
+                self.dataset.create(
+                    fps=30,  # TODO: Implement in Environment
+                    features=features,
+                    robot_type=self.follower.name,
                 )
 
-            # After setting up the robot, instantiate the FrameSource using a bridge
-            # This can be done directly once switched over to LeRobotDataset V3.
-            # We do need to first instantiate using the lerobot dict because a follower requires cameras.
-            self.robot.cameras = {camera.name: FrameSourceCameraBridge(camera) for camera in self.config.cameras}
+            self.dataset.prepare_for_writing(number_of_threads=4 * len(self.cameras))
 
-            if check_repository_exists(self.config.dataset.path):
-                self.dataset = LeRobotDataset(
-                    repo_id=self.config.dataset.name, root=self.config.dataset.path, batch_encoding_size=1
-                )
-            else:
-                self.dataset = LeRobotDataset.create(
-                    repo_id=self.config.dataset.name,
-                    root=self.config.dataset.path,
-                    fps=self.config.fps,
-                    features=self.dataset_features,
-                    robot_type=self.robot.name,
-                    use_videos=True,
-                    image_writer_threads=4,
-                )
+            logger.info("dataset loaded, starting cameras")
+            for camera in self.cameras.values():
+                camera.start_async()
 
-            self.dataset.start_image_writer(
-                num_processes=0,
-                num_threads=4 * len(self.robot.cameras),
-            )
-
-            logger.info("before robot connection")
-            self.robot.connect()
-            logger.info("between robot and teleoperator connection")
-            self.teleoperator.connect()
-            logger.info("after robot connection")
-
-            self.action_keys = [f"{key}.pos" for key in self.robot.bus.sync_read("Present_Position")]
-            self.camera_keys = [camera.name for camera in self.config.cameras]
             self.state.initialized = True
             logger.info("teleoperation all setup, reporting state")
         except Exception as e:
@@ -171,21 +165,23 @@ class TeleoperateWorker(BaseThreadWorker):
             "event": "error",
             "data": str(error),
         }
-        logger.error(f"error: {data}")
+        logger.exception(f"error: {data}")
         self.queue.put(data)
 
     def _report_observation(self, observation: dict, timestamp: float):
         """Report observation to queue."""
-        self.queue.put(
+
+        camera_images = {
+            key: self._base_64_encode_observation(cv2.cvtColor(observation[key], cv2.COLOR_RGB2BGR))
+            for key in self.camera_keys
+            if key in observation
+        }
+        self.queue.put(  # Mimicing the dataset features format.
             {
                 "event": "observations",
                 "data": {
-                    "actions": {key: observation.get(key, 0) for key in self.action_keys},
-                    "cameras": {
-                        key: self._base_64_encode_observation(cv2.cvtColor(observation[key], cv2.COLOR_RGB2BGR))
-                        for key in self.camera_keys
-                        if key in observation
-                    },
+                    "actions": {key: observation[key] for key in self.action_keys},
+                    "cameras": camera_images,
                     "timestamp": timestamp,
                 },
             }
@@ -210,141 +206,115 @@ class TeleoperateWorker(BaseThreadWorker):
 
             self.start_episode_t = time.perf_counter()
             self.state.is_recording = False
+
+            if self.leader is None or self.follower is None or self.dataset is None:
+                raise RuntimeError("Environment setup failed.")
+
             while not self.should_stop() and not self.events["stop"].is_set():
                 start_loop_t = time.perf_counter()
-                self._handle_events()
-                action = self.teleoperator.get_action()
-                self.robot.send_action(action)
-                observation = self.robot.get_observation()
-                actions_processed = self.teleop_action_processor((action, observation))
-                obs_processed = self.robot_observation_processor(observation)
+                if self.events["start"].is_set():
+                    self._on_start()
+
+                if self.events["save"].is_set():
+                    self._on_save()
+
+                if self.events["reset"].is_set():
+                    self._on_reset()
+
+                # Trossen notes:
+                # Add force feedback
+                actions = (await self.leader.read_state())["state"]
+                observations = (await self.follower.read_state())["state"]
+                forces = (await self.follower.read_forces())["state"]
+                await self.follower.set_joints_state(actions)
+                if forces is not None:
+                    await self.leader.set_forces(forces)
+
+                for camera_name, camera in self.cameras.items():
+                    _success, camera_frame = camera.get_latest_frame()  # HWC
+                    if camera_frame is None:
+                        raise Exception("Camera frame is None")
+                    processed_frame = CameraFrameProcessor.process(camera_frame)
+                    observations[camera_name] = processed_frame
 
                 timestamp = time.perf_counter() - self.start_episode_t
-                self._report_observation(observation, timestamp)
-                if self.state.is_recording:
-                    observation_frame = build_dataset_frame(self.dataset.features, obs_processed, prefix="observation")
-                    action_frame = build_dataset_frame(self.dataset.features, actions_processed, prefix="action")
-                    frame = {**observation_frame, **action_frame, "task": self.config.task}
-                    self.dataset.add_frame(frame)
+                self._report_observation(observations, timestamp)
+                if self.state.is_recording and self.dataset is not None:
+                    self.dataset.add_frame(observations, actions, self.config.task)
 
                 dt_s = time.perf_counter() - start_loop_t
-                wait_time = 1 / self.config.fps - dt_s
-
+                wait_time = 1 / 30 - dt_s
                 precise_sleep(wait_time)
         except Exception as e:
+            self.error = True
             self._report_error(e)
 
-    def _handle_events(self) -> None:
-        if self.events["save"].is_set():
-            logger.info("save")
-            self.events["save"].clear()
-            precise_sleep(0.3)  # TODO check if neccesary
-            new_episode = self._build_episode_from_buffer(self.dataset.meta.latest_episode)
-            if new_episode is not None:
-                self._report_episode(new_episode)
-            self.dataset.save_episode()
-            self.state.is_recording = False
-            self._report_state()
+    def _on_start(self) -> None:
+        logger.info("start")
+        self.events["start"].clear()
+        self.state.is_recording = True
+        self._report_state()
 
-        if self.events["reset"].is_set():
-            logger.info("reset")
-            self.events["reset"].clear()
-            precise_sleep(0.3)  # TODO check if neccesary
-            self.dataset.clear_episode_buffer()
-            self.state.is_recording = False
-            self._report_state()
+    def _on_save(self) -> None:
+        logger.info("save")
+        self.events["save"].clear()
+        precise_sleep(0.3)  # TODO check if neccesary
+        if self.dataset is not None:
+            new_episode = self.dataset.save_episode(self.config.task)
+            self._report_episode(new_episode)
+        self.state.is_recording = False
+        self._report_state()
 
-        if self.events["start"].is_set():
-            logger.info("start")
-            self.events["start"].clear()
-            self.state.is_recording = True
-            self.start_episode_t = time.perf_counter()
-            self._report_state()
+    def _on_reset(self) -> None:
+        logger.info("reset")
+        self.events["reset"].clear()
+        precise_sleep(0.3)  # TODO check if neccesary
+        if self.dataset is not None:
+            self.dataset.discard_buffer()
+        self.state.is_recording = False
+        self._report_state()
 
-    def teardown(self) -> None:
+    async def teardown(self) -> None:
         """Disconnect robots and close queue."""
-
+        logger.info("Teardown")
         try:
             self.queue.cancel_join_thread()
         except Exception as e:
             logger.warning(f"Failed cancelling queue join thread: {e}")
 
-        # must happen
-        self.dataset.finalize()
+        if self.dataset:
+            self.dataset.teardown()
 
-        # Ensure the dataset is removed if there are episodes
-        # This is because lerobot dataset needs episodes otherwise it will be in an invalid state
-        if self.dataset.num_episodes == 0:
-            shutil.rmtree(self.dataset.root)
+        if self.follower is not None:
+            try:
+                await self.follower.disconnect()
+            except Exception:
+                logger.info(f"Failed disconnecting follower: {self.follower}")
 
-        # Wait for .5 seconds before closing queue to allow messages thru
-        asyncio.run(asyncio.sleep(0.5))
+        if self.leader is not None:
+            try:
+                await self.leader.disconnect()
+            except Exception:
+                logger.info(f"Failed disconnecting leader: {self.leader}")
 
-        self.robot.disconnect()
-        self.teleoperator.disconnect()
+        for camera in self.cameras.values():
+            try:
+                camera.stop()
+                camera.disconnect()
+            except Exception:
+                logger.info("Failed disconnecting a camera. Ignoring")
+
+        # Wait for .5 seconds before closing queue to allow messages through
+        await asyncio.sleep(0.5)
+
         self.queue.close()
+
+        import threading
+
+        logger.error("THREADS AFTER TELEOP TEARDOWN:\n" + "\n".join(t.name for t in threading.enumerate()))
 
     def _base_64_encode_observation(self, observation: np.ndarray | None) -> str:
         if observation is None:
             return ""
         _, imagebytes = cv2.imencode(".jpg", observation)
         return base64.b64encode(imagebytes).decode()
-
-    def _build_episode_from_buffer(self, episode: dict | None) -> Episode | None:
-        """Build Episode object from buffer and episode dict."""
-        data = self._build_episode_data_from_buffer()
-        if data is None:
-            return None
-
-        end = data["timestamp"][-1]
-        video_timestamps = {video_key: EpisodeVideo(start=0, end=end) for video_key in self.dataset.meta.video_keys}
-        if episode is not None:
-            for video_key in self.dataset.meta.video_keys:
-                offset = episode[f"videos/{video_key}/to_timestamp"][-1]
-                video_timestamps[video_key].start += offset
-                video_timestamps[video_key].end += offset
-
-        return Episode(
-            episode_index=data["episode_index"].tolist()[0],
-            length=len(data["frame_index"]),
-            fps=self.dataset.fps,
-            tasks=[self.config.task],
-            actions=data["action"].tolist(),
-            videos=video_timestamps,
-            modification_timestamp=int(time.time()),
-        )
-
-    def _build_episode_data_from_buffer(self) -> dict | None:
-        """Build episode data from the buffer.
-
-        LeRobotDataset V3 doesnt update episode data on save.
-        In order to get the episode data we duplicate the actions that happen inside.
-        """
-
-        episode_buffer = copy.deepcopy(self.dataset.episode_buffer)
-        if episode_buffer is not None:
-            episode_length = episode_buffer.pop("size")
-            tasks = episode_buffer.pop("task")
-            episode_tasks = list(set(tasks))
-            episode_index = episode_buffer["episode_index"]
-
-            episode_buffer["index"] = np.arange(
-                self.dataset.meta.total_frames, self.dataset.meta.total_frames + episode_length
-            )
-            episode_buffer["episode_index"] = np.full((episode_length,), episode_index)
-
-            # Update tasks and task indices with new tasks if any
-            self.dataset.meta.save_episode_tasks(episode_tasks)
-
-            # Given tasks in natural language, find their corresponding task indices
-            episode_buffer["task_index"] = np.array([self.dataset.meta.get_task_index(task) for task in tasks])
-
-            for key, ft in self.dataset.features.items():
-                # index, episode_index, task_index are already processed above, and image and video
-                # are processed separately by storing image path and frame info as meta data
-                if key in ["index", "episode_index", "task_index"] or ft["dtype"] in ["image", "video"]:
-                    continue
-                episode_buffer[key] = np.stack(episode_buffer[key])
-
-            return episode_buffer
-        return None

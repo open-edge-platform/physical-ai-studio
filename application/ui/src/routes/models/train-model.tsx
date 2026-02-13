@@ -57,6 +57,8 @@ export const TrainModelModal = (close: (job: SchemaTrainJob | undefined) => void
                     </Picker>
                     <Picker label='Policy' selectedKey={selectedPolicy} onSelectionChange={setSelectedPolicy}>
                         <Item key='act'>Act</Item>
+                        <Item key='pi0'>Pi0</Item>
+                        <Item key='smolvla'>SmolVLA</Item>
                     </Picker>
                 </Form>
             </Content>
