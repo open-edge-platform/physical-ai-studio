@@ -1,17 +1,24 @@
-import { Flex, View } from '@geti/ui';
-import { useParams } from 'react-router';
+import { Suspense, useState } from 'react';
+
+import { Flex, Grid, Icon, Link, Loading, Text, View } from '@geti/ui';
+import { ChevronLeft } from '@geti/ui/icons';
+import { useNavigate, useParams } from 'react-router';
 
 import { $api } from '../../../api/client';
+import { SchemaTeleoperationConfig } from '../../../api/openapi-spec';
 import { TeleoperationSetup } from '../../../features/configuration/teleoperation/teleoperation';
-import { RecordingProvider, useRecording } from './recording-provider';
+import { paths } from '../../../router';
 import { RecordingViewer } from './recording-viewer';
 
+import classes from './index.module.scss';
+
 const RecordingPage = () => {
-    const { recordingConfig, setRecordingConfig } = useRecording();
-    const { dataset_id } = useParams();
-    if (!dataset_id) {
-        throw new Error('No dataset_id given.');
+    const [recordingConfig, setRecordingConfig] = useState<SchemaTeleoperationConfig>();
+    const { project_id, dataset_id } = useParams();
+    if (!dataset_id || !project_id) {
+        throw new Error('Incorrect params given.');
     }
+    const navigate = useNavigate();
 
     const { data: dataset } = $api.useSuspenseQuery('get', '/api/dataset/{dataset_id}', {
         params: {
@@ -20,26 +27,62 @@ const RecordingPage = () => {
             },
         },
     });
+    const backPath = paths.project.datasets.show({ project_id, dataset_id });
 
-    if (recordingConfig) {
-        return (
-            <View padding='size-200' height='100%'>
-                <RecordingViewer recordingConfig={recordingConfig} />
+    const onSetupDone = (config: SchemaTeleoperationConfig | undefined) => {
+        if (config) {
+            setRecordingConfig(config);
+        } else {
+            navigate(backPath);
+        }
+    };
+
+    const subHeader = recordingConfig ? `${recordingConfig.environment.name} | ${recordingConfig.task}` : 'Setup';
+
+    return (
+        <Grid
+            areas={['header', 'content']}
+            UNSAFE_style={{
+                gridTemplateRows: 'var(--spectrum-global-dimension-size-800, 4rem) auto',
+            }}
+            minHeight={0}
+            height={'100%'}
+        >
+            <View backgroundColor={'gray-300'} gridArea={'header'}>
+                <Flex height='100%' alignItems={'center'} marginX='1rem' gap='size-200'>
+                    <Link href={backPath} isQuiet variant='overBackground'>
+                        <Flex marginEnd='size-200' direction='row' gap='size-200' alignItems={'center'}>
+                            <Icon>
+                                <ChevronLeft />
+                            </Icon>
+                            <Flex direction={'column'}>
+                                <Text UNSAFE_className={classes.headerText}>Adding Episode</Text>
+                                <Text UNSAFE_className={classes.subHeaderText}>{subHeader}</Text>
+                            </Flex>
+                        </Flex>
+                    </Link>
+                </Flex>
             </View>
-        );
-    } else {
-        return (
-            <Flex margin={'size-200'} justifySelf='center' flex maxWidth={'size-6000'}>
-                <TeleoperationSetup dataset={dataset} onDone={setRecordingConfig} />
-            </Flex>
-        );
-    }
+
+            <View gridArea={'content'} maxHeight={'100vh'} minHeight={0} height='100%'>
+                {recordingConfig ? (
+                    <View padding='size-200' height='100%'>
+                        <RecordingViewer recordingConfig={recordingConfig} />
+                    </View>
+                ) : (
+                    <Flex margin={'size-200'} justifySelf='center' flex maxWidth={'size-6000'}>
+                        <TeleoperationSetup dataset={dataset} onDone={onSetupDone} />
+                    </Flex>
+                )}
+            </View>
+        </Grid>
+    );
 };
 
 export const Index = () => {
     return (
-        <RecordingProvider>
+        <Suspense fallback={<Loading mode='overlay' />}>
             <RecordingPage />
-        </RecordingProvider>
+        </Suspense>
     );
 };

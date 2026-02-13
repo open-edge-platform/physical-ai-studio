@@ -1,13 +1,11 @@
 import { Button, ButtonGroup, Flex, Heading, Icon, ProgressCircle, Text, ToastQueue, View } from '@geti/ui';
 import { ChevronLeft } from '@geti/ui/icons';
-import { useNavigate } from 'react-router';
 
 import { SchemaTeleoperationConfig } from '../../../api/openapi-spec';
 import { RobotViewer } from '../../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
 import { paths } from '../../../router';
 import { CameraView } from './../camera-view';
-import { useRecording } from './recording-provider';
 import { useTeleoperation } from './use-teleoperation';
 
 interface RecordingViewerProps {
@@ -15,26 +13,17 @@ interface RecordingViewerProps {
 }
 
 export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
-    const { startEpisode, saveEpisode, cancelEpisode, observation, state, disconnect } = useTeleoperation(
+    const { startEpisode, saveEpisode, cancelEpisode, observation, state } = useTeleoperation(
         recordingConfig,
         ToastQueue.negative
     );
 
-    const navigate = useNavigate();
-
     const robotType = recordingConfig.environment.robots?.[0].robot.type ?? 'SO101_Follower';
 
-    const { setIsRecording } = useRecording();
-    const onStop = () => {
-        disconnect();
-        setIsRecording(false);
-        navigate(
-            paths.project.datasets.show({
-                project_id: recordingConfig.dataset.project_id,
-                dataset_id: recordingConfig.dataset.id!,
-            })
-        );
-    };
+    const backPath = paths.project.datasets.show({
+        dataset_id: recordingConfig.dataset.id!,
+        project_id: recordingConfig.dataset.project_id,
+    });
 
     if (!state.initialized) {
         return (
@@ -49,7 +38,7 @@ export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
                 <Heading>Initializing</Heading>
                 <ProgressCircle isIndeterminate />
 
-                <Button onPress={onStop}>Cancel</Button>
+                <Button href={backPath}>Cancel</Button>
             </Flex>
         );
     }
@@ -61,7 +50,7 @@ export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
         <RobotModelsProvider>
             <Flex direction={'column'} height={'100%'} position={'relative'}>
                 <View height='size-800'>
-                    <Button onPress={onStop} alignSelf={'start'}>
+                    <Button href={backPath} alignSelf={'start'}>
                         <Icon>
                             <ChevronLeft color='white' fill='white' />
                         </Icon>
@@ -95,12 +84,4 @@ export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
             </Flex>
         </RobotModelsProvider>
     );
-};
-
-export const RecordingPage = () => {
-    const { recordingConfig } = useRecording();
-
-    if (recordingConfig) {
-        return <RecordingViewer recordingConfig={recordingConfig} />;
-    }
 };

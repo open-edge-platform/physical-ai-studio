@@ -114,6 +114,10 @@ export const router = createBrowserRouter([
                 ],
             },
             {
+                path: paths.project.datasets.record.pattern,
+                element: <RecordingPage />,
+            },
+            {
                 path: paths.project.index.pattern,
                 element: <ProjectLayout />,
                 children: [
@@ -141,10 +145,6 @@ export const router = createBrowserRouter([
                             {
                                 path: paths.project.datasets.show.pattern,
                                 element: <Datasets />,
-                            },
-                            {
-                                path: paths.project.datasets.record.pattern,
-                                element: <RecordingPage />,
                             },
                         ],
                     },
