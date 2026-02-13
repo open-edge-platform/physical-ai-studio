@@ -192,6 +192,6 @@ getiaction benchmark --config configs/benchmark/my_eval.yaml
 
 **Benchmark takes too long**: Reduce `--benchmark.num_episodes` or test fewer tasks with `--benchmark.task_ids`
 
-**LIBERO import error**: Ensure LIBERO is installed: `pip install libero`
+**LIBERO import error**: Ensure LIBERO is installed via either `pip install getiaction[libero]` or `pip install hf-libero>=0.1.3,<0.2.0"`
 
 **Video recording fails**: Check FFMPEG is installed and `video_dir` is writable
