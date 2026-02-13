@@ -41,7 +41,7 @@ uv pip install -e '.[libero]'
 or
 
 ```bash
-pip install 'libero @ git+https://github.com/Lifelong-Robot-Learning/LIBERO.git'
+pip install 'hf-libero>=0.1.3,<0.2.0"'
 ```
 
 ## Task Suites
