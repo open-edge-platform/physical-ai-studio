@@ -69,6 +69,7 @@ tests = [
     "httpx",
     "pytest",
     "pytest-mock",
+    "pytest-examples>=0.0.13",
     "mypy",
 ]
 libero = [

@@ -1127,6 +1127,8 @@ requires-dist = [
     { name = "pymunk", specifier = ">=6.6.0,<7.0.0" },
     { name = "pytest", marker = "extra == 'all'" },
     { name = "pytest", marker = "extra == 'tests'" },
+    { name = "pytest-examples", marker = "extra == 'all'", specifier = ">=0.0.13" },
+    { name = "pytest-examples", marker = "extra == 'tests'", specifier = ">=0.0.13" },
     { name = "pytest-mock", marker = "extra == 'all'" },
     { name = "pytest-mock", marker = "extra == 'tests'" },
     { name = "pytorch-triton-xpu", marker = "(sys_platform == 'linux' and extra == 'xpu') or (sys_platform == 'win32' and extra == 'xpu')", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "getiaction", extra = "xpu" } },
