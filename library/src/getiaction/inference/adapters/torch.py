@@ -116,7 +116,7 @@ class TorchAdapter(RuntimeAdapter):
         """Run inference using Torch.
 
         Args:
-            inputs: Dictionary mapping input names to numpy arrays or nested observation dict
+            inputs: Raw unpacked observation dictionary (e.g., {"state": ..., "images": ...})
 
         Returns:
             Dictionary mapping output names to numpy arrays
@@ -129,13 +129,11 @@ class TorchAdapter(RuntimeAdapter):
             msg = "Model not loaded. Call load() first."
             raise RuntimeError(msg)
 
-        obs_data = inputs.get("observation", inputs)
-
-        if not isinstance(obs_data, dict):
-            msg = f"Expected dict for observation data, got {type(obs_data)}"
+        if not isinstance(inputs, dict):
+            msg = f"Expected dict for observation data, got {type(inputs)}"
             raise TypeError(msg)
 
-        observation = Observation.from_dict(obs_data)
+        observation = Observation.from_dict(inputs)
         observation = observation.to_torch(self._torch_device)
 
         torch_outputs = self._policy(observation)
