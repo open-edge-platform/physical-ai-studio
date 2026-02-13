@@ -1,18 +1,29 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """Torch runtime adapter for inference."""
 
+import importlib
 from pathlib import Path
+from typing import Any, Protocol, cast
 
 import numpy as np
 import torch
-import yaml
 
 from getiaction.data.observation import Observation
 from getiaction.policies import get_getiaction_policy_class as get_policy_class
 
 from .base import RuntimeAdapter
+
+yaml: Any = importlib.import_module("yaml")
+
+
+class _ExportModel(Protocol):
+    extra_export_args: dict[str, dict[str, list[str]]]
+
+
+def _raise_missing_torch_export_args(message: str) -> None:
+    raise KeyError(message)
 
 
 class TorchAdapter(RuntimeAdapter):
@@ -27,16 +38,23 @@ class TorchAdapter(RuntimeAdapter):
         >>> outputs = adapter.predict({"image": image_array, "state": state_array})
     """
 
-    def __init__(self, device: torch.device | str = "cpu") -> None:
+    def __init__(self, device: torch.device | str = "cpu", **kwargs: Any) -> None:  # noqa: ANN401
         """Initialize the Torch adapter.
 
         Args:
             device: Device for inference ('cpu', 'cuda', 'xpu', etc.)
+            **kwargs: Backend-specific configuration options
         """
-        self.device = torch.device(device)
+        super().__init__(str(device), **kwargs)
+        self._torch_device = torch.device(device)
         self._policy: torch.nn.Module | None = None
         self._input_names: list[str] = []
         self._output_names: list[str] = []
+
+    @property
+    def torch_device(self) -> torch.device:
+        """Get torch device used for inference."""
+        return self._torch_device
 
     def load(self, model_path: Path | str) -> None:
         """Load Torch model from file.
@@ -71,40 +89,60 @@ class TorchAdapter(RuntimeAdapter):
             _, class_name = policy_class_path.rsplit(".", 1)
             policy_class = get_policy_class(class_name)
 
-            self._policy = policy_class.load_from_checkpoint(model_path, map_location="cpu").to(self.device).eval()
+            policy = policy_class.load_from_checkpoint(model_path, map_location="cpu").to(self._torch_device).eval()
+            self._policy = policy
 
-            self._input_names = list(self._policy.model.extra_export_args["torch"]["input_names"])
-            self._output_names = self._policy.model.extra_export_args["torch"]["output_names"]
+            export_model = cast("_ExportModel", cast("object", policy.model))
+            torch_export_args = export_model.extra_export_args.get("torch")
+            if not torch_export_args:
+                _raise_missing_torch_export_args("Metadata missing 'torch' export arguments.")
+
+            torch_export_args = cast("dict[str, list[str]]", torch_export_args)
+            try:
+                input_names = cast("list[str]", torch_export_args["input_names"])
+                output_names = cast("list[str]", torch_export_args["output_names"])
+            except KeyError:
+                _raise_missing_torch_export_args("Torch export arguments missing input/output names.")
+                raise
+
+            self._input_names = list(input_names)
+            self._output_names = list(output_names)
 
         except Exception as e:
             msg = f"Failed to load Torch model from {model_path}: {e}"
             raise RuntimeError(msg) from e
 
-    def predict(self, inputs: dict[str, Observation]) -> dict[str, np.ndarray]:
+    def predict(self, inputs: dict[str, Any]) -> dict[str, np.ndarray]:
         """Run inference using Torch.
 
         Args:
-            inputs: Dictionary mapping input names to inputs
+            inputs: Raw unpacked observation dictionary (e.g., {"state": ..., "images": ...})
 
         Returns:
             Dictionary mapping output names to numpy arrays
 
         Raises:
-            RuntimeError: If model is not loaded or inference fails
+            RuntimeError: If model is not loaded
+            TypeError: If observation data is not a dict
         """
         if self._policy is None:
             msg = "Model not loaded. Call load() first."
             raise RuntimeError(msg)
 
-        try:
-            torch_outputs = self._policy(inputs["observation"].to(self.device))
-            return self._convert_outputs_to_numpy(torch_outputs)
+        if not isinstance(inputs, dict):
+            msg = f"Expected dict for observation data, got {type(inputs)}"
+            raise TypeError(msg)
 
-        except Exception as e:
-            msg = f"Inference failed: {e}"
-            raise RuntimeError(msg) from e
+        observation = Observation.from_dict(inputs)
+        observation = observation.to_torch(self._torch_device)
 
-    def _convert_outputs_to_numpy(self, torch_outputs: torch.Tensor | dict | list | tuple) -> dict[str, np.ndarray]:
+        torch_outputs = self._policy(observation)
+        return self._convert_outputs_to_numpy(torch_outputs)
+
+    def _convert_outputs_to_numpy(
+        self,
+        torch_outputs: torch.Tensor | dict[str, torch.Tensor] | list[torch.Tensor] | tuple[torch.Tensor, ...],
+    ) -> dict[str, np.ndarray]:
         """Convert model outputs to numpy format.
 
         Args:

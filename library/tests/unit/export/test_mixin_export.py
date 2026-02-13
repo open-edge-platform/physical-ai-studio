@@ -258,6 +258,14 @@ class TestToOnnx:
         onnx.checker.check_model(onnx_model)
 
 
+_openvino_available = True
+try:
+    import openvino  # noqa: F401
+except ImportError:
+    _openvino_available = False
+
+
+@pytest.mark.skipif(not _openvino_available, reason="openvino not installed")
 class TestToOpenVINO:
     """Tests for to_openvino method."""
 
@@ -355,7 +363,7 @@ class TestToTorchExportIR:
         assert output_path.exists()
 
         # Verify the exported program can be loaded
-        loaded_program = torch.export.load(output_path) # nosec
+        loaded_program = torch.export.load(output_path)  # nosec
         assert loaded_program is not None
 
     def test_to_torch_export_ir_with_provided_input_sample(self, tmp_path):
@@ -371,7 +379,7 @@ class TestToTorchExportIR:
         assert output_path.exists()
 
         # Verify the exported program can be loaded
-        loaded_program = torch.export.load(output_path) # nosec
+        loaded_program = torch.export.load(output_path)  # nosec
         assert loaded_program is not None
 
     def test_to_torch_export_ir_kwargs_override_model_args(self, tmp_path):
@@ -394,7 +402,7 @@ class TestToTorchExportIR:
         assert output_path.exists()
 
         # Verify the exported program can be loaded
-        loaded_program = torch.export.load(output_path) # nosec
+        loaded_program = torch.export.load(output_path)  # nosec
         assert loaded_program is not None
 
     def test_to_torch_export_ir_with_multiple_inputs(self, tmp_path):
@@ -408,7 +416,7 @@ class TestToTorchExportIR:
         assert output_path.exists()
 
         # Verify the exported program can be loaded
-        loaded_program = torch.export.load(output_path) # nosec
+        loaded_program = torch.export.load(output_path)  # nosec
         assert loaded_program is not None
 
     def test_to_torch_export_ir_with_dict_input(self, tmp_path):
@@ -422,7 +430,7 @@ class TestToTorchExportIR:
         assert output_path.exists()
 
         # Verify the exported program can be loaded
-        loaded_program = torch.export.load(output_path) # nosec
+        loaded_program = torch.export.load(output_path)  # nosec
         assert loaded_program is not None
 
     def test_to_torch_export_ir_without_sample_input_raises_error(self, tmp_path):

@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """Lightning strategy for single XPU device."""
@@ -7,10 +7,17 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import torch
-from lightning.pytorch.strategies import StrategyRegistry
-from lightning.pytorch.strategies.single_device import SingleDeviceStrategy
-from lightning.pytorch.utilities.exceptions import MisconfigurationException
+try:
+    import torch
+    from lightning.pytorch.strategies import StrategyRegistry
+    from lightning.pytorch.strategies.single_device import SingleDeviceStrategy
+    from lightning.pytorch.utilities.exceptions import MisconfigurationException
+except ImportError as e:
+    msg = (
+        "PyTorch and Lightning not installed. SingleXPUStrategy requires PyTorch and Lightning."
+        "\nInstall with: pip install getiaction[torch]"
+    )
+    raise ImportError(msg) from e
 
 if TYPE_CHECKING:
     from lightning.fabric.plugins import CheckpointIO

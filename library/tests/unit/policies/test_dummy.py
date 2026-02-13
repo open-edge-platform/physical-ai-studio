@@ -7,6 +7,12 @@ from getiaction.data import Observation
 from getiaction.policies import Dummy, DummyConfig
 from getiaction.policies.dummy.model import Dummy as DummyModel
 
+_openvino_available = True
+try:
+    import openvino  # noqa: F401
+except ImportError:
+    _openvino_available = False
+
 
 class TestDummyPolicy:
     """Tests for DummyPolicy and DummyModel."""
@@ -188,6 +194,7 @@ class TestDummyPolicyImportExport:
 
         assert export_path.exists()
 
+    @pytest.mark.skipif(not _openvino_available, reason="openvino not installed")
     def test_export_to_openvino(self, tmp_path):
         """Test exporting to OpenVINO format."""
         from getiaction.policies.dummy import Dummy, DummyConfig
@@ -221,20 +228,20 @@ class TestDummySample:
         out = DummyModel._sample((4, 3), torch.float32, None, None)
         assert out.dtype == torch.float32
         assert out.shape == (4, 3)
-        assert torch.all((0.0 <= out) & (out <= 1.0)) # torch.rand range
+        assert torch.all((0.0 <= out) & (out <= 1.0))  # torch.rand range
 
     def test_float_with_bounds(self):
         """Float dtype with explicit min/max samples inside range."""
         out = DummyModel._sample((5,), torch.float32, -2.0, 2.0)
         assert out.dtype == torch.float32
         assert out.shape == (5,)
-        assert torch.all((out >= -2.0) & (out <= 2.0)) # uniform bounded
+        assert torch.all((out >= -2.0) & (out <= 2.0))  # uniform bounded
 
     def test_float_clamped_lower(self):
         """Float dtype with only min clamps values."""
         out = DummyModel._sample((6,), torch.float32, 0.5, None)
         assert out.dtype == torch.float32
-        assert torch.all(out >= 0.5) # lower bound enforced
+        assert torch.all(out >= 0.5)  # lower bound enforced
 
     def test_float_clamped_upper(self):
         """Float dtype with only max clamps values."""
@@ -257,9 +264,9 @@ class TestDummySample:
     def test_int_clamped_lower(self):
         """Int dtype with only lower bound clamps values."""
         out = DummyModel._sample((8,), torch.int32, 5, None)
-        assert torch.all(out >= 5)   #  lower clamp applied
+        assert torch.all(out >= 5)  #  lower clamp applied
 
     def test_int_clamped_upper(self):
         """Int dtype with only upper bound clamps values."""
         out = DummyModel._sample((8,), torch.int32, None, 7)
-        assert torch.all(out <= 7)   #  upper clamp applied
+        assert torch.all(out <= 7)  #  upper clamp applied

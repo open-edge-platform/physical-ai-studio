@@ -1,9 +1,28 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Export mixins module."""
+"""Export module - requires getiaction[torch]."""
 
-from .mixin_export import Export, ExportBackend
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
+from .types import ExportBackend
+
+if TYPE_CHECKING:
+    from .mixin_export import Export
+
+__all__ = ["Export", "ExportBackend", "get_available_backends"]
+
+
+def __getattr__(name: str) -> Any:  # noqa: ANN401
+    if name == "Export":
+        from .mixin_export import Export  # noqa: PLC0415
+
+        return Export
+
+    msg = f"module {__name__!r} has no attribute {name!r}"
+    raise AttributeError(msg)
 
 
 def get_available_backends() -> list[str]:
@@ -21,4 +40,5 @@ def get_available_backends() -> list[str]:
     return [backend.value for backend in ExportBackend]
 
 
-__all__ = ["Export", "ExportBackend", "get_available_backends"]
+def __dir__() -> list[str]:
+    return __all__

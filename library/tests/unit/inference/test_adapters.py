@@ -4,6 +4,7 @@
 """Unit tests for inference adapters."""
 
 from pathlib import Path
+import inspect
 from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np
@@ -11,8 +12,14 @@ import pytest
 import torch
 
 from getiaction.export.mixin_export import ExportBackend
-from getiaction.inference.adapters import ONNXAdapter, OpenVINOAdapter, RuntimeAdapter, TorchExportAdapter, TorchAdapter, get_adapter
-from getiaction.data.observation import Observation
+from getiaction.inference.adapters import (
+    ONNXAdapter,
+    OpenVINOAdapter,
+    RuntimeAdapter,
+    TorchExportAdapter,
+    TorchAdapter,
+    get_adapter,
+)
 
 
 class TestGetAdapter:
@@ -171,14 +178,20 @@ class TestTorchAdapter:
 
         with patch("getiaction.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
             adapter = TorchAdapter(device="cpu")
-            assert adapter.device == torch.device("cpu")
+            assert adapter.torch_device == torch.device("cpu")
             assert "cpu" in repr(adapter)
 
             adapter.load(model_path)
 
-            with patch("getiaction.inference.adapters.torch.TorchAdapter._convert_outputs_to_numpy",
-                        return_value={"output": np.array([[1.0, 2.0]])}):
-                outputs = adapter.predict({"observation": Observation(images=torch.randn(1, 3, 224, 224), state=torch.randn(1, 2))})
+            with patch(
+                "getiaction.inference.adapters.torch.TorchAdapter._convert_outputs_to_numpy",
+                return_value={"output": np.array([[1.0, 2.0]])},
+            ):
+                # Test with numpy arrays (standard adapter interface)
+                outputs = adapter.predict({
+                    "images": np.random.randn(1, 3, 224, 224),
+                    "state": np.random.randn(1, 2),
+                })
                 assert "output" in outputs and isinstance(outputs["output"], np.ndarray)
 
     def test_error_cases(self, tmp_path: Path) -> None:
@@ -189,7 +202,33 @@ class TestTorchAdapter:
             adapter.load(Path("/nonexistent/model.pt"))
 
         with pytest.raises(RuntimeError, match="Model not loaded"):
-            adapter.predict({"input": np.array([1.0])})
+            adapter.predict({"state": np.array([1.0])})
+
+    def test_predict_with_raw_observation_dict(self, tmp_path: Path) -> None:
+        """Test predict accepts raw unpacked observation dicts."""
+        model_path = tmp_path / "model.pt"
+        metadata_path = tmp_path / "metadata.yaml"
+        model_path.touch()
+        metadata_path.touch()
+
+        with metadata_path.open("w") as f:
+            f.write("policy_class: getiaction.policies.act.ACT\n")
+
+        mock_model = MagicMock()
+        mock_model.eval.return_value = mock_model
+        mock_model.to.return_value = mock_model
+        mock_model.model.extra_export_args = {"torch": {"output_names": ["output"], "input_names": ["observation"]}}
+
+        with patch("getiaction.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
+            adapter = TorchAdapter(device="cpu")
+            adapter.load(model_path)
+
+            with patch(
+                "getiaction.inference.adapters.torch.TorchAdapter._convert_outputs_to_numpy",
+                return_value={"output": np.array([[1.0, 2.0]])},
+            ):
+                outputs = adapter.predict({"state": np.array([[1.0]])})
+                assert "output" in outputs
 
     def test_load_failure(self, tmp_path: Path) -> None:
         """Test error handling when torch.load fails."""
@@ -209,10 +248,10 @@ class TestTorchAdapter:
     def test_device_selection(self) -> None:
         """Test device selection for Torch adapter."""
         adapter_cpu = TorchAdapter(device="cpu")
-        assert adapter_cpu.device == torch.device("cpu")
+        assert adapter_cpu.torch_device == torch.device("cpu")
 
         adapter_cuda = TorchAdapter(device="cuda")
-        assert adapter_cuda.device == torch.device("cuda")
+        assert adapter_cuda.torch_device == torch.device("cuda")
 
     def test_input_output_names_before_load(self) -> None:
         """Test input/output names return empty lists before model is loaded."""
@@ -337,5 +376,20 @@ class TestRuntimeAdapter:
 
     def test_abstract_methods_required(self) -> None:
         """Test that abstract methods must be implemented."""
-        with pytest.raises(TypeError):
-            RuntimeAdapter()  # type: ignore[abstract]
+
+        class IncompleteAdapter(RuntimeAdapter):
+            def load(self, model_path: Path) -> None:
+                raise NotImplementedError
+
+            def predict(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+                raise NotImplementedError
+
+            @property
+            def input_names(self) -> list[str]:
+                raise NotImplementedError
+
+            @property
+            def output_names(self) -> list[str]:
+                raise NotImplementedError
+
+        assert inspect.isabstract(RuntimeAdapter)

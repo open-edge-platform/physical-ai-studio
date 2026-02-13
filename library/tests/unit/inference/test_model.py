@@ -36,7 +36,7 @@ def test_exported_metadata_controls_action_queue(
     (export_dir / "smolvla.xml").touch()
     (export_dir / "smolvla.bin").touch()
 
-    with patch("getiaction.inference.model.get_adapter", return_value=mock_adapter):
+    with patch("getiaction.inference.adapters.get_adapter", return_value=mock_adapter):
         model = InferenceModel(export_dir)
 
         mock_adapter.predict.return_value = {"actions": np.random.randn(1, 3, 2)}
@@ -98,7 +98,7 @@ class TestInferenceModelInit:
 
     def test_init_with_valid_directory(self, mock_export_dir: Path, mock_adapter: MagicMock) -> None:
         """Test initialization with valid export directory."""
-        with patch("getiaction.inference.model.get_adapter", return_value=mock_adapter):
+        with patch("getiaction.inference.adapters.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
 
             assert model.export_dir == mock_export_dir
@@ -139,13 +139,13 @@ class TestInferenceModelInit:
         with (export_dir / "metadata.yaml").open("w") as f:
             yaml.dump({"policy_class": "getiaction.policies.act.ACT"}, f)
 
-        with patch("getiaction.inference.model.get_adapter", return_value=mock_adapter):
+        with patch("getiaction.inference.adapters.get_adapter", return_value=mock_adapter):
             model = InferenceModel(export_dir, backend=backend_str)
             assert model.backend == expected
 
     def test_load_classmethod(self, mock_export_dir: Path, mock_adapter: MagicMock) -> None:
         """Test convenience load() classmethod."""
-        with patch("getiaction.inference.model.get_adapter", return_value=mock_adapter):
+        with patch("getiaction.inference.adapters.get_adapter", return_value=mock_adapter):
             model = InferenceModel.load(mock_export_dir)
             assert isinstance(model, InferenceModel)
             assert model.policy_name == "act"
@@ -185,7 +185,7 @@ class TestMetadataLoading:
                 json.dump(metadata_content, f)
             (export_dir / "act.onnx").touch()
 
-        with patch("getiaction.inference.model.get_adapter", return_value=mock_adapter):
+        with patch("getiaction.inference.adapters.get_adapter", return_value=mock_adapter):
             model = InferenceModel(export_dir)
             assert model.metadata == metadata_content
 
@@ -195,7 +195,7 @@ class TestMetadataLoading:
         export_dir.mkdir()
         (export_dir / "model.onnx").touch()
 
-        with patch("getiaction.inference.model.get_adapter", return_value=mock_adapter):
+        with patch("getiaction.inference.adapters.get_adapter", return_value=mock_adapter):
             assert InferenceModel(export_dir).metadata == {}
 
 
@@ -210,7 +210,9 @@ class TestAutoDetection:
             ("getiaction.policies.dummy.Dummy", "dummy"),
         ],
     )
-    def test_policy_detection(self, tmp_path: Path, mock_adapter: MagicMock, policy_class: str, expected_name: str) -> None:
+    def test_policy_detection(
+        self, tmp_path: Path, mock_adapter: MagicMock, policy_class: str, expected_name: str
+    ) -> None:
         """Test policy name detection from metadata."""
         import yaml
 
@@ -220,29 +222,31 @@ class TestAutoDetection:
             yaml.dump({"policy_class": policy_class}, f)
         (export_dir / f"{expected_name}.xml").touch()
 
-        with patch("getiaction.inference.model.get_adapter", return_value=mock_adapter):
+        with patch("getiaction.inference.adapters.get_adapter", return_value=mock_adapter):
             assert InferenceModel(export_dir).policy_name == expected_name
 
     @pytest.mark.parametrize(
         ("file_ext", "expected_backend"),
         [(".xml", ExportBackend.OPENVINO), (".onnx", ExportBackend.ONNX), (".pt2", ExportBackend.TORCH_EXPORT_IR)],
     )
-    def test_backend_detection(self, tmp_path: Path, mock_adapter: MagicMock, file_ext: str, expected_backend: ExportBackend) -> None:
+    def test_backend_detection(
+        self, tmp_path: Path, mock_adapter: MagicMock, file_ext: str, expected_backend: ExportBackend
+    ) -> None:
         """Test backend detection from file extensions."""
         export_dir = tmp_path / "exports"
         export_dir.mkdir()
         (export_dir / f"model{file_ext}").touch()
 
-        with patch("getiaction.inference.model.get_adapter", return_value=mock_adapter):
+        with patch("getiaction.inference.adapters.get_adapter", return_value=mock_adapter):
             assert InferenceModel(export_dir).backend == expected_backend
 
-    @pytest.mark.parametrize("cuda_available", [True, False])
     @pytest.mark.parametrize(
-        ("backend_file", "backend_type"),
+        ("backend_file", "expected_device", "ort_providers"),
         [
-            ("model.xml", "openvino"),
-            ("model.onnx", "onnx"),
-            ("model.pt2", "torch_export_ir"),
+            ("model.xml", "CPU", None),
+            ("model.onnx", "cuda", ["CUDAExecutionProvider", "CPUExecutionProvider"]),
+            ("model.onnx", "cpu", ["CPUExecutionProvider"]),
+            ("model.pt2", "cpu", None),
         ],
     )
     def test_device_detection(
@@ -250,22 +254,26 @@ class TestAutoDetection:
         tmp_path: Path,
         mock_adapter: MagicMock,
         backend_file: str,
-        backend_type: str,
-        cuda_available: bool,
+        expected_device: str,
+        ort_providers: list[str] | None,
     ) -> None:
-        """Test device detection based on backend and CUDA availability."""
+        """Test device detection based on backend and runtime availability."""
+        import sys
+
         export_dir = tmp_path / "exports"
         export_dir.mkdir()
         (export_dir / backend_file).touch()
 
-        # OpenVINO always uses CPU, others use cuda/cpu based on availability
-        if backend_type == "openvino":
-            expected_device = "CPU"
+        if ort_providers is not None:
+            mock_ort = MagicMock()
+            mock_ort.get_available_providers.return_value = ort_providers
+            with (
+                patch("getiaction.inference.adapters.get_adapter", return_value=mock_adapter),
+                patch.dict(sys.modules, {"onnxruntime": mock_ort}),
+            ):
+                assert InferenceModel(export_dir, device="auto").device == expected_device
         else:
-            expected_device = "cuda" if cuda_available else "cpu"
-
-        with patch("torch.cuda.is_available", return_value=cuda_available):
-            with patch("getiaction.inference.model.get_adapter", return_value=mock_adapter):
+            with patch("getiaction.inference.adapters.get_adapter", return_value=mock_adapter):
                 assert InferenceModel(export_dir, device="auto").device == expected_device
 
 
@@ -280,7 +288,7 @@ class TestSelectAction:
     ) -> None:
         """Test action selection without action queue."""
         # Configure for non-chunked policy
-        with patch("getiaction.inference.model.get_adapter", return_value=mock_adapter):
+        with patch("getiaction.inference.adapters.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
             model.use_action_queue = False
             model.chunk_size = 1
@@ -290,7 +298,7 @@ class TestSelectAction:
 
             action = model.select_action(sample_observation)
 
-            assert isinstance(action, torch.Tensor)
+            assert isinstance(action, np.ndarray)
             assert action.shape == (1, 2)  # (batch, action_dim)
             mock_adapter.predict.assert_called_once()
 
@@ -301,7 +309,7 @@ class TestSelectAction:
         sample_observation: Observation,
     ) -> None:
         """Test action selection with action queue for chunked policy."""
-        with patch("getiaction.inference.model.get_adapter", return_value=mock_adapter):
+        with patch("getiaction.inference.adapters.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
             model.use_action_queue = True
             model.chunk_size = 10
@@ -327,7 +335,7 @@ class TestSelectAction:
         sample_observation: Observation,
     ) -> None:
         """Test action queue refills when empty."""
-        with patch("getiaction.inference.model.get_adapter", return_value=mock_adapter):
+        with patch("getiaction.inference.adapters.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
             model.use_action_queue = True
             model.chunk_size = 3
@@ -348,9 +356,9 @@ class TestSelectAction:
 
     def test_reset_clears_queue(self, mock_export_dir: Path, mock_adapter: MagicMock) -> None:
         """Test reset() clears action queue."""
-        with patch("getiaction.inference.model.get_adapter", return_value=mock_adapter):
+        with patch("getiaction.inference.adapters.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
-            model._action_queue.extend([torch.randn(1, 2) for _ in range(5)])
+            model._action_queue.extend([np.random.randn(1, 2) for _ in range(5)])
 
             model.reset()
             assert len(model._action_queue) == 0
@@ -367,7 +375,7 @@ class TestInputPreparation:
         """Test input preparation with first-party naming (state, images)."""
         mock_adapter.input_names = ["state", "images"]
 
-        with patch("getiaction.inference.model.get_adapter", return_value=mock_adapter):
+        with patch("getiaction.inference.adapters.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
 
             obs = Observation(
@@ -390,7 +398,7 @@ class TestInputPreparation:
         """Test input preparation with LeRobot naming (observation.state, observation.image)."""
         mock_adapter.input_names = ["observation.state", "observation.image"]
 
-        with patch("getiaction.inference.model.get_adapter", return_value=mock_adapter):
+        with patch("getiaction.inference.adapters.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
 
             obs = Observation(
@@ -411,7 +419,7 @@ class TestInputPreparation:
         """Test input preparation skips None values."""
         mock_adapter.input_names = ["state", "images"]
 
-        with patch("getiaction.inference.model.get_adapter", return_value=mock_adapter):
+        with patch("getiaction.inference.adapters.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
 
             obs = Observation(state=torch.randn(1, 4), images=torch.randn(1, 3, 224, 224), action=None)
@@ -429,7 +437,7 @@ class TestInputPreparation:
         """Test input preparation handles numpy arrays directly."""
         mock_adapter.input_names = ["state"]
 
-        with patch("getiaction.inference.model.get_adapter", return_value=mock_adapter):
+        with patch("getiaction.inference.adapters.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
 
             state_np = np.random.randn(1, 4)
@@ -542,7 +550,7 @@ class TestModelPathResolution:
         model_file = export_dir / f"act{file_ext}"
         model_file.touch()
 
-        with patch("getiaction.inference.model.get_adapter", return_value=mock_adapter):
+        with patch("getiaction.inference.adapters.get_adapter", return_value=mock_adapter):
             model = InferenceModel(export_dir, policy_name="act", backend=backend)
             path = model._get_model_path()
             assert path == model_file
@@ -558,7 +566,7 @@ class TestModelPathResolution:
         model_file = export_dir / "model.onnx"
         model_file.touch()
 
-        with patch("getiaction.inference.model.get_adapter", return_value=mock_adapter):
+        with patch("getiaction.inference.adapters.get_adapter", return_value=mock_adapter):
             model = InferenceModel(export_dir, policy_name=None, backend="onnx")
             path = model._get_model_path()
             assert path == model_file
@@ -579,7 +587,7 @@ class TestModelPathResolution:
             yaml.dump({"policy_class": "getiaction.policies.act.ACT"}, f)
 
         with (
-            patch("getiaction.inference.model.get_adapter", return_value=mock_adapter),
+            patch("getiaction.inference.adapters.get_adapter", return_value=mock_adapter),
             pytest.raises(FileNotFoundError, match="No .* model file found"),
         ):
             model = InferenceModel(export_dir, backend="onnx")
@@ -591,7 +599,7 @@ class TestRepr:
 
     def test_repr(self, mock_export_dir: Path, mock_adapter: MagicMock) -> None:
         """Test __repr__ returns informative string."""
-        with patch("getiaction.inference.model.get_adapter", return_value=mock_adapter):
+        with patch("getiaction.inference.adapters.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
             repr_str = repr(model)
 

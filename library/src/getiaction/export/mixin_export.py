@@ -1,34 +1,34 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """Mixin classes for exporting PyTorch models."""
 
+from __future__ import annotations
+
 import inspect
 from collections.abc import Mapping
-from enum import StrEnum
-from os import PathLike
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import lightning
-import openvino
-import torch
+try:
+    import torch
+except ImportError as e:
+    msg = "Export dependencies not installed.\nInstall with: pip install getiaction[train]"
+    raise ImportError(msg) from e
+
 import yaml
 
 from getiaction import __version__
+from getiaction.export.types import ExportBackend
+
+if TYPE_CHECKING:
+    from os import PathLike
+
+    import openvino
 
 CONFIG_KEY = "model_config"
 POLICY_NAME_KEY = "policy_name"
 DATASET_STATS_KEY = "dataset_stats"
-
-
-class ExportBackend(StrEnum):
-    """Supported export backends."""
-
-    ONNX = "onnx"
-    OPENVINO = "openvino"
-    TORCH = "torch"
-    TORCH_EXPORT_IR = "torch_export_ir"
 
 
 class Export:
@@ -138,6 +138,8 @@ class Export:
             config_dict = self.model.config.to_dict()
             checkpoint[CONFIG_KEY] = config_dict
         elif hasattr(self, "hparams"):
+            import lightning  # noqa: PLC0415
+
             checkpoint["epoch"] = 0
             checkpoint["global_step"] = 0
             checkpoint["pytorch-lightning_version"] = lightning.__version__
@@ -234,6 +236,8 @@ class Export:
             msg = "An input sample must be provided for OpenVINO export, or the model must implement "
             "`sample_input` property."
             raise RuntimeError(msg)
+
+        import openvino  # noqa: PLC0415
 
         model_path = self._prepare_export_path(output_path, ".xml")
         export_dir = model_path.parent

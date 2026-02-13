@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """Production inference module for exported policies.
@@ -14,14 +14,11 @@ Key Features:
 
 Examples:
     >>> from getiaction.inference import InferenceModel
-    >>> # Load with auto-detection
     >>> policy = InferenceModel.load("./exports/act_policy")
-
-    >>> # Use like PyTorch policy
     >>> policy.reset()
-    >>> action = policy.select_action(observation)
+    >>> action = policy.select_action({"state": state_array, "images": images_array})
 """
 
-from getiaction.inference.model import InferenceModel
+from .model import ExportBackend, InferenceModel
 
-__all__ = ["InferenceModel"]
+__all__ = ["ExportBackend", "InferenceModel"]

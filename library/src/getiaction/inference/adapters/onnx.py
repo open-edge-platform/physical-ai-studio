@@ -50,15 +50,15 @@ class ONNXAdapter(RuntimeAdapter):
             ImportError: If onnxruntime is not installed
             FileNotFoundError: If model file doesn't exist
         """
+        if not model_path.exists():
+            msg = f"Model file not found: {model_path}"
+            raise FileNotFoundError(msg)
+
         try:
             import onnxruntime as ort  # noqa: PLC0415
         except ImportError as e:
             msg = "ONNX Runtime is not installed. Install with: uv pip install onnxruntime"
             raise ImportError(msg) from e
-
-        if not model_path.exists():
-            msg = f"Model file not found: {model_path}"
-            raise FileNotFoundError(msg)
 
         # Configure providers based on device
         providers = self._get_providers()
