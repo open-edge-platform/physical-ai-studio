@@ -16,7 +16,7 @@ import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import nn
 
-from getiaction.data import Observation
+from getiaction.data.observation import ACTION, Observation
 
 from .components.attention import make_attention_mask_2d, prepare_4d_attention_mask
 from .components.gemma import GemmaVariant, PaliGemmaWithExpert
@@ -131,15 +131,6 @@ class Pi0Model(nn.Module):
 
         self._gradient_checkpointing_enabled = False
 
-        self.preprocessor = preprocessor
-        self.postprocessor = postprocessor
-
-    def set_preprocessors(
-        self,
-        preprocessor: Pi0Preprocessor | None,
-        postprocessor: Pi0Postprocessor | None,
-    ) -> None:
-        """Set preprocessor and postprocessor for the model."""
         self.preprocessor = preprocessor
         self.postprocessor = postprocessor
 
@@ -326,19 +317,32 @@ class Pi0Model(nn.Module):
         return self.predict_action_chunk(batch)
 
     def predict_action_chunk(self, batch: Mapping[str, Any] | Observation) -> torch.Tensor:
-        """Predict action chunk from observation batch."""  # noqa: DOC201
+        """Generate predicted actions for a batch of observations.
+
+        This method preprocesses the input batch, samples actions from the model,
+        and applies postprocessing to return the final action predictions.
+
+        Args:
+            batch: A mapping of input features or an Observation object containing
+                the data needed to generate action predictions.
+
+        Returns:
+            torch.Tensor: The postprocessed predicted actions.
+
+        Raises:
+            ValueError: If the postprocessor is not initialized.
+        """
         device = next(self.parameters()).device
         self.eval()
 
         processed = self._preprocess_batch(batch, require_actions=False)
         actions = self.sample_actions(device, processed)
 
-        if self.postprocessor is not None:
-            from getiaction.data.observation import ACTION  # noqa: PLC0415
+        if self.postprocessor is None:
+            msg = "Pi0Model postprocessor is not initialized"
+            raise ValueError(msg)
 
-            return self.postprocessor({ACTION: actions})[ACTION]
-
-        return actions
+        return self.postprocessor({ACTION: actions})[ACTION]
 
     @property
     def extra_export_args(self) -> dict:
@@ -518,10 +522,6 @@ class Pi0Model(nn.Module):
         device = next(self.parameters()).device
 
         if self.preprocessor is None:
-            if isinstance(batch, dict):
-                return self._move_to_device(batch, device)
-            if isinstance(batch, Observation):
-                return self._move_to_device(batch.to_dict(flatten=True), device)
             msg = "Pi0Model preprocessor is not initialized"
             raise ValueError(msg)
 

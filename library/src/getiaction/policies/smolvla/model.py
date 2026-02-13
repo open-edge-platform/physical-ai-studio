@@ -1319,7 +1319,7 @@ class _SmolVLMWithExpertModel(nn.Module):
             self.vlm = auto_model_for_image_text_to_text_cls.from_pretrained(
                 model_id,
                 device_map=device,
-                torch_dtype="bfloat16",
+                dtype="bfloat16",
                 low_cpu_mem_usage=True,
             )
             config = self.vlm.config
