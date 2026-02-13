@@ -41,12 +41,7 @@ cd application/backend
 uv sync
 ```
 
-This installs:
-- FastAPI and Uvicorn for the web server
-- SQLAlchemy and Alembic for database management
-- aiortc for WebRTC streaming
-- getiaction library for training integration
-- Camera SDKs (OpenCV, RealSense, GenICam)
+This installs all backend dependencies including FastAPI, SQLAlchemy, aiortc, and the getiaction library.
 
 ## Usage
 

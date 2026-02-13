@@ -14,7 +14,7 @@ That's it! You're ready to [train your first policy](quickstart.md).
 
 ### Python
 
-Geti Action requires **Python 3.10 or higher**.
+Geti Action requires **Python 3.12 or higher**.
 
 Check your version:
 
@@ -118,7 +118,7 @@ Ensure you have the correct XPU version for your PyTorch installation:
 
 ```bash
 # Check PyTorch XPU support
-python -c "import torch; print(f'CUDA available: {torch.xpu.is_available()}')"
+python -c "import torch; print(f'XPU available: {torch.xpu.is_available()}')"
 ```
 
 ### NVIDIA GPUs
