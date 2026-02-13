@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api/record")
 
 
 @router.websocket("/teleoperate/ws")
-async def teleoperate_websocket(
+async def teleoperate_websocket(  # noqa: C901
     websocket: WebSocket,
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
     robot_manager: RobotConnectionManagerDep,
@@ -61,11 +61,13 @@ async def teleoperate_websocket(
                     process.save()
                 if data["event"] == "disconnect":
                     process.stop()
+                    process.join(timeout=5)
                     break
         except WebSocketDisconnect:
             logger.info("Except: disconnected!")
             if process is not None:
                 process.stop()
+                process.join(timeout=5)
 
     async def handle_outgoing():
         try:
@@ -75,9 +77,11 @@ async def teleoperate_websocket(
                     await websocket.send_json(message)
                 except Empty:
                     await asyncio.sleep(0.05)
+        except ValueError:
+            logger.error("Queue closed, ignoring")
         except Exception as e:
-            raise e
-            logger.info(f"Outgoing task stopped: {e}")
+            logger.exception(e)
+            logger.error(f"Outgoing task stopped: {e}")
 
     incoming_task = asyncio.create_task(handle_incoming())
     outgoing_task = asyncio.create_task(handle_outgoing())
@@ -124,25 +128,29 @@ async def inference_websocket(
                     process.start_task(task_index)
                 if data["event"] == "stop":
                     process.stop()
+                    process.join(timeout=5)
                 if data["event"] == "disconnect":
                     process.disconnect()
                     break
         except WebSocketDisconnect:
             logger.info("Except: disconnected!")
             if process is not None:
-                process.disconnect()
+                process.stop()
+                process.join(timeout=5)
 
     async def handle_outgoing():
         try:
             while True:
                 try:
-                    message = queue.get_nowait()
+                    loop = asyncio.get_running_loop()
+
+                    message = await loop.run_in_executor(None, queue.get)
                     await websocket.send_json(message)
                 except Empty:
                     await asyncio.sleep(0.05)
         except Exception as e:
-            raise e
-            logger.info(f"Outgoing task stopped: {e}")
+            logger.exception(e)
+            logger.error(f"Outgoing task stopped: {e}")
 
     incoming_task = asyncio.create_task(handle_incoming())
     outgoing_task = asyncio.create_task(handle_outgoing())

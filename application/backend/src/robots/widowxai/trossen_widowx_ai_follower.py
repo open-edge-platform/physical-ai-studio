@@ -10,14 +10,7 @@ from schemas.robot import RobotType
 class TrossenWidowXAIFollower(RobotClient):
     def __init__(self, config: NetworkIpRobotConfig):
         self.driver = trossen_arm.TrossenArmDriver()
-        self.driver.configure(
-            trossen_arm.Model.wxai_v0,
-            trossen_arm.StandardEndEffector.wxai_v0_follower,
-            config.connection_string,
-            True,
-            timeout=30,
-        )
-        self.driver.set_all_modes(trossen_arm.Mode.position)
+        self.connection_string = config.connection_string
 
         self.config: NetworkIpRobotConfig = config
         self.motor_names = {
@@ -83,7 +76,26 @@ class TrossenWidowXAIFollower(RobotClient):
         return {}
 
     async def read_state(self, *, normalize: bool = True) -> dict:  # noqa: ARG002
-        """Read current robot state. Returns state dict with timestamp."""
+        """Read current robot state. Returns state dict with timestamp.
+
+        Example state: {
+            'elbow_flex.pos': 4.535314764553813,
+            'elbow_flex.vel': -0.0024420025292783976,
+            'gripper.pos': -1.7546117305755615e-06,
+            'gripper.vel': -6.410256173694506e-05,
+            'shoulder_lift.pos': 0.4917811441211757,
+            'shoulder_lift.vel': -0.0024420025292783976,
+            'shoulder_pan.pos': 0.03278540827405706,
+            'shoulder_pan.vel': 0.0024420025292783976,
+            'wrist_flex.pos': 4.4260300302863165,
+            'wrist_flex.vel': -0.007326007355004549,
+            'wrist_roll.pos': -0.09835622482217117,
+            'wrist_roll.vel': -0.021978022530674934,
+            'wrist_yaw.pos': 0.12021317034164915,
+            'wrist_yaw.vel': -0.007326007355004549
+        }
+        """
+
         try:
             observation = self.get_action()
             return self._create_event(
@@ -149,6 +161,15 @@ class TrossenWidowXAIFollower(RobotClient):
         return pos + vel
 
     async def connect(self, calibrate: bool = False) -> None:  # noqa: ARG002
+        self.driver.configure(
+            trossen_arm.Model.wxai_v0,
+            trossen_arm.StandardEndEffector.wxai_v0_follower,
+            self.connection_string,
+            True,
+            timeout=5,
+        )
+        self.driver.set_all_modes(trossen_arm.Mode.position)
+
         self.driver.set_all_modes(trossen_arm.Mode.position)
         self.driver.set_all_positions(np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), 2.0, True)
 

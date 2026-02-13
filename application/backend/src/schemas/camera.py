@@ -2,32 +2,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from schemas.base import BaseIDModel
-
-
-class CameraConfig(BaseIDModel):
-    fingerprint: str = Field("", description="Camera port or realsense id")
-    name: str = Field(min_length=1, max_length=50, description="Camera name")
-    driver: str = Field(description="Driver used for Camera access")
-    width: int = Field(640, description="Frame width")
-    height: int = Field(480, description="Frame height")
-    fps: int = Field(30, description="Camera fps")
-    use_depth: bool = Field(False, description="Use Depth from RealSense")
-
-    model_config = {
-        "json_schema_extra": {
-            "example": {
-                "port_or_id": "/dev/video0",
-                "name": "WebCam",
-                "driver": "webcam",
-                "width": 640,
-                "height": 480,
-                "fps": 30,
-                "use_depth": False,
-            }
-        }
-    }
-
 
 class CameraProfile(BaseModel):
     width: int

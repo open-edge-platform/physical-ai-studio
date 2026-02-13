@@ -11,7 +11,6 @@ from loguru import logger
 from tenacity import RetryError, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from schemas.project_camera import Camera
-from webrtc.framesource_track import EmptyFrameError
 from workers.transport.worker_transport import WorkerTransport
 from workers.transport_worker import TransportWorker, WorkerState, WorkerStatus
 
@@ -23,6 +22,10 @@ def create_frames_source_from_camera(camera: Camera) -> VideoCaptureBase:
         camera.fingerprint,
         **camera.payload.model_dump(),
     )
+
+
+class EmptyFrameError(Exception):
+    pass
 
 
 class CameraConnectionManager:

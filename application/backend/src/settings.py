@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     data_dir: Path = Field(default=Path("data"), alias="DATA_DIR")
     storage_dir: Path = Field(default=Path("~/.cache/geti_action").expanduser(), alias="STORAGE_DIR")
 
+    supported_backends: list[str] = ["torch"]
+
     @property
     def datasets_dir(self) -> Path:
         """Storage directory for datasets."""

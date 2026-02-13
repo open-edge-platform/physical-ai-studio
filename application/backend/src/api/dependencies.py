@@ -13,7 +13,6 @@ from services.event_processor import EventProcessor
 from services.robot_calibration_service import RobotCalibrationService
 from settings import get_settings
 from utils.serial_robot_tools import RobotConnectionManager
-from webrtc.manager import WebRTCManager
 from workers.camera_worker_registry import CameraWorkerRegistry
 from workers.robot_worker_registry import RobotWorkerRegistry
 
@@ -29,11 +28,6 @@ def is_valid_uuid(identifier: str) -> bool:
     except ValueError:
         return False
     return True
-
-
-def get_webrtc_manager(request: HTTPConnection) -> WebRTCManager:
-    """Provide the global WebRTCManager instance from FastAPI application's state."""
-    return request.app.state.webrtc_manager
 
 
 @lru_cache
