@@ -11,8 +11,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 try:
-    import lightning
-    import openvino
     import torch
 except ImportError as e:
     msg = "Export dependencies not installed.\nInstall with: pip install getiaction[train]"
@@ -25,6 +23,8 @@ from getiaction.export.types import ExportBackend
 
 if TYPE_CHECKING:
     from os import PathLike
+
+    import openvino
 
 CONFIG_KEY = "model_config"
 POLICY_NAME_KEY = "policy_name"
@@ -138,6 +138,8 @@ class Export:
             config_dict = self.model.config.to_dict()
             checkpoint[CONFIG_KEY] = config_dict
         elif hasattr(self, "hparams"):
+            import lightning  # noqa: PLC0415
+
             checkpoint["epoch"] = 0
             checkpoint["global_step"] = 0
             checkpoint["pytorch-lightning_version"] = lightning.__version__
@@ -234,6 +236,8 @@ class Export:
             msg = "An input sample must be provided for OpenVINO export, or the model must implement "
             "`sample_input` property."
             raise RuntimeError(msg)
+
+        import openvino  # noqa: PLC0415
 
         model_path = self._prepare_export_path(output_path, ".xml")
         export_dir = model_path.parent
