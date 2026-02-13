@@ -208,3 +208,4 @@ __marimo__/
 # Custom
 tmp*
 lightning_logs
+.DS_Store
