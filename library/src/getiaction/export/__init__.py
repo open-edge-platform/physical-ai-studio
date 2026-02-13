@@ -12,7 +12,7 @@ from .types import ExportBackend
 if TYPE_CHECKING:
     from .mixin_export import Export
 
-__all__ = ["Export", "ExportBackend"]
+__all__ = ["Export", "ExportBackend", "get_available_backends"]
 
 
 def __getattr__(name: str) -> Any:  # noqa: ANN401
@@ -23,6 +23,21 @@ def __getattr__(name: str) -> Any:  # noqa: ANN401
 
     msg = f"module {__name__!r} has no attribute {name!r}"
     raise AttributeError(msg)
+
+
+def get_available_backends() -> list[str]:
+    """Get list of available export backends.
+
+    Returns:
+        List of backend names as strings.
+
+    Examples:
+        >>> from getiaction.export import get_available_backends
+        >>> backends = get_available_backends()
+        >>> print(backends)
+        ['onnx', 'openvino', 'torch', 'torch_export_ir']
+    """
+    return [backend.value for backend in ExportBackend]
 
 
 def __dir__() -> list[str]:
