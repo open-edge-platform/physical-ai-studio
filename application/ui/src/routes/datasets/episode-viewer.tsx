@@ -5,7 +5,6 @@ import { Disclosure, DisclosurePanel, DisclosureTitle, Divider, Flex, Text, View
 import { SchemaEpisode, SchemaEpisodeVideo } from '../../api/openapi-spec';
 import EpisodeChart from '../../components/episode-chart/episode-chart';
 import { EpisodeTag } from '../../features/datasets/episodes/episode-tag';
-import { useDatasetId } from '../../features/datasets/use-dataset';
 import { RobotViewer } from '../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 import { TimelineControls } from './timeline-controls';
@@ -52,10 +51,10 @@ const VideoView = ({ dataset_id, cameraName, aspectRatio, time, episodeVideo }: 
 
 interface EpisodeViewerProps {
     episode: SchemaEpisode;
+    dataset_id: string;
 }
 
-export const EpisodeViewer = ({ episode }: EpisodeViewerProps) => {
-    const { dataset_id } = useDatasetId();
+export const EpisodeViewer = ({ episode, dataset_id }: EpisodeViewerProps) => {
     const player = usePlayer(episode);
     const frameIndex = Math.floor(player.time * episode.fps);
     const cameras = Object.keys(episode.videos).map((m) => m.replace('observation.images.', ''));

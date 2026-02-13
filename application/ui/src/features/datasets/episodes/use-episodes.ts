@@ -1,10 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query';
 
 import { $api } from '../../../api/client';
-import { useDatasetId } from '../use-dataset';
 
-export const useDeleteEpisodeQuery = () => {
-    const { dataset_id } = useDatasetId();
+export const useDeleteEpisodeQuery = (dataset_id: string) => {
     const queryClient = useQueryClient();
 
     const mutation = $api.useMutation('delete', '/api/dataset/{dataset_id}/episodes', {

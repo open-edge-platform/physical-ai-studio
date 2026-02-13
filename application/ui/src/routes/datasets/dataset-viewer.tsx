@@ -26,7 +26,7 @@ import { EpisodeViewer } from './episode-viewer';
 export const DatasetViewer = () => {
     const { dataset, episodes, selectedEpisodes, setSelectedEpisodes } = useDataset();
 
-    const { deleteEpisodes, isPending } = useDeleteEpisodeQuery();
+    const { deleteEpisodes, isPending } = useDeleteEpisodeQuery(dataset.id!);
     const [currentEpisode, setCurrentEpisode] = useState<number>(0);
 
     const recordPath = paths.project.datasets.record({ project_id: dataset.project_id, dataset_id: dataset.id! });
@@ -52,7 +52,7 @@ export const DatasetViewer = () => {
         <Flex direction={'row'} height={'100%'} flex gap={'size-100'}>
             {isPending && <Loading mode='overlay' />}
             <View flex={1}>
-                <EpisodeViewer episode={episodes[currentEpisode]} />
+                <EpisodeViewer episode={episodes[currentEpisode]} dataset_id={dataset.id!} />
             </View>
             <Divider orientation='vertical' size='S' />
             <Flex direction='column'>
