@@ -1,6 +1,6 @@
 services:
   geti-action:
-    image: ${REGISTRY:-ghcr.io/markredeman/}geti-action:${IMAGE_TAG:-latest}-${AI_DEVICE:-cpu}
+    image: ${REGISTRY:-ghcr.io/open-edge-platform/}geti-action:${IMAGE_TAG:-latest}-${AI_DEVICE:-cpu}
     build:
       context: ../../
       dockerfile: application/docker/Dockerfile
