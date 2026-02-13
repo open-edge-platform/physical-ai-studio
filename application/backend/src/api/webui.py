@@ -1,20 +1,18 @@
-from pathlib import Path
-
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
-
-from settings import get_settings
-
-settings = get_settings()
-webui_router = APIRouter(tags=["Webui"])
+from starlette.responses import Response
+from starlette.staticfiles import StaticFiles
+from starlette.types import Scope
 
 
-@webui_router.get("/", include_in_schema=False)
-@webui_router.get("/{full_path:path}", include_in_schema=False)
-async def get_webui(full_path: str = "") -> FileResponse:  # noqa: ARG001
-    """Get the webui index.html file."""
-    file_path = Path(settings.static_files_dir) / "index.html"
+class SPAStaticFiles(StaticFiles):
+    """StaticFiles subclass that serves index.html for unknown paths.
 
-    if settings.static_files_dir and not file_path.exists():
-        raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(file_path)
+    Serves actual files when they exist (JS, CSS, URDF models, etc.)
+    and falls back to index.html for everything else, allowing the
+    frontend router to handle client-side routes.
+    """
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        response = await super().get_response(path, scope)
+        if response.status_code == 404:
+            response = await super().get_response("index.html", scope)
+        return response

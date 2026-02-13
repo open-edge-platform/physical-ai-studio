@@ -7,7 +7,6 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 
 from api.camera import router as camera_router
 from api.dataset import router as dataset_router
@@ -23,7 +22,7 @@ from api.robot_calibration import router as robot_calibration_router
 from api.robot_control import router as robot_control_router
 from api.robots import router as project_robots_router
 from api.settings import router as settings_router
-from api.webui import webui_router
+from api.webui import SPAStaticFiles
 from core import lifespan
 from exception_handlers import register_application_exception_handlers
 from settings import get_settings
@@ -71,9 +70,9 @@ if (
     and Path(settings.static_files_dir).is_dir()
     and (Path(settings.static_files_dir) / "index.html").exists()
 ):
-    static_dir = Path(settings.static_files_dir)
-    app.mount("/static", StaticFiles(directory=static_dir / "static"), name="static")
-    app.include_router(webui_router)
+    static_files = SPAStaticFiles(directory=Path(settings.static_files_dir), html=True)
+
+    app.mount("/", static_files, name="webui")
 
 if __name__ == "__main__":
     if get_torch_device() == "xpu" and mp.get_start_method(allow_none=True) != "spawn":
