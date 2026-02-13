@@ -32,7 +32,7 @@ class ObservationLike(Protocol):
     - ObservationLike: Any object with a to_dict() method (e.g., Observation from getiaction.data)
     """
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self, *, flatten: bool = True) -> dict[str, Any]:
         """Convert observation to dictionary format."""
         ...
 
@@ -181,8 +181,6 @@ class InferenceModel:
         observation: dict[str, Any] | ObservationLike,
     ) -> dict[str, Any]:
         """Convert observation to model input format, raising ValueError if inputs missing."""
-        obs_dict: dict[str, Any] = observation.to_dict() if isinstance(observation, ObservationLike) else observation
-
         if "input_names" in self.metadata:
             expected_input_names = self.metadata["input_names"]
             adapter_input_names = list(self.adapter.input_names)
@@ -193,13 +191,35 @@ class InferenceModel:
         expected_inputs = set(expected_input_names)
 
         if expected_inputs == {"observation"}:
-            # Torch adapter expects raw unpacked observation dict
-            # and reconstructs the Observation object internally
-            return obs_dict
+            # Torch adapter expects nested structure (e.g. images: {"top": ...})
+            # so Observation.from_dict() can reconstruct the Observation correctly.
+            if isinstance(observation, ObservationLike):
+                return observation.to_dict(flatten=False)
+            return observation
 
+        obs_dict: dict[str, Any] = observation.to_dict() if isinstance(observation, ObservationLike) else observation
+        inputs = self._map_observation_to_inputs(obs_dict, expected_inputs)
+
+        missing_inputs = expected_inputs - set(inputs.keys())
+        if missing_inputs:
+            available_fields = list(obs_dict.keys())
+            msg = f"Missing required model inputs: {missing_inputs}. Available observation fields: {available_fields}"
+            raise ValueError(msg)
+
+        if expected_input_names != adapter_input_names:
+            return {adapter_input_names[i]: inputs[expected_input_names[i]] for i in range(len(expected_input_names))}
+
+        return inputs
+
+    def _map_observation_to_inputs(
+        self,
+        obs_dict: dict[str, Any],
+        expected_inputs: set[str],
+    ) -> dict[str, np.ndarray]:
+        """Map observation dict fields to model input arrays."""
         field_mapping = self._build_field_mapping(obs_dict, expected_inputs)
 
-        inputs = {}
+        inputs: dict[str, np.ndarray] = {}
         for obs_key, model_key in field_mapping.items():
             value = obs_dict.get(obs_key)
 
@@ -212,19 +232,7 @@ class InferenceModel:
                 else:
                     continue
 
-            if isinstance(value, np.ndarray):
-                inputs[model_key] = value
-            else:
-                inputs[model_key] = np.array(value)
-
-        missing_inputs = expected_inputs - set(inputs.keys())
-        if missing_inputs:
-            available_fields = list(obs_dict.keys())
-            msg = f"Missing required model inputs: {missing_inputs}. Available observation fields: {available_fields}"
-            raise ValueError(msg)
-
-        if expected_input_names != adapter_input_names:
-            return {adapter_input_names[i]: inputs[expected_input_names[i]] for i in range(len(expected_input_names))}
+            inputs[model_key] = value if isinstance(value, np.ndarray) else np.array(value)
 
         return inputs
 
