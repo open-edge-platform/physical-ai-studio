@@ -84,7 +84,7 @@ WORKDIR /app/application/backend
 # Install hardware-independent dependencies (FastAPI, SQLAlchemy, etc.)
 # first so this layer is shared across all device-specific builders.
 RUN --mount=type=cache,id=uv-base,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
+    uv sync --frozen --no-dev --no-editable
 
 # ===========================================================================
 # Stage 3a: CPU builder
@@ -92,7 +92,7 @@ RUN --mount=type=cache,id=uv-base,target=/root/.cache/uv \
 FROM builder-base AS builder-cpu
 
 RUN --mount=type=cache,id=uv-cpu,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --extra cpu
+    uv sync --frozen --no-dev --no-editable --extra cpu
 
 # ===========================================================================
 # Stage 3b: XPU builder
@@ -100,7 +100,7 @@ RUN --mount=type=cache,id=uv-cpu,target=/root/.cache/uv \
 FROM builder-base AS builder-xpu
 
 RUN --mount=type=cache,id=uv-xpu,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --extra xpu
+    uv sync --frozen --no-dev --no-editable --extra xpu
 
 # ===========================================================================
 # Stage 3c: CUDA builder
@@ -108,7 +108,7 @@ RUN --mount=type=cache,id=uv-xpu,target=/root/.cache/uv \
 FROM builder-base AS builder-cuda
 
 RUN --mount=type=cache,id=uv-cuda,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --extra cuda
+    uv sync --frozen --no-dev --no-editable --extra cuda
 
 # ===========================================================================
 # Stage 4: Runtime base — shared across all hardware targets
