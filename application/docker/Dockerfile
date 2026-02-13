@@ -173,7 +173,7 @@ ARG APP_GID=1000
 COPY --link --from=builder-cpu --chown=${APP_UID}:${APP_GID} /app /app
 
 WORKDIR /app/application/backend
-USER ${APP_UID}:${APP_GID}
+USER appuser
 CMD ["./run.sh"]
 
 # ===========================================================================
@@ -216,7 +216,7 @@ ARG APP_GID=1000
 COPY --link --from=builder-xpu --chown=${APP_UID}:${APP_GID} /app /app
 
 WORKDIR /app/application/backend
-USER ${APP_UID}:${APP_GID}
+USER appuser
 CMD ["./run.sh"]
 
 # ===========================================================================
@@ -276,5 +276,5 @@ ARG APP_GID=1000
 COPY --link --from=builder-cuda --chown=${APP_UID}:${APP_GID} /app /app
 
 WORKDIR /app/application/backend
-USER ${APP_UID}:${APP_GID}
+USER appuser
 CMD ["./run.sh"]
