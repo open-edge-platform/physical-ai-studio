@@ -11,15 +11,17 @@ import { TimelineControls } from './timeline-controls';
 import { usePlayer } from './use-player';
 
 import classes from './episode-viewer.module.scss';
+import { useDatasetId } from '../../features/datasets/use-dataset';
 
 interface VideoView {
+    dataset_id: string;
     cameraName: string;
     aspectRatio: number;
     time: number;
     episodeVideo: SchemaEpisodeVideo;
 }
-const VideoView = ({ cameraName, aspectRatio, time, episodeVideo }: VideoView) => {
-    const url = `/api/dataset/video/${episodeVideo.path}`;
+const VideoView = ({ dataset_id, cameraName, aspectRatio, time, episodeVideo }: VideoView) => {
+    const url = `/api/dataset/${dataset_id}/video/${episodeVideo.path}`;
 
     const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -53,6 +55,7 @@ interface EpisodeViewerProps {
 }
 
 export const EpisodeViewer = ({ episode }: EpisodeViewerProps) => {
+    const { dataset_id } = useDatasetId();
     const player = usePlayer(episode);
     const frameIndex = Math.floor(player.time * episode.fps);
     const cameras = Object.keys(episode.videos).map((m) => m.replace('observation.images.', ''));
@@ -71,6 +74,7 @@ export const EpisodeViewer = ({ episode }: EpisodeViewerProps) => {
                         {cameras.map((camera) => (
                             <VideoView
                                 key={camera}
+                                dataset_id={dataset_id}
                                 aspectRatio={640 / 480}
                                 cameraName={camera}
                                 time={player.time}

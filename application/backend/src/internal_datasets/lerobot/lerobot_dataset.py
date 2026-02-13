@@ -116,7 +116,7 @@ class InternalLeRobotDataset(DatasetClient):
                         video_key: EpisodeVideo(
                             start=episode[f"videos/{video_key}/from_timestamp"],
                             end=episode[f"videos/{video_key}/to_timestamp"],
-                            path=str(Path(metadata.root).stem / metadata.get_video_file_path(episode_index, video_key)),
+                            path=str(metadata.get_video_file_path(episode_index, video_key)),
                         )
                         for video_key in self._dataset.meta.video_keys
                     },
