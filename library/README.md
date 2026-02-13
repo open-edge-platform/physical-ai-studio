@@ -51,7 +51,7 @@ pip install getiaction
 <details>
 <summary><strong>Prerequisites</strong></summary>
 
-Geti Action Library requires Python 3.10+.
+Geti Action Library requires Python 3.12+.
 
 FFMPEG is required as a dependency of LeRobot:
 
