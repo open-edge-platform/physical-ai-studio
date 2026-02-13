@@ -49,12 +49,15 @@ jobs:
           target: geti-action-${{ matrix.device }}
           platforms: linux/amd64
           push: false
-          outputs: type=docker,dest=${{ runner.temp }}/geti-action-${{ matrix.device }}.tar
+          # CUDA images are too large (~5 GB) to export as tar on GHA runners.
+          # Build-only validation + cache population is sufficient for PRs.
+          outputs: ${{ matrix.device != 'cuda' && format('type=docker,dest={0}/geti-action-{1}.tar', runner.temp, matrix.device) || 'type=cacheonly' }}
           build-args: GIT_SHA=${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.device }}
           cache-to: type=gha,mode=max,scope=${{ matrix.device }}
 
       - name: Upload Docker image
+        if: matrix.device != 'cuda'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: geti-action-${{ matrix.device }}
