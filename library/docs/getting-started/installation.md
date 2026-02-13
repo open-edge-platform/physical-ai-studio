@@ -117,7 +117,7 @@ Geti Action uses PyTorch Lightning, which automatically detects and uses availab
 Ensure you have the correct XPU version for your PyTorch installation:
 
 ```bash
-# Check PyTorch CUDA support
+# Check PyTorch XPU support
 python -c "import torch; print(f'CUDA available: {torch.xpu.is_available()}')"
 ```
 
