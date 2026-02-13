@@ -37,11 +37,39 @@ COPY --link application/ui/src/ src/
 RUN npm run build
 
 # ===========================================================================
-# Stage 3: Python builder base
+# Stage 3: App source assembly
+#
+# Collects all non-.venv application files into a single layer so that
+# the final runtime stages can COPY them in one instruction. Built in
+# parallel with the Python builder stages (no dependency between them).
+# ===========================================================================
+FROM scratch AS app-source
+
+# Root workspace manifests (needed by uv run for workspace resolution)
+COPY --link pyproject.toml uv.lock LICENSE README.md /app/
+
+# Library source + manifest (needed by uv run for hatchling version)
+COPY --link --from=libs ./src /app/library/src
+COPY --link --from=libs ./LICENSE /app/library/LICENSE
+COPY --link --from=libs ./README.md /app/library/README.md
+COPY --link --from=libs ./pyproject.toml /app/library/pyproject.toml
+
+# Backend source, entrypoint, and manifests
+COPY --link application/backend/src /app/application/backend/src
+COPY --link application/backend/pyproject.toml application/backend/uv.lock \
+    /app/application/backend/
+COPY --link application/backend/run.sh /app/application/backend/run.sh
+
+# Built UI assets
+COPY --link --from=web-ui /home/app/web_ui/dist /app/application/ui/
+
+# ===========================================================================
+# Stage 4: Python builder base
 #
 # Contains build-time-only packages (g++, build-essential, etc.)
-# and is NOT shipped in the final image. The .venv it produces is
-# copied into the slim runtime stages below.
+# and dependency manifests — but NOT backend source code or UI assets.
+# This separation ensures that source-only changes do not invalidate
+# the expensive uv sync layers in the device-specific builders below.
 # ===========================================================================
 FROM python:${PYTHON_VERSION}-slim@sha256:9e01bf1ae5db7649a236da7be1e94ffbbbdd7a93f867dd0d8d5720d9e1f89fab AS builder-base
 
@@ -63,50 +91,54 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# Copy dependency manifests first for better layer caching
+# Copy only dependency manifests — no backend source or UI assets.
 COPY --link pyproject.toml uv.lock LICENSE README.md ./
 
-# Copy library source
+# Library source is needed for hatchling to resolve the dynamic version
+# of the getiaction path dependency during uv sync.
 COPY --link --from=libs ./src /app/library/src
 COPY --link --from=libs ./LICENSE /app/library/LICENSE
 COPY --link --from=libs ./README.md /app/library/README.md
 COPY --link --from=libs ./pyproject.toml /app/library/pyproject.toml
 
-# Copy backend application
-COPY --link application/backend /app/application/backend
-
-# Copy built UI assets
-ARG STATIC_FILES_DIR="/app/application/ui/"
-COPY --link --from=web-ui /home/app/web_ui/dist ${STATIC_FILES_DIR}
+# Backend manifests only (not src/ or run.sh) — sufficient for dep resolution.
+COPY --link application/backend/pyproject.toml application/backend/uv.lock \
+    /app/application/backend/
 
 WORKDIR /app/application/backend
 
+# Install hardware-independent dependencies (FastAPI, SQLAlchemy, etc.)
+# first so this layer is shared across all device-specific builders.
+# --no-install-project: skip building the backend wheel (source not present).
+RUN --mount=type=cache,id=uv-base,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-editable --no-install-project
+
 # ===========================================================================
-# Stage 3a: CPU builder
+# Stage 4a: CPU builder
 # ===========================================================================
 FROM builder-base AS builder-cpu
 
 RUN --mount=type=cache,id=uv-cpu,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --extra cpu
+    uv sync --frozen --no-dev --no-editable --no-install-project --extra cpu
 
 # ===========================================================================
-# Stage 3b: XPU builder
+# Stage 4b: XPU builder
 # ===========================================================================
 FROM builder-base AS builder-xpu
 
 RUN --mount=type=cache,id=uv-xpu,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --extra xpu
+    uv sync --frozen --no-dev --no-editable --no-install-project --extra xpu
 
 # ===========================================================================
-# Stage 3c: CUDA builder
+# Stage 4c: CUDA builder
 # ===========================================================================
 FROM builder-base AS builder-cuda
 
 RUN --mount=type=cache,id=uv-cuda,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --extra cuda
+    uv sync --frozen --no-dev --no-editable --no-install-project --extra cuda
 
 # ===========================================================================
-# Stage 4: Runtime base — shared across all hardware targets
+# Stage 5: Runtime base — shared across all hardware targets
 #
 # Provides the non-root user, common runtime libraries, environment
 # variables, and directory structure. Healthcheck is defined in
@@ -159,25 +191,24 @@ ENV PATH="/app/application/backend/.venv/bin:$PATH" \
 EXPOSE 8000
 
 # ===========================================================================
-# Stage 5a: CPU runtime target
+# Stage 6a: CPU runtime target
 # ===========================================================================
 FROM runtime-base AS geti-action-cpu
 
 ARG APP_UID=1000
 ARG APP_GID=1000
 
-# Virtual environment from cpu builder; everything else from shared base.
+# Virtual environment from CPU builder; app files from app-source.
 COPY --link --from=builder-cpu --chown=${APP_UID}:${APP_GID} \
     /app/application/backend/.venv /app/application/backend/.venv
-COPY --link --from=builder-base --exclude=application/backend/.venv \
-    --chown=${APP_UID}:${APP_GID} /app /app
+COPY --link --from=app-source --chown=${APP_UID}:${APP_GID} /app /app
 
 WORKDIR /app/application/backend
 USER appuser
 CMD ["./run.sh"]
 
 # ===========================================================================
-# Stage 5b: XPU (Intel) runtime target
+# Stage 6b: XPU (Intel) runtime target
 # ===========================================================================
 FROM runtime-base AS runtime-xpu
 
@@ -214,18 +245,17 @@ FROM runtime-xpu AS geti-action-xpu
 ARG APP_UID=1000
 ARG APP_GID=1000
 
-# Virtual environment from XPU builder; everything else from shared base.
+# Virtual environment from XPU builder; app files from app-source.
 COPY --link --from=builder-xpu --chown=${APP_UID}:${APP_GID} \
     /app/application/backend/.venv /app/application/backend/.venv
-COPY --link --from=builder-base --exclude=application/backend/.venv \
-    --chown=${APP_UID}:${APP_GID} /app /app
+COPY --link --from=app-source --chown=${APP_UID}:${APP_GID} /app /app
 
 WORKDIR /app/application/backend
 USER appuser
 CMD ["./run.sh"]
 
 # ===========================================================================
-# Stage 5c: CUDA runtime target
+# Stage 6c: CUDA runtime target
 # ===========================================================================
 FROM runtime-base AS runtime-cuda
 
@@ -279,11 +309,10 @@ FROM runtime-cuda AS geti-action-cuda
 ARG APP_UID=1000
 ARG APP_GID=1000
 
-# Virtual environment from CUDA builder; everything else from shared base.
+# Virtual environment from CUDA builder; app files from app-source.
 COPY --link --from=builder-cuda --chown=${APP_UID}:${APP_GID} \
     /app/application/backend/.venv /app/application/backend/.venv
-COPY --link --from=builder-base --exclude=application/backend/.venv \
-    --chown=${APP_UID}:${APP_GID} /app /app
+COPY --link --from=app-source --chown=${APP_UID}:${APP_GID} /app /app
 
 WORKDIR /app/application/backend
 USER appuser
