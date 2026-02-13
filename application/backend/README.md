@@ -33,7 +33,6 @@ backend/src/
 
 - Python 3.12+
 - [uv](https://github.com/astral-sh/uv) package manager
-- RealSense SDK (optional, for Intel RealSense cameras)
 
 ### Install Dependencies
 
@@ -107,12 +106,12 @@ Once the server is running:
 
 Configuration via environment variables (see `src/settings.py`):
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DATABASE_URL` | SQLite database path | `sqlite+aiosqlite:///./geti_action.db` |
-| `CORS_ORIGINS` | Allowed CORS origins | `["http://localhost:3000"]` |
-| `LOG_LEVEL` | Logging level | `INFO` |
-| `SEED_DB` | Seed database on startup | `false` |
+| Variable       | Description              | Default                                |
+| -------------- | ------------------------ | -------------------------------------- |
+| `DATABASE_URL` | SQLite database path     | `sqlite+aiosqlite:///./geti_action.db` |
+| `CORS_ORIGINS` | Allowed CORS origins     | `["http://localhost:3000"]`            |
+| `LOG_LEVEL`    | Logging level            | `INFO`                                 |
+| `SEED_DB`      | Seed database on startup | `false`                                |
 
 Create `.env` file in backend directory for local overrides.
 
