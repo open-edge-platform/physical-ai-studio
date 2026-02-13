@@ -41,7 +41,7 @@ uv pip install -e '.[libero]'
 or
 
 ```bash
-pip install 'hf-libero>=0.1.3,<0.2.0"'
+pip install 'hf-libero>=0.1.3,<0.2.0'
 ```
 
 ## Task Suites

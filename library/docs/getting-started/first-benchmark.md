@@ -10,8 +10,19 @@ Evaluate your trained policy on standardized simulation environments.
 
 ## Prerequisites
 
-- [Trained policy checkpoint](quickstart.md)
-- LIBERO benchmark environment (installed automatically)
+- [Geti Action installed](installation.md)
+- LIBERO environment installed: `pip install getiaction[libero]` (see [LIBERO docs](../explanation/gyms/libero.md))
+- A policy checkpoint trained on LIBERO data (see note below)
+
+> **Note:** The [Quickstart](quickstart.md) trains on the ALOHA sim dataset, which is **not** compatible with LIBERO evaluation. To benchmark on LIBERO, you need a policy trained on LIBERO demonstration data. For example:
+>
+> ```bash
+> getiaction fit \
+>     --model getiaction.policies.ACT \
+>     --data getiaction.data.LeRobotDataModule \
+>     --data.repo_id lerobot/libero_10_demo \
+>     --trainer.max_epochs 100
+> ```
 
 ## Step 1: Run Benchmark with CLI
 
@@ -58,6 +69,8 @@ print(results.summary())
 ## Step 3: Interpret Results
 
 ### Console Output
+
+> **Note:** The results below are illustrative examples. Your actual numbers will vary depending on the policy, dataset, and training configuration used.
 
 ```text
 ================================================================================
@@ -192,6 +205,6 @@ getiaction benchmark --config configs/benchmark/my_eval.yaml
 
 **Benchmark takes too long**: Reduce `--benchmark.num_episodes` or test fewer tasks with `--benchmark.task_ids`
 
-**LIBERO import error**: Ensure LIBERO is installed via either `pip install getiaction[libero]` or `pip install hf-libero>=0.1.3,<0.2.0"`
+**LIBERO import error**: Ensure LIBERO is installed: `pip install getiaction[libero]` or `pip install 'hf-libero>=0.1.3,<0.2.0'`
 
 **Video recording fails**: Check FFMPEG is installed and `video_dir` is writable
