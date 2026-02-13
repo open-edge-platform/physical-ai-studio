@@ -10,6 +10,7 @@ Web interface for:
 - **Data Collection** - Record and manage demonstration datasets
 - **Training** - Launch and monitor policy training jobs
 - **Model Management** - Track trained models and deployments
+- **Inference** - Perform inference on robots using the trained models.
 
 ## Setup
 
@@ -87,9 +88,9 @@ ui/src/
 
 Create `.env.local` for custom configuration:
 
-| Variable              | Description          | Default                    |
-|-----------------------|----------------------|----------------------------|
-| `PUBLIC_API_BASE_URL` | Backend API base URL | `http://localhost:3000`    |
+| Variable              | Description          | Default                 |
+| --------------------- | -------------------- | ----------------------- |
+| `PUBLIC_API_BASE_URL` | Backend API base URL | `http://localhost:3000` |
 
 ### Development Proxy
 
