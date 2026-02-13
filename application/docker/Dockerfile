@@ -81,6 +81,11 @@ COPY --link --from=web-ui /home/app/web_ui/dist ${STATIC_FILES_DIR}
 
 WORKDIR /app/application/backend
 
+# Install hardware-independent dependencies (FastAPI, SQLAlchemy, etc.)
+# first so this layer is shared across all device-specific builders.
+RUN --mount=type=cache,id=uv-base,target=/root/.cache/uv \
+    uv sync --frozen --no-dev
+
 # ===========================================================================
 # Stage 3a: CPU builder
 # ===========================================================================
