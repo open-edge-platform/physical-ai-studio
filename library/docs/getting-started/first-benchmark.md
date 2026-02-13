@@ -70,34 +70,37 @@ print(results.summary())
 
 ### Console Output
 
-> **Note:** The results below are illustrative examples. Your actual numbers will vary depending on the policy, dataset, and training configuration used.
+You'll see a summary like this:
 
 ```text
-================================================================================
-                           BENCHMARK RESULTS SUMMARY
-================================================================================
-Benchmark: LiberoBenchmark
-Tasks: 10 | Episodes per task: 20 | Total episodes: 200
---------------------------------------------------------------------------------
+============================================================
+BENCHMARK RESULTS SUMMARY
+============================================================
+Tasks evaluated: 10
+Total episodes: 200
 
-Task Results:
-  libero_10_0                    85.0% success    reward: 0.85 ± 0.36
-  libero_10_1                    70.0% success    reward: 0.70 ± 0.46
-  libero_10_2                    90.0% success    reward: 0.90 ± 0.30
+AGGREGATE METRICS:
+  Success Rate: XX.X%
+  Avg Reward: X.XXXX
+  Avg Episode Length: XXX.X
+  Avg FPS: XX.X
+
+PER-TASK RESULTS:
+  libero_10_0: success=XX.X%, reward=X.XXXX, steps=XXX.X
+  libero_10_1: success=XX.X%, reward=X.XXXX, steps=XXX.X
+  libero_10_2: success=XX.X%, reward=X.XXXX, steps=XXX.X
   ...
-
---------------------------------------------------------------------------------
-AGGREGATE:  75.5% success rate    mean reward: 0.76 ± 0.43
-================================================================================
+============================================================
 ```
 
 ### What the Metrics Mean
 
-| Metric           | Description                                |
-| ---------------- | ------------------------------------------ |
-| **Success Rate** | % of episodes where the task was completed |
-| **Mean Reward**  | Average reward across episodes             |
-| **± value**      | Standard deviation (consistency measure)   |
+| Metric                 | Description                                 |
+| ---------------------- | ------------------------------------------- |
+| **Success Rate**       | % of episodes where the task was completed  |
+| **Avg Reward**         | Average cumulative reward across episodes   |
+| **Avg Episode Length** | Average number of steps per episode         |
+| **Avg FPS**            | Average frames per second during evaluation |
 
 ### Save Results
 
