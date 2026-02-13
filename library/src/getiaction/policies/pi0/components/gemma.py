@@ -147,7 +147,7 @@ class PaliGemmaWithExpert(nn.Module):
 
         self._paligemma = PaliGemmaForConditionalGeneration.from_pretrained(  # nosec B615
             self._paligemma_model_id,
-            torch_dtype=self.dtype,
+            dtype=self.dtype,
             revision="main",
         )
 

@@ -50,15 +50,15 @@ class OpenVINOAdapter(RuntimeAdapter):
             ImportError: If OpenVINO is not installed
             FileNotFoundError: If model files don't exist
         """
+        if not model_path.exists():
+            msg = f"Model file not found: {model_path}"
+            raise FileNotFoundError(msg)
+
         try:
             import openvino as ov  # noqa: PLC0415
         except ImportError as e:
             msg = "OpenVINO is not installed. Install with: uv pip install openvino"
             raise ImportError(msg) from e
-
-        if not model_path.exists():
-            msg = f"Model file not found: {model_path}"
-            raise FileNotFoundError(msg)
 
         # Load and compile model
         core = ov.Core()
