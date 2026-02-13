@@ -26,7 +26,7 @@ import torch
 import torch.nn.functional as F  # noqa: N812
 
 from getiaction.data import Feature, FeatureType, NormalizationParameters
-from getiaction.data.observation import ACTION, STATE, TASK
+from getiaction.data.observation import ACTION, EXTRA, IMAGES, STATE, TASK, Observation
 from getiaction.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
 
 logger = logging.getLogger(__name__)
@@ -122,7 +122,63 @@ class SmolVLAPreprocessor(torch.nn.Module):
         batch["tokenized_prompt"] = tokens.to(batch[STATE].device)
         batch["tokenized_prompt_mask"] = masks.to(batch[STATE].device)
 
+        images, img_masks = self._preprocess_images(batch)
+        batch[IMAGES] = images
+        batch["image_masks"] = img_masks
+
         return self._state_action_normalizer(batch)
+
+    def _preprocess_images(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
+        """Apply SmolVLA preprocessing to the images.
+
+        This method processes image tensors from a batch by:
+        1. Extracting the last frame if the input is a 5D tensor (video sequence)
+        2. Optionally resizing images with padding to maintain aspect ratio
+        3. Converting pixel values from [0.0, 1.0] range to [-1.0, 1.0] range as required by SigLIP
+        4. Extracting or creating padding masks for each image
+        Args:
+            batch: A dictionary containing image tensors and optional padding masks.
+                Image tensors should be 4D (B, C, H, W) or 5D (B, T, C, H, W).
+                Optional padding masks are stored with keys prefixed by EXTRA.
+
+        Returns:
+            A tuple containing:
+                - images: Stacked preprocessed image tensors, each with shape (B, C, H, W)
+                    and pixel values in range [-1.0, 1.0]
+                - img_masks: List of boolean mask tensors indicating valid (non-padded)
+                    images in each batch position
+        """
+        images = []
+        img_masks = []
+
+        batch_img_keys = Observation.get_flattened_keys(batch, IMAGES)
+        batch_img_keys = [key for key in batch_img_keys if "is_pad" not in key]
+
+        max_image_dim = 5
+        for key in batch_img_keys:
+            img = batch[key][:, -1, :, :, :] if batch[key].ndim == max_image_dim else batch[key]
+            if self.image_resolution is not None:
+                img = _resize_with_pad(img, *self.image_resolution, pad_value=0)
+
+            img = img * 2.0 - 1.0
+
+            bsize = img.shape[0]
+            device = img.device
+            if EXTRA + f".{key}_padding_mask" in batch:
+                mask = batch[EXTRA + f".{key}_padding_mask"].bool()
+            else:
+                mask = torch.ones(bsize, dtype=torch.bool, device=device)
+            images.append(img)
+            img_masks.append(mask)
+
+        if images:
+            images = torch.stack(images, dim=0)
+            img_masks = torch.stack(img_masks, dim=0)
+        else:
+            images = torch.empty(0, device=batch[STATE].device)
+            img_masks = torch.empty(0, device=batch[STATE].device)
+
+        return images, img_masks
 
     @staticmethod
     def _newline_processor(batch: dict[str, Any]) -> dict[str, torch.Tensor]:
@@ -330,3 +386,29 @@ def make_smolvla_preprocessors(
     )
 
     return preprocessor, postprocessor
+
+
+def _resize_with_pad(img: torch.Tensor, width: int, height: int, pad_value: float = -1) -> torch.Tensor:
+    # assume no-op when width height fits already
+    img_dim = 4
+    if img.ndim != img_dim:
+        msg = f"(b,c,h,w) expected, but {img.shape}"
+        raise ValueError(msg)
+
+    cur_height, cur_width = img.shape[2:]
+
+    ratio = max(cur_width / width, cur_height / height)
+    resized_height = int(cur_height / ratio)
+    resized_width = int(cur_width / ratio)
+    resized_img = F.interpolate(
+        img,
+        size=(resized_height, resized_width),
+        mode="bilinear",
+        align_corners=False,
+    )
+
+    pad_height = max(0, int(height - resized_height))
+    pad_width = max(0, int(width - resized_width))
+
+    # pad on left and top of image
+    return F.pad(resized_img, (pad_width, 0, pad_height, 0), value=pad_value)
