@@ -122,9 +122,13 @@ LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/get
 # uv is needed at runtime for `uv run` in run.sh
 COPY --from=docker.io/astral/uv:0.9.7@sha256:ba4857bf2a068e9bc0e64eed8563b065908a4cd6bfb66b531a9c424c8e25e142 /uv /uvx /bin/
 
-# Create non-root user
-RUN groupadd --gid 1000 appuser \
-    && useradd --uid 1000 --gid 1000 --create-home appuser
+# Non-root user — override at build time to match host UID/GID for
+# bind-mounted volumes (e.g. calibration data, HuggingFace cache).
+ARG APP_UID=1000
+ARG APP_GID=1000
+
+RUN groupadd --gid "${APP_GID}" appuser \
+    && useradd --uid "${APP_UID}" --gid "${APP_GID}" --create-home appuser
 
 # Common runtime system dependencies (OpenCV, USB access)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -140,7 +144,7 @@ WORKDIR /app
 # subdirectories (e.g. huggingface calibration) don't cause Docker
 # to create .cache as root, which blocks uv from writing its cache.
 RUN mkdir -p /app/data /app/storage /app/tmp /home/appuser/.cache \
-    && chown -R appuser:appuser /app /home/appuser/.cache
+    && chown -R "${APP_UID}:${APP_GID}" /app /home/appuser/.cache
 
 # Environment configuration
 ENV PATH="/app/application/backend/.venv/bin:$PATH" \
@@ -159,10 +163,12 @@ EXPOSE 8000
 # ===========================================================================
 FROM runtime-base AS geti-action-cpu
 
-COPY --link --from=builder-cpu --chown=appuser:appuser /app /app
+ARG APP_UID=1000
+ARG APP_GID=1000
+COPY --link --from=builder-cpu --chown=${APP_UID}:${APP_GID} /app /app
 
 WORKDIR /app/application/backend
-USER appuser
+USER ${APP_UID}:${APP_GID}
 CMD ["./run.sh"]
 
 # ===========================================================================
@@ -200,10 +206,12 @@ SHELL ["/bin/sh", "-c"]
 
 FROM runtime-xpu AS geti-action-xpu
 
-COPY --link --from=builder-xpu --chown=appuser:appuser /app /app
+ARG APP_UID=1000
+ARG APP_GID=1000
+COPY --link --from=builder-xpu --chown=${APP_UID}:${APP_GID} /app /app
 
 WORKDIR /app/application/backend
-USER appuser
+USER ${APP_UID}:${APP_GID}
 CMD ["./run.sh"]
 
 # ===========================================================================
@@ -258,8 +266,10 @@ RUN set -eux; \
 
 FROM runtime-cuda AS geti-action-cuda
 
-COPY --link --from=builder-cuda --chown=appuser:appuser /app /app
+ARG APP_UID=1000
+ARG APP_GID=1000
+COPY --link --from=builder-cuda --chown=${APP_UID}:${APP_GID} /app /app
 
 WORKDIR /app/application/backend
-USER appuser
+USER ${APP_UID}:${APP_GID}
 CMD ["./run.sh"]

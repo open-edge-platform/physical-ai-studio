@@ -1,15 +1,3 @@
-x-proxy-list: &proxy-list
-  - HTTP_PROXY=${HTTP_PROXY}
-  - HTTPS_PROXY=${HTTPS_PROXY}
-  - NO_PROXY=${NO_PROXY}
-  - http_proxy=${http_proxy}
-  - https_proxy=${https_proxy}
-  - no_proxy=${no_proxy}
-
-x-proxies: &proxies
-  args: *proxy-list
-
-
 services:
   geti-action:
     image: ${REGISTRY:-ghcr.io/markredeman/}geti-action:${IMAGE_TAG:-latest}-${AI_DEVICE:-cpu}
@@ -19,7 +7,15 @@ services:
       target: geti-action-${AI_DEVICE:-cpu}
       additional_contexts:
         libs: ../../library
-      <<: *proxies
+      args:
+        - APP_UID=${APP_UID:-1000}
+        - APP_GID=${APP_GID:-1000}
+        - HTTP_PROXY=${HTTP_PROXY}
+        - HTTPS_PROXY=${HTTPS_PROXY}
+        - NO_PROXY=${NO_PROXY}
+        - http_proxy=${http_proxy}
+        - https_proxy=${https_proxy}
+        - no_proxy=${no_proxy}
     ports:
       - "${PORT:-7860}:7860"
     environment:
