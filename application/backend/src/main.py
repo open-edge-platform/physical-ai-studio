@@ -3,6 +3,7 @@
 
 import multiprocessing as mp
 import os
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
@@ -21,6 +22,7 @@ from api.robot_calibration import router as robot_calibration_router
 from api.robot_control import router as robot_control_router
 from api.robots import router as project_robots_router
 from api.settings import router as settings_router
+from api.webui import SPAStaticFiles
 from core import lifespan
 from exception_handlers import register_application_exception_handlers
 from settings import get_settings
@@ -61,6 +63,16 @@ async def health_check(camera_registry: CameraRegistryDep, robot_registry: Robot
         "robot_workers": robot_registry.get_status_summary(),
     }
 
+
+# In docker deployment, the UI is built and served statically
+if (
+    settings.static_files_dir
+    and Path(settings.static_files_dir).is_dir()
+    and (Path(settings.static_files_dir) / "index.html").exists()
+):
+    static_files = SPAStaticFiles(directory=Path(settings.static_files_dir), html=True)
+
+    app.mount("/", static_files, name="webui")
 
 if __name__ == "__main__":
     if get_torch_device() == "xpu" and mp.get_start_method(allow_none=True) != "spawn":
