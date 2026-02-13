@@ -5,16 +5,17 @@ set -euo pipefail
 # run.sh - Script to run the Geti Action server
 #
 # Features:
-# - Optionally seed the database before starting the server by setting:
+# - Runs database migrations on every start (idempotent via Alembic)
+# - Optionally seeds the database before starting the server by setting:
 #     SEED_DB=true
 #
 # Usage:
-#   SEED_DB=true ./run.sh       # Seed database before launching server (make sure to pre-upload model artifacts)
+#   SEED_DB=true ./run.sh       # Seed database before launching server
 #   ./run.sh                    # Run server without seeding
 #
 # Environment variables:
-#   SEED_DB       If set to "true", runs `uv run application/cli seed` before starting the server.
-#   APP_MODULE    Python module to run (default: application/main.py)
+#   SEED_DB       If set to "true", runs database seeding before starting.
+#   APP_MODULE    Python module to run (default: src/main.py)
 #   UV_CMD        Command to launch Uvicorn (default: "uv run")
 #
 # Requirements:
@@ -29,10 +30,16 @@ UV_CMD=${UV_CMD:-uv run}
 export PYTHONUNBUFFERED=1
 export PYTHONPATH=.
 
+# Always run migrations — Alembic is idempotent and will skip
+# already-applied migrations. This ensures the persistent volume
+# has an up-to-date schema regardless of how it was created.
+echo "Running database migrations..."
+uv run src/cli.py migrate
+
 if [[ "$SEED_DB" == "true" ]]; then
-  echo "Seeding the database..."
-  $UV_CMD application/cli.py init-db
-  $UV_CMD application/cli.py seed --with-model=True
+    echo "Seeding the database..."
+    $UV_CMD application/cli.py init-db
+    $UV_CMD application/cli.py seed --with-model=True
 fi
 
 echo "Starting FastAPI server..."
