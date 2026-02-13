@@ -28,7 +28,7 @@ class SigLIPVisionEncoder(nn.Module):
 
         self.model: SiglipVisionModel = SiglipVisionModel.from_pretrained(  # nosec B615
             model_name,
-            torch_dtype=dtype,
+            dtype=dtype,
             revision="main",
         )
 
