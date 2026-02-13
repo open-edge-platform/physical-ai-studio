@@ -162,8 +162,9 @@ ARG APP_GID=1000
 RUN groupadd --gid "${APP_GID}" appuser \
     && useradd --uid "${APP_UID}" --gid "${APP_GID}" --create-home appuser
 
-# Common runtime system dependencies (OpenCV, USB access)
+# Common runtime system dependencies (OpenCV, USB access, video decoding)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg \
         libgl1 \
         libglib2.0-0 \
         libusb-1.0-0 \
@@ -175,7 +176,7 @@ WORKDIR /app
 # /home/appuser/.cache must be pre-created so that bind mounts for
 # subdirectories (e.g. huggingface calibration) don't cause Docker
 # to create .cache as root, which blocks uv from writing its cache.
-RUN mkdir -p /app/data /app/storage /app/tmp /home/appuser/.cache \
+RUN mkdir -p /app/data /app/storage /app/tmp /home/appuser/.cache/huggingface \
     && chown -R "${APP_UID}:${APP_GID}" /app /home/appuser/.cache
 
 # Environment configuration

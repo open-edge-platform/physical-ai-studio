@@ -26,6 +26,8 @@ services:
         required: false
     restart: unless-stopped
     stop_grace_period: 35s
+    # PyTorch DataLoader workers need shared memory (/dev/shm) beyond Docker's 64 MB default
+    shm_size: 2g
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${PORT:-7860}/api/health')"]
       interval: 30s
