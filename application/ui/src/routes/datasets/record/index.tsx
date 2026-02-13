@@ -11,13 +11,12 @@ import { paths } from '../../../router';
 import { RecordingViewer } from './recording-viewer';
 
 import classes from './index.module.scss';
+import { useDatasetId } from '../../../features/datasets/use-dataset';
 
 const RecordingPage = () => {
+    const { project_id, dataset_id } = useDatasetId();
     const [recordingConfig, setRecordingConfig] = useState<SchemaTeleoperationConfig>();
-    const { project_id, dataset_id } = useParams();
-    if (!dataset_id || !project_id) {
-        throw new Error('Incorrect params given.');
-    }
+
     const navigate = useNavigate();
 
     const { data: dataset } = $api.useSuspenseQuery('get', '/api/dataset/{dataset_id}', {

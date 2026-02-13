@@ -1,15 +1,14 @@
 import { createContext, Dispatch, ReactNode, SetStateAction, useContext, useState } from 'react';
 
-import { useQueryClient } from '@tanstack/react-query';
-
 import { $api } from '../../api/client';
 import { SchemaDatasetOutput, SchemaEpisode } from '../../api/openapi-spec';
+import { useDeleteEpisodeQuery } from '../../features/datasets/episodes/use-episodes';
 
 type DatasetContextValue = null | {
     dataset_id: string;
     dataset: SchemaDatasetOutput;
     episodes: SchemaEpisode[];
-    deleteEpisodes: (episodeIndices: number[]) => void;
+    deleteSelectedEpisodes: () => void;
     setSelectedEpisodes: Dispatch<SetStateAction<number[]>>;
     selectedEpisodes: number[];
     isPending: boolean;
@@ -21,10 +20,9 @@ interface DatasetProviderProps {
     children: ReactNode;
 }
 export const DatasetProvider = ({ dataset_id, children }: DatasetProviderProps) => {
-    const queryClient = useQueryClient();
     const [selectedEpisodes, setSelectedEpisodes] = useState<number[]>([]);
 
-    const { data: dataset, isPending: datasetPending } = $api.useSuspenseQuery('get', '/api/dataset/{dataset_id}', {
+    const { data: dataset } = $api.useSuspenseQuery('get', '/api/dataset/{dataset_id}', {
         params: {
             path: {
                 dataset_id,
@@ -32,7 +30,7 @@ export const DatasetProvider = ({ dataset_id, children }: DatasetProviderProps) 
         },
     });
 
-    const { data: episodes, isPending: episodesPending } = $api.useSuspenseQuery(
+    const { data: episodes } = $api.useSuspenseQuery(
         'get',
         '/api/dataset/{dataset_id}/episodes',
         {
@@ -44,43 +42,28 @@ export const DatasetProvider = ({ dataset_id, children }: DatasetProviderProps) 
         }
     );
 
-    const deleteEpisodesMutation = $api.useMutation('delete', '/api/dataset/{dataset_id}/episodes', {
-        onSuccess: (data) => {
-            const query_key = [
-                'get',
-                '/api/dataset/{dataset_id}/episodes',
-                {
-                    params: {
-                        path: {
-                            dataset_id,
-                        },
-                    },
-                },
-            ];
-            queryClient.setQueryData(query_key, data);
-            setSelectedEpisodes([]);
-        },
-    });
+    const deleteEpisodesMutation = useDeleteEpisodeQuery();
 
-    const deleteEpisodes = (episodeIndices: number[]) => {
+    const deleteSelectedEpisodes = () => {
         deleteEpisodesMutation.mutate({
             params: {
                 path: {
                     dataset_id,
                 },
             },
-            body: episodeIndices,
+            body: selectedEpisodes,
         });
+        setSelectedEpisodes([]);
     };
 
-    const isPending = deleteEpisodesMutation.isPending || episodesPending || datasetPending;
+    const isPending = deleteEpisodesMutation.isPending
 
     return (
         <DatasetContext.Provider
             value={{
                 dataset_id,
                 dataset,
-                deleteEpisodes,
+                deleteSelectedEpisodes,
                 episodes,
                 setSelectedEpisodes,
                 selectedEpisodes,

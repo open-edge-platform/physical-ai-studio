@@ -23,7 +23,7 @@ import { EpisodeList } from './episode-list';
 import { EpisodeViewer } from './episode-viewer';
 
 export const DatasetViewer = () => {
-    const { dataset, episodes, deleteEpisodes, selectedEpisodes, setSelectedEpisodes, isPending } = useDataset();
+    const { dataset, episodes, deleteSelectedEpisodes, selectedEpisodes, setSelectedEpisodes, isPending } = useDataset();
 
     const [currentEpisode, setCurrentEpisode] = useState<number>(0);
 
@@ -75,7 +75,7 @@ export const DatasetViewer = () => {
                                 <Delete fill='white' />
                             </ActionButton>
                             <AlertDialog
-                                onPrimaryAction={() => deleteEpisodes(selectedEpisodes)}
+                                onPrimaryAction={() => deleteSelectedEpisodes()}
                                 title='Delete episodes'
                                 variant='warning'
                                 primaryActionLabel='Delete'
