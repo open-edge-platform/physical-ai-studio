@@ -5,13 +5,13 @@ import { Disclosure, DisclosurePanel, DisclosureTitle, Divider, Flex, Text, View
 import { SchemaEpisode, SchemaEpisodeVideo } from '../../api/openapi-spec';
 import EpisodeChart from '../../components/episode-chart/episode-chart';
 import { EpisodeTag } from '../../features/datasets/episodes/episode-tag';
+import { useDatasetId } from '../../features/datasets/use-dataset';
 import { RobotViewer } from '../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 import { TimelineControls } from './timeline-controls';
 import { usePlayer } from './use-player';
 
 import classes from './episode-viewer.module.scss';
-import { useDatasetId } from '../../features/datasets/use-dataset';
 
 interface VideoView {
     dataset_id: string;

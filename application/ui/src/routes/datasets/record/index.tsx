@@ -2,16 +2,16 @@ import { Suspense, useState } from 'react';
 
 import { Flex, Grid, Icon, Link, Loading, Text, View } from '@geti/ui';
 import { ChevronLeft } from '@geti/ui/icons';
-import { useNavigate, useParams } from 'react-router';
+import { useNavigate } from 'react-router';
 
 import { $api } from '../../../api/client';
 import { SchemaTeleoperationConfig } from '../../../api/openapi-spec';
 import { TeleoperationSetup } from '../../../features/configuration/teleoperation/teleoperation';
+import { useDatasetId } from '../../../features/datasets/use-dataset';
 import { paths } from '../../../router';
 import { RecordingViewer } from './recording-viewer';
 
 import classes from './index.module.scss';
-import { useDatasetId } from '../../../features/datasets/use-dataset';
 
 const RecordingPage = () => {
     const { project_id, dataset_id } = useDatasetId();

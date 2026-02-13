@@ -16,6 +16,7 @@ import {
 } from '@geti/ui';
 import { Add, Delete } from '@geti/ui/icons';
 
+import { useDeleteEpisodeQuery } from '../../features/datasets/episodes/use-episodes';
 import { paths } from '../../router';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
 import { useDataset } from './dataset-provider';
@@ -23,8 +24,9 @@ import { EpisodeList } from './episode-list';
 import { EpisodeViewer } from './episode-viewer';
 
 export const DatasetViewer = () => {
-    const { dataset, episodes, deleteSelectedEpisodes, selectedEpisodes, setSelectedEpisodes, isPending } = useDataset();
+    const { dataset, episodes, selectedEpisodes, setSelectedEpisodes } = useDataset();
 
+    const { deleteEpisodes, isPending } = useDeleteEpisodeQuery();
     const [currentEpisode, setCurrentEpisode] = useState<number>(0);
 
     const recordPath = paths.project.datasets.record({ project_id: dataset.project_id, dataset_id: dataset.id! });
@@ -75,7 +77,7 @@ export const DatasetViewer = () => {
                                 <Delete fill='white' />
                             </ActionButton>
                             <AlertDialog
-                                onPrimaryAction={() => deleteSelectedEpisodes()}
+                                onPrimaryAction={() => deleteEpisodes(selectedEpisodes)}
                                 title='Delete episodes'
                                 variant='warning'
                                 primaryActionLabel='Delete'
