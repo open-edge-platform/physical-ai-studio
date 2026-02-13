@@ -213,6 +213,17 @@ class Pi0(Export, Policy, FromConfig):
             if isinstance(shape, (list, tuple)):
                 env_action_dim = int(shape[-1])
 
+        self._preprocessor, self._postprocessor = make_pi0_preprocessors(
+            max_state_dim=self.config.max_state_dim,
+            max_action_dim=self.config.max_action_dim,
+            chunk_size=self.config.chunk_size,
+            env_action_dim=env_action_dim,
+            stats=dataset_stats,
+            use_quantile_norm=self.config.is_pi05,
+            image_resolution=self.config.image_resolution,
+            max_token_len=self.config.max_token_len or 48,
+        )
+
         self.model = Pi0Model(
             variant=self.config.variant,
             paligemma_variant=cast("GemmaVariant", self.config.paligemma_variant),
@@ -228,6 +239,8 @@ class Pi0(Export, Policy, FromConfig):
             time_offset=self.config.time_offset,
             time_min_period=self.config.time_min_period,
             time_max_period=self.config.time_max_period,
+            preprocessor=self._preprocessor,
+            postprocessor=self._postprocessor,
         )
 
         # Set trainable parameters
@@ -241,20 +254,6 @@ class Pi0(Export, Policy, FromConfig):
         # Enable gradient checkpointing if requested
         if self.config.gradient_checkpointing:
             self.model.gradient_checkpointing_enable()
-
-        self._preprocessor, self._postprocessor = make_pi0_preprocessors(
-            max_state_dim=self.config.max_state_dim,
-            max_action_dim=self.config.max_action_dim,
-            chunk_size=self.config.chunk_size,
-            env_action_dim=env_action_dim,
-            stats=dataset_stats,
-            use_quantile_norm=self.config.is_pi05,
-            image_resolution=self.config.image_resolution,
-            max_token_len=self.config.max_token_len or 48,
-        )
-
-        if self.model is not None:
-            cast("Pi0Model", self.model).set_preprocessors(self._preprocessor, self._postprocessor)
 
     def setup(self, stage: str) -> None:
         """Set up model from datamodule (lazy initialization path).
