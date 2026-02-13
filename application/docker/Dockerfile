@@ -81,11 +81,6 @@ COPY --link --from=web-ui /home/app/web_ui/dist ${STATIC_FILES_DIR}
 
 WORKDIR /app/application/backend
 
-# Install hardware-independent dependencies (FastAPI, SQLAlchemy, etc.)
-# first so this layer is shared across all device-specific builders.
-RUN --mount=type=cache,id=uv-base,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable
-
 # ===========================================================================
 # Stage 3a: CPU builder
 # ===========================================================================
@@ -170,7 +165,12 @@ FROM runtime-base AS geti-action-cpu
 
 ARG APP_UID=1000
 ARG APP_GID=1000
-COPY --link --from=builder-cpu --chown=${APP_UID}:${APP_GID} /app /app
+
+# Virtual environment from cpu builder; everything else from shared base.
+COPY --link --from=builder-cpu --chown=${APP_UID}:${APP_GID} \
+    /app/application/backend/.venv /app/application/backend/.venv
+COPY --link --from=builder-base --exclude=application/backend/.venv \
+    --chown=${APP_UID}:${APP_GID} /app /app
 
 WORKDIR /app/application/backend
 USER appuser
@@ -213,7 +213,12 @@ FROM runtime-xpu AS geti-action-xpu
 
 ARG APP_UID=1000
 ARG APP_GID=1000
-COPY --link --from=builder-xpu --chown=${APP_UID}:${APP_GID} /app /app
+
+# Virtual environment from XPU builder; everything else from shared base.
+COPY --link --from=builder-xpu --chown=${APP_UID}:${APP_GID} \
+    /app/application/backend/.venv /app/application/backend/.venv
+COPY --link --from=builder-base --exclude=application/backend/.venv \
+    --chown=${APP_UID}:${APP_GID} /app /app
 
 WORKDIR /app/application/backend
 USER appuser
@@ -273,7 +278,12 @@ FROM runtime-cuda AS geti-action-cuda
 
 ARG APP_UID=1000
 ARG APP_GID=1000
-COPY --link --from=builder-cuda --chown=${APP_UID}:${APP_GID} /app /app
+
+# Virtual environment from CUDA builder; everything else from shared base.
+COPY --link --from=builder-cuda --chown=${APP_UID}:${APP_GID} \
+    /app/application/backend/.venv /app/application/backend/.venv
+COPY --link --from=builder-base --exclude=application/backend/.venv \
+    --chown=${APP_UID}:${APP_GID} /app /app
 
 WORKDIR /app/application/backend
 USER appuser
