@@ -104,4 +104,54 @@ describe('fetchClient.PATH', () => {
             ).toBe('/api/cameras/supported_formats/usb?fingerprint=abc123');
         });
     });
+
+    describe('WebSocket paths', () => {
+        const fetchClient = getClient({ baseUrl: API_BASE_URL });
+
+        it('resolves /api/cameras/ws without params (query params passed separately to useWebSocket)', () => {
+            expect(fetchClient.PATH('/api/cameras/ws')).toBe('/api/cameras/ws');
+        });
+
+        it('also accepts optional camera query param inline', () => {
+            expect(
+                fetchClient.PATH('/api/cameras/ws', {
+                    params: { query: { camera: '{"driver":"usb_camera"}' } },
+                })
+            ).toBe('/api/cameras/ws?camera=%7B%22driver%22%3A%22usb_camera%22%7D');
+        });
+
+        it('resolves /api/jobs/ws without params', () => {
+            expect(fetchClient.PATH('/api/jobs/ws')).toBe('/api/jobs/ws');
+        });
+
+        it('resolves /api/record/teleoperate/ws without params', () => {
+            expect(fetchClient.PATH('/api/record/teleoperate/ws')).toBe('/api/record/teleoperate/ws');
+        });
+
+        it('resolves /api/record/inference/ws without params', () => {
+            expect(fetchClient.PATH('/api/record/inference/ws')).toBe('/api/record/inference/ws');
+        });
+
+        it('resolves /api/projects/{project_id}/robots/{robot_id}/ws with params', () => {
+            expect(
+                fetchClient.PATH('/api/projects/{project_id}/robots/{robot_id}/ws', {
+                    params: { path: { project_id: 'p1', robot_id: 'r1' } },
+                })
+            ).toBe('/api/projects/p1/robots/r1/ws');
+        });
+
+        it('throws when robot WebSocket path params are missing', () => {
+            expect(() =>
+                // @ts-expect-error missing required options argument
+                fetchClient.PATH('/api/projects/{project_id}/robots/{robot_id}/ws')
+            ).toThrow('Unresolved path parameters');
+        });
+
+        it('constructs absolute WebSocket-ready URLs with a base URL', () => {
+            const absoluteClient = getClient({ baseUrl: 'https://geti.ai' });
+            const url = absoluteClient.PATH('/api/cameras/ws');
+            expect(url).toBe('https://geti.ai/api/cameras/ws');
+            expect(url.replace(/^http/, 'ws')).toBe('wss://geti.ai/api/cameras/ws');
+        });
+    });
 });

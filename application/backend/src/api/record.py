@@ -4,6 +4,7 @@ from queue import Empty
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi.responses import Response
 from loguru import logger
 
 from api.dependencies import (
@@ -20,6 +21,12 @@ from utils.serialize_utils import to_python_primitive
 from workers import InferenceWorker, TeleoperateWorker
 
 router = APIRouter(prefix="/api/record")
+
+
+@router.get("/teleoperate/ws", tags=["WebSocket"], summary="Teleoperation (WebSocket)", status_code=426)
+async def teleoperate_websocket_openapi() -> Response:
+    """This endpoint requires a WebSocket connection. Use `ws://` or `wss://` to connect."""
+    return Response(status_code=426)
 
 
 @router.websocket("/teleoperate/ws")
@@ -96,6 +103,12 @@ async def teleoperate_websocket(  # noqa: C901
         task.cancel()
 
     logger.info("websocket handling done...")
+
+
+@router.get("/inference/ws", tags=["WebSocket"], summary="Inference (WebSocket)", status_code=426)
+async def inference_websocket_openapi() -> Response:
+    """This endpoint requires a WebSocket connection. Use `ws://` or `wss://` to connect."""
+    return Response(status_code=426)
 
 
 @router.websocket("/inference/ws")
