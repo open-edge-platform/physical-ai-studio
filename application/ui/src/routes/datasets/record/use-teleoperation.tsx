@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 
 import { useMutation } from '@tanstack/react-query';
 
+import { fetchClient } from '../../../api/client';
 import { SchemaEpisode, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
 import useWebSocketWithResponse from '../../../components/websockets/use-websocket-with-response';
 
@@ -40,7 +41,7 @@ export const useTeleoperation = (
 ) => {
     const [state, setState] = useState<TeleoperationState>(createTeleoperationState());
     const { sendJsonMessage, readyState, sendJsonMessageAndWait } = useWebSocketWithResponse(
-        `/api/record/teleoperate/ws`,
+        fetchClient.PATH('/api/record/teleoperate/ws'),
         {
             shouldReconnect: () => true,
             onMessage: (event: WebSocketEventMap['message']) => onMessage(event),

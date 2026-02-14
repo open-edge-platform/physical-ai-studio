@@ -4,7 +4,7 @@ import { View } from '@geti/ui';
 import useWebSocket from 'react-use-websocket';
 import { degToRad } from 'three/src/math/MathUtils.js';
 
-import { $api } from '../../../../api/client';
+import { $api, fetchClient } from '../../../../api/client';
 import { useProjectId } from '../../../projects/use-project';
 import { RobotViewer } from '../../controller/robot-viewer';
 import { RobotModelsProvider, useRobotModels } from '../../robot-models-context';
@@ -73,17 +73,22 @@ const useJointState = (project_id: string, robot_id: string) => {
         }
     }, []);
 
-    useWebSocket(`/api/projects/${project_id}/robots/${robot_id}/ws`, {
-        queryParams: {
-            fps: 60,
-        },
-        shouldReconnect: () => true,
-        reconnectAttempts: 5,
-        reconnectInterval: 3000,
-        onMessage: handleMessage,
-        onError: (error) => console.error('WebSocket error:', error),
-        onClose: () => console.info('WebSocket closed'),
-    });
+    useWebSocket(
+        fetchClient.PATH('/api/projects/{project_id}/robots/{robot_id}/ws', {
+            params: { path: { project_id, robot_id } },
+        }),
+        {
+            queryParams: {
+                fps: 60,
+            },
+            shouldReconnect: () => true,
+            reconnectAttempts: 5,
+            reconnectInterval: 3000,
+            onMessage: handleMessage,
+            onError: (error) => console.error('WebSocket error:', error),
+            onClose: () => console.info('WebSocket closed'),
+        }
+    );
 };
 
 const InnerCell = ({ robot_id }: { robot_id: string }) => {
