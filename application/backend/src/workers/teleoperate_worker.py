@@ -102,13 +102,13 @@ class TeleoperateWorker(BaseThreadWorker):
     async def setup_environment(self) -> None:
         """Setup environment."""
         robot = self.config.environment.robots[0]  # Assume 1 arm for now.
-        if robot.tele_operator.robot is None:
+        if robot.tele_operator.type == "none" or robot.tele_operator.robot is None:
             raise ValueError("No teleoperator given.")
         self.follower = await get_robot_client(robot.robot, self.robot_manager, self.calibration_service)
         self.leader = await get_robot_client(robot.tele_operator.robot, self.robot_manager, self.calibration_service)
 
         self.cameras = {
-            camera.name: create_frames_source_from_camera(camera) for camera in self.config.environment.cameras
+            str(camera.id): create_frames_source_from_camera(camera) for camera in self.config.environment.cameras
         }
         for camera in self.cameras.values():
             # camera.attach_processor(CameraFrameProcessor()) # TODO Not working. Fix in framesource
@@ -130,7 +130,7 @@ class TeleoperateWorker(BaseThreadWorker):
                 raise RuntimeError("Environment setup failed.")
 
             self.action_keys = self.follower.features()
-            self.camera_keys = [camera.name.lower() for camera in self.config.environment.cameras]
+            self.camera_keys = [str(camera.id) for camera in self.config.environment.cameras]
             features = self.loop.run_until_complete(
                 build_lerobot_dataset_features(self.config.environment, self.robot_manager, self.calibration_service)
             )
@@ -230,12 +230,12 @@ class TeleoperateWorker(BaseThreadWorker):
                 if forces is not None:
                     await self.leader.set_forces(forces)
 
-                for camera_name, camera in self.cameras.items():
+                for camera_id, camera in self.cameras.items():
                     _success, camera_frame = camera.get_latest_frame()  # HWC
                     if camera_frame is None:
                         raise Exception("Camera frame is None")
                     processed_frame = CameraFrameProcessor.process(camera_frame)
-                    observations[camera_name] = processed_frame
+                    observations[camera_id] = processed_frame
 
                 timestamp = time.perf_counter() - self.start_episode_t
                 self._report_observation(observations, timestamp)

@@ -40,7 +40,7 @@ jobs:
         working-directory: application/backend
         run: |
           uv lock --check
-          uv sync --frozen --all-extras
+          uv sync --frozen --extra cpu
 
       - name: Get OpenAPI spec
         working-directory: application/backend
