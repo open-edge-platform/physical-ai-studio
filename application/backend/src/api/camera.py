@@ -51,9 +51,9 @@ def get_camera_from_query(websocket: WebSocket) -> ProjectCamera:
 
 @router.get("/ws", tags=["WebSocket"], summary="Camera streaming (WebSocket)", status_code=426)
 async def camera_websocket_openapi(
-    camera: Annotated[str | None, Query(description="JSON-serialized ProjectCamera configuration")] = None,
+    camera: Annotated[str | None, Query(description="JSON-serialized ProjectCamera configuration")] = None,  # noqa: ARG001
 ) -> Response:
-    """This endpoint requires a WebSocket connection. Use `ws://` or `wss://` to connect."""
+    """This endpoint requires a WebSocket connection. Use `wss://` to connect."""
     return Response(status_code=426)
 
 
