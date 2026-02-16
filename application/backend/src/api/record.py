@@ -3,7 +3,7 @@ import multiprocessing as mp
 from queue import Empty
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket
 from loguru import logger
 
 from api.dependencies import (
