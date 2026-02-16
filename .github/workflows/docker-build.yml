@@ -24,18 +24,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet \
-                      /usr/local/lib/android \
-                      /usr/share/swift \
-                      /usr/share/miniconda \
-                      /usr/local/share/boost \
-                      /usr/local/.ghcup \
-                      /opt/ghc \
-                      /opt/hostedtoolcache
-          sudo docker image prune --all --force
-          df -h
+      - name: Cleanup runner
+        uses: open-edge-platform/geti-ci/actions/cleanup-runner@main
+        with:
+          type: all
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
