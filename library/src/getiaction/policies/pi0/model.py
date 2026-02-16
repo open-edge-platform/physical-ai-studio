@@ -42,9 +42,6 @@ def _clone_kv_cache(cache: DynamicCache) -> DynamicCache:
     same prefix cache is reused across denoising steps this causes a shape
     mismatch on step 2+.
 
-    Unlike :func:`copy.deepcopy`, this helper uses :meth:`Tensor.clone` so
-    the result is safe for ``torch.export`` / ``torch.compile`` paths.
-
     Returns:
         A new ``DynamicCache`` instance with cloned keys and values.
     """
