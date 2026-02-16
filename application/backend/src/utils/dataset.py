@@ -22,7 +22,7 @@ async def build_observation_features(
         raise ValueError("Environments with multiple robots not implemented yet")
     output_features = await build_action_features(environment, robot_manager, calibration_service)
     for camera in environment.cameras:
-        output_features[camera.name.lower()] = await get_camera_features(camera)
+        output_features[str(camera.id)] = await get_camera_features(camera)
 
     return output_features
 
