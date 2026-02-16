@@ -9,6 +9,7 @@ dependencies = [
   "cv2-enumerate-cameras",
   'harvesters; sys_platform != "darwin"',
   "fastapi[standard]",
+  "getiaction[pi0,smolvla]",
   "lerobot[feetech]==0.4.2",
   "numpy",
   "websockets",
@@ -22,7 +23,6 @@ dependencies = [
   "click>=8.3.0",
   "FrameSource>=0.2.2",
   "loguru>=0.7.3",
-  "getiaction[pi0,smolvla]",
   "greenlet>=3.2.4",
   "tenacity>=9.1.2",
   "aiofiles>=25.1.0",
@@ -30,9 +30,46 @@ dependencies = [
   "trossen-arm==1.9.0"
 ]
 
+[project.optional-dependencies]
+cpu = [
+    "torch<2.11",
+]
+cuda = [
+    "torch>=2.4.0,<=2.8.0",
+]
+xpu = [
+    "torch<2.11",
+]
+
+# --- PyTorch index configuration ---
+# torch is a transitive dependency (via lightning, lerobot) that defaults to
+# PyPI's fat CUDA wheel on Linux. Source routing here directs uv to fetch
+# torch/torchvision from the correct hardware-specific PyTorch index.
+# This must be declared in the consumer project because uv does not
+# propagate [tool.uv.sources] from path dependencies (uv #14675).
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-xpu"
+url = "https://download.pytorch.org/whl/xpu"
+explicit = false
+
 [tool.uv.sources]
 FrameSource = { git = "https://github.com/ArendJanKramer/FrameSource.git", rev = "4d51da9bc2f8f9353562e1641ddbf87d3045baf6" }
 getiaction = { path = "../../library", editable = true }
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu128", extra = "cuda" },
+    { index = "pytorch-xpu", extra = "xpu" },
+]
 
 [dependency-groups]
 dev = [
@@ -49,7 +86,19 @@ all = [
 
 [tool.uv]
 default-groups = ["all"]
-
+# unsafe-best-match is required because the PyTorch XPU index hosts
+# pytorch-triton-xpu (a transitive dep of torch+xpu) which is not on PyPI.
+# With the default first-match strategy, uv would only check PyPI for this
+# package and fail. unsafe-best-match allows uv to consider all indexes and
+# pick the best matching version across all of them.
+index-strategy = "unsafe-best-match"
+conflicts = [
+    [
+        { extra = "cpu" },
+        { extra = "cuda" },
+        { extra = "xpu" },
+    ],
+]
 
 # ============================================================================ #
 # RUFF CONFIGURATION                                                           #

@@ -1,0 +1,61 @@
+name: Docker Build
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions: {} # No permissions by default on workflow level
+
+concurrency:
+  group: docker-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (${{ matrix.device }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # Checkout code
+
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [cpu, xpu, cuda]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Cleanup runner
+        uses: open-edge-platform/geti-ci/actions/cleanup-runner@3a4b81ea648711eb638b34757427cd3ef71d19f1
+        with:
+          type: all
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Build Docker image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: application/docker/Dockerfile
+          build-contexts: libs=library
+          target: geti-action-${{ matrix.device }}
+          platforms: linux/amd64
+          push: false
+          # CUDA images are too large (~5 GB) to export as tar on GHA runners.
+          # Build-only validation + cache population is sufficient for PRs.
+          outputs: ${{ matrix.device != 'cuda' && format('type=docker,dest={0}/geti-action-{1}.tar', runner.temp, matrix.device) || 'type=cacheonly' }}
+          build-args: GIT_SHA=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.device }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.device }}
+
+      - name: Upload Docker image
+        if: matrix.device != 'cuda'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: geti-action-${{ matrix.device }}
+          path: ${{ runner.temp }}/geti-action-${{ matrix.device }}.tar
+          retention-days: 7
