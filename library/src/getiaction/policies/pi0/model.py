@@ -44,7 +44,10 @@ def _clone_kv_cache(cache: DynamicCache) -> DynamicCache:
 
     Unlike :func:`copy.deepcopy`, this helper uses :meth:`Tensor.clone` so
     the result is safe for ``torch.export`` / ``torch.compile`` paths.
-    """  # noqa: DOC201
+
+    Returns:
+        A new ``DynamicCache`` instance with cloned keys and values.
+    """
     from transformers.cache_utils import DynamicCache  # noqa: PLC0415
 
     cloned = DynamicCache()
