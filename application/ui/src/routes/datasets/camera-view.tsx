@@ -24,9 +24,8 @@ export const CameraView = ({ camera, observation }: CameraViewProps) => {
     const [img, setImg] = useState<string>();
 
     useInterval(() => {
-        const id = camera.id;
-        if (id !== undefined && observation.current?.cameras[id]) {
-            setImg(observation.current.cameras[id]);
+        if (observation.current?.cameras[camera.name]) {
+            setImg(observation.current.cameras[camera.name]);
         }
     }, 1000 / 30); //TODO: Change hardcoding
 

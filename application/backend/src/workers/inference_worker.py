@@ -104,7 +104,7 @@ class InferenceWorker(BaseThreadWorker):
         robot = self.config.environment.robots[0]  # Assume 1 arm for now.
         self.follower = await get_robot_client(robot.robot, self.robot_manager, self.calibration_service)
         self.cameras = {
-            str(camera.id): create_frames_source_from_camera(camera) for camera in self.config.environment.cameras
+            camera.name: create_frames_source_from_camera(camera) for camera in self.config.environment.cameras
         }
         for camera in self.cameras.values():
             # camera.attach_processor(CameraFrameProcessor()) # TODO Not working. Fix in framesource
@@ -161,12 +161,12 @@ class InferenceWorker(BaseThreadWorker):
                     await self._on_stop()
 
                 state = (await self.follower.read_state())["state"]
-                for camera_id, camera in self.cameras.items():
+                for camera_name, camera in self.cameras.items():
                     _success, camera_frame = camera.get_latest_frame()  # HWC
                     if camera_frame is None:
                         raise Exception("Camera frame is None")
                     processed_frame = CameraFrameProcessor.process(camera_frame)
-                    state[camera_id] = processed_frame
+                    state[camera_name] = processed_frame
 
                 timestamp = time.perf_counter() - start_episode_t
                 observation = self._build_geti_action_observation(state)
@@ -254,14 +254,14 @@ class InferenceWorker(BaseThreadWorker):
             0
         )
         images: dict = {}
-        for camera_id in self.camera_keys:
-            frame = robot_observation[camera_id]
+        for name in self.camera_keys:
+            frame = robot_observation[name]
 
             # change image to 0..1 and swap R & B channels.
-            images[camera_id] = torch.from_numpy(frame)
-            images[camera_id] = images[camera_id].float() / 255
-            images[camera_id] = images[camera_id].permute(2, 0, 1).contiguous()
-            images[camera_id] = images[camera_id].unsqueeze(0)
+            images[name] = torch.from_numpy(frame)
+            images[name] = images[name].float() / 255
+            images[name] = images[name].permute(2, 0, 1).contiguous()
+            images[name] = images[name].unsqueeze(0)
 
         return Observation(
             state=state,
