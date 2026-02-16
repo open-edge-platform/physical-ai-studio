@@ -1,0 +1,42 @@
+# =============================================================================
+# .dockerignore — allow-list approach
+#
+# Ignore everything by default, then selectively allow only the files and
+# directories required by the Docker build. This keeps the build context
+# small and prevents accidentally leaking secrets, data, or dev artifacts.
+# =============================================================================
+
+# Ignore everything
+*
+
+# ---- Root-level files needed by the build ----
+!pyproject.toml
+!uv.lock
+!LICENSE
+!README.md
+
+# ---- Application: UI ----
+!application/ui/package.json
+!application/ui/package-lock.json
+!application/ui/tsconfig.json
+!application/ui/rsbuild.config.ts
+!application/ui/src/
+
+# ---- Application: Backend ----
+!application/backend/pyproject.toml
+!application/backend/uv.lock
+!application/backend/run.sh
+!application/backend/src/
+
+# ---- Application: Docker (Dockerfile, compose, .env) ----
+!application/docker/
+
+# Re-exclude artifacts that may appear inside allowed directories
+**/__pycache__/
+**/*.py[cod]
+**/.venv/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.pytest_cache/
+**/node_modules/
+**/.DS_Store
