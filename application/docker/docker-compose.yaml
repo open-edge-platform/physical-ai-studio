@@ -40,12 +40,19 @@ services:
     #
     # Choose ONE of the two modes below by commenting/uncommenting.
     # Both modes require group_add for device permissions.
+    #
+    # Docker resolves group names against the *container's* /etc/group,
+    # not the host's. The defaults below (dialout, plugdev, video) work
+    # on Debian/Ubuntu hosts where the host GIDs match the container's.
+    # On other distros (e.g. Arch Linux) you must override these with
+    # your host's numeric GIDs — run `application/docker/setup-devices.sh`
+    # to auto-detect and write them to .env.
     # ============================================================
 
     group_add:
-      - dialout
-      - plugdev
-      - video
+      - "${DIALOUT_GID:-dialout}"   # serial ports (/dev/ttyACM*)
+      - "${PLUGDEV_GID:-plugdev}"   # pluggable USB devices
+      - "${VIDEO_GID:-video}"       # cameras & video (/dev/video*)
 
     # Persisted data and storage volumes + shared robot calibration
     volumes:
