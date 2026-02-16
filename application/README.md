@@ -25,6 +25,7 @@ The application provides a graphical interface to:
 | ------------------------- | ------------------------------------------------------------- | ------------------------------------- |
 | **[Backend](./backend/)** | FastAPI server for data management and training orchestration | [Backend README](./backend/README.md) |
 | **[UI](./ui/)**           | React web application                                         | [UI README](./ui/README.md)           |
+| **[Docker](./docker/)**   | All-in-one containerized deployment                           | [Docker README](./docker/readme.md)   |
 
 ## Quick Start
 
@@ -50,6 +51,19 @@ npm run start
 ```
 
 UI runs at http://localhost:3000
+
+### Docker (recommended)
+
+Run the full application (backend + UI) in a single container:
+
+```bash
+cd docker
+cp .env.example .env
+docker compose up
+```
+
+Application runs at http://localhost:7860. See the [Docker README](./docker/readme.md) for
+hardware configuration (Intel XPU, NVIDIA CUDA) and device setup.
 
 ## See Also
 
