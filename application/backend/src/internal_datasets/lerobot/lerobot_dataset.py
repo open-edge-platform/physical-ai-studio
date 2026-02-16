@@ -161,6 +161,7 @@ class InternalLeRobotDataset(DatasetClient):
     def finalize(self) -> None:
         """Finalize changes to dataset."""
         logger.info(f"Finalizing dataset {self.path}")
+        self._dataset.stop_image_writer()
         self._dataset.finalize()
 
     def _process_frame(self, obs: dict, act: dict, task: str) -> dict:
