@@ -157,12 +157,18 @@ To inspect volume contents:
 
 ```bash
 # List files in a volume
-docker run --rm -v geti-data:/data alpine ls -la /data
+docker run --rm -v docker_geti-data:/data alpine ls -la /data
 
 # Back up a volume
-docker run --rm -v geti-storage:/storage -v $(pwd):/backup alpine \
+docker run --rm -v docker_geti-storage:/storage -v $(pwd):/backup alpine \
   tar czf /backup/geti-storage-backup.tar.gz -C /storage .
 ```
+
+> [!NOTE]
+> Docker Compose prefixes volume names with the project name (the directory name
+> by default). When running from `application/docker/`, the actual volume names
+> are `docker_geti-data` and `docker_geti-storage`.
+> You can verify the exact volume names with `docker volume ls | grep geti`.
 
 To reset all data:
 
