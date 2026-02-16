@@ -48,7 +48,7 @@ async def interrupt_job(
 
 @router.get("/ws", tags=["WebSocket"], summary="Job updates (WebSocket)", status_code=426)
 async def jobs_websocket_openapi() -> Response:
-    """This endpoint requires a WebSocket connection. Use `ws://` or `wss://` to connect."""
+    """This endpoint requires a WebSocket connection. Use `wss://` to connect."""
     return Response(status_code=426)
 
 

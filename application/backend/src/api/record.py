@@ -25,7 +25,7 @@ router = APIRouter(prefix="/api/record")
 
 @router.get("/teleoperate/ws", tags=["WebSocket"], summary="Teleoperation (WebSocket)", status_code=426)
 async def teleoperate_websocket_openapi() -> Response:
-    """This endpoint requires a WebSocket connection. Use `ws://` or `wss://` to connect."""
+    """This endpoint requires a WebSocket connection. Use `wss://` to connect."""
     return Response(status_code=426)
 
 
@@ -107,7 +107,7 @@ async def teleoperate_websocket(  # noqa: C901
 
 @router.get("/inference/ws", tags=["WebSocket"], summary="Inference (WebSocket)", status_code=426)
 async def inference_websocket_openapi() -> Response:
-    """This endpoint requires a WebSocket connection. Use `ws://` or `wss://` to connect."""
+    """This endpoint requires a WebSocket connection. Use `wss://` to connect."""
     return Response(status_code=426)
 
 
