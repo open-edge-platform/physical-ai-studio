@@ -6,6 +6,10 @@ on:
 
 permissions: {} # No permissions by default on workflow level
 
+concurrency:
+  group: docker-build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build (${{ matrix.device }})
