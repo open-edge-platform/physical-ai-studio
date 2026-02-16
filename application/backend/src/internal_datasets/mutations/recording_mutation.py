@@ -38,7 +38,7 @@ class RecordingMutation:
     def teardown(self) -> None:
         """If mutation exists apply and then remove cache."""
         print(f"Teardown recording mutation. Has mutation {self.has_mutation}")
+        self.cache_dataset.finalize()
         if self.has_mutation:
-            self.cache_dataset.finalize()
             self.source_dataset.overwrite(self.cache_dataset)
         self.cache_dataset.delete()
