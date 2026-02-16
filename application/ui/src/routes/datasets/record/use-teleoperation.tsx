@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react';
 
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
-import { SchemaEpisode, SchemaTeleoperationConfig } from '../../../api/openapi-spec';
+import { SchemaTeleoperationConfig } from '../../../api/openapi-spec';
 import useWebSocketWithResponse from '../../../components/websockets/use-websocket-with-response';
 
 interface TeleoperationState {
@@ -33,11 +33,8 @@ export interface Observation {
     cameras: { [key: string]: string };
 }
 
-export const useTeleoperation = (
-    setup: SchemaTeleoperationConfig,
-    onEpisode: (episode: SchemaEpisode) => void,
-    onError: (error: string) => void
-) => {
+export const useTeleoperation = (setup: SchemaTeleoperationConfig, onError: (error: string) => void) => {
+    const client = useQueryClient();
     const [state, setState] = useState<TeleoperationState>(createTeleoperationState());
     const { sendJsonMessage, readyState, sendJsonMessageAndWait } = useWebSocketWithResponse(
         `/api/record/teleoperate/ws`,
@@ -45,7 +42,7 @@ export const useTeleoperation = (
             shouldReconnect: () => true,
             onMessage: (event: WebSocketEventMap['message']) => onMessage(event),
             onOpen: () => init.mutate(),
-            onClose: () => setState(createTeleoperationState()),
+            onClose: () => onClose(),
         }
     );
 
@@ -62,10 +59,28 @@ export const useTeleoperation = (
                 observation.current = message['data'] as Observation;
                 break;
             case 'episode':
-                onEpisode(message['data'] as SchemaEpisode);
+                //onEpisode(message['data'] as SchemaEpisode);
                 break;
             case 'error':
                 onError(message['data'] as string);
+        }
+    };
+
+    const invalidateEpisodesData = () => {
+        if (setup.dataset.id) {
+            const queryKey = [
+                'get',
+                '/api/dataset/{dataset_id}/episodes',
+                {
+                    params: {
+                        path: {
+                            dataset_id: setup.dataset.id,
+                        },
+                    },
+                },
+            ];
+
+            client.invalidateQueries({ queryKey });
         }
     };
 
@@ -82,6 +97,11 @@ export const useTeleoperation = (
             event: 'start_recording',
             data: {},
         });
+    };
+
+    const onClose = () => {
+        invalidateEpisodesData();
+        setState(createTeleoperationState());
     };
 
     const saveEpisode = useMutation({

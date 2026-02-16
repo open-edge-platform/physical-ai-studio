@@ -16,6 +16,7 @@ class EpisodeInfo(BaseModel):
 class EpisodeVideo(BaseModel):
     start: float
     end: float
+    path: str
 
 
 class Episode(BaseModel):
@@ -26,8 +27,8 @@ class Episode(BaseModel):
     actions: list[list[float]]
     action_keys: list[str]
     videos: dict[str, EpisodeVideo]
-    modification_timestamp: int
     follower_robot_types: list[RobotType]
+    thumbnail: str | None
 
 
 class LeRobotDatasetInfo(BaseModel):

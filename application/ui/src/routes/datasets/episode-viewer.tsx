@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react';
 
-import { Disclosure, DisclosurePanel, DisclosureTitle, Flex, View, Well } from '@geti/ui';
+import { Disclosure, DisclosurePanel, DisclosureTitle, Divider, Flex, Text, View, Well } from '@geti/ui';
 
 import { SchemaEpisode, SchemaEpisodeVideo } from '../../api/openapi-spec';
 import EpisodeChart from '../../components/episode-chart/episode-chart';
+import { EpisodeTag } from '../../features/datasets/episodes/episode-tag';
 import { RobotViewer } from '../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 import { TimelineControls } from './timeline-controls';
@@ -13,14 +14,13 @@ import classes from './episode-viewer.module.scss';
 
 interface VideoView {
     dataset_id: string;
-    episodeIndex: number;
     cameraName: string;
     aspectRatio: number;
     time: number;
     episodeVideo: SchemaEpisodeVideo;
 }
-const VideoView = ({ cameraName, dataset_id, episodeIndex, aspectRatio, time, episodeVideo }: VideoView) => {
-    const url = `/api/dataset/${dataset_id}/${episodeIndex}/${cameraName}.mp4`;
+const VideoView = ({ dataset_id, cameraName, aspectRatio, time, episodeVideo }: VideoView) => {
+    const url = `/api/dataset/${dataset_id}/video/${episodeVideo.path}`;
 
     const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -54,7 +54,7 @@ interface EpisodeViewerProps {
     dataset_id: string;
 }
 
-export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
+export const EpisodeViewer = ({ episode, dataset_id }: EpisodeViewerProps) => {
     const player = usePlayer(episode);
     const frameIndex = Math.floor(player.time * episode.fps);
     const cameras = Object.keys(episode.videos).map((m) => m.replace('observation.images.', ''));
@@ -63,15 +63,19 @@ export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
     return (
         <RobotModelsProvider>
             <Flex direction={'column'} height={'100%'} position={'relative'}>
+                <Flex gap='size-100' marginBottom='size-100'>
+                    <EpisodeTag episode={episode} variant='medium' />
+                    <Divider orientation='vertical' size='S' />
+                    <Text>{episode.tasks.join(', ')}</Text>
+                </Flex>
                 <Flex direction={'row'} flex gap={'size-100'}>
                     <Flex direction={'column'} alignContent={'start'} flex gap={'size-30'}>
                         {cameras.map((camera) => (
                             <VideoView
                                 key={camera}
+                                dataset_id={dataset_id}
                                 aspectRatio={640 / 480}
                                 cameraName={camera}
-                                episodeIndex={episode.episode_index}
-                                dataset_id={dataset_id}
                                 time={player.time}
                                 episodeVideo={episode.videos[`observation.images.${camera}`]}
                             />

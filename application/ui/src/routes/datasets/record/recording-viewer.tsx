@@ -1,31 +1,29 @@
-import { Button, ButtonGroup, Flex, Heading, ProgressCircle, ToastQueue } from '@geti/ui';
+import { Button, ButtonGroup, Flex, Heading, Icon, ProgressCircle, Text, ToastQueue, View } from '@geti/ui';
+import { ChevronLeft } from '@geti/ui/icons';
 
-import { SchemaEpisode, SchemaTeleoperationConfig } from '../../api/openapi-spec';
-import { RobotViewer } from '../../features/robots/controller/robot-viewer';
-import { RobotModelsProvider } from '../../features/robots/robot-models-context';
-import { CameraView } from './camera-view';
-import { useTeleoperation } from './record/use-teleoperation';
-import { useRecording } from './recording-provider';
+import { SchemaTeleoperationConfig } from '../../../api/openapi-spec';
+import { RobotViewer } from '../../../features/robots/controller/robot-viewer';
+import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
+import { paths } from '../../../router';
+import { CameraView } from './../camera-view';
+import { useTeleoperation } from './use-teleoperation';
 
 interface RecordingViewerProps {
     recordingConfig: SchemaTeleoperationConfig;
-    addEpisode: (episode: SchemaEpisode) => void;
 }
 
-export const RecordingViewer = ({ recordingConfig, addEpisode }: RecordingViewerProps) => {
-    const { startEpisode, saveEpisode, cancelEpisode, observation, state, disconnect } = useTeleoperation(
+export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
+    const { startEpisode, saveEpisode, cancelEpisode, observation, state } = useTeleoperation(
         recordingConfig,
-        addEpisode,
         ToastQueue.negative
     );
 
     const robotType = recordingConfig.environment.robots?.[0].robot.type ?? 'SO101_Follower';
 
-    const { setIsRecording } = useRecording();
-    const onStop = () => {
-        disconnect();
-        setIsRecording(false);
-    };
+    const backPath = paths.project.datasets.show({
+        dataset_id: recordingConfig.dataset.id!,
+        project_id: recordingConfig.dataset.project_id,
+    });
 
     if (!state.initialized) {
         return (
@@ -40,7 +38,7 @@ export const RecordingViewer = ({ recordingConfig, addEpisode }: RecordingViewer
                 <Heading>Initializing</Heading>
                 <ProgressCircle isIndeterminate />
 
-                <Button onPress={onStop}>Cancel</Button>
+                <Button href={backPath}>Cancel</Button>
             </Flex>
         );
     }
@@ -51,6 +49,14 @@ export const RecordingViewer = ({ recordingConfig, addEpisode }: RecordingViewer
     return (
         <RobotModelsProvider>
             <Flex direction={'column'} height={'100%'} position={'relative'}>
+                <View height='size-800'>
+                    <Button href={backPath} alignSelf={'start'}>
+                        <Icon>
+                            <ChevronLeft color='white' fill='white' />
+                        </Icon>
+                        <Text>Stop recording</Text>
+                    </Button>
+                </View>
                 <Flex direction={'row'} flex gap={'size-100'}>
                     <Flex direction={'column'} alignContent={'start'} flex gap={'size-30'}>
                         {recordingConfig.environment.cameras!.map((camera) => (
@@ -61,9 +67,6 @@ export const RecordingViewer = ({ recordingConfig, addEpisode }: RecordingViewer
                         <RobotViewer featureValues={action_values} featureNames={action_keys} robotType={robotType} />
                     </Flex>
                 </Flex>
-                <Button onPress={onStop} alignSelf={'start'}>
-                    Stop recording
-                </Button>
                 {state.is_recording ? (
                     <ButtonGroup alignSelf='end'>
                         <Button isDisabled={saveEpisode.isPending} variant={'negative'} onPress={cancelEpisode}>

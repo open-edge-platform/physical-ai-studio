@@ -1,7 +1,11 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from schemas import Episode
+
+if TYPE_CHECKING:
+    from internal_datasets.mutations.recording_mutation import RecordingMutation
 
 
 class DatasetClient(ABC):
@@ -10,7 +14,7 @@ class DatasetClient(ABC):
     has_episodes: bool = False
 
     @abstractmethod
-    def prepare_for_writing(self, number_of_threads: int) -> None:
+    def prepare_for_writing(self) -> None:
         """Processes for writing episodes."""
 
     @abstractmethod
@@ -30,6 +34,10 @@ class DatasetClient(ABC):
         """Create dataset."""
 
     @abstractmethod
+    def delete_episodes(self, episode_indices: list[int], output_path: Path) -> "DatasetClient":
+        """Copy over repo without given episode_indices to output_path."""
+
+    @abstractmethod
     def add_frame(self, obs: dict, act: dict, task: str) -> None:
         """Add frame to recording buffer."""
 
@@ -44,3 +52,19 @@ class DatasetClient(ABC):
     @abstractmethod
     def teardown(self) -> None:
         """Clean up dataset and delete if no episodes."""
+
+    @abstractmethod
+    def delete(self) -> None:
+        """Delete dataset."""
+
+    @abstractmethod
+    def finalize(self) -> None:
+        """Finalize changes to dataset."""
+
+    @abstractmethod
+    def overwrite(self, source: "DatasetClient") -> None:
+        """Overwrite dataset with given dataset."""
+
+    @abstractmethod
+    def start_recording_mutation(self, fps: int, features: dict, robot_type: str) -> "RecordingMutation":
+        """Start recording mutation."""
