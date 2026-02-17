@@ -26,9 +26,33 @@ __all__ = ["GemmaVariant", "Pi0Model", "create_sinusoidal_pos_embedding", "sampl
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
+    from transformers.cache_utils import DynamicCache
+
     from .preprocessor import Pi0Postprocessor, Pi0Preprocessor
 
 logger = logging.getLogger(__name__)
+
+
+def _clone_kv_cache(cache: DynamicCache) -> DynamicCache:
+    """Create an independent copy of a ``DynamicCache`` using only tensor ops.
+
+    Standard HuggingFace transformers (<=4.57) unconditionally mutates
+    ``past_key_values`` via ``DynamicCache.update()`` inside
+    ``GemmaAttention.forward()``, even when ``use_cache=False``.  When the
+    same prefix cache is reused across denoising steps this causes a shape
+    mismatch on step 2+.
+
+    Returns:
+        A new ``DynamicCache`` instance with cloned keys and values.
+    """
+    from transformers.cache_utils import DynamicCache  # noqa: PLC0415
+
+    cloned = DynamicCache()
+    for layer_idx, layer in enumerate(cache.layers):
+        if layer.keys is None or layer.values is None:
+            continue
+        cloned.update(layer.keys.clone(), layer.values.clone(), layer_idx)
+    return cloned
 
 
 def create_sinusoidal_pos_embedding(
@@ -496,11 +520,15 @@ class Pi0Model(nn.Module):
             prefix_offsets = prefix_pad.sum(dim=-1)[:, None]
             suffix_position_ids = prefix_offsets + torch.cumsum(suffix_pad.long(), dim=1) - 1
 
+            # Clone the KV cache so the action-expert forward pass doesn't
+            # mutate the original (see _clone_kv_cache docstring).
+            step_kv_cache = _clone_kv_cache(past_key_values)
+
             (_, suffix_out), _ = self.paligemma_with_expert(
                 inputs_embeds=[None, suffix_emb],
                 attention_mask=full_4d,
                 position_ids=suffix_position_ids,
-                past_key_values=past_key_values,
+                past_key_values=step_kv_cache,
                 adarms_cond=[None, adarms_cond],
                 use_cache=False,
             )
