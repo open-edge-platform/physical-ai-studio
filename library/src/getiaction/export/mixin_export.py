@@ -247,11 +247,11 @@ class Export:
         if output_names is not None:
             extra_model_args.pop("output")
 
-        enable_fp16 = extra_model_args.get("compress_to_fp16", None)
-        if enable_fp16 is not None:
+        compress_to_fp16 = extra_model_args.get("compress_to_fp16", None)
+        if compress_to_fp16 is not None:
             extra_model_args.pop("compress_to_fp16")
         else:
-            enable_fp16 = False
+            compress_to_fp16 = False
 
         input_shapes = [openvino.Shape(tuple(tensor.shape)) for tensor in input_sample.values()]
 
@@ -265,7 +265,7 @@ class Export:
         )
         _postprocess_openvino_model(ov_model, output_names)
 
-        openvino.save_model(ov_model, str(model_path), compress_to_fp16=enable_fp16)
+        openvino.save_model(ov_model, str(model_path), compress_to_fp16=compress_to_fp16)
 
         # Create metadata files
         self._create_metadata(export_dir, ExportBackend.OPENVINO)
