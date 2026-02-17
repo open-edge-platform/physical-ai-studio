@@ -735,7 +735,9 @@ class _ACT(nn.Module):
             )
         # Prepare transformer encoder inputs.
         encoder_in_tokens = [self.encoder_latent_input_proj(latent_sample)]
-        encoder_in_pos_embed = list(self.encoder_1d_feature_pos_embed.weight.unsqueeze(1))
+        pos_emb_weight = self.encoder_1d_feature_pos_embed.weight.unsqueeze(1)
+        encoder_in_pos_embed = [pos_emb_weight[i] for i in range(pos_emb_weight.shape[0])]
+
         # Robot state token.
         if self.config.robot_state_feature:
             encoder_in_tokens.append(self.encoder_robot_state_input_proj(batch[STATE]))
@@ -764,8 +766,10 @@ class _ACT(nn.Module):
 
                 # Extend immediately instead of accumulating and concatenating
                 # Convert to list to extend properly
-                encoder_in_tokens.extend(list(cam_features))
-                encoder_in_pos_embed.extend(list(cam_pos_embed))
+                cam_features_list = [cam_features[i] for i in range(cam_features.shape[0])]
+                encoder_in_tokens.extend(cam_features_list)
+                cam_pos_embed_list = [cam_pos_embed[i] for i in range(cam_pos_embed.shape[0])]
+                encoder_in_pos_embed.extend(cam_pos_embed_list)
 
         # Stack all tokens along the sequence dimension.
         encoder_in_tokens = torch.stack(encoder_in_tokens, axis=0)
