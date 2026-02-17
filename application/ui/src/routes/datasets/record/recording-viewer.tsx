@@ -18,7 +18,7 @@ export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
         ToastQueue.negative
     );
 
-    const robotType = recordingConfig.environment.robots?.[0].robot.type ?? 'SO101_Follower';
+    const robots = (recordingConfig.environment.robots ?? []).map(({ robot }) => robot);
 
     const backPath = paths.project.datasets.show({
         dataset_id: recordingConfig.dataset.id!,
@@ -64,7 +64,7 @@ export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
                         ))}
                     </Flex>
                     <Flex flex={3} minWidth={0}>
-                        <RobotViewer featureValues={action_values} featureNames={action_keys} robotType={robotType} />
+                        <RobotViewer featureValues={action_values} featureNames={action_keys} robots={robots} />
                     </Flex>
                 </Flex>
                 {state.is_recording ? (

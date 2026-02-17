@@ -5,7 +5,6 @@ from lerobot.processor import make_default_processors
 from robots.utils import get_robot_client
 from schemas.environment import EnvironmentWithRelations
 from schemas.project_camera import Camera
-from schemas.robot import RobotType
 from services.robot_calibration_service import RobotCalibrationService
 from utils.serial_robot_tools import RobotConnectionManager
 
@@ -25,13 +24,6 @@ async def build_observation_features(
         output_features[str(camera.id)] = await get_camera_features(camera)
 
     return output_features
-
-
-def robot_for_action_features(action_features: list[str]) -> RobotType:
-    """Todo: Do this proper. This is a bad idea"""
-    if len(action_features) >= 7:
-        return RobotType.TROSSEN_WIDOWXAI_FOLLOWER
-    return RobotType.SO101_FOLLOWER
 
 
 async def build_action_features(
