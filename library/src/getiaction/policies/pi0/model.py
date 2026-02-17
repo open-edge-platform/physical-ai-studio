@@ -219,7 +219,7 @@ class Pi0Model(nn.Module):
 
     @staticmethod
     def _sample_noise(shape: tuple[int, ...], device: torch.device) -> torch.Tensor:
-        return torch.randn(shape, dtype=torch.float32, device=device)
+        return torch.randn(shape, dtype=torch.float32).to(device=device)
 
     def _sample_time(self, batch_size: int, device: torch.device) -> torch.Tensor:
         time_beta = sample_beta(
@@ -228,8 +228,7 @@ class Pi0Model(nn.Module):
             batch_size,
             device,
         )
-        time = time_beta * self.time_scale + self.time_offset
-        return time.to(dtype=torch.float32)
+        return time_beta * self.time_scale + self.time_offset
 
     def embed_prefix(
         self,
@@ -559,7 +558,7 @@ class Pi0Model(nn.Module):
         processed = self.preprocessor(batch)
         processed = self._move_to_device(processed, device)
 
-        if require_actions and "actions" not in processed:
+        if require_actions and ACTION not in processed:
             msg = "Processed batch is missing 'actions' for training"
             raise ValueError(msg)
 
