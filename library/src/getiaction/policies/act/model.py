@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
 # Copyright 2025 Ville Kuosmanen
@@ -8,13 +8,14 @@
 
 """ACT torch model."""
 
+from __future__ import annotations
+
 import dataclasses
 import logging
 import math
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from itertools import chain
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import einops
 import numpy as np
@@ -31,6 +32,10 @@ from getiaction.data.observation import ACTION, EXTRA, IMAGES, STATE, Observatio
 from getiaction.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
 
 from .config import ACTConfig
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -228,7 +233,7 @@ class ACT(nn.Module, FromConfig):
         return sample_input
 
     @property
-    def extra_export_args(self) -> dict:
+    def extra_export_args(self) -> dict[str, Any]:
         """Additional export arguments for model conversion.
 
         This property provides extra configuration parameters needed when exporting
@@ -242,12 +247,13 @@ class ACT(nn.Module, FromConfig):
             >>> print(extra_args)
             {'onnx': {'output_names': ['action']}}
         """
-        extra_args = {}
+        extra_args: dict[str, Any] = {}
         extra_args["onnx"] = {
             "output_names": ["action"],
         }
         extra_args["openvino"] = {
             "output": ["action"],
+            "compress_to_fp16": False,
         }
         extra_args["torch_export_ir"] = {}
         extra_args["torch"] = {
