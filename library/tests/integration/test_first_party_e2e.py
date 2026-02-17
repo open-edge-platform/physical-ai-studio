@@ -202,9 +202,6 @@ class TestE2ECore(CoreE2ETests):
 
     def test_export_to_torch(self, trained_policy: Policy, tmp_path: Path) -> None:
         """Test that trained policy can be exported to torch."""
-        if self.policy_name == "groot":
-            pytest.skip("Groot export to torch is not supported yet.")
-
         export_dir = tmp_path / f"{trained_policy.__class__.__name__.lower()}_torch"
         trained_policy.export(export_dir, "torch")
 
@@ -218,9 +215,6 @@ class TestE2ECore(CoreE2ETests):
         datamodule: LeRobotDataModule,
         tmp_path: Path,
     ) -> None:
-        if self.policy_name == "groot":
-            pytest.skip("Groot export to torch is not supported yet.")
-
         backend = "torch"
         """Test that exported model can be loaded and used for inference."""
         export_dir = tmp_path / f"{trained_policy.__class__.__name__.lower()}_{backend}"

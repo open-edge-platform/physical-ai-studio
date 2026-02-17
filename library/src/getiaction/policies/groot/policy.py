@@ -54,6 +54,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
+from getiaction.export.mixin_export import Export
 from getiaction.policies.base import Policy
 
 from .config import GrootConfig
@@ -69,7 +70,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class Groot(Policy):
+class Groot(Export, Policy):
     """Groot (GR00T-N1.5) Policy - NVIDIA's foundation model for humanoid robots.
 
     First-party Lightning wrapper with explicit hyperparameters in __init__.
@@ -304,14 +305,17 @@ class Groot(Policy):
         # Initialize model using shared method
         self._initialize_model(env_action_dim, dataset_stats)
 
-    def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:  # type: ignore[override]
-        """Forward pass - delegates to model.
+    def forward(self, batch: Observation) -> torch.Tensor | dict[str, torch.Tensor]:
+        """Forward pass through the model.
+
+        In training mode, preprocesses the batch and computes loss.
+        In eval mode, returns predicted actions via predict_action_chunk().
 
         Args:
-            batch: Preprocessed input batch.
+            batch: Input observation batch.
 
         Returns:
-            Model output (loss dict during training, actions during inference).
+            Training: dict with 'loss' key.  Eval: action chunk tensor.
 
         Raises:
             RuntimeError: If model is not initialized.
@@ -319,32 +323,28 @@ class Groot(Policy):
         if self.model is None:
             msg = "Model not initialized. Call setup() first."
             raise RuntimeError(msg)
-        return self.model(batch)
+        if not self.training:
+            return self.predict_action_chunk(batch)
 
-    def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+        if self._preprocessor is None:
+            msg = "Preprocessor not initialized. Call setup() first."
+            raise RuntimeError(msg)
+        preprocessed = self._preprocessor(batch)
+        return self.model(preprocessed)
+
+    def training_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
         """Training step - compute loss.
 
         Args:
-            batch: Input batch in LeRobot dict format.
+            batch: Input observation batch.
             batch_idx: Batch index.
 
         Returns:
             Training loss.
-
-        Raises:
-            RuntimeError: If model is not initialized.
         """
         del batch_idx  # Unused
 
-        if self._preprocessor is None:
-            msg = "Model not initialized. Call setup() first."
-            raise RuntimeError(msg)
-
-        # Apply preprocessing
-        preprocessed = self._preprocessor(batch)
-
-        # Forward pass
-        outputs = self(preprocessed)
+        outputs = self(batch)
         loss = outputs["loss"]
 
         self.log("train/loss", loss, prog_bar=True)
