@@ -169,9 +169,9 @@ class InferenceWorker(BaseThreadWorker):
                     state[camera_id] = processed_frame
 
                 timestamp = time.perf_counter() - start_episode_t
-                observation = self._build_geti_action_observation(state)
                 if self.state.is_running:
                     if not self.action_queue:
+                        observation = self._build_geti_action_observation(state)
                         self.action_queue = self.model.select_action(observation)[0].tolist()
                     action = self.action_queue.pop(0)
 
@@ -254,14 +254,16 @@ class InferenceWorker(BaseThreadWorker):
             0
         )
         images: dict = {}
-        for camera_id in self.camera_keys:
-            frame = robot_observation[camera_id]
+        for camera in self.config.environment.cameras:
+            frame = robot_observation[str(camera.id)]
 
+            # Camera name is used to reference its feature
+            camera_name = camera.name.lower()
             # change image to 0..1 and swap R & B channels.
-            images[camera_id] = torch.from_numpy(frame)
-            images[camera_id] = images[camera_id].float() / 255
-            images[camera_id] = images[camera_id].permute(2, 0, 1).contiguous()
-            images[camera_id] = images[camera_id].unsqueeze(0)
+            images[camera_name] = torch.from_numpy(frame)
+            images[camera_name] = images[camera_name].float() / 255
+            images[camera_name] = images[camera_name].permute(2, 0, 1).contiguous()
+            images[camera_name] = images[camera_name].unsqueeze(0)
 
         return Observation(
             state=state,

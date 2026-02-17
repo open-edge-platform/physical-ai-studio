@@ -17,7 +17,7 @@ import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import nn
 
-from getiaction.data.observation import ACTION, EXTRA, IMAGES, STATE, TASK, FeatureType, Observation
+from getiaction.data.observation import ACTION, EXTRA, IMAGES, STATE, TASK, FeatureType
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -334,11 +334,9 @@ class SmolVLAModel(nn.Module):
             if ACTION in batch:
                 batch[ACTION] = self._pi_aloha_encode_actions_inv(batch[ACTION])
 
-        batch_img_keys = Observation.get_flattened_keys(batch, IMAGES)
-        batch_img_keys = [key for key in batch_img_keys if "is_pad" not in key]
         all_keys = [key for key in self._dataset_stats if self._dataset_stats[key]["type"] == FeatureType.VISUAL.value]
 
-        if len(batch_img_keys) != len(all_keys):
+        if len(all_keys) != len(batch[IMAGES]):
             msg = f"Some of the image features are missing from the batch. \
                     (batch: {batch.keys()}) (image_features:{all_keys})"
             raise ValueError(msg)
