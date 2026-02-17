@@ -16,7 +16,7 @@ import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import nn
 
-from getiaction.data.observation import ACTION, Observation
+from getiaction.data.observation import ACTION, IMAGES, STATE, Observation
 
 from .components.attention import make_attention_mask_2d, prepare_4d_attention_mask
 from .components.gemma import GemmaVariant, PaliGemmaWithExpert
@@ -445,13 +445,13 @@ class Pi0Model(nn.Module):
         device = next(self.parameters()).device
 
         observation = {
-            "images": batch["images"],
+            IMAGES: batch[IMAGES],
             "image_masks": batch["image_masks"],
-            "state": batch["state"],
+            STATE: batch[STATE],
             "tokenized_prompt": batch["tokenized_prompt"].to(device),
             "tokenized_prompt_mask": batch["tokenized_prompt_mask"].to(device),
         }
-        actions = batch["actions"]
+        actions = batch[ACTION]
 
         loss_per_sample = self._compute_loss(observation, actions)
 
