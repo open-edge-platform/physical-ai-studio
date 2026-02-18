@@ -38,7 +38,7 @@ export const Preview = () => {
             }}
             position={'relative'}
         >
-            {form.type !== null ? <RobotViewer robots={[form]} /> : <EmptyPreview />}
+            {form.type !== null ? <RobotViewer robot={form} /> : <EmptyPreview />}
         </View>
     );
 };

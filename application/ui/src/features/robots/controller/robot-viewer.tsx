@@ -54,15 +54,15 @@ const useLoadURDF = (robotType: SchemaRobotType) => {
 };
 
 interface RobotViewerProps {
-    robots: Pick<SchemaRobot, 'type'>[];
+    robot: Pick<SchemaRobot, 'type'>;
     featureValues?: number[];
     featureNames?: string[];
 }
-export const RobotViewer = ({ robots, featureValues, featureNames }: RobotViewerProps) => {
+export const RobotViewer = ({ robot, featureValues, featureNames }: RobotViewerProps) => {
     const angle = degToRad(-45);
 
     // TODO: Implement robot with multiple arms.
-    useLoadURDF(robots[0].type);
+    useLoadURDF(robot.type);
     const ref = useRef<HTMLDivElement>(null);
     const size = useContainerSize(ref);
     const { models } = useRobotModels();

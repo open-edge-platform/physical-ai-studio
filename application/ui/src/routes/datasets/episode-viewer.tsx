@@ -97,7 +97,7 @@ export const EpisodeViewer = ({ episode, dataset }: EpisodeViewerProps) => {
                         <RobotViewer
                             featureValues={episode.actions[frameIndex]}
                             featureNames={episode.action_keys}
-                            robots={robots}
+                            robot={robots[0]}
                         />
                     </Flex>
                 </Flex>

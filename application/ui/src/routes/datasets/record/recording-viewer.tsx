@@ -64,7 +64,7 @@ export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
                         ))}
                     </Flex>
                     <Flex flex={3} minWidth={0}>
-                        <RobotViewer featureValues={action_values} featureNames={action_keys} robots={robots} />
+                        <RobotViewer featureValues={action_values} featureNames={action_keys} robot={robots[0]} />
                     </Flex>
                 </Flex>
                 {state.is_recording ? (
