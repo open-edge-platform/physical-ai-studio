@@ -147,9 +147,9 @@ class Pi0Preprocessor(torch.nn.Module):
     def _process_images(
         self,
         batch: Mapping[str, Any],
-    ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
-        images: dict[str, torch.Tensor] = {}
-        image_masks: dict[str, torch.Tensor] = {}
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        images: list[torch.Tensor] = []
+        image_masks: list[torch.Tensor] = []
 
         image_keys = [k for k in batch if "image" in k.lower() and "mask" not in k.lower() and not k.startswith("_")]
 
@@ -180,11 +180,10 @@ class Pi0Preprocessor(torch.nn.Module):
             if is_channels_first:
                 img = img.permute(0, 3, 1, 2)
 
-            clean_name = key.replace("observation.images.", "").replace("observation.", "")
-            images[clean_name] = img
-            image_masks[clean_name] = torch.ones(img.shape[0], dtype=torch.bool, device=img.device)
+            images.append(img)
+            image_masks.append(torch.ones(img.shape[0], dtype=torch.bool, device=img.device))
 
-        return images, image_masks
+        return torch.stack(images, dim=0), torch.stack(image_masks, dim=0)
 
     @staticmethod
     def _resize_with_pad(images: torch.Tensor, height: int, width: int) -> torch.Tensor:  # noqa: PLR0914
