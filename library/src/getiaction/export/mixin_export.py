@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """Mixin classes for exporting PyTorch models."""
@@ -247,6 +247,12 @@ class Export:
         if output_names is not None:
             extra_model_args.pop("output")
 
+        compress_to_fp16 = extra_model_args.get("compress_to_fp16", None)
+        if compress_to_fp16 is not None:
+            extra_model_args.pop("compress_to_fp16")
+        else:
+            compress_to_fp16 = False
+
         input_shapes = [openvino.Shape(tuple(tensor.shape)) for tensor in input_sample.values()]
 
         self.model.eval()
@@ -259,7 +265,7 @@ class Export:
         )
         _postprocess_openvino_model(ov_model, output_names)
 
-        openvino.save_model(ov_model, str(model_path))
+        openvino.save_model(ov_model, str(model_path), compress_to_fp16=compress_to_fp16)
 
         # Create metadata files
         self._create_metadata(export_dir, ExportBackend.OPENVINO)

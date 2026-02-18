@@ -366,3 +366,27 @@ class GrootModel(nn.Module):
             List of trainable parameters.
         """
         return [p for p in self.parameters() if p.requires_grad]
+
+    @property
+    def extra_export_args(self) -> dict:
+        """Additional export arguments for model conversion.
+
+        Provides format-specific configuration for exporting the model
+        to different backends (ONNX, OpenVINO, Torch, etc.).
+
+        Returns:
+            dict: A dictionary containing format-specific export arguments.
+        """
+        return {
+            "onnx": {
+                "output_names": ["action"],
+            },
+            "openvino": {
+                "output": ["action"],
+            },
+            "torch_export_ir": {},
+            "torch": {
+                "input_names": ["observation"],
+                "output_names": ["action"],
+            },
+        }
