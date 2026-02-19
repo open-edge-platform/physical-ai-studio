@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from models.utils import load_inference_model
 from robots.robot_client import RobotClient
-from robots.utils import get_robot_client
+from robots.robot_client_factory import RobotClientFactory
 from schemas import InferenceConfig
 from services.robot_calibration_service import RobotCalibrationService
 from utils.serial_robot_tools import RobotConnectionManager
@@ -53,8 +53,7 @@ class InferenceState(BaseModel):
 class InferenceWorker(BaseThreadWorker):
     ROLE: str = "InferenceWorker"
 
-    robot_manager: RobotConnectionManager
-    calibration_service: RobotCalibrationService
+    robot_client_factory: RobotClientFactory
 
     events: dict[str, EventClass]
     queue: Queue
@@ -76,8 +75,8 @@ class InferenceWorker(BaseThreadWorker):
         self.config = config
         self.queue = queue
         self.state = InferenceState()
-        self.calibration_service = calibration_service
-        self.robot_manager = robot_manager
+        self.robot_client_factory = RobotClientFactory(robot_manager, calibration_service)
+
         self.events = {
             "stop": Event(),
             "start": Event(),
@@ -102,7 +101,8 @@ class InferenceWorker(BaseThreadWorker):
         """Setup environment."""
 
         robot = self.config.environment.robots[0]  # Assume 1 arm for now.
-        self.follower = await get_robot_client(robot.robot, self.robot_manager, self.calibration_service)
+
+        self.follower = await self.robot_client_factory.build(robot.robot)
         self.cameras = {
             str(camera.id): create_frames_source_from_camera(camera) for camera in self.config.environment.cameras
         }
