@@ -1,4 +1,4 @@
-import { Button, ButtonGroup, Flex, Heading, Icon, ProgressCircle, Text, ToastQueue, View } from '@geti/ui';
+import { Button, ButtonGroup, Flex, Heading, Icon, ProgressCircle, Text, toast, View } from '@geti/ui';
 import { ChevronLeft } from '@geti/ui/icons';
 
 import { SchemaTeleoperationConfig } from '../../../api/openapi-spec';
@@ -15,7 +15,7 @@ interface RecordingViewerProps {
 export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
     const { startEpisode, saveEpisode, cancelEpisode, observation, state } = useTeleoperation(
         recordingConfig,
-        ToastQueue.negative
+        (message: string) => toast({ message, type: 'error' })
     );
 
     const robotType = recordingConfig.environment.robots?.[0].robot.type ?? 'SO101_Follower';

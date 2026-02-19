@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { Button, ButtonGroup, ComboBox, Flex, Heading, Item, Link, ProgressCircle, ToastQueue } from '@geti/ui';
+import { Button, ButtonGroup, ComboBox, Flex, Heading, Item, Link, ProgressCircle, toast } from '@geti/ui';
 import { Back, Pause, Play, StepBackward } from '@geti/ui/icons';
 
 import { $api } from '../../../api/client';
@@ -27,7 +27,9 @@ export const InferenceViewer = ({ config }: InferenceViewerProps) => {
     });
     const [task, setTask] = useState<string>(tasks[0] ?? '');
 
-    const { startTask, stop, state, observation } = useInference(config, ToastQueue.negative);
+    const { startTask, stop, state, observation } = useInference(config, (message: string) =>
+        toast({ message, type: 'error' })
+    );
 
     const robotType = config.environment.robots?.[0].robot.type ?? 'SO101_Follower';
 
