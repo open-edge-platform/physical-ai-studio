@@ -19,13 +19,20 @@ router = APIRouter(prefix="/api/projects/{project_id}/robots", tags=["Robot Cali
 
 @router.post("/{robot_id}/calibrations")
 async def save_project_robot_calibration(
-    _project_id: Annotated[UUID, Depends(get_project_id)],
+    project_id: Annotated[UUID, Depends(get_project_id)],
     robot_id: Annotated[UUID, Depends(get_robot_id)],
     robot_calibration_service: RobotCalibrationServiceDep,
+    robot_service: Annotated[RobotService, Depends(get_robot_service)],
     calibration_data: Calibration,
 ) -> Calibration:
     """Save calibration for robot."""
-    return await robot_calibration_service.save_calibration(robot_id, calibration_data)
+    calibration = await robot_calibration_service.save_calibration(robot_id, calibration_data)
+
+    robot = await robot_service.get_robot_by_id(project_id, robot_id)
+    robot.active_calibration_id = calibration_data.id
+    await robot_service.update_robot(project_id, robot)
+
+    return calibration
 
 
 @router.get("/{robot_id}/calibrations")
