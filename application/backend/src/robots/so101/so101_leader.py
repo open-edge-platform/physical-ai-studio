@@ -11,14 +11,14 @@ class SO101Leader(RobotClient):
     name = "so101_leader"
     is_controlled: bool = False
 
-    def __init__(self, port: str, id: str):
-        config = SO101LeaderConfig(port=port, id=id)
+    def __init__(self, config: SO101LeaderConfig):
         self.robot = LeSO101Leader(config)
 
     @property
     def robot_type(self) -> RobotType:
         return RobotType.SO101_LEADER
 
+    @property
     async def is_connected(self) -> bool:
         return self.robot.is_connected
 

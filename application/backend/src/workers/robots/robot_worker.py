@@ -4,7 +4,7 @@ import time
 from loguru import logger
 
 from robots.robot_client import RobotClient
-from robots.utils import get_robot_client
+from robots.robot_client_factory import RobotClientFactory
 from schemas.robot import Robot
 from services.robot_calibration_service import RobotCalibrationService
 from utils.serial_robot_tools import RobotConnectionManager
@@ -16,6 +16,11 @@ from workers.transport_worker import TransportWorker, WorkerState, WorkerStatus
 class RobotWorker(TransportWorker):
     """Orchestrates robot communication over configurable transport."""
 
+    robot_client_factory: RobotClientFactory
+    client: RobotClient | None
+    fps: int
+    normalize: bool
+
     def __init__(
         self,
         robot: Robot,
@@ -26,8 +31,8 @@ class RobotWorker(TransportWorker):
         normalize: bool = False,
     ) -> None:
         super().__init__(transport)
-        self.robot_manager = robot_manager
-        self.calibration_service = calibration_service
+
+        self.robot_client_factory = RobotClientFactory(robot_manager, calibration_service)
 
         self.robot = robot
         self.client: RobotClient | None = None
@@ -39,8 +44,7 @@ class RobotWorker(TransportWorker):
         """Main worker loop."""
         try:
             await self.transport.connect()
-
-            self.client = await get_robot_client(self.robot, self.robot_manager, self.calibration_service)
+            self.client = await self.robot_client_factory.build(self.robot)
 
             try:
                 await self.client.connect()

@@ -14,8 +14,7 @@ class SO101Follower(RobotClient):
 
     previous_target: dict[str, float] | None = None
 
-    def __init__(self, port: str, id: str):
-        config = SO101FollowerConfig(port=port, id=id)
+    def __init__(self, config: SO101FollowerConfig):
         self.robot = LeSO101Follower(config)
         self.is_controlled = False
 
@@ -23,6 +22,7 @@ class SO101Follower(RobotClient):
     def robot_type(self) -> RobotType:
         return RobotType.SO101_FOLLOWER
 
+    @property
     async def is_connected(self) -> bool:
         return self.robot.is_connected
 
