@@ -3,7 +3,7 @@ import pytest
 from physicalai.train.trainer import Trainer
 
 
-class TestPhysicalAITrainer:
+class TestTrainer:
     """Tests for physicalai.train.Trainer (Lightning Trainer subclass)."""
 
     def test_trainer_is_lightning_subclass(self):
