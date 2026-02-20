@@ -56,7 +56,7 @@ class TeleoperateWorker(BaseThreadWorker):
     camera_keys: list[str] = []
 
     dataset: DatasetClient | None = None
-    mutation: RecordingMutation | None = None
+    recording_mutation: RecordingMutation | None = None
     leader: RobotClient | None = None
     follower: RobotClient | None = None
     cameras: dict[str, VideoCaptureBase] = {}
@@ -120,7 +120,9 @@ class TeleoperateWorker(BaseThreadWorker):
             camera.connect()
 
         await self.follower.connect()
+        await self.follower.enable_torque()
         await self.leader.connect()
+        await self.leader.disable_torque()
 
         for camera in self.cameras.values():
             camera.start_async()
@@ -132,6 +134,10 @@ class TeleoperateWorker(BaseThreadWorker):
             logger.info("connect to robot, cameras and setup dataset")
             if self.loop is None:
                 raise RuntimeError("The event loop must be set.")
+            features = self.loop.run_until_complete(
+                build_lerobot_dataset_features(self.config.environment, self.robot_manager, self.calibration_service)
+            )
+
             self.loop.run_until_complete(self.setup_environment())
             self.dataset = InternalLeRobotDataset(Path(self.config.dataset.path))
 
@@ -140,9 +146,6 @@ class TeleoperateWorker(BaseThreadWorker):
 
             self.action_keys = self.follower.features()
             self.camera_keys = [str(camera.id) for camera in self.config.environment.cameras]
-            features = self.loop.run_until_complete(
-                build_lerobot_dataset_features(self.config.environment, self.robot_manager, self.calibration_service)
-            )
 
             self.recording_mutation = self.dataset.start_recording_mutation(
                 fps=self.fps,  # TODO: Implement in Environment
