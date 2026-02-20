@@ -7,7 +7,7 @@ import { Canvas } from '@react-three/fiber';
 import { degToRad } from 'three/src/math/MathUtils.js';
 import { URDFRobot } from 'urdf-loader';
 
-import { SchemaRobotType } from '../../../api/openapi-spec';
+import { SchemaRobot, SchemaRobotType } from '../../../api/openapi-spec';
 import { useContainerSize } from '../../../components/zoom/use-container-size';
 import { useLoadModelMutation, useRobotModels } from './../robot-models-context';
 
@@ -54,13 +54,15 @@ const useLoadURDF = (robotType: SchemaRobotType) => {
 };
 
 interface RobotViewerProps {
-    robotType: SchemaRobotType;
+    robot: Pick<SchemaRobot, 'type'>;
     featureValues?: number[];
     featureNames?: string[];
 }
-export const RobotViewer = ({ robotType, featureValues, featureNames }: RobotViewerProps) => {
+export const RobotViewer = ({ robot, featureValues, featureNames }: RobotViewerProps) => {
     const angle = degToRad(-45);
-    useLoadURDF(robotType);
+
+    // TODO: Implement robot with multiple arms.
+    useLoadURDF(robot.type);
     const ref = useRef<HTMLDivElement>(null);
     const size = useContainerSize(ref);
     const { models } = useRobotModels();

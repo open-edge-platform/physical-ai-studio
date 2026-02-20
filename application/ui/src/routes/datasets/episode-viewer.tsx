@@ -2,9 +2,11 @@ import { useEffect, useRef } from 'react';
 
 import { Disclosure, DisclosurePanel, DisclosureTitle, Divider, Flex, Text, View, Well } from '@geti/ui';
 
-import { SchemaEpisode, SchemaEpisodeVideo } from '../../api/openapi-spec';
+import { $api } from '../../api/client';
+import { SchemaDatasetOutput, SchemaEpisode, SchemaEpisodeVideo } from '../../api/openapi-spec';
 import EpisodeChart from '../../components/episode-chart/episode-chart';
 import { EpisodeTag } from '../../features/datasets/episodes/episode-tag';
+import { useProjectId } from '../../features/projects/use-project';
 import { RobotViewer } from '../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 import { TimelineControls } from './timeline-controls';
@@ -51,14 +53,24 @@ const VideoView = ({ dataset_id, cameraName, aspectRatio, time, episodeVideo }: 
 
 interface EpisodeViewerProps {
     episode: SchemaEpisode;
-    dataset_id: string;
+    dataset: SchemaDatasetOutput;
 }
 
-export const EpisodeViewer = ({ episode, dataset_id }: EpisodeViewerProps) => {
+export const EpisodeViewer = ({ episode, dataset }: EpisodeViewerProps) => {
     const player = usePlayer(episode);
     const frameIndex = Math.floor(player.time * episode.fps);
     const cameras = Object.keys(episode.videos).map((m) => m.replace('observation.images.', ''));
-    const follower_robot_type = episode.follower_robot_types?.[0] ?? 'SO101_Follower';
+
+    const { project_id } = useProjectId();
+
+    const { data: environment } = $api.useSuspenseQuery(
+        'get',
+        '/api/projects/{project_id}/environments/{environment_id}',
+        {
+            params: { path: { project_id, environment_id: dataset.environment_id } },
+        }
+    );
+    const robots = (environment.robots ?? []).map(({ robot }) => robot);
 
     return (
         <RobotModelsProvider>
@@ -73,7 +85,7 @@ export const EpisodeViewer = ({ episode, dataset_id }: EpisodeViewerProps) => {
                         {cameras.map((camera) => (
                             <VideoView
                                 key={camera}
-                                dataset_id={dataset_id}
+                                dataset_id={dataset.id!}
                                 aspectRatio={640 / 480}
                                 cameraName={camera}
                                 time={player.time}
@@ -85,7 +97,7 @@ export const EpisodeViewer = ({ episode, dataset_id }: EpisodeViewerProps) => {
                         <RobotViewer
                             featureValues={episode.actions[frameIndex]}
                             featureNames={episode.action_keys}
-                            robotType={follower_robot_type}
+                            robot={robots[0]}
                         />
                     </Flex>
                 </Flex>

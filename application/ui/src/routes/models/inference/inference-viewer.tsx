@@ -29,7 +29,7 @@ export const InferenceViewer = ({ config }: InferenceViewerProps) => {
 
     const { startTask, stop, state, observation } = useInference(config, ToastQueue.negative);
 
-    const robotType = config.environment.robots?.[0].robot.type ?? 'SO101_Follower';
+    const robots = (config.environment.robots ?? []).map(({ robot }) => robot);
 
     const action_values = observation.current === undefined ? undefined : Object.values(observation.current['actions']);
     const action_keys = observation.current === undefined ? undefined : Object.keys(observation.current['actions']);
@@ -91,7 +91,7 @@ export const InferenceViewer = ({ config }: InferenceViewerProps) => {
                         ))}
                     </Flex>
                     <Flex flex={3} minWidth={0}>
-                        <RobotViewer featureValues={action_values} featureNames={action_keys} robotType={robotType} />
+                        <RobotViewer featureValues={action_values} featureNames={action_keys} robot={robots[0]} />
                     </Flex>
                 </Flex>
             </Flex>

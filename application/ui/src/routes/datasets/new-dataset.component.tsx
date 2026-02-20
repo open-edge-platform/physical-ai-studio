@@ -10,6 +10,8 @@ import {
     Divider,
     Form,
     Heading,
+    Item,
+    Picker,
     TextField,
 } from '@geti/ui';
 import { v4 as uuidv4 } from 'uuid';
@@ -27,19 +29,32 @@ const NewDatasetForm = ({ project_id, onDone }: NewDatasetFormProps) => {
     const [name, setName] = useState<string>('');
     const { geti_action_dataset_path } = useSettings();
 
+    const { data: environments } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/environments', {
+        params: {
+            path: {
+                project_id,
+            },
+        },
+    });
+
+    const [environmentId, setEnvironmentId] = useState<string | undefined>(environments[0]?.id);
+
     const save = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
 
-        const id = uuidv4();
-        await saveMutation.mutateAsync({
-            body: {
-                id,
-                name,
-                project_id,
-                path: `${geti_action_dataset_path}/${makeNameSafeForPath(name)}`,
-            },
-        });
-        onDone();
+        if (environmentId !== undefined) {
+            const id = uuidv4();
+            await saveMutation.mutateAsync({
+                body: {
+                    id,
+                    name,
+                    project_id,
+                    environment_id: environmentId,
+                    path: `${geti_action_dataset_path}/${makeNameSafeForPath(name)}`,
+                },
+            });
+            onDone();
+        }
     };
 
     return (
@@ -48,6 +63,16 @@ const NewDatasetForm = ({ project_id, onDone }: NewDatasetFormProps) => {
                 <Heading>Create dataset</Heading>
                 <Divider />
                 <Content>
+                    <Picker
+                        items={environments}
+                        selectedKey={environmentId}
+                        label='Environment'
+                        onSelectionChange={(m) => setEnvironmentId(m === null ? undefined : m.toString())}
+                        flex={1}
+                    >
+                        {(item) => <Item key={item.id}>{item.name}</Item>}
+                    </Picker>
+
                     <TextField
                         // eslint-disable-next-line jsx-a11y/no-autofocus
                         autoFocus

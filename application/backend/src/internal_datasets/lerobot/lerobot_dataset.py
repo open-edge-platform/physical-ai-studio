@@ -20,7 +20,6 @@ from internal_datasets.dataset_client import DatasetClient
 from internal_datasets.mutations.recording_mutation import RecordingMutation
 from schemas import Episode, EpisodeVideo
 from settings import get_settings
-from utils.dataset import robot_for_action_features
 
 
 class InternalLeRobotDataset(DatasetClient):
@@ -104,7 +103,6 @@ class InternalLeRobotDataset(DatasetClient):
 
         result = []
         action_feature_names = self._dataset.features.get("action", {}).get("names", [])
-        follower_robot = robot_for_action_features(action_feature_names)
         for episode in episodes:
             episode_index = episode["episode_index"]
             thumbnail = self._build_thumbnail(episode, image_key) if len(image_keys) > 0 else None
@@ -120,7 +118,6 @@ class InternalLeRobotDataset(DatasetClient):
                         )
                         for video_key in self._dataset.meta.video_keys
                     },
-                    follower_robot_types=[follower_robot],
                     action_keys=action_feature_names,
                     thumbnail=thumbnail,
                     **episode,
@@ -216,7 +213,6 @@ class InternalLeRobotDataset(DatasetClient):
                 video_timestamps[video_key].end += offset
 
         action_feature_names = self._dataset.features.get("action", {}).get("names", [])
-        follower_robot = robot_for_action_features(action_feature_names)
         camera_key = self._dataset.meta.camera_keys[0]
         thumbnail = self._build_thumbnail_from_buffer(data, camera_key)
         return Episode(
@@ -227,7 +223,6 @@ class InternalLeRobotDataset(DatasetClient):
             actions=data["action"].tolist(),
             videos=video_timestamps,
             action_keys=action_feature_names,
-            follower_robot_types=[follower_robot],
             thumbnail=thumbnail,
         )
 

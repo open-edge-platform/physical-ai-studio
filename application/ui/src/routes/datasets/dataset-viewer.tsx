@@ -52,7 +52,7 @@ export const DatasetViewer = () => {
         <Flex direction={'row'} height={'100%'} flex gap={'size-100'}>
             {isPending && <Loading mode='overlay' />}
             <View flex={1}>
-                <EpisodeViewer episode={episodes[currentEpisode]} dataset_id={dataset.id!} />
+                <EpisodeViewer episode={episodes[currentEpisode]} dataset={dataset} />
             </View>
             <Divider orientation='vertical' size='S' />
             <Flex direction='column'>
