@@ -232,8 +232,8 @@ class Pi0Model(nn.Module):
 
     def embed_prefix(
         self,
-        images: list[torch.Tensor],
-        image_masks: list[torch.Tensor],
+        images: torch.Tensor,
+        image_masks: torch.Tensor,
         language_tokens: torch.Tensor,
         language_masks: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -582,16 +582,14 @@ class Pi0Model(nn.Module):
     @staticmethod
     def _preprocess_observation(
         observation: Mapping[str, Any],
-    ) -> tuple[list[torch.Tensor], list[torch.Tensor], torch.Tensor, torch.Tensor, torch.Tensor]:
-        images = list(observation.get("images", {}).values())
-        image_masks = list(observation.get("image_masks", {}).values())
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        images = observation[IMAGES]
+        image_masks = observation["image_masks"]
 
-        image_masks = [m if isinstance(m, torch.Tensor) else torch.tensor(m, dtype=torch.bool) for m in image_masks]
+        lang_tokens = observation["tokenized_prompt"]
+        lang_masks = observation["tokenized_prompt_mask"]
 
-        lang_tokens = observation.get("tokenized_prompt")
-        lang_masks = observation.get("tokenized_prompt_mask")
-
-        state = observation.get("state")
+        state = observation[STATE]
 
         if lang_tokens is None or lang_masks is None or state is None:
             msg = "Observation is missing required fields for Pi0Model"
