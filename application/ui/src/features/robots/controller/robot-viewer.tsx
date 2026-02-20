@@ -58,7 +58,7 @@ interface RobotViewerProps {
     featureValues?: number[];
     featureNames?: string[];
 }
-export const RobotViewer = ({ robot, featureValues, featureNames }: RobotViewerProps) => {
+export const RobotViewer = ({ robot = { type: 'SO101_Follower' }, featureValues, featureNames }: RobotViewerProps) => {
     const angle = degToRad(-45);
 
     // TODO: Implement robot with multiple arms.
