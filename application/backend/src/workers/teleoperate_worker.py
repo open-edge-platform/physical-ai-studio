@@ -244,7 +244,9 @@ class TeleoperateWorker(BaseThreadWorker):
                 timestamp = time.perf_counter() - self.start_episode_t
                 self._report_observation(observations, timestamp)
                 if self.state.is_recording and self.recording_mutation is not None:
-                    self.recording_mutation.add_frame(observations, actions, self.config.task)
+                    self.recording_mutation.add_frame(
+                        self._to_lerobot_observations(observations), actions, self.config.task
+                    )
 
                 dt_s = time.perf_counter() - start_loop_t
                 wait_time = 1 / self.fps - dt_s
@@ -253,6 +255,13 @@ class TeleoperateWorker(BaseThreadWorker):
             self.error = True
             traceback.print_exception(e)
             self._report_error(e)
+
+    def _to_lerobot_observations(self, observations: dict) -> dict:
+        """Remap camera observations from camera ID keys to lowercase camera name keys."""
+        lerobot_observations = dict(observations)
+        for camera in self.config.environment.cameras:
+            lerobot_observations[camera.name.lower()] = lerobot_observations.pop(str(camera.id))
+        return lerobot_observations
 
     def _on_start(self) -> None:
         logger.info("start")

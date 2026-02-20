@@ -329,9 +329,15 @@ class TestToOpenVINO:
         with pytest.raises(RuntimeError, match="input sample must be provided"):
             wrapper.to_openvino(output_path)
 
-    def test_to_openvino_via_export_method(self, tmp_path):
+    @pytest.mark.parametrize("fp16", [True, False])
+    def test_to_openvino_via_export_method(self, tmp_path, fp16):
         """Test OpenVINO export using the generic export method."""
         model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        model.extra_export_args = {
+            "openvino": {
+                "compress_to_fp16": fp16,
+            }
+        }
         wrapper = ExportWrapper(model)
 
         output_path = tmp_path / "model.xml"

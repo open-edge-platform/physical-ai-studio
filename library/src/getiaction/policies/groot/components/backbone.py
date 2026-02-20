@@ -26,6 +26,7 @@ from PIL import Image
 from torch import nn
 
 if TYPE_CHECKING:
+    import types
     from collections.abc import Mapping
 
     from transformers import ProcessorMixin
@@ -138,6 +139,107 @@ def _ensure_eagle_cache_ready(
             logger.warning("[Eagle] Failed to patch config.json: %s", exc)
 
 
+def _find_eagle_module(config: Any) -> types.ModuleType | None:  # noqa: ANN401
+    """Locate the dynamically-loaded Eagle2 modelling module in ``sys.modules``.
+
+    Falls back to forcing an import via ``get_class_from_dynamic_module`` when the
+    module has not been loaded yet (e.g. only ``AutoConfig`` was called so far).
+
+    Returns:
+        The Python module containing ``Eagle25VLForConditionalGeneration``, or *None*.
+    """
+    import sys  # noqa: PLC0415
+
+    def _scan() -> types.ModuleType | None:
+        for _mod_name, mod in sys.modules.items():
+            if "modeling_eagle2_5_vl" in _mod_name and hasattr(mod, "Eagle25VLForConditionalGeneration"):
+                return mod
+        return None
+
+    found = _scan()
+    if found is not None:
+        return found
+
+    try:
+        from transformers.dynamic_module_utils import get_class_from_dynamic_module  # noqa: PLC0415
+
+        auto_map = getattr(config, "auto_map", {})
+        model_ref = auto_map.get("AutoModel", "")
+        if model_ref:
+            repo_id = getattr(config, "_name_or_path", "") or str(HF_LEROBOT_HOME / DEFAULT_TOKENIZER_ASSETS_REPO)
+            get_class_from_dynamic_module(model_ref, repo_id)
+            return _scan()
+    except (ImportError, OSError, ValueError, KeyError):
+        logger.debug("[Eagle] Failed to force-load Eagle2 module", exc_info=True)
+
+    return None
+
+
+def _patch_eagle_model_class(config: Any, attn_implementation: str) -> None:  # noqa: ANN401
+    """Patch Eagle2 to replace hardcoded ``flash_attention_2`` with *attn_implementation*.
+
+    NVIDIA's upstream ``Eagle25VLForConditionalGeneration.__init__`` hardcodes
+    ``flash_attention_2`` for its sub-models. With ``transformers >= 4.54`` the
+    implementation is validated early, so we temporarily guard ``__setattr__`` on
+    the vision / text sub-configs to silently redirect those writes.
+
+    The patch is idempotent.
+    """
+    import functools  # noqa: PLC0415
+
+    eagle_module = _find_eagle_module(config)
+    if eagle_module is None:
+        logger.warning("[Eagle] Could not find Eagle2 module in sys.modules; skipping attention patch")
+        return
+
+    eagle_cls = eagle_module.Eagle25VLForConditionalGeneration
+    if getattr(eagle_cls, "_attn_patched", False):
+        return
+
+    original_init = eagle_cls.__init__
+
+    @functools.wraps(original_init)
+    def _patched_init(
+        self_inner: nn.Module,
+        cfg: object,
+        vision_model: nn.Module | None = None,
+        language_model: nn.Module | None = None,
+    ) -> None:
+        guards: list[tuple[type, object]] = []
+        for attr in ("vision_config", "text_config"):
+            sub_cfg = getattr(cfg, attr, None)
+            if sub_cfg is None:
+                continue
+            sub_cfg._attn_implementation = attn_implementation  # noqa: SLF001
+            cfg_cls = type(sub_cfg)
+            orig_setattr = cfg_cls.__setattr__
+
+            def _guarded_setattr(
+                self: object,
+                name: str,
+                value: object,
+                *,
+                _orig: object = orig_setattr,
+                _impl: str = attn_implementation,
+            ) -> None:
+                if name == "_attn_implementation":
+                    value = _impl
+                _orig(self, name, value)  # type: ignore[operator]
+
+            cfg_cls.__setattr__ = _guarded_setattr  # type: ignore[assignment]
+            guards.append((cfg_cls, orig_setattr))
+
+        try:
+            original_init(self_inner, cfg, vision_model=vision_model, language_model=language_model)
+        finally:
+            for cfg_cls, orig in guards:
+                cfg_cls.__setattr__ = orig  # type: ignore[assignment]
+
+    eagle_cls.__init__ = _patched_init
+    eagle_cls._attn_patched = True  # noqa: SLF001
+    logger.info("[Eagle] Patched Eagle25VLForConditionalGeneration to use %s", attn_implementation)
+
+
 def _import_huggingface_components() -> tuple[Any, ...]:
     """Import HuggingFace components for Eagle backbone.
 
@@ -239,7 +341,7 @@ class EagleBackbone(nn.Module):
         eagle_config = auto_config_cls.from_pretrained(str(cache_dir), trust_remote_code=True)
 
         # Override attention implementation to avoid Flash Attention dependency
-        # Set on all sub-configs even if attribute doesn't exist yet
+        # Set on all sub-configs so SDPA is used everywhere
         eagle_config._attn_implementation = attn_implementation  # noqa: SLF001
         eagle_config._attn_implementation_autoset = False  # noqa: SLF001
         if hasattr(eagle_config, "text_config"):
@@ -249,21 +351,19 @@ class EagleBackbone(nn.Module):
             eagle_config.vision_config._attn_implementation = attn_implementation  # noqa: SLF001
             eagle_config.vision_config._attn_implementation_autoset = False  # noqa: SLF001
 
-        # NVIDIA's Eagle2 model code has a hardcoded assertion requiring flash_attention_2.
-        # We trick the model init by temporarily setting flash_attention_2, then restore SDPA.
-        # This is needed because the assertion is in their __init__ before any processing.
-        if hasattr(eagle_config, "text_config"):
-            eagle_config.text_config._attn_implementation = "flash_attention_2"  # noqa: SLF001
+        # Patch NVIDIA's Eagle2 model class to remove hardcoded flash_attention_2 requirements.
+        # The upstream code (modeling_eagle2_5_vl.py) hardcodes flash_attention_2 in two places:
+        #   1. config.vision_config._attn_implementation = "flash_attention_2" (for SiglipVisionModel)
+        #   2. assert config.text_config._attn_implementation == "flash_attention_2" (for Qwen2)
+        # With transformers >= 4.54, flash_attention_2 is validated during PreTrainedModel.__init__,
+        # so we must patch the class to use our desired implementation instead.
+        _patch_eagle_model_class(eagle_config, attn_implementation)
 
         self.eagle_model = auto_model_cls.from_config(
             eagle_config,
             trust_remote_code=True,
-            attn_implementation="flash_attention_2",
+            attn_implementation=attn_implementation,
         )
-
-        # Now restore the actual attention implementation we want
-        if hasattr(eagle_config, "text_config"):
-            eagle_config.text_config._attn_implementation = attn_implementation  # noqa: SLF001
 
         # Force patch attention implementation on all submodules AFTER model creation
         # HuggingFace creates separate config instances during model init, so we need
