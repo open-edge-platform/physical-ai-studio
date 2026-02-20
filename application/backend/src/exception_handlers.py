@@ -10,14 +10,14 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from loguru import logger
 
-from exceptions import PhysicalAIBaseException
+from exceptions import BaseException
 
 
 def handle_base_exception(request: Request, exception: Exception) -> Response:
     """
     Base exception handler
     """
-    if not isinstance(exception, PhysicalAIBaseException):
+    if not isinstance(exception, BaseException):
         raise exception
 
     response = jsonable_encoder(
@@ -136,7 +136,7 @@ def register_application_exception_handlers(app: FastAPI) -> None:
     """
     Register application exception handlers
     """
-    app.add_exception_handler(PhysicalAIBaseException, handle_base_exception)
+    app.add_exception_handler(BaseException, handle_base_exception)
 
     app.add_exception_handler(500, handle_error)
     app.add_exception_handler(404, handle_not_found)

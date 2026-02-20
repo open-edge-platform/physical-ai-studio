@@ -5,12 +5,12 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError, field_validator
 
-from exceptions import PhysicalAIBaseException
+from exceptions import BaseException
 from robots.robot_client import RobotClient
 from workers.robots.calibratable_client import Calibratable
 
 
-class UnknownCommandError(PhysicalAIBaseException):
+class UnknownCommandError(BaseException):
     """Raised when an unknown command is received.
 
     Use the static factory method to create instances:
@@ -27,7 +27,7 @@ class UnknownCommandError(PhysicalAIBaseException):
         )
 
 
-class UnsupportedCommandError(PhysicalAIBaseException):
+class UnsupportedCommandError(BaseException):
     """Raised when a command is not supported by the robot connection.
 
     Use the static factory method to create instances:
@@ -44,7 +44,7 @@ class UnsupportedCommandError(PhysicalAIBaseException):
         )
 
 
-class InvalidPayloadError(PhysicalAIBaseException):
+class InvalidPayloadError(BaseException):
     """Raised when a command payload is invalid.
 
     Use the static factory method to create instances:

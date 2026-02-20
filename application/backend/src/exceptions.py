@@ -17,7 +17,7 @@ class ResourceType(StrEnum):
     JOB_FILE = "JOB_FILE"
 
 
-class PhysicalAIBaseException(Exception):
+class BaseException(Exception):
     """
     Base class for PhysicalAI exceptions with a predefined HTTP error code.
 
@@ -33,7 +33,7 @@ class PhysicalAIBaseException(Exception):
         super().__init__(message)
 
 
-class ResourceNotFoundError(PhysicalAIBaseException):
+class ResourceNotFoundError(BaseException):
     """
     Exception raised when a resource could not be found in database.
 
@@ -52,7 +52,7 @@ class ResourceNotFoundError(PhysicalAIBaseException):
         )
 
 
-class DuplicateJobException(PhysicalAIBaseException):
+class DuplicateJobException(BaseException):
     """
     Exception raised when attempting to submit a duplicate job.
 
@@ -63,7 +63,7 @@ class DuplicateJobException(PhysicalAIBaseException):
         super().__init__(message=message, error_code="duplicate_job", http_status=http.HTTPStatus.CONFLICT)
 
 
-class ResourceInUseError(PhysicalAIBaseException):
+class ResourceInUseError(BaseException):
     """Exception raised when trying to delete a resource that is currently in use."""
 
     def __init__(self, resource_type: ResourceType, resource_id: str | UUID, message: str | None = None):
@@ -75,7 +75,7 @@ class ResourceInUseError(PhysicalAIBaseException):
         )
 
 
-class ResourceAlreadyExistsError(PhysicalAIBaseException):
+class ResourceAlreadyExistsError(BaseException):
     """
     Exception raised when a resource already exists.
 
