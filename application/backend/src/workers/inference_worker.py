@@ -104,6 +104,7 @@ class InferenceWorker(BaseThreadWorker):
 
         await asyncio.sleep(1)  # sleep for camera warmup. TODO: Refactor start_async to proper camera wrapper
         await self.follower.connect()
+        await self.follower.enable_torque()
 
     def setup(self) -> None:
         """Set up robots, cameras and dataset."""
@@ -197,7 +198,7 @@ class InferenceWorker(BaseThreadWorker):
 
     async def teardown(self) -> None:
         """Disconnect robots and close queue."""
-        if self.follower.is_connected:
+        if await self.follower.is_connected:
             await self.follower.disconnect()
 
         # Wait for .5 seconds before closing queue to allow messages through
