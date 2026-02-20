@@ -41,7 +41,7 @@ class TrossenWidowXAIFollower(RobotClient):
     async def ping(self) -> dict:
         return self._create_event("pong")
 
-    async def set_joints_state(self, joints: dict) -> dict:
+    async def set_joints_state(self, joints: dict, goal_time: float) -> dict:
         positions = {key.removesuffix(".pos"): val for key, val in joints.items() if key.endswith(".pos")}
         velocities = {key.removesuffix(".vel"): val for key, val in joints.items() if key.endswith(".vel")}
 
@@ -62,7 +62,7 @@ class TrossenWidowXAIFollower(RobotClient):
 
         self.driver.set_all_positions(
             ps,
-            0.0,
+            goal_time,
             False,
             vs,
         )

@@ -49,6 +49,7 @@ class TeleoperateWorker(BaseThreadWorker):
     state: TeleoperateState
 
     config: TeleoperationConfig
+    fps: float = 30
     robot_manager: RobotConnectionManager
 
     action_keys: list[str] = []
@@ -144,7 +145,7 @@ class TeleoperateWorker(BaseThreadWorker):
             )
 
             self.recording_mutation = self.dataset.start_recording_mutation(
-                fps=30,  # TODO: Implement in Environment
+                fps=self.fps,  # TODO: Implement in Environment
                 features=features,
                 robot_type=self.follower.name,
             )
@@ -229,7 +230,7 @@ class TeleoperateWorker(BaseThreadWorker):
                 actions = (await self.leader.read_state())["state"]
                 observations = (await self.follower.read_state())["state"]
                 forces = (await self.follower.read_forces())["state"]
-                await self.follower.set_joints_state(actions)
+                await self.follower.set_joints_state(actions, 1 / self.fps)
                 if forces is not None:
                     await self.leader.set_forces(forces)
 
@@ -248,7 +249,7 @@ class TeleoperateWorker(BaseThreadWorker):
                     )
 
                 dt_s = time.perf_counter() - start_loop_t
-                wait_time = 1 / 30 - dt_s
+                wait_time = 1 / self.fps - dt_s
                 precise_sleep(wait_time)
         except Exception as e:
             self.error = True

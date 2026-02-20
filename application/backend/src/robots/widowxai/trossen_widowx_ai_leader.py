@@ -58,7 +58,7 @@ class TrossenWidowXAILeader(RobotClient):
         self.driver.set_all_modes(trossen_arm.Mode.position)
         self.driver.set_all_positions(np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), 2.0, True)
 
-    async def set_joints_state(self, joints: dict) -> dict:  # noqa: ARG002
+    async def set_joints_state(self, joints: dict, goal_time: float) -> dict:  # noqa: ARG002
         raise Exception("Not implemented for leaders")
 
     async def enable_torque(self) -> dict:
