@@ -1,4 +1,4 @@
-# Geti Action Backend
+# Physical AI Studio Backend
 
 FastAPI server for demonstration data management and VLA model training orchestration.
 
@@ -41,7 +41,7 @@ cd application/backend
 uv sync
 ```
 
-This installs all backend dependencies including FastAPI, SQLAlchemy, aiortc, and the getiaction library.
+This installs all backend dependencies including FastAPI, SQLAlchemy, aiortc, and the physicalai library.
 
 ## Usage
 

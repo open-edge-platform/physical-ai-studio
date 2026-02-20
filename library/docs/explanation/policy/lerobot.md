@@ -2,7 +2,7 @@
 
 ## Overview
 
-GetiAction provides seamless integration with LeRobot policies through:
+PhysicalAI provides seamless integration with LeRobot policies through:
 
 1. **Explicit Wrappers** - Full parameter definitions with IDE support
    (Recommended)
@@ -22,9 +22,9 @@ Both approaches provide:
 
 ```text
 ┌───────────────────────────────────────────────┐
-│            GetiAction (Lightning)             │
+│            PhysicalAI (Lightning)             │
 │   ┌───────────────────────────────────────┐   │
-│   │  GetiAction Policy (LightningModule)  │   │
+│   │  PhysicalAI Policy (LightningModule)  │   │
 │   │  ┌─────────────────────────────────┐  │   │
 │   │  │   LeRobot Native Policy         │  │   │
 │   │  │   (Thin Delegation)             │  │   │
@@ -45,7 +45,7 @@ Both approaches provide:
 ### File Structure
 
 ```text
-library/src/getiaction/
+library/src/physicalai/
 └── policies/lerobot/
     ├── __init__.py              # Conditional imports, availability checks
     ├── mixin.py                 # LeRobotFromConfig mixin (configuration methods)
@@ -135,7 +135,7 @@ class ACT(LightningModule):
 
 - Thin delegation to native LeRobot policies
 - Automatic data format conversion (see [Data Integration](../data/lerobot.md))
-- All methods support both GetiAction and LeRobot data formats
+- All methods support both PhysicalAI and LeRobot data formats
 
 #### 2. Universal Wrapper
 
@@ -180,7 +180,7 @@ approaches through the `LeRobotFromConfig` mixin:
 #### 1. Direct Instantiation (Recommended for Python)
 
 ```python
-from getiaction.policies.lerobot import ACT
+from physicalai.policies.lerobot import ACT
 
 # Full IDE support with autocomplete
 policy = ACT(
@@ -251,7 +251,7 @@ policy = ACT.from_pydantic(config_model)
 #### 6. Universal Wrapper with Config
 
 ```python
-from getiaction.policies.lerobot import LeRobotPolicy
+from physicalai.policies.lerobot import LeRobotPolicy
 
 # Method 1: With config_kwargs
 policy = LeRobotPolicy(
@@ -278,10 +278,10 @@ policy = LeRobotPolicy(
 
 ```bash
 # Train with config
-getiaction fit --config configs/lerobot/act.yaml
+physicalai fit --config configs/lerobot/act.yaml
 
 # Override parameters
-getiaction fit \
+physicalai fit \
   --config configs/lerobot/act.yaml \
   --model.dim_model 1024 \
   --trainer.max_epochs 200
@@ -290,8 +290,8 @@ getiaction fit \
 #### Python Interface
 
 ```python
-from getiaction.policies.lerobot import ACT
-from getiaction.train import Trainer
+from physicalai.policies.lerobot import ACT
+from physicalai.train import Trainer
 
 # Create policy (full IDE support!)
 policy = ACT(
@@ -301,7 +301,7 @@ policy = ACT(
 )
 
 # Train with datamodule
-from getiaction.data.lerobot import LeRobotDataModule
+from physicalai.data.lerobot import LeRobotDataModule
 datamodule = LeRobotDataModule(
     repo_id="lerobot/pusht",
     train_batch_size=8,
@@ -318,7 +318,7 @@ trainer.fit(policy, datamodule)
 ```yaml
 # configs/lerobot_diffusion.yaml
 model:
-  class_path: getiaction.policies.lerobot.LeRobotPolicy
+  class_path: physicalai.policies.lerobot.LeRobotPolicy
   init_args:
     policy_name: diffusion
     config_kwargs:
@@ -332,7 +332,7 @@ model:
 #### Python API
 
 ```python
-from getiaction.policies.lerobot import LeRobotPolicy, Diffusion
+from physicalai.policies.lerobot import LeRobotPolicy, Diffusion
 
 # Method 1: Explicit policy_name
 policy = LeRobotPolicy(
@@ -360,7 +360,7 @@ policy = Diffusion(
 
 ### Configuration Flexibility
 
-GetiAction policies support **all LeRobot parameters** through two mechanisms:
+PhysicalAI policies support **all LeRobot parameters** through two mechanisms:
 
 #### 1. Explicit Parameters
 
@@ -455,7 +455,7 @@ policy = ACT.from_lerobot_config(
 For detailed information about data formats and conversion, see the dedicated
 [LeRobot Data Integration](../data/lerobot.md) documentation. The key points:
 
-- Policies automatically handle both GetiAction and LeRobot data formats
+- Policies automatically handle both PhysicalAI and LeRobot data formats
 - Format conversion is transparent and zero-overhead in production
 - No manual conversion needed - the wrappers handle this automatically
 
@@ -484,7 +484,7 @@ For detailed information about data formats and conversion, see the dedicated
 
 - [LeRobot GitHub](https://github.com/huggingface/lerobot)
 - [LeRobot Documentation](https://huggingface.co/lerobot)
-- [GetiAction Best Practices](../../BEST_PRACTICES_FRAMEWORK_INTEGRATION.md)
+- [PhysicalAI Best Practices](../../BEST_PRACTICES_FRAMEWORK_INTEGRATION.md)
 - [LeRobot Data Module Documentation](../data/lerobot.md) - For data format details
-- Module: `library/src/getiaction/policies/lerobot/`
-- Data Module: `library/src/getiaction/data/lerobot/`
+- Module: `library/src/physicalai/policies/lerobot/`
+- Data Module: `library/src/physicalai/data/lerobot/`

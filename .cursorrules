@@ -199,7 +199,7 @@ application/ui/src/
 
 **Library**
 ```
-library/src/getiaction/
+library/src/physicalai/
 ├── configs/      # Configuration management
 ├── data/         # Data loading and processing
 ├── inference/    # Inference engine

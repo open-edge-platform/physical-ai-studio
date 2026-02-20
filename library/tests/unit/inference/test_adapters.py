@@ -10,9 +10,9 @@ import numpy as np
 import pytest
 import torch
 
-from getiaction.export.mixin_export import ExportBackend
-from getiaction.inference.adapters import ONNXAdapter, OpenVINOAdapter, RuntimeAdapter, TorchExportAdapter, TorchAdapter, get_adapter
-from getiaction.data.observation import Observation
+from physicalai.export.mixin_export import ExportBackend
+from physicalai.inference.adapters import ONNXAdapter, OpenVINOAdapter, RuntimeAdapter, TorchExportAdapter, TorchAdapter, get_adapter
+from physicalai.data.observation import Observation
 
 
 class TestGetAdapter:
@@ -160,7 +160,7 @@ class TestTorchAdapter:
         metadata_path.touch()
 
         with metadata_path.open("w") as f:
-            f.write("policy_class: getiaction.policies.act.ACT\n")
+            f.write("policy_class: physicalai.policies.act.ACT\n")
 
         mock_model = MagicMock()
         mock_model.model.return_value = torch.tensor([[1.0, 2.0]])
@@ -169,14 +169,14 @@ class TestTorchAdapter:
         mock_model.model.sample_input = {"input": torch.tensor([[0.0]])}
         mock_model.model.extra_export_args = {"torch": {"output_names": ["output"], "input_names": ["observation"]}}
 
-        with patch("getiaction.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
+        with patch("physicalai.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
             adapter = TorchAdapter(device="cpu")
             assert adapter.device == torch.device("cpu")
             assert "cpu" in repr(adapter)
 
             adapter.load(model_path)
 
-            with patch("getiaction.inference.adapters.torch.TorchAdapter._convert_outputs_to_numpy",
+            with patch("physicalai.inference.adapters.torch.TorchAdapter._convert_outputs_to_numpy",
                         return_value={"output": np.array([[1.0, 2.0]])}):
                 outputs = adapter.predict({"observation": Observation(images=torch.randn(1, 3, 224, 224), state=torch.randn(1, 2))})
                 assert "output" in outputs and isinstance(outputs["output"], np.ndarray)
@@ -199,9 +199,9 @@ class TestTorchAdapter:
         metadata_path.touch()
 
         with metadata_path.open("w") as f:
-            f.write("policy_class: getiaction.policies.act.ACT\n")
+            f.write("policy_class: physicalai.policies.act.ACT\n")
 
-        with patch("getiaction.policies.act.ACT.load_from_checkpoint", side_effect=RuntimeError("Load error")):
+        with patch("physicalai.policies.act.ACT.load_from_checkpoint", side_effect=RuntimeError("Load error")):
             adapter = TorchAdapter()
             with pytest.raises(RuntimeError, match="Failed to load"):
                 adapter.load(model_path)

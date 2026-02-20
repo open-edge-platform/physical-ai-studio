@@ -13,13 +13,13 @@ Command-line interface built on PyTorch Lightning CLI and jsonargparse.
 
 ```bash
 # Train with config
-getiaction fit --config configs/train.yaml
+physicalai fit --config configs/train.yaml
 
 # Override parameters
-getiaction fit --config configs/train.yaml --trainer.max_epochs 200
+physicalai fit --config configs/train.yaml --trainer.max_epochs 200
 
 # Print config
-getiaction fit --print_config
+physicalai fit --print_config
 ```
 
 ## Architecture

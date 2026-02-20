@@ -99,7 +99,7 @@ class DataModule(LightningDataModule):
 Wraps HuggingFace LeRobot datasets:
 
 ```python
-from getiaction.data import LeRobotDataModule
+from physicalai.data import LeRobotDataModule
 
 datamodule = LeRobotDataModule(
     repo_id="lerobot/aloha_sim_transfer_cube_human",

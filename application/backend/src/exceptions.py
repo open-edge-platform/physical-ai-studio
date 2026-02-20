@@ -17,9 +17,9 @@ class ResourceType(StrEnum):
     JOB_FILE = "JOB_FILE"
 
 
-class GetiBaseException(Exception):
+class PhysicalAIBaseException(Exception):
     """
-    Base class for Geti exceptions with a predefined HTTP error code.
+    Base class for PhysicalAI exceptions with a predefined HTTP error code.
 
     :param message: str message providing short description of error
     :param error_code: str id of error
@@ -33,7 +33,7 @@ class GetiBaseException(Exception):
         super().__init__(message)
 
 
-class ResourceNotFoundError(GetiBaseException):
+class ResourceNotFoundError(PhysicalAIBaseException):
     """
     Exception raised when a resource could not be found in database.
 
@@ -52,7 +52,7 @@ class ResourceNotFoundError(GetiBaseException):
         )
 
 
-class DuplicateJobException(GetiBaseException):
+class DuplicateJobException(PhysicalAIBaseException):
     """
     Exception raised when attempting to submit a duplicate job.
 
@@ -63,7 +63,7 @@ class DuplicateJobException(GetiBaseException):
         super().__init__(message=message, error_code="duplicate_job", http_status=http.HTTPStatus.CONFLICT)
 
 
-class ResourceInUseError(GetiBaseException):
+class ResourceInUseError(PhysicalAIBaseException):
     """Exception raised when trying to delete a resource that is currently in use."""
 
     def __init__(self, resource_type: ResourceType, resource_id: str | UUID, message: str | None = None):
@@ -75,7 +75,7 @@ class ResourceInUseError(GetiBaseException):
         )
 
 
-class ResourceAlreadyExistsError(GetiBaseException):
+class ResourceAlreadyExistsError(PhysicalAIBaseException):
     """
     Exception raised when a resource already exists.
 

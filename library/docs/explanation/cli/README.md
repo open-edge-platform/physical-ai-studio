@@ -1,6 +1,6 @@
 # CLI Design Documentation
 
-Documentation for the GetiAction command-line interface implementation.
+Documentation for the PhysicalAI command-line interface implementation.
 
 ## Overview
 
@@ -31,13 +31,13 @@ policies using PyTorch Lightning CLI and jsonargparse.
 
 ```bash
 # Train with config file
-getiaction fit --config configs/train.yaml
+physicalai fit --config configs/train.yaml
 
 # Override parameters
-getiaction fit --config configs/train.yaml --trainer.max_epochs 200
+physicalai fit --config configs/train.yaml --trainer.max_epochs 200
 
 # Generate config template
-getiaction fit --print_config
+physicalai fit --print_config
 ```
 
 ## Architecture Diagram

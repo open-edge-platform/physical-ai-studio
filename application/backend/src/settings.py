@@ -17,12 +17,12 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore")
 
     # Application
-    app_name: str = "Geti Action"
+    app_name: str = "Physical AI Studio"
     version: str = "0.1.0"
-    summary: str = "Geti Action server"
+    summary: str = "Physical AI Studio server"
     description: str = (
-        "Geti Action is a framework to train robots."
-        "It allows the user to create datasets, models and the run inference "
+        "Physical AI Studio is a framework to train robots. It allows the user to create datasets, "
+        "models and the run inference."
     )
     openapi_url: str = "/api/openapi.json"
     debug: bool = Field(default=False, alias="DEBUG")

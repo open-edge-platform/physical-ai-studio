@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 import torch
 
-from getiaction.data import Dataset, Observation
-from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
+from physicalai.data import Dataset, Observation
+from physicalai.data.lerobot.dataset import _LeRobotDatasetAdapter
 
 
 class FakeLeRobotDataset:
@@ -148,7 +148,7 @@ class TestLeRobotActionDataset:
     def test_initialization(self, monkeypatch, dataset_cls):
         """Tests that LeRobotActionDataset initializes correctly by patching."""
         monkeypatch.setattr(
-            "getiaction.data.lerobot.dataset.LeRobotDataset", dataset_cls
+            "physicalai.data.lerobot.dataset.LeRobotDataset", dataset_cls
         )
 
         dataset = _LeRobotDatasetAdapter(repo_id="any/repo", episodes=[0])

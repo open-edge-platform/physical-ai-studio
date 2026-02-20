@@ -11,9 +11,9 @@ from multiprocessing.synchronize import Event as EventClass
 import cv2
 import numpy as np
 import torch
-from getiaction.data import Observation
 from lerobot.utils.robot_utils import precise_sleep
 from loguru import logger
+from physicalai.data import Observation
 from pydantic import BaseModel
 
 from models.utils import load_inference_model

@@ -7,18 +7,18 @@ Evaluate trained policies on standardized environments.
 ### CLI
 
 ```bash
-getiaction benchmark \
-    --benchmark getiaction.benchmark.LiberoBenchmark \
+physicalai benchmark \
+    --benchmark physicalai.benchmark.LiberoBenchmark \
     --benchmark.task_suite libero_10 \
-    --policy getiaction.policies.ACT \
+    --policy physicalai.policies.ACT \
     --ckpt_path ./checkpoints/model.ckpt
 ```
 
 ### Python API
 
 ```python test="skip" reason="requires checkpoint and libero"
-from getiaction.benchmark import LiberoBenchmark
-from getiaction.policies import ACT
+from physicalai.benchmark import LiberoBenchmark
+from physicalai.policies import ACT
 
 policy = ACT.load_from_checkpoint("./checkpoints/model.ckpt")
 policy.eval()
@@ -102,20 +102,20 @@ Use `failures` mode during debugging to save disk space.
 ```yaml
 # configs/benchmark/my_eval.yaml
 benchmark:
-  class_path: getiaction.benchmark.LiberoBenchmark
+  class_path: physicalai.benchmark.LiberoBenchmark
   init_args:
     task_suite: libero_10
     num_episodes: 20
     video_dir: ./results/videos
     record_mode: failures
 
-policy: getiaction.policies.ACT
+policy: physicalai.policies.ACT
 ckpt_path: ./checkpoints/model.ckpt
 output_dir: ./results/benchmark
 ```
 
 ```bash
-getiaction benchmark --config configs/benchmark/my_eval.yaml
+physicalai benchmark --config configs/benchmark/my_eval.yaml
 ```
 
 ## Output
@@ -153,36 +153,36 @@ AGGREGATE:  75.5% success rate    mean reward: 0.76 ± 0.43
 ### Quick Test (Single Task)
 
 ```bash
-getiaction benchmark \
-    --benchmark getiaction.benchmark.LiberoBenchmark \
+physicalai benchmark \
+    --benchmark physicalai.benchmark.LiberoBenchmark \
     --benchmark.task_suite libero_10 \
     --benchmark.task_ids "[0]" \
     --benchmark.num_episodes 1 \
-    --policy getiaction.policies.ACT \
+    --policy physicalai.policies.ACT \
     --ckpt_path ./checkpoints/model.ckpt
 ```
 
 ### Full Evaluation with Videos
 
 ```bash
-getiaction benchmark \
-    --benchmark getiaction.benchmark.LiberoBenchmark \
+physicalai benchmark \
+    --benchmark physicalai.benchmark.LiberoBenchmark \
     --benchmark.task_suite libero_90 \
     --benchmark.num_episodes 50 \
     --benchmark.video_dir ./results/videos \
     --benchmark.record_mode all \
-    --policy getiaction.policies.ACT \
+    --policy physicalai.policies.ACT \
     --ckpt_path ./checkpoints/model.ckpt
 ```
 
 ### Debug Failed Episodes
 
 ```bash
-getiaction benchmark \
-    --benchmark getiaction.benchmark.LiberoBenchmark \
+physicalai benchmark \
+    --benchmark physicalai.benchmark.LiberoBenchmark \
     --benchmark.task_suite libero_10 \
     --benchmark.video_dir ./debug_videos \
     --benchmark.record_mode failures \
-    --policy getiaction.policies.ACT \
+    --policy physicalai.policies.ACT \
     --ckpt_path ./checkpoints/model.ckpt
 ```

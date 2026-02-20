@@ -14,23 +14,23 @@ Train policies using the command-line interface built on PyTorch Lightning CLI.
 ### Train with Config File
 
 ```bash
-getiaction fit --config configs/getiaction/act.yaml
+physicalai fit --config configs/physicalai/act.yaml
 ```
 
 ### Generate Config Template
 
 ```bash
 # See all options
-getiaction fit --help
+physicalai fit --help
 
 # Print default config
-getiaction fit --print_config
+physicalai fit --print_config
 ```
 
 ### Override Config from CLI
 
 ```bash
-getiaction fit \
+physicalai fit \
     --config configs/train.yaml \
     --trainer.max_epochs 200 \
     --data.train_batch_size 64 \
@@ -40,13 +40,13 @@ getiaction fit \
 ### Train without Config File
 
 ```bash
-getiaction fit \
-    --model.class_path getiaction.policies.dummy.policy.Dummy \
-    --model.model.class_path getiaction.policies.dummy.model.Dummy \
+physicalai fit \
+    --model.class_path physicalai.policies.dummy.policy.Dummy \
+    --model.model.class_path physicalai.policies.dummy.model.Dummy \
     --model.model.action_shape=[7] \
     --model.optimizer.class_path torch.optim.Adam \
     --model.optimizer.init_args.lr=0.001 \
-    --data.class_path getiaction.data.lerobot.LeRobotDataModule \
+    --data.class_path physicalai.data.lerobot.LeRobotDataModule \
     --data.repo_id=lerobot/pusht \
     --trainer.max_epochs=100
 ```
@@ -59,10 +59,10 @@ Use `class_path` for maximum flexibility:
 
 ```yaml
 model:
-  class_path: getiaction.policies.dummy.policy.Dummy
+  class_path: physicalai.policies.dummy.policy.Dummy
   init_args:
     model:
-      class_path: getiaction.policies.dummy.model.Dummy
+      class_path: physicalai.policies.dummy.model.Dummy
       init_args:
         action_shape: [7]
     optimizer:
@@ -101,7 +101,7 @@ trainer:
 ### Multiple Configs
 
 ```bash
-getiaction fit \
+physicalai fit \
     --config configs/base.yaml \
     --config configs/experiment.yaml
 ```
@@ -116,10 +116,10 @@ getiaction fit \
 | `predict`  | Run inference       |
 
 ```bash
-getiaction fit --config CONFIG_PATH
-getiaction validate --config CONFIG_PATH --ckpt_path CHECKPOINT
-getiaction test --config CONFIG_PATH --ckpt_path CHECKPOINT
-getiaction predict --config CONFIG_PATH --ckpt_path CHECKPOINT
+physicalai fit --config CONFIG_PATH
+physicalai validate --config CONFIG_PATH --ckpt_path CHECKPOINT
+physicalai test --config CONFIG_PATH --ckpt_path CHECKPOINT
+physicalai predict --config CONFIG_PATH --ckpt_path CHECKPOINT
 ```
 
 ## Examples
@@ -137,7 +137,7 @@ trainer:
 ### Multi-GPU Training
 
 ```bash
-getiaction fit --config configs/getiaction/act.yaml --trainer.strategy=ddp --trainer.devices=4
+physicalai fit --config configs/physicalai/act.yaml --trainer.strategy=ddp --trainer.devices=4
 ```
 
 ### Custom Callbacks
@@ -166,7 +166,7 @@ model:
 ### Validate Before Training
 
 ```bash
-getiaction fit --config configs/getiaction/act.yaml --trainer.fast_dev_run=true
+physicalai fit --config configs/physicalai/act.yaml --trainer.fast_dev_run=true
 ```
 
 ## Tips
@@ -183,7 +183,7 @@ getiaction fit --config configs/getiaction/act.yaml --trainer.fast_dev_run=true
 **Import errors**: Test imports manually:
 
 ```bash
-python -c "from getiaction.policies.pi0.policy import Pi0"
+python -c "from physicalai.policies.pi0.policy import Pi0"
 ```
 
 **Type errors**: Check config matches class signature

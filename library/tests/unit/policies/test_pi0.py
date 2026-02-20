@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 import torch
-from getiaction.config import Config
-from getiaction.policies.pi0 import Pi0, Pi05, Pi0Config
+from physicalai.config import Config
+from physicalai.policies.pi0 import Pi0, Pi05, Pi0Config
 
 
 class TestPi0Config:
@@ -159,7 +159,7 @@ class TestPi0Policy:
     @pytest.mark.parametrize("method", ["forward", "predict_action_chunk"])
     def test_methods_raise_without_model(self, method: str) -> None:
         """Test methods raise ValueError if model not initialized."""
-        from getiaction.data import Observation
+        from physicalai.data import Observation
 
         policy = Pi0()
         dummy_obs = Observation(state=torch.randn(1, 10))
@@ -194,7 +194,7 @@ class TestPi0Preprocessor:
 
     def test_make_pi0_preprocessors(self) -> None:
         """Test make_pi0_preprocessors returns callables."""
-        from getiaction.policies.pi0.preprocessor import make_pi0_preprocessors
+        from physicalai.policies.pi0.preprocessor import make_pi0_preprocessors
 
         preprocessor, postprocessor = make_pi0_preprocessors(
             max_state_dim=32,
@@ -209,7 +209,7 @@ class TestPi0Preprocessor:
 
     def test_preprocessor_is_nn_module(self) -> None:
         """Test that preprocessors are nn.Module instances."""
-        from getiaction.policies.pi0.preprocessor import (
+        from physicalai.policies.pi0.preprocessor import (
             Pi0Postprocessor,
             Pi0Preprocessor,
         )
@@ -223,7 +223,7 @@ class TestPi0Preprocessor:
 
     def test_preprocessor_default_values(self) -> None:
         """Test preprocessor default configuration values."""
-        from getiaction.policies.pi0.preprocessor import Pi0Preprocessor
+        from physicalai.policies.pi0.preprocessor import Pi0Preprocessor
 
         preprocessor = Pi0Preprocessor()
 
@@ -234,7 +234,7 @@ class TestPi0Preprocessor:
 
     def test_preprocessor_custom_values(self) -> None:
         """Test preprocessor with custom configuration values."""
-        from getiaction.policies.pi0.preprocessor import Pi0Preprocessor
+        from physicalai.policies.pi0.preprocessor import Pi0Preprocessor
 
         preprocessor = Pi0Preprocessor(
             max_state_dim=64,
@@ -254,22 +254,22 @@ class TestGetPolicy:
 
     def test_get_pi0_policy(self) -> None:
         """Test creating Pi0 policy via get_policy."""
-        from getiaction.policies import get_policy
+        from physicalai.policies import get_policy
 
-        policy = get_policy("pi0", source="getiaction")
+        policy = get_policy("pi0", source="physicalai")
         assert policy.__class__.__name__ == "Pi0"
 
     def test_get_pi05_policy(self) -> None:
         """Test creating Pi05 policy via get_policy."""
-        from getiaction.policies import get_policy
+        from physicalai.policies import get_policy
 
-        policy = get_policy("pi05", source="getiaction")
+        policy = get_policy("pi05", source="physicalai")
         assert policy.__class__.__name__ == "Pi05"
         assert policy.config.variant == "pi05"
 
     def test_case_insensitive(self) -> None:
         """Test policy name is case-insensitive."""
-        from getiaction.policies import get_policy
+        from physicalai.policies import get_policy
 
         policy = get_policy("PI0")
         assert policy.__class__.__name__ == "Pi0"

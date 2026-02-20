@@ -2,13 +2,13 @@
 # Train Diffusion Policy using LeRobot's implementation
 #
 # Usage:
-#   getiaction fit --config configs/lerobot/diffusion.yaml
+#   physicalai fit --config configs/lerobot/diffusion.yaml
 #
 # Override parameters:
-#   getiaction fit --config configs/lerobot/diffusion.yaml --model.horizon 32
+#   physicalai fit --config configs/lerobot/diffusion.yaml --model.horizon 32
 
 model:
-  class_path: getiaction.policies.lerobot.Diffusion
+  class_path: physicalai.policies.lerobot.Diffusion
   init_args:
     # Core architecture - horizon must match len(delta_timestamps["action"])
     n_obs_steps: 2
@@ -43,7 +43,7 @@ model:
     scheduler_warmup_steps: 500
 
 data:
-  class_path: getiaction.data.lerobot.LeRobotDataModule
+  class_path: physicalai.data.lerobot.LeRobotDataModule
   init_args:
     repo_id: "lerobot/aloha_sim_transfer_cube_human"
     train_batch_size: 8

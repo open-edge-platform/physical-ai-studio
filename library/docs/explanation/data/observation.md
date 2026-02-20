@@ -1,6 +1,6 @@
 # Observation
 
-The `Observation` dataclass is the unified data container for the getiaction
+The `Observation` dataclass is the unified data container for the physicalai
 pipeline. It serves as both a single sample and batch representation, following
 PyTorch's convention where the same type is used for both (differentiated by
 tensor shapes).
@@ -96,7 +96,7 @@ classDiagram
 ### Creating Single Observations
 
 ```python
-from getiaction.data import Observation
+from physicalai.data import Observation
 import torch
 
 # Simple observation
@@ -155,7 +155,7 @@ obs_dict = obs.to_dict(flatten=False)
 obs_restored = Observation.from_dict(obs_dict)
 
 # Convert to LeRobot format (framework-specific)
-from getiaction.data.lerobot import FormatConverter
+from physicalai.data.lerobot import FormatConverter
 
 lerobot_dict = FormatConverter.to_lerobot_dict(obs)
 # Returns: {"action": tensor, "observation.state": tensor,
@@ -170,7 +170,7 @@ obs_from_lerobot = FormatConverter.to_observation(lerobot_dict)
 ### 1. Dataset Integration
 
 ```python
-from getiaction.data import Dataset, Observation
+from physicalai.data import Dataset, Observation
 import torch
 
 class MyDataset(Dataset):
@@ -196,7 +196,7 @@ print(sample.action.shape)  # torch.Size([2])
 
 ```python
 from torch.utils.data import DataLoader
-from getiaction.data.datamodules import _collate_observations
+from physicalai.data.datamodules import _collate_observations
 
 # DataLoader with custom collate function
 dataloader = DataLoader(
@@ -215,7 +215,7 @@ print(batch.images["top"].shape)  # torch.Size([8, 3, 64, 64])
 ### 3. DataModule Integration
 
 ```python
-from getiaction.data import DataModule
+from physicalai.data import DataModule
 
 # DataModule handles collation automatically
 datamodule = DataModule(
@@ -236,13 +236,13 @@ print(f"Action shape: {batch.action.shape}")  # torch.Size([8, 2])
 ### 4. LeRobot DataModule Integration
 
 ```python
-from getiaction.data.lerobot import LeRobotDataModule
+from physicalai.data.lerobot import LeRobotDataModule
 
 # Works with LeRobot datasets from HuggingFace
 datamodule = LeRobotDataModule(
     repo_id="lerobot/pusht",
     train_batch_size=8,
-    data_format="getiaction",  # Returns Observations
+    data_format="physicalai",  # Returns Observations
 )
 
 train_loader = datamodule.train_dataloader()
@@ -257,8 +257,8 @@ print(f"Images shape: {batch.images.shape}")  # torch.Size([8, 3, 96, 96])
 ### First-Party Policy (Custom Policies)
 
 ```python
-from getiaction.policies.base import Policy
-from getiaction.data import Observation
+from physicalai.policies.base import Policy
+from physicalai.data import Observation
 import torch
 
 class MyCustomPolicy(Policy):
@@ -285,9 +285,9 @@ class MyCustomPolicy(Policy):
 ### Third-Party Policy (LeRobot Integration)
 
 ```python
-from getiaction.policies.lerobot import ACT
-from getiaction.data import Observation
-from getiaction.data.lerobot import FormatConverter
+from physicalai.policies.lerobot import ACT
+from physicalai.data import Observation
+from physicalai.data.lerobot import FormatConverter
 import torch
 
 class ACT(Policy):
@@ -314,7 +314,7 @@ class ACT(Policy):
 ### Policy Usage Example
 
 ```python
-from getiaction.train import Trainer
+from physicalai.train import Trainer
 
 # Create policy
 policy = MyCustomPolicy()
@@ -339,9 +339,9 @@ trainer.fit(policy, datamodule)
 ## Complete End-to-End Example
 
 ```python
-from getiaction.data import Dataset, DataModule, Observation
-from getiaction.policies.base import Policy
-from getiaction.train import Trainer
+from physicalai.data import Dataset, DataModule, Observation
+from physicalai.policies.base import Policy
+from physicalai.train import Trainer
 import torch
 
 # 1. Dataset returns single Observations
@@ -428,11 +428,11 @@ Framework-specific conversions are handled separately:
 
 ```python
 # Framework-specific conversion is explicit
-from getiaction.data.lerobot import FormatConverter
+from physicalai.data.lerobot import FormatConverter
 lerobot_dict = FormatConverter.to_lerobot_dict(obs)
 
 # Easy to extend for new frameworks
-from getiaction.data.openvla import OpenVLAConverter
+from physicalai.data.openvla import OpenVLAConverter
 openvla_dict = OpenVLAConverter.convert(obs)
 ```
 
@@ -466,7 +466,7 @@ obs = Observation.from_dict(data)
 Convert to LeRobot's flattened format.
 
 ```python
-from getiaction.data.lerobot import FormatConverter
+from physicalai.data.lerobot import FormatConverter
 
 lerobot_dict = FormatConverter.to_lerobot_dict(obs)
 # Returns: {"action": tensor, "observation.state": tensor, ...}

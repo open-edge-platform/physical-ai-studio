@@ -14,7 +14,7 @@ Simulation environments for policy evaluation.
 ## Structure
 
 ```bash
-src/getiaction/gyms/
+src/physicalai/gyms/
 ├── __init__.py
 ├── base.py
 ├── gymnasium_gym.py

@@ -66,8 +66,8 @@ def dummy_dataset():
     Returns a dataset that mimics the structure of a real dataset
     without requiring any external data files.
     """
-    from getiaction.data import Dataset
-    from getiaction.data.observation import (
+    from physicalai.data import Dataset
+    from physicalai.data.observation import (
         Feature,
         FeatureType,
         NormalizationParameters,
@@ -77,7 +77,7 @@ def dummy_dataset():
     class DummyDataset(Dataset):
         """Simple in-memory dataset for testing.
 
-        This dataset properly implements the getiaction.data.Dataset interface
+        This dataset properly implements the physicalai.data.Dataset interface
         including all required properties (raw_features, fps, tolerance_s, delta_indices).
         """
 
@@ -332,8 +332,8 @@ def dummy_datamodule(dummy_dataset):
     Returns:
         Configured DataModule with dummy data.
     """
-    from getiaction.data import DataModule
-    from getiaction.gyms import PushTGym
+    from physicalai.data import DataModule
+    from physicalai.gyms import PushTGym
 
     gym = PushTGym()
     train_dataset = dummy_dataset(num_samples=20)
@@ -364,8 +364,8 @@ def dummy_lerobot_datamodule(dummy_lerobot_dataset):
     Returns:
         Configured DataModule with dummy LeRobot-style dataset.
     """
-    from getiaction.data import DataModule
-    from getiaction.gyms import PushTGym
+    from physicalai.data import DataModule
+    from physicalai.gyms import PushTGym
 
     gym = PushTGym()
     train_dataset = dummy_lerobot_dataset(num_samples=100)
@@ -383,6 +383,6 @@ def dummy_lerobot_datamodule(dummy_lerobot_dataset):
 @pytest.fixture
 def pusht_gym():
     """Create PushT gym environment for testing."""
-    from getiaction.gyms import PushTGym
+    from physicalai.gyms import PushTGym
 
     return PushTGym()

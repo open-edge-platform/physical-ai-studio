@@ -4,22 +4,22 @@
 # =============================================================================
 #
 # Usage:
-#   getiaction benchmark --config configs/benchmark/libero.yaml \
-#       --policy getiaction.policies.ACT \
+#   physicalai benchmark --config configs/benchmark/libero.yaml \
+#       --policy physicalai.policies.ACT \
 #       --ckpt_path ./checkpoints/model.ckpt
 #
 # Common overrides:
 #   # Quick test on specific tasks
-#   getiaction benchmark --config configs/benchmark/libero.yaml \
-#       --policy getiaction.policies.ACT \
+#   physicalai benchmark --config configs/benchmark/libero.yaml \
+#       --policy physicalai.policies.ACT \
 #       --ckpt_path ./checkpoints/model.ckpt \
 #       --benchmark.task_ids [0,1,2] \
 #       --benchmark.num_episodes 5
 #
 #   # Different task suite
-#   getiaction benchmark --config configs/benchmark/libero.yaml \
+#   physicalai benchmark --config configs/benchmark/libero.yaml \
 #       --benchmark.task_suite libero_spatial \
-#       --policy getiaction.policies.ACT \
+#       --policy physicalai.policies.ACT \
 #       --ckpt_path ./checkpoints/model.ckpt
 #
 # -----------------------------------------------------------------------------
@@ -37,7 +37,7 @@
 # =============================================================================
 
 benchmark:
-  class_path: getiaction.benchmark.LiberoBenchmark
+  class_path: physicalai.benchmark.LiberoBenchmark
   init_args:
     # -------------------------------------------------------------------------
     # Task Configuration
@@ -85,10 +85,10 @@ benchmark:
 # -----------------------------------------------------------------------------
 # Policy class to evaluate (must have load_from_checkpoint method)
 #
-# CLI: --policy getiaction.policies.ACT
+# CLI: --policy physicalai.policies.ACT
 #
 # Uncomment and configure:
-# policy: getiaction.policies.ACT
+# policy: physicalai.policies.ACT
 
 # Checkpoint or export path (required for evaluation)
 #

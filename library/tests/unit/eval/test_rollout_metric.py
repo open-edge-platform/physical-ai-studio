@@ -8,14 +8,14 @@ from __future__ import annotations
 import pytest
 import torch
 
-from getiaction.eval import Rollout, evaluate_policy
+from physicalai.eval import Rollout, evaluate_policy
 
 
 @pytest.fixture
 def dummy_policy():
     """Create a dummy policy for testing."""
-    from getiaction.policies.dummy import Dummy, DummyConfig
-    from getiaction.policies.dummy.model import Dummy as DummyModel
+    from physicalai.policies.dummy import Dummy, DummyConfig
+    from physicalai.policies.dummy.model import Dummy as DummyModel
 
     return Dummy(DummyModel.from_config(DummyConfig(action_shape=(2,))))
 
@@ -146,7 +146,7 @@ class TestRolloutIntegration:
     def test_lightning_training_integration(self, dummy_dataset, pusht_gym, dummy_policy):
         """Verify Rollout works correctly in Lightning training loop."""
         from lightning.pytorch import Trainer
-        from getiaction.data import DataModule
+        from physicalai.data import DataModule
 
         datamodule = DataModule(
             train_dataset=dummy_dataset(num_samples=8),

@@ -5,7 +5,7 @@
 
 import pytest
 import torch
-from getiaction.data import Dataset, DataModule, Observation
+from physicalai.data import Dataset, DataModule, Observation
 
 
 class FakeActionDataset(Dataset):

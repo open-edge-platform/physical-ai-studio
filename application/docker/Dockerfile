@@ -4,7 +4,7 @@
 ARG PYTHON_VERSION=3.12
 
 # ===========================================================================
-# Stage 1: Clone Geti UI packages and URDF robot models
+# Stage 1: Clone Physical AI Studio UI packages and URDF robot models
 # ===========================================================================
 FROM node:24-alpine3.22@sha256:bb089be859f2741e5ede9d85f47dc7daca754015b50e9642a7a45c5252807d2c AS ui-packages
 
@@ -95,7 +95,7 @@ WORKDIR /app
 COPY --link pyproject.toml uv.lock LICENSE README.md ./
 
 # Library source is needed for hatchling to resolve the dynamic version
-# of the getiaction path dependency during uv sync.
+# of the physicalai-train path dependency during uv sync.
 COPY --link --from=libs ./src /app/library/src
 COPY --link --from=libs ./LICENSE /app/library/LICENSE
 COPY --link --from=libs ./README.md /app/library/README.md
@@ -148,7 +148,7 @@ FROM python:${PYTHON_VERSION}-slim@sha256:9e01bf1ae5db7649a236da7be1e94ffbbbdd7a
 
 # OCI image metadata
 ARG GIT_SHA=unknown
-LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/geti-action" \
+LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
       org.opencontainers.image.revision="${GIT_SHA}"
 
 # uv is needed at runtime for `uv run` in run.sh
@@ -194,7 +194,7 @@ EXPOSE 8000
 # ===========================================================================
 # Stage 6a: CPU runtime target
 # ===========================================================================
-FROM runtime-base AS geti-action-cpu
+FROM runtime-base AS physical-ai-studio-cpu
 
 ARG APP_UID=1000
 ARG APP_GID=1000
@@ -241,7 +241,7 @@ RUN echo "deb [arch=amd64 trusted=yes] https://ppa.launchpadcontent.net/kobuk-te
 
 SHELL ["/bin/sh", "-c"]
 
-FROM runtime-xpu AS geti-action-xpu
+FROM runtime-xpu AS physical-ai-studio-xpu
 
 ARG APP_UID=1000
 ARG APP_GID=1000
@@ -305,7 +305,7 @@ RUN set -eux; \
     # Clean up
     apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
-FROM runtime-cuda AS geti-action-cuda
+FROM runtime-cuda AS physical-ai-studio-cuda
 
 ARG APP_UID=1000
 ARG APP_GID=1000

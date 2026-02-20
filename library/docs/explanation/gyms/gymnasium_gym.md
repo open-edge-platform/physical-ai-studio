@@ -31,7 +31,7 @@ classDiagram
 ## Vector Environments
 
 ```python
-from getiaction.gyms.gymnasium_gym import GymnasiumGym
+from physicalai.gyms.gymnasium_gym import GymnasiumGym
 
 # sync vector
 env = GymnasiumGym.vectorize("CartPole-v1", num_envs=16)

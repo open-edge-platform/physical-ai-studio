@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="../docs/assets/banner_application.png" alt="Geti Action Application" width="100%">
+  <img src="../docs/assets/banner_application.png" alt="Physical AI Studio Application" width="100%">
 </p>
 
-# Geti Action Application
+# Physical AI Studio Application
 
 Studio application for collecting demonstration data and managing VLA model training.
 
@@ -10,7 +10,7 @@ The application provides a graphical interface to:
 
 - **Collect** demonstration data from robotic systems
 - **Manage** datasets and training configurations
-- **Train** policies using the Geti Action library
+- **Train** policies using the PhysicalAI library
 - **Deploy** trained models to production
 
 <!-- markdownlint-disable MD033 -->

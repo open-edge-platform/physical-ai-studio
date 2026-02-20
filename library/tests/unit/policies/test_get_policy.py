@@ -5,16 +5,16 @@
 
 import pytest
 
-from getiaction.policies import get_policy
-from getiaction.policies.lerobot import get_lerobot_policy
+from physicalai.policies import get_policy
+from physicalai.policies.lerobot import get_lerobot_policy
 
 
 class TestGetPolicy:
     """Tests for get_policy factory function."""
 
-    def test_getiaction_source(self):
+    def test_physicalai_source(self):
         """Test creating first-party policies."""
-        policy = get_policy("act", source="getiaction")
+        policy = get_policy("act", source="physicalai")
         assert policy.__class__.__name__ == "ACT"
 
     def test_lerobot_source(self):
@@ -24,19 +24,19 @@ class TestGetPolicy:
         assert policy is not None
 
     def test_default_source(self):
-        """Test default source is getiaction."""
+        """Test default source is physicalai."""
         policy = get_policy("act")
         assert policy.__class__.__name__ == "ACT"
 
     def test_case_insensitive_source(self):
         """Test source parameter is case-insensitive."""
-        policy = get_policy("act", source="GETIACTION")
+        policy = get_policy("act", source="PHYSICALAI")
         assert policy is not None
 
     def test_unknown_policy_raises_error(self):
         """Test unknown policy name raises ValueError."""
-        with pytest.raises(ValueError, match="Unknown getiaction policy"):
-            get_policy("nonexistent", source="getiaction")
+        with pytest.raises(ValueError, match="Unknown physicalai policy"):
+            get_policy("nonexistent", source="physicalai")
 
     def test_unknown_source_raises_error(self):
         """Test unknown source raises ValueError."""
@@ -75,7 +75,7 @@ class TestGetLeRobotPolicy:
     def test_lerobot_not_installed(self, monkeypatch):
         """Test ImportError when lerobot not installed."""
         # Mock LEROBOT_AVAILABLE to False
-        import getiaction.policies.lerobot as lerobot_module
+        import physicalai.policies.lerobot as lerobot_module
 
         monkeypatch.setattr(lerobot_module, "LEROBOT_AVAILABLE", False)
         with pytest.raises(ImportError, match="LeRobot is not installed"):

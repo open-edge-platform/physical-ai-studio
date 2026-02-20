@@ -5,8 +5,8 @@ Export trained policies and deploy them to production.
 ## Quick Start
 
 ```python test="skip" reason="requires checkpoint"
-from getiaction.policies.act import ACT
-from getiaction.inference import InferenceModel
+from physicalai.policies.act import ACT
+from physicalai.inference import InferenceModel
 
 # Train (or load checkpoint)
 policy = ACT.load_from_checkpoint("checkpoints/best.ckpt")
@@ -30,7 +30,7 @@ action = model.select_action(observation)
 ## Export
 
 ```python test="skip" reason="requires checkpoint"
-from getiaction.policies import ACT
+from physicalai.policies import ACT
 
 policy = ACT.load_from_checkpoint("checkpoints/best.ckpt")
 policy.export("./exports", backend="openvino")
@@ -48,7 +48,7 @@ exports/
 ## Inference
 
 ```python test="skip" reason="requires exported model and environment"
-from getiaction.inference import InferenceModel
+from physicalai.inference import InferenceModel
 
 # Load (auto-detects backend)
 policy = InferenceModel.load("./exports")

@@ -34,5 +34,5 @@ Goal-oriented guides for specific tasks. Each guide assumes you've completed the
 
 Looking for something else?
 
-- **New to Geti Action?** → [Getting Started](../getting-started/)
+- **New to PhysicalAI?** → [Getting Started](../getting-started/)
 - **Architecture details?** → [Explanation](../explanation/)

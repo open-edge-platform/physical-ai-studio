@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 import torch
 
-from getiaction.data.lerobot import FormatConverter
-from getiaction.data.observation import IMAGES, Observation
+from physicalai.data.lerobot import FormatConverter
+from physicalai.data.observation import IMAGES, Observation
 
 
 class TestObservationCreation:
@@ -242,7 +242,7 @@ class TestObservationBatching:
         assert type(single) is type(batch)
         assert isinstance(single, Observation)
         assert isinstance(batch, Observation)
-    
+
     def test_observation_infer_batch_size(self):
         """Test we can infer batch size."""
         batch_1 = Observation(action=torch.tensor([[1, 1], [1, 2]]))
@@ -1003,7 +1003,7 @@ class TestGymInValidation:
 
     def test_gym_direct_usage(self):
         """Test that Gym can be used directly in validation."""
-        from getiaction.gyms import Gym, PushTGym
+        from physicalai.gyms import Gym, PushTGym
 
         gym = PushTGym()
 
@@ -1013,7 +1013,7 @@ class TestGymInValidation:
 
     def test_gym_reset_returns_observation(self):
         """Test that Gym.reset() returns observation dict."""
-        from getiaction.gyms import PushTGym
+        from physicalai.gyms import PushTGym
 
         gym = PushTGym()
         observation, info = gym.reset(seed=42)
@@ -1025,7 +1025,7 @@ class TestGymInValidation:
         """Test that Gym.step() returns observation dict."""
         import torch
 
-        from getiaction.gyms import PushTGym
+        from physicalai.gyms import PushTGym
 
         gym = PushTGym()
         gym.reset(seed=42)

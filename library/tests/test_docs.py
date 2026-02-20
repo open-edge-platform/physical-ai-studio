@@ -9,7 +9,7 @@ comments to control test behavior:
 
     ```python
     # This code will be tested
-    from getiaction.policies import ACT
+    from physicalai.policies import ACT
     policy = ACT()
     ```
 
