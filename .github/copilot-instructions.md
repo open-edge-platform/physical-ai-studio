@@ -1,4 +1,4 @@
-# GitHub Copilot Instructions for PhysicalAI
+# GitHub Copilot Instructions for Physical AI Studio
 
 > **Note**: This file is synchronized with `.cursorrules`. Both Cursor and VS Code (GitHub Copilot) use these same standards.
 
