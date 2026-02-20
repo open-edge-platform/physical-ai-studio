@@ -3,7 +3,7 @@
 
 r"""Unified CLI for physicalai extending LightningCLI with benchmark support.
 
-This module provides `PhysicalAICLI` - a custom CLI class that extends LightningCLI
+This module provides `CLI` - a custom CLI class that extends LightningCLI
 to add benchmark evaluation capabilities while preserving all training features.
 
 Design Pattern:
@@ -107,7 +107,7 @@ class CLI(LightningCLI):
         *args: Any,  # noqa: ANN401
         **kwargs: Any,  # noqa: ANN401
     ) -> None:
-        """Initialize PhysicalAICLI with benchmark support."""
+        """Initialize CLI with benchmark support."""
         # Store benchmark-related state
         self._benchmark: Benchmark | None = None
         self._benchmark_pretrained: str | None = None
