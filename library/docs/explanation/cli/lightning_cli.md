@@ -16,11 +16,11 @@ classDiagram
         +save_config_callback: SaveConfigCallback|None
     }
 
-    class PhysicalAICLI {
+    class CLI {
         +cli()
     }
 
-    LightningCLI <|-- PhysicalAICLI : uses
+    LightningCLI <|-- CLI : uses
 ```
 
 ## Implementation
