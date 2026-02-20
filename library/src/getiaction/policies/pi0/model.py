@@ -16,7 +16,7 @@ import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import nn
 
-from getiaction.data.observation import ACTION, Observation
+from getiaction.data.observation import ACTION, IMAGES, STATE, Observation
 
 from .components.attention import make_attention_mask_2d, prepare_4d_attention_mask
 from .components.gemma import GemmaVariant, PaliGemmaWithExpert
@@ -219,7 +219,7 @@ class Pi0Model(nn.Module):
 
     @staticmethod
     def _sample_noise(shape: tuple[int, ...], device: torch.device) -> torch.Tensor:
-        return torch.randn(shape, dtype=torch.float32, device=device)
+        return torch.randn(shape, dtype=torch.float32).to(device=device)
 
     def _sample_time(self, batch_size: int, device: torch.device) -> torch.Tensor:
         time_beta = sample_beta(
@@ -228,8 +228,7 @@ class Pi0Model(nn.Module):
             batch_size,
             device,
         )
-        time = time_beta * self.time_scale + self.time_offset
-        return time.to(dtype=torch.float32)
+        return time_beta * self.time_scale + self.time_offset
 
     def embed_prefix(
         self,
@@ -445,13 +444,13 @@ class Pi0Model(nn.Module):
         device = next(self.parameters()).device
 
         observation = {
-            "images": batch["images"],
+            IMAGES: batch[IMAGES],
             "image_masks": batch["image_masks"],
-            "state": batch["state"],
+            STATE: batch[STATE],
             "tokenized_prompt": batch["tokenized_prompt"].to(device),
             "tokenized_prompt_mask": batch["tokenized_prompt_mask"].to(device),
         }
-        actions = batch["actions"]
+        actions = batch[ACTION]
 
         loss_per_sample = self._compute_loss(observation, actions)
 
@@ -559,7 +558,7 @@ class Pi0Model(nn.Module):
         processed = self.preprocessor(batch)
         processed = self._move_to_device(processed, device)
 
-        if require_actions and "actions" not in processed:
+        if require_actions and ACTION not in processed:
             msg = "Processed batch is missing 'actions' for training"
             raise ValueError(msg)
 
