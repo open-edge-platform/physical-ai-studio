@@ -32,7 +32,7 @@ class RobotClient(ABC):
         """Send ping command. Returns event dict with timestamp."""
 
     @abstractmethod
-    async def set_joints_state(self, joints: dict) -> dict:
+    async def set_joints_state(self, joints: dict, goal_time: float) -> dict:
         """Set joint positions. Returns event dict with timestamp."""
 
     @abstractmethod

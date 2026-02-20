@@ -4,7 +4,6 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from .base import BaseIDModel
-from .robot import RobotType
 
 
 class EpisodeInfo(BaseModel):
@@ -16,6 +15,7 @@ class EpisodeInfo(BaseModel):
 class EpisodeVideo(BaseModel):
     start: float
     end: float
+    path: str
 
 
 class Episode(BaseModel):
@@ -26,8 +26,7 @@ class Episode(BaseModel):
     actions: list[list[float]]
     action_keys: list[str]
     videos: dict[str, EpisodeVideo]
-    modification_timestamp: int
-    follower_robot_types: list[RobotType]
+    thumbnail: str | None
 
 
 class LeRobotDatasetInfo(BaseModel):
@@ -44,6 +43,7 @@ class Dataset(BaseIDModel):
     name: str = "Default Name"
     path: str
     project_id: Annotated[UUID, Field(description="Unique identifier")]
+    environment_id: Annotated[UUID, Field(description="Unique identifier")]
 
     model_config = {
         "json_schema_extra": {
@@ -52,6 +52,7 @@ class Dataset(BaseIDModel):
                 "name": "Collect blocks",
                 "path": "/some/path/to/dataset",
                 "project_id": "7b073838-99d3-42ff-9018-4e901eb047fc",
+                "environment_id": "e7d4bef8-158d-6c1g-c435-20ffb2chc675",
             }
         }
     }

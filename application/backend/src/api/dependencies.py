@@ -100,6 +100,13 @@ def get_project_id(project_id: str) -> UUID:
     return UUID(project_id)
 
 
+def get_dataset_id(dataset_id: str) -> UUID:
+    """Initialize and validates a dataset ID."""
+    if not is_valid_uuid(dataset_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid dataset ID")
+    return UUID(dataset_id)
+
+
 def get_robot_id(robot_id: str) -> UUID:
     """Initialize and validates a robot ID."""
     if not is_valid_uuid(robot_id):

@@ -140,6 +140,10 @@ class ProjectEnvironmentDB(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
 
     project: Mapped["ProjectDB"] = relationship(back_populates="environments")
+    datasets: Mapped[list["DatasetDB"]] = relationship(
+        "DatasetDB",
+        back_populates="environment",
+    )
 
 
 class DatasetDB(Base):
@@ -151,6 +155,9 @@ class DatasetDB(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
+    environment_id: Mapped[str] = mapped_column(ForeignKey("project_environments.id"))
+
+    environment: Mapped["ProjectEnvironmentDB"] = relationship("ProjectEnvironmentDB", back_populates="datasets")
     project: Mapped["ProjectDB"] = relationship("ProjectDB", back_populates="datasets")
     models: Mapped[list["ModelDB"]] = relationship(
         "ModelDB",

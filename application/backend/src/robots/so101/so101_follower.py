@@ -10,6 +10,10 @@ class SO101Follower(RobotClient):
     robot: LeSO101Follower
     name = "so101_follower"
 
+    max_speed = 270  # From feetech 12V servo spec: 60 deg / 0.222s
+
+    previous_target: dict[str, float] | None = None
+
     def __init__(self, port: str, id: str):
         config = SO101FollowerConfig(port=port, id=id)
         self.robot = LeSO101Follower(config)
@@ -36,13 +40,42 @@ class SO101Follower(RobotClient):
         """Send ping command. Returns event dict with timestamp."""
         return self._create_event("pong")
 
-    async def set_joints_state(self, joints: dict) -> dict:
-        """Set joint positions. Returns event dict with timestamp."""
-        self.robot.send_action(joints)
+    async def set_joints_state(self, joints: dict, goal_time: float) -> dict:
+        """Set joint positions. Returns event dict with timestamp.
+
+        The challenge here is when the maximum degree/s * goal_time results in sub servo resulution distances.
+        This means that the servo will either not move, or very slowly.
+        In order to fix this we store the previous target so that previous attempts to move it to a sub servo
+        resolution position so that these small steps can accumulate.
+
+        However, the previous_target must remain relevant and close to the current state.
+        """
+        max_frame_speed = self.max_speed * goal_time
+
+        state = self.robot.get_observation()
+        if self.previous_target:
+            # Additional clamp to make sure that previous_target is not too far of current position
+            state = self._clamp_joints(state, self.previous_target, max_frame_speed * 2)
+
+        target = {key: value + self._clamp_speed(joints[key] - value, max_frame_speed) for key, value in state.items()}
+        self.previous_target = target
+        self.robot.send_action(target)
         return self._create_event(
             "joints_state_was_set",
-            joints=joints,
+            joints=target,
         )
+
+    @staticmethod
+    def _clamp_joints(current: dict, target: dict, max_distance: float) -> dict:
+        """Clamp a current joints dict to target with a max value"""
+        return {
+            key: value + SO101Follower._clamp_speed(target[key] - value, max_distance) for key, value in current.items()
+        }
+
+    @staticmethod
+    def _clamp_speed(value: float, speed: float) -> float:
+        """Clamp value between -speed and speed."""
+        return max(min(value, speed), -speed)
 
     async def enable_torque(self) -> dict:
         """Enable torque. Returns event dict with timestamp."""

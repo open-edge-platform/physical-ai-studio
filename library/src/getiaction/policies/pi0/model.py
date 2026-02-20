@@ -16,7 +16,7 @@ import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import nn
 
-from getiaction.data.observation import ACTION, Observation
+from getiaction.data.observation import ACTION, IMAGES, STATE, Observation
 
 from .components.attention import make_attention_mask_2d, prepare_4d_attention_mask
 from .components.gemma import GemmaVariant, PaliGemmaWithExpert
@@ -26,9 +26,33 @@ __all__ = ["GemmaVariant", "Pi0Model", "create_sinusoidal_pos_embedding", "sampl
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
+    from transformers.cache_utils import DynamicCache
+
     from .preprocessor import Pi0Postprocessor, Pi0Preprocessor
 
 logger = logging.getLogger(__name__)
+
+
+def _clone_kv_cache(cache: DynamicCache) -> DynamicCache:
+    """Create an independent copy of a ``DynamicCache`` using only tensor ops.
+
+    Standard HuggingFace transformers (<=4.57) unconditionally mutates
+    ``past_key_values`` via ``DynamicCache.update()`` inside
+    ``GemmaAttention.forward()``, even when ``use_cache=False``.  When the
+    same prefix cache is reused across denoising steps this causes a shape
+    mismatch on step 2+.
+
+    Returns:
+        A new ``DynamicCache`` instance with cloned keys and values.
+    """
+    from transformers.cache_utils import DynamicCache  # noqa: PLC0415
+
+    cloned = DynamicCache()
+    for layer_idx, layer in enumerate(cache.layers):
+        if layer.keys is None or layer.values is None:
+            continue
+        cloned.update(layer.keys.clone(), layer.values.clone(), layer_idx)
+    return cloned
 
 
 def create_sinusoidal_pos_embedding(
@@ -195,7 +219,7 @@ class Pi0Model(nn.Module):
 
     @staticmethod
     def _sample_noise(shape: tuple[int, ...], device: torch.device) -> torch.Tensor:
-        return torch.randn(shape, dtype=torch.float32, device=device)
+        return torch.randn(shape, dtype=torch.float32).to(device=device)
 
     def _sample_time(self, batch_size: int, device: torch.device) -> torch.Tensor:
         time_beta = sample_beta(
@@ -204,13 +228,12 @@ class Pi0Model(nn.Module):
             batch_size,
             device,
         )
-        time = time_beta * self.time_scale + self.time_offset
-        return time.to(dtype=torch.float32)
+        return time_beta * self.time_scale + self.time_offset
 
     def embed_prefix(
         self,
-        images: list[torch.Tensor],
-        image_masks: list[torch.Tensor],
+        images: torch.Tensor,
+        image_masks: torch.Tensor,
         language_tokens: torch.Tensor,
         language_masks: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -421,13 +444,13 @@ class Pi0Model(nn.Module):
         device = next(self.parameters()).device
 
         observation = {
-            "images": batch["images"],
+            IMAGES: batch[IMAGES],
             "image_masks": batch["image_masks"],
-            "state": batch["state"],
+            STATE: batch[STATE],
             "tokenized_prompt": batch["tokenized_prompt"].to(device),
             "tokenized_prompt_mask": batch["tokenized_prompt_mask"].to(device),
         }
-        actions = batch["actions"]
+        actions = batch[ACTION]
 
         loss_per_sample = self._compute_loss(observation, actions)
 
@@ -496,11 +519,15 @@ class Pi0Model(nn.Module):
             prefix_offsets = prefix_pad.sum(dim=-1)[:, None]
             suffix_position_ids = prefix_offsets + torch.cumsum(suffix_pad.long(), dim=1) - 1
 
+            # Clone the KV cache so the action-expert forward pass doesn't
+            # mutate the original (see _clone_kv_cache docstring).
+            step_kv_cache = _clone_kv_cache(past_key_values)
+
             (_, suffix_out), _ = self.paligemma_with_expert(
                 inputs_embeds=[None, suffix_emb],
                 attention_mask=full_4d,
                 position_ids=suffix_position_ids,
-                past_key_values=past_key_values,
+                past_key_values=step_kv_cache,
                 adarms_cond=[None, adarms_cond],
                 use_cache=False,
             )
@@ -531,7 +558,7 @@ class Pi0Model(nn.Module):
         processed = self.preprocessor(batch)
         processed = self._move_to_device(processed, device)
 
-        if require_actions and "actions" not in processed:
+        if require_actions and ACTION not in processed:
             msg = "Processed batch is missing 'actions' for training"
             raise ValueError(msg)
 
@@ -555,16 +582,14 @@ class Pi0Model(nn.Module):
     @staticmethod
     def _preprocess_observation(
         observation: Mapping[str, Any],
-    ) -> tuple[list[torch.Tensor], list[torch.Tensor], torch.Tensor, torch.Tensor, torch.Tensor]:
-        images = list(observation.get("images", {}).values())
-        image_masks = list(observation.get("image_masks", {}).values())
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        images = observation[IMAGES]
+        image_masks = observation["image_masks"]
 
-        image_masks = [m if isinstance(m, torch.Tensor) else torch.tensor(m, dtype=torch.bool) for m in image_masks]
+        lang_tokens = observation["tokenized_prompt"]
+        lang_masks = observation["tokenized_prompt_mask"]
 
-        lang_tokens = observation.get("tokenized_prompt")
-        lang_masks = observation.get("tokenized_prompt_mask")
-
-        state = observation.get("state")
+        state = observation[STATE]
 
         if lang_tokens is None or lang_masks is None or state is None:
             msg = "Observation is missing required fields for Pi0Model"

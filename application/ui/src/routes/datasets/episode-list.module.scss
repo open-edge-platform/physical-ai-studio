@@ -1,0 +1,30 @@
+.episodePreviewList {
+    padding: 0px;
+    overflow-y: auto;
+    max-height: '100%';
+}
+
+.episodeItem {
+    background-color: var(--spectrum-global-color-gray-200);
+    padding: 8px;
+    margin: 0 var(--spectrum-global-dimension-size-250);
+    margin-bottom: var(--spectrum-global-dimension-size-125);
+    border: 2px solid transparent;
+    border-radius: 4px;
+    position: relative;
+}
+
+.episodeItem:hover {
+    border: 2px solid var(--energy-blue);
+    cursor: pointer;
+}
+
+.episodeItem.active {
+    border: 2px solid var(--energy-blue);
+}
+
+.episodeCheckbox {
+    position: absolute;
+    bottom: 0px;
+    right: 0px;
+}

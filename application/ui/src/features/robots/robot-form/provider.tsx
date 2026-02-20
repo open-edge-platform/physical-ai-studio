@@ -4,7 +4,7 @@ import { SchemaRobot, SchemaRobotType } from '../../../api/openapi-spec';
 
 type RobotForm = {
     name: string;
-    type: SchemaRobotType | null;
+    type: SchemaRobotType;
     connection_string: string;
     serial_number: string;
 };
@@ -41,7 +41,7 @@ export const useRobotFormBody = (robot_id: string): SchemaRobot | null => {
 export const RobotFormProvider = ({ children, robot }: { children: ReactNode; robot?: SchemaRobot }) => {
     const [value, setValue] = useState<RobotForm>({
         name: robot?.name ?? '',
-        type: robot?.type ?? null,
+        type: robot?.type ?? 'SO101_Follower',
         connection_string: robot?.connection_string ?? '',
         serial_number: robot?.serial_number ?? '',
     });

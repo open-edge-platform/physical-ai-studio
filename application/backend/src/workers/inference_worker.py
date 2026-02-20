@@ -26,15 +26,6 @@ from workers.camera_worker import create_frames_source_from_camera
 
 from .base import BaseThreadWorker
 
-SO_101_REST_POSITION = {
-    "shoulder_pan.pos": -2,
-    "shoulder_lift.pos": -90,
-    "elbow_flex.pos": 100,
-    "wrist_flex.pos": 60,
-    "wrist_roll.pos": 0,
-    "gripper.pos": 25,
-}
-
 
 class CameraFrameProcessor:
     @staticmethod
@@ -169,14 +160,14 @@ class InferenceWorker(BaseThreadWorker):
                     state[camera_id] = processed_frame
 
                 timestamp = time.perf_counter() - start_episode_t
-                observation = self._build_geti_action_observation(state)
                 if self.state.is_running:
                     if not self.action_queue:
+                        observation = self._build_geti_action_observation(state)
                         self.action_queue = self.model.select_action(observation)[0].tolist()
                     action = self.action_queue.pop(0)
 
                     formatted_actions = dict(zip(self.action_keys, action))
-                    await self.follower.set_joints_state(formatted_actions)
+                    await self.follower.set_joints_state(formatted_actions, 1 / 30)
                     self._report_action(formatted_actions, state, timestamp)
                 else:
                     self._report_action({}, state, timestamp)
@@ -191,7 +182,6 @@ class InferenceWorker(BaseThreadWorker):
     async def _on_start(self) -> None:
         logger.info("start")
         self.events["start"].clear()
-        await self.follower.set_joints_state(SO_101_REST_POSITION)
         precise_sleep(0.3)  # TODO check if neccesary
         self.action_queue.clear()
         self.state.is_running = True
@@ -254,14 +244,16 @@ class InferenceWorker(BaseThreadWorker):
             0
         )
         images: dict = {}
-        for camera_id in self.camera_keys:
-            frame = robot_observation[camera_id]
+        for camera in self.config.environment.cameras:
+            frame = robot_observation[str(camera.id)]
 
+            # Camera name is used to reference its feature
+            camera_name = camera.name.lower()
             # change image to 0..1 and swap R & B channels.
-            images[camera_id] = torch.from_numpy(frame)
-            images[camera_id] = images[camera_id].float() / 255
-            images[camera_id] = images[camera_id].permute(2, 0, 1).contiguous()
-            images[camera_id] = images[camera_id].unsqueeze(0)
+            images[camera_name] = torch.from_numpy(frame)
+            images[camera_name] = images[camera_name].float() / 255
+            images[camera_name] = images[camera_name].permute(2, 0, 1).contiguous()
+            images[camera_name] = images[camera_name].unsqueeze(0)
 
         return Observation(
             state=state,

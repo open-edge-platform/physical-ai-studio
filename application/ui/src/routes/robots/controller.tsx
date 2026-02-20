@@ -19,7 +19,7 @@ export const Controller = () => {
                 minHeight={0}
             >
                 <View gridArea='controller'>
-                    <RobotViewer robotType={robot.type} />
+                    <RobotViewer robot={robot} />
                 </View>
                 <JointControls />
             </Grid>

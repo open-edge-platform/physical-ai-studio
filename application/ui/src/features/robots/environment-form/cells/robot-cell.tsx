@@ -97,7 +97,7 @@ const InnerCell = ({ robot_id }: { robot_id: string }) => {
 
     return (
         <View minWidth='size-4000' minHeight='size-4000' width='100%' height='100%' backgroundColor={'gray-600'}>
-            <RobotViewer robotType={robot.type} />
+            <RobotViewer robot={robot} />
         </View>
     );
 };

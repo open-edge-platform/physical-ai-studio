@@ -1,9 +1,12 @@
 import { useEffect, useRef } from 'react';
 
-import { Disclosure, DisclosurePanel, DisclosureTitle, Flex, View, Well } from '@geti/ui';
+import { Disclosure, DisclosurePanel, DisclosureTitle, Divider, Flex, Text, View, Well } from '@geti/ui';
 
-import { SchemaEpisode, SchemaEpisodeVideo } from '../../api/openapi-spec';
+import { $api } from '../../api/client';
+import { SchemaDatasetOutput, SchemaEpisode, SchemaEpisodeVideo } from '../../api/openapi-spec';
 import EpisodeChart from '../../components/episode-chart/episode-chart';
+import { EpisodeTag } from '../../features/datasets/episodes/episode-tag';
+import { useProjectId } from '../../features/projects/use-project';
 import { RobotViewer } from '../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 import { TimelineControls } from './timeline-controls';
@@ -13,14 +16,13 @@ import classes from './episode-viewer.module.scss';
 
 interface VideoView {
     dataset_id: string;
-    episodeIndex: number;
     cameraName: string;
     aspectRatio: number;
     time: number;
     episodeVideo: SchemaEpisodeVideo;
 }
-const VideoView = ({ cameraName, dataset_id, episodeIndex, aspectRatio, time, episodeVideo }: VideoView) => {
-    const url = `/api/dataset/${dataset_id}/${episodeIndex}/${cameraName}.mp4`;
+const VideoView = ({ dataset_id, cameraName, aspectRatio, time, episodeVideo }: VideoView) => {
+    const url = `/api/dataset/${dataset_id}/video/${episodeVideo.path}`;
 
     const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -51,27 +53,41 @@ const VideoView = ({ cameraName, dataset_id, episodeIndex, aspectRatio, time, ep
 
 interface EpisodeViewerProps {
     episode: SchemaEpisode;
-    dataset_id: string;
+    dataset: SchemaDatasetOutput;
 }
 
-export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
+export const EpisodeViewer = ({ episode, dataset }: EpisodeViewerProps) => {
     const player = usePlayer(episode);
     const frameIndex = Math.floor(player.time * episode.fps);
     const cameras = Object.keys(episode.videos).map((m) => m.replace('observation.images.', ''));
-    const follower_robot_type = episode.follower_robot_types?.[0] ?? 'SO101_Follower';
+
+    const { project_id } = useProjectId();
+
+    const { data: environment } = $api.useSuspenseQuery(
+        'get',
+        '/api/projects/{project_id}/environments/{environment_id}',
+        {
+            params: { path: { project_id, environment_id: dataset.environment_id } },
+        }
+    );
+    const robots = (environment.robots ?? []).map(({ robot }) => robot);
 
     return (
         <RobotModelsProvider>
             <Flex direction={'column'} height={'100%'} position={'relative'}>
+                <Flex gap='size-100' marginBottom='size-100'>
+                    <EpisodeTag episode={episode} variant='medium' />
+                    <Divider orientation='vertical' size='S' />
+                    <Text>{episode.tasks.join(', ')}</Text>
+                </Flex>
                 <Flex direction={'row'} flex gap={'size-100'}>
                     <Flex direction={'column'} alignContent={'start'} flex gap={'size-30'}>
                         {cameras.map((camera) => (
                             <VideoView
                                 key={camera}
+                                dataset_id={dataset.id!}
                                 aspectRatio={640 / 480}
                                 cameraName={camera}
-                                episodeIndex={episode.episode_index}
-                                dataset_id={dataset_id}
                                 time={player.time}
                                 episodeVideo={episode.videos[`observation.images.${camera}`]}
                             />
@@ -81,7 +97,7 @@ export const EpisodeViewer = ({ dataset_id, episode }: EpisodeViewerProps) => {
                         <RobotViewer
                             featureValues={episode.actions[frameIndex]}
                             featureNames={episode.action_keys}
-                            robotType={follower_robot_type}
+                            robot={robots[0]}
                         />
                     </Flex>
                 </Flex>
