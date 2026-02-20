@@ -10,7 +10,8 @@ import tempfile
 from pathlib import Path
 
 import pytest
-import torch
+
+torch = pytest.importorskip("torch")
 
 # Configure LeRobot to avoid interactive prompts during test collection.
 # This is needed because importing robosuite (used by LIBERO) triggers
@@ -81,9 +82,7 @@ def dummy_dataset():
         including all required properties (raw_features, fps, tolerance_s, delta_indices).
         """
 
-        def __init__(
-            self, num_samples: int = 10, state_dim: int = 4, action_dim: int = 2
-        ):
+        def __init__(self, num_samples: int = 10, state_dim: int = 4, action_dim: int = 2):
             self.num_samples = num_samples
             self.state_dim = state_dim
             self.action_dim = action_dim
@@ -97,21 +96,13 @@ def dummy_dataset():
             num_action_steps = len(self._delta_indices.get("action", [0]))
 
             # Return action chunks if delta_indices specifies multiple steps
-            action_shape = (
-                (num_action_steps, self.action_dim)
-                if num_action_steps > 1
-                else (self.action_dim,)
-            )
+            action_shape = (num_action_steps, self.action_dim) if num_action_steps > 1 else (self.action_dim,)
 
             # Create extra dict with action_is_pad if using action chunks
             extra = None
             if num_action_steps > 1:
                 # For dummy dataset, no padding - all actions are valid (False = not padded)
-                extra = {
-                    "action_is_pad": torch.full(
-                        (num_action_steps,), fill_value=False, dtype=torch.bool
-                    )
-                }
+                extra = {"action_is_pad": torch.full((num_action_steps,), fill_value=False, dtype=torch.bool)}
 
             return Observation(
                 action=torch.randn(*action_shape),
@@ -259,9 +250,7 @@ def dummy_lerobot_dataset():
                     "max": torch.full((4,), 1.0),
                 },
                 "observation.images.top": {
-                    "mean": torch.zeros(
-                        3, 1, 1
-                    ),  # (C, 1, 1) for channel-wise normalization
+                    "mean": torch.zeros(3, 1, 1),  # (C, 1, 1) for channel-wise normalization
                     "std": torch.ones(3, 1, 1),
                     "min": torch.zeros(3, 1, 1),
                     "max": torch.full((3, 1, 1), 255.0),

@@ -52,8 +52,8 @@ dependencies = [
 [project.optional-dependencies]
 # PyTorch dependency groups
 cpu = [
-    "torch<2.11",
-    "torchvision<=0.26.0",
+    "torch==2.7.1+cpu",
+    "torchvision==0.22.1+cpu",
 ]
 cu128 = [
     "torch>=2.4.0,<=2.8.0",
