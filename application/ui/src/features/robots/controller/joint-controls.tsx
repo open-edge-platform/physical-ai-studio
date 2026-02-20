@@ -8,6 +8,10 @@ import { degToRad, radToDeg } from 'three/src/math/MathUtils.js';
 import { useRobotModels } from '../robot-models-context';
 import { useRobot, useRobotId } from '../use-robot';
 
+function removeSuffix(str: string, suffix: string): string {
+    return str.endsWith(suffix) ? str.slice(0, -suffix.length) : str;
+}
+
 const Joint = ({
     name,
     value,
@@ -113,8 +117,10 @@ const useJointState = () => {
                     const newJoints = payload['state'];
 
                     Object.keys(newJoints).forEach((joint) => {
+                        const name = removeSuffix(joint, '.pos');
+
                         models.forEach((model) => {
-                            model.setJointValue(joint, degToRad(newJoints[joint]));
+                            model.setJointValue(name, degToRad(newJoints[joint]));
                         });
                     });
 
