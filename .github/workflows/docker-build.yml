@@ -3,6 +3,10 @@ name: Docker Build
 on:
   pull_request:
     branches: [main]
+    paths:
+      - 'library/**'
+      - 'application/**'
+      - '.github/workflows/docker-build.yml'
 
 permissions: {} # No permissions by default on workflow level
 
