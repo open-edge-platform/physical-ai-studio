@@ -60,7 +60,7 @@ class Benchmark:
     runs multiple episodes per gym, aggregates results, and optionally
     records videos of episodes.
 
-    This class follows the same pattern as other physical-ai-studio core classes:
+    This class follows the same pattern as other physical-ai core classes:
     - Direct usage: `Benchmark(gyms=[...], num_episodes=20)`
     - Specialized subclass: `LiberoBenchmark(task_suite="libero_10")`
 
