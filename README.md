@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.png" alt="PhysicalAI" width="100%">
+  <img src="docs/assets/banner.png" alt="Physical AI Studio" width="100%">
 </p>
 
 <div align="center">
@@ -20,9 +20,9 @@
 
 ---
 
-## What is PhysicalAI?
+## What is Physical AI Studio?
 
-PhysicalAI is an end-to-end framework for teaching robots to perform tasks through imitation learning from human demonstrations.
+Physical AI Studio is an end-to-end framework for teaching robots to perform tasks through imitation learning from human demonstrations.
 
 ## Key Features
 

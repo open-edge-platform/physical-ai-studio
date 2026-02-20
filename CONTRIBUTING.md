@@ -1,4 +1,4 @@
-# Contributing to PhysicalAI
+# Contributing to Physical AI Studio
 
 ## Getting Started
 
@@ -78,7 +78,7 @@ See [.github/copilot-instructions.md](./.github/copilot-instructions.md) for det
 
 ## License
 
-PhysicalAI is licensed under the terms in [LICENSE](./LICENSE). By contributing to the project, you agree to the license and copyright terms therein and release your contribution under these terms.
+Physical AI Studio is licensed under the terms in [LICENSE](./LICENSE). By contributing to the project, you agree to the license and copyright terms therein and release your contribution under these terms.
 
 ## Sign Your Work
 

@@ -4,7 +4,7 @@
 
 ## Table of Contents
 
-- [GitHub Copilot Instructions for PhysicalAI](#github-copilot-instructions-for-physical-ai-studio)
+- [GitHub Copilot Instructions for Physical AI Studio](#github-copilot-instructions-for-physical-ai-studio)
   - [Table of Contents](#table-of-contents)
   - [Project Overview](#project-overview)
   - [Coding Standards](#coding-standards)
