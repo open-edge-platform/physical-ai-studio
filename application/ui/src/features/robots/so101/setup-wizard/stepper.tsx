@@ -1,6 +1,6 @@
 import { Text } from '@geti/ui';
 
-import { STEP_LABELS, useWizardActions, useWizardState, WizardStep } from './wizard-provider';
+import { STEP_LABELS, useSetupActions, useSetupState, WizardStep } from './wizard-provider';
 
 import classes from './setup-wizard.module.scss';
 
@@ -8,8 +8,8 @@ import classes from './setup-wizard.module.scss';
  * Horizontal step indicator bar showing progress through the wizard.
  */
 export const Stepper = () => {
-    const { currentStep, completedSteps } = useWizardState();
-    const { visibleSteps, goToStep } = useWizardActions();
+    const { currentStep, completedSteps } = useSetupState();
+    const { visibleSteps, goToStep } = useSetupActions();
 
     return (
         <div className={classes.stepper}>
