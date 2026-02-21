@@ -7,7 +7,7 @@ import { degToRad } from 'three/src/math/MathUtils.js';
 import { $api } from '../../../../api/client';
 import { useProjectId } from '../../../projects/use-project';
 import { RobotViewer } from '../../controller/robot-viewer';
-import { RobotModelsProvider, useRobotModels } from '../../robot-models-context';
+import { RobotModelsProvider, urdfPathForType, useRobotModels } from '../../robot-models-context';
 
 type JointsState = Array<{
     name: string;
@@ -30,35 +30,36 @@ const getNewJointState = (newJoints: StateWasUpdatedEvent['state']) => {
     });
 };
 
-const useSynchronizeModelJoints = (joints: JointsState) => {
-    const { models } = useRobotModels();
+const useSynchronizeModelJoints = (joints: JointsState, urdfPath: string) => {
+    const { getModel } = useRobotModels();
+    const model = getModel(urdfPath);
 
     function removeSuffix(str: string, suffix: string): string {
         return str.endsWith(suffix) ? str.slice(0, -suffix.length) : str;
     }
 
     useEffect(() => {
-        models.forEach((model) => {
-            joints.forEach((joint) => {
-                const name = removeSuffix(joint.name, '.pos');
+        if (!model) return;
 
-                if (name === 'gripper' && model.robotName == 'wxai') {
-                    model.setJointValue('left_carriage_joint', joint.value); // meters
-                    return;
-                }
+        joints.forEach((joint) => {
+            const name = removeSuffix(joint.name, '.pos');
 
-                if (model.joints[name]) {
-                    model.setJointValue(name, degToRad(joint.value));
-                }
-            });
+            if (name === 'gripper' && model.robotName == 'wxai') {
+                model.setJointValue('left_carriage_joint', joint.value); // meters
+                return;
+            }
+
+            if (model.joints[name]) {
+                model.setJointValue(name, degToRad(joint.value));
+            }
         });
-    }, [models, joints]);
+    }, [model, joints]);
 };
 
-const useJointState = (project_id: string, robot_id: string) => {
+const useJointState = (project_id: string, robot_id: string, urdfPath: string) => {
     const [joints, setJoints] = useState<JointsState>([]);
 
-    useSynchronizeModelJoints(joints);
+    useSynchronizeModelJoints(joints, urdfPath);
 
     const handleMessage = useCallback((event: WebSocketEventMap['message']) => {
         try {
@@ -93,7 +94,7 @@ const InnerCell = ({ robot_id }: { robot_id: string }) => {
         params: { path: { project_id, robot_id } },
     });
 
-    useJointState(project_id, robot_id);
+    useJointState(project_id, robot_id, urdfPathForType(robot.type));
 
     return (
         <View minWidth='size-4000' minHeight='size-4000' width='100%' height='100%' backgroundColor={'gray-600'}>

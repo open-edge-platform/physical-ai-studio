@@ -9,7 +9,7 @@ import { URDFRobot } from 'urdf-loader';
 
 import { SchemaRobot, SchemaRobotType } from '../../../api/openapi-spec';
 import { useContainerSize } from '../../../components/zoom/use-container-size';
-import { useLoadModelMutation, useRobotModels } from './../robot-models-context';
+import { urdfPathForType, useLoadModelMutation, useRobotModels } from './../robot-models-context';
 
 // This is a wrapper component for the loaded URDF model
 const ActualURDFModel = ({ model }: { model: URDFRobot }) => {
@@ -26,35 +26,16 @@ const ActualURDFModel = ({ model }: { model: URDFRobot }) => {
 
 const useLoadURDF = (robotType: SchemaRobotType) => {
     const loadModelMutation = useLoadModelMutation();
-    const { models, setModels } = useRobotModels();
+    const { hasModel } = useRobotModels();
 
-    let PATH = '/SO101/so101_new_calib.urdf';
+    const PATH = urdfPathForType(robotType);
 
-    if (robotType !== undefined && robotType.toLowerCase().includes('trossen')) {
-        PATH = '/widowx/urdf/generated/wxai/wxai_follower.urdf';
-    }
-
-    const lastLoadedPath = useRef<string | null>(null);
     useEffect(() => {
-        // Path changed — clear stale model so we reload the correct one
-        if (lastLoadedPath.current !== null && lastLoadedPath.current !== PATH) {
-            setModels([]);
-            lastLoadedPath.current = null;
-            loadModelMutation.reset();
-            return;
-        }
+        if (hasModel(PATH)) return;
+        if (loadModelMutation.data || !loadModelMutation.isIdle) return;
 
-        if (models.length > 0) {
-            return;
-        }
-
-        if (loadModelMutation.data || !loadModelMutation.isIdle) {
-            return;
-        }
-
-        lastLoadedPath.current = PATH;
         loadModelMutation.mutate(PATH);
-    }, [models, PATH, loadModelMutation, setModels]);
+    }, [PATH, hasModel, loadModelMutation]);
 };
 
 interface RobotViewerProps {
@@ -65,12 +46,12 @@ interface RobotViewerProps {
 export const RobotViewer = ({ robot, featureValues, featureNames }: RobotViewerProps) => {
     const angle = degToRad(-45);
 
-    // TODO: Implement robot with multiple arms.
+    const PATH = urdfPathForType(robot.type);
     useLoadURDF(robot.type);
     const ref = useRef<HTMLDivElement>(null);
     const size = useContainerSize(ref);
-    const { models } = useRobotModels();
-    const model = models.at(0);
+    const { getModel } = useRobotModels();
+    const model = getModel(PATH);
 
     useEffect(() => {
         if (featureValues !== undefined && featureNames !== undefined && model !== undefined) {
