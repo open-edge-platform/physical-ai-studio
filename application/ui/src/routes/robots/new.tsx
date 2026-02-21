@@ -1,34 +1,24 @@
-import { Suspense } from 'react';
+import { View } from '@geti/ui';
 
-import { Flex, Grid, Loading, minmax, View } from '@geti/ui';
-
-import { RobotForm } from '../../features/robots/robot-form/form';
-import { Preview } from '../../features/robots/robot-form/preview';
 import { RobotFormProvider } from '../../features/robots/robot-form/provider';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
-
-const CenteredLoading = () => {
-    return (
-        <Flex width='100%' height='100%' alignItems={'center'} justifyContent={'center'}>
-            <Loading mode='inline' />
-        </Flex>
-    );
-};
+import { SetupWizardContent } from '../../features/robots/setup-wizard/setup-wizard';
+import { SetupWizardProvider } from '../../features/robots/setup-wizard/wizard-provider';
 
 export const New = () => {
     return (
         <RobotModelsProvider>
             <RobotFormProvider>
-                <Grid areas={['robot controls']} columns={[minmax('size-6000', 'auto'), '1fr']} height={'100%'}>
-                    <View gridArea='robot' backgroundColor={'gray-100'} padding='size-400'>
-                        <Suspense fallback={<CenteredLoading />}>
-                            <RobotForm />
-                        </Suspense>
+                <SetupWizardProvider>
+                    <View
+                        height='100%'
+                        backgroundColor='gray-100'
+                        padding='size-400'
+                        UNSAFE_style={{ overflow: 'hidden' }}
+                    >
+                        <SetupWizardContent />
                     </View>
-                    <View gridArea='controls' backgroundColor={'gray-50'} padding='size-400'>
-                        <Preview />
-                    </View>
-                </Grid>
+                </SetupWizardProvider>
             </RobotFormProvider>
         </RobotModelsProvider>
     );

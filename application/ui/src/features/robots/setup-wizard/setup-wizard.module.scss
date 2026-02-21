@@ -1,0 +1,237 @@
+.stepper {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 0;
+}
+
+/* Two-column wizard layout */
+.wizardGrid {
+    min-height: 0; /* allow grid to shrink inside flex container */
+}
+
+/* Disclosure sections in diagnostics step */
+.disclosureHeader {
+    padding: 8px 12px;
+    border-radius: 4px;
+    background-color: var(--spectrum-global-color-gray-75);
+    border: 1px solid var(--spectrum-global-color-gray-200);
+}
+
+.step {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+    user-select: none;
+}
+
+.step:hover {
+    background-color: var(--spectrum-global-color-gray-200);
+}
+
+.stepActive {
+    background-color: var(--spectrum-global-color-gray-200);
+}
+
+.stepDisabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.stepDisabled:hover {
+    background-color: transparent;
+}
+
+.stepNumber {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    font-size: 12px;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.stepNumberDefault {
+    background-color: var(--spectrum-global-color-gray-400);
+    color: var(--spectrum-global-color-gray-50);
+}
+
+.stepNumberActive {
+    background-color: var(--spectrum-accent-color-500, #1473e6);
+    color: white;
+}
+
+.stepNumberCompleted {
+    background-color: var(--spectrum-semantic-positive-color-default, #12805c);
+    color: white;
+}
+
+.stepDivider {
+    flex: 0 0 24px;
+    height: 1px;
+    background-color: var(--spectrum-global-color-gray-400);
+}
+
+.stepLabel {
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+/* Diagnostics step */
+.diagnosticsGrid {
+    display: grid;
+    gap: 16px;
+}
+
+.motorRow {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-radius: 4px;
+    background-color: var(--spectrum-global-color-gray-75);
+    border: 1px solid var(--spectrum-global-color-gray-200);
+}
+
+.motorName {
+    flex: 0 0 140px;
+    font-weight: 500;
+    font-size: 13px;
+}
+
+.motorId {
+    flex: 0 0 60px;
+    font-size: 12px;
+    color: var(--spectrum-global-color-gray-600);
+}
+
+.statusBadge {
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.statusOk {
+    background-color: color-mix(in srgb, var(--spectrum-semantic-positive-color-default, #12805c), transparent 85%);
+    color: var(--spectrum-semantic-positive-color-default, #12805c);
+}
+
+.statusError {
+    background-color: color-mix(in srgb, var(--spectrum-semantic-negative-color-default, #e34850), transparent 85%);
+    color: var(--spectrum-semantic-negative-color-default, #e34850);
+}
+
+.statusPending {
+    background-color: color-mix(in srgb, var(--spectrum-global-color-gray-500), transparent 85%);
+    color: var(--spectrum-global-color-gray-600);
+}
+
+.statusScanning {
+    background-color: color-mix(in srgb, var(--spectrum-accent-color-500, #1473e6), transparent 85%);
+    color: var(--spectrum-accent-color-500, #1473e6);
+}
+
+/* Voltage display */
+.voltageGrid {
+    display: grid;
+    grid-template-columns: 140px 60px 1fr;
+    gap: 4px 12px;
+    padding: 8px 12px;
+    font-size: 13px;
+    background-color: var(--spectrum-global-color-gray-75);
+    border-radius: 4px;
+    border: 1px solid var(--spectrum-global-color-gray-200);
+}
+
+/* Calibration range table */
+.rangeTable {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.rangeTable th,
+.rangeTable td {
+    padding: 6px 12px;
+    text-align: right;
+    border-bottom: 1px solid var(--spectrum-global-color-gray-200);
+}
+
+.rangeTable th:first-child,
+.rangeTable td:first-child {
+    text-align: left;
+}
+
+.rangeTable th {
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    color: var(--spectrum-global-color-gray-600);
+    background-color: var(--spectrum-global-color-gray-75);
+}
+
+/* Section card */
+.sectionCard {
+    padding: 16px;
+    border-radius: 6px;
+    background-color: var(--spectrum-global-color-gray-75);
+    border: 1px solid var(--spectrum-global-color-gray-200);
+}
+
+/* Info box */
+.infoBox {
+    padding: 12px 16px;
+    border-radius: 4px;
+    border-left: 3px solid var(--spectrum-accent-color-500, #1473e6);
+    background-color: color-mix(in srgb, var(--spectrum-accent-color-500, #1473e6), transparent 92%);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.warningBox {
+    padding: 12px 16px;
+    border-radius: 4px;
+    border-left: 3px solid var(--spectrum-semantic-notice-color-default, #e68619);
+    background-color: color-mix(
+        in srgb,
+        var(--spectrum-semantic-notice-color-default, #e68619),
+        transparent 92%
+    );
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.errorBox {
+    padding: 12px 16px;
+    border-radius: 4px;
+    border-left: 3px solid var(--spectrum-semantic-negative-color-default, #e34850);
+    background-color: color-mix(
+        in srgb,
+        var(--spectrum-semantic-negative-color-default, #e34850),
+        transparent 92%
+    );
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.successBox {
+    padding: 12px 16px;
+    border-radius: 4px;
+    border-left: 3px solid var(--spectrum-semantic-positive-color-default, #12805c);
+    background-color: color-mix(
+        in srgb,
+        var(--spectrum-semantic-positive-color-default, #12805c),
+        transparent 92%
+    );
+    font-size: 13px;
+    line-height: 1.5;
+}
