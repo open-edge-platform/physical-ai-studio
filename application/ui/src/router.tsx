@@ -29,6 +29,7 @@ import { Layout as RobotsLayout } from './routes/robots/layout';
 import { New as RobotsNew } from './routes/robots/new';
 import { Robot } from './routes/robots/robot';
 import { SetupMotors } from './routes/robots/setup-motors';
+import { SO101Setup } from './routes/robots/so101-setup';
 import { TabNavigation as RobotsTabNavigation } from './routes/robots/tab-navigation';
 
 const root = path('/');
@@ -59,6 +60,7 @@ export const paths = {
         robots: {
             index: robots,
             new: robots.path('new'),
+            so101Setup: robots.path('new/so101-setup'),
             edit: robot.path('edit'),
             show: robot,
             controller: robot.path('/controller'),
@@ -183,6 +185,10 @@ export const router = createBrowserRouter([
                             {
                                 path: paths.project.robots.new.pattern,
                                 element: <RobotsNew />,
+                            },
+                            {
+                                path: paths.project.robots.so101Setup.pattern,
+                                element: <SO101Setup />,
                             },
                             {
                                 path: paths.project.robots.edit.pattern,
