@@ -26,7 +26,7 @@ const ActualURDFModel = ({ model }: { model: URDFRobot }) => {
 
 const useLoadURDF = (robotType: SchemaRobotType) => {
     const loadModelMutation = useLoadModelMutation();
-    const { models } = useRobotModels();
+    const { models, setModels } = useRobotModels();
 
     let PATH = '/SO101/so101_new_calib.urdf';
 
@@ -34,8 +34,16 @@ const useLoadURDF = (robotType: SchemaRobotType) => {
         PATH = '/widowx/urdf/generated/wxai/wxai_follower.urdf';
     }
 
-    const ref = useRef(false);
+    const lastLoadedPath = useRef<string | null>(null);
     useEffect(() => {
+        // Path changed — clear stale model so we reload the correct one
+        if (lastLoadedPath.current !== null && lastLoadedPath.current !== PATH) {
+            setModels([]);
+            lastLoadedPath.current = null;
+            loadModelMutation.reset();
+            return;
+        }
+
         if (models.length > 0) {
             return;
         }
@@ -44,13 +52,9 @@ const useLoadURDF = (robotType: SchemaRobotType) => {
             return;
         }
 
-        if (ref.current) {
-            return;
-        }
-
-        ref.current = true;
+        lastLoadedPath.current = PATH;
         loadModelMutation.mutate(PATH);
-    }, [models, PATH, loadModelMutation]);
+    }, [models, PATH, loadModelMutation, setModels]);
 };
 
 interface RobotViewerProps {
