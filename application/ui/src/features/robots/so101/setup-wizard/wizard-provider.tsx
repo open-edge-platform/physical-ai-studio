@@ -253,8 +253,3 @@ export const useSetupActions = () => {
     if (ctx === null) throw new Error('useSetupActions must be used within SetupWizardProvider');
     return ctx;
 };
-
-// Keep the old hook names as aliases for incremental migration, but they
-// now point at the same contexts.
-export const useWizardState = useSetupState;
-export const useWizardActions = useSetupActions;
