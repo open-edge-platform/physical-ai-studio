@@ -5,12 +5,12 @@ import { useNavigate } from 'react-router';
 import { degToRad } from 'three/src/math/MathUtils.js';
 import { v4 as uuidv4 } from 'uuid';
 
-import { $api } from '../../../api/client';
-import { SchemaCalibration, SchemaRobot } from '../../../api/openapi-spec';
-import { paths } from '../../../router';
-import { useProjectId } from '../../projects/use-project';
-import { useRobotModels } from '../robot-models-context';
-import { useRobotForm } from '../robot-form/provider';
+import { $api } from '../../../../api/client';
+import { SchemaCalibration, SchemaRobot } from '../../../../api/openapi-spec';
+import { paths } from '../../../../router';
+import { useProjectId } from '../../../projects/use-project';
+import { useRobotModels } from '../../robot-models-context';
+import { useRobotForm } from '../../robot-form/provider';
 import { CalibrationResult } from './use-setup-websocket';
 import { useSetupActions, useSetupState } from './wizard-provider';
 

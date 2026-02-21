@@ -1,7 +1,7 @@
 import { createContext, ReactNode, useCallback, useContext, useMemo, useState } from 'react';
 
-import { useProjectId } from '../../projects/use-project';
-import { useRobotForm } from '../robot-form/provider';
+import { useProjectId } from '../../../projects/use-project';
+import { useRobotForm } from '../../robot-form/provider';
 import { MotorProbeResult, SetupWebSocketState, useSetupWebSocket } from './use-setup-websocket';
 
 // ---------------------------------------------------------------------------
