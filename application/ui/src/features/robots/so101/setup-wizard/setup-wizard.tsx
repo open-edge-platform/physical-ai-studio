@@ -1,9 +1,8 @@
 import { useMemo } from 'react';
 
-import { Button, Divider, Grid, Heading, View } from '@geti/ui';
+import { Divider, Grid, Heading, View } from '@geti/ui';
 import { SchemaRobotType } from '../../../../api/openapi-spec';
 
-import { RobotForm } from '../../robot-form/form';
 import { useRobotForm } from '../../robot-form/provider';
 import { CalibrationStep } from './calibration-step';
 import { DiagnosticsStep } from './diagnostics-step';
@@ -12,7 +11,7 @@ import { SetupRobotViewer } from './setup-robot-viewer';
 import { Stepper } from './stepper';
 import { useCenteringAnimation, useRangeOfMotionAnimation } from './use-calibration-animations';
 import { JointHighlight } from './use-joint-highlight';
-import { useSetupActions, useSetupState, WizardStep } from './wizard-provider';
+import { useSetupState, WizardStep } from './wizard-provider';
 
 import classes from './setup-wizard.module.scss';
 
@@ -21,33 +20,6 @@ import classes from './setup-wizard.module.scss';
 // ---------------------------------------------------------------------------
 
 const MOTOR_SETUP_ORDER = ['gripper', 'wrist_roll', 'wrist_flex', 'elbow_flex', 'shoulder_lift', 'shoulder_pan'];
-
-/**
- * The "Begin Setup" button replaces the standard "Add Robot" submit button
- * in the initial robot info form step.
- */
-const BeginSetupButton = () => {
-    const robotForm = useRobotForm();
-    const { goNext, markCompleted } = useSetupActions();
-
-    const isDisabled =
-        !robotForm.name || !robotForm.type || (!robotForm.serial_number && !robotForm.connection_string);
-
-    const isSO101 = robotForm.type?.toLowerCase().startsWith('so101') ?? false;
-
-    return (
-        <Button
-            variant='accent'
-            isDisabled={isDisabled || !isSO101}
-            onPress={() => {
-                markCompleted(WizardStep.ROBOT_INFO);
-                goNext();
-            }}
-        >
-            {isSO101 ? 'Begin Setup' : 'Add Robot'}
-        </Button>
-    );
-};
 
 // ---------------------------------------------------------------------------
 // Derive highlights from setup state (replaces the old useState + useEffect)
@@ -104,7 +76,6 @@ function useHighlights(): JointHighlight[] {
 /**
  * Right column: shows the 3D URDF viewer with contextual animations.
  *
- * - ROBOT_INFO: shows viewer when a robot type is selected
  * - DIAGNOSTICS / MOTOR_SETUP: idle viewer (with highlights during motor setup)
  * - CALIBRATION + homing phase: centering animation
  * - CALIBRATION + recording phase: range-of-motion animation
@@ -198,10 +169,6 @@ export const SetupWizardContent = () => {
 
             {/* Left column: current step content */}
             <View gridArea='form' UNSAFE_style={{ overflowY: 'auto' }} paddingBottom='size-400' minWidth={0}>
-                {currentStep === WizardStep.ROBOT_INFO && (
-                    <RobotForm heading='Add new robot' submitButton={<BeginSetupButton />} />
-                )}
-
                 {currentStep === WizardStep.DIAGNOSTICS && <DiagnosticsStep />}
 
                 {currentStep === WizardStep.MOTOR_SETUP && <MotorSetupStep />}

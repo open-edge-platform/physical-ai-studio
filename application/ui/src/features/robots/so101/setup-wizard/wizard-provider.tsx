@@ -9,8 +9,6 @@ import { MotorProbeResult, SetupWebSocketState, useSetupWebSocket } from './use-
 // ---------------------------------------------------------------------------
 
 export enum WizardStep {
-    /** Initial form: name, type, serial number selection */
-    ROBOT_INFO = 'robot_info',
     /** Checking voltage + probing motors (auto-runs on websocket connect) */
     DIAGNOSTICS = 'diagnostics',
     /** Per-motor ID assignment (only if motors missing) */
@@ -22,7 +20,6 @@ export enum WizardStep {
 }
 
 export const WIZARD_STEPS: WizardStep[] = [
-    WizardStep.ROBOT_INFO,
     WizardStep.DIAGNOSTICS,
     WizardStep.MOTOR_SETUP,
     WizardStep.CALIBRATION,
@@ -30,7 +27,6 @@ export const WIZARD_STEPS: WizardStep[] = [
 ];
 
 export const STEP_LABELS: Record<WizardStep, string> = {
-    [WizardStep.ROBOT_INFO]: 'Robot Info',
     [WizardStep.DIAGNOSTICS]: 'Diagnostics',
     [WizardStep.MOTOR_SETUP]: 'Motor Setup',
     [WizardStep.CALIBRATION]: 'Calibration',
@@ -90,7 +86,7 @@ export const SetupWizardProvider = ({ children }: { children: ReactNode }) => {
     // -----------------------------------------------------------------------
 
     const [wizardState, setWizardState] = useState({
-        currentStep: WizardStep.ROBOT_INFO as WizardStep,
+        currentStep: WizardStep.DIAGNOSTICS as WizardStep,
         completedSteps: new Set<WizardStep>(),
         skippedSteps: new Set<WizardStep>(),
     });
@@ -165,7 +161,7 @@ export const SetupWizardProvider = ({ children }: { children: ReactNode }) => {
 
     const serialNumber = robotForm.serial_number ?? '';
     const robotType = robotForm.type ?? '';
-    const wsEnabled = wizardState.currentStep !== WizardStep.ROBOT_INFO && !!serialNumber && !!robotType;
+    const wsEnabled = !!serialNumber && !!robotType;
 
     const { state: wsState, commands } = useSetupWebSocket({
         projectId,
