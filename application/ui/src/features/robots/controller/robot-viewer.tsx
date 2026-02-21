@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef } from 'react';
 
 import { Grid, OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import { Canvas } from '@react-three/fiber';
+import * as THREE from 'three';
 import { degToRad } from 'three/src/math/MathUtils.js';
 import { URDFRobot } from 'urdf-loader';
 
@@ -11,11 +12,77 @@ import { SchemaRobot, SchemaRobotType } from '../../../api/openapi-spec';
 import { useContainerSize } from '../../../components/zoom/use-container-size';
 import { urdfPathForType, useLoadModelMutation, useRobotModels } from './../robot-models-context';
 
+/** Material name used by the dark parts in the Trossen URDF. */
+const TROSSEN_DARK_MATERIAL = 'trossen_black';
+
+/** Replacement color for dark Trossen materials. */
+const TROSSEN_REPLACEMENT_COLOR = new THREE.Color('#585858');
+
+/**
+ * Find the shared `trossen_black` material on the model and replace its dark
+ * texture with a solid color.
+ *
+ * All Trossen visual meshes reference a single shared material instance that is
+ * assigned asynchronously when STL files finish loading. By mutating the shared
+ * material in-place we guarantee every mesh — including those whose STL hasn't
+ * loaded yet — will pick up the change. Originals are restored on cleanup.
+ */
+const useBrightenDarkMaterials = (model: URDFRobot | undefined, enabled: boolean) => {
+    const saved = useRef<{ mat: THREE.MeshPhongMaterial; map: THREE.Texture | null; color: THREE.Color }[]>([]);
+
+    useEffect(() => {
+        // Restore previous overrides
+        for (const s of saved.current) {
+            s.mat.map = s.map;
+            s.mat.color.copy(s.color);
+            s.mat.needsUpdate = true;
+        }
+        saved.current = [];
+
+        if (!model || !enabled) return;
+
+        // Collect the unique shared materials that match by name.
+        // We only need to visit meshes that already exist to find the shared
+        // material reference — mutating it in-place covers future meshes too.
+        const seen = new Set<THREE.Material>();
+        model.traverse((node) => {
+            if (!(node as THREE.Mesh).isMesh) return;
+            const mesh = node as THREE.Mesh;
+            const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+
+            for (const mat of materials) {
+                if (seen.has(mat)) continue;
+                seen.add(mat);
+
+                if (!mat.name.toLowerCase().includes(TROSSEN_DARK_MATERIAL)) continue;
+
+                const phong = mat as THREE.MeshPhongMaterial;
+                saved.current.push({ mat: phong, map: phong.map, color: phong.color.clone() });
+
+                phong.map = null;
+                phong.color.copy(TROSSEN_REPLACEMENT_COLOR);
+                phong.needsUpdate = true;
+            }
+        });
+
+        return () => {
+            for (const s of saved.current) {
+                s.mat.map = s.map;
+                s.mat.color.copy(s.color);
+                s.mat.needsUpdate = true;
+            }
+            saved.current = [];
+        };
+    }, [model, enabled]);
+};
+
 // This is a wrapper component for the loaded URDF model
-const ActualURDFModel = ({ model }: { model: URDFRobot }) => {
+const ActualURDFModel = ({ model, isTrossen }: { model: URDFRobot; isTrossen: boolean }) => {
     // Rotate -90 degrees around X-axis (π/2 radians)
     const rotation = [-Math.PI / 2, 0, (-1 * Math.PI) / 4] as const;
     const scale = [3, 3, 3] as const;
+
+    useBrightenDarkMaterials(model, isTrossen);
 
     return (
         <group rotation={rotation} scale={scale}>
@@ -31,8 +98,9 @@ const useLoadURDF = (robotType: SchemaRobotType) => {
     const PATH = urdfPathForType(robotType);
 
     useEffect(() => {
-        if (hasModel(PATH)) return;
-        if (loadModelMutation.data || !loadModelMutation.isIdle) return;
+        if (hasModel(PATH)) {
+            return;
+        }
 
         loadModelMutation.mutate(PATH);
     }, [PATH, hasModel, loadModelMutation]);
@@ -45,6 +113,7 @@ interface RobotViewerProps {
 }
 export const RobotViewer = ({ robot, featureValues, featureNames }: RobotViewerProps) => {
     const angle = degToRad(-45);
+    const isTrossen = robot.type.toLowerCase().includes('trossen');
 
     const PATH = urdfPathForType(robot.type);
     useLoadURDF(robot.type);
@@ -74,7 +143,7 @@ export const RobotViewer = ({ robot, featureValues, featureNames }: RobotViewerP
             <div className='canvas-container' style={{ height: `${size.height}px`, width: `${size.width}px` }}>
                 <Canvas shadows>
                     <color attach='background' args={['#242528']} />
-                    <ambientLight intensity={0.5} />
+                    <ambientLight intensity={0.4} />
                     <directionalLight
                         position={[10, 10, 5]}
                         intensity={1}
@@ -82,13 +151,15 @@ export const RobotViewer = ({ robot, featureValues, featureNames }: RobotViewerP
                         shadow-mapSize-width={1024}
                         shadow-mapSize-height={1024}
                     />
+                    <directionalLight position={[-5, 5, -5]} intensity={0.3} />
+                    <directionalLight position={[0, -3, 5]} intensity={0.2} />
                     <PerspectiveCamera makeDefault position={[2.0, 1, 1]} />
                     <OrbitControls />
                     <Grid infiniteGrid cellSize={0.25} sectionColor={'rgb(0, 199, 253)'} fadeDistance={10} />
                     {model && (
                         <group key={model.uuid} position={[0, 0, 0]} rotation={[0, angle, 0]}>
                             <Suspense fallback={null}>
-                                <ActualURDFModel model={model} />
+                                <ActualURDFModel model={model} isTrossen={isTrossen} />
                             </Suspense>
                         </group>
                     )}
