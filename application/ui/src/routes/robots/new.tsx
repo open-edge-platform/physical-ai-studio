@@ -2,8 +2,8 @@ import { View } from '@geti/ui';
 
 import { RobotFormProvider } from '../../features/robots/robot-form/provider';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
-import { SetupWizardContent } from '../../features/robots/setup-wizard/setup-wizard';
-import { SetupWizardProvider } from '../../features/robots/setup-wizard/wizard-provider';
+import { SetupWizardContent } from '../../features/robots/so101/setup-wizard/setup-wizard';
+import { SetupWizardProvider } from '../../features/robots/so101/setup-wizard/wizard-provider';
 
 export const New = () => {
     return (

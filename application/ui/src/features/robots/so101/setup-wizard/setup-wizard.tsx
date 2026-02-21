@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
 
 import { Button, Divider, Grid, Heading, View } from '@geti/ui';
-import { SchemaRobotType } from '../../../api/openapi-spec';
+import { SchemaRobotType } from '../../../../api/openapi-spec';
 
-import { RobotForm } from '../robot-form/form';
-import { useRobotForm } from '../robot-form/provider';
+import { RobotForm } from '../../robot-form/form';
+import { useRobotForm } from '../../robot-form/provider';
 import { CalibrationStep } from './calibration-step';
 import { DiagnosticsStep } from './diagnostics-step';
 import { MotorSetupStep } from './motor-setup-step';

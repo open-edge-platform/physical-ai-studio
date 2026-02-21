@@ -9,9 +9,9 @@ import { degToRad } from 'three/src/math/MathUtils.js';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { URDFRobot } from 'urdf-loader';
 
-import { SchemaRobotType } from '../../../api/openapi-spec';
-import { useContainerSize } from '../../../components/zoom/use-container-size';
-import { useLoadModelMutation, useRobotModels } from '../robot-models-context';
+import { SchemaRobotType } from '../../../../api/openapi-spec';
+import { useContainerSize } from '../../../../components/zoom/use-container-size';
+import { useLoadModelMutation, useRobotModels } from '../../robot-models-context';
 import { JointHighlight, useJointHighlight } from './use-joint-highlight';
 
 // ---------------------------------------------------------------------------

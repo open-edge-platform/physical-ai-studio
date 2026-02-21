@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { degToRad } from 'three/src/math/MathUtils.js';
 
-import { useRobotModels } from '../robot-models-context';
+import { useRobotModels } from '../../robot-models-context';
 
 // ---------------------------------------------------------------------------
 // Shared easing function
