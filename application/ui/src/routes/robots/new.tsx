@@ -2,14 +2,11 @@ import { Suspense } from 'react';
 
 import { Button, Flex, Grid, Loading, minmax, View } from '@geti/ui';
 import { useNavigate } from 'react-router';
-import { useSearchParams } from 'react-router-dom';
 
-import { SchemaRobotType } from '../../api/openapi-spec';
 import { RobotForm } from '../../features/robots/robot-form/form';
 import { Preview } from '../../features/robots/robot-form/preview';
-import { RobotFormProvider, useRobotForm } from '../../features/robots/robot-form/provider';
+import { useRobotForm } from '../../features/robots/robot-form/provider';
 import { SubmitNewRobotButton } from '../../features/robots/robot-form/submit-new-robot-button';
-import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 import { paths } from '../../router';
 import { useProjectId } from '../../features/projects/use-project';
 
@@ -23,7 +20,7 @@ const CenteredLoading = () => {
 
 /**
  * Submit button that adapts to the selected robot type:
- * - SO101 types: navigates to the setup wizard route with form values as search params
+ * - SO101 types: navigates to the setup wizard (sibling route under same layout)
  * - Other types (Trossen): directly creates the robot via POST (default behavior)
  */
 const NewRobotSubmitButton = () => {
@@ -44,16 +41,7 @@ const NewRobotSubmitButton = () => {
             variant='accent'
             isDisabled={isDisabled}
             onPress={() => {
-                const params = new URLSearchParams({
-                    name: robotForm.name,
-                    type: robotForm.type,
-                    serial_number: robotForm.serial_number ?? '',
-                    connection_string: robotForm.connection_string ?? '',
-                });
-
-                navigate(
-                    `${paths.project.robots.so101Setup({ project_id })}?${params.toString()}`
-                );
+                navigate(paths.project.robots.so101Setup({ project_id }));
             }}
         >
             Begin Setup
@@ -62,34 +50,16 @@ const NewRobotSubmitButton = () => {
 };
 
 export const New = () => {
-    const [searchParams] = useSearchParams();
-
-    // Pre-populate form from search params (e.g. when navigating back from SO101 setup wizard)
-    const name = searchParams.get('name') ?? '';
-    const type = searchParams.get('type') ?? '';
-    const initialRobot = name || type ? {
-        id: '',
-        name,
-        type: (type || 'SO101_Follower') as SchemaRobotType,
-        serial_number: searchParams.get('serial_number') ?? '',
-        connection_string: searchParams.get('connection_string') ?? '',
-        active_calibration_id: null,
-    } : undefined;
-
     return (
-        <RobotModelsProvider>
-            <RobotFormProvider robot={initialRobot}>
-                <Grid areas={['robot controls']} columns={[minmax('size-6000', 'auto'), '1fr']} height={'100%'}>
-                    <View gridArea='robot' backgroundColor={'gray-100'} padding='size-400'>
-                        <Suspense fallback={<CenteredLoading />}>
-                            <RobotForm submitButton={<NewRobotSubmitButton />} />
-                        </Suspense>
-                    </View>
-                    <View gridArea='controls' backgroundColor={'gray-50'} padding='size-400'>
-                        <Preview />
-                    </View>
-                </Grid>
-            </RobotFormProvider>
-        </RobotModelsProvider>
+        <Grid areas={['robot controls']} columns={[minmax('size-6000', 'auto'), '1fr']} height={'100%'}>
+            <View gridArea='robot' backgroundColor={'gray-100'} padding='size-400'>
+                <Suspense fallback={<CenteredLoading />}>
+                    <RobotForm submitButton={<NewRobotSubmitButton />} />
+                </Suspense>
+            </View>
+            <View gridArea='controls' backgroundColor={'gray-50'} padding='size-400'>
+                <Preview />
+            </View>
+        </Grid>
     );
 };

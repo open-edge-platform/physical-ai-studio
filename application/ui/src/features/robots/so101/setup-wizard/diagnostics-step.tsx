@@ -2,9 +2,6 @@ import { ActionButton, Button, Disclosure, DisclosurePanel, DisclosureTitle, Fle
 import { Refresh } from '@geti/ui/icons';
 import { useNavigate } from 'react-router';
 
-import { paths } from '../../../../router';
-import { useProjectId } from '../../../projects/use-project';
-import { useRobotForm } from '../../robot-form/provider';
 import { useSetupActions, useSetupState, WizardStep } from './wizard-provider';
 
 import classes from './setup-wizard.module.scss';
@@ -18,8 +15,6 @@ export const DiagnosticsStep = () => {
     const { wsState } = useSetupState();
     const { goNext, markCompleted, markSkipped, goToStep, commands } = useSetupActions();
     const navigate = useNavigate();
-    const { project_id } = useProjectId();
-    const robotForm = useRobotForm();
 
     const { voltageResult, probeResult, error } = wsState;
     const isLoading = !voltageResult || !probeResult;
@@ -238,15 +233,7 @@ export const DiagnosticsStep = () => {
 
             {/* Actions */}
             <Flex gap='size-200' justifyContent='space-between'>
-                <Button variant='secondary' onPress={() => {
-                    const params = new URLSearchParams({
-                        name: robotForm.name,
-                        type: robotForm.type,
-                        serial_number: robotForm.serial_number ?? '',
-                        connection_string: robotForm.connection_string ?? '',
-                    });
-                    navigate(`${paths.project.robots.new({ project_id })}?${params.toString()}`);
-                }}>
+                <Button variant='secondary' onPress={() => navigate(-1)}>
                     Back
                 </Button>
                 <Flex gap='size-200'>
