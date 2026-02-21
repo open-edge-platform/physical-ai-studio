@@ -2,7 +2,9 @@ import { Suspense } from 'react';
 
 import { Button, Flex, Grid, Loading, minmax, View } from '@geti/ui';
 import { useNavigate } from 'react-router';
+import { useSearchParams } from 'react-router-dom';
 
+import { SchemaRobotType } from '../../api/openapi-spec';
 import { RobotForm } from '../../features/robots/robot-form/form';
 import { Preview } from '../../features/robots/robot-form/preview';
 import { RobotFormProvider, useRobotForm } from '../../features/robots/robot-form/provider';
@@ -60,9 +62,23 @@ const NewRobotSubmitButton = () => {
 };
 
 export const New = () => {
+    const [searchParams] = useSearchParams();
+
+    // Pre-populate form from search params (e.g. when navigating back from SO101 setup wizard)
+    const name = searchParams.get('name') ?? '';
+    const type = searchParams.get('type') ?? '';
+    const initialRobot = name || type ? {
+        id: '',
+        name,
+        type: (type || 'SO101_Follower') as SchemaRobotType,
+        serial_number: searchParams.get('serial_number') ?? '',
+        connection_string: searchParams.get('connection_string') ?? '',
+        active_calibration_id: null,
+    } : undefined;
+
     return (
         <RobotModelsProvider>
-            <RobotFormProvider>
+            <RobotFormProvider robot={initialRobot}>
                 <Grid areas={['robot controls']} columns={[minmax('size-6000', 'auto'), '1fr']} height={'100%'}>
                     <View gridArea='robot' backgroundColor={'gray-100'} padding='size-400'>
                         <Suspense fallback={<CenteredLoading />}>
