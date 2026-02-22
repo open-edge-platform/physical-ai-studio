@@ -1,6 +1,7 @@
 import { createContext, ReactNode, useCallback, useContext, useRef, useState } from 'react';
 
 import { useMutation } from '@tanstack/react-query';
+import * as THREE from 'three';
 import URDFLoader, { URDFRobot } from 'urdf-loader';
 
 import { SchemaRobotType } from '../../api/openapi-spec';
@@ -37,7 +38,7 @@ type RobotModelsContextValue = null | {
      */
     models: ModelsMap;
     /** @internal — used only by `useLoadModelMutation`. */
-    _setModel: (path: string, model: URDFRobot) => void;
+    setModel: (path: string, model: URDFRobot) => void;
 };
 
 const RobotModelsContext = createContext<RobotModelsContextValue>(null);
@@ -49,16 +50,13 @@ export const RobotModelsProvider = ({ children }: { children: ReactNode }) => {
     const hasModel = useCallback((path: string) => models.has(path), [models]);
     const clearModels = useCallback(() => setModels(new Map()), []);
 
-    const _setModel = useCallback(
-        (path: string, model: URDFRobot) => {
-            setModels((prev) => {
-                const next = new Map(prev);
-                next.set(path, model);
-                return next;
-            });
-        },
-        []
-    );
+    const setModel = useCallback((path: string, model: URDFRobot) => {
+        setModels((prev) => {
+            const next = new Map(prev);
+            next.set(path, model);
+            return next;
+        });
+    }, []);
 
     return (
         <RobotModelsContext.Provider
@@ -67,7 +65,7 @@ export const RobotModelsProvider = ({ children }: { children: ReactNode }) => {
                 getModel,
                 hasModel,
                 clearModels,
-                _setModel,
+                setModel,
             }}
         >
             {children}
@@ -80,7 +78,7 @@ export const useRobotModels = () => {
 };
 
 export const useLoadModelMutation = () => {
-    const { _setModel } = useRobotModels();
+    const { setModel } = useRobotModels();
 
     // Track the path being loaded so onSuccess can key it correctly.
     // We use a ref because the mutationFn arg isn't available in onSuccess
@@ -92,18 +90,43 @@ export const useLoadModelMutation = () => {
         mutationFn: async (path: string) => {
             pathRef.current = path;
 
-            const loader = new URDFLoader();
+            // Use a custom LoadingManager so the promise only resolves after
+            // all STL meshes have finished loading — not just after the URDF
+            // XML is parsed.  URDFLoader.load() calls onComplete as soon as
+            // parse() returns, but STL files are fetched asynchronously via
+            // the manager.  By resolving on manager.onLoad we guarantee the
+            // model's mesh children exist in the scene graph.
+            const manager = new THREE.LoadingManager();
+            const loader = new URDFLoader(manager);
 
             loader.packages = {
                 trossen_arm_description: '/widowx',
             };
 
             return new Promise<URDFRobot>((resolve, reject) => {
-                loader.load(path, resolve, console.info, reject);
+                let model: URDFRobot | null = null;
+
+                manager.onLoad = () => {
+                    if (model) {
+                        resolve(model);
+                    }
+                };
+                manager.onError = (url) => {
+                    reject(new Error(`Failed to load: ${url}`));
+                };
+
+                loader.load(
+                    path,
+                    (result) => {
+                        model = result;
+                    },
+                    undefined,
+                    reject
+                );
             });
         },
         onSuccess: async (model) => {
-            _setModel(pathRef.current, model);
+            setModel(pathRef.current, model);
         },
     });
 };

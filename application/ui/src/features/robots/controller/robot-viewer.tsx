@@ -22,42 +22,46 @@ const TROSSEN_REPLACEMENT_COLOR = new THREE.Color('#585858');
  * Find the shared `trossen_black` material on the model and replace its dark
  * texture with a solid color.
  *
- * All Trossen visual meshes reference a single shared material instance that is
- * assigned asynchronously when STL files finish loading. By mutating the shared
- * material in-place we guarantee every mesh — including those whose STL hasn't
- * loaded yet — will pick up the change. Originals are restored on cleanup.
+ * The model is guaranteed to have all its STL meshes loaded before it enters
+ * React state (see `useLoadModelMutation` which resolves on
+ * `LoadingManager.onLoad`), so a plain `useEffect` is sufficient here.
+ *
+ * Because urdf-loader uses a shared material instance for each named material,
+ * mutating it in-place ensures all meshes (even nested deep in the tree) pick
+ * up the change.  Originals are restored on cleanup.
  */
 const useBrightenDarkMaterials = (model: URDFRobot | undefined, enabled: boolean) => {
-    const saved = useRef<{ mat: THREE.MeshPhongMaterial; map: THREE.Texture | null; color: THREE.Color }[]>([]);
-
     useEffect(() => {
-        // Restore previous overrides
-        for (const s of saved.current) {
-            s.mat.map = s.map;
-            s.mat.color.copy(s.color);
-            s.mat.needsUpdate = true;
-        }
-        saved.current = [];
-
         if (!model || !enabled) return;
 
-        // Collect the unique shared materials that match by name.
-        // We only need to visit meshes that already exist to find the shared
-        // material reference — mutating it in-place covers future meshes too.
+        const saved: {
+            mat: THREE.MeshPhongMaterial;
+            map: THREE.Texture | null;
+            color: THREE.Color;
+        }[] = [];
+
         const seen = new Set<THREE.Material>();
+
         model.traverse((node) => {
-            if (!(node as THREE.Mesh).isMesh) return;
+            if (!(node as THREE.Mesh).isMesh) {
+                return;
+            }
             const mesh = node as THREE.Mesh;
             const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
 
             for (const mat of materials) {
-                if (seen.has(mat)) continue;
+                if (seen.has(mat)) {
+                    continue;
+                }
+
                 seen.add(mat);
 
-                if (!mat.name.toLowerCase().includes(TROSSEN_DARK_MATERIAL)) continue;
+                if (!mat.name.toLowerCase().includes(TROSSEN_DARK_MATERIAL)) {
+                    continue;
+                }
 
                 const phong = mat as THREE.MeshPhongMaterial;
-                saved.current.push({ mat: phong, map: phong.map, color: phong.color.clone() });
+                saved.push({ mat: phong, map: phong.map, color: phong.color.clone() });
 
                 phong.map = null;
                 phong.color.copy(TROSSEN_REPLACEMENT_COLOR);
@@ -66,12 +70,11 @@ const useBrightenDarkMaterials = (model: URDFRobot | undefined, enabled: boolean
         });
 
         return () => {
-            for (const s of saved.current) {
+            for (const s of saved) {
                 s.mat.map = s.map;
                 s.mat.color.copy(s.color);
                 s.mat.needsUpdate = true;
             }
-            saved.current = [];
         };
     }, [model, enabled]);
 };
