@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:b6afd42430b15f2d2a4c5a02b919e98a525b785b1aaff16747d2f623364e39b6
 
 # Build arguments
 ARG PYTHON_VERSION=3.12
@@ -6,7 +6,7 @@ ARG PYTHON_VERSION=3.12
 # ===========================================================================
 # Stage 1: Clone Geti UI packages and URDF robot models
 # ===========================================================================
-FROM node:24-alpine3.22@sha256:bb089be859f2741e5ede9d85f47dc7daca754015b50e9642a7a45c5252807d2c AS ui-packages
+FROM node:24-alpine3.22@sha256:d28696cabe6a72c5addbb608b344818e5a158d849174abd4b1ae85ab48536280 AS ui-packages
 
 WORKDIR /home/app/web_ui/
 RUN apk add --no-cache git
@@ -20,7 +20,7 @@ RUN npm run clone-widowx
 # ===========================================================================
 # Stage 2: Build Web UI
 # ===========================================================================
-FROM node:24-alpine3.22@sha256:bb089be859f2741e5ede9d85f47dc7daca754015b50e9642a7a45c5252807d2c AS web-ui
+FROM node:24-alpine3.22@sha256:d28696cabe6a72c5addbb608b344818e5a158d849174abd4b1ae85ab48536280 AS web-ui
 
 WORKDIR /home/app/web_ui/
 
@@ -73,7 +73,7 @@ COPY --link --from=web-ui /home/app/web_ui/dist /app/application/ui/
 # ===========================================================================
 FROM python:${PYTHON_VERSION}-slim@sha256:9e01bf1ae5db7649a236da7be1e94ffbbbdd7a93f867dd0d8d5720d9e1f89fab AS builder-base
 
-COPY --from=docker.io/astral/uv:0.9.7@sha256:ba4857bf2a068e9bc0e64eed8563b065908a4cd6bfb66b531a9c424c8e25e142 /uv /uvx /bin/
+COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0
 
 # Build-time system dependencies (not shipped in final image)
@@ -152,7 +152,7 @@ LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/get
       org.opencontainers.image.revision="${GIT_SHA}"
 
 # uv is needed at runtime for `uv run` in run.sh
-COPY --from=docker.io/astral/uv:0.9.7@sha256:ba4857bf2a068e9bc0e64eed8563b065908a4cd6bfb66b531a9c424c8e25e142 /uv /uvx /bin/
+COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
 
 # Non-root user — override at build time to match host UID/GID for
 # bind-mounted volumes (e.g. calibration data, HuggingFace cache).
