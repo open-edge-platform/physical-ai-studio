@@ -15,7 +15,7 @@ const Header = ({ project_id }: { project_id: string }) => {
         <View backgroundColor={'gray-300'} gridArea={'header'}>
             <Flex height='100%' alignItems={'center'} marginX='1rem' gap='size-200'>
                 <Link href='/' isQuiet variant='overBackground'>
-                    <View marginEnd='size-200' maxWidth={'5ch'}>
+                    <View marginEnd='size-200' maxWidth={'10ch'}>
                         Physical AI Studio
                     </View>
                 </Link>
