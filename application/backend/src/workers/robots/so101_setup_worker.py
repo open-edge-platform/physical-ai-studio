@@ -126,6 +126,12 @@ class SO101SetupWorker(TransportWorker):
         self.bus: FeetechMotorsBus | None = None
         self.motors = _build_motors()
 
+        # Serialize all bus I/O — the Feetech SDK has no internal locking,
+        # so concurrent asyncio.to_thread(bus.*) calls from background
+        # streaming tasks and command handlers would collide on the serial
+        # port, causing "[TxRxResult] Port is in use!" errors.
+        self._bus_lock = asyncio.Lock()
+
         # Results accumulated during the flow
         self.voltage_result: dict[str, Any] | None = None
         self.probe_result: dict[str, Any] | None = None
@@ -133,6 +139,7 @@ class SO101SetupWorker(TransportWorker):
 
         # Range recording state
         self._recording = False
+        self._recording_stopped = asyncio.Event()
         self._range_mins: dict[str, int] = {}
         self._range_maxes: dict[str, int] = {}
 
@@ -216,7 +223,8 @@ class SO101SetupWorker(TransportWorker):
         logger.info(f"Setup worker: connecting to {port} (serial={self.serial_number})")
 
         self.bus = FeetechMotorsBus(port=port, motors=self.motors)
-        await asyncio.to_thread(self.bus.connect, handshake=False)
+        async with self._bus_lock:
+            await asyncio.to_thread(self.bus.connect, handshake=False)
 
         await self._send_phase_status(f"Connected to {port}")
 
@@ -235,7 +243,8 @@ class SO101SetupWorker(TransportWorker):
         for name, motor in bus.motors.items():
             raw: int | None = None
             try:
-                raw = int(await asyncio.to_thread(bus.read, "Present_Voltage", name, normalize=False))
+                async with self._bus_lock:
+                    raw = int(await asyncio.to_thread(bus.read, "Present_Voltage", name, normalize=False))
             except Exception:
                 logger.debug(f"Failed to read voltage for motor '{name}'", exc_info=True)
             readings.append({"name": name, "motor_id": motor.id, "raw": raw})
@@ -277,7 +286,8 @@ class SO101SetupWorker(TransportWorker):
 
         motors_found = []
         for name, motor in bus.motors.items():
-            model_nb = await asyncio.to_thread(bus.ping, motor.id)
+            async with self._bus_lock:
+                model_nb = await asyncio.to_thread(bus.ping, motor.id)
             found = model_nb is not None
             model_correct = model_nb == STS3215_MODEL_NUMBER if found else False
             motors_found.append(
@@ -313,7 +323,8 @@ class SO101SetupWorker(TransportWorker):
         """Check calibration state of all motors from EEPROM."""
         bus = self._require_bus()
 
-        cal = await asyncio.to_thread(bus.read_calibration)
+        async with self._bus_lock:
+            cal = await asyncio.to_thread(bus.read_calibration)
         motors_cal = {}
         all_calibrated = True
         for name, mc in cal.items():
@@ -353,7 +364,8 @@ class SO101SetupWorker(TransportWorker):
 
         try:
             # Use the bus's setup_motor method which handles scanning + ID/baudrate assignment
-            await asyncio.to_thread(bus.setup_motor, motor_name)
+            async with self._bus_lock:
+                await asyncio.to_thread(bus.setup_motor, motor_name)
 
             await self._send_event(
                 "motor_setup_progress",
@@ -385,17 +397,18 @@ class SO101SetupWorker(TransportWorker):
         bus = self._require_bus()
 
         # Disable torque and set operating mode
-        await asyncio.to_thread(bus.disable_torque)
-        for motor in bus.motors:
-            await asyncio.to_thread(
-                bus.write,
-                "Operating_Mode",
-                motor,
-                0,  # Position mode
-            )
+        async with self._bus_lock:
+            await asyncio.to_thread(bus.disable_torque)
+            for motor in bus.motors:
+                await asyncio.to_thread(
+                    bus.write,
+                    "Operating_Mode",
+                    motor,
+                    0,  # Position mode
+                )
 
-        # Apply homing offsets — narrow from dict[NameOrID, Value] to dict[str, int]
-        raw_offsets = await asyncio.to_thread(bus.set_half_turn_homings)
+            # Apply homing offsets — narrow from dict[NameOrID, Value] to dict[str, int]
+            raw_offsets = await asyncio.to_thread(bus.set_half_turn_homings)
         self.homing_offsets = {str(k): int(v) for k, v in raw_offsets.items()}
 
         result = {
@@ -410,49 +423,66 @@ class SO101SetupWorker(TransportWorker):
 
     async def _handle_start_recording(self) -> None:
         """Start recording range-of-motion. Sends position updates until stopped."""
+        if self._recording:
+            return
         self.phase = SetupPhase.CALIBRATION_RECORDING
         await self._send_phase_status("Recording range of motion...")
 
         bus = self._require_bus()
 
+        self._recording_stopped.clear()
+
         # Read initial positions
-        start_positions = await asyncio.to_thread(bus.sync_read, "Present_Position", list(bus.motors), normalize=False)
+        async with self._bus_lock:
+            start_positions = await asyncio.to_thread(
+                bus.sync_read, "Present_Position", list(bus.motors), normalize=False
+            )
 
         self._range_mins = {m: int(v) for m, v in start_positions.items()}
         self._range_maxes = {m: int(v) for m, v in start_positions.items()}
         self._recording = True
 
         # Stream positions until _recording is set to False
-        while self._recording and not self._stop_requested:
-            positions = await asyncio.to_thread(bus.sync_read, "Present_Position", list(bus.motors), normalize=False)
+        try:
+            while self._recording and not self._stop_requested:
+                async with self._bus_lock:
+                    positions = await asyncio.to_thread(
+                        bus.sync_read, "Present_Position", list(bus.motors), normalize=False
+                    )
 
-            for motor, pos_val in positions.items():
-                pos = int(pos_val)
-                self._range_mins[motor] = min(self._range_mins[motor], pos)
-                self._range_maxes[motor] = max(self._range_maxes[motor], pos)
+                for motor, pos_val in positions.items():
+                    pos = int(pos_val)
+                    self._range_mins[motor] = min(self._range_mins[motor], pos)
+                    self._range_maxes[motor] = max(self._range_maxes[motor], pos)
 
-            await self.transport.send_json(
-                {
-                    "event": "positions",
-                    "motors": {
-                        name: {
-                            "position": int(positions[name]),
-                            "min": self._range_mins[name],
-                            "max": self._range_maxes[name],
-                        }
-                        for name in bus.motors
-                    },
-                }
-            )
+                await self.transport.send_json(
+                    {
+                        "event": "positions",
+                        "motors": {
+                            name: {
+                                "position": int(positions[name]),
+                                "min": self._range_mins[name],
+                                "max": self._range_maxes[name],
+                            }
+                            for name in bus.motors
+                        },
+                    }
+                )
 
-            await asyncio.sleep(0.05)  # ~20Hz
+                await asyncio.sleep(0.05)  # ~20Hz
+        finally:
+            self._recording_stopped.set()
 
     async def _handle_stop_recording(self) -> None:
         """Stop recording and write calibration to motor EEPROM."""
         self._recording = False
 
-        # Small delay to let the recording loop finish
-        await asyncio.sleep(0.1)
+        # Wait for the recording loop to actually finish (it sets the event
+        # after its last bus operation completes, so no bus calls are in flight).
+        try:
+            await asyncio.wait_for(self._recording_stopped.wait(), timeout=2.0)
+        except TimeoutError:
+            logger.warning("Timed out waiting for recording loop to stop")
 
         bus = self._require_bus()
         homing_offsets = self._require_homing_offsets()
@@ -478,7 +508,8 @@ class SO101SetupWorker(TransportWorker):
                 range_max=self._range_maxes[motor_name],
             )
 
-        await asyncio.to_thread(bus.write_calibration, calibration)
+        async with self._bus_lock:
+            await asyncio.to_thread(bus.write_calibration, calibration)
 
         # Now configure the motors (return delay, acceleration, PID, etc.)
         await self._configure_motors()
@@ -514,28 +545,29 @@ class SO101SetupWorker(TransportWorker):
 
         bus = self._require_bus()
 
-        # Disable torque for configuration
-        await asyncio.to_thread(bus.disable_torque)
+        async with self._bus_lock:
+            # Disable torque for configuration
+            await asyncio.to_thread(bus.disable_torque)
 
-        # Configure bus-level settings (return delay, acceleration)
-        await asyncio.to_thread(bus.configure_motors)
+            # Configure bus-level settings (return delay, acceleration)
+            await asyncio.to_thread(bus.configure_motors)
 
-        # Per-motor PID and operating mode
-        is_follower = self.robot_type == "SO101_Follower"
-        for motor in bus.motors:
-            await asyncio.to_thread(bus.write, "Operating_Mode", motor, 0)  # Position mode
-            await asyncio.to_thread(bus.write, "P_Coefficient", motor, 16)
-            await asyncio.to_thread(bus.write, "I_Coefficient", motor, 0)
-            await asyncio.to_thread(bus.write, "D_Coefficient", motor, 32)
+            # Per-motor PID and operating mode
+            is_follower = self.robot_type == "SO101_Follower"
+            for motor in bus.motors:
+                await asyncio.to_thread(bus.write, "Operating_Mode", motor, 0)  # Position mode
+                await asyncio.to_thread(bus.write, "P_Coefficient", motor, 16)
+                await asyncio.to_thread(bus.write, "I_Coefficient", motor, 0)
+                await asyncio.to_thread(bus.write, "D_Coefficient", motor, 32)
 
-            if motor == "gripper":
-                await asyncio.to_thread(bus.write, "Max_Torque_Limit", motor, 500)
-                await asyncio.to_thread(bus.write, "Protection_Current", motor, 250)
-                await asyncio.to_thread(bus.write, "Overload_Torque", motor, 25)
+                if motor == "gripper":
+                    await asyncio.to_thread(bus.write, "Max_Torque_Limit", motor, 500)
+                    await asyncio.to_thread(bus.write, "Protection_Current", motor, 250)
+                    await asyncio.to_thread(bus.write, "Overload_Torque", motor, 25)
 
-        # For follower: enable torque. For leader: leave disabled (moved by hand).
-        if is_follower:
-            await asyncio.to_thread(bus.enable_torque)
+            # For follower: enable torque. For leader: leave disabled (moved by hand).
+            if is_follower:
+                await asyncio.to_thread(bus.enable_torque)
 
     # ------------------------------------------------------------------
     # Command loop
@@ -633,9 +665,10 @@ class SO101SetupWorker(TransportWorker):
 
         while self._positions_streaming and not self._stop_requested:
             try:
-                positions = await asyncio.to_thread(
-                    bus.sync_read, "Present_Position", list(bus.motors), normalize=False
-                )
+                async with self._bus_lock:
+                    positions = await asyncio.to_thread(
+                        bus.sync_read, "Present_Position", list(bus.motors), normalize=False
+                    )
                 current = {name: int(val) for name, val in positions.items()}
 
                 # Only send when something changed
@@ -667,6 +700,10 @@ class SO101SetupWorker(TransportWorker):
         """
         bus = self._require_bus()
 
+        # If already streaming, don't start a second loop
+        if self._streaming:
+            return
+
         # Ensure calibration is loaded — it may not be if the user skipped
         # straight to verification (robot was already calibrated from a prior
         # session). read_calibration() reads from motor EEPROM and returns
@@ -674,7 +711,8 @@ class SO101SetupWorker(TransportWorker):
         # so _normalize() can use it — no need to write back to EEPROM.
         if not bus.calibration:
             logger.info("Loading calibration from motor EEPROM for position streaming")
-            cal = await asyncio.to_thread(bus.read_calibration)
+            async with self._bus_lock:
+                cal = await asyncio.to_thread(bus.read_calibration)
             bus.calibration = cal
 
             # Send calibration_result so the frontend has calibration data for
@@ -699,7 +737,8 @@ class SO101SetupWorker(TransportWorker):
 
         while self._streaming and not self._stop_requested:
             try:
-                state = await asyncio.to_thread(bus.sync_read, "Present_Position", list(bus.motors), normalize=True)
+                async with self._bus_lock:
+                    state = await asyncio.to_thread(bus.sync_read, "Present_Position", list(bus.motors), normalize=True)
 
                 await self.transport.send_json(
                     {
@@ -735,9 +774,11 @@ class SO101SetupWorker(TransportWorker):
         """Disconnect the motor bus."""
         self._recording = False
         self._streaming = False
+        self._positions_streaming = False
         if self.bus is not None:
             try:
-                await asyncio.to_thread(self.bus.disconnect)
+                async with self._bus_lock:
+                    await asyncio.to_thread(self.bus.disconnect)
             except Exception:
                 try:
                     self.bus.port_handler.closePort()
