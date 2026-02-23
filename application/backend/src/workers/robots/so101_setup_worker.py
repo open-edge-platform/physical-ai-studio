@@ -13,7 +13,6 @@ FeetechMotorsBus connection (with handshake=False) and never touches the DB.
 """
 
 import asyncio
-import time
 from enum import StrEnum
 from typing import Any
 
@@ -23,7 +22,7 @@ from loguru import logger
 
 from utils.serial_robot_tools import find_port_for_serial
 from workers.transport.worker_transport import WorkerTransport
-from workers.transport_worker import TransportWorker, WorkerState, WorkerStatus
+from workers.transport_worker import TransportWorker, WorkerState
 
 # ---------------------------------------------------------------------------
 # Constants (shared with cli_robot_setup.py)
@@ -144,6 +143,31 @@ class SO101SetupWorker(TransportWorker):
         # Normalized position streaming state (for 3D preview verification)
         self._streaming = False
 
+        # Background tasks (prevent GC of fire-and-forget asyncio tasks)
+        self._background_tasks: set[asyncio.Task[None]] = set()
+
+    # ------------------------------------------------------------------
+    # Helpers — bus / homing guard
+    # ------------------------------------------------------------------
+
+    def _require_bus(self) -> FeetechMotorsBus:
+        """Return the motor bus, raising if not connected."""
+        if self.bus is None:
+            raise RuntimeError("Motor bus is not connected")
+        return self.bus
+
+    def _require_homing_offsets(self) -> dict[str, int]:
+        """Return homing offsets, raising if not yet computed."""
+        if self.homing_offsets is None:
+            raise RuntimeError("Homing offsets have not been computed yet")
+        return self.homing_offsets
+
+    def _spawn_task(self, coro: Any) -> None:
+        """Create a background task and prevent it from being garbage-collected."""
+        task: asyncio.Task[None] = asyncio.create_task(coro)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+
     # ------------------------------------------------------------------
     # Main run loop
     # ------------------------------------------------------------------
@@ -205,15 +229,15 @@ class SO101SetupWorker(TransportWorker):
         self.phase = SetupPhase.VOLTAGE_CHECK
         await self._send_phase_status("Checking supply voltage...")
 
-        assert self.bus is not None
+        bus = self._require_bus()
 
         readings = []
-        for name, motor in self.bus.motors.items():
+        for name, motor in bus.motors.items():
             raw: int | None = None
             try:
-                raw = int(await asyncio.to_thread(self.bus.read, "Present_Voltage", name, normalize=False))
+                raw = int(await asyncio.to_thread(bus.read, "Present_Voltage", name, normalize=False))
             except Exception:
-                pass
+                logger.debug(f"Failed to read voltage for motor '{name}'", exc_info=True)
             readings.append({"name": name, "motor_id": motor.id, "raw": raw})
 
         # Compute average
@@ -249,11 +273,11 @@ class SO101SetupWorker(TransportWorker):
         self.phase = SetupPhase.MOTOR_PROBE
         await self._send_phase_status("Probing motors...")
 
-        assert self.bus is not None
+        bus = self._require_bus()
 
         motors_found = []
-        for name, motor in self.bus.motors.items():
-            model_nb = await asyncio.to_thread(self.bus.ping, motor.id)
+        for name, motor in bus.motors.items():
+            model_nb = await asyncio.to_thread(bus.ping, motor.id)
             found = model_nb is not None
             model_correct = model_nb == STS3215_MODEL_NUMBER if found else False
             motors_found.append(
@@ -287,9 +311,9 @@ class SO101SetupWorker(TransportWorker):
 
     async def _check_calibration(self) -> dict[str, Any]:
         """Check calibration state of all motors from EEPROM."""
-        assert self.bus is not None
+        bus = self._require_bus()
 
-        cal = await asyncio.to_thread(self.bus.read_calibration)
+        cal = await asyncio.to_thread(bus.read_calibration)
         motors_cal = {}
         all_calibrated = True
         for name, mc in cal.items():
@@ -318,7 +342,7 @@ class SO101SetupWorker(TransportWorker):
         Reimplements lerobot's setup_motor() without input() calls.
         The frontend tells us which motor the user connected via command.
         """
-        assert self.bus is not None
+        bus = self._require_bus()
 
         await self._send_event(
             "motor_setup_progress",
@@ -329,13 +353,13 @@ class SO101SetupWorker(TransportWorker):
 
         try:
             # Use the bus's setup_motor method which handles scanning + ID/baudrate assignment
-            await asyncio.to_thread(self.bus.setup_motor, motor_name)
+            await asyncio.to_thread(bus.setup_motor, motor_name)
 
             await self._send_event(
                 "motor_setup_progress",
                 motor=motor_name,
                 status="success",
-                message=f"Motor '{motor_name}' configured as ID {self.bus.motors[motor_name].id}",
+                message=f"Motor '{motor_name}' configured as ID {bus.motors[motor_name].id}",
             )
         except Exception as e:
             logger.error(f"Motor setup failed for {motor_name}: {e}")
@@ -358,20 +382,21 @@ class SO101SetupWorker(TransportWorker):
         self.phase = SetupPhase.CALIBRATION_HOMING
         await self._send_phase_status("Applying homing offsets...")
 
-        assert self.bus is not None
+        bus = self._require_bus()
 
         # Disable torque and set operating mode
-        await asyncio.to_thread(self.bus.disable_torque)
-        for motor in self.bus.motors:
+        await asyncio.to_thread(bus.disable_torque)
+        for motor in bus.motors:
             await asyncio.to_thread(
-                self.bus.write,
+                bus.write,
                 "Operating_Mode",
                 motor,
                 0,  # Position mode
             )
 
-        # Apply homing offsets
-        self.homing_offsets = await asyncio.to_thread(self.bus.set_half_turn_homings)
+        # Apply homing offsets — narrow from dict[NameOrID, Value] to dict[str, int]
+        raw_offsets = await asyncio.to_thread(bus.set_half_turn_homings)
+        self.homing_offsets = {str(k): int(v) for k, v in raw_offsets.items()}
 
         result = {
             "event": "homing_result",
@@ -388,12 +413,10 @@ class SO101SetupWorker(TransportWorker):
         self.phase = SetupPhase.CALIBRATION_RECORDING
         await self._send_phase_status("Recording range of motion...")
 
-        assert self.bus is not None
+        bus = self._require_bus()
 
         # Read initial positions
-        start_positions = await asyncio.to_thread(
-            self.bus.sync_read, "Present_Position", list(self.bus.motors), normalize=False
-        )
+        start_positions = await asyncio.to_thread(bus.sync_read, "Present_Position", list(bus.motors), normalize=False)
 
         self._range_mins = {m: int(v) for m, v in start_positions.items()}
         self._range_maxes = {m: int(v) for m, v in start_positions.items()}
@@ -401,16 +424,12 @@ class SO101SetupWorker(TransportWorker):
 
         # Stream positions until _recording is set to False
         while self._recording and not self._stop_requested:
-            positions = await asyncio.to_thread(
-                self.bus.sync_read, "Present_Position", list(self.bus.motors), normalize=False
-            )
+            positions = await asyncio.to_thread(bus.sync_read, "Present_Position", list(bus.motors), normalize=False)
 
             for motor, pos_val in positions.items():
                 pos = int(pos_val)
-                if pos < self._range_mins[motor]:
-                    self._range_mins[motor] = pos
-                if pos > self._range_maxes[motor]:
-                    self._range_maxes[motor] = pos
+                self._range_mins[motor] = min(self._range_mins[motor], pos)
+                self._range_maxes[motor] = max(self._range_maxes[motor], pos)
 
             await self.transport.send_json(
                 {
@@ -421,7 +440,7 @@ class SO101SetupWorker(TransportWorker):
                             "min": self._range_mins[name],
                             "max": self._range_maxes[name],
                         }
-                        for name in self.bus.motors
+                        for name in bus.motors
                     },
                 }
             )
@@ -435,11 +454,11 @@ class SO101SetupWorker(TransportWorker):
         # Small delay to let the recording loop finish
         await asyncio.sleep(0.1)
 
-        assert self.bus is not None
-        assert self.homing_offsets is not None
+        bus = self._require_bus()
+        homing_offsets = self._require_homing_offsets()
 
         # Validate that min != max for all motors
-        same_min_max = [m for m in self.bus.motors if self._range_mins.get(m, 0) == self._range_maxes.get(m, 0)]
+        same_min_max = [m for m in bus.motors if self._range_mins.get(m, 0) == self._range_maxes.get(m, 0)]
         if same_min_max:
             await self._send_event(
                 "error",
@@ -450,16 +469,16 @@ class SO101SetupWorker(TransportWorker):
 
         # Build calibration dict and write to motor EEPROM
         calibration: dict[str, MotorCalibration] = {}
-        for motor_name, motor_obj in self.bus.motors.items():
+        for motor_name, motor_obj in bus.motors.items():
             calibration[motor_name] = MotorCalibration(
                 id=motor_obj.id,
                 drive_mode=0,
-                homing_offset=self.homing_offsets[motor_name],
+                homing_offset=homing_offsets[motor_name],
                 range_min=self._range_mins[motor_name],
                 range_max=self._range_maxes[motor_name],
             )
 
-        await asyncio.to_thread(self.bus.write_calibration, calibration)
+        await asyncio.to_thread(bus.write_calibration, calibration)
 
         # Now configure the motors (return delay, acceleration, PID, etc.)
         await self._configure_motors()
@@ -493,30 +512,30 @@ class SO101SetupWorker(TransportWorker):
         self.phase = SetupPhase.CONFIGURE
         await self._send_phase_status("Configuring motors...")
 
-        assert self.bus is not None
+        bus = self._require_bus()
 
         # Disable torque for configuration
-        await asyncio.to_thread(self.bus.disable_torque)
+        await asyncio.to_thread(bus.disable_torque)
 
         # Configure bus-level settings (return delay, acceleration)
-        await asyncio.to_thread(self.bus.configure_motors)
+        await asyncio.to_thread(bus.configure_motors)
 
         # Per-motor PID and operating mode
         is_follower = self.robot_type == "SO101_Follower"
-        for motor in self.bus.motors:
-            await asyncio.to_thread(self.bus.write, "Operating_Mode", motor, 0)  # Position mode
-            await asyncio.to_thread(self.bus.write, "P_Coefficient", motor, 16)
-            await asyncio.to_thread(self.bus.write, "I_Coefficient", motor, 0)
-            await asyncio.to_thread(self.bus.write, "D_Coefficient", motor, 32)
+        for motor in bus.motors:
+            await asyncio.to_thread(bus.write, "Operating_Mode", motor, 0)  # Position mode
+            await asyncio.to_thread(bus.write, "P_Coefficient", motor, 16)
+            await asyncio.to_thread(bus.write, "I_Coefficient", motor, 0)
+            await asyncio.to_thread(bus.write, "D_Coefficient", motor, 32)
 
             if motor == "gripper":
-                await asyncio.to_thread(self.bus.write, "Max_Torque_Limit", motor, 500)
-                await asyncio.to_thread(self.bus.write, "Protection_Current", motor, 250)
-                await asyncio.to_thread(self.bus.write, "Overload_Torque", motor, 25)
+                await asyncio.to_thread(bus.write, "Max_Torque_Limit", motor, 500)
+                await asyncio.to_thread(bus.write, "Protection_Current", motor, 250)
+                await asyncio.to_thread(bus.write, "Overload_Torque", motor, 25)
 
         # For follower: enable torque. For leader: leave disabled (moved by hand).
         if is_follower:
-            await asyncio.to_thread(self.bus.enable_torque)
+            await asyncio.to_thread(bus.enable_torque)
 
     # ------------------------------------------------------------------
     # Command loop
@@ -533,60 +552,63 @@ class SO101SetupWorker(TransportWorker):
             logger.debug(f"Setup worker received command: {command}")
 
             try:
-                match command:
-                    case "ping":
-                        await self.transport.send_json({"event": "pong"})
-
-                    case "start_motor_setup":
-                        self.phase = SetupPhase.MOTOR_SETUP
-                        await self._send_phase_status("Motor setup mode — connect motors one at a time.")
-
-                    case "motor_connected":
-                        motor_name = data.get("motor", "")
-                        if motor_name not in self.motors:
-                            await self._send_event("error", message=f"Unknown motor: {motor_name}")
-                        else:
-                            await self._handle_motor_setup(motor_name)
-
-                    case "finish_motor_setup":
-                        # Re-run motor probe after setup
-                        await self._run_motor_probe()
-
-                    case "start_homing":
-                        await self._handle_start_homing()
-
-                    case "start_recording":
-                        # Run recording in a separate task so we can still receive commands
-                        asyncio.create_task(self._handle_start_recording())
-
-                    case "stop_recording":
-                        await self._handle_stop_recording()
-
-                    case "start_positions_stream":
-                        fps = data.get("fps", self._positions_fps)
-                        self._positions_fps = max(1, min(60, int(fps)))
-                        asyncio.create_task(self._handle_positions_stream())
-
-                    case "stop_positions_stream":
-                        self._positions_streaming = False
-
-                    case "stream_positions":
-                        # Run streaming in a separate task so we can still receive commands
-                        asyncio.create_task(self._handle_stream_positions())
-
-                    case "stop_stream":
-                        await self._handle_stop_stream()
-
-                    case "re_probe":
-                        await self._run_voltage_check()
-                        await self._run_motor_probe()
-
-                    case _:
-                        await self._send_event("error", message=f"Unknown command: {command}")
-
+                await self._dispatch_command(command, data)
             except Exception as e:
                 logger.exception(f"Error handling command '{command}': {e}")
                 await self._send_event("error", message=str(e))
+
+    async def _dispatch_command(self, command: str, data: dict[str, Any]) -> None:  # noqa: PLR0912
+        """Dispatch a single command received from the frontend."""
+        match command:
+            case "ping":
+                await self.transport.send_json({"event": "pong"})
+
+            case "start_motor_setup":
+                self.phase = SetupPhase.MOTOR_SETUP
+                await self._send_phase_status("Motor setup mode — connect motors one at a time.")
+
+            case "motor_connected":
+                motor_name = data.get("motor", "")
+                if motor_name not in self.motors:
+                    await self._send_event("error", message=f"Unknown motor: {motor_name}")
+                else:
+                    await self._handle_motor_setup(motor_name)
+
+            case "finish_motor_setup":
+                # Re-run motor probe after setup
+                await self._run_motor_probe()
+
+            case "start_homing":
+                await self._handle_start_homing()
+
+            case "start_recording":
+                # Run recording in a separate task so we can still receive commands
+                self._spawn_task(self._handle_start_recording())
+
+            case "stop_recording":
+                await self._handle_stop_recording()
+
+            case "start_positions_stream":
+                fps = data.get("fps", self._positions_fps)
+                self._positions_fps = max(1, min(60, int(fps)))
+                self._spawn_task(self._handle_positions_stream())
+
+            case "stop_positions_stream":
+                self._positions_streaming = False
+
+            case "stream_positions":
+                # Run streaming in a separate task so we can still receive commands
+                self._spawn_task(self._handle_stream_positions())
+
+            case "stop_stream":
+                await self._handle_stop_stream()
+
+            case "re_probe":
+                await self._run_voltage_check()
+                await self._run_motor_probe()
+
+            case _:
+                await self._send_event("error", message=f"Unknown command: {command}")
 
     # ------------------------------------------------------------------
     # Helpers
@@ -599,7 +621,7 @@ class SO101SetupWorker(TransportWorker):
         the last send, to avoid flooding the websocket when the robot
         is stationary.
         """
-        assert self.bus is not None
+        bus = self._require_bus()
 
         # If already streaming, don't start a second loop
         if self._positions_streaming:
@@ -612,7 +634,7 @@ class SO101SetupWorker(TransportWorker):
         while self._positions_streaming and not self._stop_requested:
             try:
                 positions = await asyncio.to_thread(
-                    self.bus.sync_read, "Present_Position", list(self.bus.motors), normalize=False
+                    bus.sync_read, "Present_Position", list(bus.motors), normalize=False
                 )
                 current = {name: int(val) for name, val in positions.items()}
 
@@ -643,17 +665,17 @@ class SO101SetupWorker(TransportWorker):
         sync logic. Values are normalized (-100..100 for body, 0..100 for gripper)
         which the frontend treats as degrees and converts with degToRad().
         """
-        assert self.bus is not None
+        bus = self._require_bus()
 
         # Ensure calibration is loaded — it may not be if the user skipped
         # straight to verification (robot was already calibrated from a prior
         # session). read_calibration() reads from motor EEPROM and returns
         # dict[str, MotorCalibration]. We assign it directly to bus.calibration
         # so _normalize() can use it — no need to write back to EEPROM.
-        if not self.bus.calibration:
+        if not bus.calibration:
             logger.info("Loading calibration from motor EEPROM for position streaming")
-            cal = await asyncio.to_thread(self.bus.read_calibration)
-            self.bus.calibration = cal
+            cal = await asyncio.to_thread(bus.read_calibration)
+            bus.calibration = cal
 
             # Send calibration_result so the frontend has calibration data for
             # the save flow, even when the user skipped the calibration step.
@@ -677,9 +699,7 @@ class SO101SetupWorker(TransportWorker):
 
         while self._streaming and not self._stop_requested:
             try:
-                state = await asyncio.to_thread(
-                    self.bus.sync_read, "Present_Position", list(self.bus.motors), normalize=True
-                )
+                state = await asyncio.to_thread(bus.sync_read, "Present_Position", list(bus.motors), normalize=True)
 
                 await self.transport.send_json(
                     {
@@ -722,5 +742,5 @@ class SO101SetupWorker(TransportWorker):
                 try:
                     self.bus.port_handler.closePort()
                 except Exception:
-                    pass
+                    logger.debug("Failed to close motor bus port", exc_info=True)
             self.bus = None

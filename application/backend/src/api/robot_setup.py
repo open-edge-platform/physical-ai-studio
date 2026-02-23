@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/projects/{project_id}/robots", tags=["Robot Setu
 
 @router.websocket("/setup/ws")
 async def robot_setup_websocket(
-    project_id: Annotated[str, Depends(get_project_id)],
+    _project_id: Annotated[str, Depends(get_project_id)],
     websocket: WebSocket,
     robot_type: str,
     serial_number: str,
