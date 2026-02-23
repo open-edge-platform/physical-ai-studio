@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # -----------------------------------------------------------------------------
-# run.sh - Script to run the Geti Action server
+# run.sh - Script to run the Physical AI Studio server
 #
 # Features:
 # - Runs database migrations on every start (idempotent via Alembic)

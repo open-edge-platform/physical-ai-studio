@@ -36,11 +36,11 @@ Both share the same underlying rollout logic but serve different use cases.
 ### File Structure
 
 ```text
-getiaction/eval/
+physicalai/eval/
 ├── rollout.py    # rollout() function
 └── metrics.py    # Rollout metric class
 
-getiaction/policies/base/
+physicalai/policies/base/
 └── policy.py     # Policy with integrated Rollout metrics
 ```
 
@@ -149,9 +149,9 @@ Two-level logging:
 ### Example 1: Evaluation Script with `rollout()`
 
 ```python
-from getiaction.eval import rollout
-from getiaction.policies.act import ACT
-from getiaction.gyms import PushTGym
+from physicalai.eval import rollout
+from physicalai.policies.act import ACT
+from physicalai.gyms import PushTGym
 
 policy = ACT.load_from_checkpoint("model.ckpt")
 env = PushTGym()
@@ -168,8 +168,8 @@ print(f"Success: {success_rate*100:.1f}%, Reward: {avg_reward:.2f}")
 
 ```python
 from lightning.pytorch import Trainer
-from getiaction.data import DataModule
-from getiaction.policies.act import ACT
+from physicalai.data import DataModule
+from physicalai.policies.act import ACT
 
 datamodule = DataModule(
     train_dataset=dataset,
@@ -208,7 +208,7 @@ trainer.fit(policy, datamodule)
 ### Example 4: Custom Aggregation
 
 ```python
-from getiaction.eval import rollout
+from physicalai.eval import rollout
 import numpy as np
 
 results = [rollout(env, policy, seed=i) for i in range(100)]
@@ -238,7 +238,7 @@ plt.show()
 ### Example 6: Multiple Environments
 
 ```python
-from getiaction.eval import Rollout
+from physicalai.eval import Rollout
 
 test_envs = [
     PushTGym(),
@@ -260,7 +260,7 @@ for i, env in enumerate(test_envs):
 ### Custom Metrics
 
 ```python
-from getiaction.eval import Rollout
+from physicalai.eval import Rollout
 
 class ExtendedRollout(Rollout):
     def __init__(self, max_steps=None):
@@ -287,7 +287,7 @@ class ExtendedRollout(Rollout):
 ### Custom Policy Integration
 
 ```python
-from getiaction.policies.base import Policy
+from physicalai.policies.base import Policy
 
 class MyPolicy(Policy):
     def evaluate_gym(self, batch, batch_idx, stage):

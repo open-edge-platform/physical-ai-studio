@@ -1,6 +1,6 @@
 # Trainer
 
-Lightning Trainer wrapper with getiaction-specific defaults and callbacks.
+Lightning Trainer wrapper with physicalai-specific defaults and callbacks.
 
 ## Overview
 
@@ -13,9 +13,9 @@ The `Trainer` class extends Lightning's Trainer with:
 ## Usage
 
 ```python
-from getiaction.train import Trainer
-from getiaction.policies import ACT
-from getiaction.data import LeRobotDataModule
+from physicalai.train import Trainer
+from physicalai.policies import ACT
+from physicalai.data import LeRobotDataModule
 
 # Basic training
 policy = ACT()
@@ -39,7 +39,7 @@ class Trainer(lightning.Trainer):
     def __init__(
         self,
         *,
-        # getiaction-specific
+        # physicalai-specific
         experiment_name: str | None = None,
 
         # Hardware
@@ -65,7 +65,7 @@ class Trainer(lightning.Trainer):
 
 ## Key Differences from Lightning
 
-| Parameter              | Lightning Default | getiaction Default | Reason                                           |
+| Parameter              | Lightning Default | physicalai Default | Reason                                           |
 | ---------------------- | ----------------- | ------------------ | ------------------------------------------------ |
 | `default_root_dir`     | Current directory | `"experiments"`    | Cleaner project structure                        |
 | `num_sanity_val_steps` | 2                 | 0                  | Embodied AI typically doesn't need sanity checks |

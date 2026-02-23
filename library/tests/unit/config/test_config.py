@@ -11,9 +11,9 @@ import numpy as np
 import pytest
 from pydantic import BaseModel
 
-from getiaction.config import Config
-from getiaction.config.instantiate import _import_class, instantiate_obj
-from getiaction.config.mixin import FromConfig
+from physicalai.config import Config
+from physicalai.config.instantiate import _import_class, instantiate_obj
+from physicalai.config.mixin import FromConfig
 
 
 # =============================================================================

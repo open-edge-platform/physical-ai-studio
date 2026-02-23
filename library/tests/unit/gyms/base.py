@@ -4,7 +4,7 @@
 """Unit Tests - Base Gym Testing"""
 
 import pytest
-from getiaction.data import Observation
+from physicalai.data import Observation
 
 
 class BaseTestGym:

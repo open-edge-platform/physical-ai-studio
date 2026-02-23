@@ -10,16 +10,16 @@ Evaluate your trained policy on standardized simulation environments.
 
 ## Prerequisites
 
-- [Geti Action installed](installation.md)
-- LIBERO environment installed: `pip install getiaction[libero]` (see [LIBERO docs](../explanation/gyms/libero.md))
+- [PhysicalAI installed](installation.md)
+- LIBERO environment installed: `pip install physicalai-train[libero]` (see [LIBERO docs](../explanation/gyms/libero.md))
 - A policy checkpoint trained on LIBERO data (see note below)
 
 > **Note:** The [Quickstart](quickstart.md) trains on the ALOHA sim dataset, which is **not** compatible with LIBERO evaluation. To benchmark on LIBERO, you need a policy trained on LIBERO demonstration data. For example:
 >
 > ```bash
-> getiaction fit \
->     --model getiaction.policies.ACT \
->     --data getiaction.data.LeRobotDataModule \
+> physicalai fit \
+>     --model physicalai.policies.ACT \
+>     --data physicalai.data.LeRobotDataModule \
 >     --data.repo_id lerobot/libero_10_demo \
 >     --trainer.max_epochs 100
 > ```
@@ -29,11 +29,11 @@ Evaluate your trained policy on standardized simulation environments.
 Evaluate your policy on the LIBERO-10 benchmark:
 
 ```bash
-getiaction benchmark \
-    --benchmark getiaction.benchmark.LiberoBenchmark \
+physicalai benchmark \
+    --benchmark physicalai.benchmark.LiberoBenchmark \
     --benchmark.task_suite libero_10 \
     --benchmark.num_episodes 20 \
-    --policy getiaction.policies.ACT \
+    --policy physicalai.policies.ACT \
     --ckpt_path experiments/lightning_logs/version_0/checkpoints/last.ckpt
 ```
 
@@ -44,8 +44,8 @@ This runs 20 episodes per task across 10 LIBERO tasks.
 For more control:
 
 ```python test="skip" reason="requires checkpoint and libero"
-from getiaction.benchmark import LiberoBenchmark
-from getiaction.policies import ACT
+from physicalai.benchmark import LiberoBenchmark
+from physicalai.policies import ACT
 
 # Load trained policy
 policy = ACT.load_from_checkpoint(
@@ -119,13 +119,13 @@ for task in results.task_results:
 Debug failures by recording episodes:
 
 ```bash
-getiaction benchmark \
-    --benchmark getiaction.benchmark.LiberoBenchmark \
+physicalai benchmark \
+    --benchmark physicalai.benchmark.LiberoBenchmark \
     --benchmark.task_suite libero_10 \
     --benchmark.num_episodes 20 \
     --benchmark.video_dir ./videos \
     --benchmark.record_mode failures \
-    --policy getiaction.policies.ACT \
+    --policy physicalai.policies.ACT \
     --ckpt_path experiments/lightning_logs/version_0/checkpoints/last.ckpt
 ```
 
@@ -155,7 +155,7 @@ Recording modes:
 2D pushing task (faster to run):
 
 ```python test="skip" reason="requires policy object"
-from getiaction.benchmark import PushTBenchmark
+from physicalai.benchmark import PushTBenchmark
 
 benchmark = PushTBenchmark(num_episodes=50)
 results = benchmark.evaluate(policy)
@@ -166,12 +166,12 @@ results = benchmark.evaluate(policy)
 Test a single task before full evaluation:
 
 ```bash
-getiaction benchmark \
-    --benchmark getiaction.benchmark.LiberoBenchmark \
+physicalai benchmark \
+    --benchmark physicalai.benchmark.LiberoBenchmark \
     --benchmark.task_suite libero_10 \
     --benchmark.task_ids "[0]" \
     --benchmark.num_episodes 1 \
-    --policy getiaction.policies.ACT \
+    --policy physicalai.policies.ACT \
     --ckpt_path experiments/lightning_logs/version_0/checkpoints/last.ckpt
 ```
 
@@ -182,20 +182,20 @@ For reproducible evaluations:
 ```yaml
 # configs/benchmark/my_eval.yaml
 benchmark:
-  class_path: getiaction.benchmark.LiberoBenchmark
+  class_path: physicalai.benchmark.LiberoBenchmark
   init_args:
     task_suite: libero_10
     num_episodes: 50
     video_dir: ./results/videos
     record_mode: failures
 
-policy: getiaction.policies.ACT
+policy: physicalai.policies.ACT
 ckpt_path: ./experiments/lightning_logs/version_0/checkpoints/last.ckpt
 output_dir: ./results/benchmark
 ```
 
 ```bash
-getiaction benchmark --config configs/benchmark/my_eval.yaml
+physicalai benchmark --config configs/benchmark/my_eval.yaml
 ```
 
 ## What's Next?
@@ -208,6 +208,6 @@ getiaction benchmark --config configs/benchmark/my_eval.yaml
 
 **Benchmark takes too long**: Reduce `--benchmark.num_episodes` or test fewer tasks with `--benchmark.task_ids`
 
-**LIBERO import error**: Ensure LIBERO is installed: `pip install getiaction[libero]` or `pip install 'hf-libero>=0.1.3,<0.2.0'`
+**LIBERO import error**: Ensure LIBERO is installed: `pip install physicalai-train[libero]` or `pip install 'hf-libero>=0.1.3,<0.2.0'`
 
 **Video recording fails**: Check FFMPEG is installed and `video_dir` is writable

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.png" alt="Geti Action" width="100%">
+  <img src="docs/assets/physical_ai_studio.png" alt="Physical AI Studio" width="100%">
 </p>
 
 <div align="center">
@@ -20,9 +20,9 @@
 
 ---
 
-## What is Geti Action?
+## What is Physical AI Studio?
 
-Geti Action is an end-to-end framework for teaching robots to perform tasks through imitation learning from human demonstrations.
+Physical AI Studio is an end-to-end framework for teaching robots to perform tasks through imitation learning from human demonstrations.
 
 ## Key Features
 
@@ -51,8 +51,8 @@ For users who prefer a visual interface for end-to-end workflow:
 
 ```bash
 # Clone the repository
-git clone https://github.com/open-edge-platform/geti-action.git
-cd geti-action
+git clone https://github.com/open-edge-platform/physical-ai-studio.git
+cd physical-ai-studio
 
 # Install and run backend
 cd application/backend && uv sync
@@ -71,16 +71,16 @@ Open http://localhost:3000 in your browser.
 For programmatic control over training, benchmarking, and deployment with both API and CLI
 
 ```bash
-pip install getiaction
+pip install physicalai-train
 ```
 
 <details open>
 <summary>Training</summary>
 
 ```python test="skip" reason="requires dataset download"
-from getiaction.data import LeRobotDataModule
-from getiaction.policies import ACT
-from getiaction.train import Trainer
+from physicalai.data import LeRobotDataModule
+from physicalai.policies import ACT
+from physicalai.train import Trainer
 
 datamodule = LeRobotDataModule(repo_id="lerobot/aloha_sim_transfer_cube_human")
 model = ACT()
@@ -94,8 +94,8 @@ trainer.fit(model=model, datamodule=datamodule)
 <summary>Benchmark</summary>
 
 ```python test="skip" reason="requires checkpoint and libero"
-from getiaction.benchmark import LiberoBenchmark
-from getiaction.policies import ACT
+from physicalai.benchmark import LiberoBenchmark
+from physicalai.policies import ACT
 
 policy = ACT.load_from_checkpoint("experiments/lightning_logs/version_0/checkpoints/last.ckpt")
 benchmark = LiberoBenchmark(task_suite="libero_10", num_episodes=20)
@@ -109,8 +109,8 @@ print(f"Success rate: {results.aggregate_success_rate:.1f}%")
 <summary>Export</summary>
 
 ```python test="skip" reason="requires checkpoint"
-from getiaction.export import get_available_backends
-from getiaction.policies import ACT
+from physicalai.export import get_available_backends
+from physicalai.policies import ACT
 
 # See available backends
 print(get_available_backends())  # ['onnx', 'openvino', 'torch', 'torch_export_ir']
@@ -126,7 +126,7 @@ policy.export("./policy", backend="openvino")
 <summary>Inference</summary>
 
 ```python test="skip" reason="requires exported model and environment"
-from getiaction.inference import InferenceModel
+from physicalai.inference import InferenceModel
 
 policy = InferenceModel.load("./policy")
 obs, info = env.reset()
@@ -145,10 +145,10 @@ while not done:
 
 ```bash
 # Train
-getiaction fit --config configs/getiaction/act.yaml
+physicalai fit --config configs/physicalai/act.yaml
 
 # Evaluate
-getiaction benchmark --config configs/benchmark/libero.yaml --ckpt_path model.ckpt
+physicalai benchmark --config configs/benchmark/libero.yaml --ckpt_path model.ckpt
 
 # Export (Python API only - CLI coming soon)
 # Use: policy.export("./policy", backend="openvino")

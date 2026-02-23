@@ -25,11 +25,11 @@ Tested Policies (have explicit wrappers):
 
 import pytest
 
-from getiaction.data import LeRobotDataModule
-from getiaction.data.lerobot import get_delta_timestamps_from_policy
-from getiaction.policies import get_policy
-from getiaction.policies.base.policy import Policy
-from getiaction.train import Trainer
+from physicalai.data import LeRobotDataModule
+from physicalai.data.lerobot import get_delta_timestamps_from_policy
+from physicalai.policies import get_policy
+from physicalai.policies.base.policy import Policy
+from physicalai.train import Trainer
 
 # Core policies - fast, have explicit wrappers
 CORE_POLICIES = ["act", "diffusion"]

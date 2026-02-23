@@ -10,9 +10,9 @@ from pathlib import Path
 import pytest
 import torch
 
-from getiaction.config import Config
-from getiaction.policies.utils import FromCheckpoint
-from getiaction.export.mixin_export import CONFIG_KEY
+from physicalai.config import Config
+from physicalai.policies.utils import FromCheckpoint
+from physicalai.export.mixin_export import CONFIG_KEY
 
 
 @dataclass

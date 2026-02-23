@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../docs/assets/banner_library.png" alt="Geti Action Library" width="100%">
+  <img src="../docs/assets/physical_ai.png" alt="PhysicalAI Library" width="100%">
 </p>
 
 <div align="center">
@@ -22,7 +22,7 @@
 
 # Introduction
 
-Geti Action Library is a Python SDK for training, evaluating, and deploying Vision-Language-Action (VLA) policies. It provides implementations of imitation learning algorithms built on PyTorch Lightning, with a focus on robotic manipulation tasks. The library supports the full ML lifecycle: from training on demonstration data to deploying optimized models for real-time inference.
+PhysicalAI Library is a Python SDK for training, evaluating, and deploying Vision-Language-Action (VLA) policies. It provides implementations of imitation learning algorithms built on PyTorch Lightning, with a focus on robotic manipulation tasks. The library supports the full ML lifecycle: from training on demonstration data to deploying optimized models for real-time inference.
 
 ## Key Features
 
@@ -45,13 +45,13 @@ Geti Action Library is a Python SDK for training, evaluating, and deploying Visi
 # Installation
 
 ```bash
-pip install getiaction
+pip install physicalai-train
 ```
 
 <details>
 <summary><strong>Prerequisites</strong></summary>
 
-Geti Action Library requires Python 3.12+.
+PhysicalAI Library requires Python 3.12+.
 
 FFMPEG is required as a dependency of LeRobot:
 
@@ -69,8 +69,8 @@ brew install ffmpeg
 <summary><strong>Install from Source (for development)</strong></summary>
 
 ```bash
-git clone https://github.com/open-edge-platform/geti-action.git
-cd geti-action/library
+git clone https://github.com/open-edge-platform/physical-ai-studio.git
+cd physical-ai-studio/library
 
 # Create virtual environment and install
 uv venv
@@ -82,14 +82,14 @@ uv sync --all-extras
 
 # Training
 
-Geti Action supports both API and CLI-based training. Checkpoints are saved to `experiments/lightning_logs/` by default.
+PhysicalAI supports both API and CLI-based training. Checkpoints are saved to `experiments/lightning_logs/` by default.
 
 ## API
 
 ```python test="skip" reason="requires dataset download"
-from getiaction.data import LeRobotDataModule
-from getiaction.policies import ACT
-from getiaction.train import Trainer
+from physicalai.data import LeRobotDataModule
+from physicalai.policies import ACT
+from physicalai.train import Trainer
 
 # Initialize components
 datamodule = LeRobotDataModule(repo_id="lerobot/aloha_sim_transfer_cube_human")
@@ -104,17 +104,17 @@ trainer.fit(model=model, datamodule=datamodule)
 
 ```bash
 # Train with config file
-getiaction fit --config configs/getiaction/act.yaml
+physicalai fit --config configs/physicalai/act.yaml
 
 # Train with CLI arguments
-getiaction fit \
-    --model getiaction.policies.ACT \
-    --data getiaction.data.LeRobotDataModule \
+physicalai fit \
+    --model physicalai.policies.ACT \
+    --data physicalai.data.LeRobotDataModule \
     --data.repo_id lerobot/aloha_sim_transfer_cube_human
 
 # Override config values
-getiaction fit \
-    --config configs/getiaction/act.yaml \
+physicalai fit \
+    --config configs/physicalai/act.yaml \
     --trainer.max_epochs 200 \
     --data.train_batch_size 64
 ```
@@ -126,8 +126,8 @@ Evaluate trained policies on standardized simulation environments.
 ## API
 
 ```python test="skip" reason="requires checkpoint and libero"
-from getiaction.benchmark import LiberoBenchmark
-from getiaction.policies import ACT
+from physicalai.benchmark import LiberoBenchmark
+from physicalai.policies import ACT
 
 # Load trained policy (path from training output)
 policy = ACT.load_from_checkpoint("experiments/lightning_logs/version_0/checkpoints/last.ckpt")
@@ -146,19 +146,19 @@ results.to_json("results.json")
 
 ```bash
 # Basic benchmark
-getiaction benchmark \
-    --benchmark getiaction.benchmark.LiberoBenchmark \
+physicalai benchmark \
+    --benchmark physicalai.benchmark.LiberoBenchmark \
     --benchmark.task_suite libero_10 \
-    --policy getiaction.policies.ACT \
+    --policy physicalai.policies.ACT \
     --ckpt_path ./checkpoints/model.ckpt
 
 # With video recording
-getiaction benchmark \
-    --benchmark getiaction.benchmark.LiberoBenchmark \
+physicalai benchmark \
+    --benchmark physicalai.benchmark.LiberoBenchmark \
     --benchmark.task_suite libero_10 \
     --benchmark.video_dir ./videos \
     --benchmark.record_mode failures \
-    --policy getiaction.policies.ACT \
+    --policy physicalai.policies.ACT \
     --ckpt_path ./checkpoints/model.ckpt
 ```
 
@@ -169,7 +169,7 @@ Export trained policies to optimized formats for deployment.
 ## API
 
 ```python test="skip" reason="requires checkpoint"
-from getiaction.policies import ACT
+from physicalai.policies import ACT
 
 # Load and export
 policy = ACT.load_from_checkpoint("checkpoints/model.ckpt")
@@ -198,7 +198,7 @@ Deploy exported models with a unified inference API.
 ## API
 
 ```python test="skip" reason="requires exported model and environment"
-from getiaction.inference import InferenceModel
+from physicalai.inference import InferenceModel
 
 # Load exported model (auto-detects backend)
 policy = InferenceModel.load("./exports")

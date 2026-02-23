@@ -14,8 +14,8 @@ Export trained models to multiple formats.
 Add export capabilities to policy classes:
 
 ```python test="skip" reason="interface example, not executable"
-from getiaction.export import Export
-from getiaction.policies.base import Policy
+from physicalai.export import Export
+from physicalai.policies.base import Policy
 
 class MyPolicy(Export, Policy):
     pass
@@ -64,8 +64,8 @@ graph TB
 
 Standard PyTorch checkpoint with embedded configuration:
 
-```python test="skip" reason="requires getiaction install and model config"
-from getiaction.policies.act import ACT
+```python test="skip" reason="requires physicalai install and model config"
+from physicalai.policies.act import ACT
 
 policy = ACT(...)
 policy.to_torch("checkpoint.pt")
@@ -80,7 +80,7 @@ policy.to_torch("checkpoint.pt")
 
 Optimized format for deployment and inference:
 
-```python test="skip" reason="requires getiaction install and model config"
+```python test="skip" reason="requires physicalai install and model config"
 policy = ACT(...)
 policy.to_onnx("model.onnx")
 ```
@@ -96,7 +96,7 @@ policy.to_onnx("model.onnx")
 
 Optimized format for deployment and inference on Intel hardware:
 
-```python test="skip" reason="requires getiaction install and model config"
+```python test="skip" reason="requires physicalai install and model config"
 policy = ACT(...)
 policy.to_openvino("model.xml")
 ```
@@ -112,7 +112,7 @@ policy.to_openvino("model.xml")
 That format aims to preserve input model graph in the original pythorch aten dialect.
 Model can be loaded and executed by pytorch without any extra deps:
 
-```python test="skip" reason="requires getiaction install and model config"
+```python test="skip" reason="requires physicalai install and model config"
 policy = ACT(...)
 policy.to_torch_export_ir("model.ptir")
 
@@ -141,7 +141,7 @@ The export system automatically serializes model configurations to preserve repr
 All policies automatically inherit export capabilities:
 
 ```python test="skip" reason="interface example, not executable"
-from getiaction.policies.act import ACT
+from physicalai.policies.act import ACT
 
 class ACT(Export, Policy):
     """Export is inherited automatically."""
@@ -193,15 +193,15 @@ class MyModel(nn.Module):
 ```
 
 `self.config` should be a dataclass containing integral python datatypes,
-or related getiaction entities. Only in that case, serializaiton is guaranteed.
+or related physicalai entities. Only in that case, serializaiton is guaranteed.
 
 ## Usage Examples
 
 ### Basic Export
 
-```python test="skip" reason="requires getiaction install, trained model, and datamodule"
-from getiaction.policies.act import ACT
-from getiaction.train import Trainer
+```python test="skip" reason="requires physicalai install, trained model, and datamodule"
+from physicalai.policies.act import ACT
+from physicalai.train import Trainer
 
 # Create and train model
 policy = ACT(...)
@@ -223,7 +223,7 @@ policy.to_torch_export_ir("trained_model.ptir")
 
 ### Custom ONNX Export
 
-```python test="skip" reason="requires getiaction install and trained model"
+```python test="skip" reason="requires physicalai install and trained model"
 # Export with custom arguments
 policy.to_onnx(
     "model.onnx",
@@ -234,7 +234,7 @@ policy.to_onnx(
 
 ### Providing Input Sample
 
-```python test="skip" reason="requires getiaction install and trained model"
+```python test="skip" reason="requires physicalai install and trained model"
 # Explicit input sample
 input_sample = {
     "image": torch.randn(1, 3, 224, 224),
@@ -249,4 +249,4 @@ policy.to_onnx("model.onnx", input_sample=input_sample)
 - [Policy Base Class](../policy/README.md) - Policy interface
 
 This design provides a consistent, flexible interface for model export across
-the entire GetiAction codebase.
+the entire PhysicalAI codebase.

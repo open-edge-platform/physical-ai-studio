@@ -1,6 +1,6 @@
 # LightningCLI Integration
 
-The GetiAction CLI is built on top of PyTorch Lightning's `LightningCLI`,
+The PhysicalAI CLI is built on top of PyTorch Lightning's `LightningCLI`,
 which provides robust argument parsing and configuration management through
 `jsonargparse`.
 
@@ -16,11 +16,11 @@ classDiagram
         +save_config_callback: SaveConfigCallback|None
     }
 
-    class GetiActionCLI {
+    class CLI {
         +cli()
     }
 
-    LightningCLI <|-- GetiActionCLI : uses
+    LightningCLI <|-- CLI : uses
 ```
 
 ## Implementation
@@ -29,8 +29,8 @@ The CLI implementation in `cli.py` is intentionally minimal:
 
 ```python
 from lightning.pytorch.cli import LightningCLI
-from getiaction.data import DataModule
-from getiaction.policies.base import Policy
+from physicalai.data import DataModule
+from physicalai.policies.base import Policy
 
 def cli() -> None:
     """Main CLI entry point."""
@@ -53,10 +53,10 @@ configuration:
 
 ```yaml
 model:
-  class_path: getiaction.policies.dummy.policy.Dummy
+  class_path: physicalai.policies.dummy.policy.Dummy
   init_args:
     model:
-      class_path: getiaction.policies.dummy.model.Dummy
+      class_path: physicalai.policies.dummy.model.Dummy
 ```
 
 ### 2. Configuration Parsing
@@ -73,10 +73,10 @@ model:
 The CLI automatically provides standard Lightning commands:
 
 ```bash
-getiaction fit          # Train model
-getiaction validate     # Run validation
-getiaction test         # Run testing
-getiaction predict      # Run predictions
+physicalai fit          # Train model
+physicalai validate     # Run validation
+physicalai test         # Run testing
+physicalai predict      # Run predictions
 ```
 
 ## Configuration Flow
@@ -89,7 +89,7 @@ sequenceDiagram
     participant LightningCLI
     participant Trainer
 
-    User->>CLI: getiaction fit --config train.yaml
+    User->>CLI: physicalai fit --config train.yaml
     CLI->>jsonargparse: Parse config + args
     jsonargparse->>jsonargparse: Validate types
     jsonargparse->>LightningCLI: Instantiate components
@@ -112,22 +112,22 @@ sequenceDiagram
 ### Basic Training
 
 ```bash
-getiaction fit \
-    --model.class_path getiaction.policies.dummy.policy.Dummy \
-    --data.class_path getiaction.data.lerobot.LeRobotDataModule \
+physicalai fit \
+    --model.class_path physicalai.policies.dummy.policy.Dummy \
+    --data.class_path physicalai.data.lerobot.LeRobotDataModule \
     --trainer.max_epochs 100
 ```
 
 ### With Config File
 
 ```bash
-getiaction fit --config configs/train.yaml
+physicalai fit --config configs/train.yaml
 ```
 
 ### Override Config Values
 
 ```bash
-getiaction fit \
+physicalai fit \
     --config configs/train.yaml \
     --trainer.max_epochs 200 \
     --data.train_batch_size 64
@@ -136,7 +136,7 @@ getiaction fit \
 ### Print Full Configuration
 
 ```bash
-getiaction fit --print_config
+physicalai fit --print_config
 ```
 
 ## Integration Points

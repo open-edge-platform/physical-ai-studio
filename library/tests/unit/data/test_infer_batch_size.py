@@ -6,8 +6,8 @@
 import pytest
 import torch
 
-from getiaction.data.observation import Observation
-from getiaction.data.utils import infer_batch_size
+from physicalai.data.observation import Observation
+from physicalai.data.utils import infer_batch_size
 
 
 class TestInferBatchSize:

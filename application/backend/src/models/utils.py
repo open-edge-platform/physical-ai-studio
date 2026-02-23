@@ -3,10 +3,10 @@
 
 from pathlib import Path
 
-from getiaction.export import Export
-from getiaction.inference import InferenceModel
-from getiaction.policies import ACT, Pi0, SmolVLA
-from getiaction.policies.base import Policy
+from physicalai.export import Export
+from physicalai.inference import InferenceModel
+from physicalai.policies import ACT, Pi0, SmolVLA
+from physicalai.policies.base import Policy
 
 from schemas import Model
 from utils.device import get_torch_device

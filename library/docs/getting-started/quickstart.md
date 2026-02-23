@@ -10,7 +10,7 @@ Setup your training pipeline within 5 minutes.
 
 ## Prerequisites
 
-- [Geti Action installed](installation.md)
+- [PhysicalAI installed](installation.md)
 - GPU recommended (CPU would technically work but remember the waiting skeleton meme)
 
 ## Step 1: Train with CLI
@@ -18,9 +18,9 @@ Setup your training pipeline within 5 minutes.
 Use the CLI if you prefer training via terminal without diving into the code base
 
 ```bash
-getiaction fit \
-    --model getiaction.policies.ACT \
-    --data getiaction.data.LeRobotDataModule \
+physicalai fit \
+    --model physicalai.policies.ACT \
+    --data physicalai.data.LeRobotDataModule \
     --data.repo_id lerobot/aloha_sim_transfer_cube_human \
     --trainer.max_epochs 10
 ```
@@ -38,9 +38,9 @@ Training output appears in `experiments/lightning_logs/version_N/`.
 For more control, use the Python API:
 
 ```python test="skip" reason="requires dataset download"
-from getiaction.data import LeRobotDataModule
-from getiaction.policies import ACT
-from getiaction.train import Trainer
+from physicalai.data import LeRobotDataModule
+from physicalai.policies import ACT
+from physicalai.train import Trainer
 
 # 1. Load dataset
 datamodule = LeRobotDataModule(
@@ -102,10 +102,10 @@ For reproducible experiments, use YAML configs:
 ```yaml
 # configs/my_experiment.yaml
 model:
-  class_path: getiaction.policies.ACT
+  class_path: physicalai.policies.ACT
 
 data:
-  class_path: getiaction.data.LeRobotDataModule
+  class_path: physicalai.data.LeRobotDataModule
   init_args:
     repo_id: lerobot/aloha_sim_transfer_cube_human
     train_batch_size: 32
@@ -119,7 +119,7 @@ trainer:
 Run with:
 
 ```bash
-getiaction fit --config configs/my_experiment.yaml
+physicalai fit --config configs/my_experiment.yaml
 ```
 
 ### Adjust Batch Size
@@ -127,7 +127,7 @@ getiaction fit --config configs/my_experiment.yaml
 If you run out of GPU memory:
 
 ```bash
-getiaction fit \
+physicalai fit \
     --config configs/my_experiment.yaml \
     --data.train_batch_size 8
 ```
@@ -137,7 +137,7 @@ getiaction fit \
 Test your setup without a full training run:
 
 ```bash
-getiaction fit \
+physicalai fit \
     --config configs/my_experiment.yaml \
     --trainer.fast_dev_run true
 ```

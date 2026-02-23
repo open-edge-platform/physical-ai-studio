@@ -1,6 +1,6 @@
-# Geti Action UI
+# Physical AI Studio UI
 
-React web application for the Geti Action studio.
+React web application for the Physical AI Studio.
 
 ## Overview
 

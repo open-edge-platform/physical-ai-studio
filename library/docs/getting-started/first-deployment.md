@@ -26,7 +26,7 @@ Export your trained policy and run inference in production.
 ### Export with Python
 
 ```python test="skip" reason="requires checkpoint"
-from getiaction.policies import ACT
+from physicalai.policies import ACT
 
 # Load checkpoint
 policy = ACT.load_from_checkpoint(
@@ -50,7 +50,7 @@ policy_export/
 ## Step 2: Load for Inference
 
 ```python test="skip" reason="requires exported model"
-from getiaction.inference import InferenceModel
+from physicalai.inference import InferenceModel
 
 # Load exported model (auto-detects backend)
 policy = InferenceModel.load("./policy_export")
@@ -63,7 +63,7 @@ The same code works regardless of which backend you exported to.
 ### Basic Control Loop
 
 ```python test="skip" reason="requires exported model and environment"
-from getiaction.inference import InferenceModel
+from physicalai.inference import InferenceModel
 
 # Load model
 policy = InferenceModel.load("./policy_export")
@@ -89,7 +89,7 @@ while not done:
 
 ```python test="skip" reason="requires exported model and environment"
 import logging
-from getiaction.inference import InferenceModel
+from physicalai.inference import InferenceModel
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

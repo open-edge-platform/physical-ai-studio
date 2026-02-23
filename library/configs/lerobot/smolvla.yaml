@@ -2,13 +2,13 @@
 # Train SmolVLA using LeRobot's implementation
 #
 # Usage:
-#   getiaction fit --config configs/lerobot/smolvla_xai.yaml
+#   physicalai fit --config configs/lerobot/smolvla_xai.yaml
 #
 # Override parameters:
-#   getiaction fit --config configs/lerobot/smolvla_xai.yaml --model.max_state_dim 64
+#   physicalai fit --config configs/lerobot/smolvla_xai.yaml --model.max_state_dim 64
 
 model:
-  class_path: getiaction.policies.lerobot.SmolVLA
+  class_path: physicalai.policies.lerobot.SmolVLA
   init_args:
     # Steps for input and output
     n_obs_steps: 1
@@ -68,11 +68,11 @@ model:
     head_idx: null # Which head to display (null means average from all heads, -1 takes the max)
 
 data:
-  class_path: getiaction.data.lerobot.LeRobotDataModule
+  class_path: physicalai.data.lerobot.LeRobotDataModule
   init_args:
     repo_id: "lerobot/svla_so100_stacking"
     train_batch_size: 64
-    data_format: "lerobot" # Output format: "lerobot" (flattened dict) or "getiaction" (Observation)
+    data_format: "lerobot" # Output format: "lerobot" (flattened dict) or "physicalai" (Observation)
     delta_timestamps:
       action:
         [

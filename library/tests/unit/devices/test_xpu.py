@@ -4,7 +4,7 @@
 """Unit Tests - XPU Device"""
 
 
-from getiaction.devices.xpu import XPUAccelerator, SingleXPUStrategy
+from physicalai.devices.xpu import XPUAccelerator, SingleXPUStrategy
 import torch
 
 

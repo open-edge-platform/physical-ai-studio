@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 import torch
-from getiaction.config import Config
-from getiaction.policies.groot import Groot, GrootConfig
+from physicalai.config import Config
+from physicalai.policies.groot import Groot, GrootConfig
 
 # ============================================================================ #
 # Configuration Tests                                                          #
@@ -125,7 +125,7 @@ class TestNNPrimitives:
 
     def test_swish_activation(self) -> None:
         """Test swish computes x * sigmoid(x) and preserves gradients."""
-        from getiaction.policies.groot.components.nn import swish
+        from physicalai.policies.groot.components.nn import swish
 
         x = torch.tensor([-1.0, 0.0, 1.0, 2.0], requires_grad=True)
         out = swish(x)
@@ -136,7 +136,7 @@ class TestNNPrimitives:
 
     def test_sinusoidal_encoding(self) -> None:
         """Test sinusoidal positional encoding produces unique, deterministic outputs."""
-        from getiaction.policies.groot.components.nn import SinusoidalPositionalEncoding
+        from physicalai.policies.groot.components.nn import SinusoidalPositionalEncoding
 
         encoder = SinusoidalPositionalEncoding(embedding_dim=128)
         t = torch.tensor([[0.0, 100.0, 500.0]])
@@ -152,7 +152,7 @@ class TestNNPrimitives:
 
     def test_category_specific_linear(self) -> None:
         """Test category-specific linear layer routes by category ID."""
-        from getiaction.policies.groot.components.nn import CategorySpecificLinear
+        from physicalai.policies.groot.components.nn import CategorySpecificLinear
 
         layer = CategorySpecificLinear(num_categories=4, input_dim=16, hidden_dim=32)
         x = torch.randn(2, 5, 16, requires_grad=True)
@@ -167,7 +167,7 @@ class TestNNPrimitives:
 
     def test_multi_embodiment_action_encoder(self) -> None:
         """Test multi-embodiment action encoder combines actions and timesteps."""
-        from getiaction.policies.groot.components.nn import MultiEmbodimentActionEncoder
+        from physicalai.policies.groot.components.nn import MultiEmbodimentActionEncoder
 
         encoder = MultiEmbodimentActionEncoder(action_dim=7, hidden_size=64, num_embodiments=4)
         actions = torch.randn(2, 10, 7)
@@ -190,7 +190,7 @@ class TestTransformerComponents:
 
     def test_timestep_encoder(self) -> None:
         """Test timestep encoder produces unique embeddings per timestep."""
-        from getiaction.policies.groot.components.transformer import TimestepEncoder
+        from physicalai.policies.groot.components.transformer import TimestepEncoder
 
         encoder = TimestepEncoder(embedding_dim=256)
 
@@ -202,7 +202,7 @@ class TestTransformerComponents:
 
     def test_ada_layer_norm(self) -> None:
         """Test adaptive layer norm modulates based on timestep embedding."""
-        from getiaction.policies.groot.components.transformer import AdaLayerNorm
+        from physicalai.policies.groot.components.transformer import AdaLayerNorm
 
         norm = AdaLayerNorm(embedding_dim=256)
         x = torch.randn(2, 16, 256)
@@ -215,7 +215,7 @@ class TestTransformerComponents:
 
     def test_basic_transformer_block(self) -> None:
         """Test basic transformer block with cross-attention."""
-        from getiaction.policies.groot.components.transformer import BasicTransformerBlock
+        from physicalai.policies.groot.components.transformer import BasicTransformerBlock
 
         block = BasicTransformerBlock(
             dim=256,
@@ -236,7 +236,7 @@ class TestTransformerComponents:
 
     def test_dit(self) -> None:
         """Test Diffusion Transformer (DiT) forward pass."""
-        from getiaction.policies.groot.components.transformer import get_dit_class
+        from physicalai.policies.groot.components.transformer import get_dit_class
 
         DiT = get_dit_class()
         dit = DiT(num_attention_heads=4, attention_head_dim=64, num_layers=2, output_dim=256)
@@ -251,7 +251,7 @@ class TestTransformerComponents:
 
     def test_self_attention_transformer(self) -> None:
         """Test self-attention transformer (VL encoder)."""
-        from getiaction.policies.groot.components.transformer import (
+        from physicalai.policies.groot.components.transformer import (
             get_self_attention_transformer_class,
         )
 
@@ -274,7 +274,7 @@ class TestFlowMatchingActionHead:
 
     def test_config_defaults(self) -> None:
         """Test default configuration values."""
-        from getiaction.policies.groot.components.action_head import FlowMatchingActionHeadConfig
+        from physicalai.policies.groot.components.action_head import FlowMatchingActionHeadConfig
 
         config = FlowMatchingActionHeadConfig(action_dim=32, action_horizon=16)
         assert config.action_dim == 32
@@ -286,7 +286,7 @@ class TestFlowMatchingActionHead:
 
     def test_from_config_and_from_dict(self) -> None:
         """Test FlowMatchingActionHead can be created from config or dict."""
-        from getiaction.policies.groot.components.action_head import (
+        from physicalai.policies.groot.components.action_head import (
             FlowMatchingActionHead,
             FlowMatchingActionHeadConfig,
         )
@@ -314,7 +314,7 @@ class TestPreprocessor:
 
     def test_make_groot_transforms(self) -> None:
         """Test make_groot_transforms returns callables."""
-        from getiaction.policies.groot.transforms import make_groot_transforms
+        from physicalai.policies.groot.transforms import make_groot_transforms
 
         preprocessor, postprocessor = make_groot_transforms(
             max_state_dim=64,
@@ -330,7 +330,7 @@ class TestPreprocessor:
 
     def test_preprocessor_is_nn_module(self) -> None:
         """Test that preprocessors are nn.Module instances."""
-        from getiaction.policies.groot.transforms import GrootPostprocessor, GrootPreprocessor
+        from physicalai.policies.groot.transforms import GrootPostprocessor, GrootPreprocessor
         from torch import nn
 
         preprocessor = GrootPreprocessor()
@@ -341,7 +341,7 @@ class TestPreprocessor:
 
     def test_preprocessor_buffers_registered(self) -> None:
         """Test that stats are registered as buffers."""
-        from getiaction.policies.groot.transforms import GrootPreprocessor
+        from physicalai.policies.groot.transforms import GrootPreprocessor
 
         stats = {
             "observation.state": {"min": [0.0, 1.0], "max": [1.0, 2.0]},
@@ -358,7 +358,7 @@ class TestPreprocessor:
 
     def test_preprocessor_device_handling(self) -> None:
         """Test that preprocessor buffers move with .to(device)."""
-        from getiaction.policies.groot.transforms import GrootPreprocessor
+        from physicalai.policies.groot.transforms import GrootPreprocessor
 
         stats = {
             "observation.state": {"min": [0.0], "max": [1.0]},
@@ -376,7 +376,7 @@ class TestPreprocessor:
 
     def test_postprocessor_buffers_registered(self) -> None:
         """Test that postprocessor stats are registered as buffers."""
-        from getiaction.policies.groot.transforms import GrootPostprocessor
+        from physicalai.policies.groot.transforms import GrootPostprocessor
 
         stats = {"action": {"min": [-1.0, -2.0], "max": [1.0, 2.0]}}
         postprocessor = GrootPostprocessor(env_action_dim=2, stats=stats)
@@ -387,7 +387,7 @@ class TestPreprocessor:
 
     def test_preprocessor_state_normalization(self) -> None:
         """Test state normalization with registered buffers."""
-        from getiaction.policies.groot.transforms import GrootPreprocessor
+        from physicalai.policies.groot.transforms import GrootPreprocessor
 
         stats = {
             "observation.state": {"min": [0.0, 0.0], "max": [10.0, 10.0]},
@@ -406,7 +406,7 @@ class TestPreprocessor:
 
     def test_postprocessor_denormalization(self) -> None:
         """Test action denormalization with registered buffers."""
-        from getiaction.policies.groot.transforms import GrootPostprocessor
+        from physicalai.policies.groot.transforms import GrootPostprocessor
 
         stats = {"action": {"min": [0.0, 0.0], "max": [10.0, 10.0]}}
         postprocessor = GrootPostprocessor(env_action_dim=2, stats=stats)

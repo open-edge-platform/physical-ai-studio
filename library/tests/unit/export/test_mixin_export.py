@@ -10,7 +10,7 @@ import onnx
 import pytest
 import torch
 
-from getiaction.export.mixin_export import Export, ExportBackend
+from physicalai.export.mixin_export import Export, ExportBackend
 
 
 # Test configurations

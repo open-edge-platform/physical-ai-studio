@@ -8,10 +8,10 @@ from __future__ import annotations
 import pytest
 import torch
 
-from getiaction.policies.dummy import Dummy, DummyConfig
-from getiaction.policies.dummy.model import Dummy as DummyModel
-from getiaction.gyms import PushTGym, GymnasiumGym
-from getiaction.eval import rollout
+from physicalai.policies.dummy import Dummy, DummyConfig
+from physicalai.policies.dummy.model import Dummy as DummyModel
+from physicalai.gyms import PushTGym, GymnasiumGym
+from physicalai.eval import rollout
 
 
 @pytest.fixture
