@@ -13,6 +13,7 @@ FeetechMotorsBus connection (with handshake=False) and never touches the DB.
 """
 
 import asyncio
+import time
 from enum import StrEnum
 from typing import Any
 
@@ -31,6 +32,7 @@ from workers.transport_worker import TransportWorker, WorkerState
 STS3215_MODEL_NUMBER = 777
 VOLTAGE_THRESHOLD_RAW = 70  # 7.0V in register units (0.1V per unit)
 VOLTAGE_UNIT = 0.1
+FPS = 30  # Streaming rate for position reads (calibration + 3D preview)
 
 MOTOR_NAMES = [
     "shoulder_pan",
@@ -145,7 +147,6 @@ class SO101SetupWorker(TransportWorker):
 
         # Raw position streaming state (for live joint table in calibration)
         self._positions_streaming = False
-        self._positions_fps = 30
 
         # Normalized position streaming state (for 3D preview verification)
         self._streaming = False
@@ -443,8 +444,11 @@ class SO101SetupWorker(TransportWorker):
         self._recording = True
 
         # Stream positions until _recording is set to False
+        read_interval = 1.0 / FPS
         try:
             while self._recording and not self._stop_requested:
+                start_time = time.perf_counter()
+
                 async with self._bus_lock:
                     positions = await asyncio.to_thread(
                         bus.sync_read, "Present_Position", list(bus.motors), normalize=False
@@ -469,7 +473,8 @@ class SO101SetupWorker(TransportWorker):
                     }
                 )
 
-                await asyncio.sleep(0.05)  # ~20Hz
+                elapsed = time.perf_counter() - start_time
+                await asyncio.sleep(max(0.001, read_interval - elapsed))
         finally:
             self._recording_stopped.set()
 
@@ -621,8 +626,6 @@ class SO101SetupWorker(TransportWorker):
                 await self._handle_stop_recording()
 
             case "start_positions_stream":
-                fps = data.get("fps", self._positions_fps)
-                self._positions_fps = max(1, min(60, int(fps)))
                 self._spawn_task(self._handle_positions_stream())
 
             case "stop_positions_stream":
@@ -661,9 +664,10 @@ class SO101SetupWorker(TransportWorker):
         self._positions_streaming = True
 
         last_sent: dict[str, int] | None = None
-        interval = 1.0 / self._positions_fps
+        read_interval = 1.0 / FPS
 
         while self._positions_streaming and not self._stop_requested:
+            start_time = time.perf_counter()
             try:
                 async with self._bus_lock:
                     positions = await asyncio.to_thread(
@@ -684,7 +688,8 @@ class SO101SetupWorker(TransportWorker):
             except Exception as e:
                 logger.warning(f"Position stream read error: {e}")
 
-            await asyncio.sleep(interval)
+            elapsed = time.perf_counter() - start_time
+            await asyncio.sleep(max(0.001, read_interval - elapsed))
 
     # ------------------------------------------------------------------
     # Position streaming (for 3D preview in verification step)
@@ -734,8 +739,10 @@ class SO101SetupWorker(TransportWorker):
             )
 
         self._streaming = True
+        read_interval = 1.0 / FPS
 
         while self._streaming and not self._stop_requested:
+            start_time = time.perf_counter()
             try:
                 async with self._bus_lock:
                     state = await asyncio.to_thread(bus.sync_read, "Present_Position", list(bus.motors), normalize=True)
@@ -749,7 +756,8 @@ class SO101SetupWorker(TransportWorker):
             except Exception as e:
                 logger.warning(f"Position streaming read error: {e}")
 
-            await asyncio.sleep(0.05)  # ~20Hz
+            elapsed = time.perf_counter() - start_time
+            await asyncio.sleep(max(0.001, read_interval - elapsed))
 
     async def _handle_stop_stream(self) -> None:
         """Stop streaming positions."""
