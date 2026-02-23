@@ -64,17 +64,29 @@ def _build_motors() -> dict[str, Motor]:
 
 
 class SetupPhase(StrEnum):
-    """Phases of the setup wizard state machine."""
+    """Phases of the setup wizard state machine.
+
+    The broadcast loop uses this to decide what to stream:
+      - CALIBRATION_INSTRUCTIONS / CALIBRATION_HOMING → raw positions
+        (``normalize=False``) with change detection (skip unchanged frames)
+      - CALIBRATION_RECORDING → raw positions (``normalize=False``) AND
+        track per-motor min/max for range-of-motion calibration
+      - VERIFICATION → normalized positions (``normalize=True``)
+      - Everything else → no streaming (idle sleep)
+
+    During CALIBRATION_RECORDING the broadcast loop additionally tracks
+    per-motor min/max values for range-of-motion calibration.
+    """
 
     CONNECTING = "connecting"
     VOLTAGE_CHECK = "voltage_check"
     MOTOR_PROBE = "motor_probe"
     MOTOR_SETUP = "motor_setup"  # Only entered if motors are missing
+    CALIBRATION_INSTRUCTIONS = "calibration_instructions"
     CALIBRATION_HOMING = "calibration_homing"
     CALIBRATION_RECORDING = "calibration_recording"
     CONFIGURE = "configure"
-    COMPLETE = "complete"
-    ERROR = "error"
+    VERIFICATION = "verification"
 
 
 # ---------------------------------------------------------------------------
@@ -85,22 +97,32 @@ class SetupPhase(StrEnum):
 class SO101SetupWorker(TransportWorker):
     """Websocket worker that drives the SO101 setup wizard.
 
-    Protocol overview (client sends commands, server sends events):
+    Architecture mirrors ``RobotWorker``: two concurrent asyncio tasks —
+    a *broadcast loop* that reads the motor bus and pushes events to the
+    client, and a *command loop* that receives commands from the client.
 
-    After connection the worker immediately runs voltage check + motor probe
-    and sends the results. Then it waits for commands:
+    Streaming behaviour is controlled entirely by ``self.phase``:
+
+      - ``CALIBRATION_INSTRUCTIONS`` / ``CALIBRATION_HOMING`` → stream
+        raw positions (``normalize=False``) with change detection.
+      - ``CALIBRATION_RECORDING`` → stream raw positions AND track
+        per-motor min/max for range-of-motion calibration.
+      - ``VERIFICATION`` → stream normalized positions
+        (``normalize=True``), sending ``state_was_updated`` events that
+        match the format used by the standard ``RobotWorker`` broadcast.
+      - All other phases → no streaming (the loop idles).
 
     Commands:
         {"command": "ping"}
-        {"command": "start_motor_setup"}        — begin per-motor ID assignment
-        {"command": "motor_connected", "motor": "shoulder_pan"}  — user connected single motor
-        {"command": "start_homing"}             — user centered robot, apply homing offsets
-        {"command": "start_recording"}          — begin recording range-of-motion
-        {"command": "stop_recording"}           — finish recording, write calibration
-        {"command": "start_positions_stream"}   — start streaming raw positions (~30Hz)
-        {"command": "stop_positions_stream"}    — stop streaming raw positions
-        {"command": "stream_positions"}         — start streaming normalized positions (~20Hz)
-        {"command": "stop_stream"}              — stop streaming positions
+        {"command": "start_motor_setup"}
+        {"command": "motor_connected", "motor": "shoulder_pan"}
+        {"command": "finish_motor_setup"}
+        {"command": "enter_calibration"}
+        {"command": "start_homing"}
+        {"command": "start_recording"}
+        {"command": "stop_recording"}
+        {"command": "enter_verification"}
+        {"command": "re_probe"}
 
     Events sent to client:
         {"event": "status", "state": ..., "phase": ..., "message": ...}
@@ -109,7 +131,7 @@ class SO101SetupWorker(TransportWorker):
         {"event": "motor_setup_progress", ...}
         {"event": "homing_result", ...}
         {"event": "positions", ...}
-        {"event": "state_was_updated", "state": {...}}  — normalized positions for 3D preview
+        {"event": "state_was_updated", "state": {...}}
         {"event": "calibration_result", ...}
         {"event": "error", "message": ...}
     """
@@ -129,9 +151,9 @@ class SO101SetupWorker(TransportWorker):
         self.motors = _build_motors()
 
         # Serialize all bus I/O — the Feetech SDK has no internal locking,
-        # so concurrent asyncio.to_thread(bus.*) calls from background
-        # streaming tasks and command handlers would collide on the serial
-        # port, causing "[TxRxResult] Port is in use!" errors.
+        # so concurrent asyncio.to_thread(bus.*) calls from the broadcast
+        # loop and command handlers would collide on the serial port,
+        # causing "[TxRxResult] Port is in use!" errors.
         self._bus_lock = asyncio.Lock()
 
         # Results accumulated during the flow
@@ -139,20 +161,9 @@ class SO101SetupWorker(TransportWorker):
         self.probe_result: dict[str, Any] | None = None
         self.homing_offsets: dict[str, int] | None = None
 
-        # Range recording state
-        self._recording = False
-        self._recording_stopped = asyncio.Event()
+        # Range recording state (used by broadcast loop during CALIBRATION_RECORDING)
         self._range_mins: dict[str, int] = {}
         self._range_maxes: dict[str, int] = {}
-
-        # Raw position streaming state (for live joint table in calibration)
-        self._positions_streaming = False
-
-        # Normalized position streaming state (for 3D preview verification)
-        self._streaming = False
-
-        # Background tasks (prevent GC of fire-and-forget asyncio tasks)
-        self._background_tasks: set[asyncio.Task[None]] = set()
 
     # ------------------------------------------------------------------
     # Helpers — bus / homing guard
@@ -170,18 +181,18 @@ class SO101SetupWorker(TransportWorker):
             raise RuntimeError("Homing offsets have not been computed yet")
         return self.homing_offsets
 
-    def _spawn_task(self, coro: Any) -> None:
-        """Create a background task and prevent it from being garbage-collected."""
-        task: asyncio.Task[None] = asyncio.create_task(coro)
-        self._background_tasks.add(task)
-        task.add_done_callback(self._background_tasks.discard)
-
     # ------------------------------------------------------------------
     # Main run loop
     # ------------------------------------------------------------------
 
     async def run(self) -> None:
-        """Main worker lifecycle."""
+        """Main worker lifecycle.
+
+        Connects to the motor bus, runs initial diagnostics (voltage +
+        motor probe), then starts two concurrent tasks:
+          - ``_broadcast_loop`` — reads the bus and pushes events
+          - ``_command_loop`` — receives and dispatches frontend commands
+        """
         try:
             await self.transport.connect()
             self.state = WorkerState.RUNNING
@@ -195,12 +206,14 @@ class SO101SetupWorker(TransportWorker):
             # Phase 3: Motor probe (automatic)
             await self._run_motor_probe()
 
-            # Now wait for commands from the frontend
-            await self._command_loop()
+            # Two concurrent tasks — mirrors RobotWorker architecture
+            await self.run_concurrent(
+                asyncio.create_task(self._broadcast_loop()),
+                asyncio.create_task(self._command_loop()),
+            )
 
         except Exception as e:
             self.state = WorkerState.ERROR
-            self.phase = SetupPhase.ERROR
             self.error_message = str(e)
             logger.exception(f"Setup worker error: {e}")
             await self._send_event("error", message=str(e))
@@ -423,17 +436,19 @@ class SO101SetupWorker(TransportWorker):
     # ------------------------------------------------------------------
 
     async def _handle_start_recording(self) -> None:
-        """Start recording range-of-motion. Sends position updates until stopped."""
-        if self._recording:
-            return
-        self.phase = SetupPhase.CALIBRATION_RECORDING
-        await self._send_phase_status("Recording range of motion...")
+        """Start recording range-of-motion.
 
+        Reads the current positions to initialise min/max, then
+        transitions to ``CALIBRATION_RECORDING``.  The broadcast loop
+        picks up from here — it streams positions AND tracks min/max.
+        """
+        if self.phase == SetupPhase.CALIBRATION_RECORDING:
+            return
         bus = self._require_bus()
 
-        self._recording_stopped.clear()
+        await self._send_phase_status("Recording range of motion...")
 
-        # Read initial positions
+        # Read initial positions to seed min/max
         async with self._bus_lock:
             start_positions = await asyncio.to_thread(
                 bus.sync_read, "Present_Position", list(bus.motors), normalize=False
@@ -441,53 +456,20 @@ class SO101SetupWorker(TransportWorker):
 
         self._range_mins = {m: int(v) for m, v in start_positions.items()}
         self._range_maxes = {m: int(v) for m, v in start_positions.items()}
-        self._recording = True
 
-        # Stream positions until _recording is set to False
-        read_interval = 1.0 / FPS
-        try:
-            while self._recording and not self._stop_requested:
-                start_time = time.perf_counter()
-
-                async with self._bus_lock:
-                    positions = await asyncio.to_thread(
-                        bus.sync_read, "Present_Position", list(bus.motors), normalize=False
-                    )
-
-                for motor, pos_val in positions.items():
-                    pos = int(pos_val)
-                    self._range_mins[motor] = min(self._range_mins[motor], pos)
-                    self._range_maxes[motor] = max(self._range_maxes[motor], pos)
-
-                await self.transport.send_json(
-                    {
-                        "event": "positions",
-                        "motors": {
-                            name: {
-                                "position": int(positions[name]),
-                                "min": self._range_mins[name],
-                                "max": self._range_maxes[name],
-                            }
-                            for name in bus.motors
-                        },
-                    }
-                )
-
-                elapsed = time.perf_counter() - start_time
-                await asyncio.sleep(max(0.001, read_interval - elapsed))
-        finally:
-            self._recording_stopped.set()
+        # The broadcast loop will start tracking min/max on next iteration
+        self.phase = SetupPhase.CALIBRATION_RECORDING
 
     async def _handle_stop_recording(self) -> None:
-        """Stop recording and write calibration to motor EEPROM."""
-        self._recording = False
+        """Stop recording and write calibration to motor EEPROM.
 
-        # Wait for the recording loop to actually finish (it sets the event
-        # after its last bus operation completes, so no bus calls are in flight).
-        try:
-            await asyncio.wait_for(self._recording_stopped.wait(), timeout=2.0)
-        except TimeoutError:
-            logger.warning("Timed out waiting for recording loop to stop")
+        Transitions the phase to ``CONFIGURE`` so the broadcast loop
+        stops streaming.  Because the command handler and broadcast loop
+        share ``_bus_lock``, the lock acquisition here guarantees no bus
+        reads are in flight when we start writing calibration.
+        """
+        # Transition phase — broadcast loop will idle on next iteration
+        self.phase = SetupPhase.CONFIGURE
 
         bus = self._require_bus()
         homing_offsets = self._require_homing_offsets()
@@ -519,7 +501,6 @@ class SO101SetupWorker(TransportWorker):
         # Now configure the motors (return delay, acceleration, PID, etc.)
         await self._configure_motors()
 
-        self.phase = SetupPhase.COMPLETE
         await self._send_phase_status("Calibration complete")
 
         # Send the final calibration data back
@@ -539,13 +520,52 @@ class SO101SetupWorker(TransportWorker):
             }
         )
 
+        # Transition to verification — broadcast loop auto-starts
+        # normalized streaming on the next iteration.
+        await self._enter_verification()
+
+    async def _enter_verification(self) -> None:
+        """Enter VERIFICATION phase, ensuring calibration is loaded on the bus.
+
+        If the user went through the full calibration flow, the bus
+        already has ``bus.calibration`` populated from ``write_calibration``.
+        If the user skipped calibration (robot was already calibrated from
+        a prior session), we load it from motor EEPROM.
+        """
+        bus = self._require_bus()
+
+        if not bus.calibration:
+            logger.info("Loading calibration from motor EEPROM for verification streaming")
+            async with self._bus_lock:
+                cal = await asyncio.to_thread(bus.read_calibration)
+            bus.calibration = cal
+
+            # Send calibration_result so the frontend has calibration data
+            # for the save flow, even when calibration was skipped.
+            await self.transport.send_json(
+                {
+                    "event": "calibration_result",
+                    "calibration": {
+                        name: {
+                            "id": mc.id,
+                            "drive_mode": mc.drive_mode,
+                            "homing_offset": mc.homing_offset,
+                            "range_min": mc.range_min,
+                            "range_max": mc.range_max,
+                        }
+                        for name, mc in cal.items()
+                    },
+                }
+            )
+
+        self.phase = SetupPhase.VERIFICATION
+
     # ------------------------------------------------------------------
     # Configure motors (PID, acceleration, operating mode)
     # ------------------------------------------------------------------
 
     async def _configure_motors(self) -> None:
         """Apply motor configuration — reimplements SO101Follower.configure()."""
-        self.phase = SetupPhase.CONFIGURE
         await self._send_phase_status("Configuring motors...")
 
         bus = self._require_bus()
@@ -575,24 +595,147 @@ class SO101SetupWorker(TransportWorker):
                 await asyncio.to_thread(bus.enable_torque)
 
     # ------------------------------------------------------------------
+    # Broadcast loop — phase-driven streaming
+    # ------------------------------------------------------------------
+
+    async def _broadcast_loop(self) -> None:
+        """Read the motor bus and push events to the client.
+
+        Behaviour depends on the current phase:
+
+          - ``CALIBRATION_INSTRUCTIONS`` / ``CALIBRATION_HOMING`` — stream
+            raw positions so the user can see live joint values (while
+            centering or while instructions are displayed).
+          - ``CALIBRATION_RECORDING`` — stream raw positions AND track
+            per-motor min/max for range-of-motion calibration.
+          - ``VERIFICATION`` — stream normalized positions using the
+            same ``state_was_updated`` event format as ``RobotWorker``.
+          - All other phases — idle (no bus reads).
+        """
+        read_interval = 1.0 / FPS
+
+        # Tracks last-sent raw positions so we can skip unchanged frames
+        # during CALIBRATION_HOMING.  Mutable list-of-one so
+        # _broadcast_raw_positions can update it.
+        last_raw: list[dict[str, int] | None] = [None]
+
+        try:
+            while not self._stop_requested:
+                start_time = time.perf_counter()
+
+                try:
+                    await self._broadcast_tick(last_raw)
+                except Exception as e:
+                    logger.warning(f"Broadcast loop error: {e}")
+
+                elapsed = time.perf_counter() - start_time
+                await asyncio.sleep(max(0.001, read_interval - elapsed))
+        except asyncio.CancelledError:
+            pass
+
+    async def _broadcast_tick(self, last_raw: list[dict[str, int] | None]) -> None:
+        """Single iteration of the broadcast loop, dispatched by phase."""
+        match self.phase:
+            case SetupPhase.CALIBRATION_INSTRUCTIONS | SetupPhase.CALIBRATION_HOMING:
+                await self._broadcast_raw_positions(last_raw, track_range=False)
+
+            case SetupPhase.CALIBRATION_RECORDING:
+                await self._broadcast_raw_positions(last_raw, track_range=True)
+
+            case SetupPhase.VERIFICATION:
+                await self._broadcast_normalized_positions()
+
+            case _:
+                # No streaming needed — the sleep in _broadcast_loop
+                # keeps us from busy-spinning.
+                pass
+
+    async def _broadcast_raw_positions(self, last_raw: list[dict[str, int] | None], *, track_range: bool) -> None:
+        """Read raw positions and send a ``positions`` event.
+
+        When *track_range* is True (``CALIBRATION_RECORDING``), also
+        updates ``_range_mins`` / ``_range_maxes`` and includes min/max
+        in the event payload.
+
+        *last_raw* is a mutable single-element list so the caller's
+        reference is updated in place (used for change-detection).
+        """
+        bus = self._require_bus()
+
+        async with self._bus_lock:
+            positions = await asyncio.to_thread(bus.sync_read, "Present_Position", list(bus.motors), normalize=False)
+
+        current = {name: int(val) for name, val in positions.items()}
+
+        if track_range:
+            for motor, pos in current.items():
+                self._range_mins[motor] = min(self._range_mins[motor], pos)
+                self._range_maxes[motor] = max(self._range_maxes[motor], pos)
+
+            await self.transport.send_json(
+                {
+                    "event": "positions",
+                    "motors": {
+                        name: {
+                            "position": pos,
+                            "min": self._range_mins[name],
+                            "max": self._range_maxes[name],
+                        }
+                        for name, pos in current.items()
+                    },
+                }
+            )
+        elif current != last_raw[0]:
+            # Only send when values changed (avoid flooding during idle centering)
+            await self.transport.send_json(
+                {
+                    "event": "positions",
+                    "motors": {name: {"position": val} for name, val in current.items()},
+                }
+            )
+
+        last_raw[0] = current
+
+    async def _broadcast_normalized_positions(self) -> None:
+        """Read normalized positions and send a ``state_was_updated`` event.
+
+        Uses the same event format as ``RobotWorker._broadcast_loop`` so
+        the frontend can reuse its joint-sync logic.
+        """
+        bus = self._require_bus()
+
+        async with self._bus_lock:
+            state = await asyncio.to_thread(bus.sync_read, "Present_Position", list(bus.motors), normalize=True)
+
+        await self.transport.send_json(
+            {
+                "event": "state_was_updated",
+                "state": {f"{name}.pos": float(val) for name, val in state.items()},
+            }
+        )
+
+    # ------------------------------------------------------------------
     # Command loop
     # ------------------------------------------------------------------
 
     async def _command_loop(self) -> None:
         """Wait for and handle commands from the frontend."""
-        while not self._stop_requested:
-            data = await self.transport.receive_command()
-            if data is None:
-                continue
+        try:
+            while not self._stop_requested:
+                data = await self.transport.receive_command()
+                if data is None:
+                    continue
 
-            command = data.get("command", "")
-            logger.debug(f"Setup worker received command: {command}")
+                command = data.get("command", "")
+                logger.debug(f"Setup worker received command: {command}")
 
-            try:
-                await self._dispatch_command(command, data)
-            except Exception as e:
-                logger.exception(f"Error handling command '{command}': {e}")
-                await self._send_event("error", message=str(e))
+                try:
+                    await self._dispatch_command(command, data)
+                except Exception as e:
+                    logger.exception(f"Error handling command '{command}': {e}")
+                    await self._send_event("error", message=str(e))
+        except asyncio.CancelledError:
+            pass
 
     async def _dispatch_command(self, command: str, data: dict[str, Any]) -> None:  # noqa: PLR0912
         """Dispatch a single command received from the frontend."""
@@ -615,28 +758,20 @@ class SO101SetupWorker(TransportWorker):
                 # Re-run motor probe after setup
                 await self._run_motor_probe()
 
+            case "enter_calibration":
+                self.phase = SetupPhase.CALIBRATION_INSTRUCTIONS
+
             case "start_homing":
                 await self._handle_start_homing()
 
             case "start_recording":
-                # Run recording in a separate task so we can still receive commands
-                self._spawn_task(self._handle_start_recording())
+                await self._handle_start_recording()
 
             case "stop_recording":
                 await self._handle_stop_recording()
 
-            case "start_positions_stream":
-                self._spawn_task(self._handle_positions_stream())
-
-            case "stop_positions_stream":
-                self._positions_streaming = False
-
-            case "stream_positions":
-                # Run streaming in a separate task so we can still receive commands
-                self._spawn_task(self._handle_stream_positions())
-
-            case "stop_stream":
-                await self._handle_stop_stream()
+            case "enter_verification":
+                await self._enter_verification()
 
             case "re_probe":
                 await self._run_voltage_check()
@@ -646,122 +781,8 @@ class SO101SetupWorker(TransportWorker):
                 await self._send_event("error", message=f"Unknown command: {command}")
 
     # ------------------------------------------------------------------
-    # Helpers
+    # Event helpers
     # ------------------------------------------------------------------
-
-    async def _handle_positions_stream(self) -> None:
-        """Stream raw positions at the configured FPS until stopped.
-
-        Sends 'positions' events only when values have changed since
-        the last send, to avoid flooding the websocket when the robot
-        is stationary.
-        """
-        bus = self._require_bus()
-
-        # If already streaming, don't start a second loop
-        if self._positions_streaming:
-            return
-        self._positions_streaming = True
-
-        last_sent: dict[str, int] | None = None
-        read_interval = 1.0 / FPS
-
-        while self._positions_streaming and not self._stop_requested:
-            start_time = time.perf_counter()
-            try:
-                async with self._bus_lock:
-                    positions = await asyncio.to_thread(
-                        bus.sync_read, "Present_Position", list(bus.motors), normalize=False
-                    )
-                current = {name: int(val) for name, val in positions.items()}
-
-                # Only send when something changed
-                if current != last_sent:
-                    await self.transport.send_json(
-                        {
-                            "event": "positions",
-                            "motors": {name: {"position": val} for name, val in current.items()},
-                        }
-                    )
-                    last_sent = current
-
-            except Exception as e:
-                logger.warning(f"Position stream read error: {e}")
-
-            elapsed = time.perf_counter() - start_time
-            await asyncio.sleep(max(0.001, read_interval - elapsed))
-
-    # ------------------------------------------------------------------
-    # Position streaming (for 3D preview in verification step)
-    # ------------------------------------------------------------------
-
-    async def _handle_stream_positions(self) -> None:
-        """Start streaming normalized positions for 3D preview.
-
-        Sends 'state_was_updated' events in the same format as the standard
-        RobotWorker broadcast loop, so the frontend can reuse the same joint
-        sync logic. Values are normalized (-100..100 for body, 0..100 for gripper)
-        which the frontend treats as degrees and converts with degToRad().
-        """
-        bus = self._require_bus()
-
-        # If already streaming, don't start a second loop
-        if self._streaming:
-            return
-
-        # Ensure calibration is loaded — it may not be if the user skipped
-        # straight to verification (robot was already calibrated from a prior
-        # session). read_calibration() reads from motor EEPROM and returns
-        # dict[str, MotorCalibration]. We assign it directly to bus.calibration
-        # so _normalize() can use it — no need to write back to EEPROM.
-        if not bus.calibration:
-            logger.info("Loading calibration from motor EEPROM for position streaming")
-            async with self._bus_lock:
-                cal = await asyncio.to_thread(bus.read_calibration)
-            bus.calibration = cal
-
-            # Send calibration_result so the frontend has calibration data for
-            # the save flow, even when the user skipped the calibration step.
-            await self.transport.send_json(
-                {
-                    "event": "calibration_result",
-                    "calibration": {
-                        name: {
-                            "id": mc.id,
-                            "drive_mode": mc.drive_mode,
-                            "homing_offset": mc.homing_offset,
-                            "range_min": mc.range_min,
-                            "range_max": mc.range_max,
-                        }
-                        for name, mc in cal.items()
-                    },
-                }
-            )
-
-        self._streaming = True
-        read_interval = 1.0 / FPS
-
-        while self._streaming and not self._stop_requested:
-            start_time = time.perf_counter()
-            try:
-                async with self._bus_lock:
-                    state = await asyncio.to_thread(bus.sync_read, "Present_Position", list(bus.motors), normalize=True)
-
-                await self.transport.send_json(
-                    {
-                        "event": "state_was_updated",
-                        "state": {f"{name}.pos": float(val) for name, val in state.items()},
-                    }
-                )
-            except Exception as e:
-                logger.warning(f"Position streaming read error: {e}")
-
-            elapsed = time.perf_counter() - start_time
-            await asyncio.sleep(max(0.001, read_interval - elapsed))
-
-    async def _handle_stop_stream(self) -> None:
-        """Stop streaming positions."""
-        self._streaming = False
 
     async def _send_phase_status(self, message: str) -> None:
         """Send a status event with current phase info."""
@@ -780,9 +801,6 @@ class SO101SetupWorker(TransportWorker):
 
     async def _cleanup(self) -> None:
         """Disconnect the motor bus."""
-        self._recording = False
-        self._streaming = False
-        self._positions_streaming = False
         if self.bus is not None:
             try:
                 async with self._bus_lock:

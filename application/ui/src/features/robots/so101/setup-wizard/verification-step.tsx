@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Button, Flex, Heading, Text } from '@geti/ui';
 import { useNavigate } from 'react-router';
@@ -97,7 +97,7 @@ function buildCalibrationBody(
 export const VerificationStep = () => {
     const navigate = useNavigate();
     const { project_id } = useProjectId();
-    const { goBack, commands } = useSetupActions();
+    const { goBack } = useSetupActions();
     const { wsState } = useSetupState();
     const robotForm = useRobotForm();
 
@@ -111,22 +111,6 @@ export const VerificationStep = () => {
 
     // Sync live joint positions to the 3D model
     useSyncJointState(wsState.jointState);
-
-    // Start streaming when the step mounts, stop when it unmounts.
-    // Use a ref to capture the latest commands/isConnected without
-    // re-triggering the effect.
-    const mountRef = useRef({ commands, isConnected: wsState.isConnected });
-    mountRef.current = { commands, isConnected: wsState.isConnected };
-
-    useEffect(() => {
-        if (mountRef.current.isConnected) {
-            mountRef.current.commands.streamPositions();
-        }
-
-        return () => {
-            mountRef.current.commands.stopStream();
-        };
-    }, []);
 
     const addRobotMutation = $api.useMutation('post', '/api/projects/{project_id}/robots');
     const saveCalibrationMutation = $api.useMutation(
@@ -158,9 +142,6 @@ export const VerificationStep = () => {
         setSaveError(null);
 
         try {
-            // Stop streaming before saving
-            commands.stopStream();
-
             // 1. Create the robot
             const createdRobot = await addRobotMutation.mutateAsync({
                 params: { path: { project_id } },

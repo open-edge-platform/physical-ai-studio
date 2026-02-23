@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import { Button, Flex, Heading, Loading, Text } from '@geti/ui';
 
@@ -22,6 +22,10 @@ export const CalibrationStep = () => {
     // Reset when going back to instructions for recalibration.
     const [prevHomingDone, setPrevHomingDone] = useState(false);
 
+    // Tracks whether we've already sent the enter_calibration command.
+    // The backend streams raw positions in CALIBRATION_INSTRUCTIONS phase.
+    const [enteredCalibration, setEnteredCalibration] = useState(false);
+
     // Helper that updates phase in context.
     // Replaces the old local state + onPhaseChange callback.
     const changePhase = useCallback(
@@ -31,24 +35,18 @@ export const CalibrationStep = () => {
             // so auto-start recording can fire again on recalibration.
             if (newPhase === 'instructions') {
                 setPrevHomingDone(false);
+                setEnteredCalibration(false);
             }
         },
         [setCalibrationPhase]
     );
 
-    // Stream raw positions during the instructions phase so the user can see
-    // live joint values while centering the arm
-    useEffect(() => {
-        if (phase !== 'instructions') {
-            return;
-        }
-
-        commands.startPositionsStream();
-
-        return () => {
-            commands.stopPositionsStream();
-        };
-    }, [phase, commands]);
+    // Tell the backend to enter CALIBRATION_INSTRUCTIONS phase so it starts
+    // streaming raw positions.  Uses the "adjusting state during render" pattern.
+    if (phase === 'instructions' && !enteredCalibration) {
+        setEnteredCalibration(true);
+        commands.enterCalibration();
+    }
 
     const { homingResult, positions, calibrationResult, error } = wsState;
 
@@ -280,6 +278,7 @@ export const CalibrationStep = () => {
                                     variant='accent'
                                     onPress={() => {
                                         markCompleted(WizardStep.CALIBRATION);
+                                        commands.enterVerification();
                                         goNext();
                                     }}
                                 >
