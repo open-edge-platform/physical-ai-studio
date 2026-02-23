@@ -2,17 +2,17 @@
 # Train NVIDIA's GR00T-N1.5-3B foundation model using LeRobot's implementation
 #
 # Usage:
-#   getiaction fit --config configs/lerobot/groot.yaml
+#   physicalai fit --config configs/lerobot/groot.yaml
 #
 # Requirements:
-#   - pip install getiaction[groot]
+#   - pip install physicalai-train[groot]
 #   - Significant GPU memory (>24GB recommended with bf16)
 #
 # Override parameters:
-#   getiaction fit --config configs/lerobot/groot.yaml --model.learning_rate 1e-5
+#   physicalai fit --config configs/lerobot/groot.yaml --model.learning_rate 1e-5
 
 model:
-  class_path: getiaction.policies.lerobot.Groot
+  class_path: physicalai.policies.lerobot.Groot
   init_args:
     # Action chunking
     chunk_size: 50
@@ -54,7 +54,7 @@ model:
     use_bf16: true
 
 data:
-  class_path: getiaction.data.lerobot.LeRobotDataModule
+  class_path: physicalai.data.lerobot.LeRobotDataModule
   init_args:
     repo_id: "lerobot/aloha_sim_transfer_cube_human"
     train_batch_size: 4 # Reduced for memory efficiency

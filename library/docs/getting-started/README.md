@@ -1,6 +1,6 @@
 # Getting Started
 
-Learn Geti Action through hands-on tutorials. Each guide builds on the previous one.
+Learn PhysicalAI through hands-on tutorials. Each guide builds on the previous one.
 
 ## Tutorials
 

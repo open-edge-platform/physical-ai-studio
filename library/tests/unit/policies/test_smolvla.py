@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 import torch
-from getiaction.config import Config
-from getiaction.policies.smolvla import SmolVLA, SmolVLAConfig
+from physicalai.config import Config
+from physicalai.policies.smolvla import SmolVLA, SmolVLAConfig
 
 # ============================================================================ #
 # Configuration Tests                                                          #
@@ -126,7 +126,7 @@ class TestSmolVLAPolicy:
     @pytest.mark.parametrize("method", ["forward", "predict_action_chunk"])
     def test_methods_raise_without_model(self, method: str) -> None:
         """Test methods raise ValueError if model not initialized."""
-        from getiaction.data import Observation
+        from physicalai.data import Observation
 
         policy = SmolVLA()
         dummy_obs = Observation(state=torch.randn(1, 10))
@@ -144,7 +144,7 @@ class TestSmolVLAPreprocessor:
 
     def test_make_smolvla_preprocessors(self) -> None:
         """Test make_smolvla_preprocessors returns callables."""
-        from getiaction.policies.smolvla.preprocessor import make_smolvla_preprocessors
+        from physicalai.policies.smolvla.preprocessor import make_smolvla_preprocessors
 
         preprocessor, postprocessor = make_smolvla_preprocessors(
             max_state_dim=32,
@@ -158,7 +158,7 @@ class TestSmolVLAPreprocessor:
 
     def test_preprocessor_is_nn_module(self) -> None:
         """Test that preprocessors are nn.Module instances."""
-        from getiaction.policies.smolvla.preprocessor import (
+        from physicalai.policies.smolvla.preprocessor import (
             SmolVLAPostprocessor,
             SmolVLAPreprocessor,
         )
@@ -172,7 +172,7 @@ class TestSmolVLAPreprocessor:
 
     def test_preprocessor_default_values(self) -> None:
         """Test preprocessor default configuration values."""
-        from getiaction.policies.smolvla.preprocessor import SmolVLAPreprocessor
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
 
         preprocessor = SmolVLAPreprocessor()
 
@@ -185,7 +185,7 @@ class TestSmolVLAPreprocessor:
 
     def test_preprocessor_custom_values(self) -> None:
         """Test preprocessor with custom configuration values."""
-        from getiaction.policies.smolvla.preprocessor import SmolVLAPreprocessor
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
 
         preprocessor = SmolVLAPreprocessor(
             max_state_dim=64,
@@ -201,8 +201,8 @@ class TestSmolVLAPreprocessor:
 
     def test_newline_processor_adds_newline(self) -> None:
         """Test newline processor adds newline to task strings."""
-        from getiaction.data.observation import TASK
-        from getiaction.policies.smolvla.preprocessor import SmolVLAPreprocessor
+        from physicalai.data.observation import TASK
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
 
         batch = {TASK: "Pick up the object"}
         result = SmolVLAPreprocessor._newline_processor(batch)
@@ -210,8 +210,8 @@ class TestSmolVLAPreprocessor:
 
     def test_newline_processor_preserves_newline(self) -> None:
         """Test newline processor preserves existing newline."""
-        from getiaction.data.observation import TASK
-        from getiaction.policies.smolvla.preprocessor import SmolVLAPreprocessor
+        from physicalai.data.observation import TASK
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
 
         batch = {TASK: "Pick up the object\n"}
         result = SmolVLAPreprocessor._newline_processor(batch)
@@ -219,8 +219,8 @@ class TestSmolVLAPreprocessor:
 
     def test_newline_processor_handles_list(self) -> None:
         """Test newline processor handles list of strings."""
-        from getiaction.data.observation import TASK
-        from getiaction.policies.smolvla.preprocessor import SmolVLAPreprocessor
+        from physicalai.data.observation import TASK
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
 
         batch = {TASK: ["Task 1", "Task 2\n", "Task 3"]}
         result = SmolVLAPreprocessor._newline_processor(batch)
@@ -228,8 +228,8 @@ class TestSmolVLAPreprocessor:
 
     def test_newline_processor_handles_none(self) -> None:
         """Test newline processor handles None task."""
-        from getiaction.data.observation import TASK
-        from getiaction.policies.smolvla.preprocessor import SmolVLAPreprocessor
+        from physicalai.data.observation import TASK
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
 
         batch = {TASK: None}
         result = SmolVLAPreprocessor._newline_processor(batch)
@@ -237,7 +237,7 @@ class TestSmolVLAPreprocessor:
 
     def test_newline_processor_missing_task(self) -> None:
         """Test newline processor handles missing task key."""
-        from getiaction.policies.smolvla.preprocessor import SmolVLAPreprocessor
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
 
         batch = {"other_key": "value"}
         result = SmolVLAPreprocessor._newline_processor(batch)
@@ -245,7 +245,7 @@ class TestSmolVLAPreprocessor:
 
     def test_resize_with_pad_shape(self) -> None:
         """Test resize_with_pad produces correct output shape."""
-        from getiaction.policies.smolvla.preprocessor import SmolVLAPreprocessor
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
 
         # Input image: batch=2, channels=3, height=480, width=640
         img = torch.randn(2, 3, 480, 640)
@@ -255,7 +255,7 @@ class TestSmolVLAPreprocessor:
 
     def test_resize_with_pad_invalid_dims(self) -> None:
         """Test resize_with_pad raises error for wrong dimensions."""
-        from getiaction.policies.smolvla.preprocessor import SmolVLAPreprocessor
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
 
         # 3D tensor instead of 4D
         img = torch.randn(3, 480, 640)
@@ -264,7 +264,7 @@ class TestSmolVLAPreprocessor:
 
     def test_resize_with_pad_preserves_batch(self) -> None:
         """Test resize_with_pad preserves batch dimension."""
-        from getiaction.policies.smolvla.preprocessor import SmolVLAPreprocessor
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
 
         for batch_size in [1, 4, 8]:
             img = torch.randn(batch_size, 3, 480, 640)
@@ -273,8 +273,8 @@ class TestSmolVLAPreprocessor:
 
     def test_postprocessor_identity_without_features(self) -> None:
         """Test postprocessor acts as identity without features."""
-        from getiaction.data.observation import ACTION
-        from getiaction.policies.smolvla.preprocessor import SmolVLAPostprocessor
+        from physicalai.data.observation import ACTION
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPostprocessor
 
         postprocessor = SmolVLAPostprocessor(features=None)
         action = torch.randn(2, 10, 7)
@@ -294,8 +294,8 @@ class TestFeatureNormalization:
 
     def test_preprocessor_with_features(self) -> None:
         """Test preprocessor with feature configuration."""
-        from getiaction.data import Feature, FeatureType, NormalizationParameters
-        from getiaction.policies.smolvla.preprocessor import SmolVLAPreprocessor
+        from physicalai.data import Feature, FeatureType, NormalizationParameters
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
 
         features = {
             "state": Feature(
@@ -315,8 +315,8 @@ class TestFeatureNormalization:
 
     def test_postprocessor_with_features(self) -> None:
         """Test postprocessor with feature configuration."""
-        from getiaction.data import Feature, FeatureType, NormalizationParameters
-        from getiaction.policies.smolvla.preprocessor import SmolVLAPostprocessor
+        from physicalai.data import Feature, FeatureType, NormalizationParameters
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPostprocessor
 
         features = {
             "action": Feature(
@@ -336,7 +336,7 @@ class TestFeatureNormalization:
 
     def test_make_preprocessors_with_stats(self) -> None:
         """Test make_smolvla_preprocessors with dataset statistics."""
-        from getiaction.policies.smolvla.preprocessor import make_smolvla_preprocessors
+        from physicalai.policies.smolvla.preprocessor import make_smolvla_preprocessors
 
         stats: dict[str, dict[str, list[float] | str | tuple]] = {
             "observation.state": {
@@ -385,5 +385,3 @@ class TestAttentionModes:
         """Test custom prefix length."""
         config = SmolVLAConfig(prefix_length=32)
         assert config.prefix_length == 32
-
-

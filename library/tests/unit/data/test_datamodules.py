@@ -11,8 +11,8 @@ class TestDataModuleValidation:
 
     def test_collate_gym(self):
         """Test that gym collate function returns Gym directly."""
-        from getiaction.data.datamodules import _collate_gym
-        from getiaction.gyms import Gym, PushTGym
+        from physicalai.data.datamodules import _collate_gym
+        from physicalai.gyms import Gym, PushTGym
 
         gym = PushTGym()
         batch = [gym]  # Simulates batch from DataLoader
@@ -24,7 +24,7 @@ class TestDataModuleValidation:
 
     def test_val_dataloader_structure(self, dummy_datamodule):
         """Test that DataModule.val_dataloader returns correct structure."""
-        from getiaction.gyms import Gym
+        from physicalai.gyms import Gym
 
         dummy_datamodule.setup(stage="fit")
         val_loader = dummy_datamodule.val_dataloader()

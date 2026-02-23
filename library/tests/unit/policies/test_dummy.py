@@ -3,9 +3,9 @@
 
 import pytest
 import torch
-from getiaction.data import Observation
-from getiaction.policies import Dummy, DummyConfig
-from getiaction.policies.dummy.model import Dummy as DummyModel
+from physicalai.data import Observation
+from physicalai.policies import Dummy, DummyConfig
+from physicalai.policies.dummy.model import Dummy as DummyModel
 
 
 class TestDummyPolicy:
@@ -82,7 +82,7 @@ class TestDummyPolicyValidation:
 
     def test_evaluate_gym_method_exists(self):
         """Test that Policy.evaluate_gym method exists and is callable."""
-        from getiaction.policies.dummy import Dummy, DummyConfig
+        from physicalai.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
         policy = Dummy(DummyModel.from_config(config))
@@ -92,8 +92,8 @@ class TestDummyPolicyValidation:
 
     def test_validation_step_accepts_gym(self):
         """Test that validation_step accepts Gym environment directly."""
-        from getiaction.gyms import PushTGym
-        from getiaction.policies.dummy import Dummy, DummyConfig
+        from physicalai.gyms import PushTGym
+        from physicalai.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
         policy = Dummy(DummyModel.from_config(config))
@@ -108,8 +108,8 @@ class TestDummyPolicyValidation:
 
     def test_test_step_accepts_gym(self):
         """Test that test_step accepts Gym environment directly."""
-        from getiaction.gyms import PushTGym
-        from getiaction.policies.dummy import Dummy, DummyConfig
+        from physicalai.gyms import PushTGym
+        from physicalai.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
         policy = Dummy(DummyModel.from_config(config))
@@ -124,8 +124,8 @@ class TestDummyPolicyValidation:
 
     def test_validation_metrics_have_correct_keys(self):
         """Test that validation returns expected metric keys."""
-        from getiaction.gyms import PushTGym
-        from getiaction.policies.dummy import Dummy, DummyConfig
+        from physicalai.gyms import PushTGym
+        from physicalai.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
         policy = Dummy(DummyModel.from_config(config))
@@ -141,8 +141,8 @@ class TestDummyPolicyValidation:
 
     def test_test_metrics_use_test_prefix(self):
         """Test that test_step returns metrics with 'test/' prefix."""
-        from getiaction.gyms import PushTGym
-        from getiaction.policies.dummy import Dummy, DummyConfig
+        from physicalai.gyms import PushTGym
+        from physicalai.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
         policy = Dummy(DummyModel.from_config(config))
@@ -159,8 +159,8 @@ class TestDummyPolicyImportExport:
 
     def test_export_and_import_torch(self, tmp_path):
         """Test exporting to and importing from Torch format."""
-        from getiaction.policies.dummy import Dummy, DummyConfig
-        from getiaction.policies.dummy.model import Dummy as DummyModel
+        from physicalai.policies.dummy import Dummy, DummyConfig
+        from physicalai.policies.dummy.model import Dummy as DummyModel
 
         config = DummyConfig(action_shape=(2,))
         policy = Dummy(DummyModel.from_config(config))
@@ -178,7 +178,7 @@ class TestDummyPolicyImportExport:
 
     def test_export_to_onnx(self, tmp_path):
         """Test exporting to ONNX format."""
-        from getiaction.policies.dummy import Dummy, DummyConfig
+        from physicalai.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
         policy = Dummy(DummyModel.from_config(config))
@@ -190,7 +190,7 @@ class TestDummyPolicyImportExport:
 
     def test_export_to_openvino(self, tmp_path):
         """Test exporting to OpenVINO format."""
-        from getiaction.policies.dummy import Dummy, DummyConfig
+        from physicalai.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
         policy = Dummy(DummyModel.from_config(config))
@@ -202,7 +202,7 @@ class TestDummyPolicyImportExport:
 
     def test_export_to_torch_ir(self, tmp_path):
         """Test exporting to Torch IR format."""
-        from getiaction.policies.dummy import Dummy, DummyConfig
+        from physicalai.policies.dummy import Dummy, DummyConfig
 
         config = DummyConfig(action_shape=(2,))
         policy = Dummy(DummyModel.from_config(config))

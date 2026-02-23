@@ -30,9 +30,9 @@ export const OpenApi = () => {
                         hideClientButton: true,
                         hideDarkModeToggle: true,
                         metaData: {
-                            title: 'Geti Action | REST API specification',
+                            title: 'Physical AI Studio | REST API specification',
                         },
-                        servers: [{ url: `/api/`, description: 'Geti Action' }],
+                        servers: [{ url: `/api/`, description: 'Physical AI Studio' }],
                         forceDarkModeState: 'dark',
                     }}
                 />

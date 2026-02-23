@@ -1,6 +1,6 @@
 # Config System Design Documentation
 
-Documentation for the GetiAction configuration system implementation.
+Documentation for the PhysicalAI configuration system implementation.
 
 ## Overview
 
@@ -28,7 +28,7 @@ dynamic class instantiation.
 
 ## Quick Links
 
-- [Config Module Code](../../../src/getiaction/config/) - Implementation
+- [Config Module Code](../../../src/physicalai/config/) - Implementation
 - [Config Tests](../../../tests/unit/config/) - Test suite
 - [Example Configs](../../../../configs/) - YAML configuration examples
 - [CLI User Guide](../../guides/cli.md) - User-facing CLI documentation
@@ -63,7 +63,7 @@ model = Model.from_pydantic(config)
 
 ```yaml
 model:
-  class_path: getiaction.policies.dummy.policy.Dummy
+  class_path: physicalai.policies.dummy.policy.Dummy
   init_args:
     hidden_size: 256
 ```

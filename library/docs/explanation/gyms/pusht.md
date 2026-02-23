@@ -15,7 +15,7 @@ classDiagram
 Example:
 
 ```python
-from getiaction.gyms import PushTGym
+from physicalai.gyms import PushTGym
 
 # default configuration
 env = PushTGym()

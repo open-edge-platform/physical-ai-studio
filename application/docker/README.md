@@ -1,7 +1,7 @@
-# Deploying Geti Action with Docker
+# Deploying Physical AI Studio with Docker
 
-Geti Action is a framework for training and deploying Vision-Language-Action (VLA)
-models for robotic imitation learning. This guide covers running Geti Action as a
+Physical AI Studio is a framework for training and deploying Vision-Language-Action (VLA)
+models for robotic imitation learning. This guide covers running Physical AI Studio as a
 Docker container with support for CPU, Intel XPU, and NVIDIA CUDA hardware.
 
 ## Prerequisites
@@ -24,11 +24,11 @@ cp .env.example .env
 # 2. (Optional) Auto-detect host device GIDs for non-Debian systems
 ./setup-devices.sh
 
-# 3. Start Geti Action
+# 3. Start Physical AI Studio
 docker compose up
 ```
 
-Geti Action will be available at **http://localhost:7860**.
+Physical AI Studio will be available at **http://localhost:7860**.
 
 To run with a different hardware backend:
 
@@ -74,9 +74,9 @@ The correct variant is selected automatically based on `AI_DEVICE`.
 
 | Build target       | `AI_DEVICE` | Additional system packages                 |
 |--------------------|-------------|--------------------------------------------|
-| `geti-action-cpu`  | `cpu`       | None                                       |
-| `geti-action-xpu`  | `xpu`       | Intel GPU runtime (Level Zero, OpenCL, VA) |
-| `geti-action-cuda` | `cuda`      | CUDA 12.8 runtime (cudart, cuBLAS, cuDNN)  |
+| `physical-ai-studio-cpu`  | `cpu`       | None                                       |
+| `physical-ai-studio-xpu`  | `xpu`       | Intel GPU runtime (Level Zero, OpenCL, VA) |
+| `physical-ai-studio-cuda` | `cuda`      | CUDA 12.8 runtime (cudart, cuBLAS, cuDNN)  |
 
 ## Hardware Access
 
@@ -195,7 +195,7 @@ AI_DEVICE=cuda docker compose build
 ```
 
 The Dockerfile uses a multi-stage build. The build context is the repository
-root, and the image is built with the target `geti-action-${AI_DEVICE}`.
+root, and the image is built with the target `physical-ai-studio-${AI_DEVICE}`.
 Proxy environment variables from `.env` are passed as build arguments
 automatically.
 

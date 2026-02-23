@@ -5,7 +5,7 @@ The benchmark module provides standardized evaluation for trained policies. A `B
 ## Components
 
 ```text
-src/getiaction/benchmark/
+src/physicalai/benchmark/
 ├── benchmark.py      # Benchmark, LiberoBenchmark
 ├── results.py        # TaskResult, BenchmarkResults
 └── video.py          # VideoRecorder
@@ -42,7 +42,7 @@ class Benchmark:
 
 Concrete implementation for LIBERO task suites. Handles task suite loading, gym creation, and LIBERO-specific configuration. Supports running on a subset of tasks via `task_ids`.
 
-```python test="skip" reason="requires getiaction install and libero"
+```python test="skip" reason="requires physicalai install and libero"
 benchmark = LiberoBenchmark(
     task_suite="libero_10",
     task_ids=[0, 1, 2],      # Optional subset

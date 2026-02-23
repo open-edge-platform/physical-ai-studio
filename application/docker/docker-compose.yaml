@@ -1,10 +1,10 @@
 services:
-  geti-action:
-    image: ${REGISTRY:-ghcr.io/open-edge-platform/}geti-action:${IMAGE_TAG:-latest}-${AI_DEVICE:-cpu}
+  physical-ai-studio:
+    image: ${REGISTRY:-ghcr.io/open-edge-platform/}physical-ai-studio:${IMAGE_TAG:-latest}-${AI_DEVICE:-cpu}
     build:
       context: ../../
       dockerfile: application/docker/Dockerfile
-      target: geti-action-${AI_DEVICE:-cpu}
+      target: physical-ai-studio-${AI_DEVICE:-cpu}
       additional_contexts:
         libs: ../../library
       args:

@@ -1,4 +1,4 @@
-# Geti Action Backend
+# Physical AI Studio Backend
 
 FastAPI server for demonstration data management and VLA model training orchestration.
 
@@ -41,7 +41,7 @@ cd application/backend
 uv sync
 ```
 
-This installs all backend dependencies including FastAPI, SQLAlchemy, aiortc, and the getiaction library.
+This installs all backend dependencies including FastAPI, SQLAlchemy, aiortc, and the physicalai library.
 
 ## Usage
 
@@ -101,12 +101,12 @@ Once the server is running:
 
 Configuration via environment variables (see `src/settings.py`):
 
-| Variable       | Description              | Default                                |
-| -------------- | ------------------------ | -------------------------------------- |
-| `DATABASE_URL` | SQLite database path     | `sqlite+aiosqlite:///./geti_action.db` |
-| `CORS_ORIGINS` | Allowed CORS origins     | `["http://localhost:3000"]`            |
-| `LOG_LEVEL`    | Logging level            | `INFO`                                 |
-| `SEED_DB`      | Seed database on startup | `false`                                |
+| Variable       | Description              | Default                               |
+| -------------- | ------------------------ | ------------------------------------- |
+| `DATABASE_URL` | SQLite database path     | `sqlite+aiosqlite:///./physicalai.db` |
+| `CORS_ORIGINS` | Allowed CORS origins     | `["http://localhost:3000"]`           |
+| `LOG_LEVEL`    | Logging level            | `INFO`                                |
+| `SEED_DB`      | Seed database on startup | `false`                               |
 
 Create `.env` file in backend directory for local overrides.
 
@@ -148,7 +148,7 @@ uv run mypy src/
 SQLite doesn't handle high concurrency well. For production, use PostgreSQL:
 
 ```bash
-export DATABASE_URL="postgresql+asyncpg://user:pass@localhost/geti_action"
+export DATABASE_URL="postgresql+asyncpg://user:pass@localhost/physicalai"
 ```
 
 ### Camera Not Detected

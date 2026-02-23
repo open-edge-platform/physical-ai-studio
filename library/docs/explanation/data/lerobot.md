@@ -5,7 +5,7 @@
 The LeRobot data integration is organized into three focused modules:
 
 ```text
-getiaction/data/lerobot/
+physicalai/data/lerobot/
 ├── converters.py      # Format conversion utilities
 ├── dataset.py         # Dataset adapter
 └── datamodule.py      # Lightning DataModule
@@ -14,9 +14,9 @@ getiaction/data/lerobot/
 ### Module Responsibilities
 
 - **`converters.py`**: Bidirectional format conversion between
-  GetiAction's `Observation` and LeRobot's flattened dict format
+  PhysicalAI's `Observation` and LeRobot's flattened dict format
 - **`dataset.py`**: `_LeRobotDatasetAdapter` wraps `LeRobotDataset`
-  for GetiAction compatibility
+  for PhysicalAI compatibility
 - **`datamodule.py`**: `LeRobotDataModule` provides PyTorch Lightning
   integration
 
@@ -24,7 +24,7 @@ getiaction/data/lerobot/
 
 ### Two Data Formats
 
-1. **GetiAction Format**: Structured `Observation` dataclass with typed fields
+1. **PhysicalAI Format**: Structured `Observation` dataclass with typed fields
 
    ```python
    Observation(
@@ -67,7 +67,7 @@ classDiagram
 
     class DataFormat {
         <<enumeration>>
-        GETIACTION
+        PHYSICALAI
         LEROBOT
     }
 
@@ -77,20 +77,20 @@ classDiagram
 
 **Usage:**
 
-```python test="skip" reason="requires getiaction install"
-from getiaction.data.lerobot import FormatConverter
+```python test="skip" reason="requires physicalai install"
+from physicalai.data.lerobot import FormatConverter
 
 # Convert to LeRobot format
 lerobot_dict = FormatConverter.to_lerobot_dict(observation)
 
-# Convert to GetiAction format
+# Convert to PhysicalAI format
 observation = FormatConverter.to_observation(lerobot_dict)
 ```
 
 ## LeRobotDatasetAdapter
 
 Internal adapter that makes `LeRobotDataset` compatible with the
-`getiaction.data.Dataset` interface.
+`physicalai.data.Dataset` interface.
 
 ```mermaid
 classDiagram
@@ -121,14 +121,14 @@ classDiagram
 
 Example (these examples will download data onto your disk):
 
-```python test="skip" reason="requires getiaction install and downloads data"
+```python test="skip" reason="requires physicalai install and downloads data"
 # Internal usage - not recommended for end users
-from getiaction.data.lerobot.dataset import _LeRobotDatasetAdapter
+from physicalai.data.lerobot.dataset import _LeRobotDatasetAdapter
 
 pusht_dataset = _LeRobotDatasetAdapter(repo_id="lerobot/pusht")
 
 # Preferred: Use LeRobotDataModule instead
-from getiaction.data.lerobot import LeRobotDataModule
+from physicalai.data.lerobot import LeRobotDataModule
 datamodule = LeRobotDataModule(repo_id="lerobot/pusht", train_batch_size=32)
 ```
 
@@ -143,7 +143,7 @@ classDiagram
     class LeRobotDataset
     class DataFormat {
         <<enumeration>>
-        GETIACTION
+        PHYSICALAI
         LEROBOT
     }
 
@@ -154,7 +154,7 @@ classDiagram
     }
 
     DataModule <|-- LeRobotDataModule
-    LeRobotDataModule --> _LeRobotDatasetAdapter: when data_format=GETIACTION
+    LeRobotDataModule --> _LeRobotDatasetAdapter: when data_format=PHYSICALAI
     LeRobotDataModule --> LeRobotDataset: when data_format=LEROBOT
     LeRobotDataModule --> DataFormat
 ```
@@ -163,17 +163,17 @@ classDiagram
 
 The `data_format` parameter controls the output format:
 
-- **`"getiaction"`** (default): Returns `Observation` dataclass instances
+- **`"physicalai"`** (default): Returns `Observation` dataclass instances
 - **`"lerobot"`**: Returns flattened dict in LeRobot's native format
 
 Example (this will download data to disk if not cached already):
 
-```python test="skip" reason="requires getiaction install and downloads data"
-from getiaction.data.lerobot import LeRobotDataModule, DataFormat
+```python test="skip" reason="requires physicalai install and downloads data"
+from physicalai.data.lerobot import LeRobotDataModule, DataFormat
 
 repo_id = "lerobot/pusht"
 
-# Option 1: GetiAction format (default)
+# Option 1: PhysicalAI format (default)
 datamodule = LeRobotDataModule(
     repo_id=repo_id,
     train_batch_size=16

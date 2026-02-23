@@ -1,10 +1,10 @@
 import pytest
 
-from getiaction.train.trainer import Trainer
+from physicalai.train.trainer import Trainer
 
 
-class TestGetiActionTrainer:
-    """Tests for getiaction.train.Trainer (Lightning Trainer subclass)."""
+class TestTrainer:
+    """Tests for physicalai.train.Trainer (Lightning Trainer subclass)."""
 
     def test_trainer_is_lightning_subclass(self):
         """Verify Trainer is a subclass of Lightning Trainer."""
@@ -13,15 +13,15 @@ class TestGetiActionTrainer:
         assert issubclass(Trainer, lightning.Trainer)
 
     def test_trainer_defaults(self):
-        """Verify getiaction-specific defaults are set."""
+        """Verify physicalai-specific defaults are set."""
         trainer = Trainer(accelerator="cpu", logger=False, enable_checkpointing=False)
 
-        # getiaction default: num_sanity_val_steps=0 (instead of Lightning's 2)
+        # physicalai default: num_sanity_val_steps=0 (instead of Lightning's 2)
         assert trainer.num_sanity_val_steps == 0
 
     def test_policy_dataset_interaction_callback_injected(self):
         """Verify PolicyDatasetInteraction callback is automatically added."""
-        from getiaction.train.callbacks import PolicyDatasetInteraction
+        from physicalai.train.callbacks import PolicyDatasetInteraction
 
         trainer = Trainer(accelerator="cpu", logger=False, enable_checkpointing=False)
 
@@ -33,7 +33,7 @@ class TestGetiActionTrainer:
         """Verify user callbacks are preserved alongside auto-injected callback."""
         from lightning.pytorch.callbacks import EarlyStopping
 
-        from getiaction.train.callbacks import PolicyDatasetInteraction
+        from physicalai.train.callbacks import PolicyDatasetInteraction
 
         user_callback = EarlyStopping(monitor="val_loss")
         trainer = Trainer(

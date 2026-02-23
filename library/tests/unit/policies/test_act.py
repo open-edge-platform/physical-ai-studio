@@ -7,10 +7,10 @@ import pytest
 import torch
 import numpy as np
 
-from getiaction.data import Feature, FeatureType, Observation
-from getiaction.policies.utils.normalization import NormalizationParameters
-from getiaction.policies import ACT, ACTConfig
-from getiaction.policies.act.model import ACT as ACTModel
+from physicalai.data import Feature, FeatureType, Observation
+from physicalai.policies.utils.normalization import NormalizationParameters
+from physicalai.policies import ACT, ACTConfig
+from physicalai.policies.act.model import ACT as ACTModel
 
 
 class TestACTolicy:

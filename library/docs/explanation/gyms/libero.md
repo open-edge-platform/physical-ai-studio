@@ -57,7 +57,7 @@ LIBERO provides 5 benchmark suites with varying episode limits:
 ## Single Environment
 
 ```python
-from getiaction.gyms import LiberoGym
+from physicalai.gyms import LiberoGym
 
 # Create a single gym for one task
 gym = LiberoGym(
@@ -76,7 +76,7 @@ obs, reward, terminated, truncated, info = gym.step(action)
 ## Multiple Environments
 
 ```python
-from getiaction.gyms import create_libero_gyms
+from physicalai.gyms import create_libero_gyms
 
 # Create gyms for multiple task suites
 gyms = create_libero_gyms(
@@ -87,7 +87,7 @@ gyms = create_libero_gyms(
 )
 
 # Use with DataModule for validation
-from getiaction.data import LeRobotDataModule
+from physicalai.data import LeRobotDataModule
 
 datamodule = LeRobotDataModule(
     repo_id="your_dataset",

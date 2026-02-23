@@ -1,6 +1,6 @@
-# Geti Action Library Documentation
+# PhysicalAI Library Documentation
 
-Welcome to the Geti Action Library documentation. This library helps you train and deploy Vision-Language-Action (VLA) policies for robotic imitation learning.
+Welcome to the PhysicalAI Library documentation. This library helps you train and deploy Vision-Language-Action (VLA) policies for robotic imitation learning.
 
 ## Quick Links
 
@@ -14,7 +14,7 @@ Welcome to the Geti Action Library documentation. This library helps you train a
 
 ## Getting Started
 
-New to Geti Action? Start here:
+New to PhysicalAI? Start here:
 
 1. **[Installation](getting-started/installation.md)** - Install the library
 2. **[Quickstart](getting-started/quickstart.md)** - Train your first policy in 5 minutes
@@ -68,6 +68,6 @@ graph LR
 
 ## Need Help?
 
-- **Bug reports**: [GitHub Issues](https://github.com/open-edge-platform/geti-action/issues)
-- **Questions**: [GitHub Discussions](https://github.com/open-edge-platform/geti-action/discussions)
+- **Bug reports**: [GitHub Issues](https://github.com/open-edge-platform/physical-ai-studio/issues)
+- **Questions**: [GitHub Discussions](https://github.com/open-edge-platform/physical-ai-studio/discussions)
 - **Contributing**: [Contribution Guide](../../CONTRIBUTING.md)

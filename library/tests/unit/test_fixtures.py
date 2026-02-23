@@ -17,7 +17,7 @@ class TestDummyDatasetFixture:
 
     def test_dummy_dataset_returns_observations(self, dummy_dataset):
         """Test that dummy dataset returns Observation objects."""
-        from getiaction.data.observation import Observation
+        from physicalai.data.observation import Observation
 
         dataset = dummy_dataset(num_samples=5)
         sample = dataset[0]
@@ -93,7 +93,7 @@ class TestDummyDataModuleFixture:
 
     def test_dummy_datamodule_train_loader(self, dummy_datamodule):
         """Test that train loader returns correct batches."""
-        from getiaction.data.observation import Observation
+        from physicalai.data.observation import Observation
 
         dummy_datamodule.setup(stage="fit")
         train_loader = dummy_datamodule.train_dataloader()
@@ -103,7 +103,7 @@ class TestDummyDataModuleFixture:
 
     def test_dummy_datamodule_val_loader(self, dummy_datamodule):
         """Test that val loader returns Gym directly."""
-        from getiaction.gyms import Gym
+        from physicalai.gyms import Gym
 
         dummy_datamodule.setup(stage="fit")
         val_loader = dummy_datamodule.val_dataloader()

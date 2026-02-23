@@ -24,7 +24,7 @@ def frames():
 
 class TestVideoRecorder:
     def test_init(self, tmp_path: Path):
-        from getiaction.eval.video import VideoRecorder
+        from physicalai.eval.video import VideoRecorder
         r = VideoRecorder(output_dir=tmp_path / "new")
         assert (tmp_path / "new").exists() and r.fps == 30 and r.record_mode == "all"
         r.close()
@@ -36,7 +36,7 @@ class TestVideoRecorder:
         ("none", False, False),
     ])
     def test_record_modes(self, tmp_path: Path, frames, mode, save_success, save_failure):
-        from getiaction.eval.video import VideoRecorder
+        from physicalai.eval.video import VideoRecorder
         with VideoRecorder(output_dir=tmp_path, record_mode=mode) as r:
             r.start_episode("s")
             for f in frames:
@@ -49,7 +49,7 @@ class TestVideoRecorder:
             assert (r.finish_episode(success=False) is not None) == save_failure
 
     def test_chw_and_float_formats(self, tmp_path: Path):
-        from getiaction.eval.video import VideoRecorder
+        from physicalai.eval.video import VideoRecorder
         with VideoRecorder(output_dir=tmp_path) as r:
             r.start_episode("chw")
             r.record_frame(np.random.randint(0, 255, (3, 64, 64), dtype=np.uint8))
@@ -60,7 +60,7 @@ class TestVideoRecorder:
             assert r.finish_episode(success=True) is not None
 
     def test_filename_suffix(self, tmp_path: Path, frames):
-        from getiaction.eval.video import VideoRecorder
+        from physicalai.eval.video import VideoRecorder
         with VideoRecorder(output_dir=tmp_path) as r:
             r.start_episode("t1")
             for f in frames:

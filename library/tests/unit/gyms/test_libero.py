@@ -7,13 +7,13 @@ import numpy as np
 import pytest
 import torch
 
-from getiaction.data.observation import Observation
+from physicalai.data.observation import Observation
 
 # Import will fail gracefully if libero is not installed
 pytest.importorskip("libero")
 pytest.importorskip("robosuite")
 
-from getiaction.gyms.libero import TASK_SUITE_MAX_STEPS, LiberoGym, create_libero_gyms
+from physicalai.gyms.libero import TASK_SUITE_MAX_STEPS, LiberoGym, create_libero_gyms
 
 
 class TestLiberoGym:

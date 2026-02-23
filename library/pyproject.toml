@@ -9,30 +9,23 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.hatch.version]
-path = "src/getiaction/__init__.py"
-
 [tool.hatch.build.targets.wheel]
-packages = ["src/getiaction"]
+packages = ["src/physicalai"]
 
 # ============================================================================ #
 # PROJECT CONFIGURATION                                                        #
 # ============================================================================ #
 [project]
-name = "getiaction"
-dynamic = ["version"]
+name = "physicalai-train"
+version = "0.1.0"
 requires-python = ">=3.12"
-authors = [
-  { name="Alfie Roddan", email="alfiex.roddan@intel.com" },
-  { name="Vladislav Sovrasov", email="vladislav.sovrasov@intel.com" },
-  { name="Samet Akcay", email="samet.akcay@intel.com" },
-]
 description = "A package for training vision-action models"
 readme = "README.md"
-license = {file = "LICENSE"}
+license = { file = "LICENSE" }
+authors = [{ name = "Intel Open Edge Platform" }]
 classifiers = [
-  "License :: OSI Approved :: Apache Software License",
-  "Programming Language :: Python :: 3.12"
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
     "pillow",
@@ -46,38 +39,24 @@ dependencies = [
     "onnxruntime",
     "openvino>=2025.0",
     "jsonargparse[signatures]>=4.27.0", # This could be extra
-    "pydantic", # This could be extra
+    "pydantic",                         # This could be extra
 ]
 
 [project.optional-dependencies]
 # PyTorch dependency groups
-cpu = [
-    "torch<2.11",
-    "torchvision<=0.26.0",
-]
-cu128 = [
-    "torch>=2.4.0,<=2.8.0",
-    "torchvision>=0.19.0",
-]
+cpu = ["torch==2.7.1+cpu", "torchvision==0.22.1+cpu"]
+cu128 = ["torch>=2.4.0,<=2.8.0", "torchvision>=0.19.0"]
 xpu = [
     "torch<2.11",
     "torchvision<=0.26.0",
     "pytorch-triton-xpu ; sys_platform == 'linux' or sys_platform == 'win32'",
 ]
 # Testing dependencies
-tests = [
-    "httpx",
-    "pytest",
-    "pytest-mock",
-    "pytest-examples>=0.0.13",
-    "mypy",
-]
-libero = [
-    "hf-libero>=0.1.3,<0.2.0",
-]
+tests = ["httpx", "pytest", "pytest-mock", "pytest-examples>=0.0.13", "mypy"]
+libero = ["hf-libero>=0.1.3,<0.2.0"]
 
 # VLA Policy dependencies - these are heavy models with specific requirements
-# Install with: pip install getiaction[groot]
+# Install with: pip install physicalai-train[groot]
 
 # Physical Intelligence Pi0/Pi0.5 foundation model
 # Requires PaliGemma backbone + Gemma action expert
@@ -112,20 +91,20 @@ smolvla = [
 
 # All optional dependencies
 all = [
-    "getiaction[tests]",
-    "getiaction[libero]",
-    "getiaction[pi0]",
-    "getiaction[groot]",
-    "getiaction[smolvla]",
+    "physicalai-train[tests]",
+    "physicalai-train[libero]",
+    "physicalai-train[pi0]",
+    "physicalai-train[groot]",
+    "physicalai-train[smolvla]",
 ]
 
 [project.scripts]
-getiaction = "getiaction.cli.cli:cli"
+physicalai = "physicalai.cli.cli:cli"
 
 [project.urls]
-Homepage = "https://github.com/open-edge-platform/geti-action"
-Documentation = "https://github.com/open-edge-platform/geti-action/blob/main/README.md"
-Repository = "https://github.com/open-edge-platform/geti-action.git"
+Homepage = "https://github.com/open-edge-platform/physical-ai-studio"
+Documentation = "https://github.com/open-edge-platform/physical-ai-studio/blob/main/README.md"
+Repository = "https://github.com/open-edge-platform/physical-ai-studio.git"
 
 
 # ============================================================================ #
@@ -133,13 +112,7 @@ Repository = "https://github.com/open-edge-platform/geti-action.git"
 # ============================================================================ #
 [tool.uv]
 
-conflicts = [
-    [
-        { extra = "cpu" },
-        { extra = "cu128" },
-        { extra = "xpu" },
-    ],
-]
+conflicts = [[{ extra = "cpu" }, { extra = "cu128" }, { extra = "xpu" }]]
 
 # PyTorch index configuration
 [[tool.uv.index]]
@@ -170,9 +143,7 @@ torchvision = [
     { index = "pytorch-xpu", extra = "xpu" },
 ]
 
-pytorch-triton-xpu = [
-    { index = "pytorch-xpu", extra = "xpu" },
-]
+pytorch-triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
 
 
 # ============================================================================ #
@@ -199,12 +170,10 @@ extend-exclude = [
     "docs",
     "examples",
     "tests",
-    "notebooks",  # Jupyter notebooks have different style requirements
+    "notebooks", # Jupyter notebooks have different style requirements
 ]
 
 [tool.ruff.lint]
-# Library uses ALL rules from root config
-# Add any library-specific ignores here if needed
 ignore = []
 
 

@@ -8,8 +8,8 @@ import pytest
 import torch
 from torch import nn
 
-from getiaction.data import Feature, FeatureType, NormalizationParameters
-from getiaction.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
+from physicalai.data import Feature, FeatureType, NormalizationParameters
+from physicalai.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
 
 
 class TestFeatureNormalizeTransform:

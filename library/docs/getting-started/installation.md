@@ -1,11 +1,11 @@
 # Installation
 
-This guide covers all installation methods for Geti Action Library.
+This guide covers all installation methods for PhysicalAI Library.
 
 ## Quick Install
 
 ```bash
-pip install getiaction
+pip install physicalai-train
 ```
 
 That's it! You're ready to [train your first policy](quickstart.md).
@@ -14,7 +14,7 @@ That's it! You're ready to [train your first policy](quickstart.md).
 
 ### Python
 
-Geti Action requires **Python 3.12 or higher**.
+PhysicalAI requires **Python 3.12 or higher**.
 
 Check your version:
 
@@ -50,20 +50,20 @@ ffmpeg -version
 For most users, pip install is the simplest option:
 
 ```bash
-pip install getiaction
+pip install physicalai-train
 ```
 
 To install with specific backend support:
 
 ```bash
 # With PI0 policy support
-pip install getiaction[pi0]
+pip install physicalai-train[pi0]
 
 # With SmolVLA policy support
-pip install getiaction[smolvla]
+pip install physicalai-train[smolvla]
 
 # With all optional dependencies
-pip install getiaction[all]
+pip install physicalai-train[all]
 ```
 
 ### Method 2: From Source (Development)
@@ -72,8 +72,8 @@ For contributors or users who need the latest features:
 
 ```bash
 # Clone repository
-git clone https://github.com/open-edge-platform/geti-action.git
-cd geti-action/library
+git clone https://github.com/open-edge-platform/physical-ai-studio.git
+cd physical-ai-studio/library
 
 # Create virtual environment with uv (recommended)
 uv venv
@@ -88,14 +88,14 @@ uv sync --all-extras
 
 Run a quick test to ensure everything is working:
 
-```python test="skip" reason="requires full getiaction install with dependencies"
-import getiaction
-print(getiaction.__version__)
+```python test="skip" reason="requires full physicalai install with dependencies"
+import physicalai
+print(physicalai.__version__)
 
 # Test imports
-from getiaction.policies import ACT
-from getiaction.data import LeRobotDataModule
-from getiaction.train import Trainer
+from physicalai.policies import ACT
+from physicalai.data import LeRobotDataModule
+from physicalai.train import Trainer
 
 print("Installation successful!")
 ```
@@ -103,14 +103,14 @@ print("Installation successful!")
 Or from the command line:
 
 ```bash
-getiaction --help
+physicalai --help
 ```
 
 You should see the CLI help menu with available commands.
 
 ## GPU Support
 
-Geti Action uses PyTorch Lightning, which automatically detects and uses available GPUs.
+PhysicalAI uses PyTorch Lightning, which automatically detects and uses available GPUs.
 
 ### Intel GPUs
 
@@ -132,13 +132,13 @@ python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
 
 ## Troubleshooting
 
-### ImportError: No module named 'getiaction'
+### ImportError: No module named 'physicalai'
 
 Ensure you're in the correct virtual environment:
 
 ```bash
 which python  # Should point to your venv
-pip list | grep getiaction
+pip list | grep physicalai
 ```
 
 ### FFMPEG not found
@@ -150,7 +150,7 @@ LeRobot datasets require FFMPEG. Install it using your system package manager (s
 Reduce batch size in your training config:
 
 ```bash
-getiaction fit --config your_config.yaml --data.train_batch_size 8
+physicalai fit --config your_config.yaml --data.train_batch_size 8
 ```
 
 ### Permission errors on Linux
@@ -158,7 +158,7 @@ getiaction fit --config your_config.yaml --data.train_batch_size 8
 If you encounter permission issues with pip:
 
 ```bash
-pip install --user getiaction
+pip install --user physicalai
 ```
 
 Or use a virtual environment (recommended).

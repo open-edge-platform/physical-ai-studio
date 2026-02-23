@@ -10,8 +10,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 import torch
 
-from getiaction.benchmark import Benchmark, BenchmarkResults, LiberoBenchmark, TaskResult
-from getiaction.policies.base import PolicyLike
+from physicalai.benchmark import Benchmark, BenchmarkResults, LiberoBenchmark, TaskResult
+from physicalai.policies.base import PolicyLike
 
 
 @pytest.fixture
@@ -86,24 +86,24 @@ class TestBenchmark:
 
     def test_evaluate(self, mock_gym, eval_result):
         benchmark = Benchmark(gyms=[mock_gym], num_episodes=5, max_steps=100)
-        with patch("getiaction.benchmark.benchmark.evaluate_policy", return_value=eval_result):
+        with patch("physicalai.benchmark.benchmark.evaluate_policy", return_value=eval_result):
             results = benchmark.evaluate(MagicMock())
         assert results.n_tasks == 1 and results.overall_success_rate == 80.0
 
 
 class TestLiberoBenchmark:
     def test_init(self):
-        with patch("getiaction.gyms.create_libero_gyms", return_value=[MagicMock() for _ in range(10)]):
+        with patch("physicalai.gyms.create_libero_gyms", return_value=[MagicMock() for _ in range(10)]):
             b = LiberoBenchmark(task_suite="libero_10", num_episodes=20)
         assert b.task_suite == "libero_10" and len(b.gyms) == 10 and b.max_steps == 300
 
     def test_task_ids_subset(self):
-        with patch("getiaction.gyms.create_libero_gyms", return_value=[MagicMock() for _ in range(3)]):
+        with patch("physicalai.gyms.create_libero_gyms", return_value=[MagicMock() for _ in range(3)]):
             b = LiberoBenchmark(task_suite="libero_spatial", task_ids=[0, 1, 2])
         assert b.task_ids == [0, 1, 2] and len(b.gyms) == 3
 
     def test_repr(self):
-        with patch("getiaction.gyms.create_libero_gyms", return_value=[MagicMock()]):
+        with patch("physicalai.gyms.create_libero_gyms", return_value=[MagicMock()]):
             assert "libero_10" in repr(LiberoBenchmark(task_suite="libero_10"))
 
 
@@ -146,7 +146,7 @@ class TestPolicyLikeProtocol:
         model = MockInferenceModel()
         benchmark = Benchmark(gyms=[mock_gym], num_episodes=5, max_steps=100)
 
-        with patch("getiaction.benchmark.benchmark.evaluate_policy", return_value=eval_result):
+        with patch("physicalai.benchmark.benchmark.evaluate_policy", return_value=eval_result):
             results = benchmark.evaluate(model)
 
         assert results.n_tasks == 1
@@ -154,7 +154,7 @@ class TestPolicyLikeProtocol:
 
     def test_policy_name_extraction_from_inference_model(self):
         """Test that _get_policy_name extracts policy_name from InferenceModel-like objects."""
-        from getiaction.benchmark.benchmark import _get_policy_name
+        from physicalai.benchmark.benchmark import _get_policy_name
 
         class MockInferenceModel:
             def __init__(self):
