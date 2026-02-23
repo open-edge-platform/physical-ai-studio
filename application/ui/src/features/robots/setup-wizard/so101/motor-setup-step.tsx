@@ -4,7 +4,7 @@ import { Button, Flex, Heading, Text } from '@geti/ui';
 
 import { useSetupActions, useSetupState, WizardStep } from './wizard-provider';
 
-import classes from './setup-wizard.module.scss';
+import classes from '../shared/setup-wizard.module.scss';
 
 /** The motors in reverse order (gripper first) — matches lerobot's setup flow */
 const MOTOR_SETUP_ORDER = ['gripper', 'wrist_roll', 'wrist_flex', 'elbow_flex', 'shoulder_lift', 'shoulder_pan'];

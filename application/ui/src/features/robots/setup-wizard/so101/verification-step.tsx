@@ -14,7 +14,7 @@ import { useRobotModels } from '../../robot-models-context';
 import { CalibrationResult } from './use-setup-websocket';
 import { useSetupActions, useSetupState } from './wizard-provider';
 
-import classes from './setup-wizard.module.scss';
+import classes from '../shared/setup-wizard.module.scss';
 
 // ---------------------------------------------------------------------------
 // Hook: sync normalized joint state from the setup websocket to the URDF model

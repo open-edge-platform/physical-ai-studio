@@ -4,7 +4,7 @@ import { Button, Flex, Heading, Loading, Text } from '@geti/ui';
 
 import { CalibrationPhase, useSetupActions, useSetupState, WizardStep } from './wizard-provider';
 
-import classes from './setup-wizard.module.scss';
+import classes from '../shared/setup-wizard.module.scss';
 
 const MOTOR_NAMES = ['shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex', 'wrist_roll', 'gripper'];
 

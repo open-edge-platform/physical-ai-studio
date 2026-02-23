@@ -15,7 +15,7 @@ import { useNavigate } from 'react-router';
 
 import { useSetupActions, useSetupState, WizardStep } from './wizard-provider';
 
-import classes from './setup-wizard.module.scss';
+import classes from '../shared/setup-wizard.module.scss';
 
 /**
  * Diagnostics step — shows voltage check + motor probe results.
