@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../docs/assets/banner_library.png" alt="PhysicalAI Library" width="100%">
+  <img src="../docs/assets/physical_ai.png" alt="PhysicalAI Library" width="100%">
 </p>
 
 <div align="center">

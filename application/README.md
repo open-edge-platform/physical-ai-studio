@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../docs/assets/banner_application.png" alt="Physical AI Studio Application" width="100%">
+  <img src="../docs/assets/physical_ai_studio.png" alt="Physical AI Studio Application" width="100%">
 </p>
 
 # Physical AI Studio Application
