@@ -581,18 +581,15 @@ class SO101SetupWorker(TransportWorker):
             is_follower = self.robot_type == "SO101_Follower"
             for motor in bus.motors:
                 await asyncio.to_thread(bus.write, "Operating_Mode", motor, 0)  # Position mode
-                await asyncio.to_thread(bus.write, "P_Coefficient", motor, 16)
-                await asyncio.to_thread(bus.write, "I_Coefficient", motor, 0)
-                await asyncio.to_thread(bus.write, "D_Coefficient", motor, 32)
+                if is_follower:
+                    await asyncio.to_thread(bus.write, "P_Coefficient", motor, 16)
+                    await asyncio.to_thread(bus.write, "I_Coefficient", motor, 0)
+                    await asyncio.to_thread(bus.write, "D_Coefficient", motor, 32)
 
-                if motor == "gripper":
-                    await asyncio.to_thread(bus.write, "Max_Torque_Limit", motor, 500)
-                    await asyncio.to_thread(bus.write, "Protection_Current", motor, 250)
-                    await asyncio.to_thread(bus.write, "Overload_Torque", motor, 25)
-
-            # For follower: enable torque. For leader: leave disabled (moved by hand).
-            if is_follower:
-                await asyncio.to_thread(bus.enable_torque)
+                    if motor == "gripper":
+                        await asyncio.to_thread(bus.write, "Max_Torque_Limit", motor, 500)
+                        await asyncio.to_thread(bus.write, "Protection_Current", motor, 250)
+                        await asyncio.to_thread(bus.write, "Overload_Torque", motor, 25)
 
     # ------------------------------------------------------------------
     # Broadcast loop — phase-driven streaming
