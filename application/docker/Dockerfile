@@ -4,7 +4,7 @@
 ARG PYTHON_VERSION=3.12
 
 # ===========================================================================
-# Stage 1: Clone Physical AI Studio UI packages and URDF robot models
+# Stage 1: Clone Geti UI packages and URDF robot models
 # ===========================================================================
 FROM node:24-alpine3.22@sha256:bb089be859f2741e5ede9d85f47dc7daca754015b50e9642a7a45c5252807d2c AS ui-packages
 
