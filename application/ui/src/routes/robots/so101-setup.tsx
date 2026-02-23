@@ -1,7 +1,7 @@
 import { View } from '@geti/ui';
 
-import { SetupWizardContent } from '../../features/robots/so101/setup-wizard/setup-wizard';
-import { SetupWizardProvider } from '../../features/robots/so101/setup-wizard/wizard-provider';
+import { SetupWizardContent } from '../../features/robots/setup-wizard/so101/setup-wizard';
+import { SetupWizardProvider } from '../../features/robots/setup-wizard/so101/wizard-provider';
 
 /**
  * Route: /projects/:project_id/robots/new/so101-setup
