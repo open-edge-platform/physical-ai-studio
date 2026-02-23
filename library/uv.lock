@@ -3522,6 +3522,7 @@ wheels = [
 
 [[package]]
 name = "physicalai-train"
+version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "gym-pusht", marker = "(extra != 'extra-10-physicalai-train-cu128' and extra != 'extra-10-physicalai-train-xpu') or (extra != 'extra-10-physicalai-train-cpu' and extra != 'extra-10-physicalai-train-xpu') or (extra != 'extra-10-physicalai-train-cpu' and extra != 'extra-10-physicalai-train-cu128') or (extra == 'extra-10-physicalai-train-xpu' and extra == 'extra-16-physicalai-train-cpu' and extra == 'extra-16-physicalai-train-cu128') or (extra == 'extra-10-physicalai-train-xpu' and extra == 'extra-16-physicalai-train-cpu' and extra == 'extra-16-physicalai-train-xpu') or (extra == 'extra-10-physicalai-train-xpu' and extra == 'extra-16-physicalai-train-cu128' and extra == 'extra-16-physicalai-train-xpu') or (extra == 'extra-10-physicalai-train-cpu' and extra == 'extra-10-physicalai-train-cu128' and extra == 'extra-16-physicalai-train-cpu' and extra == 'extra-16-physicalai-train-cu128') or (extra == 'extra-10-physicalai-train-cpu' and extra == 'extra-10-physicalai-train-cu128' and extra == 'extra-16-physicalai-train-cpu' and extra == 'extra-16-physicalai-train-xpu') or (extra == 'extra-10-physicalai-train-cpu' and extra == 'extra-10-physicalai-train-cu128' and extra == 'extra-16-physicalai-train-cu128' and extra == 'extra-16-physicalai-train-xpu')" },
@@ -3607,50 +3608,41 @@ xpu = [
 
 [package.metadata]
 requires-dist = [
-    { name = "decord", marker = "(platform_machine == 'AMD64' and extra == 'all') or (platform_machine == 'x86_64' and extra == 'all')", specifier = ">=0.6.0,<1.0.0" },
     { name = "decord", marker = "(platform_machine == 'AMD64' and extra == 'groot') or (platform_machine == 'x86_64' and extra == 'groot')", specifier = ">=0.6.0,<1.0.0" },
-    { name = "dm-tree", marker = "extra == 'all'", specifier = ">=0.1.8,<1.0.0" },
     { name = "dm-tree", marker = "extra == 'groot'", specifier = ">=0.1.8,<1.0.0" },
     { name = "gym-pusht", specifier = ">=0.1.5" },
     { name = "gymnasium", specifier = ">=0.29.1" },
-    { name = "hf-libero", marker = "extra == 'all'", specifier = ">=0.1.3,<0.2.0" },
     { name = "hf-libero", marker = "extra == 'libero'", specifier = ">=0.1.3,<0.2.0" },
-    { name = "httpx", marker = "extra == 'all'" },
     { name = "httpx", marker = "extra == 'tests'" },
     { name = "jsonargparse", extras = ["signatures"], specifier = ">=4.27.0" },
     { name = "lerobot", specifier = ">=0.4.1" },
     { name = "lightning" },
     { name = "lightning-utilities" },
-    { name = "mypy", marker = "extra == 'all'" },
     { name = "mypy", marker = "extra == 'tests'" },
-    { name = "ninja", marker = "extra == 'all'", specifier = ">=1.11.1,<2.0.0" },
     { name = "ninja", marker = "extra == 'groot'", specifier = ">=1.11.1,<2.0.0" },
-    { name = "num2words", marker = "extra == 'all'", specifier = ">=0.5.14,<0.6.0" },
     { name = "num2words", marker = "extra == 'smolvla'", specifier = ">=0.5.14,<0.6.0" },
     { name = "onnx" },
     { name = "onnxruntime" },
     { name = "openvino", specifier = ">=2025.0" },
-    { name = "peft", marker = "extra == 'all'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'groot'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'pi0'", specifier = ">=0.13.0,<1.0.0" },
+    { name = "physicalai-train", extras = ["groot"], marker = "extra == 'all'" },
+    { name = "physicalai-train", extras = ["libero"], marker = "extra == 'all'" },
+    { name = "physicalai-train", extras = ["pi0"], marker = "extra == 'all'" },
+    { name = "physicalai-train", extras = ["smolvla"], marker = "extra == 'all'" },
+    { name = "physicalai-train", extras = ["tests"], marker = "extra == 'all'" },
     { name = "pillow" },
-    { name = "pillow", marker = "extra == 'all'", specifier = ">=10.0.0,<13.0.0" },
     { name = "pillow", marker = "extra == 'groot'", specifier = ">=10.0.0,<13.0.0" },
     { name = "pillow", marker = "extra == 'pi0'", specifier = ">=10.0.0,<13.0.0" },
     { name = "pydantic" },
     { name = "pymunk", specifier = ">=6.6.0,<7.0.0" },
-    { name = "pytest", marker = "extra == 'all'" },
     { name = "pytest", marker = "extra == 'tests'" },
-    { name = "pytest-examples", marker = "extra == 'all'", specifier = ">=0.0.13" },
     { name = "pytest-examples", marker = "extra == 'tests'", specifier = ">=0.0.13" },
-    { name = "pytest-mock", marker = "extra == 'all'" },
     { name = "pytest-mock", marker = "extra == 'tests'" },
     { name = "pytorch-triton-xpu", marker = "(sys_platform == 'linux' and extra == 'xpu') or (sys_platform == 'win32' and extra == 'xpu')", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-train", extra = "xpu" } },
-    { name = "safetensors", marker = "extra == 'all'", specifier = ">=0.4.3,<1.0.0" },
     { name = "safetensors", marker = "extra == 'groot'", specifier = ">=0.4.3,<1.0.0" },
     { name = "safetensors", marker = "extra == 'pi0'", specifier = ">=0.4.3,<1.0.0" },
     { name = "safetensors", marker = "extra == 'smolvla'", specifier = ">=0.4.3,<1.0.0" },
-    { name = "timm", marker = "extra == 'all'", specifier = ">=1.0.0,<1.1.0" },
     { name = "timm", marker = "extra == 'groot'", specifier = ">=1.0.0,<1.1.0" },
     { name = "torch", marker = "extra == 'cpu'", specifier = "==2.7.1+cpu", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-train", extra = "cpu" } },
     { name = "torch", marker = "extra == 'cu128'", specifier = ">=2.4.0,<=2.8.0", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-train", extra = "cu128" } },
@@ -3658,13 +3650,11 @@ requires-dist = [
     { name = "torchvision", marker = "extra == 'cpu'", specifier = "==0.22.1+cpu", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-train", extra = "cpu" } },
     { name = "torchvision", marker = "extra == 'cu128'", specifier = ">=0.19.0", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-train", extra = "cu128" } },
     { name = "torchvision", marker = "extra == 'xpu'", specifier = "<=0.26.0", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-train", extra = "xpu" } },
-    { name = "transformers", marker = "extra == 'all'", specifier = ">=4.53.0,<5.0.0" },
-    { name = "transformers", marker = "extra == 'all'", specifier = ">=4.54.0,<5.0.0" },
     { name = "transformers", marker = "extra == 'groot'", specifier = ">=4.54.0,<5.0.0" },
     { name = "transformers", marker = "extra == 'pi0'", specifier = ">=4.54.0,<5.0.0" },
     { name = "transformers", marker = "extra == 'smolvla'", specifier = ">=4.53.0,<5.0.0" },
 ]
-provides-extras = ["all", "cpu", "cu128", "groot", "libero", "pi0", "smolvla", "tests", "xpu"]
+provides-extras = ["cpu", "cu128", "xpu", "tests", "libero", "pi0", "groot", "smolvla", "all"]
 
 [[package]]
 name = "pillow"

@@ -3,8 +3,10 @@
 
 """PhysicalAI trainer."""
 
+from importlib.metadata import version
+
 from .trainer import Trainer
 
-__version__ = "0.1.0"
+__version__ = version("physicalai-train")
 
 __all__ = ["Trainer", "__version__"]
