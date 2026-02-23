@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     debug: bool = Field(default=False, alias="DEBUG")
     environment: Literal["dev", "prod"] = "dev"
     data_dir: Path = Field(default=Path("data"), alias="DATA_DIR")
-    storage_dir: Path = Field(default=Path("~/.cache/geti_action").expanduser(), alias="STORAGE_DIR")
+    storage_dir: Path = Field(default=Path("~/.cache/physicalai").expanduser(), alias="STORAGE_DIR")
     static_files_dir: str | None = Field(default=None, alias="STATIC_FILES_DIR")
 
     supported_backends: list[str] = ["torch"]
@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     port: int = Field(default=7860, alias="PORT")
 
     # Database
-    database_file: str = Field(default="geti_action.db", alias="DATABASE_FILE", description="Database filename")
+    database_file: str = Field(default="physicalai.db", alias="DATABASE_FILE", description="Database filename")
     db_echo: bool = Field(default=False, alias="DB_ECHO")
 
     # Alembic
