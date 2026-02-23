@@ -1,6 +1,6 @@
 import { Text } from '@geti/ui';
 
-import { STEP_LABELS, useSetupActions, useSetupState, WizardStep } from './wizard-provider';
+import { STEP_LABELS, useSetupActions, useSetupState } from './wizard-provider';
 
 import classes from './setup-wizard.module.scss';
 
@@ -23,7 +23,11 @@ export const Stepper = () => {
                     <div key={step} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         {index > 0 && <div className={classes.stepDivider} />}
                         <div
-                            className={`${classes.step} ${isActive ? classes.stepActive : ''} ${!isClickable && !isActive ? classes.stepDisabled : ''}`}
+                            className={[
+                                classes.step,
+                                isActive ? classes.stepActive : '',
+                                !isClickable && !isActive ? classes.stepDisabled : '',
+                            ].join(' ')}
                             onClick={() => {
                                 if (isClickable) goToStep(step);
                             }}

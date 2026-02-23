@@ -55,7 +55,9 @@ export const useCenteringAnimation = (enabled: boolean) => {
     const animationRef = useRef<number | null>(null);
 
     useEffect(() => {
-        if (!enabled || models.length === 0) return;
+        if (!enabled || models.length === 0) {
+            return;
+        }
 
         const startTime = performance.now();
 
@@ -109,7 +111,7 @@ export const useRangeOfMotionAnimation = (enabled: boolean) => {
     const [currentStep, setCurrentStep] = useState(0);
 
     const model = models.at(0);
-    const joints = model?.joints ?? {};
+    const joints = useMemo(() => model?.joints ?? {}, [model]);
 
     const changeableJoints = useMemo(
         () =>
@@ -158,7 +160,9 @@ export const useRangeOfMotionAnimation = (enabled: boolean) => {
 
     // Animate to the current step's target position
     useEffect(() => {
-        if (!enabled || models.length === 0 || animationSequence.length === 0) return;
+        if (!enabled || models.length === 0 || animationSequence.length === 0) {
+            return;
+        }
 
         const targetPosition = animationSequence[currentStep].position;
 
