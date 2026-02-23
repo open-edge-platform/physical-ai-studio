@@ -93,7 +93,7 @@ export const SetupWizardProvider = ({ children }: { children: ReactNode }) => {
 
     const visibleSteps = useMemo(
         () => WIZARD_STEPS.filter((s) => !wizardState.skippedSteps.has(s)),
-        [wizardState.skippedSteps],
+        [wizardState.skippedSteps]
     );
 
     const stepIndex = visibleSteps.indexOf(wizardState.currentStep);
@@ -218,17 +218,7 @@ export const SetupWizardProvider = ({ children }: { children: ReactNode }) => {
             setCalibrationPhase,
             setPreVerifyProbeResult,
         }),
-        [
-            goToStep,
-            goNext,
-            goBack,
-            markCompleted,
-            markSkipped,
-            unmarkSkipped,
-            stepIndex,
-            visibleSteps,
-            commands,
-        ],
+        [goToStep, goNext, goBack, markCompleted, markSkipped, unmarkSkipped, stepIndex, visibleSteps, commands]
     );
 
     return (

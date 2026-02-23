@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Button, Flex, Heading, Text } from '@geti/ui';
 import { useNavigate } from 'react-router';
@@ -9,8 +9,8 @@ import { $api } from '../../../../api/client';
 import { SchemaCalibration, SchemaRobot } from '../../../../api/openapi-spec';
 import { paths } from '../../../../router';
 import { useProjectId } from '../../../projects/use-project';
-import { useRobotModels } from '../../robot-models-context';
 import { useRobotForm } from '../../robot-form/provider';
+import { useRobotModels } from '../../robot-models-context';
 import { CalibrationResult } from './use-setup-websocket';
 import { useSetupActions, useSetupState } from './wizard-provider';
 
@@ -32,7 +32,9 @@ const useSyncJointState = (jointState: Record<string, number> | null) => {
     const { models } = useRobotModels();
 
     useEffect(() => {
-        if (!jointState) return;
+        if (!jointState) {
+            return;
+        }
 
         models.forEach((model) => {
             for (const [key, value] of Object.entries(jointState)) {
@@ -110,17 +112,20 @@ export const VerificationStep = () => {
     // Sync live joint positions to the 3D model
     useSyncJointState(wsState.jointState);
 
-    // Start streaming when the step mounts, stop when it unmounts
+    // Start streaming when the step mounts, stop when it unmounts.
+    // Use a ref to capture the latest commands/isConnected without
+    // re-triggering the effect.
+    const mountRef = useRef({ commands, isConnected: wsState.isConnected });
+    mountRef.current = { commands, isConnected: wsState.isConnected };
+
     useEffect(() => {
-        if (wsState.isConnected) {
-            commands.streamPositions();
+        if (mountRef.current.isConnected) {
+            mountRef.current.commands.streamPositions();
         }
 
         return () => {
-            commands.stopStream();
+            mountRef.current.commands.stopStream();
         };
-        // Only run on mount/unmount — don't re-trigger on every isConnected change
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const addRobotMutation = $api.useMutation('post', '/api/projects/{project_id}/robots');
@@ -145,7 +150,9 @@ export const VerificationStep = () => {
     const hasCalibration = wsState.calibrationResult !== null;
 
     const handleSave = async () => {
-        if (robotBody === null) return;
+        if (robotBody === null) {
+            return;
+        }
 
         setSaving(true);
         setSaveError(null);
@@ -162,11 +169,7 @@ export const VerificationStep = () => {
 
             // 2. Save calibration if we have it
             if (wsState.calibrationResult) {
-                const calibrationBody = buildCalibrationBody(
-                    wsState.calibrationResult,
-                    createdRobot.id,
-                    calibrationId
-                );
+                const calibrationBody = buildCalibrationBody(wsState.calibrationResult, createdRobot.id, calibrationId);
 
                 await saveCalibrationMutation.mutateAsync({
                     params: { path: { project_id, robot_id: createdRobot.id } },
@@ -196,8 +199,8 @@ export const VerificationStep = () => {
         <Flex direction='column' gap='size-300'>
             <div className={classes.successBox}>
                 <Text>
-                    Robot setup is complete. Move the robot arm to verify that the 3D visualization matches
-                    the physical robot, then save.
+                    Robot setup is complete. Move the robot arm to verify that the 3D visualization matches the physical
+                    robot, then save.
                 </Text>
             </div>
 

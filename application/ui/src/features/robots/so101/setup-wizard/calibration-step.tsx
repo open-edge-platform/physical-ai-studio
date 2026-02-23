@@ -33,13 +33,15 @@ export const CalibrationStep = () => {
                 setPrevHomingDone(false);
             }
         },
-        [setCalibrationPhase],
+        [setCalibrationPhase]
     );
 
     // Stream raw positions during the instructions phase so the user can see
     // live joint values while centering the arm
     useEffect(() => {
-        if (phase !== 'instructions') return;
+        if (phase !== 'instructions') {
+            return;
+        }
 
         commands.startPositionsStream();
 
@@ -125,8 +127,8 @@ export const CalibrationStep = () => {
                     <div className={classes.infoBox}>
                         <Text>
                             Move the robot arm to the <strong>center of its range of motion</strong> for all joints.
-                            Each joint should be roughly in the middle position. When ready, click "Apply Homing
-                            Offsets".
+                            Each joint should be roughly in the middle position. When ready, click &ldquo;Apply Homing
+                            Offsets&rdquo;.
                         </Text>
                     </div>
                     <div className={classes.warningBox}>
@@ -157,10 +159,17 @@ export const CalibrationStep = () => {
                     minHeight='size-3000'
                 >
                     <Loading mode='inline' />
-                    <Heading level={4} margin={0}>Applying Homing Offsets</Heading>
-                    <Text UNSAFE_style={{ color: 'var(--spectrum-global-color-gray-600)', textAlign: 'center', maxWidth: 400 }}>
-                        Reading current motor positions and computing center offsets.
-                        This takes a few seconds.
+                    <Heading level={4} margin={0}>
+                        Applying Homing Offsets
+                    </Heading>
+                    <Text
+                        UNSAFE_style={{
+                            color: 'var(--spectrum-global-color-gray-600)',
+                            textAlign: 'center',
+                            maxWidth: 400,
+                        }}
+                    >
+                        Reading current motor positions and computing center offsets. This takes a few seconds.
                     </Text>
                 </Flex>
             )}
@@ -216,7 +225,8 @@ export const CalibrationStep = () => {
                     <div className={classes.infoBox}>
                         <Text>
                             Move <strong>every joint</strong> slowly through its complete range of motion (minimum to
-                            maximum). When you have covered the full range for all joints, click "Finish Recording".
+                            maximum). When you have covered the full range for all joints, click &ldquo;Finish
+                            Recording&rdquo;.
                         </Text>
                     </div>
                     <Flex justifyContent='end'>
@@ -286,10 +296,18 @@ export const CalibrationStep = () => {
                             minHeight='size-3000'
                         >
                             <Loading mode='inline' />
-                            <Heading level={4} margin={0}>Writing Calibration</Heading>
-                            <Text UNSAFE_style={{ color: 'var(--spectrum-global-color-gray-600)', textAlign: 'center', maxWidth: 400 }}>
-                                Saving calibration data to motor EEPROM and applying PID configuration.
-                                This takes a few seconds.
+                            <Heading level={4} margin={0}>
+                                Writing Calibration
+                            </Heading>
+                            <Text
+                                UNSAFE_style={{
+                                    color: 'var(--spectrum-global-color-gray-600)',
+                                    textAlign: 'center',
+                                    maxWidth: 400,
+                                }}
+                            >
+                                Saving calibration data to motor EEPROM and applying PID configuration. This takes a few
+                                seconds.
                             </Text>
                         </Flex>
                     )}

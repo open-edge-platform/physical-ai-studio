@@ -21,7 +21,7 @@ export interface JointHighlight {
 // ---------------------------------------------------------------------------
 
 const EMISSIVE_MAP: Record<HighlightColor, THREE.Color> = {
-    accent: new THREE.Color(0x00c7fd),   // cyan — matches the 3D grid
+    accent: new THREE.Color(0x00c7fd), // cyan — matches the 3D grid
     positive: new THREE.Color(0x2dc937), // green — motor OK
     negative: new THREE.Color(0xd32f2f), // red — motor missing
 };
@@ -36,6 +36,11 @@ interface SavedMaterial {
     original: THREE.Material;
 }
 
+interface URDFNode extends THREE.Object3D {
+    isURDFJoint?: boolean;
+    isURDFLink?: boolean;
+}
+
 /**
  * Collect all Mesh descendants of a node, stopping traversal at child
  * URDFJoints so only the "direct" link geometry is returned (not
@@ -46,7 +51,9 @@ function collectLinkMeshes(root: THREE.Object3D): THREE.Mesh[] {
 
     function walk(node: THREE.Object3D) {
         // Stop at sub-joints (but not the root itself)
-        if (node !== root && (node as any).isURDFJoint) return;
+        if (node !== root && (node as URDFNode).isURDFJoint) {
+            return;
+        }
         if ((node as THREE.Mesh).isMesh) meshes.push(node as THREE.Mesh);
         for (const child of node.children) walk(child);
     }
@@ -62,11 +69,15 @@ function collectLinkMeshes(root: THREE.Object3D): THREE.Mesh[] {
  */
 function collectMotorMeshesForJoint(robot: URDFRobot, jointName: string): THREE.Mesh[] {
     const joint = robot.joints[jointName];
-    if (!joint) return [];
+    if (!joint) {
+        return [];
+    }
 
     // The motor lives in the joint's parent link (the upstream side)
     const parentLink = joint.parent;
-    if (!parentLink || !(parentLink as any).isURDFLink) return [];
+    if (!parentLink || !(parentLink as URDFNode).isURDFLink) {
+        return [];
+    }
 
     const allMeshes = collectLinkMeshes(parentLink);
 
@@ -96,13 +107,11 @@ function collectMotorMeshesForJoint(robot: URDFRobot, jointName: string): THREE.
  *
  * Materials are cloned so shared material instances are never mutated.
  */
-export function useJointHighlight(
-    robot: URDFRobot | undefined,
-    highlights: JointHighlight[],
-) {
+export function useJointHighlight(robot: URDFRobot | undefined, highlights: JointHighlight[]) {
     const saved = useRef<SavedMaterial[]>([]);
 
-    // Stable string key for the dependency array
+    // Stable string key so we only re-run when joint/color combos change,
+    // not on every new array reference.
     const highlightsKey = highlights.map((h) => `${h.joint}:${h.color}`).join(',');
 
     useEffect(() => {
@@ -113,7 +122,9 @@ export function useJointHighlight(
         saved.current = [];
 
         // 2. Nothing to highlight
-        if (!robot || highlights.length === 0) return;
+        if (!robot || highlights.length === 0) {
+            return;
+        }
 
         // 3. Collect motor meshes per joint with associated color (deduplicate)
         const seen = new Set<THREE.Mesh>();
@@ -140,7 +151,7 @@ export function useJointHighlight(
                 highlighted.emissiveIntensity = HIGHLIGHT_EMISSIVE_INTENSITY;
             } else {
                 // Fallback for materials without emissive support
-                (highlighted as any).color = emissive.clone();
+                (highlighted as THREE.MeshBasicMaterial).color = emissive.clone();
             }
 
             mesh.material = highlighted;
@@ -153,6 +164,5 @@ export function useJointHighlight(
             }
             saved.current = [];
         };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [robot, highlightsKey]);
+    }, [robot, highlights, highlightsKey]);
 }

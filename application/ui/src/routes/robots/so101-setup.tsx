@@ -14,12 +14,7 @@ import { SetupWizardProvider } from '../../features/robots/so101/setup-wizard/wi
 export const SO101Setup = () => {
     return (
         <SetupWizardProvider>
-            <View
-                height='100%'
-                backgroundColor='gray-100'
-                padding='size-400'
-                UNSAFE_style={{ overflow: 'hidden' }}
-            >
+            <View height='100%' backgroundColor='gray-100' padding='size-400' UNSAFE_style={{ overflow: 'hidden' }}>
                 <SetupWizardContent />
             </View>
         </SetupWizardProvider>

@@ -26,9 +26,7 @@ export const MotorSetupStep = () => {
     // If all succeed, index goes past the end (triggering reassembly phase).
     // If a motor errors, index stays on it until the user retries and it succeeds.
     const currentMotorIndex = useMemo(() => {
-        const idx = MOTOR_SETUP_ORDER.findIndex(
-            (motor) => progress[motor]?.status !== 'success'
-        );
+        const idx = MOTOR_SETUP_ORDER.findIndex((motor) => progress[motor]?.status !== 'success');
         return idx === -1 ? MOTOR_SETUP_ORDER.length : idx;
     }, [progress]);
 
@@ -42,17 +40,25 @@ export const MotorSetupStep = () => {
     // - 'verifying': triggered but no new probe result yet (same reference)
     // - 'success'/'failed': new probe result arrived with the verdict
     const reassemblyState = useMemo<ReassemblyState>(() => {
-        if (!allDone || preVerifyProbeResult === null) return 'idle';
+        if (!allDone || preVerifyProbeResult === null) {
+            return 'idle';
+        }
         // Still waiting — the current probeResult is the same reference as before verification
-        if (wsState.probeResult === preVerifyProbeResult) return 'verifying';
+        if (wsState.probeResult === preVerifyProbeResult) {
+            return 'verifying';
+        }
         // New result arrived
-        if (wsState.probeResult?.all_motors_ok) return 'success';
+        if (wsState.probeResult?.all_motors_ok) {
+            return 'success';
+        }
         return 'failed';
     }, [allDone, preVerifyProbeResult, wsState.probeResult]);
 
     // Compute which motors are missing (for the failed state)
     const missingMotors = useMemo(() => {
-        if (!wsState.probeResult) return [];
+        if (!wsState.probeResult) {
+            return [];
+        }
         return wsState.probeResult.motors.filter((m) => !m.found).map((m) => m.name);
     }, [wsState.probeResult]);
 
@@ -161,13 +167,14 @@ export const MotorSetupStep = () => {
                     <Text>
                         {currentMotorIndex === 0 ? (
                             <>
-                                Connect <strong>only the '{currentMotor}'</strong> motor to the controller board.
-                                When ready, click the button below.
+                                Connect <strong>only the &apos;{currentMotor}&apos;</strong> motor to the controller
+                                board. When ready, click the button below.
                             </>
                         ) : (
                             <>
-                                Disconnect the previous motor, then connect <strong>only the '{currentMotor}'</strong>{' '}
-                                motor to the controller board. When ready, click the button below.
+                                Disconnect the previous motor, then connect{' '}
+                                <strong>only the &apos;{currentMotor}&apos;</strong> motor to the controller board. When
+                                ready, click the button below.
                             </>
                         )}
                     </Text>
@@ -177,9 +184,9 @@ export const MotorSetupStep = () => {
             {allDone && reassemblyState === 'idle' && (
                 <div className={classes.infoBox}>
                     <Text>
-                        All motor IDs have been assigned. Now <strong>reconnect all motors</strong> to the
-                        controller board and reassemble the robot. When ready, click "Verify Motors" to confirm
-                        all motors are responding.
+                        All motor IDs have been assigned. Now <strong>reconnect all motors</strong> to the controller
+                        board and reassemble the robot. When ready, click &ldquo;Verify Motors&rdquo; to confirm all
+                        motors are responding.
                     </Text>
                 </div>
             )}

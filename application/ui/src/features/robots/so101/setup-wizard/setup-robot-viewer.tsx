@@ -5,8 +5,8 @@ import { Suspense, useEffect, useMemo, useRef } from 'react';
 import { Grid, OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { degToRad } from 'three/src/math/MathUtils.js';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
+import { degToRad } from 'three/src/math/MathUtils.js';
 import { URDFRobot } from 'urdf-loader';
 
 import { SchemaRobotType } from '../../../../api/openapi-spec';
@@ -18,13 +18,7 @@ import { JointHighlight, useJointHighlight } from './use-joint-highlight';
 // Inner model component — renders the URDF and applies joint highlight
 // ---------------------------------------------------------------------------
 
-const ActualURDFModel = ({
-    model,
-    highlights,
-}: {
-    model: URDFRobot;
-    highlights: JointHighlight[];
-}) => {
+const ActualURDFModel = ({ model, highlights }: { model: URDFRobot; highlights: JointHighlight[] }) => {
     const rotation = [-Math.PI / 2, 0, (-1 * Math.PI) / 4] as const;
     const scale = [3, 3, 3] as const;
 
@@ -71,17 +65,21 @@ const CameraController = ({ controlsRef, model, highlights }: CameraControllerPr
     // Returns null when there's nothing to focus on (empty or multiple) — the camera stays put.
     const focus = useMemo(() => {
         // Only focus camera for a single joint — for multiple joints leave camera alone
-        if (!model || highlights.length !== 1) return null;
+        if (!model || highlights.length !== 1) {
+            return null;
+        }
 
         const joint = model.joints[highlights[0].joint];
-        if (!joint) return null;
+        if (!joint) {
+            return null;
+        }
 
         // Get the joint's world-space position (accounts for all parent transforms)
         const worldPos = new THREE.Vector3();
         joint.getWorldPosition(worldPos);
 
         // Compute a bounding sphere of the joint's child link for framing distance
-        const childLink = joint.children.find((c: any) => c.isURDFLink);
+        const childLink = joint.children.find((c: THREE.Object3D & { isURDFLink?: boolean }) => c.isURDFLink);
         let radius = 0.3; // fallback
         if (childLink) {
             const box = new THREE.Box3().setFromObject(childLink);
@@ -102,7 +100,9 @@ const CameraController = ({ controlsRef, model, highlights }: CameraControllerPr
 
     useFrame((_, delta) => {
         // Only animate the camera when we have a joint to focus on
-        if (!focus || !controlsRef.current) return;
+        if (!focus || !controlsRef.current) {
+            return;
+        }
 
         const t = 1 - Math.exp(-LERP_SPEED * delta);
 
@@ -136,9 +136,15 @@ const useLoadURDF = (robotType: SchemaRobotType) => {
 
     const ref = useRef(false);
     useEffect(() => {
-        if (models.length > 0) return;
-        if (loadModelMutation.data || !loadModelMutation.isIdle) return;
-        if (ref.current) return;
+        if (models.length > 0) {
+            return;
+        }
+        if (loadModelMutation.data || !loadModelMutation.isIdle) {
+            return;
+        }
+        if (ref.current) {
+            return;
+        }
 
         ref.current = true;
         loadModelMutation.mutate(PATH);
@@ -188,11 +194,7 @@ export const SetupRobotViewer = ({ robotType, highlights = [] }: SetupRobotViewe
                     />
                     <PerspectiveCamera makeDefault position={[2.0, 1, 1]} />
                     <OrbitControls ref={controlsRef} />
-                    <CameraController
-                        controlsRef={controlsRef}
-                        model={model}
-                        highlights={highlights}
-                    />
+                    <CameraController controlsRef={controlsRef} model={model} highlights={highlights} />
                     <Grid infiniteGrid cellSize={0.25} sectionColor={'rgb(0, 199, 253)'} fadeDistance={10} />
                     {model && (
                         <group key={model.uuid} position={[0, 0, 0]} rotation={[0, angle, 0]}>

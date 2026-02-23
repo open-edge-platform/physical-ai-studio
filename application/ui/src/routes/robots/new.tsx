@@ -3,12 +3,12 @@ import { Suspense } from 'react';
 import { Button, Flex, Grid, Loading, minmax, View } from '@geti/ui';
 import { useNavigate } from 'react-router';
 
+import { useProjectId } from '../../features/projects/use-project';
 import { RobotForm } from '../../features/robots/robot-form/form';
 import { Preview } from '../../features/robots/robot-form/preview';
 import { useRobotForm } from '../../features/robots/robot-form/provider';
 import { SubmitNewRobotButton } from '../../features/robots/robot-form/submit-new-robot-button';
 import { paths } from '../../router';
-import { useProjectId } from '../../features/projects/use-project';
 
 const CenteredLoading = () => {
     return (

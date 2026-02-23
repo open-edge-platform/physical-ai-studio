@@ -87,7 +87,9 @@ const IdentifyRobot = () => {
     const isDisabled = identifyMutation.isPending || !robotForm.name || !robotForm.type || !robotForm.connection_string;
 
     const onIdentify = () => {
-        if (isDisabled || robotForm.type === null) return;
+        if (isDisabled || robotForm.type === null) {
+            return;
+        }
 
         const body: SchemaRobot = {
             id: crypto.randomUUID(), // required by schema, not used by backend
@@ -119,11 +121,15 @@ export const RobotForm = ({ heading = 'Add new robot', submitButton = <SubmitNew
     // Since project won't save connection_string for Serial devices;
     // we need to populate this value; so the identify button works.
     useEffect(() => {
-        if (!robotForm.serial_number) return;
+        if (!robotForm.serial_number) {
+            return;
+        }
 
         const device = serialDevicesQuery.data.find((d) => d.serial_number === robotForm.serial_number);
 
-        if (!device) return;
+        if (!device) {
+            return;
+        }
 
         if (robotForm.connection_string !== device.connection_string) {
             setRobotForm((oldForm) => ({

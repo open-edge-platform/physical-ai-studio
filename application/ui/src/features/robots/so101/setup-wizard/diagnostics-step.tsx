@@ -1,4 +1,15 @@
-import { ActionButton, Button, Disclosure, DisclosurePanel, DisclosureTitle, Flex, Heading, Icon, Loading, Text } from '@geti/ui';
+import {
+    ActionButton,
+    Button,
+    Disclosure,
+    DisclosurePanel,
+    DisclosureTitle,
+    Flex,
+    Heading,
+    Icon,
+    Loading,
+    Text,
+} from '@geti/ui';
 import { Refresh } from '@geti/ui/icons';
 import { useNavigate } from 'react-router';
 
@@ -73,12 +84,12 @@ export const DiagnosticsStep = () => {
                         <Flex flex alignItems='center' justifyContent='end'>
                             {voltageReadable && voltageOk && (
                                 <span className={`${classes.statusBadge} ${classes.statusOk}`}>
-                                    {voltageResult.avg_voltage.toFixed(1)}V OK
+                                    {(voltageResult.avg_voltage ?? 0).toFixed(1)}V OK
                                 </span>
                             )}
                             {voltageReadable && !voltageOk && (
                                 <span className={`${classes.statusBadge} ${classes.statusError}`}>
-                                    {voltageResult.avg_voltage.toFixed(1)}V MISMATCH
+                                    {(voltageResult.avg_voltage ?? 0).toFixed(1)}V MISMATCH
                                 </span>
                             )}
                             {!voltageReadable && (
@@ -93,7 +104,7 @@ export const DiagnosticsStep = () => {
                             <>
                                 <div className={voltageOk ? classes.successBox : classes.errorBox}>
                                     <Text>
-                                        Average: <strong>{voltageResult.avg_voltage.toFixed(1)}V</strong>
+                                        Average: <strong>{(voltageResult.avg_voltage ?? 0).toFixed(1)}V</strong>
                                         {' — '}
                                         Expected: {voltageResult.expected_source}
                                         {voltageOk ? ' (OK)' : ' (MISMATCH)'}
@@ -203,7 +214,9 @@ export const DiagnosticsStep = () => {
                                     <div key={name} className={classes.motorRow}>
                                         <span className={classes.motorName}>{name}</span>
                                         <span
-                                            className={`${classes.statusBadge} ${cal.is_calibrated ? classes.statusOk : classes.statusError}`}
+                                            className={`${classes.statusBadge} ${
+                                                cal.is_calibrated ? classes.statusOk : classes.statusError
+                                            }`}
                                         >
                                             {cal.is_calibrated ? 'Calibrated' : 'Not calibrated'}
                                         </span>

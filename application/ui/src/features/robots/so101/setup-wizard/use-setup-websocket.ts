@@ -227,7 +227,9 @@ export function useSetupWebSocket({ projectId, robotType, serialNumber, enabled 
 
     const url =
         enabled && robotType && serialNumber
-            ? `/api/projects/${projectId}/robots/setup/ws?robot_type=${encodeURIComponent(robotType)}&serial_number=${encodeURIComponent(serialNumber)}`
+            ? `/api/projects/${projectId}/robots/setup/ws` +
+              `?robot_type=${encodeURIComponent(robotType)}` +
+              `&serial_number=${encodeURIComponent(serialNumber)}`
             : null;
 
     const { sendJsonMessage, readyState } = useWebSocket(url, {

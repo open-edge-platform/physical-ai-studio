@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 
 import { Divider, Grid, Heading, View } from '@geti/ui';
-import { SchemaRobotType } from '../../../../api/openapi-spec';
 
+import { SchemaRobotType } from '../../../../api/openapi-spec';
 import { useRobotForm } from '../../robot-form/provider';
 import { CalibrationStep } from './calibration-step';
 import { DiagnosticsStep } from './diagnostics-step';
@@ -11,6 +11,8 @@ import { SetupRobotViewer } from './setup-robot-viewer';
 import { Stepper } from './stepper';
 import { useCenteringAnimation, useRangeOfMotionAnimation } from './use-calibration-animations';
 import { JointHighlight } from './use-joint-highlight';
+// Lazy import to avoid circular dependency (VerificationStep imports from wizard-provider)
+import { VerificationStep } from './verification-step';
 import { useSetupState, WizardStep } from './wizard-provider';
 
 import classes from './setup-wizard.module.scss';
@@ -29,15 +31,15 @@ function useHighlights(): JointHighlight[] {
     const { currentStep, wsState, preVerifyProbeResult } = useSetupState();
 
     return useMemo(() => {
-        if (currentStep !== WizardStep.MOTOR_SETUP) return [];
+        if (currentStep !== WizardStep.MOTOR_SETUP) {
+            return [];
+        }
 
         const progress = wsState.motorSetupProgress;
 
         // Derive current motor index (same logic as motor-setup-step)
         const currentMotorIndex = (() => {
-            const idx = MOTOR_SETUP_ORDER.findIndex(
-                (motor) => progress[motor]?.status !== 'success',
-            );
+            const idx = MOTOR_SETUP_ORDER.findIndex((motor) => progress[motor]?.status !== 'success');
             return idx === -1 ? MOTOR_SETUP_ORDER.length : idx;
         })();
 
@@ -185,6 +187,3 @@ export const SetupWizardContent = () => {
         </Grid>
     );
 };
-
-// Lazy import to avoid circular dependency (VerificationStep imports from wizard-provider)
-import { VerificationStep } from './verification-step';
