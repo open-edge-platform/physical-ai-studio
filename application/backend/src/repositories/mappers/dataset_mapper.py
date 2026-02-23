@@ -14,6 +14,7 @@ class DatasetMapper(IBaseMapper):
             name=dataset.name,
             path=dataset.path,
             project_id=str(dataset.project_id),
+            environment_id=str(dataset.environment_id),
         )
 
     @staticmethod
