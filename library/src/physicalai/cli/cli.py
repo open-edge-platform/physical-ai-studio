@@ -148,7 +148,7 @@ class CLI(LightningCLI):
     def _add_subcommands(self, parser: LightningArgumentParser, **kwargs: Any) -> None:  # noqa: ANN401
         """Add subcommands including custom benchmark command."""
         from lightning.pytorch.cli import (  # noqa: PLC0415
-            _get_short_description,
+            _get_short_description,  # noqa: PLC2701
             class_from_function,
         )
 

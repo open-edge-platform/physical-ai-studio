@@ -23,7 +23,7 @@ import torch
 import torch.nn.functional as F  # noqa: N812
 import torchvision
 from torch import Tensor, nn
-from torchvision.models._utils import IntermediateLayerGetter
+from torchvision.models._utils import IntermediateLayerGetter  # noqa: PLC2701
 from torchvision.ops.misc import FrozenBatchNorm2d
 
 from physicalai.config import FromConfig

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from lerobot.datasets.utils import check_delta_timestamps, get_delta_indices
 
-from physicalai.data.lerobot.dataset import _LeRobotDatasetAdapter
+from physicalai.data.lerobot.dataset import _LeRobotDatasetAdapter  # noqa: PLC2701
 
 if TYPE_CHECKING:
     from physicalai.data import DataModule

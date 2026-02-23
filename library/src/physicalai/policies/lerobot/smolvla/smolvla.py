@@ -16,7 +16,7 @@ from lightning_utilities.core.imports import module_available
 
 from physicalai.data import Observation
 from physicalai.data.lerobot import FormatConverter
-from physicalai.data.lerobot.dataset import _LeRobotDatasetAdapter
+from physicalai.data.lerobot.dataset import _LeRobotDatasetAdapter  # noqa: PLC2701
 from physicalai.policies.base import Policy
 from physicalai.policies.lerobot.mixin import LeRobotFromConfig
 

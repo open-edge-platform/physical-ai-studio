@@ -20,7 +20,7 @@ from lightning_utilities import module_available
 from physicalai.config.serializable import dataclass_to_dict, dict_to_dataclass
 from physicalai.data import Observation
 from physicalai.data.lerobot import FormatConverter
-from physicalai.data.lerobot.dataset import _LeRobotDatasetAdapter
+from physicalai.data.lerobot.dataset import _LeRobotDatasetAdapter  # noqa: PLC2701
 from physicalai.export.mixin_export import CONFIG_KEY, DATASET_STATS_KEY, POLICY_NAME_KEY
 from physicalai.policies.base import Policy
 from physicalai.policies.lerobot.mixin import LeRobotFromConfig
