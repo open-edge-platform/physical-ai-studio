@@ -277,20 +277,12 @@ export function useSetupWebSocket({ projectId, robotType, serialNumber, enabled 
         sendJsonMessage({ command: 're_probe' });
     }, [sendJsonMessage]);
 
-    const startPositionsStream = useCallback(() => {
-        sendJsonMessage({ command: 'start_positions_stream' });
+    const enterVerification = useCallback(() => {
+        sendJsonMessage({ command: 'enter_verification' });
     }, [sendJsonMessage]);
 
-    const stopPositionsStream = useCallback(() => {
-        sendJsonMessage({ command: 'stop_positions_stream' });
-    }, [sendJsonMessage]);
-
-    const streamPositions = useCallback(() => {
-        sendJsonMessage({ command: 'stream_positions' });
-    }, [sendJsonMessage]);
-
-    const stopStream = useCallback(() => {
-        sendJsonMessage({ command: 'stop_stream' });
+    const enterCalibration = useCallback(() => {
+        sendJsonMessage({ command: 'enter_calibration' });
     }, [sendJsonMessage]);
 
     const ping = useCallback(() => {
@@ -308,10 +300,8 @@ export function useSetupWebSocket({ projectId, robotType, serialNumber, enabled 
             startRecording,
             stopRecording,
             reProbe,
-            startPositionsStream,
-            stopPositionsStream,
-            streamPositions,
-            stopStream,
+            enterVerification,
+            enterCalibration,
             ping,
         },
     };

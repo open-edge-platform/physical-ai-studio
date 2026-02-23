@@ -289,6 +289,7 @@ export const DiagnosticsStep = () => {
                                 onPress={() => {
                                     markCompleted(WizardStep.DIAGNOSTICS);
                                     markSkipped(WizardStep.CALIBRATION);
+                                    commands.enterVerification();
                                     goToStep(WizardStep.VERIFICATION);
                                 }}
                             >
