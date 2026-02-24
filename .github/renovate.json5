@@ -34,9 +34,7 @@
   enabledManagers: ["github-actions", "pep621", "dockerfile", "npm"],
 
   // ignore FrameSource dependencies
-  ignoreDeps: [
-    "FrameSource"
-  ],
+  ignoreDeps: ["FrameSource"],
 
   // Set limit to 10
   ignorePresets: [":prHourlyLimit2"],
@@ -112,7 +110,7 @@
     {
       enabled: false,
       matchDatasources: ["docker"],
-      matchPackageNames: ["ghcr.io/astral-sh"],
+      matchPackageNames: ["docker.io/astral/uv"],
       matchUpdateTypes: ["major", "minor", "patch"],
     },
 
@@ -122,6 +120,13 @@
       matchDatasources: ["docker"],
       matchPackageNames: ["python"],
       matchUpdateTypes: ["major", "minor"],
+    },
+
+    // Disable upgrades for Dockerfile syntax (docker/dockerfile)
+    {
+      enabled: false,
+      matchDatasources: ["docker"],
+      matchDepNames: ["docker/dockerfile"],
     },
 
     // Disable non-security and lock file upgrades for npm
