@@ -4,12 +4,12 @@ import { Divider, Grid, Heading, View } from '@geti/ui';
 
 import { SchemaRobotType } from '../../../../api/openapi-spec';
 import { useRobotForm } from '../../robot-form/provider';
-import { CalibrationStep } from './calibration-step';
-import { DiagnosticsStep } from './diagnostics-step';
-import { MotorSetupStep } from './motor-setup-step';
 import { SetupRobotViewer } from '../shared/setup-robot-viewer';
 import { Stepper } from '../shared/stepper';
 import { JointHighlight } from '../shared/use-joint-highlight';
+import { CalibrationStep } from './calibration-step';
+import { DiagnosticsStep } from './diagnostics-step';
+import { MotorSetupStep } from './motor-setup-step';
 import { useCenteringAnimation, useRangeOfMotionAnimation } from './use-calibration-animations';
 // Lazy import to avoid circular dependency (VerificationStep imports from wizard-provider)
 import { VerificationStep } from './verification-step';
