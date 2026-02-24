@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 
 import { Button, Flex, Heading, Loading, Text } from '@geti/ui';
 
+import { InlineAlert } from '../shared/inline-alert';
 import { CalibrationPhase, useSetupActions, useSetupState, WizardStep } from './wizard-provider';
 
 import classes from '../shared/setup-wizard.module.scss';
@@ -77,11 +78,9 @@ export const CalibrationStep = () => {
     if (error && phase !== 'done') {
         return (
             <Flex direction='column' gap='size-200'>
-                <div className={classes.errorBox}>
-                    <Text>
-                        <strong>Error:</strong> {error}
-                    </Text>
-                </div>
+                <InlineAlert variant='error'>
+                    <strong>Error:</strong> {error}
+                </InlineAlert>
                 <Flex justifyContent='end'>
                     <Button variant='secondary' onPress={() => changePhase('instructions')}>
                         Try Again
@@ -122,19 +121,15 @@ export const CalibrationStep = () => {
                         </Flex>
                     </div>
 
-                    <div className={classes.infoBox}>
-                        <Text>
-                            Move the robot arm to the <strong>center of its range of motion</strong> for all joints.
-                            Each joint should be roughly in the middle position. When ready, click &ldquo;Apply Homing
-                            Offsets&rdquo;.
-                        </Text>
-                    </div>
-                    <div className={classes.warningBox}>
-                        <Text>
-                            Make sure the robot is <strong>powered on</strong> but <strong>not under torque</strong> —
-                            you should be able to move the joints freely by hand while the live positions update above.
-                        </Text>
-                    </div>
+                    <InlineAlert variant='info'>
+                        Move the robot arm to the <strong>center of its range of motion</strong> for all joints. Each
+                        joint should be roughly in the middle position. When ready, click &ldquo;Apply Homing
+                        Offsets&rdquo;.
+                    </InlineAlert>
+                    <InlineAlert variant='warning'>
+                        Make sure the robot is <strong>powered on</strong> but <strong>not under torque</strong> — you
+                        should be able to move the joints freely by hand while the live positions update above.
+                    </InlineAlert>
 
                     <Flex justifyContent='space-between'>
                         <Button variant='secondary' onPress={goBack}>
@@ -220,13 +215,11 @@ export const CalibrationStep = () => {
                             </table>
                         </Flex>
                     </div>
-                    <div className={classes.infoBox}>
-                        <Text>
-                            Move <strong>every joint</strong> slowly through its complete range of motion (minimum to
-                            maximum). When you have covered the full range for all joints, click &ldquo;Finish
-                            Recording&rdquo;.
-                        </Text>
-                    </div>
+                    <InlineAlert variant='info'>
+                        Move <strong>every joint</strong> slowly through its complete range of motion (minimum to
+                        maximum). When you have covered the full range for all joints, click &ldquo;Finish
+                        Recording&rdquo;.
+                    </InlineAlert>
                     <Flex justifyContent='end'>
                         <Button variant='accent' onPress={handleStopRecording}>
                             Finish Recording
@@ -265,11 +258,9 @@ export const CalibrationStep = () => {
                                     </table>
                                 </Flex>
                             </div>
-                            <div className={classes.successBox}>
-                                <Text>
-                                    Calibration has been written to the motor EEPROM and motors have been configured.
-                                </Text>
-                            </div>
+                            <InlineAlert variant='success'>
+                                Calibration has been written to the motor EEPROM and motors have been configured.
+                            </InlineAlert>
                             <Flex justifyContent='space-between'>
                                 <Button variant='secondary' onPress={() => changePhase('instructions')}>
                                     Back

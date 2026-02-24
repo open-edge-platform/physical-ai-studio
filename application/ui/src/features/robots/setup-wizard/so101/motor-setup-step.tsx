@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 
 import { Button, Flex, Heading, Text } from '@geti/ui';
 
+import { InlineAlert } from '../shared/inline-alert';
 import { useSetupActions, useSetupState, WizardStep } from './wizard-provider';
 
 import classes from '../shared/setup-wizard.module.scss';
@@ -163,55 +164,45 @@ export const MotorSetupStep = () => {
 
             {/* Contextual instructions & status — positioned close to action buttons */}
             {!allDone && currentMotor && (
-                <div className={classes.warningBox}>
-                    <Text>
-                        {currentMotorIndex === 0 ? (
-                            <>
-                                Connect <strong>only the &apos;{currentMotor}&apos;</strong> motor to the controller
-                                board. When ready, click the button below.
-                            </>
-                        ) : (
-                            <>
-                                Disconnect the previous motor, then connect{' '}
-                                <strong>only the &apos;{currentMotor}&apos;</strong> motor to the controller board. When
-                                ready, click the button below.
-                            </>
-                        )}
-                    </Text>
-                </div>
+                <InlineAlert variant='warning'>
+                    {currentMotorIndex === 0 ? (
+                        <>
+                            Connect <strong>only the &apos;{currentMotor}&apos;</strong> motor to the controller board.
+                            When ready, click the button below.
+                        </>
+                    ) : (
+                        <>
+                            Disconnect the previous motor, then connect{' '}
+                            <strong>only the &apos;{currentMotor}&apos;</strong> motor to the controller board. When
+                            ready, click the button below.
+                        </>
+                    )}
+                </InlineAlert>
             )}
 
             {allDone && reassemblyState === 'idle' && (
-                <div className={classes.infoBox}>
-                    <Text>
-                        All motor IDs have been assigned. Now <strong>reconnect all motors</strong> to the controller
-                        board and reassemble the robot. When ready, click &ldquo;Verify Motors&rdquo; to confirm all
-                        motors are responding.
-                    </Text>
-                </div>
+                <InlineAlert variant='info'>
+                    All motor IDs have been assigned. Now <strong>reconnect all motors</strong> to the controller board
+                    and reassemble the robot. When ready, click &ldquo;Verify Motors&rdquo; to confirm all motors are
+                    responding.
+                </InlineAlert>
             )}
 
             {allDone && reassemblyState === 'verifying' && (
-                <div className={classes.infoBox}>
-                    <Text>Verifying all motors... Please wait.</Text>
-                </div>
+                <InlineAlert variant='info'>Verifying all motors... Please wait.</InlineAlert>
             )}
 
             {allDone && reassemblyState === 'success' && (
-                <div className={classes.successBox}>
-                    <Text>
-                        All motors verified successfully! The robot is fully assembled and ready for calibration.
-                    </Text>
-                </div>
+                <InlineAlert variant='success'>
+                    All motors verified successfully! The robot is fully assembled and ready for calibration.
+                </InlineAlert>
             )}
 
             {allDone && reassemblyState === 'failed' && (
-                <div className={classes.warningBox}>
-                    <Text>
-                        {missingMotors.length} motor{missingMotors.length !== 1 ? 's' : ''} not found:{' '}
-                        <strong>{missingMotors.join(', ')}</strong>. Please check the connections and try again.
-                    </Text>
-                </div>
+                <InlineAlert variant='warning'>
+                    {missingMotors.length} motor{missingMotors.length !== 1 ? 's' : ''} not found:{' '}
+                    <strong>{missingMotors.join(', ')}</strong>. Please check the connections and try again.
+                </InlineAlert>
             )}
 
             {/* Action buttons */}

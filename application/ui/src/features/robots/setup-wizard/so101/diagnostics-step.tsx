@@ -13,6 +13,7 @@ import {
 import { Refresh } from '@geti/ui/icons';
 import { useNavigate } from 'react-router';
 
+import { InlineAlert } from '../shared/inline-alert';
 import { useSetupActions, useSetupState, WizardStep } from './wizard-provider';
 
 import classes from '../shared/setup-wizard.module.scss';
@@ -33,11 +34,9 @@ export const DiagnosticsStep = () => {
     if (error) {
         return (
             <Flex direction='column' gap='size-200'>
-                <div className={classes.errorBox}>
-                    <Text>
-                        <strong>Connection Error:</strong> {error}
-                    </Text>
-                </div>
+                <InlineAlert variant='error'>
+                    <strong>Connection Error:</strong> {error}
+                </InlineAlert>
             </Flex>
         );
     }
@@ -102,31 +101,25 @@ export const DiagnosticsStep = () => {
                     <Flex direction='column' gap='size-100' marginTop='size-100'>
                         {voltageReadable ? (
                             <>
-                                <div className={voltageOk ? classes.successBox : classes.errorBox}>
-                                    <Text>
-                                        Average: <strong>{(voltageResult.avg_voltage ?? 0).toFixed(1)}V</strong>
-                                        {' — '}
-                                        Expected: {voltageResult.expected_source}
-                                        {voltageOk ? ' (OK)' : ' (MISMATCH)'}
-                                    </Text>
-                                </div>
+                                <InlineAlert variant={voltageOk ? 'success' : 'error'}>
+                                    Average: <strong>{(voltageResult.avg_voltage ?? 0).toFixed(1)}V</strong>
+                                    {' — '}
+                                    Expected: {voltageResult.expected_source}
+                                    {voltageOk ? ' (OK)' : ' (MISMATCH)'}
+                                </InlineAlert>
                                 {!voltageOk && (
-                                    <div className={classes.warningBox}>
-                                        <Text>
-                                            The voltage does not match what is expected for a{' '}
-                                            {voltageResult.robot_type.includes('Follower') ? 'Follower' : 'Leader'}.
-                                            Please verify the robot type and power connections, then re-check.
-                                        </Text>
-                                    </div>
+                                    <InlineAlert variant='warning'>
+                                        The voltage does not match what is expected for a{' '}
+                                        {voltageResult.robot_type.includes('Follower') ? 'Follower' : 'Leader'}. Please
+                                        verify the robot type and power connections, then re-check.
+                                    </InlineAlert>
                                 )}
                             </>
                         ) : (
-                            <div className={classes.warningBox}>
-                                <Text>
-                                    Could not read voltage from any motor. This is normal after a full reset (all motors
-                                    share the same ID). Proceed to motor setup to assign unique IDs, then re-check.
-                                </Text>
-                            </div>
+                            <InlineAlert variant='warning'>
+                                Could not read voltage from any motor. This is normal after a full reset (all motors
+                                share the same ID). Proceed to motor setup to assign unique IDs, then re-check.
+                            </InlineAlert>
                         )}
                     </Flex>
                 </DisclosurePanel>
@@ -174,16 +167,12 @@ export const DiagnosticsStep = () => {
                             </div>
 
                             {allMotorsOk ? (
-                                <div className={classes.successBox}>
-                                    <Text>All motors detected and verified.</Text>
-                                </div>
+                                <InlineAlert variant='success'>All motors detected and verified.</InlineAlert>
                             ) : (
-                                <div className={classes.errorBox}>
-                                    <Text>
-                                        Some motors are missing or have incorrect firmware. You can run motor setup to
-                                        assign motor IDs.
-                                    </Text>
-                                </div>
+                                <InlineAlert variant='error'>
+                                    Some motors are missing or have incorrect firmware. You can run motor setup to
+                                    assign motor IDs.
+                                </InlineAlert>
                             )}
                         </Flex>
                     </DisclosurePanel>
@@ -232,12 +221,10 @@ export const DiagnosticsStep = () => {
                                 ))}
                             </div>
                             {alreadyCalibrated && (
-                                <div className={classes.infoBox}>
-                                    <Text>
-                                        All motors are already calibrated. You can skip to verification, or recalibrate
-                                        if needed.
-                                    </Text>
-                                </div>
+                                <InlineAlert variant='info'>
+                                    All motors are already calibrated. You can skip to verification, or recalibrate if
+                                    needed.
+                                </InlineAlert>
                             )}
                         </Flex>
                     </DisclosurePanel>
