@@ -24,7 +24,7 @@ export const Robot = () => {
                     gap='size-200'
                     UNSAFE_style={{ padding: 'var(--spectrum-global-dimension-size-100)' }}
                     areas={['actions', 'robot-viewer', 'controls ']}
-                    rows={['auto', 'auto', 'min-content']}
+                    rows={['auto', '1fr', 'min-content']}
                     height='100%'
                     maxHeight={'100vh'}
                     maxWidth='100%'
@@ -40,7 +40,7 @@ export const Robot = () => {
                             </ButtonGroup>
                         </Flex>
                     </View>
-                    <View gridArea='robot-viewer'>
+                    <View gridArea='robot-viewer' overflow='auto' minHeight={0}>
                         <RobotViewer robot={robot} />
                     </View>
                     <JointControls />
