@@ -404,6 +404,15 @@ class Export:
 
         return next(iter(positional_args))
 
+    @property
+    def supported_export_backends(self) -> list[str | ExportBackend]:
+        """Get a list of export backends supported by policy.
+
+        Returns:
+            list[str | ExportBackend]: A list of supported export backends.
+        """
+        return [ExportBackend.TORCH]
+
 
 def _postprocess_openvino_model(ov_model: openvino.Model, output_names: list[str] | None) -> None:
     """Postprocess an OpenVINO model by setting output tensor names.
