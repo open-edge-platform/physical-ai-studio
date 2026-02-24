@@ -28,7 +28,6 @@ import { Layout as RobotsLayout } from './routes/robots/layout';
 import { New as RobotsNew } from './routes/robots/new';
 import { NewRobotLayout } from './routes/robots/new-layout';
 import { Robot } from './routes/robots/robot';
-import { SetupMotors } from './routes/robots/setup-motors';
 import { SO101Setup } from './routes/robots/so101-setup';
 import { TabNavigation as RobotsTabNavigation } from './routes/robots/tab-navigation';
 
@@ -63,9 +62,6 @@ export const paths = {
             so101Setup: robots.path('new/so101-setup'),
             edit: robot.path('edit'),
             show: robot,
-            controller: robot.path('/controller'),
-            calibration: robot.path('/calibration'),
-            setupMotors: robot.path('/setup-motors'),
         },
         cameras: {
             index: cameras,
@@ -226,31 +222,6 @@ export const router = createBrowserRouter([
                                     {
                                         path: paths.project.robots.show.pattern,
                                         element: <Robot />,
-                                        children: [
-                                            {
-                                                index: true,
-                                                loader: ({ params }) => {
-                                                    return redirect(
-                                                        paths.project.robots.controller({
-                                                            project_id: params.project_id ?? '',
-                                                            robot_id: params.robot_id ?? '',
-                                                        })
-                                                    );
-                                                },
-                                            },
-                                            {
-                                                path: paths.project.robots.controller.pattern,
-                                                element: <Controller />,
-                                            },
-                                            {
-                                                path: paths.project.robots.calibration.pattern,
-                                                element: <Calibration />,
-                                            },
-                                            {
-                                                path: paths.project.robots.setupMotors.pattern,
-                                                element: <SetupMotors />,
-                                            },
-                                        ],
                                     },
                                 ],
                             },
