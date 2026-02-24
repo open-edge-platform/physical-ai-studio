@@ -116,9 +116,6 @@ const RobotListItem = ({
                             <li style={{ marginLeft: 'var(--spectrum-global-dimension-size-200)' }}>
                                 ID: <pre style={{ margin: 0, display: 'inline' }}>{id}</pre>
                             </li>
-                            <li style={{ marginLeft: 'var(--spectrum-global-dimension-size-200)' }}>
-                                Calibrated: 09/02/2025 7:34 PM
-                            </li>
                         </ul>
                     </View>
                     <View alignSelf={'end'}>
