@@ -69,6 +69,19 @@ npm run build:api:download && npm run build:api && npm run start
 
 Open http://localhost:3000 in your browser.
 
+##### Docker
+
+Run the full application (backend + UI) in a single container:
+
+```bash
+cd docker
+cp .env.example .env
+docker compose up
+```
+
+Application runs at http://localhost:7860. See the [Docker README](./docker/readme.md) for
+hardware configuration (Intel XPU, NVIDIA CUDA) and device setup.
+
 ### Library (Python/CLI)
 
 For programmatic control over training, benchmarking, and deployment with both API and CLI
