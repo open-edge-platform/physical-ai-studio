@@ -46,13 +46,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      security-events: write # Needed to upload the results to code-scanning dashboard
     steps:
       - &checkout
         name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          # FIXME: needed for tj-actions/changed-files to gather changed files, once repository becomes public this argument should be set to false
-          persist-credentials: true
+          persist-credentials: false
 
       - name: Run Zizmor scan
         uses: open-edge-platform/geti-ci/actions/zizmor@3a4b81ea648711eb638b34757427cd3ef71d19f1
@@ -61,12 +61,12 @@ jobs:
           severity-level: ${{ github.event_name == 'pull_request' && 'MEDIUM' || 'LOW' }}
           confidence-level: ${{ github.event_name == 'pull_request' && 'MEDIUM' || 'LOW' }}
           fail-on-findings: ${{ github.event_name == 'pull_request' && 'true' || 'false' }} # reports only
-          output-format: "plain" # Use plain text output format to omit uploading code scanning results to Security tab
 
   bandit-scan:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      security-events: write # Needed to upload the results to code-scanning dashboard
     steps:
       - *checkout
 
@@ -78,13 +78,13 @@ jobs:
           confidence-level: ${{ github.event_name == 'pull_request' && 'MEDIUM' || 'LOW' }}
           config_file: ".github/bandit_config.yml"
           fail-on-findings: ${{ github.event_name == 'pull_request' && 'true' || 'false' }} # reports only
-          output-format: "txt" # Use plain text output format to omit uploading code scanning results to Security tab
 
   trivy-scan:
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request'
     permissions:
       contents: read
+      security-events: write # Needed to upload the results to code-scanning dashboard
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -99,7 +99,7 @@ jobs:
           scan-scope: all
           severity: "LOW"
           scanners: "vuln,secret,config"
-          format: "table" # Use plain text output format to omit uploading code scanning results to Security tab
+          format: "sarif"
           timeout: "15m"
           ignore_unfixed: "false"
 
@@ -107,6 +107,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      security-events: write # Needed to upload the results to code-scanning dashboard
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -120,4 +121,3 @@ jobs:
           scan-scope: ${{ github.event_name == 'pull_request' && 'changed' || 'all' }}
           severity: ${{ github.event_name == 'pull_request' && 'HIGH' || 'LOW' }}
           fail-on-findings: ${{ github.event_name == 'pull_request' && 'true' || 'false' }} # reports only
-          output-format: "text" # Use plain text output format to omit uploading code scanning results to Security tab
