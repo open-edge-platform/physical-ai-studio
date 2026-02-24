@@ -1,4 +1,4 @@
-* @open-edge-platform/geti-action-maintain
+* @open-edge-platform/physical-ai-studio-maintain
 
 # CI and security
 .github/workflows/              @open-edge-platform/geti-ci-maintain
