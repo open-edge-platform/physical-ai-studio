@@ -2,24 +2,21 @@ from lerobot.datasets.pipeline_features import aggregate_pipeline_dataset_featur
 from lerobot.datasets.utils import combine_feature_dicts
 from lerobot.processor import make_default_processors
 
-from robots.utils import get_robot_client
+from robots.robot_client_factory import RobotClientFactory
 from schemas.environment import EnvironmentWithRelations
 from schemas.project_camera import Camera
-from services.robot_calibration_service import RobotCalibrationService
-from utils.serial_robot_tools import RobotConnectionManager
 
 
 async def build_observation_features(
     environment: EnvironmentWithRelations,
-    robot_manager: RobotConnectionManager,
-    calibration_service: RobotCalibrationService,
+    robot_factory: RobotClientFactory,
 ) -> dict:
     """Return dict of action features of environment."""
     if len(environment.robots) > 1:
         # TODO: Implement, should probably prefix feature the robots only when len(robots) > 1
         # One issue is that you need to know which is which, so probably need a name identifier for robots
         raise ValueError("Environments with multiple robots not implemented yet")
-    output_features = await build_action_features(environment, robot_manager, calibration_service)
+    output_features = await build_action_features(environment, robot_factory)
     for camera in environment.cameras:
         output_features[camera.name.lower()] = await get_camera_features(camera)
 
@@ -28,13 +25,13 @@ async def build_observation_features(
 
 async def build_action_features(
     environment: EnvironmentWithRelations,
-    robot_manager: RobotConnectionManager,
-    calibration_service: RobotCalibrationService,
+    robot_factory: RobotClientFactory,
 ) -> dict:
     """Return dict of action features of environment."""
     output_features = {}
+
     for robot in environment.robots:
-        client = await get_robot_client(robot.robot, robot_manager, calibration_service)
+        client = await robot_factory.build(robot.robot)
         for feature in client.features():
             output_features[feature] = float
     return output_features
@@ -42,14 +39,13 @@ async def build_action_features(
 
 async def build_lerobot_dataset_features(
     environment: EnvironmentWithRelations,
-    robot_manager: RobotConnectionManager,
-    calibration_service: RobotCalibrationService,
+    robot_factory: RobotClientFactory,
     use_videos: bool = True,
 ) -> dict:
     """Build lerobot dataset features."""
     teleop_action_processor, _robot_action_processor, robot_observation_processor = make_default_processors()
-    observation_features = await build_observation_features(environment, robot_manager, calibration_service)
-    action_features = await build_action_features(environment, robot_manager, calibration_service)
+    observation_features = await build_observation_features(environment, robot_factory)
+    action_features = await build_action_features(environment, robot_factory)
 
     return combine_feature_dicts(
         aggregate_pipeline_dataset_features(
