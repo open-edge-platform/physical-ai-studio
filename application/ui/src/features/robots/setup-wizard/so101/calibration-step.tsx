@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react';
 import { Button, Flex, Heading, Loading, Text } from '@geti/ui';
 
 import { InlineAlert } from '../shared/inline-alert';
+import { StatusBadge } from '../shared/status-badge';
 import { CalibrationPhase, useSetupActions, useSetupState, WizardStep } from './wizard-provider';
 
 import classes from '../shared/setup-wizard.module.scss';
@@ -174,7 +175,7 @@ export const CalibrationStep = () => {
                         <Flex direction='column' gap='size-100'>
                             <Flex justifyContent='space-between' alignItems='center'>
                                 <Heading level={4}>Range of Motion Recording</Heading>
-                                <span className={`${classes.statusBadge} ${classes.statusScanning}`}>Recording...</span>
+                                <StatusBadge variant='scanning'>Recording...</StatusBadge>
                             </Flex>
                             <table className={classes.rangeTable}>
                                 <thead>

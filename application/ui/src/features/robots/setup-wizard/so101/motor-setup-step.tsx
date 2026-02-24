@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { Button, Flex, Heading, Text } from '@geti/ui';
 
 import { InlineAlert } from '../shared/inline-alert';
+import { StatusBadge, type StatusBadgeVariant } from '../shared/status-badge';
 import { useSetupActions, useSetupState, WizardStep } from './wizard-provider';
 
 import classes from '../shared/setup-wizard.module.scss';
@@ -90,26 +91,26 @@ export const MotorSetupStep = () => {
                         const isCurrentMotor = index === currentMotorIndex && !allDone;
                         const isPast = index < currentMotorIndex;
 
-                        let statusClass = classes.statusPending;
+                        let statusVariant: StatusBadgeVariant = 'pending';
                         let statusText = 'Pending';
 
                         if (motorProgress) {
                             switch (motorProgress.status) {
                                 case 'scanning':
-                                    statusClass = classes.statusScanning;
+                                    statusVariant = 'scanning';
                                     statusText = 'Scanning...';
                                     break;
                                 case 'success':
-                                    statusClass = classes.statusOk;
+                                    statusVariant = 'ok';
                                     statusText = 'Done';
                                     break;
                                 case 'error':
-                                    statusClass = classes.statusError;
+                                    statusVariant = 'error';
                                     statusText = 'Error';
                                     break;
                             }
                         } else if (isPast) {
-                            statusClass = classes.statusOk;
+                            statusVariant = 'ok';
                             statusText = 'Done';
                         }
 
@@ -118,10 +119,10 @@ export const MotorSetupStep = () => {
                             const probeEntry = wsState.probeResult.motors.find((m) => m.name === motor);
                             if (probeEntry) {
                                 if (probeEntry.found) {
-                                    statusClass = classes.statusOk;
+                                    statusVariant = 'ok';
                                     statusText = 'Found';
                                 } else {
-                                    statusClass = classes.statusError;
+                                    statusVariant = 'error';
                                     statusText = 'Missing';
                                 }
                             }
@@ -145,7 +146,7 @@ export const MotorSetupStep = () => {
                                 <span className={classes.motorId}>
                                     ID {index < MOTOR_SETUP_ORDER.length ? MOTOR_SETUP_ORDER.length - index : '?'}
                                 </span>
-                                <span className={`${classes.statusBadge} ${statusClass}`}>{statusText}</span>
+                                <StatusBadge variant={statusVariant}>{statusText}</StatusBadge>
                                 {motorProgress?.status === 'error' && (
                                     <Text
                                         UNSAFE_style={{

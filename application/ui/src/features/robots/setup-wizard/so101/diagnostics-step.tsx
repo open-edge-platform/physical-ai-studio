@@ -14,6 +14,7 @@ import { Refresh } from '@geti/ui/icons';
 import { useNavigate } from 'react-router';
 
 import { InlineAlert } from '../shared/inline-alert';
+import { StatusBadge } from '../shared/status-badge';
 import { useSetupActions, useSetupState, WizardStep } from './wizard-provider';
 
 import classes from '../shared/setup-wizard.module.scss';
@@ -82,18 +83,16 @@ export const DiagnosticsStep = () => {
                         <Text UNSAFE_style={{ fontWeight: 600, fontSize: 14 }}>Supply Voltage</Text>
                         <Flex flex alignItems='center' justifyContent='end'>
                             {voltageReadable && voltageOk && (
-                                <span className={`${classes.statusBadge} ${classes.statusOk}`}>
+                                <StatusBadge variant='ok'>
                                     {(voltageResult.avg_voltage ?? 0).toFixed(1)}V OK
-                                </span>
+                                </StatusBadge>
                             )}
                             {voltageReadable && !voltageOk && (
-                                <span className={`${classes.statusBadge} ${classes.statusError}`}>
+                                <StatusBadge variant='error'>
                                     {(voltageResult.avg_voltage ?? 0).toFixed(1)}V MISMATCH
-                                </span>
+                                </StatusBadge>
                             )}
-                            {!voltageReadable && (
-                                <span className={`${classes.statusBadge} ${classes.statusPending}`}>Unreadable</span>
-                            )}
+                            {!voltageReadable && <StatusBadge variant='pending'>Unreadable</StatusBadge>}
                         </Flex>
                     </Flex>
                 </DisclosureTitle>
@@ -135,11 +134,11 @@ export const DiagnosticsStep = () => {
                             </Text>
                             <Flex flex alignItems='center' justifyContent='end'>
                                 {allMotorsOk ? (
-                                    <span className={`${classes.statusBadge} ${classes.statusOk}`}>All found</span>
+                                    <StatusBadge variant='ok'>All found</StatusBadge>
                                 ) : (
-                                    <span className={`${classes.statusBadge} ${classes.statusError}`}>
+                                    <StatusBadge variant='error'>
                                         {probeResult.total_count - probeResult.found_count} missing
-                                    </span>
+                                    </StatusBadge>
                                 )}
                             </Flex>
                         </Flex>
@@ -152,15 +151,13 @@ export const DiagnosticsStep = () => {
                                         <span className={classes.motorName}>{motor.name}</span>
                                         <span className={classes.motorId}>ID {motor.motor_id}</span>
                                         {motor.found && motor.model_correct ? (
-                                            <span className={`${classes.statusBadge} ${classes.statusOk}`}>Found</span>
+                                            <StatusBadge variant='ok'>Found</StatusBadge>
                                         ) : motor.found ? (
-                                            <span className={`${classes.statusBadge} ${classes.statusError}`}>
+                                            <StatusBadge variant='error'>
                                                 Wrong model ({motor.model_number})
-                                            </span>
+                                            </StatusBadge>
                                         ) : (
-                                            <span className={`${classes.statusBadge} ${classes.statusError}`}>
-                                                Not found
-                                            </span>
+                                            <StatusBadge variant='error'>Not found</StatusBadge>
                                         )}
                                     </div>
                                 ))}
@@ -187,11 +184,9 @@ export const DiagnosticsStep = () => {
                             <Text UNSAFE_style={{ fontWeight: 600, fontSize: 14 }}>Calibration Status</Text>
                             <Flex flex alignItems='center' justifyContent='end'>
                                 {alreadyCalibrated ? (
-                                    <span className={`${classes.statusBadge} ${classes.statusOk}`}>Calibrated</span>
+                                    <StatusBadge variant='ok'>Calibrated</StatusBadge>
                                 ) : (
-                                    <span className={`${classes.statusBadge} ${classes.statusPending}`}>
-                                        Needs calibration
-                                    </span>
+                                    <StatusBadge variant='pending'>Needs calibration</StatusBadge>
                                 )}
                             </Flex>
                         </Flex>
@@ -202,13 +197,9 @@ export const DiagnosticsStep = () => {
                                 {Object.entries(probeResult.calibration.motors).map(([name, cal]) => (
                                     <div key={name} className={classes.motorRow}>
                                         <span className={classes.motorName}>{name}</span>
-                                        <span
-                                            className={`${classes.statusBadge} ${
-                                                cal.is_calibrated ? classes.statusOk : classes.statusError
-                                            }`}
-                                        >
+                                        <StatusBadge variant={cal.is_calibrated ? 'ok' : 'error'}>
                                             {cal.is_calibrated ? 'Calibrated' : 'Not calibrated'}
-                                        </span>
+                                        </StatusBadge>
                                         <Text
                                             UNSAFE_style={{
                                                 fontSize: 12,
