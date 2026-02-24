@@ -1,10 +1,11 @@
 import { Suspense } from 'react';
 
-import { Grid, Loading, View } from '@geti/ui';
+import { Content, Grid, Heading, IllustratedMessage, Loading, View } from '@geti/ui';
 import { Outlet, redirect } from 'react-router';
 import { createBrowserRouter } from 'react-router-dom';
 import { path } from 'static-path';
 
+import { ReactComponent as RobotIllustration } from './assets/illustrations/INTEL_08_NO-TESTS.svg';
 import { ErrorPage } from './components/error-page/error-page';
 import { Camera } from './routes/cameras/camera';
 import { Edit as CameraEdit } from './routes/cameras/edit';
@@ -22,8 +23,6 @@ import { Index as Inference } from './routes/models/inference/index';
 import { OpenApi } from './routes/openapi';
 import { Index as Projects } from './routes/projects/index';
 import { ProjectLayout } from './routes/projects/project.layout';
-import { Calibration } from './routes/robots/calibration';
-import { Controller } from './routes/robots/controller';
 import { Edit as RobotEdit } from './routes/robots/edit';
 import { Layout as RobotsLayout } from './routes/robots/layout';
 import { New as RobotsNew } from './routes/robots/new';
@@ -89,6 +88,16 @@ export const paths = {
             inference: models.path('/:model_id/inference'),
         },
     },
+};
+
+const EmptySelection = ({ heading, content }: { heading: string; content: string }) => {
+    return (
+        <IllustratedMessage>
+            <RobotIllustration />
+            <Content>{content}</Content>
+            <Heading>{heading}</Heading>
+        </IllustratedMessage>
+    );
 };
 
 export const router = createBrowserRouter([
@@ -207,7 +216,12 @@ export const router = createBrowserRouter([
                                 children: [
                                     {
                                         index: true,
-                                        element: <div>Illustration to persuade user to select robot</div>,
+                                        element: (
+                                            <EmptySelection
+                                                heading='Robots'
+                                                content='Select a robot or create a new one'
+                                            />
+                                        ),
                                     },
                                     {
                                         path: paths.project.robots.show.pattern,
@@ -255,7 +269,12 @@ export const router = createBrowserRouter([
                                 children: [
                                     {
                                         index: true,
-                                        element: <div>Select a camera or create a new one</div>,
+                                        element: (
+                                            <EmptySelection
+                                                heading='Cameras'
+                                                content='Select a camera or create a new one'
+                                            />
+                                        ),
                                     },
                                     {
                                         path: paths.project.cameras.show.pattern,
@@ -282,7 +301,12 @@ export const router = createBrowserRouter([
                                 children: [
                                     {
                                         index: true,
-                                        element: <div>Select an environment or create a new one</div>,
+                                        element: (
+                                            <EmptySelection
+                                                heading='Environments'
+                                                content='Select an environment or create a new one'
+                                            />
+                                        ),
                                     },
                                     {
                                         path: paths.project.environments.show.pattern,

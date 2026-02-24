@@ -135,11 +135,11 @@ export const EnvironmentsList = () => {
 
 export const Layout = () => {
     return (
-        <Grid areas={['camera controls']} columns={[minmax('size-6000', 'auto'), '1fr']} height={'100%'}>
-            <View gridArea='camera' backgroundColor={'gray-100'} padding='size-400'>
+        <Grid areas={['environments controls']} columns={[minmax('size-6000', 'auto'), '1fr']} height={'100%'}>
+            <View gridArea='environments' backgroundColor={'gray-100'} padding='size-400'>
                 <EnvironmentsList />
             </View>
-            <View gridArea='controls' backgroundColor={'gray-50'}>
+            <View gridArea='controls' backgroundColor={'gray-50'} minHeight={0}>
                 <Suspense
                     fallback={
                         <Grid width='100%' height='100%'>
