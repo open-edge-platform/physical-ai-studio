@@ -49,7 +49,7 @@ Backend runs at http://localhost:8000
 cd ui
 nvm use
 npm install
-npm run start
+npm run build:api:download && npm run build:api && npm run start
 ```
 
 UI runs at http://localhost:3000
