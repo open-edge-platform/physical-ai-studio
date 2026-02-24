@@ -72,11 +72,11 @@ hardware configuration (Intel XPU, NVIDIA CUDA) and device setup.
 This guide will setup a project for imitation learning using teleoperation.
 In this example we'll be using a SO-101.
 
-### ** 0. Create a project. **
+### **0. Create a project.**
 
-PhysicalAI Studio groups the robot problems into Projects. This project will house the datasets and models for the specific problem (e.g. Assemble Part Y). 
+Physical AI Studio groups the robot problems into Projects. This project will house the datasets and models for the specific problem (e.g. Assemble Part Y). 
 
-### ** 1. Setup your robot arms**
+### **1. Setup your robot arms**
 
 **Objective:** Connect and calibrate robot arms & cameras
 
@@ -90,7 +90,6 @@ This environment consists of robot arms and cameras. At first a SO101 robot arm 
   If you are unsure which serial ID is which robot, press the identify button to open and close the gripper.
   - Press Add Robot
   - Check if there are any issues and resolve them with help of the UI.
-  - *Troubleshooting*: [TODO link here]
   
 2. **Setup motors**
 The SO101 daisy chains the servos. In order to know which servo is which joint it will need to assign an ID to the servo.
@@ -118,12 +117,12 @@ The SO101 needs to know the root position and the servos range.
   
 Repeat this process for the SO101 Leader.
 
-### ** 2. Setup cameras**
+### **2. Setup cameras**
 
 **Objective:** Setup cameras that will be used by the follower.
 
 1. **Add new camera**
-  - [Image: Add camera]
+  <img src="../docs/assets/getting_started/add_camera.png" alt="Add new camera" width="100%">
   - Select USB Camera.
   - Set camera name of video input of the model.
   - Select the camera from the list and check preview to verify correct camera.
@@ -132,14 +131,14 @@ Repeat this process for the SO101 Leader.
   
 Repeat for all the points of view for the robot.
 
-### ** 3. Setup environment**
+### **3. Setup environment**
 
 **Objective:** Define environment for robot
 
 This environment will define your robot and the cameras. This will be used in the dataset to determine the input features of the models.
 
 1. **Configure new environment**
-  - [Image: Configure new environment]
+  <img src="../docs/assets/getting_started/new_environment.png" alt="Configure new environment" width="100%">
   - Press *Configure new enviroment*
   - Select previously defined follower.
   - Select the leader robot.
@@ -150,30 +149,31 @@ This environment will define your robot and the cameras. This will be used in th
   - Press *Add* 
   
 3. **Verify**
-  - [Image: Verify image]
+  <img src="../docs/assets/getting_started/verify_environment.png" alt="Verify new environment" width="100%">
+  - Press *Configure new enviroment*
   - A preview will be shown with the robots and camera point of views.
   - Verify the robots by moving them in real time.
   - Press *Add Environment*
 
-### ** 4. Collect demonstration data from robot**
+### **4. Collect demonstration data from robot**
 
 **Objective:** Create a dataset to train a model for your task.
 
 1. **Create new dataset**
-  - [Image: Create new dataset]
+  <img src="../docs/assets/getting_started/new_dataset.png" alt="New Dataset" width="100%">
   - Press *New dataset*
   - Select the environment. This will determine the dataset features - and therefore the model features.
   - Select a name
   - Press *Save*
   
 2. **Start recording**
-  - [Image: Start recording]
+  <img src="../docs/assets/getting_started/start_recording.png" alt="Start Recording" width="100%">
   - Press *New dataset*
   - Select the environment. Multiple environments are allowed and datasets can be recorded using different environments as long as they have the same *features*.
   - Name the task
   
 3. **Start Episode**
-  - [Image: Start Episode]
+  <img src="../docs/assets/getting_started/start_episode.png" alt="Start Episode" width="100%">
   - Move the leader around to verify. Check lighting of scene.
   - Reset the environment for your task.
   - Press *Start Episode*
@@ -183,11 +183,11 @@ This environment will define your robot and the cameras. This will be used in th
   - Press *< Adding Episode* in the banner to go back to the dataset and persist the new episodes.
   
 
-### ** 5. Train policies using the PhysicalAI library**
+### **5. Train policies using the PhysicalAI library**
 
 **Objective:** Train a policy using the recorded dataset.
 1. **Train model**
-  - [Image: Train model]
+  <img src="../docs/assets/getting_started/train_model.png" alt="Train Model" width="100%">
   - Go to *Models* in the header
   - Press *Train model*
   - Fill in model name
@@ -198,7 +198,7 @@ This environment will define your robot and the cameras. This will be used in th
 
 
 2. **Run Inference**
-  - [Image: Run inference]
+  <img src="../docs/assets/getting_started/run_inference.png" alt="Run Inference" width="100%">
   - Once model has been trained you can run the model on your environment for verification.
   - Press *Run model* on your trained model.
   - Verify environment and backend.
