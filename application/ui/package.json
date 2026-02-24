@@ -20,7 +20,7 @@
         "format:check": "prettier --check --cache \"./src/**/*.{js,ts,jsx,tsx,css,scss,sass}\"",
         "lint": "eslint \"src/**/*.ts*\" --max-warnings 0",
         "lint:fix": "eslint --fix \"./src/**/*.ts*\"",
-        "preinstall": "npm run clone-geti-ui-packages",
+        "preinstall": "npm run clone-geti-ui-packages && npm run clone-so101 && npm run clone-widowx",
         "preview": "rsbuild preview",
         "test:unit": "vitest --config vitest.config.ts",
         "test:unit:watch": "vitest --config vitest.config.ts --reporter=verbose --watch",
@@ -102,7 +102,5 @@
         "vite-plugin-svgr": "^4.3.0",
         "vitest": "^3.2.4"
     },
-    "workspaces": [
-        "packages/*"
-    ]
+    "workspaces": ["packages/*"]
 }
