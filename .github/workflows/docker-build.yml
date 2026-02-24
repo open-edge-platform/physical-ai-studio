@@ -33,7 +33,7 @@ jobs:
           persist-credentials: false
 
       - name: Cleanup runner
-        uses: open-edge-platform/geti-ci/actions/cleanup-runner@3a4b81ea648711eb638b34757427cd3ef71d19f1
+        uses: open-edge-platform/geti-ci/actions/cleanup-runner@375de2eb018dae396c959f9b3a464f40271de969
         with:
           type: all
 
