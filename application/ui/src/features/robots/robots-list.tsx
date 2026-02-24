@@ -28,7 +28,6 @@ const MenuActions = ({ robot_id }: { robot_id: string }) => {
                     }
                 }}
             >
-                <Item href={paths.project.robots.edit({ project_id, robot_id })}>Edit</Item>
                 <Item key='delete'>Delete</Item>
             </Menu>
         </MenuTrigger>
