@@ -27,8 +27,10 @@ import { Controller } from './routes/robots/controller';
 import { Edit as RobotEdit } from './routes/robots/edit';
 import { Layout as RobotsLayout } from './routes/robots/layout';
 import { New as RobotsNew } from './routes/robots/new';
+import { NewRobotLayout } from './routes/robots/new-layout';
 import { Robot } from './routes/robots/robot';
 import { SetupMotors } from './routes/robots/setup-motors';
+import { SO101Setup } from './routes/robots/so101-setup';
 import { TabNavigation as RobotsTabNavigation } from './routes/robots/tab-navigation';
 
 const root = path('/');
@@ -59,6 +61,7 @@ export const paths = {
         robots: {
             index: robots,
             new: robots.path('new'),
+            so101Setup: robots.path('new/so101-setup'),
             edit: robot.path('edit'),
             show: robot,
             controller: robot.path('/controller'),
@@ -182,7 +185,17 @@ export const router = createBrowserRouter([
                             // Robots
                             {
                                 path: paths.project.robots.new.pattern,
-                                element: <RobotsNew />,
+                                element: <NewRobotLayout />,
+                                children: [
+                                    {
+                                        index: true,
+                                        element: <RobotsNew />,
+                                    },
+                                    {
+                                        path: 'so101-setup',
+                                        element: <SO101Setup />,
+                                    },
+                                ],
                             },
                             {
                                 path: paths.project.robots.edit.pattern,
