@@ -4,6 +4,7 @@ import { ActionButton, Button, Flex, Heading, Icon, Item, Picker, Text, View, We
 import { Add, Close } from '@geti/ui/icons';
 
 import { $api } from '../../../api/client';
+import { SchemaProjectCamera } from '../../../api/types';
 import { useProjectId } from '../../../features/projects/use-project';
 import { useEnvironmentForm, useSetEnvironmentForm } from './provider';
 
@@ -38,6 +39,22 @@ export const CameraListItem = ({ cameraId, onRemove }: { cameraId: string; onRem
     );
 };
 
+const getAvailableCameras = (environmentCameraIds: Array<string>, cameras: Array<SchemaProjectCamera>) => {
+    const environmentCameras = environmentCameraIds.map((id) => {
+        return cameras.find((camera) => camera.id === id);
+    });
+
+    return cameras.filter((camera) => {
+        // Don't allow adding the same camera twice
+        if (environmentCameraIds.includes(camera.id!)) {
+            return false;
+        }
+
+        // Don't allow adding duplicated camera names
+        return environmentCameras.some((environmentCamera) => environmentCamera?.name === camera.name) === false;
+    });
+};
+
 export const AddCameraForm = ({
     onAddCamera,
     onCancel,
@@ -51,9 +68,7 @@ export const AddCameraForm = ({
     });
     const environment = useEnvironmentForm();
 
-    const availableCameras = camerasQuery.data.filter((camera) => {
-        return environment.camera_ids.includes(camera.id!) === false;
-    });
+    const availableCameras = getAvailableCameras(environment.camera_ids, camerasQuery.data);
 
     const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null);
 
