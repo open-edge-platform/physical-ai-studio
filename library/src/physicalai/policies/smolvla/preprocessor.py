@@ -340,7 +340,7 @@ def make_smolvla_preprocessors(
     *,
     image_resolution: tuple[int, int] = (512, 512),
     max_token_len: int = 48,
-    token_pad_type: str = "longest",
+    token_pad_type: str = "longest",  # noqa: S107
 ) -> tuple[SmolVLAPreprocessor, SmolVLAPostprocessor]:
     """Create preprocessor and postprocessor pair.
 

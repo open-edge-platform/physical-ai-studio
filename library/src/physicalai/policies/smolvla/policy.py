@@ -237,6 +237,7 @@ class SmolVLA(Export, Policy):
             stats=dataset_stats,
             image_resolution=self.config.resize_imgs_with_padding,
             max_token_len=self.config.tokenizer_max_length,
+            token_pad_type=self.config.pad_language_to,
         )
 
     def setup(self, stage: str) -> None:
