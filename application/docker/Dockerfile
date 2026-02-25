@@ -223,21 +223,21 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN echo "deb [arch=amd64 trusted=yes] https://ppa.launchpadcontent.net/kobuk-team/intel-graphics/ubuntu noble main" \
         > /etc/apt/sources.list.d/kobuk-intel.list \
     && apt-get update && apt-get install -y --no-install-recommends \
-        libze-intel-gpu1=26.01.36711.4-1~24.04~ppa1 \
-        libze1=1.26.2-1~24.04~ppa1 \
-        libze-dev=1.26.2-1~24.04~ppa1 \
-        intel-opencl-icd=26.01.36711.4-1~24.04~ppa1 \
-        intel-metrics-discovery=1.14.183-1~24.04~ppa1 \
-        intel-gsc=0.9.5-1~24.04~ppa2 \
-        intel-ocloc=26.01.36711.4-1~24.04~ppa1 \
-        clinfo=3.0.25.02.14-1 \
-        intel-media-va-driver-non-free=25.4.6-1~24.04~ppa1 \
-        libmfx-gen1=25.4.0-0ubuntu1~24.04~ppa1 \
-        libvpl2=1:2.16.0-1~24.04~ppa1 \
-        libvpl-tools=1.5.0-1~24.04~ppa1 \
-        libva-glx2=2.22.0-3 \
-        va-driver-all=2.22.0-3 \
-        vainfo=2.22.0+ds1-2 \
+        libze-intel-gpu1 \
+        libze1 \
+        libze-dev \
+        intel-opencl-icd \
+        intel-metrics-discovery \
+        intel-gsc \
+        intel-ocloc \
+        clinfo \
+        intel-media-va-driver-non-free \
+        libmfx-gen1 \
+        libvpl2 \
+        libvpl-tools \
+        libva-glx2 \
+        va-driver-all \
+        vainfo \
     && rm -rf /var/lib/apt/lists/*
 
 SHELL ["/bin/sh", "-c"]
