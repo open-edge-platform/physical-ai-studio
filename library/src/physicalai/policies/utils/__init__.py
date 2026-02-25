@@ -3,10 +3,8 @@
 
 """Utils for policies."""
 
-from .from_checkpoint_mixin import FromCheckpoint
 from .normalization import FeatureNormalizeTransform
 
 __all__ = [
     "FeatureNormalizeTransform",
-    "FromCheckpoint",
 ]
