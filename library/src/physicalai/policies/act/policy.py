@@ -16,26 +16,66 @@ from physicalai.policies.base import Policy
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 
-class ACT(Export, Policy):  # type: ignore[misc]
+class ACT(Export, Policy):
     """Action Chunking with Transformers (ACT) policy implementation.
 
     This class implements the ACT policy for imitation learning, which uses a transformer-based
     architecture to predict sequences of actions given observations.
-    Policy contains contains model and other related modules and methods that are required
+    Policy contains model and other related modules and methods that are required
     to start training in a Lightning Trainer.
 
-    Example:
-        >>> model = ACTModel(...)
-        >>> policy = ACT(model)
-        >>> actions = policy.select_action(batch)
-        >>> loss_dict = policy.training_step(batch, batch_idx=0)
+    The model is lazily initialized during ``setup()`` from the datamodule, or eagerly
+    when ``dataset_stats`` is provided (e.g. when restoring from a checkpoint).
 
-        Export examples:
-        >>> policy = ACT(model)
-        >>> # Export to OpenVINO (recommended for Intel platforms)
-        >>> policy.export("./exports", backend="openvino")
-        >>> # Export to ONNX (cross-platform)
-        >>> policy.export("./exports", backend="onnx")
+    Args:
+        n_obs_steps: Number of observation steps to pass to the policy.
+        chunk_size: Size of the action prediction chunk in environment steps.
+        n_action_steps: Number of action steps to execute per policy invocation.
+            Should be no greater than ``chunk_size``.
+        vision_backbone: Name of the torchvision ResNet backbone for encoding images.
+        pretrained_backbone_weights: Pretrained weights for the vision backbone.
+            ``None`` means no pretrained weights.
+        replace_final_stride_with_dilation: Whether to replace the ResNet's final
+            2x2 stride with a dilated convolution.
+        pre_norm: Whether to use pre-norm in transformer blocks.
+        dim_model: Main hidden dimension of the transformer blocks.
+        n_heads: Number of attention heads in transformer blocks.
+        dim_feedforward: Feedforward expansion dimension in transformer blocks.
+        feedforward_activation: Activation function in transformer feedforward layers.
+        n_encoder_layers: Number of transformer encoder layers.
+        n_decoder_layers: Number of transformer decoder layers.
+        use_vae: Whether to use a variational objective during training.
+        latent_dim: Latent dimension for the VAE.
+        n_vae_encoder_layers: Number of transformer layers in the VAE encoder.
+        temporal_ensemble_coeff: Coefficient for temporal ensembling. ``None`` disables it.
+            When enabled, ``n_action_steps`` must be 1.
+        dropout: Dropout rate in transformer layers.
+        kl_weight: Weight for the KL-divergence loss term when ``use_vae`` is True.
+        optimizer_lr: Learning rate for the optimizer.
+        optimizer_weight_decay: Weight decay for the optimizer.
+        optimizer_grad_clip_norm: Maximum gradient norm for gradient clipping.
+        dataset_stats: Dataset normalization statistics for eager model initialization
+            (used when restoring from a checkpoint).
+
+    Examples:
+        Create a policy with default parameters (model built lazily during training):
+
+            >>> policy = ACT()
+            >>> trainer.fit(policy, datamodule=dm)
+
+        Create a policy with custom architecture parameters:
+
+            >>> policy = ACT(
+            ...     chunk_size=50,
+            ...     dim_model=256,
+            ...     n_heads=4,
+            ...     n_encoder_layers=6,
+            ... )
+
+        Export a trained policy:
+
+            >>> policy.export("./exports", backend="openvino")
+            >>> policy.export("./exports", backend="onnx")
     """
 
     def __init__(  # noqa: PLR0913
