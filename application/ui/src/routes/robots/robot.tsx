@@ -1,20 +1,14 @@
-import { Button, ButtonGroup, Flex, Item, TabList, TabPanels, Tabs } from '@geti/ui';
-import { Outlet, useLocation, useParams } from 'react-router-dom';
+import { Button, ButtonGroup, Flex, Grid, View } from '@geti/ui';
 
 import { $api } from '../../api/client';
-import { paths } from '../../router';
-import { getPathSegment } from '../../utils';
+import { JointControls } from '../../features/robots/controller/joint-controls';
+import { RobotViewer } from '../../features/robots/controller/robot-viewer';
+import { RobotModelsProvider } from '../../features/robots/robot-models-context';
+import { useRobot } from '../../features/robots/use-robot';
 
 export const Robot = () => {
-    const { pathname } = useLocation();
-    const params = useParams<{ project_id: string; robot_id: string }>() as {
-        project_id: string;
-        robot_id: string;
-    };
+    const robot = useRobot();
 
-    const { data: robot } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/robots/{robot_id}', {
-        params: { path: { project_id: params.project_id, robot_id: params.robot_id } },
-    });
     const identifyMutation = $api.useMutation('post', '/api/hardware/identify');
 
     const onIdentify = identifyMutation.isPending
@@ -24,57 +18,34 @@ export const Robot = () => {
           };
 
     return (
-        <Tabs aria-label='Robot configuration navigation' selectedKey={getPathSegment(pathname, 5)} height='100%'>
-            <Flex>
-                <TabList
-                    width='100%'
-                    UNSAFE_style={{
-                        '--spectrum-tabs-selection-indicator-color': 'var(--energy-blue)',
-                    }}
+        <View padding='size-400' height='100%' minHeight='0'>
+            <RobotModelsProvider>
+                <Grid
+                    gap='size-200'
+                    UNSAFE_style={{ padding: 'var(--spectrum-global-dimension-size-100)' }}
+                    areas={['actions', 'robot-viewer', 'controls ']}
+                    rows={['auto', 'auto', 'min-content']}
+                    height='100%'
+                    maxHeight={'100vh'}
+                    maxWidth='100%'
+                    minHeight={0}
+                    minWidth={0}
                 >
-                    <Item key={paths.project.robots.controller(params)} href={paths.project.robots.controller(params)}>
-                        Robot controller
-                    </Item>
-                    <Item
-                        key={paths.project.robots.calibration(params)}
-                        href={paths.project.robots.calibration(params)}
-                    >
-                        Calibration
-                    </Item>
-                    <Item
-                        key={paths.project.robots.setupMotors(params)}
-                        href={paths.project.robots.setupMotors(params)}
-                    >
-                        Setup motors
-                    </Item>
-                </TabList>
-                <div
-                    style={{
-                        display: 'flex',
-                        flex: '0 0 auto',
-                        borderBottom:
-                            'var(--spectrum-alias-border-size-thick) solid var(--spectrum-global-color-gray-300)',
-                    }}
-                >
-                    <ButtonGroup>
-                        <Button variant='secondary' onPress={onIdentify}>
-                            Identify
-                        </Button>
-                        <Button variant='secondary'>Connect</Button>
-                    </ButtonGroup>
-                </div>
-            </Flex>
-            <TabPanels>
-                <Item key={paths.project.robots.controller(params)}>
-                    <Outlet />
-                </Item>
-                <Item key={paths.project.robots.calibration(params)}>
-                    <Outlet />
-                </Item>
-                <Item key={paths.project.robots.setupMotors(params)}>
-                    <Outlet />
-                </Item>
-            </TabPanels>
-        </Tabs>
+                    <View gridArea='actions'>
+                        <Flex justifyContent={'end'}>
+                            <ButtonGroup>
+                                <Button variant='secondary' onPress={onIdentify}>
+                                    Identify
+                                </Button>
+                            </ButtonGroup>
+                        </Flex>
+                    </View>
+                    <View gridArea='robot-viewer'>
+                        <RobotViewer robot={robot} />
+                    </View>
+                    <JointControls />
+                </Grid>
+            </RobotModelsProvider>
+        </View>
     );
 };

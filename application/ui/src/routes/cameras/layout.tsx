@@ -172,11 +172,11 @@ export const CamerasList = () => {
 
 export const Layout = () => {
     return (
-        <Grid gap='size-200' areas={['camera controls']} columns={[minmax('size-6000', 'auto'), '1fr']} height={'100%'}>
+        <Grid areas={['camera controls']} columns={[minmax('size-6000', 'auto'), '1fr']} height={'100%'}>
             <View gridArea='camera' backgroundColor={'gray-100'} padding='size-400'>
                 <CamerasList />
             </View>
-            <View gridArea='controls' backgroundColor={'gray-50'} padding='size-400'>
+            <View gridArea='controls' backgroundColor={'gray-50'} minHeight={0}>
                 <Suspense
                     fallback={
                         <Grid width='100%' height='100%'>

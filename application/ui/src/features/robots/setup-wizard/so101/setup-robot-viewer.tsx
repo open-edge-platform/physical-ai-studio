@@ -11,7 +11,7 @@ import { URDFRobot } from 'urdf-loader';
 
 import { SchemaRobotType } from '../../../../api/openapi-spec';
 import { useContainerSize } from '../../../../components/zoom/use-container-size';
-import { useLoadModelMutation, useRobotModels } from '../../robot-models-context';
+import { urdfPathForType, useLoadModelMutation, useRobotModels } from '../../robot-models-context';
 import { JointHighlight, useJointHighlight } from './use-joint-highlight';
 
 // ---------------------------------------------------------------------------
@@ -126,29 +126,17 @@ const CameraController = ({ controlsRef, model, highlights }: CameraControllerPr
 
 const useLoadURDF = (robotType: SchemaRobotType) => {
     const loadModelMutation = useLoadModelMutation();
-    const { models } = useRobotModels();
+    const { hasModel } = useRobotModels();
 
-    let PATH = '/SO101/so101_new_calib.urdf';
+    const PATH = urdfPathForType(robotType);
 
-    if (robotType !== undefined && robotType.toLowerCase().includes('trossen')) {
-        PATH = '/widowx/urdf/generated/wxai/wxai_follower.urdf';
-    }
-
-    const ref = useRef(false);
     useEffect(() => {
-        if (models.length > 0) {
-            return;
-        }
-        if (loadModelMutation.data || !loadModelMutation.isIdle) {
-            return;
-        }
-        if (ref.current) {
+        if (hasModel(PATH)) {
             return;
         }
 
-        ref.current = true;
         loadModelMutation.mutate(PATH);
-    }, [models, PATH, loadModelMutation]);
+    }, [PATH, hasModel, loadModelMutation]);
 };
 
 // ---------------------------------------------------------------------------
@@ -172,12 +160,13 @@ interface SetupRobotViewerProps {
 export const SetupRobotViewer = ({ robotType, highlights = [] }: SetupRobotViewerProps) => {
     const angle = degToRad(-45);
 
+    const PATH = urdfPathForType(robotType);
     useLoadURDF(robotType);
     const ref = useRef<HTMLDivElement>(null);
     const controlsRef = useRef<OrbitControlsImpl>(null);
     const size = useContainerSize(ref);
-    const { models } = useRobotModels();
-    const model = models.at(0);
+    const { getModel } = useRobotModels();
+    const model = getModel(PATH);
 
     return (
         <div ref={ref} style={{ width: '100%', height: '100%' }}>
