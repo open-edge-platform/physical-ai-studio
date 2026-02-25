@@ -8,7 +8,7 @@ on:
 permissions: {} # No permissions by default on workflow level
 
 env:
-  REGISTRY: ghcr.io/open-edge-platform/physical-ai-studio/dev
+  REGISTRY: ghcr.io/open-edge-platform/dev/physical-ai-studio
 
 concurrency:
   group: docker-publish
@@ -38,11 +38,10 @@ jobs:
         id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          # Each device publishes to its own subpath under the registry.
-          images: ${{ env.REGISTRY }}/${{ matrix.device }}/physical-ai-studio
+          images: ${{ env.REGISTRY }}/physical-ai-studio-${{ matrix.device }}
           tags: |
-            type=ref,event=branch
-            type=sha,prefix=
+            type=ref,event=branch,suffix=-dev
+            type=sha,prefix=,suffix=-dev
 
       - name: Build and push Docker image
         uses: ./.github/actions/docker-build
