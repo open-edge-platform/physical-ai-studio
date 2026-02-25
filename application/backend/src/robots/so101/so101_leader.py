@@ -1,9 +1,16 @@
+import asyncio
+
 from lerobot.teleoperators.so101_leader import SO101Leader as LeSO101Leader
 from lerobot.teleoperators.so101_leader import SO101LeaderConfig
 from loguru import logger
 
 from robots.robot_client import RobotClient
 from schemas.robot import RobotType
+
+# Timeout for hardware operations (seconds)
+# Connection may take longer due to USB enumeration
+HARDWARE_TIMEOUT_CONNECT = 10.0
+HARDWARE_TIMEOUT_COMMAND = 5.0
 
 
 class SO101Leader(RobotClient):
@@ -13,6 +20,10 @@ class SO101Leader(RobotClient):
 
     def __init__(self, config: SO101LeaderConfig):
         self.robot = LeSO101Leader(config)
+        # Serialize all serial bus access. The Feetech SCS bus is half-duplex
+        # (single TX/RX line), so concurrent reads/writes cause "Port is in use!"
+        # errors. This lock ensures only one bus operation is in-flight at a time.
+        self._bus_lock = asyncio.Lock()
 
     @property
     def robot_type(self) -> RobotType:
@@ -25,12 +36,27 @@ class SO101Leader(RobotClient):
     async def connect(self) -> None:
         """Connect to the robot."""
         logger.info(f"Connecting to SO101Leader on port {self.robot.config.port}")
-        self.robot.connect()
+        try:
+            async with self._bus_lock, asyncio.timeout(HARDWARE_TIMEOUT_CONNECT):
+                await asyncio.to_thread(self.robot.connect)
+        except TimeoutError:
+            logger.error("Timeout connecting to robot")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to connect to robot: {e}")
+            raise
 
     async def disconnect(self) -> None:
         """Disconnect from the robot."""
-        logger.info(f"Disconnecting to SO101Leader on port {self.robot.config.port}")
-        self.robot.disconnect()
+        logger.info(f"Disconnecting SO101Leader on port {self.robot.config.port}")
+        try:
+            async with self._bus_lock, asyncio.timeout(HARDWARE_TIMEOUT_COMMAND):
+                await asyncio.to_thread(self.robot.disconnect)
+            logger.info("Robot disconnected")
+        except TimeoutError:
+            logger.warning("Timeout during robot disconnect - forcing cleanup")
+        except Exception as e:
+            logger.error(f"Error during robot disconnect: {e}")
 
     async def ping(self) -> dict:
         """Send ping command. Returns event dict with timestamp."""
@@ -43,15 +69,17 @@ class SO101Leader(RobotClient):
     async def enable_torque(self) -> dict:
         """Enable torque. Returns event dict with timestamp."""
         logger.info("Enabling torque")
+        async with self._bus_lock, asyncio.timeout(HARDWARE_TIMEOUT_COMMAND):
+            await asyncio.to_thread(self.robot.bus.enable_torque)
         self.is_controlled = True
-        self.robot.bus.enable_torque()
         return self._create_event("torque_was_enabled")
 
     async def disable_torque(self) -> dict:
         """Disable torque. Returns event dict with timestamp."""
         logger.info("Disabling torque")
+        async with self._bus_lock, asyncio.timeout(HARDWARE_TIMEOUT_COMMAND):
+            await asyncio.to_thread(self.robot.bus.disable_torque)
         self.is_controlled = False
-        self.robot.bus.disable_torque()
         return self._create_event("torque_was_disabled")
 
     def features(self) -> list[str]:
@@ -71,7 +99,8 @@ class SO101Leader(RobotClient):
         }
         """
         try:
-            state = self.robot.get_action()
+            async with self._bus_lock, asyncio.timeout(HARDWARE_TIMEOUT_COMMAND):
+                state = await asyncio.to_thread(self.robot.get_action)
             return self._create_event(
                 "state_was_updated",
                 state=state,
