@@ -4,6 +4,9 @@ import { degToRad } from 'three/src/math/MathUtils.js';
 
 import { useRobotModels } from '../../robot-models-context';
 
+/** URDF path for the SO101 model — this file is only used in the SO101 wizard. */
+const SO101_PATH = '/SO101/so101_new_calib.urdf';
+
 // ---------------------------------------------------------------------------
 // Shared easing function
 // ---------------------------------------------------------------------------
@@ -51,11 +54,12 @@ const CENTERING_DURATION_MS = 4000;
  * Adapted from the experimental centering-step.tsx (commit c3f677b0).
  */
 export const useCenteringAnimation = (enabled: boolean) => {
-    const { models } = useRobotModels();
+    const { getModel } = useRobotModels();
+    const model = getModel(SO101_PATH);
     const animationRef = useRef<number | null>(null);
 
     useEffect(() => {
-        if (!enabled || models.length === 0) {
+        if (!enabled || !model) {
             return;
         }
 
@@ -66,13 +70,11 @@ export const useCenteringAnimation = (enabled: boolean) => {
             const progress = Math.min(elapsed / CENTERING_DURATION_MS, 1);
             const eased = easeInOut(progress);
 
-            models.forEach((model) => {
-                Object.values(model.joints).forEach((joint) => {
-                    const homeValue = HOME_POSITION_STATE[joint.urdfName] ?? 0;
-                    const targetValue = TARGET_POSITION_STATE[joint.urdfName] ?? 0;
-                    const interpolated = homeValue + (targetValue - homeValue) * eased;
-                    joint.setJointValue(degToRad(interpolated));
-                });
+            Object.values(model.joints).forEach((joint) => {
+                const homeValue = HOME_POSITION_STATE[joint.urdfName] ?? 0;
+                const targetValue = TARGET_POSITION_STATE[joint.urdfName] ?? 0;
+                const interpolated = homeValue + (targetValue - homeValue) * eased;
+                joint.setJointValue(degToRad(interpolated));
             });
 
             if (progress < 1) {
@@ -88,7 +90,7 @@ export const useCenteringAnimation = (enabled: boolean) => {
                 animationRef.current = null;
             }
         };
-    }, [enabled, models]);
+    }, [enabled, model]);
 };
 
 // ---------------------------------------------------------------------------
@@ -105,12 +107,12 @@ const RANGE_PAUSE_MS = 500;
  * Adapted from the experimental MovementPreview (commit c3f677b0).
  */
 export const useRangeOfMotionAnimation = (enabled: boolean) => {
-    const { models } = useRobotModels();
+    const { getModel } = useRobotModels();
+    const model = getModel(SO101_PATH);
     const animationRef = useRef<number | null>(null);
     const cycleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [currentStep, setCurrentStep] = useState(0);
 
-    const model = models.at(0);
     const joints = useMemo(() => model?.joints ?? {}, [model]);
 
     const changeableJoints = useMemo(
@@ -160,19 +162,16 @@ export const useRangeOfMotionAnimation = (enabled: boolean) => {
 
     // Animate to the current step's target position
     useEffect(() => {
-        if (!enabled || models.length === 0 || animationSequence.length === 0) {
+        if (!enabled || !model || animationSequence.length === 0) {
             return;
         }
 
         const targetPosition = animationSequence[currentStep].position;
 
         // Capture starting positions for interpolation
-        const startPositions: Record<number, Record<string, number>> = {};
-        models.forEach((m, index) => {
-            startPositions[index] = {};
-            Object.values(m.joints).forEach((joint) => {
-                startPositions[index][joint.urdfName] = joint.angle;
-            });
+        const startPositions: Record<string, number> = {};
+        Object.values(model.joints).forEach((joint) => {
+            startPositions[joint.urdfName] = joint.angle;
         });
 
         const startTime = performance.now();
@@ -182,16 +181,14 @@ export const useRangeOfMotionAnimation = (enabled: boolean) => {
             const progress = Math.min(elapsed / RANGE_TRANSITION_MS, 1);
             const eased = easeInOut(progress);
 
-            models.forEach((m, index) => {
-                Object.values(m.joints).forEach((joint) => {
-                    const startValue = startPositions[index][joint.urdfName] ?? 0;
-                    const targetValue = targetPosition[joint.urdfName];
+            Object.values(model.joints).forEach((joint) => {
+                const startValue = startPositions[joint.urdfName] ?? 0;
+                const targetValue = targetPosition[joint.urdfName];
 
-                    if (targetValue !== undefined) {
-                        const interpolated = startValue + (targetValue - startValue) * eased;
-                        joint.setJointValue(interpolated);
-                    }
-                });
+                if (targetValue !== undefined) {
+                    const interpolated = startValue + (targetValue - startValue) * eased;
+                    joint.setJointValue(interpolated);
+                }
             });
 
             if (progress < 1) {
@@ -216,5 +213,5 @@ export const useRangeOfMotionAnimation = (enabled: boolean) => {
                 cycleTimeoutRef.current = null;
             }
         };
-    }, [enabled, models, animationSequence, currentStep]);
+    }, [enabled, model, animationSequence, currentStep]);
 };
