@@ -1,0 +1,83 @@
+name: Docker Build
+description: >
+  Build a Physical AI Studio Docker image for a given device target.
+  Handles runner cleanup, Buildx setup, registry login, and the build itself.
+  The caller is responsible for checkout, metadata/tagging, and any post-build
+  steps (artifact upload, image signing).
+
+inputs:
+  device:
+    description: "Build target device (cpu, xpu, or cuda)"
+    required: true
+  registry:
+    description: "Container registry host/path for login (e.g. ghcr.io)"
+    required: true
+  push:
+    description: "Push the image to the registry (true/false)"
+    required: false
+    default: "false"
+  tags:
+    description: "Newline-separated image tags (from docker/metadata-action)"
+    required: false
+    default: ""
+  labels:
+    description: "Newline-separated image labels (from docker/metadata-action)"
+    required: false
+    default: ""
+
+outputs:
+  digest:
+    description: "Image digest from docker/build-push-action"
+    value: ${{ steps.build.outputs.digest }}
+
+runs:
+  using: composite
+  steps:
+    - name: Cleanup runner
+      uses: open-edge-platform/geti-ci/actions/cleanup-runner@375de2eb018dae396c959f9b3a464f40271de969
+      with:
+        type: all
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+      with:
+        registry: ${{ inputs.registry }}
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+
+    - name: Compute build outputs
+      id: build-outputs
+      shell: bash
+      env:
+        PUSH: ${{ inputs.push }}
+        DEVICE: ${{ inputs.device }}
+      run: |
+        if [ "$PUSH" = "true" ]; then
+          echo "value=" >> "$GITHUB_OUTPUT"
+        elif [ "$DEVICE" = "cuda" ]; then
+          # CUDA images are too large (~5 GB) to export as tar on GHA runners.
+          # Build-only validation + cache population is sufficient for PRs.
+          echo "value=type=cacheonly" >> "$GITHUB_OUTPUT"
+        else
+          echo "value=type=docker,dest=${RUNNER_TEMP}/physical-ai-studio-${DEVICE}.tar" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Build Docker image
+      id: build
+      uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+      with:
+        context: .
+        file: application/docker/Dockerfile
+        build-contexts: libs=library
+        target: physical-ai-studio-${{ inputs.device }}
+        platforms: linux/amd64
+        push: ${{ inputs.push }}
+        tags: ${{ inputs.tags }}
+        labels: ${{ inputs.labels }}
+        outputs: ${{ steps.build-outputs.outputs.value }}
+        build-args: GIT_SHA=${{ github.sha }}
+        cache-from: type=gha,scope=${{ inputs.device }}
+        cache-to: type=gha,mode=max,scope=${{ inputs.device }}

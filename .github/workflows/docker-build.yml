@@ -6,6 +6,7 @@ on:
     paths:
       - "library/**"
       - "application/**"
+      - ".github/actions/docker-build/**"
       - ".github/workflows/docker-build.yml"
 
 permissions: {} # No permissions by default on workflow level
@@ -13,6 +14,9 @@ permissions: {} # No permissions by default on workflow level
 concurrency:
   group: docker-build-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io/open-edge-platform/physical-ai-studio/dev
 
 jobs:
   build:
@@ -32,29 +36,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Cleanup runner
-        uses: open-edge-platform/geti-ci/actions/cleanup-runner@375de2eb018dae396c959f9b3a464f40271de969
-        with:
-          type: all
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-
       - name: Build Docker image
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        uses: ./.github/actions/docker-build
         with:
-          context: .
-          file: application/docker/Dockerfile
-          build-contexts: libs=library
-          target: physical-ai-studio-${{ matrix.device }}
-          platforms: linux/amd64
-          push: false
-          # CUDA images are too large (~5 GB) to export as tar on GHA runners.
-          # Build-only validation + cache population is sufficient for PRs.
-          outputs: ${{ matrix.device != 'cuda' && format('type=docker,dest={0}/physical-ai-studio-{1}.tar', runner.temp, matrix.device) || 'type=cacheonly' }}
-          build-args: GIT_SHA=${{ github.sha }}
-          cache-from: type=gha,scope=${{ matrix.device }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.device }}
+          device: ${{ matrix.device }}
+          registry: ${{ env.REGISTRY }}
 
       - name: Upload Docker image
         if: matrix.device != 'cuda'

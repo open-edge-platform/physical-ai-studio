@@ -1,0 +1,69 @@
+name: Docker Publish
+
+on:
+  schedule:
+    - cron: "0 2 * * *" # Nightly at 2 AM UTC
+  workflow_dispatch: # Allow manual runs
+
+permissions: {} # No permissions by default on workflow level
+
+env:
+  REGISTRY: ghcr.io/open-edge-platform/physical-ai-studio/dev
+
+concurrency:
+  group: docker-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish (${{ matrix.device }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # Checkout code
+      packages: write # Push images to GHCR
+      id-token: write # Cosign keyless signing (OIDC)
+
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [cpu, xpu, cuda]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        with:
+          # Each device publishes to its own subpath under the registry.
+          images: ${{ env.REGISTRY }}/${{ matrix.device }}/physical-ai-studio
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=
+
+      - name: Build and push Docker image
+        uses: ./.github/actions/docker-build
+        with:
+          device: ${{ matrix.device }}
+          registry: ${{ env.REGISTRY }}
+          push: "true"
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Resolve primary image tag for signing
+        id: primary-tag
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          # Use the first tag as the signing reference.
+          # The sign-image action resolves the digest from this tag via crane.
+          TAG="$(echo "$TAGS" | head -n1)"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Sign Docker image
+        uses: open-edge-platform/geti-ci/actions/sign-image@375de2eb018dae396c959f9b3a464f40271de969
+        with:
+          image-uri: ${{ steps.primary-tag.outputs.tag }}
