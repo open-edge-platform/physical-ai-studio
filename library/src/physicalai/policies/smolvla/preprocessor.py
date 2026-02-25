@@ -227,7 +227,7 @@ class SmolVLAPreprocessor(torch.nn.Module):
             text,
             max_length=self.max_token_len,
             truncation=True,
-            padding="longest",
+            padding=self.padding,
             padding_side="right",
             return_tensors="pt",
         )
@@ -340,6 +340,7 @@ def make_smolvla_preprocessors(
     *,
     image_resolution: tuple[int, int] = (512, 512),
     max_token_len: int = 48,
+    token_pad_type: str = "longest",
 ) -> tuple[SmolVLAPreprocessor, SmolVLAPostprocessor]:
     """Create preprocessor and postprocessor pair.
 
@@ -350,6 +351,7 @@ def make_smolvla_preprocessors(
         stats: Dataset statistics as nested dicts.
         image_resolution: Target image resolution.
         max_token_len: Maximum token length.
+        token_pad_type: Padding strategy for tokenization ("longest" or "max_length").
 
     Returns:
         Tuple of (preprocessor, postprocessor).
@@ -379,6 +381,7 @@ def make_smolvla_preprocessors(
         image_resolution=image_resolution,
         features=features,
         max_token_len=max_token_len,
+        padding=token_pad_type,
     )
 
     postprocessor = SmolVLAPostprocessor(
