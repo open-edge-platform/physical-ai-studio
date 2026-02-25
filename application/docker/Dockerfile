@@ -184,6 +184,7 @@ ENV PATH="/app/application/backend/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONFAULTHANDLER=1 \
+    UV_NO_SYNC=1 \
     STATIC_FILES_DIR="/app/application/ui/" \
     DATA_DIR="/app/data" \
     STORAGE_DIR="/app/storage" \
