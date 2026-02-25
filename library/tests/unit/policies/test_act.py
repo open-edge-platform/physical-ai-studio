@@ -6,6 +6,7 @@ import tempfile
 import pytest
 import torch
 import numpy as np
+import lightning
 
 from physicalai.data import Feature, FeatureType, Observation
 from physicalai.policies.utils.normalization import NormalizationParameters
@@ -18,12 +19,13 @@ class TestACTolicy:
 
     @pytest.fixture
     def policy(self):
-        config = ACTConfig({"image": Feature(normalization_data=NormalizationParameters(mean=[0.0]*3, std=[1.0]*3), shape=(3, 64, 64), ftype=FeatureType.VISUAL),
+        model = ACTModel({"image": Feature(normalization_data=NormalizationParameters(mean=[0.0]*3, std=[1.0]*3), shape=(3, 64, 64), ftype=FeatureType.VISUAL),
                             "state": Feature(normalization_data=NormalizationParameters(mean=[0.0]*3, std=[1.0]*3), shape=(3,), ftype=FeatureType.STATE)},
                            {"action": Feature(normalization_data=NormalizationParameters(mean=[0.0]*3, std=[1.0]*3), shape=(3,), ftype=FeatureType.ACTION)},
-                            chunk_size=100)
-        model = ACTModel.from_config(config)
-        return ACT(model)
+                           chunk_size=100)
+        policy = ACT()
+        policy.model = model
+        return policy
 
     @pytest.fixture
     def batch(self):
@@ -126,7 +128,13 @@ class TestACTolicy:
 
         try:
             checkpoint = {"state_dict": policy.state_dict()}
-            policy.on_save_checkpoint(checkpoint)
+            checkpoint["epoch"] = 0
+            checkpoint["global_step"] = 0
+            checkpoint["pytorch-lightning_version"] = lightning.__version__
+            checkpoint["loops"] = {}
+            checkpoint["hparams_name"] = "kwargs"
+            checkpoint["hyper_parameters"] = dict(policy.hparams)
+
             # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
             torch.save(checkpoint, checkpoint_path)
 
