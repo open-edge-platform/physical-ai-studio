@@ -2,9 +2,11 @@ import { useMemo } from 'react';
 
 import { Button, Flex, Heading, Text } from '@geti/ui';
 
+import { InlineAlert } from '../shared/inline-alert';
+import { StatusBadge, type StatusBadgeVariant } from '../shared/status-badge';
 import { useSetupActions, useSetupState, WizardStep } from './wizard-provider';
 
-import classes from './setup-wizard.module.scss';
+import classes from '../shared/setup-wizard.module.scss';
 
 /** The motors in reverse order (gripper first) — matches lerobot's setup flow */
 const MOTOR_SETUP_ORDER = ['gripper', 'wrist_roll', 'wrist_flex', 'elbow_flex', 'shoulder_lift', 'shoulder_pan'];
@@ -89,26 +91,26 @@ export const MotorSetupStep = () => {
                         const isCurrentMotor = index === currentMotorIndex && !allDone;
                         const isPast = index < currentMotorIndex;
 
-                        let statusClass = classes.statusPending;
+                        let statusVariant: StatusBadgeVariant = 'pending';
                         let statusText = 'Pending';
 
                         if (motorProgress) {
                             switch (motorProgress.status) {
                                 case 'scanning':
-                                    statusClass = classes.statusScanning;
+                                    statusVariant = 'scanning';
                                     statusText = 'Scanning...';
                                     break;
                                 case 'success':
-                                    statusClass = classes.statusOk;
+                                    statusVariant = 'ok';
                                     statusText = 'Done';
                                     break;
                                 case 'error':
-                                    statusClass = classes.statusError;
+                                    statusVariant = 'error';
                                     statusText = 'Error';
                                     break;
                             }
                         } else if (isPast) {
-                            statusClass = classes.statusOk;
+                            statusVariant = 'ok';
                             statusText = 'Done';
                         }
 
@@ -117,10 +119,10 @@ export const MotorSetupStep = () => {
                             const probeEntry = wsState.probeResult.motors.find((m) => m.name === motor);
                             if (probeEntry) {
                                 if (probeEntry.found) {
-                                    statusClass = classes.statusOk;
+                                    statusVariant = 'ok';
                                     statusText = 'Found';
                                 } else {
-                                    statusClass = classes.statusError;
+                                    statusVariant = 'error';
                                     statusText = 'Missing';
                                 }
                             }
@@ -144,7 +146,7 @@ export const MotorSetupStep = () => {
                                 <span className={classes.motorId}>
                                     ID {index < MOTOR_SETUP_ORDER.length ? MOTOR_SETUP_ORDER.length - index : '?'}
                                 </span>
-                                <span className={`${classes.statusBadge} ${statusClass}`}>{statusText}</span>
+                                <StatusBadge variant={statusVariant}>{statusText}</StatusBadge>
                                 {motorProgress?.status === 'error' && (
                                     <Text
                                         UNSAFE_style={{
@@ -163,55 +165,45 @@ export const MotorSetupStep = () => {
 
             {/* Contextual instructions & status — positioned close to action buttons */}
             {!allDone && currentMotor && (
-                <div className={classes.warningBox}>
-                    <Text>
-                        {currentMotorIndex === 0 ? (
-                            <>
-                                Connect <strong>only the &apos;{currentMotor}&apos;</strong> motor to the controller
-                                board. When ready, click the button below.
-                            </>
-                        ) : (
-                            <>
-                                Disconnect the previous motor, then connect{' '}
-                                <strong>only the &apos;{currentMotor}&apos;</strong> motor to the controller board. When
-                                ready, click the button below.
-                            </>
-                        )}
-                    </Text>
-                </div>
+                <InlineAlert variant='warning'>
+                    {currentMotorIndex === 0 ? (
+                        <>
+                            Connect <strong>only the &apos;{currentMotor}&apos;</strong> motor to the controller board.
+                            When ready, click the button below.
+                        </>
+                    ) : (
+                        <>
+                            Disconnect the previous motor, then connect{' '}
+                            <strong>only the &apos;{currentMotor}&apos;</strong> motor to the controller board. When
+                            ready, click the button below.
+                        </>
+                    )}
+                </InlineAlert>
             )}
 
             {allDone && reassemblyState === 'idle' && (
-                <div className={classes.infoBox}>
-                    <Text>
-                        All motor IDs have been assigned. Now <strong>reconnect all motors</strong> to the controller
-                        board and reassemble the robot. When ready, click &ldquo;Verify Motors&rdquo; to confirm all
-                        motors are responding.
-                    </Text>
-                </div>
+                <InlineAlert variant='info'>
+                    All motor IDs have been assigned. Now <strong>reconnect all motors</strong> to the controller board
+                    and reassemble the robot. When ready, click &ldquo;Verify Motors&rdquo; to confirm all motors are
+                    responding.
+                </InlineAlert>
             )}
 
             {allDone && reassemblyState === 'verifying' && (
-                <div className={classes.infoBox}>
-                    <Text>Verifying all motors... Please wait.</Text>
-                </div>
+                <InlineAlert variant='info'>Verifying all motors... Please wait.</InlineAlert>
             )}
 
             {allDone && reassemblyState === 'success' && (
-                <div className={classes.successBox}>
-                    <Text>
-                        All motors verified successfully! The robot is fully assembled and ready for calibration.
-                    </Text>
-                </div>
+                <InlineAlert variant='success'>
+                    All motors verified successfully! The robot is fully assembled and ready for calibration.
+                </InlineAlert>
             )}
 
             {allDone && reassemblyState === 'failed' && (
-                <div className={classes.warningBox}>
-                    <Text>
-                        {missingMotors.length} motor{missingMotors.length !== 1 ? 's' : ''} not found:{' '}
-                        <strong>{missingMotors.join(', ')}</strong>. Please check the connections and try again.
-                    </Text>
-                </div>
+                <InlineAlert variant='warning'>
+                    {missingMotors.length} motor{missingMotors.length !== 1 ? 's' : ''} not found:{' '}
+                    <strong>{missingMotors.join(', ')}</strong>. Please check the connections and try again.
+                </InlineAlert>
             )}
 
             {/* Action buttons */}
