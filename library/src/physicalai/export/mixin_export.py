@@ -134,10 +134,7 @@ class Export:
         checkpoint = {}
         checkpoint["state_dict"] = self.state_dict() if hasattr(self, "state_dict") else {}
 
-        if hasattr(self.model, "config"):
-            config_dict = self.model.config.to_dict()
-            checkpoint[CONFIG_KEY] = config_dict
-        elif hasattr(self, "hparams"):
+        if hasattr(self, "hparams"):
             checkpoint["epoch"] = 0
             checkpoint["global_step"] = 0
             checkpoint["pytorch-lightning_version"] = lightning.__version__
