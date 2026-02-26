@@ -84,7 +84,7 @@ Physical AI Studio groups the robot problems into Projects. This project will ho
 **Objective:** Connect and calibrate robot arms & cameras
 
 In order to record datasets and train models we need to setup the environment.
-This environment consists of robot arms and cameras. At first a SO101 robot arm will need to be configured. Physical AI Studio will recognize an already setup robot and skip those steps.
+This environment consists of robot arms and cameras. At first a SO101 robot arm will need to be configured. Physical AI Studio will recognize an already setup robot and skip those steps if needed.
 
 1. **Add Follower Robot**
   - [Image: Add follower robot arm]
