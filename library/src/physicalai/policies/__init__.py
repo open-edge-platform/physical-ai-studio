@@ -134,8 +134,6 @@ def get_physicalai_policy_class(policy_name: str) -> type[Policy]:
 
     if policy_name == "act":
         return ACT
-    if policy_name == "dummy":
-        return Dummy
     if policy_name == "groot":
         return Groot
     if policy_name == "pi0":
