@@ -6,10 +6,14 @@
 from __future__ import annotations
 
 import os
-import tempfile
 from pathlib import Path
 
+from typing import TYPE_CHECKING
+
 import pytest
+
+if TYPE_CHECKING:
+    import torch
 
 torch = pytest.importorskip("torch")
 
@@ -375,3 +379,76 @@ def pusht_gym():
     from physicalai.gyms import PushTGym
 
     return PushTGym()
+
+@pytest.fixture
+def dummy_policy():
+    """Create a dummy policy factory for testing.
+
+    Returns a callable factory that creates minimal Policy instances.
+    Calling the factory with no arguments returns a default policy (action_dim=2, float32).
+    Calling with custom arguments allows creating policies for different environments.
+
+    The returned factory is also a valid Policy instance itself (default config),
+    so existing tests that pass ``dummy_policy`` directly as a policy still work.
+
+    Satisfies:
+    - PolicyLike protocol (select_action, reset) for evaluate_policy / Rollout
+    - LightningModule interface (forward, training_step, configure_optimizers) for trainer.fit
+    """
+    from physicalai.policies.base import Policy
+    from physicalai.data import Observation
+
+    class DummyPolicy(Policy):
+        """Minimal Policy implementation for testing."""
+
+        def __init__(
+            self,
+            action_shape: tuple[int, ...] = (2,),
+            action_dtype: torch.dtype = torch.float32,
+            action_min: float | int | None = None,
+            action_max: float | int | None = None,
+        ):
+            super().__init__(n_action_steps=1)
+            self.action_shape = action_shape
+            self.action_dtype = action_dtype
+            self.action_min = action_min
+            self.action_max = action_max
+            # A dummy parameter so configure_optimizers has something to optimize
+            self.model = torch.nn.Linear(1, 1)
+
+        @property
+        def action_dim(self) -> int:
+            """Total action dimensionality (product of action_shape)."""
+            dim = 1
+            for s in self.action_shape:
+                dim *= s
+            return dim
+
+        def forward(self, batch: Observation) -> torch.Tensor:
+            """Return a dummy loss in training mode, or zeros in eval mode."""
+            if self.training:
+                return torch.tensor(0.0, requires_grad=True)
+            return torch.zeros(1, *self.action_shape, dtype=self.action_dtype)
+
+        def predict_action_chunk(self, batch: Observation) -> torch.Tensor:
+            """Predict a single zero-action chunk."""
+            b = batch.batch_size
+            action = torch.zeros(b, 1, *self.action_shape, dtype=self.action_dtype)
+            if self.action_min is not None:
+                action = action.clamp(min=self.action_min)
+            if self.action_max is not None:
+                action = action.clamp(max=self.action_max)
+            return action
+
+        def training_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
+            """Return a dummy loss for Lightning training."""
+            return torch.tensor(0.0, requires_grad=True)
+
+        def configure_optimizers(self):
+            """Return a dummy optimizer."""
+            return torch.optim.SGD(self.parameters(), lr=1e-3)
+
+    # Return a default instance that also exposes the class for custom instantiation
+    instance = DummyPolicy()
+    instance.create = DummyPolicy  # type: ignore[attr-defined]
+    return instance
