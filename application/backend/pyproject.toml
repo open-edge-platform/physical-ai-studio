@@ -33,12 +33,16 @@ dependencies = [
 [project.optional-dependencies]
 cpu = [
     "torch<2.11",
+    "torchvision",
 ]
 cuda = [
     "torch>=2.4.0,<=2.8.0",
+    "torchvision",
 ]
 xpu = [
     "torch<2.11",
+    "torchvision",
+    "pytorch-triton-xpu ; sys_platform == 'linux' or sys_platform == 'win32'",
 ]
 
 # --- PyTorch index configuration ---
@@ -47,6 +51,15 @@ xpu = [
 # torch/torchvision from the correct hardware-specific PyTorch index.
 # This must be declared in the consumer project because uv does not
 # propagate [tool.uv.sources] from path dependencies (uv #14675).
+#
+# PyPI is listed first as a named default index so that it takes priority
+# over the non-explicit pytorch-xpu index in unsafe-best-match resolution.
+# Without this, the XPU index can shadow PyPI packages with incompatible
+# wheels (e.g. markupsafe cp314-only, see uv #9647).
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
@@ -70,6 +83,12 @@ torch = [
     { index = "pytorch-cu128", extra = "cuda" },
     { index = "pytorch-xpu", extra = "xpu" },
 ]
+torchvision = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu128", extra = "cuda" },
+    { index = "pytorch-xpu", extra = "xpu" },
+]
+pytorch-triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
 
 [dependency-groups]
 dev = [
@@ -86,11 +105,15 @@ all = [
 
 [tool.uv]
 default-groups = ["all"]
-# unsafe-best-match is required because the PyTorch XPU index hosts
-# pytorch-triton-xpu (a transitive dep of torch+xpu) which is not on PyPI.
-# With the default first-match strategy, uv would only check PyPI for this
-# package and fail. unsafe-best-match allows uv to consider all indexes and
-# pick the best matching version across all of them.
+# The pytorch-xpu index is non-explicit (explicit = false) because
+# transitive deps like pytorch-triton-xpu only exist on the XPU index.
+# unsafe-best-match is required because the XPU index also hosts stale
+# copies of common packages (e.g. cmake 3.25.0); with first-match uv
+# would stop at the XPU index and miss the newer PyPI version.
+#
+# To prevent the XPU index from providing incompatible wheels for
+# common packages (e.g. markupsafe cp314-only, see uv #9647), PyPI
+# is listed as a named index with higher priority above.
 index-strategy = "unsafe-best-match"
 conflicts = [
     [
