@@ -2,7 +2,8 @@ import json
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, WebSocket, status
+from fastapi import APIRouter, Depends, Query, WebSocket, status
+from fastapi.responses import Response
 from frame_source import FrameSourceFactory
 from loguru import logger
 
@@ -46,6 +47,14 @@ def get_camera_from_query(websocket: WebSocket) -> ProjectCamera:
         raise ValueError(f"Invalid JSON in camera parameter: {e}")
     except Exception as e:
         raise ValueError(f"Invalid camera configuration: {e}")
+
+
+@router.get("/ws", tags=["WebSocket"], summary="Camera streaming (WebSocket)", status_code=426)
+async def camera_websocket_openapi(
+    camera: Annotated[str | None, Query(description="JSON-serialized ProjectCamera configuration")] = None,  # noqa: ARG001
+) -> Response:
+    """This endpoint requires a WebSocket connection. Use `wss://` to connect."""
+    return Response(status_code=426)
 
 
 @router.websocket("/ws")

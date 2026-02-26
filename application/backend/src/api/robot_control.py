@@ -2,6 +2,7 @@ from typing import Annotated
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, WebSocket, status
+from fastapi.responses import Response
 from loguru import logger
 
 from api.dependencies import (
@@ -19,6 +20,12 @@ from workers.transport.websocket_transport import WebSocketTransport
 router = APIRouter(prefix="/api/projects/{project_id}/robots", tags=["Project Robots"])
 
 ProjectID = Annotated[UUID, Depends(get_project_id)]
+
+
+@router.get("/{robot_id}/ws", tags=["WebSocket"], summary="Robot control (WebSocket)", status_code=426)
+async def robot_websocket_openapi(project_id: UUID, robot_id: UUID) -> Response:  # noqa: ARG001
+    """This endpoint requires a WebSocket connection. Use `wss://` to connect."""
+    return Response(status_code=426)
 
 
 @router.websocket("/{robot_id}/ws")

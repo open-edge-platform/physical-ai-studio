@@ -2,6 +2,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, WebSocket, WebSocketDisconnect
+from fastapi.responses import Response
 from loguru import logger
 
 from api.dependencies import get_event_processor_ws, get_job_service, get_scheduler, validate_uuid
@@ -43,6 +44,12 @@ async def interrupt_job(
         if job.status == JobStatus.RUNNING:
             scheduler.training_interrupt_event.set()
         await job_service.update_job_status(job_id, status=JobStatus.CANCELED)
+
+
+@router.get("/ws", tags=["WebSocket"], summary="Job updates (WebSocket)", status_code=426)
+async def jobs_websocket_openapi() -> Response:
+    """This endpoint requires a WebSocket connection. Use `wss://` to connect."""
+    return Response(status_code=426)
 
 
 @router.websocket("/ws")

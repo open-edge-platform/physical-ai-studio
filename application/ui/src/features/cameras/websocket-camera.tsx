@@ -3,9 +3,10 @@ import { useCallback, useRef, useState } from 'react';
 import { Flex, ProgressCircle } from '@geti/ui';
 import useWebSocket from 'react-use-websocket';
 
+import { fetchClient } from '../../api/client';
 import { SchemaProjectCamera } from '../../api/types';
 
-const CAMERA_WS_URL = '/api/cameras/ws';
+const CAMERA_WS_URL = fetchClient.PATH('/api/cameras/ws');
 
 export const WebsocketCamera = ({ camera }: { camera: SchemaProjectCamera }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
