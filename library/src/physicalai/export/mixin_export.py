@@ -5,7 +5,6 @@
 
 import inspect
 from collections.abc import Mapping
-from enum import StrEnum
 from os import PathLike
 from pathlib import Path
 from typing import Any
@@ -22,13 +21,7 @@ POLICY_NAME_KEY = "policy_name"
 DATASET_STATS_KEY = "dataset_stats"
 
 
-class ExportBackend(StrEnum):
-    """Supported export backends."""
-
-    ONNX = "onnx"
-    OPENVINO = "openvino"
-    TORCH = "torch"
-    TORCH_EXPORT_IR = "torch_export_ir"
+from physicalai.export.backends import ExportBackend
 
 
 class Export:

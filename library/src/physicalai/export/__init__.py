@@ -3,7 +3,14 @@
 
 """Export mixins module."""
 
-from .mixin_export import Export, ExportBackend
+from .backends import ExportBackend
+
+
+def __getattr__(name):
+    if name == "Export":
+        from .mixin_export import Export
+        return Export
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def get_available_backends() -> list[str]:
