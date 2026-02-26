@@ -128,8 +128,8 @@ Repeat this process for the SO101 Leader.
   <img src="../docs/assets/getting_started/add_camera.png" alt="Add new camera" width="100%">
   - Select USB Camera.
   - Set camera name of video input of the model.
-  - Select the camera from the list and check preview to verify correct camera.
-  - Select resolution and FPS
+  - Select the camera from the list.
+  - Select resolution and FPS and check preview to verify correct camera
   - Press *Add camera*
   
 Repeat for all the points of view for the robot.
