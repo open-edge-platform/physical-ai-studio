@@ -12,6 +12,22 @@ from typing import Any
 import numpy as np
 import torch
 
+from .constants import (  # noqa: F401
+    ACTION,
+    EPISODE_INDEX,
+    EXTRA,
+    FRAME_INDEX,
+    IMAGES,
+    INDEX,
+    INFO,
+    NEXT_REWARD,
+    NEXT_SUCCESS,
+    STATE,
+    TASK,
+    TASK_INDEX,
+    TIMESTAMP,
+)  # Re-exported for backward compatibility
+
 
 @dataclass(frozen=True)
 class Observation:
@@ -68,23 +84,23 @@ class Observation:
     info: dict[str, Any] | None = None
     extra: dict[str, Any] | None = None
 
-    class FieldName(StrEnum):
+    class FieldName(StrEnum):  # noqa: F811
         """Observation field name constants for dict access and type annotations."""
 
-        ACTION = "action"
-        TASK = "task"
-        STATE = "state"
-        IMAGES = "images"
+        ACTION = "action"  # noqa: F811
+        TASK = "task"  # noqa: F811
+        STATE = "state"  # noqa: F811
+        IMAGES = "images"  # noqa: F811
 
-        NEXT_REWARD = "next_reward"
-        NEXT_SUCCESS = "next_success"
-        EPISODE_INDEX = "episode_index"
-        FRAME_INDEX = "frame_index"
-        INDEX = "index"
-        TASK_INDEX = "task_index"
-        TIMESTAMP = "timestamp"
-        INFO = "info"
-        EXTRA = "extra"
+        NEXT_REWARD = "next_reward"  # noqa: F811
+        NEXT_SUCCESS = "next_success"  # noqa: F811
+        EPISODE_INDEX = "episode_index"  # noqa: F811
+        FRAME_INDEX = "frame_index"  # noqa: F811
+        INDEX = "index"  # noqa: F811
+        TASK_INDEX = "task_index"  # noqa: F811
+        TIMESTAMP = "timestamp"  # noqa: F811
+        INFO = "info"  # noqa: F811
+        EXTRA = "extra"  # noqa: F811
 
     def to_dict(self, *, flatten: bool = True) -> dict[str, Any]:
         """Convert Observation to a dictionary format.
@@ -441,8 +457,8 @@ class FeatureType(StrEnum):
     """Enum for feature types."""
 
     VISUAL = "VISUAL"
-    ACTION = "ACTION"
-    STATE = "STATE"
+    ACTION = "ACTION"  # noqa: F811
+    STATE = "STATE"  # noqa: F811
     ENV = "ENV"
 
 
@@ -464,30 +480,3 @@ class NormalizationParameters:
     std: list[float] | float | None = None
     min: list[float] | float | None = None
     max: list[float] | float | None = None
-
-
-# Module-level constants for convenient dict access
-# Generated from Observation.FieldName enum to avoid duplication.
-#
-# Usage: from physicalai.data.observation import STATE, ACTION, IMAGES
-# Then: batch[STATE] instead of batch["state"]
-#
-# Note: All of the following are equivalent for dict access:
-# - batch[ACTION]                       (recommended: imported constant)
-# - batch["action"]                     (string literal)
-# - batch[Observation.FieldName.ACTION] (enum member)
-#
-# Using imported constants is recommended for IDE autocomplete, refactoring support, and consistency.
-ACTION = Observation.FieldName.ACTION.value
-EPISODE_INDEX = Observation.FieldName.EPISODE_INDEX.value
-EXTRA = Observation.FieldName.EXTRA.value
-FRAME_INDEX = Observation.FieldName.FRAME_INDEX.value
-IMAGES = Observation.FieldName.IMAGES.value
-INDEX = Observation.FieldName.INDEX.value
-INFO = Observation.FieldName.INFO.value
-NEXT_REWARD = Observation.FieldName.NEXT_REWARD.value
-NEXT_SUCCESS = Observation.FieldName.NEXT_SUCCESS.value
-STATE = Observation.FieldName.STATE.value
-TASK = Observation.FieldName.TASK.value
-TASK_INDEX = Observation.FieldName.TASK_INDEX.value
-TIMESTAMP = Observation.FieldName.TIMESTAMP.value
