@@ -63,7 +63,7 @@ url = "https://download.pytorch.org/whl/xpu"
 explicit = false
 
 [tool.uv.sources]
-FrameSource = { git = "https://github.com/ArendJanKramer/FrameSource.git", rev = "4d51da9bc2f8f9353562e1641ddbf87d3045baf6" }
+FrameSource = { git = "https://github.com/ArendJanKramer/FrameSource.git", rev = "c3023714ceaa2bf50cf04e1d2861d9fe7cd01422" }
 physicalai-train = { path = "../../library", editable = true }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
