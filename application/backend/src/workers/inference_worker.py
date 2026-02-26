@@ -240,9 +240,11 @@ class InferenceWorker(BaseThreadWorker):
         )
 
     def _build_geti_action_observation(self, robot_observation: dict):
-        state = torch.tensor([value for key, value in robot_observation.items() if key in self.action_keys]).unsqueeze(
-            0
-        ).float()
+        state = (
+            torch.tensor([value for key, value in robot_observation.items() if key in self.action_keys])
+            .unsqueeze(0)
+            .float()
+        )
         images: dict = {}
         for camera in self.config.environment.cameras:
             frame = robot_observation[str(camera.id)]
