@@ -21,6 +21,7 @@ from robots.robot_client import RobotClient
 from robots.robot_client_factory import RobotClientFactory
 from schemas import InferenceConfig
 from services.robot_calibration_service import RobotCalibrationService
+from utils.async_camera_capture import AsyncCameraCapture
 from utils.serial_robot_tools import RobotConnectionManager
 from workers.camera_worker import create_frames_source_from_camera
 
@@ -67,6 +68,7 @@ class InferenceWorker(BaseThreadWorker):
         self.queue = queue
         self.state = InferenceState()
         self.robot_client_factory = RobotClientFactory(robot_manager, calibration_service)
+        self.frame_captures = {}
 
         self.events = {
             "stop": Event(),
@@ -94,13 +96,19 @@ class InferenceWorker(BaseThreadWorker):
         robot = self.config.environment.robots[0]  # Assume 1 arm for now.
 
         self.follower = await self.robot_client_factory.build(robot.robot)
-        self.cameras = {
-            str(camera.id): create_frames_source_from_camera(camera) for camera in self.config.environment.cameras
-        }
-        for camera in self.cameras.values():
-            # camera.attach_processor(CameraFrameProcessor()) # TODO Not working. Fix in framesource
-            camera.connect()
-            camera.start_async()
+        self.frame_captures = {}
+        for cam_cfg in self.config.environment.cameras:
+            cam_id = str(cam_cfg.id)
+            cam = create_frames_source_from_camera(cam_cfg)  # gives you the object with connect/read
+
+            cap = AsyncCameraCapture(
+                camera=cam,
+                fps=cam_cfg.payload.fps,
+                process_fn=CameraFrameProcessor.process,  # BGR->RGB, etc.
+                use_cached_on_failure=True,
+            )
+            await cap.start()
+            self.frame_captures[cam_id] = cap
 
         await asyncio.sleep(1)  # sleep for camera warmup. TODO: Refactor start_async to proper camera wrapper
         await self.follower.connect()
@@ -116,10 +124,7 @@ class InferenceWorker(BaseThreadWorker):
             self.model = load_inference_model(self.config.model, backend=self.config.backend)
 
             self.action_keys = self.follower.features()
-            self.camera_keys = list(self.cameras)
-
-            for camera in self.cameras.values():
-                camera.start_async()
+            self.camera_keys = list(self.frame_captures.keys())
 
             self.state.initialized = True
             logger.info("inference all setup, reporting state")
@@ -127,6 +132,19 @@ class InferenceWorker(BaseThreadWorker):
             self.state.error = True
             self._report_error(e)
         self._report_state()
+
+    async def get_camera_frame(self, camera):
+        retries = 30
+        _cur_retries = 0
+        while _cur_retries < retries:
+            _success, camera_frame = camera.read()  # HWC
+            if camera_frame is None:
+                _cur_retries += 1
+                time.sleep(0.1)
+                continue
+            processed_frame = CameraFrameProcessor.process(camera_frame)
+            return processed_frame
+        raise RuntimeError(f"Could not read frame after {retries} retries")
 
     async def run_loop(self) -> None:
         """inference loop."""
@@ -152,12 +170,10 @@ class InferenceWorker(BaseThreadWorker):
                     await self._on_stop()
 
                 state = (await self.follower.read_state())["state"]
-                for camera_id, camera in self.cameras.items():
-                    _success, camera_frame = camera.get_latest_frame()  # HWC
-                    if camera_frame is None:
-                        raise Exception("Camera frame is None")
-                    processed_frame = CameraFrameProcessor.process(camera_frame)
-                    state[camera_id] = processed_frame
+                for cam_id, cap in self.frame_captures.items():
+                    frame, t_perf, ok, err, seq = await cap.get_latest()
+                    if ok and frame is not None:
+                        state[cam_id] = frame
 
                 timestamp = time.perf_counter() - start_episode_t
                 if self.state.is_running:
@@ -199,6 +215,12 @@ class InferenceWorker(BaseThreadWorker):
         """Disconnect robots and close queue."""
         if self.follower.is_connected:
             await self.follower.disconnect()
+
+        for cap in self.frame_captures.values():
+            try:
+                await cap.stop()
+            except Exception:
+                logger.info("Failed stopping a camera thread. Ignoring")
 
         # Wait for .5 seconds before closing queue to allow messages through
         await asyncio.sleep(0.5)
