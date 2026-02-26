@@ -1,2 +1,0 @@
-action images state task episode_index
-PASS
