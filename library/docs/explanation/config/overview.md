@@ -94,10 +94,10 @@ model = Model.from_pydantic(config)
 
 ```yaml
 model:
-  class_path: getiaction.policies.dummy.policy.Dummy
+  class_path: physicalai.policies.dummy.policy.Dummy
   init_args:
     model:
-      class_path: getiaction.policies.dummy.model.Dummy
+      class_path: physicalai.policies.dummy.model.Dummy
       init_args:
         hidden_size: 256
 ```
@@ -113,10 +113,10 @@ model:
 
 ### Basic Usage
 
-```python test="skip" reason="requires getiaction install"
+```python test="skip" reason="requires physicalai install"
 # From dict with class_path
 config = {
-    "class_path": "getiaction.policies.dummy.policy.Dummy",
+    "class_path": "physicalai.policies.dummy.policy.Dummy",
     "init_args": {"hidden_size": 256}
 }
 policy = instantiate_obj_from_dict(config)
@@ -135,10 +135,10 @@ policy = MyPolicy.from_config(config)  # Works with any pattern
 
 ```yaml
 model:
-  class_path: getiaction.policies.dummy.policy.Dummy
+  class_path: physicalai.policies.dummy.policy.Dummy
   init_args:
     model:
-      class_path: getiaction.policies.dummy.model.Dummy
+      class_path: physicalai.policies.dummy.model.Dummy
       init_args:
         action_shape: [7]
     optimizer:

@@ -1,10 +1,10 @@
-# GitHub Copilot Instructions for Geti Action
+# GitHub Copilot Instructions for Physical AI Studio
 
 > **Note**: This file is synchronized with `.cursorrules`. Both Cursor and VS Code (GitHub Copilot) use these same standards.
 
 ## Table of Contents
 
-- [GitHub Copilot Instructions for Geti Action](#github-copilot-instructions-for-geti-action)
+- [GitHub Copilot Instructions for Physical AI Studio](#github-copilot-instructions-for-physical-ai-studio)
   - [Table of Contents](#table-of-contents)
   - [Project Overview](#project-overview)
   - [Coding Standards](#coding-standards)
@@ -226,7 +226,7 @@ application/ui/src/
 **Library**
 
 ```
-library/src/getiaction/
+library/src/physicalai/
 ├── configs/      # Configuration management
 ├── data/         # Data loading and processing
 ├── inference/    # Inference engine

@@ -1,6 +1,6 @@
 # Library Documentation
 
-Documentation for the Geti Action Python library.
+Documentation for the PhysicalAI Python library.
 
 **→ [Start Here](index.md)** - Documentation home page
 
@@ -16,15 +16,15 @@ Documentation for the Geti Action Python library.
 
 ```bash
 # Install
-pip install getiaction
+pip install physicalai-train
 
 # Train
-getiaction fit --config configs/getiaction/act.yaml
+physicalai fit --config configs/physicalai/act.yaml
 
 # Benchmark
-getiaction benchmark \
-    --benchmark getiaction.benchmark.LiberoBenchmark \
-    --policy getiaction.policies.ACT \
+physicalai benchmark \
+    --benchmark physicalai.benchmark.LiberoBenchmark \
+    --policy physicalai.policies.ACT \
     --ckpt_path ./checkpoints/model.ckpt
 
 # Export

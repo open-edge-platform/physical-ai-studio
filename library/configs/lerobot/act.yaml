@@ -2,13 +2,13 @@
 # Train Action Chunking Transformer using LeRobot's implementation
 #
 # Usage:
-#   getiaction fit --config configs/lerobot/act.yaml
+#   physicalai fit --config configs/lerobot/act.yaml
 #
 # Override parameters:
-#   getiaction fit --config configs/lerobot/act.yaml --model.dim_model 1024
+#   physicalai fit --config configs/lerobot/act.yaml --model.dim_model 1024
 
 model:
-  class_path: getiaction.policies.lerobot.ACT
+  class_path: physicalai.policies.lerobot.ACT
   init_args:
     # Core architecture - MUST match delta_timestamps length
     dim_model: 512
@@ -39,11 +39,11 @@ model:
     temporal_ensemble_coeff: null # e.g., 0.01 for ensembling
 
 data:
-  class_path: getiaction.data.lerobot.LeRobotDataModule
+  class_path: physicalai.data.lerobot.LeRobotDataModule
   init_args:
     repo_id: "lerobot/aloha_sim_transfer_cube_human"
     train_batch_size: 8
-    data_format: "lerobot" # Output format: "lerobot" (flattened dict) or "getiaction" (Observation)
+    data_format: "lerobot" # Output format: "lerobot" (flattened dict) or "physicalai" (Observation)
     delta_timestamps:
       action: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 

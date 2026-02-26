@@ -66,8 +66,8 @@ graph TD
 
 ### Factory Pattern
 
-```python test="skip" reason="requires getiaction install and model"
-from getiaction.inference.adapters import get_adapter
+```python test="skip" reason="requires physicalai install and model"
+from physicalai.inference.adapters import get_adapter
 
 adapter = get_adapter(ExportBackend.OPENVINO)
 adapter.load(model_path)
@@ -79,7 +79,7 @@ Configuration loaded from `metadata.yaml`:
 
 ```yaml
 backend: openvino
-policy_class: getiaction.policies.act.policy.ACT
+policy_class: physicalai.policies.act.policy.ACT
 chunk_size: 100
 use_action_queue: true
 input_shapes: { image: [3, 224, 224], state: [14] }

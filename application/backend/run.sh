@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # -----------------------------------------------------------------------------
-# run.sh - Script to run the Geti Action server
+# run.sh - Script to run the Physical AI Studio server
 #
 # Features:
 # - Runs database migrations on every start (idempotent via Alembic)
@@ -25,7 +25,7 @@ set -euo pipefail
 
 SEED_DB=${SEED_DB:-false}
 APP_MODULE=${APP_MODULE:-src/main.py}
-UV_CMD=${UV_CMD:-uv run}
+UV_CMD=${UV_CMD:-uv run --no-sync}
 
 export PYTHONUNBUFFERED=1
 export PYTHONPATH=.
@@ -34,7 +34,7 @@ export PYTHONPATH=.
 # already-applied migrations. This ensures the persistent volume
 # has an up-to-date schema regardless of how it was created.
 echo "Running database migrations..."
-uv run src/cli.py migrate
+$UV_CMD src/cli.py migrate
 
 if [[ "$SEED_DB" == "true" ]]; then
     echo "Seeding the database..."
@@ -44,4 +44,5 @@ fi
 
 echo "Starting FastAPI server..."
 
+echo $UV_CMD "$APP_MODULE"
 exec $UV_CMD "$APP_MODULE"

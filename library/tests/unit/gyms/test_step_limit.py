@@ -3,8 +3,8 @@
 
 """Unit Tests - PushT Gym."""
 
-from getiaction.gyms import GymnasiumGym
-from getiaction.gyms.step_limit import with_step_limit
+from physicalai.gyms import GymnasiumGym
+from physicalai.gyms.step_limit import with_step_limit
 
 
 class TestStepLimit:

@@ -127,10 +127,10 @@ The system handles complex nested configurations automatically:
 
 ```yaml
 model:
-  class_path: getiaction.policies.dummy.policy.Dummy
+  class_path: physicalai.policies.dummy.policy.Dummy
   init_args:
     model:
-      class_path: getiaction.policies.dummy.model.Dummy
+      class_path: physicalai.policies.dummy.model.Dummy
       init_args:
         action_shape: [7]
         n_action_steps: 4
@@ -215,8 +215,8 @@ When used with Lightning CLI, jsonargparse handles the instantiation:
 
 ```bash
 # jsonargparse uses this system internally
-getiaction fit \
-    --model getiaction.policies.dummy.policy.Dummy
+physicalai fit \
+    --model physicalai.policies.dummy.policy.Dummy
 ```
 
 The CLI automatically calls the appropriate instantiation functions based

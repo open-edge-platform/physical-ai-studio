@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:b6afd42430b15f2d2a4c5a02b919e98a525b785b1aaff16747d2f623364e39b6
 
 # Build arguments
 ARG PYTHON_VERSION=3.12
@@ -6,7 +6,7 @@ ARG PYTHON_VERSION=3.12
 # ===========================================================================
 # Stage 1: Clone Geti UI packages and URDF robot models
 # ===========================================================================
-FROM node:24-alpine3.22@sha256:bb089be859f2741e5ede9d85f47dc7daca754015b50e9642a7a45c5252807d2c AS ui-packages
+FROM node:24-alpine3.22@sha256:d28696cabe6a72c5addbb608b344818e5a158d849174abd4b1ae85ab48536280 AS ui-packages
 
 WORKDIR /home/app/web_ui/
 RUN apk add --no-cache git
@@ -20,7 +20,7 @@ RUN npm run clone-widowx
 # ===========================================================================
 # Stage 2: Build Web UI
 # ===========================================================================
-FROM node:24-alpine3.22@sha256:bb089be859f2741e5ede9d85f47dc7daca754015b50e9642a7a45c5252807d2c AS web-ui
+FROM node:24-alpine3.22@sha256:d28696cabe6a72c5addbb608b344818e5a158d849174abd4b1ae85ab48536280 AS web-ui
 
 WORKDIR /home/app/web_ui/
 
@@ -73,7 +73,7 @@ COPY --link --from=web-ui /home/app/web_ui/dist /app/application/ui/
 # ===========================================================================
 FROM python:${PYTHON_VERSION}-slim@sha256:9e01bf1ae5db7649a236da7be1e94ffbbbdd7a93f867dd0d8d5720d9e1f89fab AS builder-base
 
-COPY --from=docker.io/astral/uv:0.9.7@sha256:ba4857bf2a068e9bc0e64eed8563b065908a4cd6bfb66b531a9c424c8e25e142 /uv /uvx /bin/
+COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0
 
 # Build-time system dependencies (not shipped in final image)
@@ -95,7 +95,7 @@ WORKDIR /app
 COPY --link pyproject.toml uv.lock LICENSE README.md ./
 
 # Library source is needed for hatchling to resolve the dynamic version
-# of the getiaction path dependency during uv sync.
+# of the physicalai-train path dependency during uv sync.
 COPY --link --from=libs ./src /app/library/src
 COPY --link --from=libs ./LICENSE /app/library/LICENSE
 COPY --link --from=libs ./README.md /app/library/README.md
@@ -148,11 +148,11 @@ FROM python:${PYTHON_VERSION}-slim@sha256:9e01bf1ae5db7649a236da7be1e94ffbbbdd7a
 
 # OCI image metadata
 ARG GIT_SHA=unknown
-LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/geti-action" \
+LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
       org.opencontainers.image.revision="${GIT_SHA}"
 
 # uv is needed at runtime for `uv run` in run.sh
-COPY --from=docker.io/astral/uv:0.9.7@sha256:ba4857bf2a068e9bc0e64eed8563b065908a4cd6bfb66b531a9c424c8e25e142 /uv /uvx /bin/
+COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
 
 # Non-root user — override at build time to match host UID/GID for
 # bind-mounted volumes (e.g. calibration data, HuggingFace cache).
@@ -184,6 +184,7 @@ ENV PATH="/app/application/backend/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONFAULTHANDLER=1 \
+    UV_NO_SYNC=1 \
     STATIC_FILES_DIR="/app/application/ui/" \
     DATA_DIR="/app/data" \
     STORAGE_DIR="/app/storage" \
@@ -194,7 +195,7 @@ EXPOSE 8000
 # ===========================================================================
 # Stage 6a: CPU runtime target
 # ===========================================================================
-FROM runtime-base AS geti-action-cpu
+FROM runtime-base AS physical-ai-studio-cpu
 
 ARG APP_UID=1000
 ARG APP_GID=1000
@@ -222,26 +223,26 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN echo "deb [arch=amd64 trusted=yes] https://ppa.launchpadcontent.net/kobuk-team/intel-graphics/ubuntu noble main" \
         > /etc/apt/sources.list.d/kobuk-intel.list \
     && apt-get update && apt-get install -y --no-install-recommends \
-        libze-intel-gpu1=26.01.36711.4-1~24.04~ppa1 \
-        libze1=1.26.2-1~24.04~ppa1 \
-        libze-dev=1.26.2-1~24.04~ppa1 \
-        intel-opencl-icd=26.01.36711.4-1~24.04~ppa1 \
-        intel-metrics-discovery=1.14.183-1~24.04~ppa1 \
-        intel-gsc=0.9.5-1~24.04~ppa2 \
-        intel-ocloc=26.01.36711.4-1~24.04~ppa1 \
-        clinfo=3.0.25.02.14-1 \
-        intel-media-va-driver-non-free=25.4.6-1~24.04~ppa1 \
-        libmfx-gen1=25.4.0-0ubuntu1~24.04~ppa1 \
-        libvpl2=1:2.16.0-1~24.04~ppa1 \
-        libvpl-tools=1.5.0-1~24.04~ppa1 \
-        libva-glx2=2.22.0-3 \
-        va-driver-all=2.22.0-3 \
-        vainfo=2.22.0+ds1-2 \
+        libze-intel-gpu1 \
+        libze1 \
+        libze-dev \
+        intel-opencl-icd \
+        intel-metrics-discovery \
+        intel-gsc \
+        intel-ocloc \
+        clinfo \
+        intel-media-va-driver-non-free \
+        libmfx-gen1 \
+        libvpl2 \
+        libvpl-tools \
+        libva-glx2 \
+        va-driver-all \
+        vainfo \
     && rm -rf /var/lib/apt/lists/*
 
 SHELL ["/bin/sh", "-c"]
 
-FROM runtime-xpu AS geti-action-xpu
+FROM runtime-xpu AS physical-ai-studio-xpu
 
 ARG APP_UID=1000
 ARG APP_GID=1000
@@ -305,7 +306,7 @@ RUN set -eux; \
     # Clean up
     apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
-FROM runtime-cuda AS geti-action-cuda
+FROM runtime-cuda AS physical-ai-studio-cuda
 
 ARG APP_UID=1000
 ARG APP_GID=1000

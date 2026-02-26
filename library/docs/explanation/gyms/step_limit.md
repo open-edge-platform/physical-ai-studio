@@ -27,8 +27,8 @@ classDiagram
 Example:
 
 ```python
-from getiaction.gyms import GymnasiumGym
-from getiaction.gyms.step_limit import StepLimit
+from physicalai.gyms import GymnasiumGym
+from physicalai.gyms.step_limit import StepLimit
 
 env = GymnasiumGym("CartPole-v1")
 env = StepLimit(env, max_steps=200)
@@ -41,6 +41,6 @@ obs, reward, terminated, truncated, info = env.step(action)
 or with our helper function:
 
 ```python
-from getiaction.gyms.step_limit import with_step_limit
+from physicalai.gyms.step_limit import with_step_limit
 env = with_step_limit(env, max_steps=200)
 ```

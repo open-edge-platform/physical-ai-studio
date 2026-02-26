@@ -4,9 +4,9 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'library/**'
-      - 'application/**'
-      - '.github/workflows/docker-build.yml'
+      - "library/**"
+      - "application/**"
+      - ".github/workflows/docker-build.yml"
 
 permissions: {} # No permissions by default on workflow level
 
@@ -33,7 +33,7 @@ jobs:
           persist-credentials: false
 
       - name: Cleanup runner
-        uses: open-edge-platform/geti-ci/actions/cleanup-runner@3a4b81ea648711eb638b34757427cd3ef71d19f1
+        uses: open-edge-platform/geti-ci/actions/cleanup-runner@375de2eb018dae396c959f9b3a464f40271de969
         with:
           type: all
 
@@ -46,12 +46,12 @@ jobs:
           context: .
           file: application/docker/Dockerfile
           build-contexts: libs=library
-          target: geti-action-${{ matrix.device }}
+          target: physical-ai-studio-${{ matrix.device }}
           platforms: linux/amd64
           push: false
           # CUDA images are too large (~5 GB) to export as tar on GHA runners.
           # Build-only validation + cache population is sufficient for PRs.
-          outputs: ${{ matrix.device != 'cuda' && format('type=docker,dest={0}/geti-action-{1}.tar', runner.temp, matrix.device) || 'type=cacheonly' }}
+          outputs: ${{ matrix.device != 'cuda' && format('type=docker,dest={0}/physical-ai-studio-{1}.tar', runner.temp, matrix.device) || 'type=cacheonly' }}
           build-args: GIT_SHA=${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.device }}
           cache-to: type=gha,mode=max,scope=${{ matrix.device }}
@@ -60,6 +60,6 @@ jobs:
         if: matrix.device != 'cuda'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: geti-action-${{ matrix.device }}
-          path: ${{ runner.temp }}/geti-action-${{ matrix.device }}.tar
+          name: physical-ai-studio-${{ matrix.device }}
+          path: ${{ runner.temp }}/physical-ai-studio-${{ matrix.device }}.tar
           retention-days: 7

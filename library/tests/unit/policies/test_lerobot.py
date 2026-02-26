@@ -26,7 +26,7 @@ def lerobot_imports():
     pytest.importorskip("lerobot")
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-    from getiaction.policies.lerobot import LeRobotPolicy
+    from physicalai.policies.lerobot import LeRobotPolicy
 
     return {"LeRobotPolicy": LeRobotPolicy, "LeRobotDataset": LeRobotDataset}
 
@@ -290,7 +290,7 @@ class TestLeRobotPolicyCheckpoint:
 
     def test_load_from_checkpoint_explicit_wrapper_act(self, lerobot_imports, pusht_dataset):
         """Test checkpoint save and load for explicit ACT wrapper."""
-        from getiaction.policies.lerobot import ACT
+        from physicalai.policies.lerobot import ACT
 
         # Create a policy using explicit wrapper
         # Note: n_action_steps must be <= chunk_size for ACT
@@ -330,7 +330,7 @@ class TestLeRobotPolicyCheckpoint:
 
     def test_load_from_checkpoint_explicit_wrapper_diffusion(self, lerobot_imports, pusht_dataset):
         """Test checkpoint save and load for explicit Diffusion wrapper."""
-        from getiaction.policies.lerobot import Diffusion
+        from physicalai.policies.lerobot import Diffusion
 
         # Create a policy using explicit wrapper
         original_policy = Diffusion.from_dataset(pusht_dataset, horizon=16)
@@ -369,7 +369,7 @@ class TestLeRobotPolicyCheckpoint:
 
     def test_load_from_checkpoint_missing_config_raises_error(self, tmp_path):
         """Test that loading checkpoint without config raises KeyError."""
-        from getiaction.policies.lerobot import LeRobotPolicy
+        from physicalai.policies.lerobot import LeRobotPolicy
 
         checkpoint_path = tmp_path / "test.ckpt"
         checkpoint = {"state_dict": {}}

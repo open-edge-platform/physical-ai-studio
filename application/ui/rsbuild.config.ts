@@ -32,7 +32,7 @@ export default defineConfig({
         },
     },
     html: {
-        title: 'Geti Action',
+        title: 'Physical AI Studio',
         favicon: './src/assets/icons/build-icon.svg',
     },
     tools: {

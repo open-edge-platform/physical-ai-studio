@@ -5,12 +5,12 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError, field_validator
 
-from exceptions import GetiBaseException
+from exceptions import BaseException
 from robots.robot_client import RobotClient
 from workers.robots.calibratable_client import Calibratable
 
 
-class UnknownCommandError(GetiBaseException):
+class UnknownCommandError(BaseException):
     """Raised when an unknown command is received.
 
     Use the static factory method to create instances:
@@ -27,7 +27,7 @@ class UnknownCommandError(GetiBaseException):
         )
 
 
-class UnsupportedCommandError(GetiBaseException):
+class UnsupportedCommandError(BaseException):
     """Raised when a command is not supported by the robot connection.
 
     Use the static factory method to create instances:
@@ -44,7 +44,7 @@ class UnsupportedCommandError(GetiBaseException):
         )
 
 
-class InvalidPayloadError(GetiBaseException):
+class InvalidPayloadError(BaseException):
     """Raised when a command payload is invalid.
 
     Use the static factory method to create instances:
@@ -93,6 +93,7 @@ class SetJointsStateCommand(BaseModel):
 
     command: Literal["set_joints_state"] = "set_joints_state"
     joints: dict[str, float]
+    goal_time: float = 0.0
 
     @field_validator("joints")
     @classmethod
@@ -231,8 +232,8 @@ async def handle_command(  # noqa: PLR0911
         case DisableTorqueCommand():
             return await robot_connection.disable_torque()
 
-        case SetJointsStateCommand(joints=joints):
-            return await robot_connection.set_joints_state(joints)
+        case SetJointsStateCommand(joints=joints, goal_time=goal_time):
+            return await robot_connection.set_joints_state(joints, goal_time)
 
         case ReadStateCommand(normalize=normalize):
             return await robot_connection.read_state(normalize=normalize)

@@ -73,10 +73,10 @@ policy = MyPolicy.from_dict(config, key="model")
 
 ```python
 config = {
-    "class_path": "getiaction.policies.dummy.policy.Dummy",
+    "class_path": "physicalai.policies.dummy.policy.Dummy",
     "init_args": {
         "model": {
-            "class_path": "getiaction.policies.dummy.model.Dummy",
+            "class_path": "physicalai.policies.dummy.model.Dummy",
             "init_args": {"action_shape": [7]}
         }
     }
@@ -205,7 +205,7 @@ class DummyPolicy(Policy, FromConfig):
 
 config = {
     "model": {
-        "class_path": "getiaction.policies.dummy.model.Dummy",
+        "class_path": "physicalai.policies.dummy.model.Dummy",
         "init_args": {"action_shape": [7]}
     },
     "optimizer": {
@@ -390,4 +390,4 @@ policy = MyPolicy.from_dataclass(config)
 ```
 
 This mixin design provides a consistent, flexible interface for
-configuration loading across the entire GetiAction codebase.
+configuration loading across the entire PhysicalAI codebase.

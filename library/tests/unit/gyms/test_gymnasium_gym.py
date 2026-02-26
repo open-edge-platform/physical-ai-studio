@@ -1,10 +1,10 @@
 """Test gymnasium wrapper."""
 import pytest
 import torch
-from getiaction.gyms import GymnasiumGym
-from getiaction.data.observation import Observation
+from physicalai.gyms import GymnasiumGym
+from physicalai.data.observation import Observation
 
-from .base import BaseTestGym     
+from .base import BaseTestGym
 
 
 class TestGymnasiumGym(BaseTestGym):

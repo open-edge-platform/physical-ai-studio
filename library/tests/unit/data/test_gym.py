@@ -11,8 +11,8 @@ class TestGymDataset:
 
     def test_gym_dataset_returns_gym(self):
         """Test that GymDataset returns Gym objects."""
-        from getiaction.data.gym import GymDataset
-        from getiaction.gyms import PushTGym
+        from physicalai.data.gym import GymDataset
+        from physicalai.gyms import PushTGym
 
         gym = PushTGym()
         dataset = GymDataset(env=gym, num_rollouts=5)
@@ -23,8 +23,8 @@ class TestGymDataset:
 
     def test_gym_dataset_length(self):
         """Test that GymDataset has correct length."""
-        from getiaction.data.gym import GymDataset
-        from getiaction.gyms import PushTGym
+        from physicalai.data.gym import GymDataset
+        from physicalai.gyms import PushTGym
 
         gym = PushTGym()
         dataset = GymDataset(env=gym, num_rollouts=10)
@@ -33,8 +33,8 @@ class TestGymDataset:
 
     def test_gym_dataset_indexing(self):
         """Test that GymDataset indexing returns same gym."""
-        from getiaction.data.gym import GymDataset
-        from getiaction.gyms import PushTGym
+        from physicalai.data.gym import GymDataset
+        from physicalai.gyms import PushTGym
 
         gym = PushTGym()
         dataset = GymDataset(env=gym, num_rollouts=3)

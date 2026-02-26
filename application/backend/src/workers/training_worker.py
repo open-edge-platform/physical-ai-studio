@@ -20,9 +20,9 @@ if TYPE_CHECKING:
     import multiprocessing as mp
     from multiprocessing.synchronize import Event as EventClass
 
-from getiaction.data import LeRobotDataModule
-from getiaction.train import Trainer
 from loguru import logger
+from physicalai.data import LeRobotDataModule
+from physicalai.train import Trainer
 
 from schemas import Job, Model, Snapshot
 from schemas.job import JobStatus, TrainJobPayload

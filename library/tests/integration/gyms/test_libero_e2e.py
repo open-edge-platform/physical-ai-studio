@@ -14,11 +14,11 @@ import torch
 pytest.importorskip("libero")
 pytest.importorskip("robosuite")
 
-from getiaction.data import Feature, FeatureType, Observation
-from getiaction.gyms.libero import LiberoGym, create_libero_gyms
-from getiaction.policies import ACT, ACTConfig
-from getiaction.policies.act.model import ACT as ACTModel
-from getiaction.policies.utils.normalization import NormalizationParameters
+from physicalai.data import Feature, FeatureType, Observation
+from physicalai.gyms.libero import LiberoGym, create_libero_gyms
+from physicalai.policies import ACT, ACTConfig
+from physicalai.policies.act.model import ACT as ACTModel
+from physicalai.policies.utils.normalization import NormalizationParameters
 
 
 @pytest.fixture

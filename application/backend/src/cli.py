@@ -1,4 +1,4 @@
-"""Command line interface for interacting with the Geti Action application."""
+"""Command line interface for interacting with the Physical AI Studio application."""
 
 import sys
 
@@ -23,7 +23,7 @@ migration_manager = MigrationManager(settings)
 
 @click.group()
 def cli() -> None:
-    """Geti Action CLI"""
+    """Physical AI Studio CLI"""
 
 
 @cli.command()

@@ -17,7 +17,7 @@ from internal_datasets.dataset_client import DatasetClient
 from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
 from internal_datasets.mutations.recording_mutation import RecordingMutation
 from robots.robot_client import RobotClient
-from robots.utils import get_robot_client
+from robots.robot_client_factory import RobotClientFactory
 from schemas import TeleoperationConfig
 from schemas.dataset import Episode
 from services.robot_calibration_service import RobotCalibrationService
@@ -49,8 +49,8 @@ class TeleoperateWorker(BaseThreadWorker):
     state: TeleoperateState
 
     config: TeleoperationConfig
-    fps: float = 30
-    robot_manager: RobotConnectionManager
+    fps: int = 30
+    robot_client_factory: RobotClientFactory
 
     action_keys: list[str] = []
     camera_keys: list[str] = []
@@ -74,8 +74,8 @@ class TeleoperateWorker(BaseThreadWorker):
         self.state = TeleoperateState()
         self.config = config
         self.queue = queue
-        self.robot_manager = robot_manager
-        self.calibration_service = calibration_service
+        self.robot_client_factory = RobotClientFactory(robot_manager, calibration_service)
+
         self.events = {
             "stop": Event(),
             "reset": Event(),
@@ -109,8 +109,8 @@ class TeleoperateWorker(BaseThreadWorker):
         robot = self.config.environment.robots[0]  # Assume 1 arm for now.
         if robot.tele_operator.type == "none" or robot.tele_operator.robot is None:
             raise ValueError("No teleoperator given.")
-        self.follower = await get_robot_client(robot.robot, self.robot_manager, self.calibration_service)
-        self.leader = await get_robot_client(robot.tele_operator.robot, self.robot_manager, self.calibration_service)
+        self.follower = await self.robot_client_factory.build(robot.robot)
+        self.leader = await self.robot_client_factory.build(robot.tele_operator.robot)
 
         self.cameras = {
             str(camera.id): create_frames_source_from_camera(camera) for camera in self.config.environment.cameras

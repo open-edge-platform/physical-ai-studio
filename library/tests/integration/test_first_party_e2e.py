@@ -16,11 +16,11 @@ from pathlib import Path
 import pytest
 import torch
 
-from getiaction.data import LeRobotDataModule
-from getiaction.inference import InferenceModel
-from getiaction.policies import get_policy
-from getiaction.policies.base.policy import Policy
-from getiaction.train import Trainer
+from physicalai.data import LeRobotDataModule
+from physicalai.inference import InferenceModel
+from physicalai.policies import get_policy
+from physicalai.policies.base.policy import Policy
+from physicalai.train import Trainer
 
 # Export backend constants
 EXPORT_BACKENDS = ["openvino", "onnx", "torch_export_ir"]
@@ -52,7 +52,7 @@ class CoreE2ETests:
     @pytest.fixture(scope="class")
     def policy(self, policy_name: str) -> Policy:
         """Create first-party policy instance."""
-        return get_policy(policy_name, source="getiaction")
+        return get_policy(policy_name, source="physicalai")
 
     @pytest.fixture(scope="class")
     def trained_policy(self, policy: Policy, datamodule: LeRobotDataModule, trainer: Trainer) -> Policy:
@@ -114,7 +114,7 @@ class ExportE2ETests:
 
         sample_batch = next(iter(datamodule.train_dataloader()))
 
-        from getiaction.data.lerobot import FormatConverter
+        from physicalai.data.lerobot import FormatConverter
 
         batch_observation = FormatConverter.to_observation(sample_batch)
         inference_input = batch_observation[0:1].to_numpy()
@@ -135,7 +135,7 @@ class ExportE2ETests:
         policy_name = trained_policy.__class__.__name__.lower()
         export_dir = tmp_path / f"{policy_name}_{backend}"
 
-        from getiaction.data.lerobot import FormatConverter
+        from physicalai.data.lerobot import FormatConverter
 
         sample_batch = next(iter(datamodule.train_dataloader()))
         batch_observation = FormatConverter.to_observation(sample_batch)
@@ -181,7 +181,7 @@ class TestE2ECore(CoreE2ETests):
         if policy_name == "groot":
             return get_policy(
                 policy_name,
-                source="getiaction",
+                source="physicalai",
                 # Memory-efficient settings for 24GB GPU
                 tune_llm=False,
                 tune_visual=False,
@@ -189,7 +189,7 @@ class TestE2ECore(CoreE2ETests):
                 tune_diffusion_model=False,
             )
         # Other VLA policies use defaults (already memory-efficient)
-        return get_policy(policy_name, source="getiaction")
+        return get_policy(policy_name, source="physicalai")
 
     @pytest.fixture(scope="class")
     def datamodule(self) -> LeRobotDataModule:
@@ -225,7 +225,7 @@ class TestE2ECore(CoreE2ETests):
 
         sample_batch = next(iter(datamodule.train_dataloader()))
 
-        from getiaction.data.lerobot import FormatConverter
+        from physicalai.data.lerobot import FormatConverter
 
         batch_observation = FormatConverter.to_observation(sample_batch)
         inference_input = batch_observation[0:1]
