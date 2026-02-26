@@ -5,23 +5,6 @@
 
 from typing import Any
 
-# Import torch-free constants first
-from .constants import (
-    ACTION,
-    EPISODE_INDEX,
-    EXTRA,
-    FRAME_INDEX,
-    IMAGES,
-    INDEX,
-    INFO,
-    NEXT_REWARD,
-    NEXT_SUCCESS,
-    STATE,
-    TASK,
-    TASK_INDEX,
-    TIMESTAMP,
-)
-
 
 # Lazy-load torch-dependent modules to keep constants torch-free
 def _get_lazy_attr(module: str, name: str) -> Any:  # noqa: ANN401
@@ -70,19 +53,6 @@ def __getattr__(name: str):  # noqa: ANN202
 
 
 __all__ = [
-    "ACTION",
-    "EPISODE_INDEX",
-    "EXTRA",
-    "FRAME_INDEX",
-    "IMAGES",
-    "INDEX",
-    "INFO",
-    "NEXT_REWARD",
-    "NEXT_SUCCESS",
-    "STATE",
-    "TASK",
-    "TASK_INDEX",
-    "TIMESTAMP",
     "DataModule",  # noqa: F822
     "Dataset",  # noqa: F822
     "Feature",  # noqa: F822

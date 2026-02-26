@@ -12,22 +12,6 @@ from typing import Any
 import numpy as np
 import torch
 
-from .constants import (  # noqa: F401
-    ACTION,
-    EPISODE_INDEX,
-    EXTRA,
-    FRAME_INDEX,
-    IMAGES,
-    INDEX,
-    INFO,
-    NEXT_REWARD,
-    NEXT_SUCCESS,
-    STATE,
-    TASK,
-    TASK_INDEX,
-    TIMESTAMP,
-)  # Re-exported for backward compatibility
-
 
 @dataclass(frozen=True)
 class Observation:
@@ -87,20 +71,20 @@ class Observation:
     class FieldName(StrEnum):
         """Observation field name constants for dict access and type annotations."""
 
-        ACTION = "action"  # noqa: F811
-        TASK = "task"  # noqa: F811
-        STATE = "state"  # noqa: F811
-        IMAGES = "images"  # noqa: F811
+        ACTION = "action"
+        TASK = "task"
+        STATE = "state"
+        IMAGES = "images"
 
-        NEXT_REWARD = "next_reward"  # noqa: F811
-        NEXT_SUCCESS = "next_success"  # noqa: F811
-        EPISODE_INDEX = "episode_index"  # noqa: F811
-        FRAME_INDEX = "frame_index"  # noqa: F811
-        INDEX = "index"  # noqa: F811
-        TASK_INDEX = "task_index"  # noqa: F811
-        TIMESTAMP = "timestamp"  # noqa: F811
-        INFO = "info"  # noqa: F811
-        EXTRA = "extra"  # noqa: F811
+        NEXT_REWARD = "next_reward"
+        NEXT_SUCCESS = "next_success"
+        EPISODE_INDEX = "episode_index"
+        FRAME_INDEX = "frame_index"
+        INDEX = "index"
+        TASK_INDEX = "task_index"
+        TIMESTAMP = "timestamp"
+        INFO = "info"
+        EXTRA = "extra"
 
     def to_dict(self, *, flatten: bool = True) -> dict[str, Any]:
         """Convert Observation to a dictionary format.
@@ -457,8 +441,8 @@ class FeatureType(StrEnum):
     """Enum for feature types."""
 
     VISUAL = "VISUAL"
-    ACTION = "ACTION"  # noqa: F811
-    STATE = "STATE"  # noqa: F811
+    ACTION = "ACTION"
+    STATE = "STATE"
     ENV = "ENV"
 
 
