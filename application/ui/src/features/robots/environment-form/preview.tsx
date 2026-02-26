@@ -1,4 +1,4 @@
-import { Suspense, useRef } from 'react';
+import { Suspense, useEffect, useRef } from 'react';
 
 import { Content, Flex, Heading, IllustratedMessage, Loading, Text, View } from '@geti/ui';
 import { DockviewApi, IDockviewPanelProps } from 'dockview';
@@ -7,7 +7,7 @@ import { DockviewReact, DockviewReadyEvent, IDockviewReactProps } from 'dockview
 import { ReactComponent as RobotIllustration } from './../../../assets/illustrations/INTEL_08_NO-TESTS.svg';
 import { CameraCell } from './cells/camera-cell';
 import { RobotCell } from './cells/robot-cell';
-import { useEnvironmentForm } from './provider';
+import { EnvironmentFormState, useEnvironmentForm } from './provider';
 
 const EmptyPreview = () => {
     return (
@@ -42,13 +42,19 @@ const components = {
     },
 } satisfies IDockviewReactProps['components'];
 
-const ActualPreview = () => {
-    const environment = useEnvironmentForm();
-    const api = useRef<DockviewApi>(null);
+// Builds up all panels that we should add to Dockview
+// also removes any panels that are no longer part of the environment
+const buildDockviewPanels = (api: DockviewReadyEvent['api'], environment: EnvironmentFormState) => {
+    if (environment === null) {
+        return api;
+    }
 
-    const onReady = (event: DockviewReadyEvent): void => {
-        environment.camera_ids.forEach((camera_id, idx) => {
-            event.api.addPanel({
+    const panels = new Set<string>();
+
+    environment.camera_ids.forEach((camera_id, idx) => {
+        panels.add(camera_id);
+        if (!api.panels.some((panel) => panel.id === camera_id)) {
+            api.addPanel({
                 id: camera_id,
                 component: 'camera',
                 params: {
@@ -60,10 +66,13 @@ const ActualPreview = () => {
                     referencePanel: '',
                 },
             });
-        });
+        }
+    });
 
-        environment.robots.forEach((robot) => {
-            event.api.addPanel({
+    environment.robots.forEach((robot) => {
+        panels.add(robot.robot_id);
+        if (!api.panels.some((panel) => panel.id === robot.robot_id)) {
+            api.addPanel({
                 id: robot.robot_id,
                 params: { title: 'Follower', robot_id: robot.robot_id },
                 title: 'Follower',
@@ -74,10 +83,15 @@ const ActualPreview = () => {
                     referencePanel: '',
                 },
             });
+        }
 
-            if (robot.teleoperator.type === 'robot') {
-                event.api.addPanel({
-                    id: robot.teleoperator.robot_id,
+        if (robot.teleoperator.type === 'robot') {
+            const teleoperator_id = robot.teleoperator.robot_id;
+            panels.add(teleoperator_id);
+
+            if (!api.panels.some((panel) => panel.id === teleoperator_id)) {
+                api.addPanel({
+                    id: teleoperator_id,
                     params: { title: 'Leader', robot_id: robot.teleoperator.robot_id },
                     component: 'leader',
                     title: 'Leader',
@@ -88,10 +102,34 @@ const ActualPreview = () => {
                     },
                 });
             }
+        }
+    });
+
+    // Remove any panels that are no longer part of the environment
+    api.panels
+        .filter((panel) => panels.has(panel.id) === false)
+        .forEach((panel) => {
+            api.removePanel(panel);
         });
 
-        api.current = event.api;
+    return api;
+};
+
+const ActualPreview = () => {
+    const environment = useEnvironmentForm();
+    const api = useRef<DockviewApi>(null);
+
+    const onReady = (event: DockviewReadyEvent): void => {
+        api.current = buildDockviewPanels(event.api, environment);
     };
+
+    useEffect(() => {
+        if (!api.current) {
+            return;
+        }
+
+        buildDockviewPanels(api.current, environment);
+    }, [environment]);
 
     return <DockviewReact onReady={onReady} components={components} />;
 };
