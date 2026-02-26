@@ -3,6 +3,8 @@
 
 """Action trainer datamodules."""
 
+from typing import Any
+
 # Import torch-free constants first
 from .constants import (
     ACTION,
@@ -22,7 +24,7 @@ from .constants import (
 
 
 # Lazy-load torch-dependent modules to keep constants torch-free
-def _get_lazy_attr(module: str, name: str):
+def _get_lazy_attr(module: str, name: str) -> Any:  # noqa: ANN401
     """Lazy load a module attribute.
 
     Args:
@@ -81,11 +83,11 @@ __all__ = [
     "TASK",
     "TASK_INDEX",
     "TIMESTAMP",
-    "DataModule",
-    "Dataset",
-    "Feature",
-    "FeatureType",
-    "LeRobotDataModule",
-    "NormalizationParameters",
-    "Observation",
-]  # noqa: F822
+    "DataModule",  # noqa: F822
+    "Dataset",  # noqa: F822
+    "Feature",  # noqa: F822
+    "FeatureType",  # noqa: F822
+    "LeRobotDataModule",  # noqa: F822
+    "NormalizationParameters",  # noqa: F822
+    "Observation",  # noqa: F822
+]

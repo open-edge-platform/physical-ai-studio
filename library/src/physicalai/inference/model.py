@@ -160,6 +160,7 @@ class InferenceModel:
         # Extract actions from outputs
         action_key = self._get_action_output_key(outputs)
         import torch  # noqa: PLC0415
+
         actions = torch.from_numpy(outputs[action_key])
 
         # Manage action queue for chunked policies
@@ -441,6 +442,7 @@ class InferenceModel:
 
         # For ONNX/Torch Export IR, check CUDA availability
         import torch  # noqa: PLC0415
+
         if torch.cuda.is_available():
             return "cuda"
 

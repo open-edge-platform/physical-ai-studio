@@ -3,14 +3,18 @@
 
 """Export mixins module."""
 
+from typing import Any
+
 from .backends import ExportBackend
 
 
-def __getattr__(name):
+def __getattr__(name: str) -> Any:  # noqa: ANN401
     if name == "Export":
-        from .mixin_export import Export
+        from .mixin_export import Export  # noqa: PLC0415
+
         return Export
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    msg = f"module {__name__!r} has no attribute {name!r}"
+    raise AttributeError(msg)
 
 
 def get_available_backends() -> list[str]:
@@ -28,4 +32,4 @@ def get_available_backends() -> list[str]:
     return [backend.value for backend in ExportBackend]
 
 
-__all__ = ["Export", "ExportBackend", "get_available_backends"]
+__all__ = ["Export", "ExportBackend", "get_available_backends"]  # noqa: F822

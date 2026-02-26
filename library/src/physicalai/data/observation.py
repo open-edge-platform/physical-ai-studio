@@ -84,7 +84,7 @@ class Observation:
     info: dict[str, Any] | None = None
     extra: dict[str, Any] | None = None
 
-    class FieldName(StrEnum):  # noqa: F811
+    class FieldName(StrEnum):
         """Observation field name constants for dict access and type annotations."""
 
         ACTION = "action"  # noqa: F811
