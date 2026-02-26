@@ -60,11 +60,27 @@ source .venv/bin/activate
 uvicorn src.main:app --reload
 
 # In a new terminal: install and run UI
-cd application/ui && npm install
-npm run start
+cd application/ui 
+nvm use
+npm install
+# Fetch the api from the backend and build the types and start the frontend.
+npm run build:api:download && npm run build:api && npm run start
 ```
 
 Open http://localhost:3000 in your browser.
+
+##### Docker
+
+Run the full application (backend + UI) in a single container:
+
+```bash
+cd docker
+cp .env.example .env
+docker compose up
+```
+
+Application runs at http://localhost:7860. See the [Docker README](./docker/readme.md) for
+hardware configuration (Intel XPU, NVIDIA CUDA) and device setup.
 
 ### Library (Python/CLI)
 
