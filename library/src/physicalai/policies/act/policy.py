@@ -12,7 +12,7 @@ import yaml
 
 from physicalai.data import Dataset, Observation
 from physicalai.export.mixin_export import CONFIG_KEY as _MODEL_CONFIG_KEY
-from physicalai.export.mixin_export import Export
+from physicalai.export.mixin_export import Export, ExportBackend
 from physicalai.gyms import Gym
 from physicalai.policies.act.config import ACTConfig
 from physicalai.policies.act.model import ACT as ACTModel  # noqa: N811
@@ -326,3 +326,14 @@ class ACT(FromCheckpoint, Export, Policy):  # type: ignore[misc]
             return
         if hasattr(self.model, "reset") and callable(self.model.reset):
             self.model.reset()
+
+    @property
+    def supported_export_backends(self) -> list[str | ExportBackend]:
+        """Get a list of export backends supported by policy.
+
+        This method returns a list of supported export backends as strings.
+
+        Returns:
+            list[str | ExportBackend]: A list of supported export backends.
+        """
+        return [ExportBackend.TORCH, ExportBackend.OPENVINO, ExportBackend.ONNX, ExportBackend.TORCH_EXPORT_IR]
