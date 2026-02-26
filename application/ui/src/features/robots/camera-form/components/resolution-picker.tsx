@@ -24,11 +24,14 @@ export const ResolutionPicker = ({ driver, fingerprint, selectedResolution, onSe
             ? `${selectedResolution.width}_${selectedResolution.height}`
             : undefined;
 
+    const isDisabled = fingerprint === undefined;
+
     return (
         <Picker
             label='Resolution'
             width='100%'
             selectedKey={selectedKey}
+            isDisabled={isDisabled}
             onSelectionChange={(key) => {
                 const found = supportedResolutions.find(({ width, height }) => `${width}_${height}` === key);
 

@@ -245,7 +245,7 @@ export const RobotForm = () => {
                         }
                     />
                 </Well>
-            ) : (
+            ) : environmentForm.robots.length === 0 ? (
                 <Button
                     variant='secondary'
                     UNSAFE_className={classes.addNewButton}
@@ -259,7 +259,7 @@ export const RobotForm = () => {
                     </Icon>
                     Robot
                 </Button>
-            )}
+            ) : null}
         </>
     );
 };
