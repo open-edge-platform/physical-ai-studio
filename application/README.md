@@ -114,7 +114,7 @@ The SO101 needs to know the root position and the servos range.
 4. **Verification**
 
   - [Image: Verification]
-  - Quickly note the robot details
+  - Move the robot's joints in its entire range and verify that the UI shows the same movements. If not go back to the calibration step.
   - Press *Save Robot*
   
   
