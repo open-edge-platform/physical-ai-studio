@@ -135,7 +135,7 @@ class TeleoperateWorker(BaseThreadWorker):
             if self.loop is None:
                 raise RuntimeError("The event loop must be set.")
             features = self.loop.run_until_complete(
-                build_lerobot_dataset_features(self.config.environment, self.robot_manager, self.calibration_service)
+                build_lerobot_dataset_features(self.config.environment, self.robot_client_factory)
             )
 
             self.loop.run_until_complete(self.setup_environment())

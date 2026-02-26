@@ -1,3 +1,4 @@
+from schemas.calibration import Calibration
 from typing import Literal
 
 from lerobot.motors.feetech import FeetechMotorsBus, OperatingMode
@@ -33,7 +34,7 @@ class So101(RobotClient):
     bus: FeetechMotorsBus
     is_controlled: bool = False
 
-    def __init__(self, port: str, id: str, mode: RobotMode, calibration: dict[str, MotorCalibration]):
+    def __init__(self, port: str, id: str, mode: RobotMode, calibration: Calibration):
         norm_mode_body = MotorNormMode.RANGE_M100_100
         self.calibration = calibration
         self.bus = FeetechMotorsBus(
@@ -46,11 +47,21 @@ class So101(RobotClient):
                 "wrist_roll": Motor(5, "sts3215", norm_mode_body),
                 "gripper": Motor(6, "sts3215", MotorNormMode.RANGE_0_100),
             },
-            calibration=calibration,
+            calibration=self._convert_calibration_to_dict(calibration)
         )
         self.id = id
         self.port = port
         self.mode = mode
+
+    @staticmethod
+    def _convert_calibration_to_dict(calibration: Calibration) -> dict[str, MotorCalibration]:
+        return {key: MotorCalibration(
+            id=values.id,
+            drive_mode=values.drive_mode,
+            homing_offset=values.homing_offset,
+            range_min=values.range_min,
+            range_max=values.range_max,
+        ) for key, values in calibration.values.items()}
 
     @property
     def robot_type(self) -> RobotType:
