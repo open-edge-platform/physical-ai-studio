@@ -49,7 +49,10 @@ Backend runs at http://localhost:8000
 cd ui
 nvm use
 npm install
-npm run build:api:download && npm run build:api && npm run start
+# Download the OpenAPI spec and generate types (assumed backend is running at http://localhost:7860)
+npm run build:api:download && npm run build:api 
+# Start the acutal UI
+npm run start
 ```
 
 UI runs at http://localhost:3000
