@@ -7,9 +7,6 @@ on:
 
 permissions: {} # No permissions by default on workflow level
 
-env:
-  REGISTRY: ghcr.io/open-edge-platform/dev/physical-ai-studio
-
 concurrency:
   group: docker-publish
   cancel-in-progress: false
@@ -34,20 +31,37 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Read version
+        id: version
+        run: |
+          VERSION="$(tr -d '[:space:]' < application/VERSION)"
+          SHORT_SHA="$(echo "$GITHUB_SHA" | head -c 7)"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "short-sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Extract metadata (tags, labels)
         id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          images: ${{ env.REGISTRY }}/physical-ai-studio-${{ matrix.device }}
+          images: ghcr.io/open-edge-platform/physical-ai-studio-dev-${{ matrix.device }}
           tags: |
-            type=ref,event=branch,suffix=-dev
-            type=sha,prefix=,suffix=-dev
+            type=raw,value=${{ steps.version.outputs.version }}-${{ steps.version.outputs.short-sha }}
+            type=raw,value=${{ github.ref_name }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/open-edge-platform/physical-ai-studio
+            org.opencontainers.image.description=Physical AI Studio is an end-to-end framework for teaching robots to perform tasks through imitation learning from human demonstrations
 
       - name: Build and push Docker image
         uses: ./.github/actions/docker-build
         with:
           device: ${{ matrix.device }}
-          registry: ${{ env.REGISTRY }}
           push: "true"
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

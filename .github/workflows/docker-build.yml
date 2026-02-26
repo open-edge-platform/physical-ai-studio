@@ -15,9 +15,6 @@ concurrency:
   group: docker-build-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  REGISTRY: ghcr.io/open-edge-platform/physical-ai-studio/dev
-
 jobs:
   build:
     name: Build (${{ matrix.device }})
@@ -40,12 +37,3 @@ jobs:
         uses: ./.github/actions/docker-build
         with:
           device: ${{ matrix.device }}
-          registry: ${{ env.REGISTRY }}
-
-      - name: Upload Docker image
-        if: matrix.device != 'cuda'
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: physical-ai-studio-${{ matrix.device }}
-          path: ${{ runner.temp }}/physical-ai-studio-${{ matrix.device }}.tar
-          retention-days: 7

@@ -149,6 +149,7 @@ FROM python:${PYTHON_VERSION}-slim@sha256:9e01bf1ae5db7649a236da7be1e94ffbbbdd7a
 # OCI image metadata
 ARG GIT_SHA=unknown
 LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
+      org.opencontainers.image.description="Physical AI Studio is an end-to-end framework for teaching robots to perform tasks through imitation learning from human demonstrations" \
       org.opencontainers.image.revision="${GIT_SHA}"
 
 # uv is needed at runtime for `uv run` in run.sh
