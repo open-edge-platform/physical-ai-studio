@@ -26,12 +26,15 @@ def _get_lazy_attr(module: str, name: str):
     """Lazy load a module attribute.
 
     Args:
-        module: Module name to import from.
+        module: Module name to import from (e.g., '.datamodules' for relative or 'pkg.mod' for absolute).
         name: Attribute name to retrieve.
 
     Returns:
         The requested attribute.
     """
+    if module.startswith("."):
+        # Relative import - convert to absolute using current package
+        module = f"physicalai.data{module}"
     return getattr(__import__(module, fromlist=[name]), name)
 
 
