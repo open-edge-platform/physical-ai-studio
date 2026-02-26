@@ -110,7 +110,7 @@ class SmolVLAConfig(Config):
 
     prefix_length: int = -1
 
-    pad_language_to: str = "longest"  # "max_length"
+    pad_language_to: str = "max_length"  # "longest"
 
     num_expert_layers: int = -1
     num_vlm_layers: int = 16
