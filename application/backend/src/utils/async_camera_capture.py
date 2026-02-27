@@ -187,6 +187,12 @@ class AsyncCameraCapture:
                     except asyncio.TimeoutError:
                         pass
 
+    @retry(
+        stop=stop_after_attempt(MAX_CONSECUTIVE_ERRORS),
+        wait=wait_exponential(multiplier=0.1, min=0, max=1.0),
+        retry=retry_if_exception_type(EmptyFrameError),
+        reraise=True,
+    )
     def _read_frame_with_retry(self) -> np.ndarray:
         ret, frame = self.camera.read()
         if not ret or frame is None:
