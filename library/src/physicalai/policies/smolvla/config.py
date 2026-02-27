@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from physicalai.config import Config
 
 
-@dataclass
+@dataclass(frozen=True)
 class SmolVLAConfig(Config):
     """Configuration for SmolVLA flow matching model.
 

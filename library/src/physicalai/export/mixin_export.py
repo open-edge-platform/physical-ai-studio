@@ -134,7 +134,7 @@ class Export:
         checkpoint = {}
         checkpoint["state_dict"] = self.state_dict() if hasattr(self, "state_dict") else {}
 
-        if hasattr(self.model, "config"):
+        if hasattr(self, "model_config_type") and hasattr(self.model, "config"):
             config_dict = self.model.config.to_dict()
             checkpoint[CONFIG_KEY] = config_dict
         elif hasattr(self, "hparams"):

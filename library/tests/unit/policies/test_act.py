@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import copy
@@ -6,10 +6,10 @@ import tempfile
 import pytest
 import torch
 import numpy as np
+import lightning
 
-from physicalai.data import Feature, FeatureType, Observation
-from physicalai.policies.utils.normalization import NormalizationParameters
-from physicalai.policies import ACT, ACTConfig
+from physicalai.data import Observation
+from physicalai.policies import ACT
 from physicalai.policies.act.model import ACT as ACTModel
 
 
@@ -18,12 +18,10 @@ class TestACTolicy:
 
     @pytest.fixture
     def policy(self):
-        config = ACTConfig({"image": Feature(normalization_data=NormalizationParameters(mean=[0.0]*3, std=[1.0]*3), shape=(3, 64, 64), ftype=FeatureType.VISUAL),
-                            "state": Feature(normalization_data=NormalizationParameters(mean=[0.0]*3, std=[1.0]*3), shape=(3,), ftype=FeatureType.STATE)},
-                           {"action": Feature(normalization_data=NormalizationParameters(mean=[0.0]*3, std=[1.0]*3), shape=(3,), ftype=FeatureType.ACTION)},
-                            chunk_size=100)
-        model = ACTModel.from_config(config)
-        return ACT(model)
+        policy = ACT(dataset_stats={"image": {"mean": [0.0]*3, "std": [1.0]*3, "type": "VISUAL", "name": "image", "shape": (3, 64, 64)},
+                                    "state": {"mean": [0.0]*3, "std": [1.0]*3, "type": "STATE", "name": "state", "shape": (3,)},
+                                    "action": {"mean": [0.0]*3, "std": [1.0]*3, "type": "ACTION", "name": "action", "shape": (3,)}},)
+        return policy
 
     @pytest.fixture
     def batch(self):
@@ -126,7 +124,13 @@ class TestACTolicy:
 
         try:
             checkpoint = {"state_dict": policy.state_dict()}
-            policy.on_save_checkpoint(checkpoint)
+            checkpoint["epoch"] = 0
+            checkpoint["global_step"] = 0
+            checkpoint["pytorch-lightning_version"] = lightning.__version__
+            checkpoint["loops"] = {}
+            checkpoint["hparams_name"] = "kwargs"
+            checkpoint["hyper_parameters"] = dict(policy.hparams)
+
             # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
             torch.save(checkpoint, checkpoint_path)
 

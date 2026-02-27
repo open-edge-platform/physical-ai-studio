@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """ACT policy config."""
@@ -110,3 +110,7 @@ class ACTConfig(Config):
     # Training and loss computation.
     dropout: float = 0.1
     kl_weight: float = 10.0
+
+    optimizer_lr: float = 1e-5
+    optimizer_weight_decay: float = 1e-4
+    optimizer_grad_clip_norm: float = 10

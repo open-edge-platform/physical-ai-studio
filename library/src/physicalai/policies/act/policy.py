@@ -1,148 +1,216 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """Lightning module for ACT policy."""
 
-from collections.abc import Callable, Iterable
-from pathlib import Path
-from typing import Any, Self
+from typing import Any, cast
 
 import torch
-import yaml
 
-from physicalai.data import Dataset, Observation
-from physicalai.export.mixin_export import CONFIG_KEY as _MODEL_CONFIG_KEY
+from physicalai.data import Dataset, Feature, FeatureType, NormalizationParameters, Observation
 from physicalai.export.mixin_export import Export, ExportBackend
 from physicalai.gyms import Gym
 from physicalai.policies.act.config import ACTConfig
 from physicalai.policies.act.model import ACT as ACTModel  # noqa: N811
 from physicalai.policies.base import Policy
-from physicalai.policies.utils import FromCheckpoint
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 
-class ACT(FromCheckpoint, Export, Policy):  # type: ignore[misc]
+class ACT(Export, Policy):
     """Action Chunking with Transformers (ACT) policy implementation.
 
     This class implements the ACT policy for imitation learning, which uses a transformer-based
     architecture to predict sequences of actions given observations.
-    Policy contains contains model and other related modules and methods that are required
+    Policy contains model and other related modules and methods that are required
     to start training in a Lightning Trainer.
 
-    Example:
-        >>> model = ACTModel(...)
-        >>> policy = ACT(model)
-        >>> actions = policy.select_action(batch)
-        >>> loss_dict = policy.training_step(batch, batch_idx=0)
+    The model is lazily initialized during ``setup()`` from the datamodule, or eagerly
+    when ``dataset_stats`` is provided (e.g. when restoring from a checkpoint).
 
-        Export examples:
-        >>> policy = ACT(model)
-        >>> # Export to OpenVINO (recommended for Intel platforms)
-        >>> policy.export("./exports", backend="openvino")
-        >>> # Export to ONNX (cross-platform)
-        >>> policy.export("./exports", backend="onnx")
+    Args:
+        n_obs_steps: Number of observation steps to pass to the policy.
+        chunk_size: Size of the action prediction chunk in environment steps.
+        n_action_steps: Number of action steps to execute per policy invocation.
+            Should be no greater than ``chunk_size``.
+        vision_backbone: Name of the torchvision ResNet backbone for encoding images.
+        pretrained_backbone_weights: Pretrained weights for the vision backbone.
+            ``None`` means no pretrained weights.
+        replace_final_stride_with_dilation: Whether to replace the ResNet's final
+            2x2 stride with a dilated convolution.
+        pre_norm: Whether to use pre-norm in transformer blocks.
+        dim_model: Main hidden dimension of the transformer blocks.
+        n_heads: Number of attention heads in transformer blocks.
+        dim_feedforward: Feedforward expansion dimension in transformer blocks.
+        feedforward_activation: Activation function in transformer feedforward layers.
+        n_encoder_layers: Number of transformer encoder layers.
+        n_decoder_layers: Number of transformer decoder layers.
+        use_vae: Whether to use a variational objective during training.
+        latent_dim: Latent dimension for the VAE.
+        n_vae_encoder_layers: Number of transformer layers in the VAE encoder.
+        temporal_ensemble_coeff: Coefficient for temporal ensembling. ``None`` disables it.
+            When enabled, ``n_action_steps`` must be 1.
+        dropout: Dropout rate in transformer layers.
+        kl_weight: Weight for the KL-divergence loss term when ``use_vae`` is True.
+        optimizer_lr: Learning rate for the optimizer.
+        optimizer_weight_decay: Weight decay for the optimizer.
+        optimizer_grad_clip_norm: Maximum gradient norm for gradient clipping.
+        dataset_stats: Dataset normalization statistics for eager model initialization
+            (used when restoring from a checkpoint).
+
+    Examples:
+        Create a policy with default parameters (model built lazily during training):
+
+            >>> policy = ACT()
+            >>> trainer.fit(policy, datamodule=dm)
+
+        Create a policy with custom architecture parameters:
+
+            >>> policy = ACT(
+            ...     chunk_size=50,
+            ...     dim_model=256,
+            ...     n_heads=4,
+            ...     n_encoder_layers=6,
+            ... )
+
+        Export a trained policy:
+
+            >>> policy.export("./exports", backend="openvino")
+            >>> policy.export("./exports", backend="onnx")
     """
 
-    model_type: type = ACTModel
-    model_config_type: type = ACTConfig
-
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
-        model: ACTModel | None = None,
-        optimizer_fn: Callable[[Iterable[torch.nn.Parameter]], torch.optim.Optimizer] | None = None,
+        n_obs_steps: int = 1,
+        chunk_size: int = 100,
+        n_action_steps: int = 100,
+        *,
+        vision_backbone: str = "resnet18",
+        pretrained_backbone_weights: str | None = "ResNet18_Weights.IMAGENET1K_V1",
+        replace_final_stride_with_dilation: bool = False,
+        pre_norm: bool = False,
+        dim_model: int = 512,
+        n_heads: int = 8,
+        dim_feedforward: int = 3200,
+        feedforward_activation: str = "relu",
+        n_encoder_layers: int = 4,
+        n_decoder_layers: int = 1,
+        use_vae: bool = True,
+        latent_dim: int = 32,
+        n_vae_encoder_layers: int = 4,
+        temporal_ensemble_coeff: float | None = None,
+        dropout: float = 0.1,
+        kl_weight: float = 10.0,
+        optimizer_lr: float = 1e-5,
+        optimizer_weight_decay: float = 1e-4,
+        optimizer_grad_clip_norm: float = 10.0,
+        # Eager initialization (for checkpoint loading)
+        dataset_stats: dict[str, Any] | None = None,
     ) -> None:
-        """Initialize the ACT policy with a model and optional optimizer.
+        """Initialize ACT policy.
 
-        Args:
-            model (ACTModel): The ACT model to be used by this policy.
-            optimizer_fn (Callable[[Iterable[torch.nn.Parameter]], torch.optim.Optimizer] | None, optional):
-              The optimizer factory function that takes model parameters and returns an optimizer instance.
-              If None, defaults to Adam optimizer with lr=1e-5 and weight_decay=1e-4.
+        Creates ACTConfig from explicit args and saves it as hyperparameters.
         """
-        # Get n_action_steps from model config if available (for action queue sizing)
-        n_action_steps = model.config.n_action_steps if model is not None else 1
         super().__init__(n_action_steps=n_action_steps)
 
-        self.model = model  # type: ignore[assignment]
-        self.optimizer_fn = optimizer_fn
-
-    @classmethod
-    def from_dataset(
-        cls,
-        dataset: Dataset,
-        config: dict[str, Any] | str | Path | None = None,
-        **kwargs: Any,  # noqa: ANN401
-    ) -> Self:
-        """Create ACT policy from a dataset with eager initialization.
-
-        This factory method extracts features from the dataset and builds the model
-        immediately, making the policy ready for inference without a Trainer.
-
-        Args:
-            dataset: Dataset to extract features from. Must implement
-                `observation_features` and `action_features` properties.
-            config: Optional config dict or path to YAML file for ACTModel.
-                If None, uses default model parameters.
-            **kwargs: Additional keyword arguments to override config parameters.
-
-        Returns:
-            Fully initialized ACT policy ready for inference.
-
-        Examples:
-            Create policy with default parameters:
-
-                >>> from physicalai.policies import ACT
-                >>> policy = ACT.from_dataset(dataset)
-                >>> action = policy.select_action(observation)
-
-            Create policy with custom model parameters:
-
-                >>> policy = ACT.from_dataset(dataset, dim_model=256, chunk_size=50)
-
-            Create policy from YAML config file:
-
-                >>> policy = ACT.from_dataset(dataset, config="configs/act.yaml")
-
-            Create policy with config and overrides:
-
-                >>> policy = ACT.from_dataset(
-                ...     dataset,
-                ...     config="configs/act.yaml",
-                ...     chunk_size=100,  # Override config value
-                ... )
-        """
-        input_features = dataset.observation_features
-        output_features = dataset.action_features
-
-        # Load config if path provided
-        model_kwargs: dict[str, Any] = {}
-        if config is not None:
-            if isinstance(config, (str, Path)):
-                with Path(config).open("r", encoding="utf-8") as f:
-                    model_kwargs = yaml.safe_load(f)
-            else:
-                model_kwargs = dict(config)
-
-        # Merge with kwargs (kwargs override config)
-        model_kwargs.update(kwargs)
-
-        # Build the model
-        model = ACTModel(
-            input_features=input_features,
-            output_features=output_features,
-            **model_kwargs,
+        # Create config from explicit args (policy-level config)
+        self.config = ACTConfig(
+            input_features={},
+            output_features={},
+            n_obs_steps=n_obs_steps,
+            chunk_size=chunk_size,
+            n_action_steps=n_action_steps,
+            vision_backbone=vision_backbone,
+            pretrained_backbone_weights=pretrained_backbone_weights,
+            replace_final_stride_with_dilation=replace_final_stride_with_dilation,
+            pre_norm=pre_norm,
+            dim_model=dim_model,
+            n_heads=n_heads,
+            dim_feedforward=dim_feedforward,
+            feedforward_activation=feedforward_activation,
+            n_encoder_layers=n_encoder_layers,
+            n_decoder_layers=n_decoder_layers,
+            use_vae=use_vae,
+            latent_dim=latent_dim,
+            n_vae_encoder_layers=n_vae_encoder_layers,
+            temporal_ensemble_coeff=temporal_ensemble_coeff,
+            dropout=dropout,
+            kl_weight=kl_weight,
+            optimizer_lr=optimizer_lr,
+            optimizer_weight_decay=optimizer_weight_decay,
+            optimizer_grad_clip_norm=optimizer_grad_clip_norm,
         )
 
-        return cls(model=model)
+        # Save config as hyperparameters for checkpoint restoration
+        self.save_hyperparameters(ignore=["config"])  # Save individual args, not config object
+        # Also save config dict for compatibility
+        self.hparams["config"] = self.config.to_dict()
 
-    def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
-        """Save model config to checkpoint for reconstruction.
+        # Model will be built in setup() or immediately if env_action_dim provided
+        self.model: ACTModel | None = None
 
-        Converts ACTConfig dataclass to a plain dict for safe serialization.
-        This allows torch.load() to use weights_only=True for security.
+        # Preprocessor/postprocessor set in setup() or _initialize_model()
+        self._preprocessor = None
+        self._postprocessor = None
+
+        # Eager initialization if dataset_stats is provided
+        if dataset_stats is not None:
+            self._initialize_model(dataset_stats)
+
+        self._dataset_stats = dataset_stats
+
+    def _initialize_model(
+        self,
+        dataset_stats: dict[str, dict[str, list[float] | str | tuple]],
+    ) -> None:
+        """Initialize model and preprocessors.
+
+        Called by both lazy (setup) and eager (checkpoint) paths.
+
+        Args:
+            env_action_dim: Environment action dimension.
+            dataset_stats: Dataset normalization statistics.
         """
-        if self.model is not None and hasattr(self.model, "config"):
-            checkpoint[_MODEL_CONFIG_KEY] = self.model.config.to_dict()
+        features: dict[str, Feature] = {}
+        for stat in dataset_stats.values():
+            features[str(stat["name"])] = Feature(
+                name=str(stat["name"]),
+                ftype=cast("FeatureType", stat["type"]),
+                shape=cast("tuple[int, ...]", stat["shape"]),
+                normalization_data=NormalizationParameters(
+                    mean=cast("list[float]", stat["mean"]),
+                    std=cast("list[float]", stat["std"]),
+                ),
+            )
+
+        self.model = ACTModel(
+            input_features={
+                name: feature
+                for name, feature in features.items()
+                if feature.ftype in {FeatureType.STATE, FeatureType.VISUAL}
+            },
+            output_features={
+                name: feature for name, feature in features.items() if feature.ftype == FeatureType.ACTION
+            },
+            n_obs_steps=self.config.n_obs_steps,
+            chunk_size=self.config.chunk_size,
+            n_action_steps=self.config.n_action_steps,
+            vision_backbone=self.config.vision_backbone,
+            pretrained_backbone_weights=self.config.pretrained_backbone_weights,
+            replace_final_stride_with_dilation=self.config.replace_final_stride_with_dilation,
+            pre_norm=self.config.pre_norm,
+            dim_model=self.config.dim_model,
+            n_heads=self.config.n_heads,
+            dim_feedforward=self.config.dim_feedforward,
+            feedforward_activation=self.config.feedforward_activation,
+            n_encoder_layers=self.config.n_encoder_layers,
+            n_decoder_layers=self.config.n_decoder_layers,
+            use_vae=self.config.use_vae,
+            latent_dim=self.config.latent_dim,
+            n_vae_encoder_layers=self.config.n_vae_encoder_layers,
+            temporal_ensemble_coeff=self.config.temporal_ensemble_coeff,
+            dropout=self.config.dropout,
+            kl_weight=self.config.kl_weight,
+        )
 
     def setup(self, stage: str) -> None:
         """Set up the policy from datamodule if not already initialized.
@@ -159,9 +227,6 @@ class ACT(FromCheckpoint, Export, Policy):  # type: ignore[misc]
         """
         del stage  # Unused argument
 
-        if self.model is not None:
-            return  # Already initialized
-
         datamodule = self.trainer.datamodule  # type: ignore[union-attr]
         train_dataset = datamodule.train_dataset
 
@@ -170,13 +235,34 @@ class ACT(FromCheckpoint, Export, Policy):  # type: ignore[misc]
             msg = f"Expected train_dataset to be physicalai.data.Dataset, got {type(train_dataset)}."
             raise TypeError(msg)
 
-        # Initialize the policy
+        if self.model is not None:
+            reformat_dataset_to_match_policy(self, datamodule)
+            return
+
         self.model = ACTModel(
             input_features=train_dataset.observation_features,
             output_features=train_dataset.action_features,
+            n_obs_steps=self.config.n_obs_steps,
+            chunk_size=self.config.chunk_size,
+            n_action_steps=self.config.n_action_steps,
+            vision_backbone=self.config.vision_backbone,
+            pretrained_backbone_weights=self.config.pretrained_backbone_weights,
+            replace_final_stride_with_dilation=self.config.replace_final_stride_with_dilation,
+            pre_norm=self.config.pre_norm,
+            dim_model=self.config.dim_model,
+            n_heads=self.config.n_heads,
+            dim_feedforward=self.config.dim_feedforward,
+            feedforward_activation=self.config.feedforward_activation,
+            n_encoder_layers=self.config.n_encoder_layers,
+            n_decoder_layers=self.config.n_decoder_layers,
+            use_vae=self.config.use_vae,
+            latent_dim=self.config.latent_dim,
+            n_vae_encoder_layers=self.config.n_vae_encoder_layers,
+            temporal_ensemble_coeff=self.config.temporal_ensemble_coeff,
+            dropout=self.config.dropout,
+            kl_weight=self.config.kl_weight,
         )
 
-        # TO-DO(Vlad):  remove that workaround after CLI is able to run physicalai trainer
         reformat_dataset_to_match_policy(self, datamodule)
 
     def predict_action_chunk(self, batch: Observation) -> torch.Tensor:
@@ -260,21 +346,51 @@ class ACT(FromCheckpoint, Export, Policy):  # type: ignore[misc]
         )
         return {"loss": loss}
 
-    def configure_optimizers(self) -> torch.optim.Optimizer:
-        """Configure the optimizer for the policy.
+    def configure_optimizers(self) -> dict[str, Any]:
+        """Configure optimizer.
 
         Returns:
-            torch.optim.Optimizer: Adam optimizer over the model parameters.
-
-        Raises:
-            RuntimeError: If the ACT model is not initialized.
+            Optimizer configuration dict.
         """
-        if self.model is None:
-            msg = "ACT model is not initialized."
-            raise RuntimeError(msg)
-        if self.optimizer_fn is not None:
-            return self.optimizer_fn(self.model.parameters())
-        return torch.optim.Adam(self.model.parameters(), lr=1e-5, weight_decay=1e-4)
+        # Get trainable parameters
+        params = [p for p in self.parameters() if p.requires_grad]
+
+        # Create optimizer (use config values)
+        optimizer = torch.optim.AdamW(
+            params,
+            lr=self.config.optimizer_lr,
+            weight_decay=self.config.optimizer_weight_decay,
+        )
+
+        return {
+            "optimizer": optimizer,
+        }
+
+    def configure_gradient_clipping(
+        self,
+        optimizer: torch.optim.Optimizer,
+        gradient_clip_val: float | None = None,
+        gradient_clip_algorithm: str | None = None,
+    ) -> None:
+        """Configure gradient clipping from policy config.
+
+        This overrides Lightning's default gradient clipping to use
+        the policy's grad_clip_norm config value.
+
+        Args:
+            optimizer: The optimizer being used.
+            gradient_clip_val: Ignored (uses config value instead).
+            gradient_clip_algorithm: Ignored (always uses 'norm').
+        """
+        # Use Trainer's value if set, otherwise fall back to policy config
+        clip_val = gradient_clip_val if gradient_clip_val is not None else self.config.optimizer_grad_clip_norm
+
+        if clip_val and clip_val > 0:
+            self.clip_gradients(
+                optimizer,
+                gradient_clip_val=clip_val,
+                gradient_clip_algorithm=gradient_clip_algorithm or "norm",
+            )
 
     def evaluation_step(self, batch: Observation, stage: str) -> None:  # noqa: PLR6301
         """Evaluation step (no-op by default).
