@@ -13,6 +13,32 @@ import torch
 from physicalai.data.observation import Observation
 from physicalai.export.mixin_export import ExportBackend
 from physicalai.inference.model import InferenceModel
+from physicalai.inference.adapters import RuntimeAdapter
+
+
+class TestAdapter(RuntimeAdapter):
+    def __init__(self, device: torch.device | str = "cpu") -> None:
+        self.device = torch.device(device)
+        self._policy: torch.nn.Module | None = None
+        self._input_names: list[str] = []
+        self._output_names: list[str] = []
+
+    def load(self, model_path: Path | str) -> None:
+        pass
+
+    def predict(self, inputs: dict[str, Observation]):
+        pass
+
+    def _convert_outputs_to_numpy(self, torch_outputs: torch.Tensor | dict | list | tuple):
+        pass
+
+    @property
+    def input_names(self) -> list[str]:
+        return []
+
+    @property
+    def output_names(self) -> list[str]:
+        return []
 
 
 def test_exported_metadata_controls_action_queue(
@@ -267,6 +293,21 @@ class TestAutoDetection:
         with patch("torch.cuda.is_available", return_value=cuda_available):
             with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
                 assert InferenceModel(export_dir, device="auto").device == expected_device
+
+    def test_device_setting(
+        self,
+        tmp_path: Path,
+        mock_adapter: MagicMock,
+    ) -> None:
+        """Test manual device setting."""
+        export_dir = tmp_path / "exports"
+        export_dir.mkdir()
+        backend_file = "model.onnx"
+        (export_dir / backend_file).touch()
+
+        expected_device = "xpu"
+        with patch("physicalai.inference.model.get_adapter", return_value=TestAdapter(device=expected_device)):
+            assert InferenceModel(export_dir, device=expected_device).device == expected_device
 
 
 class TestSelectAction:
