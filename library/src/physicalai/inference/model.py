@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import yaml
+
 from physicalai.data.constants import ACTION, IMAGES, STATE
 from physicalai.export.backends import ExportBackend
 from physicalai.inference.adapters import get_adapter
@@ -18,6 +19,7 @@ from physicalai.inference.adapters import get_adapter
 if TYPE_CHECKING:
     import numpy as np
     import torch
+
     from physicalai.data import Observation
     from physicalai.inference.adapters.base import RuntimeAdapter
 
