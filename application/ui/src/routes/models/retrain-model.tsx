@@ -16,36 +16,35 @@ import {
 } from '@geti/ui';
 
 import { $api } from '../../api/client';
-import { SchemaJob, SchemaTrainJobPayload } from '../../api/openapi-spec';
+import { SchemaModel, SchemaTrainJobPayload } from '../../api/openapi-spec';
 import { useProject } from '../../features/projects/use-project';
+import { SchemaTrainJob } from './train-model';
 
-export type SchemaTrainJob = Omit<SchemaJob, 'payload'> & {
-    payload: SchemaTrainJobPayload;
-};
-
-export const TrainModelModal = (close: (job: SchemaTrainJob | undefined) => void) => {
+export const RetrainModelModal = (
+    baseModel: SchemaModel,
+    close: (job: SchemaTrainJob | undefined) => void
+) => {
     const { datasets, id: project_id } = useProject();
-    const [name, setName] = useState<string>('');
-    const [selectedDatasets, setSelectedDatasets] = useState<Key | null>(null);
-    const [selectedPolicy, setSelectedPolicy] = useState<Key | null>('act');
-    const [maxSteps, setMaxSteps] = useState<number>(100);
+    const [name, setName] = useState<string>(`${baseModel.name} (retrained)`);
+    const [selectedDataset, setSelectedDataset] = useState<Key | null>(baseModel.dataset_id);
+    const [maxSteps, setMaxSteps] = useState<number>(10000);
 
     const trainMutation = $api.useMutation('post', '/api/jobs:train');
 
     const save = () => {
-        const dataset_id = selectedDatasets?.toString();
-        const policy = selectedPolicy?.toString();
+        const dataset_id = selectedDataset?.toString();
 
-        if (!dataset_id || !policy) {
+        if (!dataset_id) {
             return;
         }
 
         const payload: SchemaTrainJobPayload = {
-            dataset_id: dataset_id!,
+            dataset_id,
             project_id,
             model_name: name,
-            policy: policy!,
+            policy: baseModel.policy,
             max_steps: maxSteps,
+            base_model_id: baseModel.id!,
         };
         trainMutation.mutateAsync({ body: payload }).then((response) => {
             close(response as SchemaTrainJob | undefined);
@@ -54,7 +53,7 @@ export const TrainModelModal = (close: (job: SchemaTrainJob | undefined) => void
 
     return (
         <Dialog>
-            <Heading>Train Model</Heading>
+            <Heading>Retrain Model</Heading>
             <Divider />
             <Content>
                 <Form
@@ -65,16 +64,12 @@ export const TrainModelModal = (close: (job: SchemaTrainJob | undefined) => void
                     validationBehavior='native'
                 >
                     <TextField label='Name' value={name} onChange={setName} />
-                    <Picker label='Dataset' selectedKey={selectedDatasets} onSelectionChange={setSelectedDatasets}>
+                    <Picker label='Dataset' selectedKey={selectedDataset} onSelectionChange={setSelectedDataset}>
                         {datasets.map((dataset) => (
                             <Item key={dataset.id}>{dataset.name}</Item>
                         ))}
                     </Picker>
-                    <Picker label='Policy' selectedKey={selectedPolicy} onSelectionChange={setSelectedPolicy}>
-                        <Item key='act'>Act</Item>
-                        <Item key='pi0'>Pi0</Item>
-                        <Item key='smolvla'>SmolVLA</Item>
-                    </Picker>
+                    <TextField label='Policy' value={baseModel.policy.toUpperCase()} isReadOnly />
                     <NumberField
                         label='Max Steps'
                         value={maxSteps}
@@ -90,7 +85,7 @@ export const TrainModelModal = (close: (job: SchemaTrainJob | undefined) => void
                     Cancel
                 </Button>
                 <Button variant='accent' onPress={save}>
-                    Train
+                    Retrain
                 </Button>
             </ButtonGroup>
         </Dialog>

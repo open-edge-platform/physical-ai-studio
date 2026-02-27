@@ -25,15 +25,20 @@ export const ModelRow = ({
     model,
     trainingJob,
     onDelete,
+    onRetrain,
 }: {
     model: SchemaModel;
     trainingJob?: SchemaJob;
     onDelete: () => void;
+    onRetrain: () => void;
 }) => {
     const onAction = (key: Key) => {
         const action = key.toString();
         if (action === 'delete') {
             onDelete();
+        }
+        if (action === 'retrain') {
+            onRetrain();
         }
     };
 
@@ -62,6 +67,7 @@ export const ModelRow = ({
                         <MoreMenu />
                     </ActionButton>
                     <Menu onAction={onAction}>
+                        <Item key='retrain'>Retrain</Item>
                         <Item key='delete'>Delete</Item>
                     </Menu>
                 </MenuTrigger>
