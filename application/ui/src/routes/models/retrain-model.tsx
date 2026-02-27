@@ -28,7 +28,7 @@ export const RetrainModelModal = ({
     close: (job: SchemaTrainJob | undefined) => void;
 }) => {
     const { datasets, id: project_id } = useProject();
-    const [name, setName] = useState<string>(`${baseModel.name} (retrained)`);
+    const [name, setName] = useState<string>(baseModel.name);
     const [selectedDataset, setSelectedDataset] = useState<Key | null>(baseModel.dataset_id);
     const [maxSteps, setMaxSteps] = useState<number>(10000);
 
