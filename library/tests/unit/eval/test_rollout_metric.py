@@ -11,15 +11,6 @@ import torch
 from physicalai.eval import Rollout, evaluate_policy
 
 
-@pytest.fixture
-def dummy_policy():
-    """Create a dummy policy for testing."""
-    from physicalai.policies.dummy import Dummy, DummyConfig
-    from physicalai.policies.dummy.model import Dummy as DummyModel
-
-    return Dummy(DummyModel.from_config(DummyConfig(action_shape=(2,))))
-
-
 class TestRolloutNumericalEquivalence:
     """Tests that verify Rollout produces identical results to evaluate_policy."""
 
