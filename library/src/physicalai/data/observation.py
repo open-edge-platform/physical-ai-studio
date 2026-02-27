@@ -464,3 +464,30 @@ class NormalizationParameters:
     std: list[float] | float | None = None
     min: list[float] | float | None = None
     max: list[float] | float | None = None
+
+
+# Module-level constants for convenient dict access
+# Generated from Observation.FieldName enum to avoid duplication.
+#
+# Usage: from physicalai.data.observation import STATE, ACTION, IMAGES
+# Then: batch[STATE] instead of batch["state"]
+#
+# Note: All of the following are equivalent for dict access:
+# - batch[ACTION]                       (recommended: imported constant)
+# - batch["action"]                     (string literal)
+# - batch[Observation.FieldName.ACTION] (enum member)
+#
+# Using imported constants is recommended for IDE autocomplete, refactoring support, and consistency.
+ACTION = Observation.FieldName.ACTION.value
+EPISODE_INDEX = Observation.FieldName.EPISODE_INDEX.value
+EXTRA = Observation.FieldName.EXTRA.value
+FRAME_INDEX = Observation.FieldName.FRAME_INDEX.value
+IMAGES = Observation.FieldName.IMAGES.value
+INDEX = Observation.FieldName.INDEX.value
+INFO = Observation.FieldName.INFO.value
+NEXT_REWARD = Observation.FieldName.NEXT_REWARD.value
+NEXT_SUCCESS = Observation.FieldName.NEXT_SUCCESS.value
+STATE = Observation.FieldName.STATE.value
+TASK = Observation.FieldName.TASK.value
+TASK_INDEX = Observation.FieldName.TASK_INDEX.value
+TIMESTAMP = Observation.FieldName.TIMESTAMP.value
