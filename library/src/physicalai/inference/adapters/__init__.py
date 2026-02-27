@@ -7,23 +7,45 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+if TYPE_CHECKING:
+    from physicalai.export.backends import ExportBackend
+
 from physicalai.inference.adapters.base import RuntimeAdapter
 from physicalai.inference.adapters.onnx import ONNXAdapter
 from physicalai.inference.adapters.openvino import OpenVINOAdapter
-from physicalai.inference.adapters.torch import TorchAdapter
-from physicalai.inference.adapters.torch_export import TorchExportAdapter
-
-if TYPE_CHECKING:
-    from physicalai.export import ExportBackend
 
 __all__ = [
     "ONNXAdapter",
     "OpenVINOAdapter",
     "RuntimeAdapter",
-    "TorchAdapter",
-    "TorchExportAdapter",
+    "TorchAdapter",  # noqa: F822
+    "TorchExportAdapter",  # noqa: F822
     "get_adapter",
 ]
+
+
+def __getattr__(name: str) -> Any:  # noqa: ANN401
+    """Lazy-load torch-dependent adapters on access.
+
+    Args:
+        name: Attribute name to load.
+
+    Returns:
+        The requested adapter class.
+
+    Raises:
+        AttributeError: If attribute is not found.
+    """
+    if name == "TorchAdapter":
+        from physicalai.inference.adapters.torch import TorchAdapter  # noqa: PLC0415
+
+        return TorchAdapter
+    if name == "TorchExportAdapter":
+        from physicalai.inference.adapters.torch_export import TorchExportAdapter  # noqa: PLC0415
+
+        return TorchExportAdapter
+    msg = f"module {__name__!r} has no attribute {name!r}"
+    raise AttributeError(msg)
 
 
 def get_adapter(backend: ExportBackend | str, **kwargs: Any) -> RuntimeAdapter:  # noqa: ARG001, ANN401
@@ -40,13 +62,13 @@ def get_adapter(backend: ExportBackend | str, **kwargs: Any) -> RuntimeAdapter: 
         ValueError: If backend is not supported
 
     Examples:
-        >>> from physicalai.export import ExportBackend
+        >>> from physicalai.export.backends import ExportBackend
         >>> adapter = get_adapter(ExportBackend.OPENVINO)
         >>> adapter.load(Path("model.xml"))
         >>> # Can also use string
         >>> adapter = get_adapter("openvino")
     """
-    from physicalai.export import ExportBackend  # noqa: PLC0415
+    from physicalai.export.backends import ExportBackend  # noqa: PLC0415
 
     # Convert string to enum if needed
     if isinstance(backend, str):
@@ -55,9 +77,15 @@ def get_adapter(backend: ExportBackend | str, **kwargs: Any) -> RuntimeAdapter: 
     adapter_map: dict[ExportBackend, type[RuntimeAdapter]] = {
         ExportBackend.OPENVINO: OpenVINOAdapter,
         ExportBackend.ONNX: ONNXAdapter,
-        ExportBackend.TORCH_EXPORT_IR: TorchExportAdapter,
-        ExportBackend.TORCH: TorchAdapter,
     }
+
+    # Lazy-import torch adapters only when needed
+    if backend in {ExportBackend.TORCH, ExportBackend.TORCH_EXPORT_IR}:
+        from physicalai.inference.adapters.torch import TorchAdapter  # noqa: PLC0415
+        from physicalai.inference.adapters.torch_export import TorchExportAdapter  # noqa: PLC0415
+
+        adapter_map[ExportBackend.TORCH] = TorchAdapter
+        adapter_map[ExportBackend.TORCH_EXPORT_IR] = TorchExportAdapter
 
     if backend not in adapter_map:
         msg = f"No adapter available for backend: {backend}"

@@ -9,14 +9,15 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 import torch
-
 from physicalai.data.observation import Observation
 from physicalai.export.mixin_export import ExportBackend
 from physicalai.inference.model import InferenceModel
 
 
 def test_exported_metadata_controls_action_queue(
-    tmp_path: Path, mock_adapter: MagicMock, sample_observation: Observation
+    tmp_path: Path,
+    mock_adapter: MagicMock,
+    sample_observation: Observation,
 ) -> None:
     export_dir = tmp_path / "exports"
     export_dir.mkdir()
@@ -210,7 +211,13 @@ class TestAutoDetection:
             ("physicalai.policies.dummy.Dummy", "dummy"),
         ],
     )
-    def test_policy_detection(self, tmp_path: Path, mock_adapter: MagicMock, policy_class: str, expected_name: str) -> None:
+    def test_policy_detection(
+        self,
+        tmp_path: Path,
+        mock_adapter: MagicMock,
+        policy_class: str,
+        expected_name: str,
+    ) -> None:
         """Test policy name detection from metadata."""
         import yaml
 
@@ -227,7 +234,13 @@ class TestAutoDetection:
         ("file_ext", "expected_backend"),
         [(".xml", ExportBackend.OPENVINO), (".onnx", ExportBackend.ONNX), (".pt2", ExportBackend.TORCH_EXPORT_IR)],
     )
-    def test_backend_detection(self, tmp_path: Path, mock_adapter: MagicMock, file_ext: str, expected_backend: ExportBackend) -> None:
+    def test_backend_detection(
+        self,
+        tmp_path: Path,
+        mock_adapter: MagicMock,
+        file_ext: str,
+        expected_backend: ExportBackend,
+    ) -> None:
         """Test backend detection from file extensions."""
         export_dir = tmp_path / "exports"
         export_dir.mkdir()

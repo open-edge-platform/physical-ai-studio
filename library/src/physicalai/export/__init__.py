@@ -3,7 +3,8 @@
 
 """Export mixins module."""
 
-from .mixin_export import Export, ExportBackend
+from .backends import ExportBackend
+from .mixin_export import Export
 
 
 def get_available_backends() -> list[str]:

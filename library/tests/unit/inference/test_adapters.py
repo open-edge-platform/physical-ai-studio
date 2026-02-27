@@ -9,10 +9,16 @@ from unittest.mock import MagicMock, Mock, patch
 import numpy as np
 import pytest
 import torch
-
-from physicalai.export.mixin_export import ExportBackend
-from physicalai.inference.adapters import ONNXAdapter, OpenVINOAdapter, RuntimeAdapter, TorchExportAdapter, TorchAdapter, get_adapter
 from physicalai.data.observation import Observation
+from physicalai.export.mixin_export import ExportBackend
+from physicalai.inference.adapters import (
+    ONNXAdapter,
+    OpenVINOAdapter,
+    RuntimeAdapter,
+    TorchAdapter,
+    TorchExportAdapter,
+    get_adapter,
+)
 
 
 class TestGetAdapter:
@@ -153,7 +159,6 @@ class TestTorchAdapter:
 
     def test_lifecycle(self, tmp_path: Path) -> None:
         """Test complete adapter lifecycle: init, load, predict."""
-
         model_path = tmp_path / "model.pt"
         metadata_path = tmp_path / "metadata.yaml"
         model_path.touch()
@@ -176,9 +181,13 @@ class TestTorchAdapter:
 
             adapter.load(model_path)
 
-            with patch("physicalai.inference.adapters.torch.TorchAdapter._convert_outputs_to_numpy",
-                        return_value={"output": np.array([[1.0, 2.0]])}):
-                outputs = adapter.predict({"observation": Observation(images=torch.randn(1, 3, 224, 224), state=torch.randn(1, 2))})
+            with patch(
+                "physicalai.inference.adapters.torch.TorchAdapter._convert_outputs_to_numpy",
+                return_value={"output": np.array([[1.0, 2.0]])},
+            ):
+                outputs = adapter.predict({
+                    "observation": Observation(images=torch.randn(1, 3, 224, 224), state=torch.randn(1, 2)),
+                })
                 assert "output" in outputs and isinstance(outputs["output"], np.ndarray)
 
     def test_error_cases(self, tmp_path: Path) -> None:
