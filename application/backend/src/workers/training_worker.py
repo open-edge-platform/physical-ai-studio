@@ -54,6 +54,10 @@ class TrainingWorker(BaseProcessWorker):
                 payload = TrainJobPayload.model_validate(job.payload)
                 id = uuid4()
 
+                base_model = None
+                if payload.base_model_id is not None:
+                    base_model = await ModelService.get_model_by_id(payload.base_model_id)
+
                 dataset = await DatasetService.get_dataset_by_id(payload.dataset_id)
                 model_dir = Path(str(settings.models_dir / str(id)))
                 model_dir.mkdir(parents=True)
@@ -69,11 +73,13 @@ class TrainingWorker(BaseProcessWorker):
                     snapshot_id=snapshot.id,
                     policy=payload.policy,
                     properties={},
+                    parent_model_id=payload.base_model_id,
+                    version=base_model.version + 1 if base_model else 1,
                     created_at=None,
                 )
 
                 self.interrupt_event.clear()
-                await asyncio.create_task(self._train_model(job, model, snapshot, payload))
+                await asyncio.create_task(self._train_model(job, model, snapshot, payload, base_model))
             await asyncio.sleep(0.5)
 
     def setup(self) -> None:
@@ -90,7 +96,9 @@ class TrainingWorker(BaseProcessWorker):
                 raise RuntimeError("The event loop must be set.")
             self.loop.run_until_complete(TrainingService.abort_orphan_jobs())
 
-    async def _train_model(self, job: Job, model: Model, snapshot: Snapshot, payload: TrainJobPayload):
+    async def _train_model(
+        self, job: Job, model: Model, snapshot: Snapshot, payload: TrainJobPayload, base_model: Model | None = None
+    ):
         settings = get_settings()
         await JobService.update_job_status(job_id=job.id, status=JobStatus.RUNNING, message="Training started")
         dispatcher = TrainingTrackingDispatcher(
@@ -107,8 +115,7 @@ class TrainingWorker(BaseProcessWorker):
                 train_batch_size=8,
             )
 
-            if payload.base_model_id is not None:
-                base_model = await ModelService.get_model_by_id(payload.base_model_id)
+            if base_model is not None:
                 policy = load_policy(base_model)
             else:
                 policy = setup_policy(model)

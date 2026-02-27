@@ -1,4 +1,4 @@
-import { ActionButton, Grid, Item, Key, Link, Menu, MenuTrigger, Text, View } from '@geti/ui';
+import { ActionButton, Flex, Grid, Item, Key, Link, Menu, MenuTrigger, Text, View } from '@geti/ui';
 import { MoreMenu } from '@geti/ui/icons';
 
 import { SchemaModel } from '../../api/openapi-spec';
@@ -38,9 +38,16 @@ export const ModelRow = ({
         }
     };
 
+    const version = model.version ?? 1;
+
     return (
         <Grid columns={GRID_COLUMNS} alignItems={'center'} width={'100%'} UNSAFE_className={classes.modelRow}>
-            <Text>{model.name}</Text>
+            <Flex alignItems='center' gap='size-100'>
+                <Text>{model.name}</Text>
+                {version > 1 && (
+                    <Text UNSAFE_style={{ color: 'var(--spectrum-gray-600)', fontSize: '0.85em' }}>v{version}</Text>
+                )}
+            </Flex>
             <Text>{new Date(model.created_at!).toLocaleString()}</Text>
             <Text>{model.policy.toUpperCase()}</Text>
             <Link

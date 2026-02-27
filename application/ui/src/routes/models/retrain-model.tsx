@@ -20,10 +20,13 @@ import { SchemaModel, SchemaTrainJobPayload } from '../../api/openapi-spec';
 import { useProject } from '../../features/projects/use-project';
 import { SchemaTrainJob } from './train-model';
 
-export const RetrainModelModal = (
-    baseModel: SchemaModel,
-    close: (job: SchemaTrainJob | undefined) => void
-) => {
+export const RetrainModelModal = ({
+    baseModel,
+    close,
+}: {
+    baseModel: SchemaModel;
+    close: (job: SchemaTrainJob | undefined) => void;
+}) => {
     const { datasets, id: project_id } = useProject();
     const [name, setName] = useState<string>(`${baseModel.name} (retrained)`);
     const [selectedDataset, setSelectedDataset] = useState<Key | null>(baseModel.dataset_id);
