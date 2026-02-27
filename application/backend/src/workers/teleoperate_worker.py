@@ -21,6 +21,7 @@ from robots.robot_client_factory import RobotClientFactory
 from schemas import TeleoperationConfig
 from schemas.dataset import Episode
 from services.robot_calibration_service import RobotCalibrationService
+from utils.async_camera_capture import AsyncCameraCapture
 from utils.dataset import build_lerobot_dataset_features
 from utils.serial_robot_tools import RobotConnectionManager
 from workers.camera_worker import create_frames_source_from_camera
@@ -32,7 +33,9 @@ class CameraFrameProcessor:
     @staticmethod
     def process(frame: np.ndarray) -> np.ndarray:
         """Post process camera frame."""
-        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        if isinstance(frame, np.ndarray):
+            return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        return None
 
 
 class TeleoperateState(BaseModel):
@@ -60,6 +63,7 @@ class TeleoperateWorker(BaseThreadWorker):
     leader: RobotClient | None = None
     follower: RobotClient | None = None
     cameras: dict[str, VideoCaptureBase] = {}
+    recording_mutation = None
 
     def __init__(
         self,
@@ -75,6 +79,7 @@ class TeleoperateWorker(BaseThreadWorker):
         self.config = config
         self.queue = queue
         self.robot_client_factory = RobotClientFactory(robot_manager, calibration_service)
+        self.frame_captures = {}
 
         self.events = {
             "stop": Event(),
@@ -112,18 +117,23 @@ class TeleoperateWorker(BaseThreadWorker):
         self.follower = await self.robot_client_factory.build(robot.robot)
         self.leader = await self.robot_client_factory.build(robot.tele_operator.robot)
 
-        self.cameras = {
-            str(camera.id): create_frames_source_from_camera(camera) for camera in self.config.environment.cameras
-        }
-        for camera in self.cameras.values():
-            # camera.attach_processor(CameraFrameProcessor()) # TODO Not working. Fix in framesource
-            camera.connect()
+        self.frame_captures = {}
+        for cam_cfg in self.config.environment.cameras:
+            cam_id = str(cam_cfg.id)
+            cam = create_frames_source_from_camera(cam_cfg)  # gives you the object with connect/read
+
+            cap = AsyncCameraCapture(
+                camera=cam,
+                fps=cam_cfg.payload.fps,
+                process_fn=CameraFrameProcessor.process,  # BGR->RGB, etc.
+                use_cached_on_failure=True,
+            )
+            await cap.start()
+            self.frame_captures[cam_id] = cap
 
         await self.follower.connect()
         await self.leader.connect()
 
-        for camera in self.cameras.values():
-            camera.start_async()
         await asyncio.sleep(1)  #  warmup cameras
 
     def setup(self) -> None:
@@ -229,17 +239,15 @@ class TeleoperateWorker(BaseThreadWorker):
                 # Add force feedback
                 actions = (await self.leader.read_state())["state"]
                 observations = (await self.follower.read_state())["state"]
-                forces = (await self.follower.read_forces())["state"]
                 await self.follower.set_joints_state(actions, 1 / self.fps)
+                forces = (await self.follower.read_forces())["state"]
                 if forces is not None:
                     await self.leader.set_forces(forces)
 
-                for camera_id, camera in self.cameras.items():
-                    _success, camera_frame = camera.get_latest_frame()  # HWC
-                    if camera_frame is None:
-                        raise Exception("Camera frame is None")
-                    processed_frame = CameraFrameProcessor.process(camera_frame)
-                    observations[camera_id] = processed_frame
+                for cam_id, cap in self.frame_captures.items():
+                    frame, t_perf, ok, err, seq = await cap.get_latest()
+                    if ok and frame is not None:
+                        observations[cam_id] = frame
 
                 timestamp = time.perf_counter() - self.start_episode_t
                 self._report_observation(observations, timestamp)
@@ -249,8 +257,11 @@ class TeleoperateWorker(BaseThreadWorker):
                     )
 
                 dt_s = time.perf_counter() - start_loop_t
-                wait_time = 1 / self.fps - dt_s
-                precise_sleep(wait_time)
+                wait_time = 1 / (self.fps * 2) - dt_s
+                if wait_time > 0:
+                    await asyncio.sleep(wait_time)
+                else:
+                    await asyncio.sleep(0)
         except Exception as e:
             self.error = True
             traceback.print_exception(e)
@@ -311,12 +322,11 @@ class TeleoperateWorker(BaseThreadWorker):
             except Exception:
                 logger.info(f"Failed disconnecting leader: {self.leader}")
 
-        for camera in self.cameras.values():
+        for cap in self.frame_captures.values():
             try:
-                camera.stop()
-                camera.disconnect()
+                await cap.stop()
             except Exception:
-                logger.info("Failed disconnecting a camera. Ignoring")
+                logger.info("Failed stopping a camera thread. Ignoring")
 
         # Wait for .5 seconds before closing queue to allow messages through
         await asyncio.sleep(0.5)
