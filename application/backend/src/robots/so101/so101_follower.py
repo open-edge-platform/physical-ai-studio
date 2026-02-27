@@ -1,7 +1,7 @@
 import asyncio
 
-from lerobot.robots.so101_follower import SO101Follower as LeSO101Follower
-from lerobot.robots.so101_follower import SO101FollowerConfig
+from lerobot.robots.so_follower import SOFollower as LeSOFollower
+from lerobot.robots.so_follower import SOFollowerRobotConfig
 from loguru import logger
 
 from robots.robot_client import RobotClient
@@ -14,15 +14,15 @@ HARDWARE_TIMEOUT_COMMAND = 5.0
 
 
 class SO101Follower(RobotClient):
-    robot: LeSO101Follower
+    robot: LeSOFollower
     name = "so101_follower"
 
     max_speed = 270  # From feetech 12V servo spec: 60 deg / 0.222s
 
     previous_target: dict[str, float] | None = None
 
-    def __init__(self, config: SO101FollowerConfig):
-        self.robot = LeSO101Follower(config)
+    def __init__(self, config: SOFollowerRobotConfig):
+        self.robot = LeSOFollower(config)
         self.is_controlled = False
         # Serialize all serial bus access. The Feetech SCS bus is half-duplex
         # (single TX/RX line), so concurrent reads/writes cause "Port is in use!"

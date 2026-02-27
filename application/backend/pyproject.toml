@@ -10,7 +10,7 @@ dependencies = [
   'harvesters; sys_platform != "darwin"',
   "fastapi[standard]",
   "physicalai-train[pi0,smolvla]",
-  "lerobot[feetech]==0.4.2",
+  "lerobot[feetech]==0.4.4",
   "numpy",
   "websockets",
   'pyrealsense2-macosx; sys_platform == "darwin"',

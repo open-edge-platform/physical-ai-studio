@@ -1,7 +1,7 @@
 import asyncio
 
-from lerobot.teleoperators.so101_leader import SO101Leader as LeSO101Leader
-from lerobot.teleoperators.so101_leader import SO101LeaderConfig
+from lerobot.teleoperators.so_leader import SOLeader as LeSOLeader
+from lerobot.teleoperators.so_leader import SOLeaderTeleopConfig
 from loguru import logger
 
 from robots.robot_client import RobotClient
@@ -14,12 +14,12 @@ HARDWARE_TIMEOUT_COMMAND = 5.0
 
 
 class SO101Leader(RobotClient):
-    robot: LeSO101Leader
+    robot: LeSOLeader
     name = "so101_leader"
     is_controlled: bool = False
 
-    def __init__(self, config: SO101LeaderConfig):
-        self.robot = LeSO101Leader(config)
+    def __init__(self, config: SOLeaderTeleopConfig):
+        self.robot = LeSOLeader(config)
         # Serialize all serial bus access. The Feetech SCS bus is half-duplex
         # (single TX/RX line), so concurrent reads/writes cause "Port is in use!"
         # errors. This lock ensures only one bus operation is in-flight at a time.

@@ -31,7 +31,7 @@ dependencies = [
     "pillow",
     "lightning",
     "lightning-utilities",
-    "lerobot>=0.4.1",
+    "lerobot>=0.4.4",
     "gymnasium>=0.29.1",
     "gym-pusht>=0.1.5",
     "pymunk>=6.6.0,<7.0.0",
@@ -105,6 +105,12 @@ physicalai = "physicalai.cli.cli:cli"
 Homepage = "https://github.com/open-edge-platform/physical-ai-studio"
 Documentation = "https://github.com/open-edge-platform/physical-ai-studio/blob/main/README.md"
 Repository = "https://github.com/open-edge-platform/physical-ai-studio.git"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.1",
+    "ruff>=0.14.14",
+]
 
 
 # ============================================================================ #

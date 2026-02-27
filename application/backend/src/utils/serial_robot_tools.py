@@ -1,6 +1,6 @@
 import asyncio
 
-from lerobot.robots.so101_follower import SO101Follower, SO101FollowerConfig
+from lerobot.robots.so_follower import SOFollower, SOFollowerRobotConfig
 from loguru import logger
 from serial.tools import list_ports
 from serial.tools.list_ports_common import ListPortInfo
@@ -108,7 +108,7 @@ async def identify_so101_robot_visually(robot: Robot, joint: str | None = None) 
     if robot.connection_string == "":
         raise ValueError(f"Could not find the serial port for serial number {robot.serial_number}")
     # Assume follower since leader shares same FeetechMotorBus layout
-    connection = SO101Follower(SO101FollowerConfig(port=robot.connection_string))
+    connection = SOFollower(SOFollowerRobotConfig(port=robot.connection_string))
     connection.bus.connect()
 
     PRESENT_POSITION_KEY = "Present_Position"
