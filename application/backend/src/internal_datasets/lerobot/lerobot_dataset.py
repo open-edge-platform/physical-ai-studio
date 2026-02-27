@@ -7,7 +7,6 @@ from uuid import uuid4
 import cv2
 import numpy as np
 import torch
-from git import rmtree
 from lerobot.datasets.dataset_tools import delete_episodes as lerobot_delete_episodes
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import build_dataset_frame
@@ -85,7 +84,7 @@ class InternalLeRobotDataset(DatasetClient):
             raise ValueError(f"Cannot overwrite lerobot dataset with {source.__class__}")
 
         if self.path.is_dir():
-            rmtree(self.path)
+            shutil.rmtree(self.path)
 
         shutil.copytree(source.path, self.path)
         self.load_dataset()

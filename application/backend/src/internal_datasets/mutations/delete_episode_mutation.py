@@ -1,7 +1,6 @@
 from pathlib import Path
+from shutil import rmtree
 from uuid import uuid4
-
-from git import rmtree
 
 from internal_datasets.dataset_client import DatasetClient
 from settings import get_settings
