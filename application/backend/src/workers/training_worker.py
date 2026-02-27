@@ -151,5 +151,6 @@ class TrainingWorker(BaseProcessWorker):
                 job_id=job.id, status=JobStatus.FAILED, message=f"Training failed: {e}"
             )
         self.interrupt_event.set()
-        dispatcher.join(timeout=10)
+        if dispatcher.is_alive():
+            dispatcher.join(timeout=10)
         self.queue.put((EventType.JOB_UPDATE, job))
