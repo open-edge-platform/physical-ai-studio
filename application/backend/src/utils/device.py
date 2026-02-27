@@ -27,6 +27,8 @@ def get_lightning_strategy() -> str:
     import torch
 
     if torch.xpu.is_available():
+        import physicalai.devices.xpu  # noqa: F401 — registers XPU accelerator/strategy with Lightning
+
         return "xpu_single"
 
     return "auto"
