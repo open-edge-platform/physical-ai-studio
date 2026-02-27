@@ -12,7 +12,7 @@ from uuid import uuid4
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import CSVLogger
 
-from models.utils import setup_policy
+from models.utils import load_policy, setup_policy
 from services.snapshot_service import SnapshotService
 from settings import get_settings
 
@@ -73,7 +73,7 @@ class TrainingWorker(BaseProcessWorker):
                 )
 
                 self.interrupt_event.clear()
-                await asyncio.create_task(self._train_model(job, model, snapshot))
+                await asyncio.create_task(self._train_model(job, model, snapshot, payload))
             await asyncio.sleep(0.5)
 
     def setup(self) -> None:
@@ -90,7 +90,7 @@ class TrainingWorker(BaseProcessWorker):
                 raise RuntimeError("The event loop must be set.")
             self.loop.run_until_complete(TrainingService.abort_orphan_jobs())
 
-    async def _train_model(self, job: Job, model: Model, snapshot: Snapshot):
+    async def _train_model(self, job: Job, model: Model, snapshot: Snapshot, payload: TrainJobPayload):
         settings = get_settings()
         await JobService.update_job_status(job_id=job.id, status=JobStatus.RUNNING, message="Training started")
         dispatcher = TrainingTrackingDispatcher(
@@ -106,7 +106,12 @@ class TrainingWorker(BaseProcessWorker):
                 root=snapshot.path,
                 train_batch_size=8,
             )
-            policy = setup_policy(model)
+
+            if payload.base_model_id is not None:
+                base_model = await ModelService.get_model_by_id(payload.base_model_id)
+                policy = load_policy(base_model)
+            else:
+                policy = setup_policy(model)
 
             checkpoint_callback = ModelCheckpoint(
                 dirpath=path,
@@ -129,7 +134,7 @@ class TrainingWorker(BaseProcessWorker):
                 ],
                 accelerator=get_torch_device(),
                 strategy=get_lightning_strategy(),
-                max_steps=10000,
+                max_steps=payload.max_steps,
             )
 
             dispatcher.start()

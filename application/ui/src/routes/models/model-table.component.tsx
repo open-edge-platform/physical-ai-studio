@@ -19,11 +19,22 @@ export const ModelHeader = () => {
     );
 };
 
-export const ModelRow = ({ model, onDelete }: { model: SchemaModel; onDelete: () => void }) => {
+export const ModelRow = ({
+    model,
+    onDelete,
+    onRetrain,
+}: {
+    model: SchemaModel;
+    onDelete: () => void;
+    onRetrain: () => void;
+}) => {
     const onAction = (key: Key) => {
         const action = key.toString();
         if (action === 'delete') {
             onDelete();
+        }
+        if (action === 'retrain') {
+            onRetrain();
         }
     };
 
@@ -46,6 +57,7 @@ export const ModelRow = ({ model, onDelete }: { model: SchemaModel; onDelete: ()
                         <MoreMenu />
                     </ActionButton>
                     <Menu onAction={onAction}>
+                        <Item key='retrain'>Retrain</Item>
                         <Item key='delete'>Delete</Item>
                     </Menu>
                 </MenuTrigger>
