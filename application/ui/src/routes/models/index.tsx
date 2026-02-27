@@ -189,11 +189,15 @@ export const Index = () => {
                 )}
             </Flex>
             <DialogContainer onDismiss={() => setRetrainModel(null)}>
-                {retrainModel &&
-                    RetrainModelModal(retrainModel, (job) => {
-                        if (job) addJob(job);
-                        setRetrainModel(null);
-                    })}
+                {retrainModel && (
+                    <RetrainModelModal
+                        baseModel={retrainModel}
+                        close={(job) => {
+                            if (job) addJob(job);
+                            setRetrainModel(null);
+                        }}
+                    />
+                )}
             </DialogContainer>
         </Flex>
     );
