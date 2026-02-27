@@ -5,24 +5,6 @@
 
 Module-level constants providing string literals for Observation field names,
 enabling IDE autocomplete and safe refactoring for dict-based access patterns.
-
-Usage:
-    from physicalai.data.constants import STATE, ACTION, IMAGES
-    from physicalai.data.observation import Observation
-
-    # Dict-based access with constants
-    batch[STATE]   # equivalent to batch["state"]
-    batch[ACTION]  # equivalent to batch["action"]
-
-    # All of these are equivalent:
-    batch[ACTION]                              # imported constant (recommended)
-    batch["action"]                            # string literal
-    batch[Observation.FieldName.ACTION]        # enum member
-
-Note:
-    These constants are torch-free and can be imported without loading torch.
-    This module is designed for use in data pipelines that need to avoid
-    torch imports until necessary.
 """
 
 # Core observation fields
