@@ -190,7 +190,10 @@ class InferenceWorker(BaseThreadWorker):
                 dt_s = time.perf_counter() - start_loop_t
                 wait_time = 1 / 30 - dt_s
 
-                precise_sleep(wait_time)
+                if wait_time > 0:
+                    await asyncio.sleep(wait_time)
+                else:
+                    await asyncio.sleep(0)
         except Exception as e:
             traceback.print_exception(e)
             self._report_error(e)
