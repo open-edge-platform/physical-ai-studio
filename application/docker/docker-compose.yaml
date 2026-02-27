@@ -56,8 +56,8 @@ services:
 
     # Persisted data and storage volumes + shared robot calibration
     volumes:
-      - geti-data:/app/data
-      - geti-storage:/app/storage
+      - physical-ai-studio-data:/app/data
+      - physical-ai-studio-storage:/app/storage
       - ${HOME}/.cache/huggingface/lerobot/calibration:/home/appuser/.cache/huggingface/lerobot/calibration:ro
 
     # --- Option 1: Privileged mode (active by default) ---
@@ -85,5 +85,5 @@ services:
     #    # - /dev/bus/usb:/dev/bus/usb
 
 volumes:
-  geti-data:
-  geti-storage:
+  physical-ai-studio-data:
+  physical-ai-studio-storage:

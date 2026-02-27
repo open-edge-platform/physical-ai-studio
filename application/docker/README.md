@@ -147,28 +147,28 @@ sudo usermod -aG dialout $USER
 
 The compose file defines two named volumes and one bind mount:
 
-| Volume         | Container path                                         | Purpose                                       |
-|----------------|--------------------------------------------------------|-----------------------------------------------|
-| `geti-data`    | `/app/data`                                            | Application database and runtime data         |
-| `geti-storage` | `/app/storage`                                         | Trained models, datasets, and other artifacts |
-| *(bind mount)* | `~/.cache/huggingface/lerobot/calibration` (read-only) | Shared robot calibration data from the host   |
+| Volume                       | Container path                                         | Purpose                                       |
+|------------------------------|--------------------------------------------------------|-----------------------------------------------|
+| `physical-ai-studio-data`    | `/app/data`                                            | Application database and runtime data         |
+| `physical-ai-studio-storage` | `/app/storage`                                         | Trained models, datasets, and other artifacts |
+| *(bind mount)*               | `~/.cache/huggingface/lerobot/calibration` (read-only) | Shared robot calibration data from the host   |
 
 To inspect volume contents:
 
 ```bash
 # List files in a volume
-docker run --rm -v docker_geti-data:/data alpine ls -la /data
+docker run --rm -v docker_physical-ai-studio-data:/data alpine ls -la /data
 
 # Back up a volume
-docker run --rm -v docker_geti-storage:/storage -v $(pwd):/backup alpine \
-  tar czf /backup/geti-storage-backup.tar.gz -C /storage .
+docker run --rm -v docker_physical-ai-studio-storage:/storage -v $(pwd):/backup alpine \
+  tar czf /backup/physical-ai-studio-storage-backup.tar.gz -C /storage .
 ```
 
 > [!NOTE]
 > Docker Compose prefixes volume names with the project name (the directory name
 > by default). When running from `application/docker/`, the actual volume names
-> are `docker_geti-data` and `docker_geti-storage`.
-> You can verify the exact volume names with `docker volume ls | grep geti`.
+> are `docker_physical-ai-studio-data` and `docker_physical-ai-studio-storage`.
+> You can verify the exact volume names with `docker volume ls | grep physical-ai-studio`.
 
 To reset all data:
 
