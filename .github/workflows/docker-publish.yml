@@ -50,9 +50,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          images: ghcr.io/open-edge-platform/physical-ai-studio-dev-${{ matrix.device }}
+          images: ghcr.io/open-edge-platform/physical-ai-studio-${{ matrix.device }}
           tags: |
-            type=raw,value=${{ steps.version.outputs.version }}-${{ steps.version.outputs.short-sha }}
+            type=raw,value=${{ steps.version.outputs.version }}-dev-${{ steps.version.outputs.short-sha }}
             type=raw,value=${{ github.ref_name }}
 
       - name: Build and push Docker image
