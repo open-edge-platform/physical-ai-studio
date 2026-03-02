@@ -13,12 +13,10 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import yaml
 
-from physicalai.data.constants import ACTION, IMAGES, STATE
 from physicalai.export.backends import ExportBackend
 from physicalai.inference.adapters import get_adapter
 
 if TYPE_CHECKING:
-    from physicalai.data import Observation
     from physicalai.inference.adapters.base import RuntimeAdapter
 
 
@@ -124,7 +122,7 @@ class InferenceModel:
         """
         return cls(export_dir=export_dir, **kwargs)
 
-    def select_action(self, observation: Observation | dict[str, np.ndarray]) -> np.ndarray:
+    def select_action(self, observation: dict[str, np.ndarray]) -> np.ndarray:
         """Select action for given observation.
 
         Matches PyTorch policy API for seamless transition from
@@ -134,8 +132,7 @@ class InferenceModel:
         automatically and returns one action at a time.
 
         Args:
-            observation: Robot observation (images, states, etc.). Can be an Observation
-                instance or a dict of numpy arrays.
+            observation: Robot observation as a dict mapping input names to numpy arrays.
 
         Returns:
             Action array to execute. Shape: (batch_size, action_dim)
@@ -148,7 +145,7 @@ class InferenceModel:
         """
         # For chunked policies, use action queue
         if self.use_action_queue and len(self._action_queue) > 0:
-            return self._backward_compat_wrap(observation, self._action_queue.popleft())
+            return self._action_queue.popleft()
 
         # Convert observation to model inputs
         inputs = self._prepare_inputs(observation)
@@ -166,7 +163,7 @@ class InferenceModel:
             # Queue shape: (chunk_size, batch, action_dim)
             batch_actions = np.transpose(actions, (1, 0, 2))
             self._action_queue.extend(batch_actions)
-            return self._backward_compat_wrap(observation, self._action_queue.popleft())
+            return self._action_queue.popleft()
 
         # For non-chunked policies, return directly
         # Remove temporal dimension if present: (batch, 1, action_dim) -> (batch, action_dim)
@@ -174,7 +171,7 @@ class InferenceModel:
         if actions.ndim == temporal_dim and actions.shape[1] == 1:
             actions = np.squeeze(actions, axis=1)
 
-        return self._backward_compat_wrap(observation, actions)
+        return actions
 
     def reset(self) -> None:
         """Reset policy state for new episode.
@@ -193,154 +190,16 @@ class InferenceModel:
         """
         self._action_queue.clear()
 
-    def _backward_compat_wrap(
-        self, observation: Observation | dict[str, np.ndarray], actions: np.ndarray,
-    ) -> np.ndarray:
-        """Wrap numpy actions as torch.Tensor for backward compat when caller passes Observation.
-
-        Studio callers that pass an Observation instance expect torch.Tensor back.
-        Future callers passing dict[str, np.ndarray] get np.ndarray.
-        """
-        if not isinstance(observation, dict):
-            import torch  # noqa: PLC0415
-
-            return torch.from_numpy(actions)
-        return actions
-
-    def _prepare_inputs(self, observation: Observation | dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-        """Convert observation to model input format.
-
-        Handles both first-party (state, images) and LeRobot (observation.*, action)
-        naming conventions by mapping Observation fields to expected model inputs.
-        Returns the original Observation object when the model expects
-        a single "Observation" input.
+    def _prepare_inputs(self, observation: dict[str, np.ndarray]) -> dict[str, np.ndarray]:  # noqa: PLR6301
+        """Validate and return observation dict for model input.
 
         Args:
-            observation: Robot observation
+            observation: Robot observation as a dict mapping input names to numpy arrays.
 
         Returns:
-            Dictionary mapping input names to numpy arrays or the input Observation
-
-        Raises:
-            ValueError: If required model inputs are missing from observation
+            The observation dict passed through unchanged.
         """
-        if isinstance(observation, dict):
-            return observation
-
-        # Convert observation to numpy arrays using unified .to() API
-        obs_numpy = observation.to_numpy()
-
-        # Convert observation to dict format
-        obs_dict = obs_numpy.to_dict()
-
-        # Get model input names - prefer metadata over adapter when available
-        # Metadata contains semantic names (e.g., "observation_state")
-        # Adapter may return internal node names for some backends (e.g., OpenVINO Cast nodes)
-        if "input_names" in self.metadata:
-            expected_input_names = self.metadata["input_names"]
-            adapter_input_names = list(self.adapter.input_names)
-        else:
-            expected_input_names = list(self.adapter.input_names)
-            adapter_input_names = expected_input_names
-
-        expected_inputs = set(expected_input_names)
-
-        if expected_inputs == {"observation"}:
-            return {"observation": observation}
-
-        # Build mapping from observation fields to expected input names
-        # This handles different naming conventions:
-        # - First-party: "state", "images" -> "state", "images"
-        # - LeRobot: "state", "images" -> "observation.state", "observation.image"
-        field_mapping = self._build_field_mapping(obs_dict, expected_inputs)
-
-        # Build inputs using the mapping
-        inputs = {}
-        for obs_key, model_key in field_mapping.items():
-            value = obs_dict[obs_key]
-
-            # Skip None values
-            if value is None:
-                continue
-
-            # Handle images (can be list or single tensor)
-            if obs_key == "images" and isinstance(value, list):
-                # For LeRobot, take first image from list
-                # NOTE: Multiple camera support will be added in future
-                if len(value) > 0:
-                    value = value[0]
-                else:
-                    continue
-
-            # Add to inputs (already numpy arrays after to_numpy())
-            if isinstance(value, np.ndarray):
-                inputs[model_key] = value
-            else:
-                # Handle nested structures if needed
-                inputs[model_key] = np.array(value)
-
-        # Validate all expected inputs are present
-        missing_inputs = expected_inputs - set(inputs.keys())
-        if missing_inputs:
-            available_fields = list(obs_dict.keys())
-            msg = f"Missing required model inputs: {missing_inputs}. Available observation fields: {available_fields}"
-            raise ValueError(msg)
-
-        # If adapter uses different names (e.g., OpenVINO Cast nodes), map by position
-        if expected_input_names != adapter_input_names:
-            # Reorder inputs to match expected order, then use adapter input names (indices)
-            return {adapter_input_names[i]: inputs[expected_input_names[i]] for i in range(len(expected_input_names))}
-
-        return inputs
-
-    @staticmethod
-    def _build_field_mapping(obs_dict: dict[str, Any], expected_inputs: set[str]) -> dict[str, str]:
-        """Build mapping from observation fields to model input names.
-
-        Supports both first-party and LeRobot naming conventions.
-
-        Args:
-            obs_dict: Observation dictionary with keys like "state", "images"
-            expected_inputs: Set of expected model input names
-
-        Returns:
-            Dictionary mapping observation keys to model input names
-        """
-        mapping = {}
-
-        # Dummy matching for exact matches
-        mapping = {key: key for key in obs_dict if key in expected_inputs}
-
-        if len(mapping) == len(expected_inputs):
-            return mapping
-
-        # Common observation fields with their possible model input names
-        # Supports both first-party (e.g., "state") and LeRobot (e.g., "observation.state") conventions
-        # NOTE: ONNX converts dots to underscores in input names
-        obs_fields = {
-            STATE: [STATE, f"observation.{STATE}", f"observation_{STATE}"],
-            IMAGES: [
-                IMAGES,
-                "image",
-                "observation.image",
-                f"observation.{IMAGES}",
-                "observation_image",
-                f"observation_{IMAGES}",
-            ],
-            ACTION: [ACTION],
-        }
-
-        for obs_key, possible_model_keys in obs_fields.items():
-            if obs_key not in obs_dict:
-                continue
-
-            # Find which model key matches expected inputs
-            for model_key in possible_model_keys:
-                if model_key in expected_inputs:
-                    mapping[obs_key] = model_key
-                    break
-
-        return mapping
+        return observation
 
     @staticmethod
     def _get_action_output_key(outputs: dict[str, np.ndarray]) -> str:
