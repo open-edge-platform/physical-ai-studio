@@ -74,6 +74,6 @@ jobs:
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Sign Docker image
-        uses: open-edge-platform/geti-ci/actions/sign-image@375de2eb018dae396c959f9b3a464f40271de969
+        uses: open-edge-platform/geti-ci/actions/sign-image@4d46c7fb444d8fae6390348e76d96bb0749c5632
         with:
           image-uri: ${{ steps.primary-tag.outputs.tag }}
