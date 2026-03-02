@@ -15,7 +15,7 @@ import {
     View,
 } from '@geti/ui';
 import { Add } from '@geti/ui/icons';
-import { useParams } from 'react-router';
+import { useNavigate, useParams } from 'react-router';
 
 import { SchemaDatasetOutput } from '../../api/openapi-spec';
 import { useProject, useProjectId } from '../../features/projects/use-project';
@@ -35,10 +35,18 @@ const Datasets = ({ datasets }: DatasetsProps) => {
     const dataset_id = params.dataset_id ?? datasets[0]?.id;
 
     const [showDialog, setShowDialog] = useState<boolean>(false);
+    const navigate = useNavigate();
 
     const onSelectionChange = (key: Key) => {
         if (key.toString() === '#new-dataset') {
             setShowDialog(true);
+        }
+    };
+
+    const onDatasetDialogClose = (dataset: SchemaDatasetOutput | undefined) => {
+        setShowDialog(false);
+        if (dataset?.id) {
+            navigate(paths.project.datasets.show({ project_id, dataset_id: dataset.id }));
         }
     };
 
@@ -94,11 +102,7 @@ const Datasets = ({ datasets }: DatasetsProps) => {
                     </Item>
                 </TabPanels>
             </Tabs>
-            <NewDatasetDialogContainer
-                project_id={project_id}
-                show={showDialog}
-                onDismiss={() => setShowDialog(false)}
-            />
+            <NewDatasetDialogContainer project_id={project_id} show={showDialog} onDismiss={onDatasetDialogClose} />
         </Flex>
     );
 };

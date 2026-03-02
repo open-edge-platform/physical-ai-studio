@@ -4,7 +4,6 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import FileResponse
-from loguru import logger
 
 from api.dependencies import HTTPException, get_dataset_id, get_dataset_service
 from internal_datasets.mutations.delete_episode_mutation import DeleteEpisodesMutation
@@ -58,7 +57,6 @@ async def dataset_video_endpoint(
     """Get path to video of episode"""
     dataset = await dataset_service.get_dataset_by_id(dataset_id)
     requested_path = (Path(dataset.path) / video_path).resolve()
-    logger.info(requested_path)
 
     if not str(requested_path).startswith(str(dataset.path)):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access to the requested file is forbidden.")
