@@ -9,10 +9,8 @@ from multiprocessing.synchronize import Event as EventClass
 
 import cv2
 import numpy as np
-import torch
 from lerobot.utils.robot_utils import precise_sleep
 from loguru import logger
-from physicalai.data import Observation
 from pydantic import BaseModel
 
 from models.utils import load_inference_model
@@ -161,7 +159,7 @@ class InferenceWorker(BaseThreadWorker):
                 timestamp = time.perf_counter() - start_episode_t
                 if self.state.is_running:
                     if not self.action_queue:
-                        observation = self._build_geti_action_observation(state)
+                        observation = self._build_inference_input(state)
                         self.action_queue = self.model.select_action(observation)[0].tolist()
                     action = self.action_queue.pop(0)
 
@@ -238,28 +236,23 @@ class InferenceWorker(BaseThreadWorker):
             }
         )
 
-    def _build_geti_action_observation(self, robot_observation: dict):
-        state = (
-            torch.tensor([value for key, value in robot_observation.items() if key in self.action_keys])
-            .unsqueeze(0)
-            .float()
-        )
-        images: dict = {}
+    def _build_inference_input(self, robot_observation: dict) -> dict[str, np.ndarray]:
+        state = np.array(
+            [value for key, value in robot_observation.items() if key in self.action_keys],
+            dtype=np.float32,
+        ).reshape(1, -1)  # (1, state_dim) — equivalent to unsqueeze(0)
+
+        images: dict[str, np.ndarray] = {}
         for camera in self.config.environment.cameras:
             frame = robot_observation[str(camera.id)]
-
-            # Camera name is used to reference its feature
             camera_name = camera.name.lower()
-            # change image to 0..1 and swap R & B channels.
-            images[camera_name] = torch.from_numpy(frame)
-            images[camera_name] = images[camera_name].float() / 255
-            images[camera_name] = images[camera_name].permute(2, 0, 1).contiguous()
-            images[camera_name] = images[camera_name].unsqueeze(0)
+            # Convert HWC uint8 to NCHW float32 [0,1]
+            img = frame.astype(np.float32) / 255.0
+            img = np.transpose(img, (2, 0, 1))  # HWC -> CHW
+            img = np.expand_dims(img, 0)         # CHW -> NCHW
+            images[camera_name] = img
 
-        return Observation(
-            state=state,
-            images=images,
-        )
+        return {"state": state, "images": images}
 
     def _base_64_encode_observation(self, observation: np.ndarray | None) -> str:
         if observation is None:
