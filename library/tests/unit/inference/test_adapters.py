@@ -19,6 +19,7 @@ from physicalai.inference.adapters import (
     TorchExportAdapter,
     get_adapter,
 )
+from physicalai.inference.adapters.executorch import ExecuTorchAdapter
 
 
 class TestGetAdapter:
@@ -32,6 +33,7 @@ class TestGetAdapter:
             ("onnx", ONNXAdapter),
             ("torch_export_ir", TorchExportAdapter),
             ("torch", TorchAdapter),
+            ("executorch", ExecuTorchAdapter),
         ],
     )
     def test_get_adapter(
@@ -348,3 +350,47 @@ class TestRuntimeAdapter:
         """Test that abstract methods must be implemented."""
         with pytest.raises(TypeError):
             RuntimeAdapter()  # type: ignore[abstract]
+
+
+class TestDefaultDevice:
+    """Test default_device() method for all adapters."""
+
+    def test_runtime_adapter_default_device(self) -> None:
+        """Test RuntimeAdapter base class default_device returns a string."""
+
+        class ConcreteAdapter(RuntimeAdapter):
+            def load(self, model_path: Path) -> None:
+                pass
+
+            def predict(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+                return {"output": np.array([1.0])}
+
+            @property
+            def input_names(self) -> list[str]:
+                return ["input"]
+
+            @property
+            def output_names(self) -> list[str]:
+                return ["output"]
+
+        adapter = ConcreteAdapter()
+        result = adapter.default_device()
+        assert isinstance(result, str)
+
+    def test_onnx_adapter_default_device(self) -> None:
+        """Test ONNXAdapter default_device returns a string."""
+        adapter = ONNXAdapter()
+        result = adapter.default_device()
+        assert isinstance(result, str)
+
+    def test_openvino_adapter_default_device(self) -> None:
+        """Test OpenVINOAdapter default_device returns a string."""
+        adapter = OpenVINOAdapter()
+        result = adapter.default_device()
+        assert isinstance(result, str)
+
+    def test_executorch_adapter_default_device(self) -> None:
+        """Test ExecuTorchAdapter default_device returns a string."""
+        adapter = ExecuTorchAdapter()
+        result = adapter.default_device()
+        assert isinstance(result, str)

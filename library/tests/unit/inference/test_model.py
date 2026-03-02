@@ -413,6 +413,27 @@ class TestSelectAction:
             model.reset()
             assert len(model._action_queue) == 0
 
+    def test_select_action_with_numpy_dict_input(
+        self,
+        mock_export_dir: Path,
+        mock_adapter: MagicMock,
+    ) -> None:
+        """Test select_action with dict[str, np.ndarray] returns np.ndarray (no backward compat wrap)."""
+        with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
+            model = InferenceModel(mock_export_dir)
+            model.use_action_queue = False
+            model.chunk_size = 1
+
+            # Mock adapter returns (1, 1, 2) - remove temporal dim
+            mock_adapter.predict.return_value = {"actions": np.random.randn(1, 1, 2)}
+
+            # Pass dict[str, np.ndarray] instead of Observation
+            numpy_input = {"observation": np.random.randn(1, 3).astype(np.float32)}
+            action = model.select_action(numpy_input)
+
+            assert isinstance(action, np.ndarray)
+            assert action.shape == (1, 2)  # (batch, action_dim)
+            mock_adapter.predict.assert_called_once()
 
 class TestInputPreparation:
     """Test observation-to-input conversion."""
