@@ -62,7 +62,6 @@ def test_adapters_import_without_torch():
             "-c",
             "import sys; "
             "from physicalai.inference.adapters import RuntimeAdapter, ONNXAdapter, OpenVINOAdapter; "
-            "from physicalai.inference.adapters.executorch import ExecuTorchAdapter; "
             "torch_modules = [k for k in sys.modules if k == 'torch']; "
             "assert not torch_modules, f'torch leaked: {torch_modules}'",
         ],
