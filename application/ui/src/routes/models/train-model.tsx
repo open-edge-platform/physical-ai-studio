@@ -29,6 +29,7 @@ export const TrainModelModal = (close: (job: SchemaTrainJob | undefined) => void
     const [selectedDatasets, setSelectedDatasets] = useState<Key | null>(null);
     const [selectedPolicy, setSelectedPolicy] = useState<Key | null>('act');
     const [maxSteps, setMaxSteps] = useState<number>(100);
+    const [batchSize, setBatchSize] = useState<number>(8);
 
     const trainMutation = $api.useMutation('post', '/api/jobs:train');
 
@@ -46,6 +47,7 @@ export const TrainModelModal = (close: (job: SchemaTrainJob | undefined) => void
             model_name: name,
             policy: policy!,
             max_steps: maxSteps,
+            batch_size: batchSize,
         };
         trainMutation.mutateAsync({ body: payload }).then((response) => {
             close(response as SchemaTrainJob | undefined);
@@ -82,6 +84,14 @@ export const TrainModelModal = (close: (job: SchemaTrainJob | undefined) => void
                         minValue={100}
                         maxValue={100000}
                         step={100}
+                    />
+                    <NumberField
+                        label='Batch Size'
+                        value={batchSize}
+                        onChange={setBatchSize}
+                        minValue={1}
+                        maxValue={256}
+                        step={1}
                     />
                 </Form>
             </Content>

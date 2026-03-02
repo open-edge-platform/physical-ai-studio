@@ -31,6 +31,7 @@ export const RetrainModelModal = ({
     const [name, setName] = useState<string>(baseModel.name);
     const [selectedDataset, setSelectedDataset] = useState<Key | null>(baseModel.dataset_id);
     const [maxSteps, setMaxSteps] = useState<number>(10000);
+    const [batchSize, setBatchSize] = useState<number>(8);
 
     const trainMutation = $api.useMutation('post', '/api/jobs:train');
 
@@ -47,6 +48,7 @@ export const RetrainModelModal = ({
             model_name: name,
             policy: baseModel.policy,
             max_steps: maxSteps,
+            batch_size: batchSize,
             base_model_id: baseModel.id!,
         };
         trainMutation.mutateAsync({ body: payload }).then((response) => {
@@ -80,6 +82,14 @@ export const RetrainModelModal = ({
                         minValue={100}
                         maxValue={100000}
                         step={100}
+                    />
+                    <NumberField
+                        label='Batch Size'
+                        value={batchSize}
+                        onChange={setBatchSize}
+                        minValue={1}
+                        maxValue={256}
+                        step={1}
                     />
                 </Form>
             </Content>

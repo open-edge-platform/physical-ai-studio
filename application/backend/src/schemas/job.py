@@ -47,6 +47,7 @@ class TrainJobPayload(BaseModel):
     policy: str
     model_name: str
     max_steps: int = Field(default=100, ge=100, le=100_000, description="Number of training steps")
+    batch_size: int = Field(default=8, ge=1, le=256, description="Training batch size")
     base_model_id: UUID | None = Field(default=None, description="Model ID to resume training from")
 
     @field_serializer("project_id")

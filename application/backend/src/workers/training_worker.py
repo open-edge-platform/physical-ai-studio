@@ -110,7 +110,7 @@ class TrainingWorker(BaseProcessWorker):
             l_dm = LeRobotDataModule(
                 repo_id="snapshot",  # doesnt matter for loading the data.
                 root=snapshot.path,
-                train_batch_size=8,
+                train_batch_size=payload.batch_size,
             )
 
             if base_model is not None:
