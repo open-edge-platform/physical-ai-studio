@@ -19,7 +19,6 @@ from physicalai.inference.adapters import (
     TorchExportAdapter,
     get_adapter,
 )
-from physicalai.inference.adapters.executorch import ExecuTorchAdapter
 
 
 class TestGetAdapter:
@@ -33,7 +32,6 @@ class TestGetAdapter:
             ("onnx", ONNXAdapter),
             ("torch_export_ir", TorchExportAdapter),
             ("torch", TorchAdapter),
-            ("executorch", ExecuTorchAdapter),
         ],
     )
     def test_get_adapter(
@@ -389,8 +387,3 @@ class TestDefaultDevice:
         result = adapter.default_device()
         assert isinstance(result, str)
 
-    def test_executorch_adapter_default_device(self) -> None:
-        """Test ExecuTorchAdapter default_device returns a string."""
-        adapter = ExecuTorchAdapter()
-        result = adapter.default_device()
-        assert isinstance(result, str)
