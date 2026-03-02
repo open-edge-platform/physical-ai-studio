@@ -1,0 +1,23 @@
+Task 5: Update test_model.py for pure-numpy InferenceModel
+===========================================================
+
+Date: 2026-03-02
+Branch: refactor/decouple-torch-deps
+Base commit: 7f28857
+
+Changes made to library/tests/unit/inference/test_model.py:
+- Removed `from physicalai.data.observation import Observation` import
+- Kept `import torch` (still needed for TestAdapter and cuda patches)
+- Updated `sample_observation` fixture to return `dict[str, np.ndarray]`
+- Updated `TestAdapter.predict` signature: `dict[str, np.ndarray]`
+- Removed `TestAdapter._convert_outputs_to_numpy` method
+- Updated all `sample_observation: Observation` type hints → `dict[str, np.ndarray]`
+- Changed `assert isinstance(action, torch.Tensor)` → `assert isinstance(action, np.ndarray)`
+- Replaced `torch.randn(1, 2)` with `np.random.randn(1, 2).astype(np.float32)` in test_reset_clears_queue
+- Simplified `TestInputPreparation`: kept passthrough identity test, removed LeRobot/None tests
+- Removed `TestFieldMapping` class entirely
+
+Verification:
+- grep -c "Observation" → 0
+- grep -c "_build_field_mapping" → 0
+- pytest tests/unit/inference/test_model.py: 40 passed, 2 warnings in 3.27s
