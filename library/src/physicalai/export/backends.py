@@ -11,7 +11,6 @@ class ExportBackend(StrEnum):
 
     ONNX = "onnx"
     OPENVINO = "openvino"
-    EXECUTORCH = "executorch"
     TORCH = "torch"
     TORCH_EXPORT_IR = "torch_export_ir"
 
