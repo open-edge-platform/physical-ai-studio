@@ -5,7 +5,6 @@
 
 import inspect
 from collections.abc import Mapping
-from enum import StrEnum
 from os import PathLike
 from pathlib import Path
 from typing import Any
@@ -15,20 +14,12 @@ import openvino
 import torch
 import yaml
 
+from physicalai.export.backends import ExportBackend
 from physicalai.train import __version__
 
 CONFIG_KEY = "model_config"
 POLICY_NAME_KEY = "policy_name"
 DATASET_STATS_KEY = "dataset_stats"
-
-
-class ExportBackend(StrEnum):
-    """Supported export backends."""
-
-    ONNX = "onnx"
-    OPENVINO = "openvino"
-    TORCH = "torch"
-    TORCH_EXPORT_IR = "torch_export_ir"
 
 
 class Export:

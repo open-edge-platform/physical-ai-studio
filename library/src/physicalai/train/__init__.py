@@ -5,6 +5,8 @@
 
 from importlib.metadata import version
 
+import physicalai.devices.xpu  # noqa: F401 - ensure xpu device is registered if available
+
 from .trainer import Trainer
 
 __version__ = version("physicalai-train")

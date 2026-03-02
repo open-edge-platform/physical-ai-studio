@@ -4,7 +4,6 @@
 import asyncio
 import base64
 import time
-import traceback
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
 
@@ -176,7 +175,7 @@ class InferenceWorker(BaseThreadWorker):
 
                 precise_sleep(wait_time)
         except Exception as e:
-            traceback.print_exception(e)
+            logger.exception(f"Inference loop error: {e}")
             self._report_error(e)
 
     async def _on_start(self) -> None:

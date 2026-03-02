@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from loguru import logger
 
+from core.logging import setup_logging, setup_uvicorn_logging
 from services.event_processor import EventProcessor
 from settings import get_settings
 from utils.serial_robot_tools import RobotConnectionManager
@@ -17,6 +18,9 @@ from .scheduler import Scheduler
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """FastAPI lifespan context manager"""
     # Startup
+    setup_logging()
+    setup_uvicorn_logging()
+
     settings = get_settings()
     app.state.settings = settings
 

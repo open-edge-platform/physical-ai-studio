@@ -239,29 +239,11 @@ class ACT(Export, Policy):
             reformat_dataset_to_match_policy(self, datamodule)
             return
 
-        self.model = ACTModel(
-            input_features=train_dataset.observation_features,
-            output_features=train_dataset.action_features,
-            n_obs_steps=self.config.n_obs_steps,
-            chunk_size=self.config.chunk_size,
-            n_action_steps=self.config.n_action_steps,
-            vision_backbone=self.config.vision_backbone,
-            pretrained_backbone_weights=self.config.pretrained_backbone_weights,
-            replace_final_stride_with_dilation=self.config.replace_final_stride_with_dilation,
-            pre_norm=self.config.pre_norm,
-            dim_model=self.config.dim_model,
-            n_heads=self.config.n_heads,
-            dim_feedforward=self.config.dim_feedforward,
-            feedforward_activation=self.config.feedforward_activation,
-            n_encoder_layers=self.config.n_encoder_layers,
-            n_decoder_layers=self.config.n_decoder_layers,
-            use_vae=self.config.use_vae,
-            latent_dim=self.config.latent_dim,
-            n_vae_encoder_layers=self.config.n_vae_encoder_layers,
-            temporal_ensemble_coeff=self.config.temporal_ensemble_coeff,
-            dropout=self.config.dropout,
-            kl_weight=self.config.kl_weight,
-        )
+        stats_dict = train_dataset.stats
+
+        self.hparams["dataset_stats"] = stats_dict
+
+        self._initialize_model(stats_dict)
 
         reformat_dataset_to_match_policy(self, datamodule)
 
