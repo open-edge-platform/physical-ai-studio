@@ -1,6 +1,6 @@
 services:
   physical-ai-studio:
-    image: ${REGISTRY:-ghcr.io/open-edge-platform/}physical-ai-studio:${IMAGE_TAG:-latest}-${AI_DEVICE:-cpu}
+    image: ${REGISTRY:-ghcr.io/open-edge-platform/}physical-ai-studio-${AI_DEVICE:-cpu}:${IMAGE_TAG:-main}
     build:
       context: ../../
       dockerfile: application/docker/Dockerfile
