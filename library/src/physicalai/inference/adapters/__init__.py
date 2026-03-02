@@ -15,7 +15,6 @@ from physicalai.inference.adapters.onnx import ONNXAdapter
 from physicalai.inference.adapters.openvino import OpenVINOAdapter
 
 __all__ = [
-    "ExecuTorchAdapter",  # noqa: F822
     "ONNXAdapter",
     "OpenVINOAdapter",
     "RuntimeAdapter",
@@ -80,10 +79,6 @@ def get_adapter(backend: ExportBackend | str, **kwargs: Any) -> RuntimeAdapter: 
         ExportBackend.ONNX: ONNXAdapter,
     }
 
-    # Lazy-import executorch adapter only when needed (no torch dependency)
-    if backend == ExportBackend.EXECUTORCH:
-        from physicalai.inference.adapters.executorch import ExecuTorchAdapter  # noqa: PLC0415
-        adapter_map[ExportBackend.EXECUTORCH] = ExecuTorchAdapter
 
     # Lazy-import torch adapters only when needed
     if backend in {ExportBackend.TORCH, ExportBackend.TORCH_EXPORT_IR}:

@@ -429,7 +429,6 @@ class InferenceModel:
         extension_map = {
             ".xml": "openvino",  # OpenVINO IR
             ".onnx": "onnx",  # ONNX
-            ".pte": "executorch",  # ExecuTorch
             ".pt2": "torch_export_ir",  # Torch Export IR (PyTorch 2.x)
             ".ptir": "torch_export_ir",  # Torch Export IR (alternative extension)
             ".ckpt": "torch",  # Torch
@@ -464,7 +463,6 @@ class InferenceModel:
         """
         # Map backend to file extension(s)
         extension_map = {
-            ExportBackend.EXECUTORCH: [".pte"],
             ExportBackend.OPENVINO: [".xml"],
             ExportBackend.ONNX: [".onnx"],
             ExportBackend.TORCH_EXPORT_IR: [".pt2", ".ptir"],
