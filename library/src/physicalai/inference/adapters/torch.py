@@ -3,7 +3,10 @@
 
 """Torch runtime adapter for inference."""
 
+from __future__ import annotations
+
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
@@ -18,13 +21,16 @@ from .base import RuntimeAdapter
 class TorchAdapter(RuntimeAdapter):
     """Runtime adapter for Torch models.
 
-    This adapter loads and runs models exported via `to_torch()`
-    using PyTorch's API.
+    This adapter loads and runs models exported via ``to_torch()``
+    using PyTorch's API.  It accepts the same ``dict[str, np.ndarray]``
+    input contract as every other adapter.  Internally it converts
+    numpy arrays to torch tensors, wraps them in an ``Observation``
+    dataclass and forwards them to the policy.
 
     Example:
         >>> adapter = TorchAdapter()
         >>> adapter.load("model.pt")
-        >>> outputs = adapter.predict({"image": image_array, "state": state_array})
+        >>> outputs = adapter.predict({"state": state_array, "images": images_dict})
     """
 
     def __init__(self, device: torch.device | str = "cpu") -> None:
@@ -73,18 +79,28 @@ class TorchAdapter(RuntimeAdapter):
 
             self._policy = policy_class.load_from_checkpoint(model_path, map_location="cpu").to(self.device).eval()
 
-            self._input_names = list(self._policy.model.extra_export_args["torch"]["input_names"])
+            # Derive granular input names from the policy's sample_input.
+            # sample_input returns e.g. {"state": tensor, "images": tensor}
+            # which are the real observation keys the model consumes.
+            self._input_names = list(self._policy.model.sample_input.keys())
             self._output_names = self._policy.model.extra_export_args["torch"]["output_names"]
 
         except Exception as e:
             msg = f"Failed to load Torch model from {model_path}: {e}"
             raise RuntimeError(msg) from e
 
-    def predict(self, inputs: dict[str, Observation]) -> dict[str, np.ndarray]:
+    def predict(self, inputs: dict[str, Any]) -> dict[str, np.ndarray]:
         """Run inference using Torch.
 
+        Accepts ``dict[str, np.ndarray]`` (same contract as all other
+        adapters).  Values may be plain numpy arrays *or* dicts of numpy
+        arrays (e.g. multi-camera images).  The method converts them to
+        torch tensors, wraps them in an :class:`Observation` and passes
+        the result to the loaded policy.
+
         Args:
-            inputs: Dictionary mapping input names to inputs
+            inputs: Dictionary mapping input names to numpy arrays
+                (or dicts of numpy arrays for nested fields like images).
 
         Returns:
             Dictionary mapping output names to numpy arrays
@@ -97,7 +113,11 @@ class TorchAdapter(RuntimeAdapter):
             raise RuntimeError(msg)
 
         try:
-            torch_outputs = self._policy(inputs["observation"].to(self.device))
+            # Build Observation from numpy dict and convert to torch tensors on device
+            observation = Observation.from_dict(inputs).to_torch(self.device)
+
+            # Run policy forward pass
+            torch_outputs = self._policy(observation)
             return self._convert_outputs_to_numpy(torch_outputs)
 
         except Exception as e:
@@ -118,13 +138,14 @@ class TorchAdapter(RuntimeAdapter):
         """
         if isinstance(torch_outputs, torch.Tensor):
             # Single output
-            return {self._output_names[0]: torch_outputs.cpu().numpy()}
+            return {self._output_names[0]: torch_outputs.detach().cpu().numpy()}
         if isinstance(torch_outputs, dict):
             # Dict output
-            return {k: v.cpu().numpy() if isinstance(v, torch.Tensor) else v for k, v in torch_outputs.items()}
+            return {k: v.detach().cpu().numpy() if isinstance(v, torch.Tensor) else v for k, v in torch_outputs.items()}
         if isinstance(torch_outputs, (list, tuple)):
             # Multiple outputs as list/tuple
-            return {name: output.cpu().numpy() for name, output in zip(self._output_names, torch_outputs, strict=True)}
+            outputs_iter = zip(self._output_names, torch_outputs, strict=True)
+            return {name: out.detach().cpu().numpy() for name, out in outputs_iter}
 
         # Unexpected output type
         msg = f"Unexpected output type: {type(torch_outputs)}"
