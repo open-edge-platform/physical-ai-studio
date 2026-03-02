@@ -9,6 +9,7 @@ import {
     DisclosurePanel,
     DisclosureTitle,
     Divider,
+    Flex,
     Form,
     Heading,
     Item,
@@ -79,24 +80,28 @@ export const RetrainModelModal = ({
                     </Picker>
                     <TextField label='Policy' value={baseModel.policy.toUpperCase()} isReadOnly />
                     <Disclosure isQuiet>
-                        <DisclosureTitle>Advanced settings</DisclosureTitle>
+                        <DisclosureTitle UNSAFE_style={{ fontSize: 13 }}>
+                            Advanced settings
+                        </DisclosureTitle>
                         <DisclosurePanel>
-                            <NumberField
-                                label='Max Steps'
-                                value={maxSteps}
-                                onChange={setMaxSteps}
-                                minValue={100}
-                                maxValue={100000}
-                                step={100}
-                            />
-                            <NumberField
-                                label='Batch Size'
-                                value={batchSize}
-                                onChange={setBatchSize}
-                                minValue={1}
-                                maxValue={256}
-                                step={1}
-                            />
+                            <Flex direction='column' gap='size-150'>
+                                <NumberField
+                                    label='Max Steps'
+                                    value={maxSteps}
+                                    onChange={setMaxSteps}
+                                    minValue={100}
+                                    maxValue={100000}
+                                    step={100}
+                                />
+                                <NumberField
+                                    label='Batch Size'
+                                    value={batchSize}
+                                    onChange={setBatchSize}
+                                    minValue={1}
+                                    maxValue={256}
+                                    step={1}
+                                />
+                            </Flex>
                         </DisclosurePanel>
                     </Disclosure>
                 </Form>
