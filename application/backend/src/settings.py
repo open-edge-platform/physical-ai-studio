@@ -53,6 +53,11 @@ class Settings(BaseSettings):
         """Storage directory for robots."""
         return self.storage_dir / "robots"
 
+    @property
+    def log_dir(self) -> Path:
+        """Storage directory for logs."""
+        return self.storage_dir / "logs"
+
     # Server
     host: str = Field(default="0.0.0.0", alias="HOST")  # noqa: S104 # nosec B104
     port: int = Field(default=7860, alias="PORT")

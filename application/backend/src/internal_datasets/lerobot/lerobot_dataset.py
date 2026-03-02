@@ -173,7 +173,7 @@ class InternalLeRobotDataset(DatasetClient):
         settings = get_settings()
         cache_dir = settings.cache_dir / str(uuid4())
 
-        print(f"Creating cache dataset {cache_dir}")
+        logger.info(f"Creating cache dataset {cache_dir}")
         if self.exists_on_disk:
             shutil.copytree(self.path, cache_dir)
             cache_dataset = InternalLeRobotDataset(cache_dir)

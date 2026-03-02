@@ -1,4 +1,5 @@
 import trossen_arm
+from loguru import logger
 
 from schemas import Robot
 
@@ -10,7 +11,7 @@ async def identify_trossen_robot_visually(robot: Robot) -> None:
 
     driver = trossen_arm.TrossenArmDriver()
 
-    print("Configuring the drivers...")
+    logger.info("Configuring the drivers...")
     driver.configure(
         trossen_arm.Model.wxai_v0,
         trossen_arm.StandardEndEffector.wxai_v0_leader,

@@ -1,5 +1,4 @@
 import http
-import traceback
 from collections import defaultdict
 from collections.abc import Sequence
 
@@ -37,7 +36,6 @@ async def handle_error(_request: Request, exception: Exception) -> JSONResponse:
     Handler for internal server errors
     """
 
-    traceback.print_exception(exception)
     logger.exception(f"Internal server error: {exception}")
     headers = {"Cache-Control": "no-cache"}  # always revalidate
     return JSONResponse(

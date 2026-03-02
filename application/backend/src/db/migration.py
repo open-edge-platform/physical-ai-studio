@@ -60,7 +60,6 @@ class MigrationManager:
             logger.info("✓ Database migrations completed successfully")
             return True
         except Exception as e:
-            print(e)
             logger.error(f"✗ Database migration failed: {e}")
             return False
 
