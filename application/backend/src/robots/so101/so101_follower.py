@@ -1,9 +1,16 @@
+import asyncio
+
 from lerobot.robots.so101_follower import SO101Follower as LeSO101Follower
 from lerobot.robots.so101_follower import SO101FollowerConfig
 from loguru import logger
 
 from robots.robot_client import RobotClient
 from schemas.robot import RobotType
+
+# Timeout for hardware operations (seconds)
+# Connection may take longer due to USB enumeration
+HARDWARE_TIMEOUT_CONNECT = 10.0
+HARDWARE_TIMEOUT_COMMAND = 5.0
 
 
 class SO101Follower(RobotClient):
@@ -17,6 +24,10 @@ class SO101Follower(RobotClient):
     def __init__(self, config: SO101FollowerConfig):
         self.robot = LeSO101Follower(config)
         self.is_controlled = False
+        # Serialize all serial bus access. The Feetech SCS bus is half-duplex
+        # (single TX/RX line), so concurrent reads/writes cause "Port is in use!"
+        # errors. This lock ensures only one bus operation is in-flight at a time.
+        self._bus_lock = asyncio.Lock()
 
     @property
     def robot_type(self) -> RobotType:
@@ -29,12 +40,27 @@ class SO101Follower(RobotClient):
     async def connect(self) -> None:
         """Connect to the robot."""
         logger.info(f"Connecting to SO101Follower on port {self.robot.config.port}")
-        self.robot.connect()
+        try:
+            async with self._bus_lock, asyncio.timeout(HARDWARE_TIMEOUT_CONNECT):
+                await asyncio.to_thread(self.robot.connect)
+        except TimeoutError:
+            logger.error("Timeout connecting to robot")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to connect to robot: {e}")
+            raise
 
     async def disconnect(self) -> None:
         """Disconnect from the robot."""
-        logger.info(f"Disconnecting to SO101Follower on port {self.robot.config.port}")
-        self.robot.disconnect()
+        logger.info(f"Disconnecting SO101Follower on port {self.robot.config.port}")
+        try:
+            async with self._bus_lock, asyncio.timeout(HARDWARE_TIMEOUT_COMMAND):
+                await asyncio.to_thread(self.robot.disconnect)
+            logger.info("Robot disconnected")
+        except TimeoutError:
+            logger.warning("Timeout during robot disconnect - forcing cleanup")
+        except Exception as e:
+            logger.error(f"Error during robot disconnect: {e}")
 
     async def ping(self) -> dict:
         """Send ping command. Returns event dict with timestamp."""
@@ -52,14 +78,25 @@ class SO101Follower(RobotClient):
         """
         max_frame_speed = self.max_speed * goal_time
 
-        state = self.robot.get_observation()
-        if self.previous_target:
-            # Additional clamp to make sure that previous_target is not too far of current position
-            state = self._clamp_joints(state, self.previous_target, max_frame_speed * 2)
+        async with self._bus_lock:
+            async with asyncio.timeout(HARDWARE_TIMEOUT_COMMAND):
+                state = await asyncio.to_thread(self.robot.get_observation)
 
-        target = {key: value + self._clamp_speed(joints[key] - value, max_frame_speed) for key, value in state.items()}
-        self.previous_target = target
-        self.robot.send_action(target)
+            if self.previous_target:
+                # Additional clamp to make sure that previous_target is not too far of current position
+                state = self._clamp_joints(state, self.previous_target, max_frame_speed * 2)
+
+            target = {
+                key: value + self._clamp_speed(joints[key] - value, max_frame_speed) for key, value in state.items()
+            }
+            self.previous_target = target
+
+            if not self.is_controlled:
+                await self._enable_torque_unlocked()
+
+            async with asyncio.timeout(HARDWARE_TIMEOUT_COMMAND):
+                await asyncio.to_thread(self.robot.send_action, target)
+
         return self._create_event(
             "joints_state_was_set",
             joints=target,
@@ -80,16 +117,34 @@ class SO101Follower(RobotClient):
     async def enable_torque(self) -> dict:
         """Enable torque. Returns event dict with timestamp."""
         logger.info("Enabling torque")
-        self.is_controlled = True
-        self.robot.bus.enable_torque()
+        async with self._bus_lock:
+            await self._enable_torque_unlocked()
         return self._create_event("torque_was_enabled")
+
+    async def _enable_torque_unlocked(self) -> None:
+        """Enable torque without acquiring the bus lock.
+
+        Must be called while holding self._bus_lock.
+        """
+        async with asyncio.timeout(HARDWARE_TIMEOUT_COMMAND):
+            await asyncio.to_thread(self.robot.bus.enable_torque)
+        self.is_controlled = True
 
     async def disable_torque(self) -> dict:
         """Disable torque. Returns event dict with timestamp."""
         logger.info("Disabling torque")
-        self.is_controlled = False
-        self.robot.bus.disable_torque()
+        async with self._bus_lock:
+            await self._disable_torque_unlocked()
         return self._create_event("torque_was_disabled")
+
+    async def _disable_torque_unlocked(self) -> None:
+        """Disable torque without acquiring the bus lock.
+
+        Must be called while holding self._bus_lock.
+        """
+        async with asyncio.timeout(HARDWARE_TIMEOUT_COMMAND):
+            await asyncio.to_thread(self.robot.bus.disable_torque)
+        self.is_controlled = False
 
     def features(self) -> list[str]:
         """Get Robot features. Returns list with joints."""
@@ -108,7 +163,8 @@ class SO101Follower(RobotClient):
         }
         """
         try:
-            state = self.robot.get_observation()
+            async with self._bus_lock, asyncio.timeout(HARDWARE_TIMEOUT_COMMAND):
+                state = await asyncio.to_thread(self.robot.get_observation)
             return self._create_event(
                 "state_was_updated",
                 state=state,
