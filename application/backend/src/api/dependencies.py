@@ -8,6 +8,7 @@ from fastapi.requests import HTTPConnection
 
 from core.scheduler import Scheduler
 from services import DatasetService, JobService, ModelService, ProjectCameraService, ProjectService, RobotService
+from services.dataset_playback_service import DatasetPlaybackService
 from services.environment_service import EnvironmentService
 from services.event_processor import EventProcessor
 from services.robot_calibration_service import RobotCalibrationService
@@ -79,6 +80,11 @@ def get_environment_service() -> EnvironmentService:
 def get_dataset_service() -> DatasetService:
     """Provides a DatasetService instance for managing datasets."""
     return DatasetService()
+
+@lru_cache
+def get_dataset_playback_service() -> DatasetPlaybackService:
+    """Provides a DatasetPlaybackService instance for managing datasets."""
+    return DatasetPlaybackService()
 
 
 @lru_cache

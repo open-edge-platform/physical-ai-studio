@@ -118,8 +118,10 @@ class TeleoperateWorker(BaseThreadWorker):
             # camera.attach_processor(CameraFrameProcessor()) # TODO Not working. Fix in framesource
             camera.connect()
 
-        await self.follower.connect()
-        await self.leader.connect()
+        await asyncio.gather(
+            self.follower.connect(),
+            self.leader.connect(),
+        )
 
         for camera in self.cameras.values():
             camera.start_async()

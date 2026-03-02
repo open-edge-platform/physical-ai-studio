@@ -6,11 +6,12 @@ from fastapi import APIRouter, Depends, status
 from fastapi.responses import FileResponse
 from loguru import logger
 
-from api.dependencies import HTTPException, get_dataset_id, get_dataset_service
+from api.dependencies import HTTPException, get_dataset_id, get_dataset_service, get_dataset_playback_service
 from internal_datasets.mutations.delete_episode_mutation import DeleteEpisodesMutation
 from internal_datasets.utils import get_internal_dataset
 from schemas import Dataset, Episode
 from services import DatasetService
+from services.dataset_playback_service import DatasetPlaybackService
 
 router = APIRouter(prefix="/api/dataset", tags=["Dataset"])
 
@@ -33,6 +34,20 @@ async def get_episodes_of_dataset(
     dataset = await dataset_service.get_dataset_by_id(dataset_id)
     internal_dataset = get_internal_dataset(dataset)
     return internal_dataset.get_episodes()
+
+@router.post("/{dataset_id}/episodes/{episode_id}/play")
+async def get_episodes_of_dataset(
+    dataset_id: str,
+    episode_id: int,
+    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
+    dataset_playback_service: Annotated[DatasetPlaybackService, Depends(get_dataset_playback_service)],
+) -> Episode:
+    """Get dataset episodes of dataset by id."""
+    dataset = await dataset_service.get_dataset_by_id(UUID(dataset_id))
+    internal_dataset = get_internal_dataset(dataset)
+    episode = internal_dataset.get_episodes()[episode_id]
+    await dataset_playback_service.playback_episode(episode)
+    return episode
 
 
 @router.delete("/{dataset_id}/episodes")
