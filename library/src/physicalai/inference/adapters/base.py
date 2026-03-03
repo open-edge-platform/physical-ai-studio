@@ -74,7 +74,7 @@ class RuntimeAdapter(ABC):
             List of output tensor names
         """
 
-    def default_device(self) -> str:
+    def default_device(self) -> str:  # noqa: PLR6301
         """Get default device for this runtime.
 
         Returns:

@@ -109,7 +109,7 @@ class ONNXAdapter(RuntimeAdapter):
 
         return ["CPUExecutionProvider"]
 
-    def default_device(self) -> str:
+    def default_device(self) -> str:  # noqa: PLR6301
         """Get default ONNX Runtime provider based on available hardware.
 
         Returns:

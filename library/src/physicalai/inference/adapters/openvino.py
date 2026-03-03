@@ -93,7 +93,7 @@ class OpenVINOAdapter(RuntimeAdapter):
         # Convert to dictionary with output names
         return {name: np.array(results[i]) for i, name in enumerate(self._output_names)}
 
-    def default_device(self) -> str:
+    def default_device(self) -> str:  # noqa: PLR6301
         """Get default OpenVINO device.
 
         Returns:
