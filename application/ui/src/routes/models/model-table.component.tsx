@@ -8,12 +8,6 @@ import { durationBetween } from './utils';
 
 import classes from './model-table.module.scss';
 
-const getTrainingDuration = (model: SchemaModel, jobs: SchemaJob[]): string | null => {
-    const job = model.train_job_id ? jobs.find((j) => j.id === model.train_job_id) : undefined;
-    if (!job?.start_time || !job?.end_time) return null;
-    return durationBetween(job.start_time, job.end_time);
-};
-
 export const ModelHeader = () => {
     return (
         <Grid columns={GRID_COLUMNS} alignItems={'center'} width={'100%'} UNSAFE_className={classes.modelHeader}>
@@ -29,11 +23,11 @@ export const ModelHeader = () => {
 
 export const ModelRow = ({
     model,
-    jobs,
+    trainingJob,
     onDelete,
 }: {
     model: SchemaModel;
-    jobs: SchemaJob[];
+    trainingJob?: SchemaJob;
     onDelete: () => void;
 }) => {
     const onAction = (key: Key) => {
@@ -43,7 +37,10 @@ export const ModelRow = ({
         }
     };
 
-    const duration = getTrainingDuration(model, jobs);
+    const duration =
+        trainingJob?.start_time && trainingJob?.end_time
+            ? durationBetween(trainingJob.start_time, trainingJob.end_time)
+            : null;
 
     return (
         <Grid columns={GRID_COLUMNS} alignItems={'center'} width={'100%'} UNSAFE_className={classes.modelRow}>

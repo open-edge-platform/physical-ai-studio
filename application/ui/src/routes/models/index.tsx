@@ -15,6 +15,8 @@ const ModelList = ({ models, jobs }: { models: SchemaModel[]; jobs: SchemaJob[] 
         (a, b) => new Date(b.created_at!).getTime() - new Date(a.created_at!).getTime()
     );
 
+    const jobsById = new Map(jobs.map((j) => [j.id, j]));
+
     const deleteModelMutation = $api.useMutation('delete', '/api/models');
 
     const deleteModel = (model: SchemaModel) => {
@@ -25,7 +27,12 @@ const ModelList = ({ models, jobs }: { models: SchemaModel[]; jobs: SchemaJob[] 
         <View marginBottom={'size-600'}>
             <ModelHeader />
             {sortedModels.map((model) => (
-                <ModelRow key={model.id} model={model} jobs={jobs} onDelete={() => deleteModel(model)} />
+                <ModelRow
+                    key={model.id}
+                    model={model}
+                    trainingJob={model.train_job_id ? jobsById.get(model.train_job_id) : undefined}
+                    onDelete={() => deleteModel(model)}
+                />
             ))}
         </View>
     );
