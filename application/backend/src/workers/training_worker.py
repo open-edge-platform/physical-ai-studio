@@ -10,7 +10,6 @@ from uuid import uuid4
 
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import CSVLogger
-from torchvision.transforms import v2 as transforms
 
 from core.logging.utils import job_logging_ctx
 from models.utils import setup_policy
@@ -108,8 +107,6 @@ class TrainingWorker(BaseProcessWorker):
                 repo_id="snapshot",  # doesnt matter for loading the data.
                 root=snapshot.path,
                 train_batch_size=8,
-                # ACT's ResNet backbone does not resize internally, so large images cause OOM.
-                image_transforms=transforms.Resize((480, 640)) if model.policy == "act" else None,
             )
             policy = setup_policy(model)
 
