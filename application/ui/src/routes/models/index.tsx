@@ -10,7 +10,7 @@ import { TrainingHeader, TrainingRow } from './job-table.component';
 import { ModelHeader, ModelRow } from './model-table.component';
 import { SchemaTrainJob, TrainModelModal } from './train-model';
 
-const ModelList = ({ models }: { models: SchemaModel[] }) => {
+const ModelList = ({ models, jobs }: { models: SchemaModel[]; jobs: SchemaJob[] }) => {
     const sortedModels = models.toSorted(
         (a, b) => new Date(b.created_at!).getTime() - new Date(a.created_at!).getTime()
     );
@@ -25,7 +25,7 @@ const ModelList = ({ models }: { models: SchemaModel[] }) => {
         <View marginBottom={'size-600'}>
             <ModelHeader />
             {sortedModels.map((model) => (
-                <ModelRow key={model.id} model={model} onDelete={() => deleteModel(model)} />
+                <ModelRow key={model.id} model={model} jobs={jobs} onDelete={() => deleteModel(model)} />
             ))}
         </View>
     );
@@ -148,7 +148,7 @@ export const Index = () => {
                             </DialogTrigger>
                         </Flex>
                         <JobList jobs={jobs.filter((m) => m.type === 'training') as SchemaTrainJob[]} />
-                        {hasModels && <ModelList models={models} />}
+                        {hasModels && <ModelList models={models} jobs={jobs} />}
                     </View>
                 )}
             </Flex>

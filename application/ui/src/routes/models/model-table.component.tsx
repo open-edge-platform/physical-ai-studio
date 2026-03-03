@@ -1,17 +1,25 @@
 import { ActionButton, Grid, Item, Key, Link, Menu, MenuTrigger, Text, View } from '@geti/ui';
 import { MoreMenu } from '@geti/ui/icons';
 
-import { SchemaModel } from '../../api/openapi-spec';
+import { SchemaJob, SchemaModel } from '../../api/openapi-spec';
 import { paths } from '../../router';
 import { GRID_COLUMNS } from './constants';
+import { durationBetween } from './utils';
 
 import classes from './model-table.module.scss';
+
+const getTrainingDuration = (model: SchemaModel, jobs: SchemaJob[]): string | null => {
+    const job = model.train_job_id ? jobs.find((j) => j.id === model.train_job_id) : undefined;
+    if (!job?.start_time || !job?.end_time) return null;
+    return durationBetween(job.start_time, job.end_time);
+};
 
 export const ModelHeader = () => {
     return (
         <Grid columns={GRID_COLUMNS} alignItems={'center'} width={'100%'} UNSAFE_className={classes.modelHeader}>
             <Text>Model name</Text>
             <Text>Trained</Text>
+            <Text>Duration</Text>
             <Text>Architecture</Text>
             <div />
             <div />
@@ -19,7 +27,15 @@ export const ModelHeader = () => {
     );
 };
 
-export const ModelRow = ({ model, onDelete }: { model: SchemaModel; onDelete: () => void }) => {
+export const ModelRow = ({
+    model,
+    jobs,
+    onDelete,
+}: {
+    model: SchemaModel;
+    jobs: SchemaJob[];
+    onDelete: () => void;
+}) => {
     const onAction = (key: Key) => {
         const action = key.toString();
         if (action === 'delete') {
@@ -27,10 +43,13 @@ export const ModelRow = ({ model, onDelete }: { model: SchemaModel; onDelete: ()
         }
     };
 
+    const duration = getTrainingDuration(model, jobs);
+
     return (
         <Grid columns={GRID_COLUMNS} alignItems={'center'} width={'100%'} UNSAFE_className={classes.modelRow}>
             <Text>{model.name}</Text>
             <Text>{new Date(model.created_at!).toLocaleString()}</Text>
+            <Text UNSAFE_className={duration ? undefined : classes.modelInfo}>{duration ?? '—'}</Text>
             <Text>{model.policy.toUpperCase()}</Text>
             <Link
                 href={paths.project.models.inference({

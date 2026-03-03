@@ -3,28 +3,16 @@ import { Button, Flex, Grid, ProgressBar, Text, View } from '@geti/ui';
 import { GRID_COLUMNS } from './constants';
 import { SingleBadge, SplitBadge } from './split-badge.component';
 import { SchemaTrainJob } from './train-model';
+import { durationBetween, elapsedSince } from './utils';
 
 import classes from './model-table.module.scss';
-
-const timeSince = (dateString: string) => {
-    const date = new Date(dateString);
-    const diff = new Date().getTime() - date.getTime();
-
-    const duration = new Date(diff);
-    return new Intl.DateTimeFormat('en', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        timeZone: 'UTC',
-        hour12: false,
-    }).format(duration);
-};
 
 export const TrainingHeader = () => {
     return (
         <Grid columns={GRID_COLUMNS} alignItems={'center'} width={'100%'} UNSAFE_className={classes.modelHeader}>
             <Text>Model name</Text>
             <Text>Loss</Text>
+            <div />
             <Text>Architecture</Text>
             <div />
             <div />
@@ -42,7 +30,7 @@ const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
                 </Flex>
                 {job.start_time ? (
                     <Text UNSAFE_className={classes.modelInfo}>
-                        Started: {new Date(job.start_time).toLocaleString()} | Elapsed: {timeSince(job.start_time)}
+                        Started: {new Date(job.start_time).toLocaleString()} | Elapsed: {elapsedSince(job.start_time)}
                     </Text>
                 ) : (
                     <></>
@@ -57,6 +45,11 @@ const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
                     <Text UNSAFE_style={{ fontWeight: 500 }}>{job.payload.model_name}</Text>
                     <SingleBadge color={color} text={job.status} />
                 </Flex>
+                {job.start_time && job.end_time && (
+                    <Text UNSAFE_className={classes.modelInfo}>
+                        Elapsed: {durationBetween(job.start_time, job.end_time)}
+                    </Text>
+                )}
             </View>
         );
     }
@@ -70,6 +63,7 @@ export const TrainingRow = ({ trainJob, onInterrupt }: { trainJob: SchemaTrainJo
             <Grid columns={GRID_COLUMNS} alignItems={'center'} width={'100%'} UNSAFE_className={classes.modelRow}>
                 <TrainJobStatus job={trainJob} />
                 <Text>{loss ? loss.toFixed(2) : '...'}</Text>
+                <div />
                 <Text>{trainJob.payload.policy.toUpperCase()}</Text>
                 <View>
                     {trainJob.status === 'running' && (

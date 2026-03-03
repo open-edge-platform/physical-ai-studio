@@ -124,7 +124,7 @@ class TrainingWorker(BaseProcessWorker):
             csv_logger = CSVLogger(path.parent, name=path.stem)
 
             kwargs: dict = {}
-            if training_device := get_torch_device() == "xpu":
+            if (training_device := get_torch_device()) == "xpu":
                 kwargs["strategy"] = SingleXPUStrategy()
                 kwargs["accelerator"] = XPUAccelerator()
             else:
