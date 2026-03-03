@@ -6,6 +6,7 @@ import base64
 import time
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
+from typing import Any
 
 import cv2
 import numpy as np
@@ -236,7 +237,7 @@ class InferenceWorker(BaseThreadWorker):
             }
         )
 
-    def _build_inference_input(self, robot_observation: dict) -> dict[str, np.ndarray]:
+    def _build_inference_input(self, robot_observation: dict) -> dict[str, Any]:
         state = np.array(
             [value for key, value in robot_observation.items() if key in self.action_keys],
             dtype=np.float32,
@@ -249,7 +250,7 @@ class InferenceWorker(BaseThreadWorker):
             # Convert HWC uint8 to NCHW float32 [0,1]
             img = frame.astype(np.float32) / 255.0
             img = np.transpose(img, (2, 0, 1))  # HWC -> CHW
-            img = np.expand_dims(img, 0)         # CHW -> NCHW
+            img = np.expand_dims(img, 0)  # CHW -> NCHW
             images[camera_name] = img
 
         return {"state": state, "images": images}
