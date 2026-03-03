@@ -10,7 +10,6 @@ from uuid import uuid4
 
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import CSVLogger
-from physicalai.devices import SingleXPUStrategy, XPUAccelerator
 from torchvision.transforms import v2 as transforms
 
 from core.logging.utils import job_logging_ctx
@@ -123,14 +122,6 @@ class TrainingWorker(BaseProcessWorker):
             )
             csv_logger = CSVLogger(path.parent, name=path.stem)
 
-            kwargs: dict = {}
-            if (training_device := get_torch_device()) == "xpu":
-                kwargs["strategy"] = SingleXPUStrategy()
-                kwargs["accelerator"] = XPUAccelerator()
-            else:
-                kwargs["accelerator"] = training_device
-                kwargs["strategy"] = get_lightning_strategy()
-
             trainer = Trainer(
                 logger=csv_logger,
                 callbacks=[
@@ -141,8 +132,9 @@ class TrainingWorker(BaseProcessWorker):
                         dispatcher=dispatcher,
                     ),
                 ],
+                accelerator=get_torch_device(),
+                strategy=get_lightning_strategy(),
                 max_steps=10000,
-                **kwargs,
             )
 
             dispatcher.start()
