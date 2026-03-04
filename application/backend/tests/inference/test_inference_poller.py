@@ -1,9 +1,9 @@
 import time
 from multiprocessing import Queue
 
+import numpy as np
 import pytest
 from physicalai.data import Observation
-import numpy as np
 
 from workers.inference.inference_poller import InferencePoller
 from workers.inference.inference_result import InferenceResult

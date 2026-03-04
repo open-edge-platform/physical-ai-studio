@@ -1,6 +1,6 @@
+import numpy as np
 import pytest
 from pytest import approx
-import numpy as np
 
 from workers.inference.queue_mixer import QueueMixer
 
