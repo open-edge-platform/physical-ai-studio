@@ -214,7 +214,7 @@ class InferenceWorker(BaseThreadWorker):
         logger.info("start")
         self.events["start"].clear()
         precise_sleep(0.3)  # TODO check if neccesary
-        self.action_queue.clear()
+        self.inference_poller.reset()
         self.state.is_running = True
         self._report_state()
 
@@ -223,7 +223,6 @@ class InferenceWorker(BaseThreadWorker):
         self.events["stop"].clear()
         precise_sleep(0.3)  # TODO check if neccesary
         self.state.is_running = False
-        self.action_queue.clear()
         self._report_state()
 
     async def teardown(self) -> None:

@@ -30,3 +30,8 @@ class InferencePoller:
     def get_result(self) -> InferenceResult:
         self.busy = False
         return self.output_queue.get_nowait()
+
+    def reset(self) -> None:
+        """Clear the queue, but dont touch busy to prevent desyncs from active inference."""
+        if self.has_result:
+            self.output_queue.get_nowait()
