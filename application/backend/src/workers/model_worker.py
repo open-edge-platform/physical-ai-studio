@@ -22,12 +22,7 @@ class ModelWorker(BaseProcessWorker):
     observation_queue: mp.Queue
     output_queue: mp.Queue
 
-    def __init__(
-        self,
-        model: Model,
-        backend: str,
-        stop_event: EventClass
-    ):
+    def __init__(self, model: Model, backend: str, stop_event: EventClass):
         self.observation_queue = mp.Queue()
         self.output_queue = mp.Queue()
         super().__init__(stop_event=stop_event, queues_to_cancel=[self.observation_queue, self.output_queue])

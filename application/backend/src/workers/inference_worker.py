@@ -18,10 +18,10 @@ from robots.robot_client import RobotClient
 from robots.robot_client_factory import RobotClientFactory
 from schemas import InferenceConfig
 from services.robot_calibration_service import RobotCalibrationService
-from workers.inference.queue_mixer import QueueMixer
 from utils.serial_robot_tools import RobotConnectionManager
 from workers.camera_worker import create_frames_source_from_camera
 from workers.inference.inference_poller import InferencePoller
+from workers.inference.queue_mixer import QueueMixer
 from workers.model_worker import ModelWorker
 
 from .base import BaseThreadWorker
@@ -183,20 +183,18 @@ class InferenceWorker(BaseThreadWorker):
                     if self.inference_poller.has_result():
                         inference_result = self.inference_poller.get_result()
                         offset = int(inference_result.time * self.fps)
-                        logger.info(
+                        logger.debug(
                             f"Got inference from inference_poller: {inference_result.data.shape} with offset {offset}"
                         )
                         self.queue_mixer.add(inference_result.data, offset)
-                        self.queue_mixer.lerp_duration = offset # inference time should be a good guide for now.
+                        self.queue_mixer.lerp_duration = offset  # inference time should be a good guide for now.
 
                     if not self.inference_poller.busy:
                         observation = self._build_geti_action_observation(state)
-                        logger.info("Add observation to inference poller")
                         self.inference_poller.run_inference(observation)
 
                     if not self.queue_mixer.empty():
                         action = self.queue_mixer.pop().tolist()
-                        logger.info("Got new actions...")
                         formatted_actions = dict(zip(self.action_keys, action))
                         await self.follower.set_joints_state(formatted_actions, 1 / 30)
                         self._report_action(formatted_actions, state, timestamp)

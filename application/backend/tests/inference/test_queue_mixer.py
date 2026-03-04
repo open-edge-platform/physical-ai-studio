@@ -1,7 +1,8 @@
 import pytest
 from pytest import approx
-from workers.inference.queue_mixer import QueueMixer
 from torch import Tensor
+
+from workers.inference.queue_mixer import QueueMixer
 
 
 class TestQueueMixer:
