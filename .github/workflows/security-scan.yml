@@ -16,6 +16,7 @@
 # 2. Analyze Python code security with Bandit
 # 3. Perform filesystem security scan with Trivy
 # 4. Run semantic security analysis with Semgrep
+# 5. Scan container images (latest available version) with Trivy
 
 # Security Tools:
 # - Zizmor: GitHub Actions workflow security scanner
@@ -122,7 +123,7 @@ jobs:
           fail-on-findings: ${{ github.event_name == 'pull_request' && 'true' || 'false' }} # reports only
 
   trivy-image-scan:
-    # if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read
