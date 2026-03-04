@@ -2,6 +2,13 @@
 
 This document covers how database migrations work in this project, how conflicts arise, and how to prevent and resolve them.
 
+Tl/dr: Run the script below to check if you have migration conflicts.
+
+```bash
+cd application/backend
+bash scripts/check_alembic_heads.sh
+```
+
 ## Overview
 
 We use [Alembic](https://alembic.sqlalchemy.org/) to manage database schema changes. Migrations live in `src/alembic/versions/` and form a **linear chain** — each migration has a `revision` (its own ID) and a `down_revision` (the ID of the migration it follows).
@@ -34,23 +41,27 @@ ERROR: Multiple head revisions are present; please specify a specific target.
 
 This is called the **"multiple heads"** problem.
 
-## Automated Protection
+## Automated Protection with pre-commit
 
-### CI Check (GitHub Actions)
-
-Every pull request runs a `migration-check` job in the Backend workflow (`.github/workflows/backend.yml`). This job:
-
-1. Installs dependencies
-2. Runs `scripts/check_alembic_heads.sh`
-3. Asserts exactly **one** Alembic head exists
-
-If your PR introduces a second head, the check fails and the PR cannot be merged.
-
-### Pre-commit Hook
-
-A local pre-commit hook runs the same check whenever you commit changes to migration files (`src/alembic/versions/*.py`). This catches conflicts before you push.
+Prek is used to run a pre-commit hook that checks whenever you commit changes to migration files (`src/alembic/versions/*.py`). This catches conflicts before you push. 
 
 The hook is defined in `.pre-commit-config.yaml` under the `check-alembic-heads` ID.
+We also run this check in the backend Github Action workflow.
+
+### Running the Check Locally
+
+You can run the migration head check at any time:
+
+```bash
+cd application/backend
+bash scripts/check_alembic_heads.sh
+```
+
+Or trigger it via pre-commit:
+
+```bash
+pre-commit run check-alembic-heads
+```
 
 ## Creating a New Migration
 
@@ -135,17 +146,3 @@ git push
 
 - **Never manually edit revision IDs.** Only change `down_revision` when resolving a conflict. Never modify the `revision` field — it is auto-generated and referenced by other migrations.
 
-## Running the Check Locally
-
-You can run the migration head check at any time:
-
-```bash
-cd application/backend
-bash scripts/check_alembic_heads.sh
-```
-
-Or trigger it via pre-commit:
-
-```bash
-pre-commit run check-alembic-heads
-```
