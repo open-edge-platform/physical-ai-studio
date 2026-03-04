@@ -31,7 +31,7 @@ def load_inference_model(model: Model, backend: str) -> InferenceModel:
         inference_device = get_torch_device()
 
     export_dir = Path(model.path) / "exports" / backend
-    return InferenceModel(export_dir=export_dir, policy_name=model.policy, backend=backend, device=inference_device)
+    return InferenceModel(export_dir=export_dir, policy_name=model.policy, backend=backend)
 
 
 def setup_policy(model: Model) -> Policy:

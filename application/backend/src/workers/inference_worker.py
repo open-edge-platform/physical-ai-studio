@@ -1,5 +1,6 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
+from src.workers.inference.queue_mixer import QueueMixer
 
 import asyncio
 import base64
@@ -11,19 +12,21 @@ import cv2
 import numpy as np
 import torch
 from lerobot.utils.robot_utils import precise_sleep
-from loguru import logger
 from physicalai.data import Observation
 from pydantic import BaseModel
 
-from models.utils import load_inference_model
 from robots.robot_client import RobotClient
 from robots.robot_client_factory import RobotClientFactory
 from schemas import InferenceConfig
 from services.robot_calibration_service import RobotCalibrationService
 from utils.serial_robot_tools import RobotConnectionManager
 from workers.camera_worker import create_frames_source_from_camera
+from workers.model_worker import ModelWorker
+from workers.inference.inference_poller import InferencePoller
 
 from .base import BaseThreadWorker
+
+from loguru import logger
 
 
 class CameraFrameProcessor:
@@ -48,6 +51,10 @@ class InferenceWorker(BaseThreadWorker):
     events: dict[str, EventClass]
     queue: Queue
     state: InferenceState
+    model_worker: ModelWorker
+    inference_poller: InferencePoller
+    queue_mixer: QueueMixer
+    fps: int = 30
 
     follower: RobotClient
     action_keys: list[str] = []
@@ -66,6 +73,23 @@ class InferenceWorker(BaseThreadWorker):
         self.queue = queue
         self.state = InferenceState()
         self.robot_client_factory = RobotClientFactory(robot_manager, calibration_service)
+
+
+        # Model Worker that handles inference in separate process.
+        self.model_worker = ModelWorker(
+            model=config.model,
+            backend=config.backend,
+            stop_event=stop_event,
+        )
+
+        # Communication layer to model worker. It ensures no queue.
+        self.inference_poller = InferencePoller(
+            self.model_worker.observation_queue,
+            self.model_worker.output_queue
+        )
+
+        # Queue mixer to move to new inference result while still executing previous.
+        self.queue_mixer = QueueMixer(lerp_duration=12) # TODO: Remove hardcode and use running average of inference time?
 
         self.events = {
             "stop": Event(),
@@ -112,7 +136,7 @@ class InferenceWorker(BaseThreadWorker):
                 raise RuntimeError("The event loop must be set.")
             self.loop.run_until_complete(self.setup_environment())
 
-            self.model = load_inference_model(self.config.model, backend=self.config.backend)
+            self.model_worker.start()
 
             self.action_keys = self.follower.features()
             self.camera_keys = list(self.cameras)
@@ -160,14 +184,23 @@ class InferenceWorker(BaseThreadWorker):
 
                 timestamp = time.perf_counter() - start_episode_t
                 if self.state.is_running:
-                    if not self.action_queue:
-                        observation = self._build_geti_action_observation(state)
-                        self.action_queue = self.model.select_action(observation)[0].tolist()
-                    action = self.action_queue.pop(0)
+                    if self.inference_poller.has_result():
+                        inference_result = self.inference_poller.get_result()
+                        offset = int(inference_result.time * self.fps)
+                        logger.info(f"Got inference from inference_poller: {inference_result.data.shape} with offset {offset}")
+                        self.queue_mixer.add(inference_result.data, offset)
 
-                    formatted_actions = dict(zip(self.action_keys, action))
-                    await self.follower.set_joints_state(formatted_actions, 1 / 30)
-                    self._report_action(formatted_actions, state, timestamp)
+                    if not self.inference_poller.busy:
+                        observation = self._build_geti_action_observation(state)
+                        logger.info("Add observation to inference poller")
+                        self.inference_poller.run_inference(observation)
+
+                    if not self.queue_mixer.empty():
+                        action = self.queue_mixer.pop().tolist()
+                        logger.info(f"Got new actions...")
+                        formatted_actions = dict(zip(self.action_keys, action))
+                        await self.follower.set_joints_state(formatted_actions, 1 / 30)
+                        self._report_action(formatted_actions, state, timestamp)
                 else:
                     self._report_action({}, state, timestamp)
                 dt_s = time.perf_counter() - start_loop_t
@@ -196,8 +229,10 @@ class InferenceWorker(BaseThreadWorker):
 
     async def teardown(self) -> None:
         """Disconnect robots and close queue."""
-        if self.follower.is_connected:
+        if await self.follower.is_connected:
             await self.follower.disconnect()
+
+        self.model_worker.stop()
 
         # Wait for .5 seconds before closing queue to allow messages through
         await asyncio.sleep(0.5)
