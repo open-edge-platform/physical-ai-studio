@@ -80,7 +80,18 @@ class ACTPreprocessor(torch.nn.Module):
 
     @staticmethod
     def _resize_max(img: torch.Tensor, max_width: int, max_height: int) -> torch.Tensor:
-        """Resize an image to fit within the specified maximum width and height while maintaining aspect ratio.
+        """Resize an image tensor to fit within the specified maximum width and height while maintaining aspect ratio.
+
+        Args:
+            img (torch.Tensor): Input image tensor with shape (batch, channels, height, width).
+            max_width (int): Maximum width for the resized image.
+            max_height (int): Maximum height for the resized image.
+
+        Returns:
+            torch.Tensor: Resized image tensor maintaining the original aspect ratio and batch/channel dimensions.
+
+        Raises:
+            ValueError: If the input tensor does not have 4 dimensions (batch, channels, height, width).
         """
         img_dim = 4
         if img.ndim != img_dim:
@@ -101,5 +112,3 @@ class ACTPreprocessor(torch.nn.Module):
             mode="bilinear",
             align_corners=False,
         )
-
-
