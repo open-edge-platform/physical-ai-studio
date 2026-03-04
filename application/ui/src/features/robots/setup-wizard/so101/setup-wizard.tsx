@@ -4,18 +4,18 @@ import { Divider, Grid, Heading, View } from '@geti/ui';
 
 import { SchemaRobotType } from '../../../../api/openapi-spec';
 import { useRobotForm } from '../../robot-form/provider';
+import { SetupRobotViewer } from '../shared/setup-robot-viewer';
+import { Stepper } from '../shared/stepper';
+import { JointHighlight } from '../shared/use-joint-highlight';
 import { CalibrationStep } from './calibration-step';
 import { DiagnosticsStep } from './diagnostics-step';
 import { MotorSetupStep } from './motor-setup-step';
-import { SetupRobotViewer } from './setup-robot-viewer';
-import { Stepper } from './stepper';
 import { useCenteringAnimation, useRangeOfMotionAnimation } from './use-calibration-animations';
-import { JointHighlight } from './use-joint-highlight';
 // Lazy import to avoid circular dependency (VerificationStep imports from wizard-provider)
 import { VerificationStep } from './verification-step';
-import { useSetupState, WizardStep } from './wizard-provider';
+import { STEP_LABELS, useSetupActions, useSetupState, WizardStep } from './wizard-provider';
 
-import classes from './setup-wizard.module.scss';
+import classes from '../shared/setup-wizard.module.scss';
 
 // ---------------------------------------------------------------------------
 // Motor setup order (gripper first) — matches lerobot's setup flow
@@ -152,7 +152,8 @@ const ViewerPanel = () => {
  * this component simply renders the layout and switches between steps.
  */
 export const SetupWizardContent = () => {
-    const { currentStep } = useSetupState();
+    const { currentStep, completedSteps } = useSetupState();
+    const { visibleSteps, goToStep } = useSetupActions();
 
     return (
         <Grid
@@ -165,7 +166,13 @@ export const SetupWizardContent = () => {
         >
             {/* Top row: stepper spans full width */}
             <View gridArea='stepper'>
-                <Stepper />
+                <Stepper
+                    steps={visibleSteps}
+                    currentStep={currentStep}
+                    completedSteps={completedSteps}
+                    labels={STEP_LABELS}
+                    onGoToStep={goToStep}
+                />
                 <Divider orientation='horizontal' size='S' marginTop='size-200' />
             </View>
 

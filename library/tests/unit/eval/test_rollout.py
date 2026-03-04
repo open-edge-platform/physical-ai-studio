@@ -8,8 +8,6 @@ from __future__ import annotations
 import pytest
 import torch
 
-from physicalai.policies.dummy import Dummy, DummyConfig
-from physicalai.policies.dummy.model import Dummy as DummyModel
 from physicalai.gyms import PushTGym, GymnasiumGym
 from physicalai.eval import rollout
 
@@ -32,6 +30,22 @@ def env_cartpole_vec():
     return GymnasiumGym.vectorize("CartPole-v1", num_envs=3)
 
 
+def _policy_from_env(env, dummy_policy):
+    """Create a dummy policy matching an environment's action space."""
+    action = env.sample_action()
+    assert action.ndim == 2
+    action_shape = tuple(action.shape[1:])
+    action_dtype = action.dtype
+    action_max = 1 if action_dtype in (torch.int64, torch.int32) else None
+    action_min = 0 if action_dtype in (torch.int64, torch.int32) else None
+    return dummy_policy.create(
+        action_shape=action_shape,
+        action_dtype=action_dtype,
+        action_max=action_max,
+        action_min=action_min,
+    )
+
+
 class TestRollout:
     """Tests for rollout with dynamic action shape."""
 
@@ -43,23 +57,11 @@ class TestRollout:
             ("env_cartpole_vec", "env_cartpole_vec"),
         ]
     )
-    def test_rollout_executes_successfully(self, request, env_fixture, policy_env_fixture):
+    def test_rollout_executes_successfully(self, request, dummy_policy, env_fixture, policy_env_fixture):
         env = request.getfixturevalue(env_fixture)
         policy_env = request.getfixturevalue(policy_env_fixture)
 
-        action = policy_env.sample_action()
-        assert action.ndim == 2
-        action_shape = tuple(action.shape[1:])
-        action_dtype = action.dtype
-        action_max = 1 if action_dtype is torch.int64 else None
-        action_min = 0 if action_dtype is torch.int64 else None
-
-        policy = Dummy(DummyModel.from_config(DummyConfig(
-            action_shape=action_shape,
-            action_dtype=action_dtype,
-            action_max=action_max,
-            action_min=action_min,
-        )))
+        policy = _policy_from_env(policy_env, dummy_policy)
 
         result = rollout(env=env, policy=policy, seed=42, max_steps=5, return_observations=False)
 
@@ -67,27 +69,15 @@ class TestRollout:
         assert "sum_reward" in result
         assert "max_reward" in result
 
-
     @pytest.mark.parametrize(
-    "env_fixture",
-    ["env_pusht", "env_cartpole", "env_cartpole_vec"])
-    def test_rollout_return_types(self, request, env_fixture):
+        "env_fixture",
+        ["env_pusht", "env_cartpole", "env_cartpole_vec"],
+    )
+    def test_rollout_return_types(self, request, dummy_policy, env_fixture):
         """Rollout returns correct types."""
         env = request.getfixturevalue(env_fixture)
 
-        # Build policy from same env
-        action = env.sample_action()
-        action_shape = tuple(action.shape[1:])
-        action_dtype = action.dtype
-        action_max = 1 if action_dtype in (torch.int64, torch.int32) else None
-        action_min = 0 if action_dtype in (torch.int64, torch.int32) else None
-
-        policy = Dummy(DummyModel.from_config(DummyConfig(
-            action_shape=action_shape,
-            action_dtype=action_dtype,
-            action_max=action_max,
-            action_min=action_min,
-        )))
+        policy = _policy_from_env(env, dummy_policy)
 
         result = rollout(env=env, policy=policy, seed=42, max_steps=5, return_observations=False)
 

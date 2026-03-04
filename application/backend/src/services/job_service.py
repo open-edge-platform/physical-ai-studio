@@ -1,3 +1,4 @@
+import datetime
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
@@ -70,4 +71,6 @@ class JobService:
                 updates["progress"] = progress_
             if extra_info is not None:
                 updates["extra_info"] = extra_info
+            if status in {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELED}:
+                updates["end_time"] = datetime.datetime.now(tz=datetime.UTC)
             return await repo.update(job, updates)

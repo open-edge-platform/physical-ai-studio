@@ -3,7 +3,7 @@ from uuid import UUID
 
 import aiofiles
 from lerobot.motors import MotorCalibration
-from lerobot.robots.so101_follower import SO101Follower, SO101FollowerConfig
+from lerobot.robots.so_follower import SOFollower, SOFollowerRobotConfig
 from loguru import logger
 
 from db.engine import get_async_db_session_ctx
@@ -102,7 +102,7 @@ class RobotCalibrationService:
 
         # TODO: make this depend on the robot type
         # Assume follower since leader shares same FeetechMotorBus layout
-        robot_config = SO101Follower(SO101FollowerConfig(port=port))
+        robot_config = SOFollower(SOFollowerRobotConfig(port=port))
         robot_config.bus.connect()
         calibration = robot_config.bus.read_calibration()
         robot_config.bus.disconnect()

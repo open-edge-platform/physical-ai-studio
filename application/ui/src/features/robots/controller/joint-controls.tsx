@@ -186,6 +186,7 @@ export const JointControls = () => {
 
     return (
         <View
+            isHidden
             gridArea='controls'
             backgroundColor={'gray-100'}
             padding='size-100'

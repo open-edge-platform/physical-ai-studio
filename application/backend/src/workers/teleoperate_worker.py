@@ -1,7 +1,6 @@
 import asyncio
 import base64
 import time
-import traceback
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
 from pathlib import Path
@@ -256,7 +255,7 @@ class TeleoperateWorker(BaseThreadWorker):
                 precise_sleep(wait_time)
         except Exception as e:
             self.error = True
-            traceback.print_exception(e)
+            logger.exception(f"Teleoperation loop error: {e}")
             self._report_error(e)
 
     def _to_lerobot_observations(self, observations: dict) -> dict:

@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 from . import lerobot
 from .act import ACT, ACTConfig, ACTModel
 from .base import PolicyLike
-from .dummy import Dummy, DummyConfig
 from .groot import Groot, GrootConfig, GrootModel
 from .lerobot import get_lerobot_policy
 from .pi0 import Pi0, Pi0Config, Pi0Model, Pi05, Pi05Config
@@ -24,9 +23,6 @@ __all__ = [
     "ACT",
     "ACTConfig",
     "ACTModel",
-    # Dummy
-    "Dummy",
-    "DummyConfig",
     # Groot
     "Groot",
     "GrootConfig",
@@ -138,8 +134,6 @@ def get_physicalai_policy_class(policy_name: str) -> type[Policy]:
 
     if policy_name == "act":
         return ACT
-    if policy_name == "dummy":
-        return Dummy
     if policy_name == "groot":
         return Groot
     if policy_name == "pi0":

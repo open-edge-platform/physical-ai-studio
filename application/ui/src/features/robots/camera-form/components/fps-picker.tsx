@@ -17,11 +17,13 @@ export const FpsPicker = ({ driver, fingerprint, width, height, selectedFps, onS
 
     const resolution = supportedFormats.find((r) => r.width === width && r.height === height);
     const supportedFps = resolution?.fps ?? [];
+    const isDisabled = fingerprint === undefined;
 
     return (
         <Picker
             label='Frames per second (FPS)'
             width='100%'
+            isDisabled={isDisabled}
             selectedKey={selectedFps !== undefined ? String(selectedFps) : undefined}
             onSelectionChange={(key) => {
                 if (key !== null) {

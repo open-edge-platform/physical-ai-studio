@@ -4,7 +4,6 @@
 import asyncio
 import base64
 import time
-import traceback
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
 
@@ -177,7 +176,7 @@ class InferenceWorker(BaseThreadWorker):
 
                 precise_sleep(wait_time)
         except Exception as e:
-            traceback.print_exception(e)
+            logger.exception(f"Inference loop error: {e}")
             self._report_error(e)
 
     async def _on_start(self) -> None:
@@ -241,8 +240,10 @@ class InferenceWorker(BaseThreadWorker):
         )
 
     def _build_geti_action_observation(self, robot_observation: dict):
-        state = torch.tensor([value for key, value in robot_observation.items() if key in self.action_keys]).unsqueeze(
-            0
+        state = (
+            torch.tensor([value for key, value in robot_observation.items() if key in self.action_keys])
+            .unsqueeze(0)
+            .float()
         )
         images: dict = {}
         for camera in self.config.environment.cameras:

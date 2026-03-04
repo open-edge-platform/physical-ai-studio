@@ -2,7 +2,7 @@ import { Button, Content, DialogTrigger, Divider, Flex, Heading, IllustratedMess
 import { useQueryClient } from '@tanstack/react-query';
 import useWebSocket from 'react-use-websocket';
 
-import { $api } from '../../api/client';
+import { $api, fetchClient } from '../../api/client';
 import { SchemaJob, SchemaModel } from '../../api/openapi-spec';
 import { useProjectId } from '../../features/projects/use-project';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
@@ -10,10 +10,12 @@ import { TrainingHeader, TrainingRow } from './job-table.component';
 import { ModelHeader, ModelRow } from './model-table.component';
 import { SchemaTrainJob, TrainModelModal } from './train-model';
 
-const ModelList = ({ models }: { models: SchemaModel[] }) => {
+const ModelList = ({ models, jobs }: { models: SchemaModel[]; jobs: SchemaJob[] }) => {
     const sortedModels = models.toSorted(
         (a, b) => new Date(b.created_at!).getTime() - new Date(a.created_at!).getTime()
     );
+
+    const jobsById = new Map(jobs.map((j) => [j.id, j]));
 
     const deleteModelMutation = $api.useMutation('delete', '/api/models');
 
@@ -25,7 +27,12 @@ const ModelList = ({ models }: { models: SchemaModel[] }) => {
         <View marginBottom={'size-600'}>
             <ModelHeader />
             {sortedModels.map((model) => (
-                <ModelRow key={model.id} model={model} onDelete={() => deleteModel(model)} />
+                <ModelRow
+                    key={model.id}
+                    model={model}
+                    trainingJob={model.train_job_id ? jobsById.get(model.train_job_id) : undefined}
+                    onDelete={() => deleteModel(model)}
+                />
             ))}
         </View>
     );
@@ -77,7 +84,7 @@ export const Index = () => {
 
     const jobs = useProjectJobs(project_id);
 
-    const {} = useWebSocket(`/api/jobs/ws`, {
+    const {} = useWebSocket(fetchClient.PATH('/api/jobs/ws'), {
         shouldReconnect: () => true,
         onMessage: (event: WebSocketEventMap['message']) => onMessage(event),
     });
@@ -148,7 +155,7 @@ export const Index = () => {
                             </DialogTrigger>
                         </Flex>
                         <JobList jobs={jobs.filter((m) => m.type === 'training') as SchemaTrainJob[]} />
-                        {hasModels && <ModelList models={models} />}
+                        {hasModels && <ModelList models={models} jobs={jobs} />}
                     </View>
                 )}
             </Flex>

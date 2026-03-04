@@ -10,15 +10,15 @@ from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import torch
 import yaml
 
-from physicalai.data.observation import ACTION, IMAGES, STATE
-from physicalai.export import ExportBackend
+from physicalai.data.constants import ACTION, IMAGES, STATE
+from physicalai.export.backends import ExportBackend
 from physicalai.inference.adapters import get_adapter
 
 if TYPE_CHECKING:
     import numpy as np
+    import torch
 
     from physicalai.data import Observation
     from physicalai.inference.adapters.base import RuntimeAdapter
@@ -159,6 +159,8 @@ class InferenceModel:
 
         # Extract actions from outputs
         action_key = self._get_action_output_key(outputs)
+        import torch  # noqa: PLC0415
+
         actions = torch.from_numpy(outputs[action_key])
 
         # Manage action queue for chunked policies
@@ -439,6 +441,8 @@ class InferenceModel:
             return "CPU"
 
         # For ONNX/Torch Export IR, check CUDA availability
+        import torch  # noqa: PLC0415
+
         if torch.cuda.is_available():
             return "cuda"
 

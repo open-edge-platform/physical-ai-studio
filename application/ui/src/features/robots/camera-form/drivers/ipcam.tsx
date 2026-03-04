@@ -10,7 +10,7 @@ export const initialIpCamState: DriverFormSchema<'ipcam'> = {
     hardware_name: null,
     payload: {
         fps: 30,
-        width: 480,
+        width: 640,
         height: 480,
         stream_url: '',
     },

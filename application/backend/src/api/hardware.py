@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from frame_source import FrameSourceFactory
+from loguru import logger
 
 from schemas import CalibrationConfig, Camera, CameraProfile, Robot, SerialPortInfo
 from schemas.robot import RobotType
@@ -14,7 +15,7 @@ router = APIRouter(prefix="/api/hardware", tags=["Hardware"])
 async def get_cameras() -> list[Camera]:
     """Get all cameras"""
     cameras = FrameSourceFactory.discover_devices(sources=["webcam", "realsense", "genicam", "basler"])
-    print(cameras)
+    logger.debug("Discovered cameras: {}", cameras)
     res = []
     sp = CameraProfile(width=640, height=480, fps=30)  # TODO: Implement proper default camera profile retrieval
 

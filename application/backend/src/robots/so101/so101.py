@@ -1,3 +1,5 @@
+import asyncio
+
 from schemas.calibration import Calibration
 from typing import Literal
 
@@ -20,6 +22,11 @@ def clamp(value: float, min_max: float) -> float:
 
 
 RobotMode = Literal["follower", "teleoperator"]
+
+# Timeout for hardware operations (seconds)
+# Connection may take longer due to USB enumeration
+HARDWARE_TIMEOUT_CONNECT = 10.0
+HARDWARE_TIMEOUT_COMMAND = 5.0
 
 
 class So101(RobotClient):
@@ -52,6 +59,7 @@ class So101(RobotClient):
         self.id = id
         self.port = port
         self.mode = mode
+        self._bus_lock = asyncio.Lock()
 
     @staticmethod
     def _convert_calibration_to_dict(calibration: Calibration) -> dict[str, MotorCalibration]:
@@ -78,10 +86,45 @@ class So101(RobotClient):
     async def connect(self) -> None:
         """Connect to the robot."""
         logger.info(f"Connecting to SO {self.mode} on port {self.port}")
+        try:
+            async with self._bus_lock, asyncio.timeout(HARDWARE_TIMEOUT_CONNECT):
+                await asyncio.to_thread(self._connect_impl)
+        except TimeoutError:
+            logger.error("Timeout connecting to robot")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to connect to robot: {e}")
+            raise
+
+    def _connect_impl(self) -> None:
         self.bus.connect()
         self.configure()
 
-    def configure(self) -> None:
+    async def disconnect(self) -> None:
+        """Disconnect from the robot."""
+        logger.info(f"Disconnecting SO101 {self.mode} on port {self.port}")
+        try:
+            async with self._bus_lock, asyncio.timeout(HARDWARE_TIMEOUT_COMMAND):
+                await asyncio.to_thread(self.bus.disconnect)
+            logger.info("Robot disconnected")
+        except TimeoutError:
+            logger.warning("Timeout during robot disconnect - forcing cleanup")
+        except Exception as e:
+            logger.error(f"Error during robot disconnect: {e}")
+
+
+    async def configure(self) -> None:
+        async with self._bus_lock:
+            async with asyncio.timeout(HARDWARE_TIMEOUT_COMMAND):
+                await asyncio.to_thread(self._configure_impl)
+
+                if self.mode == "follower":
+                    await asyncio.to_thread(self._enable_torque_impl)
+                else:
+                    await asyncio.to_thread(self._disable_torque_impl)
+
+
+    def _configure_impl(self) -> None:
         if not self.bus.is_calibrated:
             logger.info(f"Not calibrated, writing {self.calibration}")
             self.bus.write_calibration(self.calibration)
@@ -90,16 +133,7 @@ class So101(RobotClient):
         for motor in self.bus.motors:
             self.bus.write("Operating_Mode", motor, OperatingMode.POSITION.value)
 
-    def _configure_leader(self) -> None:
-        logger.info("_configure_leader")
-        self.is_controlled = True
-        self.bus.disable_torque()
-
-    def _configure_follower(self) -> None:
-        logger.info("_configure_follower")
-        self.is_controlled = False
         with self.bus.torque_disabled():
-            self.bus.configure_motors()
             for motor in self.bus.motors:
                 self.bus.write("Operating_Mode", motor, OperatingMode.POSITION.value)
                 # Set P_Coefficient to lower value to avoid shakiness (Default is 32)
@@ -113,10 +147,11 @@ class So101(RobotClient):
                     self.bus.write("Protection_Current", motor, 250)  # 50% of max current to avoid burnout
                     self.bus.write("Overload_Torque", motor, 25)  # 25% torque when overloaded
 
-    def _move_to_target(self, joints: dict, goal_time: float) -> None:
+
+    async def _move_to_target(self, joints: dict, goal_time: float) -> None:
         max_rotational_distance = self.max_speed * goal_time
 
-        state = self._get_state()
+        state = await self._get_state()
         if self.previous_target:
             # Additional clamp to make sure that previous_target is not too far of current position
             state = clamp_joints(state, self.previous_target, max_rotational_distance * 2)
@@ -124,17 +159,16 @@ class So101(RobotClient):
         target = {key: value + clamp(joints[key] - value, max_rotational_distance) for key, value in state.items()}
         self.previous_target = target
 
-        goal_pos = {key.removesuffix(".pos"): val for key, val in target.items() if key.endswith(".pos")}
-        self.bus.sync_write("Goal_Position", goal_pos)
+        async with self._bus_lock:
+            async with asyncio.timeout(HARDWARE_TIMEOUT_COMMAND):
+                goal_pos = {key.removesuffix(".pos"): val for key, val in target.items() if key.endswith(".pos")}
+                await asyncio.to_thread(self.bus.sync_write, "Goal_Position", goal_pos)
 
-    def _get_state(self) -> dict:
-        obs_dict = self.bus.sync_read("Present_Position")
-        return {f"{motor}.pos": val for motor, val in obs_dict.items()}
-
-    async def disconnect(self) -> None:
-        """Disconnect from the robot."""
-        logger.info(f"Disconnecting to SO {self.mode} on port {self.port}")
-        self.bus.disconnect(True)
+    async def _get_state(self) -> dict:
+        async with self._bus_lock:
+            async with asyncio.timeout(HARDWARE_TIMEOUT_COMMAND):
+                obs_dict = await asyncio.to_thread(self.bus.sync_read, "Present_Position")
+                return {f"{motor}.pos": val for motor, val in obs_dict.items()}
 
     async def ping(self) -> dict:
         """Send ping command. Returns event dict with timestamp."""
@@ -142,7 +176,7 @@ class So101(RobotClient):
 
     async def set_joints_state(self, joints: dict, goal_time: float) -> dict:
         """Set joint positions. Returns event dict with timestamp."""
-        self._move_to_target(joints, goal_time)
+        await self._move_to_target(joints, goal_time)
         return self._create_event(
             "joints_state_was_set",
             joints=joints,
@@ -150,14 +184,35 @@ class So101(RobotClient):
 
     async def enable_torque(self) -> dict:
         """Enable torque. Returns event dict with timestamp."""
-        self._configure_follower()
+        logger.info("Enabling torque")
+        async with self._bus_lock:
+            async with asyncio.timeout(HARDWARE_TIMEOUT_COMMAND):
+                await asyncio.to_thread(self._enable_torque_impl)
         return self._create_event("torque_was_enabled")
+
+    def _enable_torque_impl(self) -> None:
+        """Enable torque without acquiring the bus lock.
+
+        Must be called while holding self._bus_lock.
+        """
+        self.bus.enable_torque()
+        self.is_controlled = True
 
     async def disable_torque(self) -> dict:
         """Disable torque. Returns event dict with timestamp."""
         logger.info("Disabling torque")
-        self._configure_leader()
+        async with self._bus_lock:
+            async with asyncio.timeout(HARDWARE_TIMEOUT_COMMAND):
+                await asyncio.to_thread(self._disable_torque_impl)
         return self._create_event("torque_was_disabled")
+
+    def _disable_torque_impl(self) -> None:
+        """Disable torque without acquiring the bus lock.
+
+        Must be called while holding self._bus_lock.
+        """
+        self.bus.disable_torque()
+        self.is_controlled = False
 
     async def read_state(self, *, normalize: bool = True) -> dict:  # noqa: ARG002
         """Read current robot state. Returns state dict with timestamp.
@@ -172,7 +227,7 @@ class So101(RobotClient):
         }
         """
         try:
-            state = self._get_state()
+            state = await self._get_state()
             return self._create_event(
                 "state_was_updated",
                 state=state,

@@ -181,7 +181,7 @@ export const router = createBrowserRouter([
                                 height={'100%'}
                             >
                                 <RobotsTabNavigation />
-                                <View gridArea='content'>
+                                <View gridArea='content' height='100%' minHeight={0}>
                                     <Outlet />
                                 </View>
                             </Grid>
