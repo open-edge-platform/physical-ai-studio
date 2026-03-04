@@ -1,7 +1,5 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-from src.workers.inference.queue_mixer import QueueMixer
-
 import asyncio
 import base64
 import time
@@ -12,6 +10,7 @@ import cv2
 import numpy as np
 import torch
 from lerobot.utils.robot_utils import precise_sleep
+from loguru import logger
 from physicalai.data import Observation
 from pydantic import BaseModel
 
@@ -19,14 +18,13 @@ from robots.robot_client import RobotClient
 from robots.robot_client_factory import RobotClientFactory
 from schemas import InferenceConfig
 from services.robot_calibration_service import RobotCalibrationService
+from src.workers.inference.queue_mixer import QueueMixer
 from utils.serial_robot_tools import RobotConnectionManager
 from workers.camera_worker import create_frames_source_from_camera
-from workers.model_worker import ModelWorker
 from workers.inference.inference_poller import InferencePoller
+from workers.model_worker import ModelWorker
 
 from .base import BaseThreadWorker
-
-from loguru import logger
 
 
 class CameraFrameProcessor:
@@ -74,7 +72,6 @@ class InferenceWorker(BaseThreadWorker):
         self.state = InferenceState()
         self.robot_client_factory = RobotClientFactory(robot_manager, calibration_service)
 
-
         # Model Worker that handles inference in separate process.
         self.model_worker = ModelWorker(
             model=config.model,
@@ -83,13 +80,12 @@ class InferenceWorker(BaseThreadWorker):
         )
 
         # Communication layer to model worker. It ensures no queue.
-        self.inference_poller = InferencePoller(
-            self.model_worker.observation_queue,
-            self.model_worker.output_queue
-        )
+        self.inference_poller = InferencePoller(self.model_worker.observation_queue, self.model_worker.output_queue)
 
         # Queue mixer to move to new inference result while still executing previous.
-        self.queue_mixer = QueueMixer(lerp_duration=12) # TODO: Remove hardcode and use running average of inference time?
+        self.queue_mixer = QueueMixer(
+            lerp_duration=12
+        )  # TODO: Remove hardcode and use running average of inference time?
 
         self.events = {
             "stop": Event(),
@@ -187,7 +183,9 @@ class InferenceWorker(BaseThreadWorker):
                     if self.inference_poller.has_result():
                         inference_result = self.inference_poller.get_result()
                         offset = int(inference_result.time * self.fps)
-                        logger.info(f"Got inference from inference_poller: {inference_result.data.shape} with offset {offset}")
+                        logger.info(
+                            f"Got inference from inference_poller: {inference_result.data.shape} with offset {offset}"
+                        )
                         self.queue_mixer.add(inference_result.data, offset)
 
                     if not self.inference_poller.busy:
@@ -197,7 +195,7 @@ class InferenceWorker(BaseThreadWorker):
 
                     if not self.queue_mixer.empty():
                         action = self.queue_mixer.pop().tolist()
-                        logger.info(f"Got new actions...")
+                        logger.info("Got new actions...")
                         formatted_actions = dict(zip(self.action_keys, action))
                         await self.follower.set_joints_state(formatted_actions, 1 / 30)
                         self._report_action(formatted_actions, state, timestamp)

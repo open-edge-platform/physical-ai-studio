@@ -1,16 +1,16 @@
-from workers.inference.inference_result import InferenceResult
+import multiprocessing as mp
 import queue
 import time
-from models.utils import load_inference_model
-from schemas import Model
-from loguru._logger import Logger as LoguruLogger
+from multiprocessing.synchronize import Event as EventClass
+
+from loguru import logger
 from physicalai.inference import InferenceModel
 
-from .base import BaseProcessWorker
+from models.utils import load_inference_model
+from schemas import Model
+from workers.inference.inference_result import InferenceResult
 
-from multiprocessing.synchronize import Event as EventClass
-import multiprocessing as mp
-from loguru import logger
+from .base import BaseProcessWorker
 
 
 class ModelWorker(BaseProcessWorker):
@@ -19,19 +19,18 @@ class ModelWorker(BaseProcessWorker):
     backend: str
     model: Model
     inference_model: InferenceModel
+    observation_queue: mp.Queue
+    output_queue: mp.Queue
 
-    def __init__(self,
-                 model: Model,
+    def __init__(
+        self,
+        model: Model,
         backend: str,
-        stop_event: EventClass,
-        #logger_: LoguruLogger
+        stop_event: EventClass
     ):
         self.observation_queue = mp.Queue()
         self.output_queue = mp.Queue()
-        super().__init__(stop_event=stop_event, queues_to_cancel=[
-            self.observation_queue,
-            self.output_queue
-        ])
+        super().__init__(stop_event=stop_event, queues_to_cancel=[self.observation_queue, self.output_queue])
         self.model = model
         self.backend = backend
         self.close_event = mp.Event()

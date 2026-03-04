@@ -1,5 +1,6 @@
 from torch import Tensor
 
+
 class QueueMixer:
     """
     QueueMixer class that takes at most two queues and intrapolates between them to
@@ -11,6 +12,7 @@ class QueueMixer:
     Once a second queue is added it will slowly move from the first to the second queue.
     Once it has fully moved to the second queue it will replace the first queue with the second.
     """
+
     first_queue: Tensor | None = None
     second_queue: Tensor | None = None
     lerp_duration: float
@@ -19,7 +21,7 @@ class QueueMixer:
     def __init__(self, lerp_duration: float = 1):
         self.lerp_duration = lerp_duration
 
-    def add(self, row: Tensor, offset: float = 0) -> None:
+    def add(self, row: Tensor, offset: int = 0) -> None:
         if self.first_queue is None or len(self.first_queue) == 0:
             # No queue? Add as first queue
             self.first_queue = row[offset:]
