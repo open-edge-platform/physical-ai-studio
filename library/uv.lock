@@ -3037,7 +3037,7 @@ requires-dist = [
     { name = "ninja", marker = "extra == 'groot'", specifier = ">=1.11.1,<2.0.0" },
     { name = "num2words", marker = "extra == 'smolvla'", specifier = ">=0.5.14,<0.6.0" },
     { name = "onnx" },
-    { name = "onnxruntime", specifier = "<1.24.0" },
+    { name = "onnxruntime", specifier = "==1.23.2" },
     { name = "openvino", specifier = ">=2025.0" },
     { name = "peft", marker = "extra == 'groot'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'pi0'", specifier = ">=0.13.0,<1.0.0" },
