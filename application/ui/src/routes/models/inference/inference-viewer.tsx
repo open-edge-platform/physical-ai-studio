@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import { Button, ButtonGroup, ComboBox, Flex, Heading, Item, Link, ProgressCircle, ToastQueue } from '@geti/ui';
-import { Back, Pause, Play, StepBackward } from '@geti/ui/icons';
+import { Back, Pause, Play } from '@geti/ui/icons';
 
 import { $api } from '../../../api/client';
 import { SchemaInferenceConfig } from '../../../api/openapi-spec';
@@ -31,8 +31,10 @@ export const InferenceViewer = ({ config }: InferenceViewerProps) => {
 
     const robots = (config.environment.robots ?? []).map(({ robot }) => robot);
 
-    const action_values = observation.current === undefined ? undefined : Object.values(observation.current['actions']);
-    const action_keys = observation.current === undefined ? undefined : Object.keys(observation.current['actions']);
+    const visualisation_source =
+        observation.current && (observation.current['actions'] ?? observation.current['state']);
+    const action_values = visualisation_source && Object.values(visualisation_source);
+    const action_keys = visualisation_source && Object.keys(visualisation_source);
 
     if (state.error) {
         return <ErrorMessage message={'An error occurred during inference setup'} />;
@@ -65,11 +67,6 @@ export const InferenceViewer = ({ config }: InferenceViewerProps) => {
                         ))}
                     </ComboBox>
                     <ButtonGroup>
-                        <Button variant='primary'>
-                            <StepBackward fill='white' />
-                            Restart
-                        </Button>
-
                         {state.is_running ? (
                             <Button variant='primary' onPress={stop}>
                                 <Pause fill='white' />
@@ -81,7 +78,6 @@ export const InferenceViewer = ({ config }: InferenceViewerProps) => {
                                 Play
                             </Button>
                         )}
-                        <Button variant='negative'>Start Recording</Button>
                     </ButtonGroup>
                 </Flex>
                 <Flex direction={'row'} flex gap={'size-100'} margin='size-200'>

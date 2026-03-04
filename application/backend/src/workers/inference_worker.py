@@ -199,7 +199,7 @@ class InferenceWorker(BaseThreadWorker):
                         await self.follower.set_joints_state(formatted_actions, 1 / 30)
                         self._report_action(formatted_actions, state, timestamp)
                 else:
-                    self._report_action({}, state, timestamp)
+                    self._report_action(None, state, timestamp)
                 dt_s = time.perf_counter() - start_loop_t
                 wait_time = 1 / 30 - dt_s
 
@@ -252,7 +252,7 @@ class InferenceWorker(BaseThreadWorker):
     def _report_trajectory(self, trajectory: list[dict]):
         self.queue.put({"event": "trajectory", "data": {"trajectory": trajectory}})
 
-    def _report_action(self, actions: dict, observation: dict, timestamp: float):
+    def _report_action(self, actions: dict | None, observation: dict, timestamp: float):
         """Report observation to queue."""
         self.queue.put(
             {

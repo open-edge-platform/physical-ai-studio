@@ -49,6 +49,10 @@ const JobList = ({ jobs }: { jobs: SchemaTrainJob[] }) => {
         }
     };
 
+    if (sortedJobs.length === 0) {
+        return <></>;
+    }
+
     return (
         <View marginBottom={'size-600'}>
             <Heading level={4} marginBottom={'size-100'}>
