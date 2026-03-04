@@ -1,8 +1,13 @@
-from multiprocessing import Queue
+from __future__ import annotations
 
-from physicalai.data import Observation
+from typing import TYPE_CHECKING
 
 from workers.inference.inference_result import InferenceResult
+
+if TYPE_CHECKING:
+    from multiprocessing import Queue
+
+    from physicalai.data import Observation
 
 
 class InferencePoller:

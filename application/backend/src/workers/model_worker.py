@@ -46,12 +46,11 @@ class ModelWorker(BaseProcessWorker):
         while not self.should_stop() and not self.close_event.is_set():
             try:
                 observation = self.observation_queue.get(timeout=1)
-                logger.info("Trying to run inference")
                 start_time = time.perf_counter()
                 output = self.inference_model.select_action(observation)[0].detach().cpu()
                 end_time = time.perf_counter()
                 elapsed_time = end_time - start_time
-                logger.info(f"Done running inference ({elapsed_time}): {output.shape}")
+                logger.debug(f"Inference: ({elapsed_time}): {output.shape}")
                 self.output_queue.put(InferenceResult(time=elapsed_time, data=output))
             except queue.Empty:
                 continue
