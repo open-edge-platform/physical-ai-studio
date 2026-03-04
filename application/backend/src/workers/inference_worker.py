@@ -232,6 +232,7 @@ class InferenceWorker(BaseThreadWorker):
             await self.follower.disconnect()
 
         self.model_worker.stop()
+        self.model_worker.join(timeout=5)
 
         # Wait for .5 seconds before closing queue to allow messages through
         await asyncio.sleep(0.5)
