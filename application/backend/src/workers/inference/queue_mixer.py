@@ -1,4 +1,4 @@
-from torch import Tensor
+import numpy as np
 
 
 class QueueMixer:
@@ -13,15 +13,15 @@ class QueueMixer:
     Once it has fully moved to the second queue it will replace the first queue with the second.
     """
 
-    first_queue: Tensor | None = None
-    second_queue: Tensor | None = None
+    first_queue: np.ndarray | None = None
+    second_queue: np.ndarray | None = None
     lerp_duration: float
     moment: int
 
     def __init__(self, lerp_duration: float = 1):
         self.lerp_duration = lerp_duration
 
-    def add(self, row: Tensor, offset: int = 0) -> None:
+    def add(self, row: np.ndarray, offset: int = 0) -> None:
         if self.first_queue is None or len(self.first_queue) == 0:
             # No queue? Add as first queue
             self.first_queue = row[offset:]
@@ -40,7 +40,7 @@ class QueueMixer:
         self.first_queue = None
         self.second_queue = None
 
-    def pop(self) -> Tensor:
+    def pop(self) -> np.ndarray:
         if self.first_queue is None or len(self.first_queue) == 0:
             raise IndexError("No data in queue mixer.")
         if self.second_queue is None:

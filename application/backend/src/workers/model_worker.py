@@ -47,7 +47,7 @@ class ModelWorker(BaseProcessWorker):
             try:
                 observation = self.observation_queue.get(timeout=1)
                 start_time = time.perf_counter()
-                output = self.inference_model.select_action(observation)[0].detach().cpu()
+                output = self.inference_model.select_action(observation)[0].detach().cpu().numpy()
                 end_time = time.perf_counter()
                 elapsed_time = end_time - start_time
                 logger.debug(f"Inference: ({elapsed_time}): {output.shape}")

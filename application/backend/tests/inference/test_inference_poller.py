@@ -3,7 +3,7 @@ from multiprocessing import Queue
 
 import pytest
 from physicalai.data import Observation
-from torch import Tensor
+import numpy as np
 
 from workers.inference.inference_poller import InferencePoller
 from workers.inference.inference_result import InferenceResult
@@ -28,7 +28,7 @@ class TestInferencePoller:
 
     def test_getting_results_gets_result(self, poller: InferencePoller):
         assert poller.run_inference(Observation())
-        poller.output_queue.put_nowait(InferenceResult(time=0, data=Tensor([1, 2, 3, 4])))
+        poller.output_queue.put_nowait(InferenceResult(time=0, data=np.array([1, 2, 3, 4])))
         time.sleep(0.01)  # let feeder thread flush to pipe
         result = poller.get_result()
         assert result.time == 0
@@ -36,14 +36,14 @@ class TestInferencePoller:
 
     def test_getting_results_sets_busy_to_false(self, poller: InferencePoller):
         assert poller.run_inference(Observation())
-        poller.output_queue.put_nowait(InferenceResult(time=0, data=Tensor([])))
+        poller.output_queue.put_nowait(InferenceResult(time=0, data=np.array([])))
         time.sleep(0.01)  # let feeder thread flush to pipe
         poller.get_result()
         assert not poller.busy
 
     def test_reset(self, poller: InferencePoller):
         assert poller.run_inference(Observation())
-        poller.output_queue.put_nowait(InferenceResult(time=0, data=Tensor([])))
+        poller.output_queue.put_nowait(InferenceResult(time=0, data=np.array([])))
         time.sleep(0.01)  # let feeder thread flush to pipe
         assert poller.has_result()
         poller.reset()
@@ -55,6 +55,6 @@ class TestInferencePoller:
         poller.reset()
         assert not poller.has_result()
         assert poller.busy
-        poller.output_queue.put_nowait(InferenceResult(time=0, data=Tensor([])))
+        poller.output_queue.put_nowait(InferenceResult(time=0, data=np.array([])))
         time.sleep(0.01)  # let feeder thread flush to pipe
         assert poller.has_result()
