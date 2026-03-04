@@ -2,7 +2,7 @@ import { Button, Content, DialogTrigger, Divider, Flex, Heading, IllustratedMess
 import { useQueryClient } from '@tanstack/react-query';
 import useWebSocket from 'react-use-websocket';
 
-import { $api } from '../../api/client';
+import { $api, fetchClient } from '../../api/client';
 import { SchemaJob, SchemaModel } from '../../api/openapi-spec';
 import { useProjectId } from '../../features/projects/use-project';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
@@ -77,7 +77,7 @@ export const Index = () => {
 
     const jobs = useProjectJobs(project_id);
 
-    const {} = useWebSocket(`/api/jobs/ws`, {
+    const {} = useWebSocket(fetchClient.PATH('/api/jobs/ws'), {
         shouldReconnect: () => true,
         onMessage: (event: WebSocketEventMap['message']) => onMessage(event),
     });
