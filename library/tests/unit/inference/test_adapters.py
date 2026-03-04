@@ -158,15 +158,18 @@ class TestONNXAdapter:
 class TestTorchAdapter:
     """Test Torch inference adapter."""
 
-    def test_lifecycle(self, tmp_path: Path) -> None:
-        """Test complete adapter lifecycle: init, load, predict with numpy inputs."""
+    @staticmethod
+    def _write_policy_metadata(tmp_path: Path) -> Path:
         model_path = tmp_path / "model.pt"
         metadata_path = tmp_path / "metadata.yaml"
         model_path.touch()
-        metadata_path.touch()
-
         with metadata_path.open("w") as f:
             f.write("policy_class: physicalai.policies.act.ACT\n")
+        return model_path
+
+    def test_lifecycle(self, tmp_path: Path) -> None:
+        """Test complete adapter lifecycle: init, load, predict with numpy inputs."""
+        model_path = self._write_policy_metadata(tmp_path)
 
         mock_model = MagicMock()
         # Policy forward returns a tensor (action output)
@@ -197,12 +200,7 @@ class TestTorchAdapter:
 
     def test_predict_with_nested_images(self, tmp_path: Path) -> None:
         """Test predict with multi-camera images (dict of numpy arrays)."""
-        model_path = tmp_path / "model.pt"
-        metadata_path = tmp_path / "metadata.yaml"
-        model_path.touch()
-
-        with metadata_path.open("w") as f:
-            f.write("policy_class: physicalai.policies.act.ACT\n")
+        model_path = self._write_policy_metadata(tmp_path)
 
         mock_model = MagicMock()
         mock_model.return_value = torch.tensor([[0.1, 0.2]])
@@ -228,12 +226,7 @@ class TestTorchAdapter:
 
     def test_load_falls_back_to_export_input_names_when_sample_input_missing(self, tmp_path: Path) -> None:
         """Test fallback input name behavior when model has no sample_input."""
-        model_path = tmp_path / "model.pt"
-        metadata_path = tmp_path / "metadata.yaml"
-        model_path.touch()
-
-        with metadata_path.open("w") as f:
-            f.write("policy_class: physicalai.policies.act.ACT\n")
+        model_path = self._write_policy_metadata(tmp_path)
 
         mock_model = MagicMock()
         mock_model.return_value = torch.tensor([[0.1, 0.2]])
@@ -277,13 +270,7 @@ class TestTorchAdapter:
 
     def test_load_failure(self, tmp_path: Path) -> None:
         """Test error handling when torch.load fails."""
-        model_path = tmp_path / "model.pt"
-        metadata_path = tmp_path / "metadata.yaml"
-        model_path.touch()
-        metadata_path.touch()
-
-        with metadata_path.open("w") as f:
-            f.write("policy_class: physicalai.policies.act.ACT\n")
+        model_path = self._write_policy_metadata(tmp_path)
 
         with patch("physicalai.policies.act.ACT.load_from_checkpoint", side_effect=RuntimeError("Load error")):
             adapter = TorchAdapter()
