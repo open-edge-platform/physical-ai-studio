@@ -151,7 +151,6 @@ class ACT(Export, Policy):
         # Model will be built in setup() or immediately if env_action_dim provided
         self.model: ACTModel | None = None
 
-        # Preprocessor/postprocessor set in setup() or _initialize_model()
         self._preprocessor = ACTPreprocessor(image_resolution=(self.config.max_image_size, self.config.max_image_size))
         self._postprocessor = None
 
