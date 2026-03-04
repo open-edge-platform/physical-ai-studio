@@ -18,7 +18,7 @@ from robots.robot_client import RobotClient
 from robots.robot_client_factory import RobotClientFactory
 from schemas import InferenceConfig
 from services.robot_calibration_service import RobotCalibrationService
-from src.workers.inference.queue_mixer import QueueMixer
+from workers.inference.queue_mixer import QueueMixer
 from utils.serial_robot_tools import RobotConnectionManager
 from workers.camera_worker import create_frames_source_from_camera
 from workers.inference.inference_poller import InferencePoller
@@ -187,6 +187,7 @@ class InferenceWorker(BaseThreadWorker):
                             f"Got inference from inference_poller: {inference_result.data.shape} with offset {offset}"
                         )
                         self.queue_mixer.add(inference_result.data, offset)
+                        self.queue_mixer.lerp_duration = offset # inference time should be a good guide for now.
 
                     if not self.inference_poller.busy:
                         observation = self._build_geti_action_observation(state)

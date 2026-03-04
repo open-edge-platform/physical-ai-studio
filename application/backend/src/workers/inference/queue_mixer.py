@@ -67,4 +67,4 @@ class QueueMixer:
         return self.first_queue is None or len(self.first_queue) == 0
 
     def _factor(self, offset: float = 0) -> float:
-        return (self.moment - offset) / self.lerp_duration
+        return (self.moment - offset) / max(self.lerp_duration, 1)
