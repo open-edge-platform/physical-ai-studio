@@ -70,6 +70,7 @@ class TrainingWorker(BaseProcessWorker):
                         snapshot_id=snapshot.id,
                         policy=payload.policy,
                         properties={},
+                        train_job_id=job.id,
                         created_at=None,
                     )
 
