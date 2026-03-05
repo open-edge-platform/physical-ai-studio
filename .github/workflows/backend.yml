@@ -53,9 +53,14 @@ jobs:
         working-directory: application/backend
         run: |
           uv lock --check
-          uv sync --frozen --extra cpu
+          uv sync --frozen --extra cpu --extra tests
 
       - name: Check source code with mypy
         working-directory: application/backend
         run: |
           uv run mypy . --config-file=pyproject.toml
+
+      - name: Run python tests
+        working-directory: application/backend
+        run: |
+          uv run pytest tests

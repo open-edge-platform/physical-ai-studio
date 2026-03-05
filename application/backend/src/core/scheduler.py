@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import psutil
 from loguru import logger
 
-from workers import TrainingWorker
+from workers.training_worker import TrainingWorker
 
 if TYPE_CHECKING:
     import threading

@@ -18,7 +18,8 @@ from exceptions import ResourceNotFoundError
 from schemas import InferenceConfig, TeleoperationConfig
 from services import DatasetService
 from utils.serialize_utils import to_python_primitive
-from workers import InferenceWorker, TeleoperateWorker
+from workers.inference_worker import InferenceWorker
+from workers.teleoperate_worker import TeleoperateWorker
 
 router = APIRouter(prefix="/api/record")
 

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import { Button, ButtonGroup, ComboBox, Flex, Heading, Item, Link, ProgressCircle, ToastQueue } from '@geti/ui';
-import { Back, Pause, Play, StepBackward } from '@geti/ui/icons';
+import { Back, Pause, Play } from '@geti/ui/icons';
 
 import { $api } from '../../../api/client';
 import { SchemaInferenceConfig } from '../../../api/openapi-spec';
@@ -10,12 +10,24 @@ import { RobotViewer } from '../../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
 import { paths } from '../../../router';
 import { CameraView } from '../../datasets/camera-view';
-import { useInference } from './use-inference';
+import { Observation, useInference } from './use-inference';
 import { useInferenceParams } from './use-inference-params';
 
 interface InferenceViewerProps {
     config: SchemaInferenceConfig;
 }
+
+const getVisualisationSourceFromObservation = (observation: Observation | undefined): { [joint: string]: number } => {
+    if (observation === undefined) {
+        return {};
+    }
+    if (observation['actions'] !== null) {
+        return observation['actions'];
+    } else {
+        return observation['state'];
+    }
+};
+
 export const InferenceViewer = ({ config }: InferenceViewerProps) => {
     const { project_id, model_id } = useInferenceParams();
 
@@ -31,8 +43,7 @@ export const InferenceViewer = ({ config }: InferenceViewerProps) => {
 
     const robots = (config.environment.robots ?? []).map(({ robot }) => robot);
 
-    const action_values = observation.current === undefined ? undefined : Object.values(observation.current['actions']);
-    const action_keys = observation.current === undefined ? undefined : Object.keys(observation.current['actions']);
+    const visualisation_source = getVisualisationSourceFromObservation(observation.current);
 
     if (state.error) {
         return <ErrorMessage message={'An error occurred during inference setup'} />;
@@ -65,11 +76,6 @@ export const InferenceViewer = ({ config }: InferenceViewerProps) => {
                         ))}
                     </ComboBox>
                     <ButtonGroup>
-                        <Button variant='primary'>
-                            <StepBackward fill='white' />
-                            Restart
-                        </Button>
-
                         {state.is_running ? (
                             <Button variant='primary' onPress={stop}>
                                 <Pause fill='white' />
@@ -81,7 +87,6 @@ export const InferenceViewer = ({ config }: InferenceViewerProps) => {
                                 Play
                             </Button>
                         )}
-                        <Button variant='negative'>Start Recording</Button>
                     </ButtonGroup>
                 </Flex>
                 <Flex direction={'row'} flex gap={'size-100'} margin='size-200'>
@@ -91,7 +96,11 @@ export const InferenceViewer = ({ config }: InferenceViewerProps) => {
                         ))}
                     </Flex>
                     <Flex flex={3} minWidth={0}>
-                        <RobotViewer featureValues={action_values} featureNames={action_keys} robot={robots[0]} />
+                        <RobotViewer
+                            featureValues={Object.values(visualisation_source)}
+                            featureNames={Object.keys(visualisation_source)}
+                            robot={robots[0]}
+                        />
                     </Flex>
                 </Flex>
             </Flex>
