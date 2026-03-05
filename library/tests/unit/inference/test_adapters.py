@@ -176,7 +176,6 @@ class TestTorchAdapter:
         mock_model.return_value = torch.tensor([[1.0, 2.0]])
         mock_model.eval.return_value = mock_model
         mock_model.to.return_value = mock_model
-        mock_model.model.sample_input = {"state": torch.tensor([[0.0]]), "images": torch.randn(1, 3, 96, 96)}
         mock_model.model.extra_export_args = {"torch": {"output_names": ["action"], "input_names": ["observation"]}}
 
         with patch("physicalai.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
@@ -309,17 +308,24 @@ class TestTorchExportAdapter:
         mock_module.return_value = {"output": torch.tensor([[1.0, 2.0]])}
         mock_program.module.return_value = mock_module
 
-        # Mock call_spec for input names
+        # Mock call_spec for input names.
+        # Adapter traversal: in_spec.child(0) -> args_spec,
+        #   args_spec.children() truthy -> dict_spec = args_spec.child(0),
+        #   dict_spec.context = ["input"]
         mock_dict_spec = Mock()
         mock_dict_spec.context = ["input"]
+
+        mock_args_spec = Mock()
+        mock_args_spec.children.return_value = [mock_dict_spec]  # truthy -> positional-args path
+        mock_args_spec.child.return_value = mock_dict_spec        # args_spec.child(0) -> dict_spec
+
         mock_in_spec = Mock()
-        mock_in_spec.children_specs = [Mock(children_specs=[mock_dict_spec])]
+        mock_in_spec.children.return_value = [mock_args_spec]    # len == 1, no kwargs branch
+        mock_in_spec.child.return_value = mock_args_spec          # in_spec.child(0) -> args_spec
         mock_program.call_spec.in_spec = mock_in_spec
 
         # Mock graph_signature for output names
-        mock_sig = Mock()
-        mock_sig.user_outputs = ["output"]
-        mock_program.graph_signature = mock_sig
+        mock_program.graph_signature.user_outputs = ["output"]
 
         with patch("torch.export.load", return_value=mock_program):
             adapter = TorchExportAdapter()
@@ -351,11 +357,17 @@ class TestTorchExportAdapter:
         mock_program = MagicMock()
         mock_program.module.return_value = MagicMock()
 
-        # Mock call_spec for input names
+        # Mock call_spec for input names (same traversal as test_lifecycle)
         mock_dict_spec = Mock()
         mock_dict_spec.context = ["input1", "input2"]
+
+        mock_args_spec = Mock()
+        mock_args_spec.children.return_value = [mock_dict_spec]
+        mock_args_spec.child.return_value = mock_dict_spec
+
         mock_in_spec = Mock()
-        mock_in_spec.children_specs = [Mock(children_specs=[mock_dict_spec])]
+        mock_in_spec.children.return_value = [mock_args_spec]
+        mock_in_spec.child.return_value = mock_args_spec
         mock_program.call_spec.in_spec = mock_in_spec
 
         # Mock graph_signature for output names
