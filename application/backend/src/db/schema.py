@@ -210,7 +210,8 @@ class ModelDB(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     project: Mapped["ProjectDB"] = relationship("ProjectDB", back_populates="models")
     dataset: Mapped["DatasetDB"] = relationship("DatasetDB", back_populates="models")
-    snapshot: Mapped["DatasetDB"] = relationship("SnapshotDB", back_populates="models")
+    snapshot: Mapped["SnapshotDB"] = relationship("SnapshotDB", back_populates="models")
+    training_job: Mapped["JobDB"] = relationship("JobDB", back_populates="model", foreign_keys=[train_job_id])
 
 
 class JobDB(Base):
@@ -227,3 +228,11 @@ class JobDB(Base):
     end_time: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     payload: Mapped[str] = mapped_column(JSON, nullable=False)
     extra_info: Mapped[str] = mapped_column(JSON, nullable=True)
+
+    model: Mapped["ModelDB"] = relationship(
+        "ModelDB",
+        back_populates="training_job",
+        foreign_keys="[ModelDB.train_job_id]",
+        uselist=False,
+        lazy="selectin",
+    )
