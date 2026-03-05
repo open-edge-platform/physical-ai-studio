@@ -202,7 +202,7 @@ class InferenceWorker(BaseThreadWorker):
 
     async def teardown(self) -> None:
         """Disconnect robots and close queue."""
-        if await self.follower.is_connected:
+        if self.follower.is_connected:
             await self.follower.disconnect()
 
         self.model_worker.teardown()

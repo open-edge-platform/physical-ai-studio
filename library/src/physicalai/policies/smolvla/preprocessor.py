@@ -158,7 +158,7 @@ class SmolVLAPreprocessor(torch.nn.Module):
         for key in batch_img_keys:
             img = batch[key][:, -1, :, :, :] if batch[key].ndim == max_image_dim else batch[key]
             if self.image_resolution is not None:
-                img = _resize_with_pad(img, *self.image_resolution, pad_value=0)
+                img = self._resize_with_pad(img, *self.image_resolution, pad_value=0)
 
             img = img * 2.0 - 1.0
 
@@ -389,29 +389,3 @@ def make_smolvla_preprocessors(
     )
 
     return preprocessor, postprocessor
-
-
-def _resize_with_pad(img: torch.Tensor, width: int, height: int, pad_value: float = -1) -> torch.Tensor:
-    # assume no-op when width height fits already
-    img_dim = 4
-    if img.ndim != img_dim:
-        msg = f"(b,c,h,w) expected, but {img.shape}"
-        raise ValueError(msg)
-
-    cur_height, cur_width = img.shape[2:]
-
-    ratio = max(cur_width / width, cur_height / height)
-    resized_height = int(cur_height / ratio)
-    resized_width = int(cur_width / ratio)
-    resized_img = F.interpolate(
-        img,
-        size=(resized_height, resized_width),
-        mode="bilinear",
-        align_corners=False,
-    )
-
-    pad_height = max(0, int(height - resized_height))
-    pad_width = max(0, int(width - resized_width))
-
-    # pad on left and top of image
-    return F.pad(resized_img, (pad_width, 0, pad_height, 0), value=pad_value)

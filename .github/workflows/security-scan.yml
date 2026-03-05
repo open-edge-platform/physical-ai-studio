@@ -16,6 +16,7 @@
 # 2. Analyze Python code security with Bandit
 # 3. Perform filesystem security scan with Trivy
 # 4. Run semantic security analysis with Semgrep
+# 5. Scan container images (latest available version) with Trivy
 
 # Security Tools:
 # - Zizmor: GitHub Actions workflow security scanner
@@ -92,7 +93,6 @@ jobs:
           persist-credentials: false
 
       - name: Run Trivy scan
-        id: trivy
         uses: open-edge-platform/geti-ci/actions/trivy@9b1ef60a8b2b802da428621e192c322960f4b3d5
         with:
           scan_type: "fs"
@@ -121,3 +121,25 @@ jobs:
           scan-scope: ${{ github.event_name == 'pull_request' && 'changed' || 'all' }}
           severity: ${{ github.event_name == 'pull_request' && 'HIGH' || 'LOW' }}
           fail-on-findings: ${{ github.event_name == 'pull_request' && 'true' || 'false' }} # reports only
+
+  trivy-image-scan:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        ai-device: [cpu, cuda, xpu]
+    steps:
+      - name: Run container image scan (${{ matrix.ai-device }})
+        uses: open-edge-platform/geti-ci/actions/trivy@9b1ef60a8b2b802da428621e192c322960f4b3d5
+        with:
+          artifact-name: "trivy-scan-container-${{ matrix.ai-device }}"
+          scan_type: "image"
+          scan_target: "ghcr.io/open-edge-platform/physical-ai-studio-${{ matrix.ai-device }}:main"
+          scan-scope: all
+          severity: "LOW"
+          scanners: "vuln,secret,config"
+          format: "table"
+          timeout: "15m"
+          ignore_unfixed: "true"
