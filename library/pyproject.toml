@@ -36,8 +36,8 @@ dependencies = [
     "gym-pusht>=0.1.5",
     "pymunk>=6.6.0,<7.0.0",
     "onnx",
-    "onnxruntime==1.23.2",
-    "onnxscript<0.6.0",
+    "onnxruntime",
+    "onnxscript",
     "openvino>=2025.0",
     "jsonargparse[signatures]>=4.27.0", # This could be extra
     "pydantic",                         # This could be extra
