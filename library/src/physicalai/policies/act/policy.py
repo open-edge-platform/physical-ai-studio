@@ -318,7 +318,7 @@ class ACT(Export, Policy):
         if self.model is None:
             msg = "ACT model is not initialized."
             raise RuntimeError(msg)
-        loss, loss_dict = self.model(batch.to_dict())  # noqa: RUF059
+        loss, loss_dict = self.forward(batch)  # noqa: RUF059
         self.log("train/loss_step", loss, on_step=True, on_epoch=False, prog_bar=True, logger=True)
         self.log(
             "train/loss",

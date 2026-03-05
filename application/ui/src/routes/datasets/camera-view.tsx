@@ -16,7 +16,7 @@ type SchemaCamera =
     | components['schemas']['GenicamCamera-Output'];
 
 interface CameraViewProps {
-    observation: RefObject<Observation | undefined>;
+    observation: RefObject<Pick<Observation, 'cameras'> | undefined>;
     camera: SchemaCamera;
 }
 

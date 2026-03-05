@@ -206,11 +206,6 @@ class InferenceModel:
         """
         expected = self.adapter.input_names
 
-        # Torch adapter consumes Observation payloads and is tolerant to extra
-        # keys. Do not over-filter for torch exports.
-        if self.backend == ExportBackend.TORCH:
-            return observation
-
         if expected:
             filtered: dict[str, np.ndarray] = {}
             for key, value in observation.items():

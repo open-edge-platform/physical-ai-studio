@@ -525,28 +525,6 @@ class TestInputPreparation:
             assert set(result.keys()) == {"state", "images"}
             assert "action" not in result
 
-    def test_prepare_inputs_torch_backend_returns_full_payload(
-        self,
-        mock_export_dir: Path,
-        mock_adapter: MagicMock,
-    ) -> None:
-        """Test torch backend keeps full observation payload (no strict filtering)."""
-        mock_adapter.input_names = ["state", "images"]
-        with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
-            (mock_export_dir / "act.pt").touch()
-            model = InferenceModel(mock_export_dir, backend="torch")
-
-            inputs = {
-                "state": np.random.randn(1, 4).astype(np.float32),
-                "images": {"top": np.random.randn(1, 3, 224, 224).astype(np.float32)},
-                "task": ["pick and place"],
-                "extra": {"next.done": np.array([False])},
-            }
-
-            result = model._prepare_inputs(inputs)
-
-            assert result == inputs
-
 
 class TestActionOutputKey:
     """Test action output key detection."""
