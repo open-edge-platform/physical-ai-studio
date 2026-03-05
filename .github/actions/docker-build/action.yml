@@ -53,5 +53,9 @@ runs:
         # When not pushing, validate the build and populate the cache only.
         outputs: ${{ inputs.push != 'true' && 'type=cacheonly' || '' }}
         build-args: GIT_SHA=${{ github.sha }}
-        cache-from: type=gha,scope=${{ inputs.device }}
-        cache-to: type=gha,mode=max,scope=${{ inputs.device }}
+        # Registry-based cache: each device variant gets its own cache
+        # image in GHCR, avoiding the 10 GB GHA cache limit that caused
+        # cache thrashing across cpu/xpu/cuda scopes (~18-20 GB total).
+        # The caller must log in to ghcr.io before invoking this action.
+        cache-from: type=registry,ref=ghcr.io/open-edge-platform/physical-ai-studio-${{ inputs.device }}:buildcache
+        cache-to: type=registry,ref=ghcr.io/open-edge-platform/physical-ai-studio-${{ inputs.device }}:buildcache,mode=max
