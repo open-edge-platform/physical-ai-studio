@@ -47,7 +47,7 @@ class InferenceWorker(BaseThreadWorker):
     events: dict[str, EventClass]
     queue: Queue
     state: InferenceState
-    model_worker: SyncMixedModelIntegration # TODO: rename
+    model_worker: SyncMixedModelIntegration  # TODO: rename
     fps: int = 30
 
     follower: RobotClient
@@ -122,7 +122,6 @@ class InferenceWorker(BaseThreadWorker):
             if self.loop is None:
                 raise RuntimeError("The event loop must be set.")
             self.loop.run_until_complete(self.setup_environment())
-
 
             self.action_keys = self.follower.features()
             self.camera_keys = list(self.cameras)

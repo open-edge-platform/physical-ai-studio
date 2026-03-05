@@ -1,3 +1,4 @@
+import asyncio
 import multiprocessing as mp
 import queue
 import time
@@ -21,6 +22,7 @@ class ModelWorker(BaseProcessWorker):
     inference_model: InferenceModel
     observation_queue: mp.Queue
     output_queue: mp.Queue
+    model_loaded_event: EventClass
 
     def __init__(self, model: Model, backend: str, stop_event: EventClass):
         self.observation_queue = mp.Queue()
@@ -29,11 +31,16 @@ class ModelWorker(BaseProcessWorker):
         self.model = model
         self.backend = backend
         self.close_event = mp.Event()
+        self.model_loaded_event = mp.Event()
 
-    def setup(self) -> None:
+    async def setup(self) -> None:
         """Load model."""
         self.inference_model = load_inference_model(self.model, backend=self.backend)
-        logger.info("Inference model loaded")
+        logger.info("Model loaded.")
+        self.model_loaded_event.set()
+
+    async def wait_for_loading_to_complete(self) -> None:
+        await asyncio.to_thread(self.model_loaded_event.wait)
 
     def stop(self) -> None:
         """Stop model worker."""
@@ -58,6 +65,7 @@ class ModelWorker(BaseProcessWorker):
 
         logger.info("Inference stopped")
 
-    def teardown(self) -> None:
+    async def teardown(self) -> None:
         self.observation_queue.close()
         self.output_queue.close()
+        await super().teardown()
