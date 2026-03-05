@@ -102,7 +102,7 @@ def mock_export_dir(tmp_path: Path) -> Path:
 def mock_adapter():
     """Create mock adapter for testing."""
     adapter = MagicMock()
-    adapter.input_names = ["observation.state", "observation.image"]
+    adapter.input_names = ["state", "images"]
     adapter.output_names = ["actions"]
     adapter.predict.return_value = {"actions": np.random.randn(1, 10, 2)}
     adapter.default_device.return_value = "cpu"
@@ -425,7 +425,8 @@ class TestSelectAction:
             mock_adapter.predict.return_value = {"actions": np.random.randn(1, 1, 2)}
 
             # Pass dict[str, np.ndarray] directly
-            numpy_input = {"observation": np.random.randn(1, 3).astype(np.float32)}
+            numpy_input = {"state": np.random.randn(1, 3).astype(np.float32),
+                           "images": np.random.randn(1, 3, 224, 224).astype(np.float32)}
             action = model.select_action(numpy_input)
 
             assert isinstance(action, np.ndarray)
@@ -494,13 +495,14 @@ class TestInputPreparation:
 
             inputs = {
                 "state": np.random.randn(1, 4).astype(np.float32),
+                "images": np.random.randn(1, 3, 224, 224).astype(np.float32),
+                "extra_input": np.random.randn(1, 2).astype(np.float32),
                 "unrelated": np.random.randn(1, 2).astype(np.float32),
             }
 
             result = model._prepare_inputs(inputs)
 
-            # Only 'state' is in both observation and input_names
-            assert set(result.keys()) == {"state"}
+            assert set(result.keys()) == {"state", "images", "extra_input"}
             assert "unrelated" not in result
 
     def test_prepare_inputs_nested_payload_handling(
@@ -522,7 +524,7 @@ class TestInputPreparation:
             }
 
             result = model._prepare_inputs(inputs)
-            assert set(result.keys()) == {"state", "images"}
+            assert set(result.keys()) == {"state", "images.top"}
             assert "action" not in result
 
 
