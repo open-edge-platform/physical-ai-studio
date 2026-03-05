@@ -78,7 +78,6 @@ class ModelWithExtraExportArgs(torch.nn.Module):
         return {
             "onnx": {
                 "output_names": ["output"],
-                "dynamic_axes": {"x": {0: "batch_size"}, "output": {0: "batch_size"}},
             }
         }
 
