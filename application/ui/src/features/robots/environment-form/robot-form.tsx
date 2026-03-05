@@ -1,21 +1,6 @@
 import { useState } from 'react';
 
-import {
-    Accordion,
-    ActionButton,
-    Button,
-    Disclosure,
-    DisclosurePanel,
-    DisclosureTitle,
-    Flex,
-    Heading,
-    Icon,
-    Item,
-    Picker,
-    Text,
-    View,
-    Well,
-} from '@geti/ui';
+import { ActionButton, Button, Flex, Heading, Icon, Item, Picker, Text, View, Well } from '@geti/ui';
 import { Add, Close } from '@geti/ui/icons';
 
 import { $api } from '../../../api/client';
@@ -132,39 +117,26 @@ export const AddRobotForm = ({
                     })}
             </Picker>
 
-            <Accordion defaultExpandedKeys={['leader-robot']} marginY='size-200'>
-                <Disclosure id='none'>
-                    <DisclosureTitle>No teleoperator</DisclosureTitle>
-                    <DisclosurePanel>No teleoperator</DisclosurePanel>
-                </Disclosure>
-                <Disclosure id='leader-robot'>
-                    <DisclosureTitle>Leader robot</DisclosureTitle>
-                    <DisclosurePanel>
-                        <Picker
-                            label='Robot (Leader)'
-                            width='100%'
-                            selectedKey={selectedTeleoperatorRobotId}
-                            onSelectionChange={(key) => {
-                                if (key !== null && typeof key === 'string') {
-                                    setSelectedTeleoperatorRobotId(key);
-                                }
-                            }}
-                        >
-                            {availableRobots
-                                .filter(
-                                    (robot) => robot.type === 'SO101_Leader' || robot.type === 'Trossen_WidowXAI_Leader'
-                                )
-                                .map((robot) => {
-                                    return (
-                                        <Item textValue={robot.name} key={robot.id}>
-                                            <Text>{robot.name}</Text>
-                                        </Item>
-                                    );
-                                })}
-                        </Picker>
-                    </DisclosurePanel>
-                </Disclosure>
-            </Accordion>
+            <Picker
+                label='Robot (Leader)'
+                width='100%'
+                selectedKey={selectedTeleoperatorRobotId}
+                onSelectionChange={(key) => {
+                    if (key !== null && typeof key === 'string') {
+                        setSelectedTeleoperatorRobotId(key);
+                    }
+                }}
+            >
+                {availableRobots
+                    .filter((robot) => robot.type === 'SO101_Leader' || robot.type === 'Trossen_WidowXAI_Leader')
+                    .map((robot) => {
+                        return (
+                            <Item textValue={robot.name} key={robot.id}>
+                                <Text>{robot.name}</Text>
+                            </Item>
+                        );
+                    })}
+            </Picker>
 
             <Flex gap='size-100'>
                 <Button
