@@ -191,33 +191,47 @@ class InferenceModel:
         self._action_queue.clear()
 
     def _prepare_inputs(self, observation: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-        """Filter observation dict to only include adapter's expected input names.
+        """Flatten and filter observation dict for the adapter.
 
-        This ensures that extra keys in the observation (e.g., metadata fields
-        like action, episode_index, task, etc.) are stripped before passing to
-        the adapter, which may error on unexpected keys.
+        Flattens nested dicts using dot notation (e.g., ``{"obs": {"image": x}}``
+        becomes ``{"obs.image": x}``), then filters to only the keys the adapter
+        expects.
 
         Args:
-            observation: Robot observation as a dict mapping names to numpy arrays.
+            observation: Observation dict mapping input names to arrays. Values
+                may be nested dicts, which are flattened with dot-separated keys.
 
         Returns:
-            Filtered observation dict containing only the adapter's expected inputs.
-            If adapter has no input names (e.g., not yet loaded), returns observation unchanged.
+            Flat dict containing only the adapter's expected inputs. If the
+            adapter has no declared input names, returns `observation` unchanged.
+
+        Raises:
+            KeyError: If an expected adapter input is not found in the
+                (flattened) observation.
         """
         expected = self.adapter.input_names
 
         if expected:
-            filtered: dict[str, np.ndarray] = {}
+            flat_observation: dict[str, np.ndarray] = {}
             for key, value in observation.items():
-                if key in expected:
-                    filtered[key] = value
-                    continue
+                if isinstance(value, dict):
+                    key_entries = []
+                    for sub_key, sub_value in value.items():
+                        flat_observation[f"{key}.{sub_key}"] = sub_value
+                        key_entries.append(f"{key}.{sub_key}")
+                else:
+                    flat_observation[key] = value
 
-                # Keep nested parent keys when adapter expects dotted child keys.
-                # Example: keep "images" when expected contains "images.top".
-                key_prefix = f"{key}."
-                if any(name.startswith(key_prefix) for name in expected):
-                    filtered[key] = value
+            filtered: dict[str, np.ndarray] = {}
+            for k in expected:
+                if k in flat_observation:
+                    filtered[k] = flat_observation[k]
+                else:
+                    msg = (
+                        f"Expected input '{k}' not found in observation.\n"
+                        f"Available keys: {list(flat_observation.keys())}"
+                    )
+                    raise KeyError(msg)
 
             return filtered
         return observation
