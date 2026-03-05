@@ -10,12 +10,24 @@ import { RobotViewer } from '../../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
 import { paths } from '../../../router';
 import { CameraView } from '../../datasets/camera-view';
-import { useInference } from './use-inference';
+import { Observation, useInference } from './use-inference';
 import { useInferenceParams } from './use-inference-params';
 
 interface InferenceViewerProps {
     config: SchemaInferenceConfig;
 }
+
+const getVisualisationSourceFromObservation = (observation: Observation | undefined): { [joint: string]: number } => {
+    if (observation === undefined) {
+        return {};
+    }
+    if (observation['actions'] !== null) {
+        return observation['actions'];
+    } else {
+        return observation['state'];
+    }
+};
+
 export const InferenceViewer = ({ config }: InferenceViewerProps) => {
     const { project_id, model_id } = useInferenceParams();
 
@@ -31,10 +43,7 @@ export const InferenceViewer = ({ config }: InferenceViewerProps) => {
 
     const robots = (config.environment.robots ?? []).map(({ robot }) => robot);
 
-    const visualisation_source =
-        observation.current && (observation.current['actions'] ?? observation.current['state']);
-    const action_values = visualisation_source && Object.values(visualisation_source);
-    const action_keys = visualisation_source && Object.keys(visualisation_source);
+    const visualisation_source = getVisualisationSourceFromObservation(observation.current);
 
     if (state.error) {
         return <ErrorMessage message={'An error occurred during inference setup'} />;
@@ -87,7 +96,11 @@ export const InferenceViewer = ({ config }: InferenceViewerProps) => {
                         ))}
                     </Flex>
                     <Flex flex={3} minWidth={0}>
-                        <RobotViewer featureValues={action_values} featureNames={action_keys} robot={robots[0]} />
+                        <RobotViewer
+                            featureValues={Object.values(visualisation_source)}
+                            featureNames={Object.keys(visualisation_source)}
+                            robot={robots[0]}
+                        />
                     </Flex>
                 </Flex>
             </Flex>
