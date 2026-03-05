@@ -16,7 +16,7 @@ class RobotClient(ABC):
 
     @property
     @abstractmethod
-    async def is_connected(self) -> bool:
+    def is_connected(self) -> bool:
         """Check if robot is connected."""
 
     @abstractmethod
