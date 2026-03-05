@@ -20,9 +20,7 @@ from schemas import InferenceConfig
 from services.robot_calibration_service import RobotCalibrationService
 from utils.serial_robot_tools import RobotConnectionManager
 from workers.camera_worker import create_frames_source_from_camera
-from workers.inference.inference_poller import InferencePoller
-from workers.inference.queue_mixer import QueueMixer
-from workers.model_worker import ModelWorker
+from workers.inference.sync_mixed_model_integration import SyncMixedModelIntegration
 
 from .base import BaseThreadWorker
 
@@ -49,9 +47,7 @@ class InferenceWorker(BaseThreadWorker):
     events: dict[str, EventClass]
     queue: Queue
     state: InferenceState
-    model_worker: ModelWorker
-    inference_poller: InferencePoller
-    queue_mixer: QueueMixer
+    model_worker: SyncMixedModelIntegration # TODO: rename
     fps: int = 30
 
     follower: RobotClient
@@ -73,19 +69,12 @@ class InferenceWorker(BaseThreadWorker):
         self.robot_client_factory = RobotClientFactory(robot_manager, calibration_service)
 
         # Model Worker that handles inference in separate process.
-        self.model_worker = ModelWorker(
+        self.model_worker = SyncMixedModelIntegration(
             model=config.model,
             backend=config.backend,
             stop_event=stop_event,
+            fps=self.fps,
         )
-
-        # Communication layer to model worker. It ensures no queue.
-        self.inference_poller = InferencePoller(self.model_worker.observation_queue, self.model_worker.output_queue)
-
-        # Queue mixer to move to new inference result while still executing previous.
-        self.queue_mixer = QueueMixer(
-            lerp_duration=12
-        )  # TODO: Remove hardcode and use running average of inference time?
 
         self.events = {
             "stop": Event(),
@@ -124,6 +113,8 @@ class InferenceWorker(BaseThreadWorker):
         await asyncio.sleep(1)  # sleep for camera warmup. TODO: Refactor start_async to proper camera wrapper
         await self.follower.connect()
 
+        await self.model_worker.setup()
+
     def setup(self) -> None:
         """Set up robots, cameras and dataset."""
         logger.info("connect to robot, cameras and setup dataset")
@@ -132,7 +123,6 @@ class InferenceWorker(BaseThreadWorker):
                 raise RuntimeError("The event loop must be set.")
             self.loop.run_until_complete(self.setup_environment())
 
-            self.model_worker.start()
 
             self.action_keys = self.follower.features()
             self.camera_keys = list(self.cameras)
@@ -180,21 +170,9 @@ class InferenceWorker(BaseThreadWorker):
 
                 timestamp = time.perf_counter() - start_episode_t
                 if self.state.is_running:
-                    if self.inference_poller.has_result():
-                        inference_result = self.inference_poller.get_result()
-                        offset = int(inference_result.time * self.fps)
-                        logger.debug(
-                            f"Got inference from inference_poller: {inference_result.data.shape} with offset {offset}"
-                        )
-                        self.queue_mixer.add(inference_result.data, offset)
-                        self.queue_mixer.lerp_duration = offset  # inference time should be a good guide for now.
-
-                    if not self.inference_poller.busy:
-                        observation = self._build_geti_action_observation(state)
-                        self.inference_poller.run_inference(observation)
-
-                    if not self.queue_mixer.empty():
-                        action = self.queue_mixer.pop().tolist()
+                    observation = self._build_geti_action_observation(state)
+                    action = self.model_worker.select_action(observation)
+                    if action is not None:
                         formatted_actions = dict(zip(self.action_keys, action))
                         await self.follower.set_joints_state(formatted_actions, 1 / 30)
                         self._report_action(formatted_actions, state, timestamp)
@@ -212,7 +190,7 @@ class InferenceWorker(BaseThreadWorker):
         logger.info("start")
         self.events["start"].clear()
         precise_sleep(0.3)  # TODO check if neccesary
-        self.inference_poller.reset()
+        self.model_worker.reset()
         self.state.is_running = True
         self._report_state()
 
@@ -228,8 +206,7 @@ class InferenceWorker(BaseThreadWorker):
         if await self.follower.is_connected:
             await self.follower.disconnect()
 
-        self.model_worker.stop()
-        self.model_worker.join(timeout=5)
+        self.model_worker.teardown()
 
         # Wait for .5 seconds before closing queue to allow messages through
         await asyncio.sleep(0.5)
@@ -270,7 +247,7 @@ class InferenceWorker(BaseThreadWorker):
             }
         )
 
-    def _build_geti_action_observation(self, robot_observation: dict):
+    def _build_geti_action_observation(self, robot_observation: dict) -> Observation:
         state = (
             torch.tensor([value for key, value in robot_observation.items() if key in self.action_keys])
             .unsqueeze(0)
