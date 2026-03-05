@@ -69,16 +69,16 @@ class TorchExportAdapter(RuntimeAdapter):
             # We need to navigate to the actual input dict
 
             # Check if args are used (args_spec has children) or kwargs (second element)
-            args_spec = in_spec.children_specs[0]  # First element is args tuple
-            kwargs_spec = in_spec.children_specs[1] if len(in_spec.children_specs) > 1 else None
+            args_spec = in_spec.child(0)  # First element is args tuple
+            kwargs_spec = in_spec.child(1) if len(in_spec.children()) > 1 else None
 
-            if args_spec.children_specs:  # Args used (positional arguments)
+            if args_spec.children():  # Args used (positional arguments)
                 # Navigate: args[0] -> input_dict
-                dict_spec = args_spec.children_specs[0]
-            elif kwargs_spec and kwargs_spec.children_specs:  # Kwargs used
+                dict_spec = args_spec.child(0)
+            elif kwargs_spec and kwargs_spec.children():  # Kwargs used
                 # Navigate: kwargs['batch'] -> input_dict
                 # kwargs_spec is dict with context=['batch'], children_specs has the actual dict
-                dict_spec = kwargs_spec.children_specs[0]
+                dict_spec = kwargs_spec.child(0)
             else:
                 dict_spec = None
 
@@ -121,7 +121,7 @@ class TorchExportAdapter(RuntimeAdapter):
             with torch.no_grad():
                 # Try to determine if model expects kwargs from the in_spec structure
                 in_spec = self._program.call_spec.in_spec
-                kwargs_spec = in_spec.children_specs[1] if len(in_spec.children_specs) > 1 else None
+                kwargs_spec = in_spec.child(1) if len(in_spec.children()) > 1 else None
 
                 if kwargs_spec and kwargs_spec.context:
                     # Model expects kwargs, wrap inputs with the expected key name
