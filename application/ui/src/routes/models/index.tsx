@@ -22,8 +22,7 @@ import { useProjectId } from '../../features/projects/use-project';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
 import { TrainingHeader, TrainingRow } from './job-table.component';
 import { ModelHeader, ModelRow } from './model-table.component';
-import { RetrainModelModal } from './retrain-model';
-import { SchemaTrainJob, TrainModelModal } from './train-model';
+import { SchemaTrainJob, TrainModelDialog } from './train-model-dialog';
 
 const ModelList = ({
     models,
@@ -165,7 +164,7 @@ export const Index = () => {
                             <View margin={'size-100'}>
                                 <DialogTrigger>
                                     <Button variant='accent'>Train model</Button>
-                                    {TrainModelModal}
+                                    {(close) => <TrainModelDialog close={close} />}
                                 </DialogTrigger>
                             </View>
                         </IllustratedMessage>
@@ -175,12 +174,14 @@ export const Index = () => {
                         <Flex justifyContent={'end'} marginBottom='size-300'>
                             <DialogTrigger>
                                 <Button variant='secondary'>Train model</Button>
-                                {(close) =>
-                                    TrainModelModal((job) => {
-                                        if (job) addJob(job);
-                                        close();
-                                    })
-                                }
+                                {(close) => (
+                                    <TrainModelDialog
+                                        close={(job) => {
+                                            if (job) addJob(job);
+                                            close();
+                                        }}
+                                    />
+                                )}
                             </DialogTrigger>
                         </Flex>
                         <JobList jobs={jobs.filter((m) => m.type === 'training') as SchemaTrainJob[]} />
@@ -190,7 +191,7 @@ export const Index = () => {
             </Flex>
             <DialogContainer onDismiss={() => setRetrainModel(null)}>
                 {retrainModel && (
-                    <RetrainModelModal
+                    <TrainModelDialog
                         baseModel={retrainModel}
                         close={(job) => {
                             if (job) addJob(job);

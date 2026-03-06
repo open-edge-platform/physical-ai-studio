@@ -1,4 +1,4 @@
-import { ReactNode, useState } from 'react';
+import { useState } from 'react';
 
 import {
     Button,
@@ -20,39 +20,27 @@ import {
 } from '@geti/ui';
 
 import { $api } from '../../api/client';
-import { SchemaDatasetInput, SchemaJob, SchemaTrainJobPayload } from '../../api/openapi-spec';
+import { SchemaJob, SchemaModel, SchemaTrainJobPayload } from '../../api/openapi-spec';
+import { useProject } from '../../features/projects/use-project';
 
 export type SchemaTrainJob = Omit<SchemaJob, 'payload'> & {
     payload: SchemaTrainJobPayload;
 };
 
 interface TrainModelDialogProps {
-    title: string;
-    submitLabel: string;
-    datasets: SchemaDatasetInput[];
-    projectId: string;
-    defaultName?: string;
-    defaultDatasetId?: Key | null;
-    defaultMaxSteps?: number;
-    extraPayload?: Partial<SchemaTrainJobPayload>;
-    policyField: ReactNode;
-    getPolicy: () => string | undefined;
+    baseModel?: SchemaModel;
     close: (job: SchemaTrainJob | undefined) => void;
+    defaultMaxSteps?: number;
 }
 
-export const TrainModelDialog = ({
-    title,
-    submitLabel,
-    datasets,
-    projectId,
-    defaultName = '',
-    defaultDatasetId = null,
-    defaultMaxSteps = 10000,
-    extraPayload,
-    policyField,
-    getPolicy,
-    close,
-}: TrainModelDialogProps) => {
+export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: TrainModelDialogProps) => {
+    const defaultName = baseModel?.name ?? '';
+    const defaultDatasetId = baseModel?.dataset_id ?? null;
+    const extraPayload = baseModel ? { base_model_id: baseModel.id! } : undefined;
+
+    const [selectedPolicy, setSelectedPolicy] = useState<Key | null>(baseModel?.policy ?? 'act');
+    const { datasets, id: projectId } = useProject();
+
     const [name, setName] = useState<string>(defaultName);
     const [selectedDataset, setSelectedDataset] = useState<Key | null>(defaultDatasetId);
     const [maxSteps, setMaxSteps] = useState<number>(defaultMaxSteps);
@@ -62,9 +50,8 @@ export const TrainModelDialog = ({
 
     const save = () => {
         const dataset_id = selectedDataset?.toString();
-        const policy = getPolicy();
 
-        if (!dataset_id || !policy) {
+        if (!dataset_id || !selectedPolicy) {
             return;
         }
 
@@ -72,7 +59,7 @@ export const TrainModelDialog = ({
             dataset_id,
             project_id: projectId,
             model_name: name,
-            policy,
+            policy: selectedPolicy.toString(),
             max_steps: maxSteps,
             batch_size: batchSize,
             ...extraPayload,
@@ -84,7 +71,7 @@ export const TrainModelDialog = ({
 
     return (
         <Dialog>
-            <Heading>{title}</Heading>
+            <Heading>Train Model</Heading>
             <Divider />
             <Content>
                 <Form
@@ -100,7 +87,16 @@ export const TrainModelDialog = ({
                             <Item key={dataset.id}>{dataset.name}</Item>
                         ))}
                     </Picker>
-                    <>{policyField}</>
+                    <Picker
+                        label='Policy'
+                        selectedKey={selectedPolicy}
+                        onSelectionChange={setSelectedPolicy}
+                        isDisabled={baseModel !== undefined}
+                    >
+                        <Item key='act'>Act</Item>
+                        <Item key='pi0'>Pi0</Item>
+                        <Item key='smolvla'>SmolVLA</Item>
+                    </Picker>
                     <Disclosure isQuiet UNSAFE_style={{ padding: 0 }}>
                         <DisclosureTitle UNSAFE_style={{ fontSize: 13, padding: '4px 0' }}>
                             Advanced settings
@@ -135,7 +131,7 @@ export const TrainModelDialog = ({
                     Cancel
                 </Button>
                 <Button variant='accent' onPress={save}>
-                    {submitLabel}
+                    Train
                 </Button>
             </ButtonGroup>
         </Dialog>
