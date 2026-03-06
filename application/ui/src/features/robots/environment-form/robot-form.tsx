@@ -172,24 +172,28 @@ export const RobotForm = () => {
 
     return (
         <>
-            <ul style={{ width: '100%' }}>
-                <Flex direction='column' gap='size-100' width='100%'>
-                    {environmentForm.robots.map((robot) => (
-                        <RobotListItem
-                            key={robot.robot_id}
-                            robot={robot}
-                            onRemove={() => {
-                                setEnvironmentForm((oldForm) => {
-                                    return {
-                                        ...oldForm,
-                                        robots: oldForm.robots.filter(({ robot_id }) => robot_id !== robot.robot_id),
-                                    };
-                                });
-                            }}
-                        />
-                    ))}
-                </Flex>
-            </ul>
+            {environmentForm.robots.length > 0 && (
+                <ul style={{ width: '100%' }}>
+                    <Flex direction='column' gap='size-100' width='100%'>
+                        {environmentForm.robots.map((robot) => (
+                            <RobotListItem
+                                key={robot.robot_id}
+                                robot={robot}
+                                onRemove={() => {
+                                    setEnvironmentForm((oldForm) => {
+                                        return {
+                                            ...oldForm,
+                                            robots: oldForm.robots.filter(
+                                                ({ robot_id }) => robot_id !== robot.robot_id
+                                            ),
+                                        };
+                                    });
+                                }}
+                            />
+                        ))}
+                    </Flex>
+                </ul>
+            )}
 
             {isAdding ? (
                 <Well
