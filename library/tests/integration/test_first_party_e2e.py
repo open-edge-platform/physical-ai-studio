@@ -117,7 +117,7 @@ class ExportE2ETests:
         from physicalai.data.lerobot import FormatConverter
 
         batch_observation = FormatConverter.to_observation(sample_batch)
-        inference_input = batch_observation[0:1].to_numpy()
+        inference_input = batch_observation[0:1].to_numpy().to_dict(flatten=False)
         inference_output = inference_model.select_action(inference_input)
 
         assert inference_output.shape[-1] == 2
@@ -157,7 +157,7 @@ class ExportE2ETests:
         inference_model = InferenceModel.load(export_dir)
 
         torch.manual_seed(42)
-        inference_input = single_observation.to_numpy()
+        inference_input = single_observation.to_numpy().to_dict(flatten=False)
         inference_output = inference_model.select_action(inference_input)
         inference_output = torch.as_tensor(inference_output)
         inference_output_cpu: torch.Tensor = inference_output.cpu().squeeze(0)
@@ -228,7 +228,7 @@ class TestE2ECore(CoreE2ETests):
         from physicalai.data.lerobot import FormatConverter
 
         batch_observation = FormatConverter.to_observation(sample_batch)
-        inference_input = batch_observation[0:1]
+        inference_input = batch_observation[0:1].to_numpy().to_dict(flatten=False)
         inference_output = inference_model.select_action(inference_input)
 
         assert len(inference_output.shape) in {1, 2, 3}, f"Expected 1-3D tensor, got {inference_output.shape}"

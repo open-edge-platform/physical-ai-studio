@@ -1,10 +1,25 @@
+# ================================================================
+# Physical AI Studio — Docker Compose
+#
+# Uses Docker Compose profiles to select the hardware backend.
+# Set COMPOSE_PROFILES in your .env file (cpu, xpu, or cuda)
+# or pass --profile on the command line:
+#
+#   docker compose --profile cpu up      # CPU (default)
+#   docker compose --profile xpu up      # Intel XPU
+#   docker compose --profile cuda up     # NVIDIA CUDA
+#
+# ================================================================
+
 services:
-  physical-ai-studio:
-    image: ${REGISTRY:-ghcr.io/open-edge-platform/}physical-ai-studio-${AI_DEVICE:-cpu}:${IMAGE_TAG:-main}
+  physical-ai-studio-cpu:
+    profiles: [cpu]
+    container_name: physical-ai-studio
+    image: ${REGISTRY:-ghcr.io/open-edge-platform/}physical-ai-studio-cpu:${IMAGE_TAG:-main}
     build:
       context: ../../
       dockerfile: application/docker/Dockerfile
-      target: physical-ai-studio-${AI_DEVICE:-cpu}
+      target: physical-ai-studio-cpu
       additional_contexts:
         libs: ../../library
       args:
@@ -17,7 +32,7 @@ services:
         - https_proxy=${https_proxy}
         - no_proxy=${no_proxy}
     ports:
-      - "${PORT:-7860}:7860"
+      - "${PORT:-7860}:${PORT:-7860}"
     environment:
       - HOST=${HOST:-0.0.0.0}
       - PORT=${PORT:-7860}
@@ -26,10 +41,25 @@ services:
         required: false
     restart: unless-stopped
     stop_grace_period: 35s
-    # PyTorch DataLoader workers need shared memory (/dev/shm) beyond Docker's 64 MB default
-    shm_size: 2g
+
+    # PyTorch DataLoader workers need shared memory (/dev/shm) beyond
+    # Docker's 64 MB default. Using ipc: host shares the host's /dev/shm
+    # (typically 50% of system RAM on Linux), so it scales automatically
+    # with available memory and works across different hardware configs.
+    #
+    # If you prefer an isolated, fixed-size allocation instead, comment
+    # out "ipc: host" and uncomment the line below:
+    # shm_size: 16g
+    ipc: host
+
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${PORT:-7860}/api/health')"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:${PORT:-7860}/api/health')",
+        ]
       interval: 30s
       timeout: 10s
       start_period: 60s
@@ -50,9 +80,9 @@ services:
     # ============================================================
 
     group_add:
-      - "${DIALOUT_GID:-dialout}"   # serial ports (/dev/ttyACM*)
-      - "${PLUGDEV_GID:-plugdev}"   # pluggable USB devices
-      - "${VIDEO_GID:-video}"       # cameras & video (/dev/video*)
+      - "${DIALOUT_GID:-dialout}" # serial ports (/dev/ttyACM*)
+      - "${PLUGDEV_GID:-plugdev}" # pluggable USB devices
+      - "${VIDEO_GID:-video}" # cameras & video (/dev/video*)
 
     # Persisted data and storage volumes + shared robot calibration
     volumes:
@@ -60,13 +90,13 @@ services:
       - physical-ai-studio-storage:/app/storage
       - ${HOME}/.cache/huggingface/lerobot/calibration:/home/appuser/.cache/huggingface/lerobot/calibration:ro
 
-    # --- Option 1: Privileged mode (active by default) ---
+    # --- Option 1: Privileged mode (active by default)
     # Grants full access to all host devices. Easiest setup, but the
     # container runs with elevated privileges.
     # Also covers Intel RealSense cameras via /dev/bus/usb.
     privileged: true
 
-    # --- Option 2: Non-privileged mode (more secure) ---
+    # --- Option 2: Non-privileged mode (more secure)
     # Map only the specific devices the robot needs. More secure since
     # the container cannot access arbitrary host devices, but you must
     # update the device list whenever hardware changes.
@@ -83,6 +113,41 @@ services:
     #    - /dev/video4:/dev/video4
     #    # Intel RealSense cameras
     #    # - /dev/bus/usb:/dev/bus/usb
+
+  physical-ai-studio-xpu:
+    extends:
+      service: physical-ai-studio-cpu
+    profiles: [xpu]
+    container_name: physical-ai-studio
+    image: ${REGISTRY:-ghcr.io/open-edge-platform/}physical-ai-studio-xpu:${IMAGE_TAG:-main}
+    build:
+      target: physical-ai-studio-xpu
+    # --- Non-privileged XPU additions
+    # When running in non-privileged mode, add these to grant
+    # Intel GPU access via /dev/dri/renderD* nodes:
+    # group_add:
+    #   - "${DIALOUT_GID:-dialout}"
+    #   - "${PLUGDEV_GID:-plugdev}"
+    #   - "${VIDEO_GID:-video}"
+    #   - "${RENDER_GID:-render}"   # Intel GPU render nodes
+    # devices:
+    #   - /dev/dri:/dev/dri         # Intel GPU device nodes
+
+  physical-ai-studio-cuda:
+    extends:
+      service: physical-ai-studio-cpu
+    profiles: [cuda]
+    container_name: physical-ai-studio
+    image: ${REGISTRY:-ghcr.io/open-edge-platform/}physical-ai-studio-cuda:${IMAGE_TAG:-main}
+    build:
+      target: physical-ai-studio-cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
 volumes:
   physical-ai-studio-data:

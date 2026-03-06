@@ -34,7 +34,7 @@ class SO101Follower(RobotClient):
         return RobotType.SO101_FOLLOWER
 
     @property
-    async def is_connected(self) -> bool:
+    def is_connected(self) -> bool:
         return self.robot.is_connected
 
     async def connect(self) -> None:

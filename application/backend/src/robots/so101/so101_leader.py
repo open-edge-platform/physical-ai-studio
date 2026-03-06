@@ -30,7 +30,7 @@ class SO101Leader(RobotClient):
         return RobotType.SO101_LEADER
 
     @property
-    async def is_connected(self) -> bool:
+    def is_connected(self) -> bool:
         return self.robot.is_connected
 
     async def connect(self) -> None:

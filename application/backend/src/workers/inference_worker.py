@@ -1,6 +1,5 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-
 import asyncio
 import base64
 import time
@@ -15,13 +14,13 @@ from loguru import logger
 from physicalai.data import Observation
 from pydantic import BaseModel
 
-from models.utils import load_inference_model
 from robots.robot_client import RobotClient
 from robots.robot_client_factory import RobotClientFactory
 from schemas import InferenceConfig
 from services.robot_calibration_service import RobotCalibrationService
 from utils.serial_robot_tools import RobotConnectionManager
 from workers.camera_worker import create_frames_source_from_camera
+from workers.inference.sync_mixed_model_integration import SyncMixedModelIntegration
 
 from .base import BaseThreadWorker
 
@@ -48,6 +47,8 @@ class InferenceWorker(BaseThreadWorker):
     events: dict[str, EventClass]
     queue: Queue
     state: InferenceState
+    model_worker: SyncMixedModelIntegration  # TODO: rename
+    fps: int = 30
 
     follower: RobotClient
     action_keys: list[str] = []
@@ -66,6 +67,14 @@ class InferenceWorker(BaseThreadWorker):
         self.queue = queue
         self.state = InferenceState()
         self.robot_client_factory = RobotClientFactory(robot_manager, calibration_service)
+
+        # Model Worker that handles inference in separate process.
+        self.model_worker = SyncMixedModelIntegration(
+            model=config.model,
+            backend=config.backend,
+            stop_event=stop_event,
+            fps=self.fps,
+        )
 
         self.events = {
             "stop": Event(),
@@ -104,6 +113,8 @@ class InferenceWorker(BaseThreadWorker):
         await asyncio.sleep(1)  # sleep for camera warmup. TODO: Refactor start_async to proper camera wrapper
         await self.follower.connect()
 
+        await self.model_worker.setup()
+
     def setup(self) -> None:
         """Set up robots, cameras and dataset."""
         logger.info("connect to robot, cameras and setup dataset")
@@ -111,8 +122,6 @@ class InferenceWorker(BaseThreadWorker):
             if self.loop is None:
                 raise RuntimeError("The event loop must be set.")
             self.loop.run_until_complete(self.setup_environment())
-
-            self.model = load_inference_model(self.config.model, backend=self.config.backend)
 
             self.action_keys = self.follower.features()
             self.camera_keys = list(self.cameras)
@@ -160,16 +169,14 @@ class InferenceWorker(BaseThreadWorker):
 
                 timestamp = time.perf_counter() - start_episode_t
                 if self.state.is_running:
-                    if not self.action_queue:
-                        observation = self._build_geti_action_observation(state)
-                        self.action_queue = self.model.select_action(observation)[0].tolist()
-                    action = self.action_queue.pop(0)
-
-                    formatted_actions = dict(zip(self.action_keys, action))
-                    await self.follower.set_joints_state(formatted_actions, 1 / 30)
-                    self._report_action(formatted_actions, state, timestamp)
+                    observation = self._build_geti_action_observation(state)
+                    action = self.model_worker.select_action(observation)
+                    if action is not None:
+                        formatted_actions = dict(zip(self.action_keys, action))
+                        await self.follower.set_joints_state(formatted_actions, 1 / 30)
+                        self._report_action(formatted_actions, state, timestamp)
                 else:
-                    self._report_action({}, state, timestamp)
+                    self._report_action(None, state, timestamp)
                 dt_s = time.perf_counter() - start_loop_t
                 wait_time = 1 / 30 - dt_s
 
@@ -182,7 +189,7 @@ class InferenceWorker(BaseThreadWorker):
         logger.info("start")
         self.events["start"].clear()
         precise_sleep(0.3)  # TODO check if neccesary
-        self.action_queue.clear()
+        self.model_worker.reset()
         self.state.is_running = True
         self._report_state()
 
@@ -191,13 +198,14 @@ class InferenceWorker(BaseThreadWorker):
         self.events["stop"].clear()
         precise_sleep(0.3)  # TODO check if neccesary
         self.state.is_running = False
-        self.action_queue.clear()
         self._report_state()
 
     async def teardown(self) -> None:
         """Disconnect robots and close queue."""
         if self.follower.is_connected:
             await self.follower.disconnect()
+
+        self.model_worker.teardown()
 
         # Wait for .5 seconds before closing queue to allow messages through
         await asyncio.sleep(0.5)
@@ -220,7 +228,7 @@ class InferenceWorker(BaseThreadWorker):
     def _report_trajectory(self, trajectory: list[dict]):
         self.queue.put({"event": "trajectory", "data": {"trajectory": trajectory}})
 
-    def _report_action(self, actions: dict, observation: dict, timestamp: float):
+    def _report_action(self, actions: dict | None, observation: dict, timestamp: float):
         """Report observation to queue."""
         self.queue.put(
             {
@@ -238,7 +246,7 @@ class InferenceWorker(BaseThreadWorker):
             }
         )
 
-    def _build_geti_action_observation(self, robot_observation: dict):
+    def _build_geti_action_observation(self, robot_observation: dict) -> Observation:
         state = (
             torch.tensor([value for key, value in robot_observation.items() if key in self.action_keys])
             .unsqueeze(0)

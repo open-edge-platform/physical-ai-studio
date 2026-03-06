@@ -109,6 +109,14 @@ class ONNXAdapter(RuntimeAdapter):
 
         return ["CPUExecutionProvider"]
 
+    def default_device(self) -> str:  # noqa: PLR6301
+        """Get default ONNX Runtime device.
+
+        Returns:
+            'cpu' (consistent with other adapters' default behavior)
+        """
+        return "cpu"
+
     @property
     def input_names(self) -> list[str]:
         """Get input tensor names.

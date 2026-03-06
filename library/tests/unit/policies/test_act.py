@@ -3,6 +3,7 @@
 
 import copy
 import tempfile
+from unittest.mock import patch
 import pytest
 import torch
 import numpy as np
@@ -62,6 +63,13 @@ class TestACTolicy:
 
         assert "loss" in loss
         assert loss["loss"] >= 0
+
+    def test_training_step_call(self, policy, batch):
+        policy.model.train()
+
+        with patch.object(policy, "forward", wraps=policy.forward) as mock_forward:
+            policy.training_step(batch, 0)
+            mock_forward.assert_called_once()
 
     def test_predict_action_chunk_with_explain(self, policy, batch):
         """Test predict_action_chunk_with_explain method."""
