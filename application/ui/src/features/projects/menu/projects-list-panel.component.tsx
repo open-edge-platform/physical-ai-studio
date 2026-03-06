@@ -117,16 +117,6 @@ export const ProjectsListPanel = () => {
                     <Divider size={'S'} marginTop={'size-200'} />
 
                     <Link
-                        href={paths.project.cameras.index({ project_id })}
-                        UNSAFE_style={{ color: 'white', textDecoration: 'none' }}
-                        UNSAFE_className={styles.openApiLink}
-                    >
-                        <Flex alignItems={'center'} gap='size-100'>
-                            <ChevronRightSmallLight fill='white' />
-                            Cameras
-                        </Flex>
-                    </Link>
-                    <Link
                         href={paths.openapi({})}
                         UNSAFE_style={{ color: 'white', textDecoration: 'none' }}
                         UNSAFE_className={styles.openApiLink}
