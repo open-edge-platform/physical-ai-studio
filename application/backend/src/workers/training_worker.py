@@ -12,7 +12,7 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import CSVLogger
 
 from core.logging.utils import job_logging_ctx
-from models.utils import setup_policy
+from models.utils import load_policy, setup_policy
 from services.snapshot_service import SnapshotService
 from settings import get_settings
 
@@ -55,6 +55,10 @@ class TrainingWorker(BaseProcessWorker):
                     payload = TrainJobPayload.model_validate(job.payload)
                     id = uuid4()
 
+                    base_model = None
+                    if payload.base_model_id is not None:
+                        base_model = await ModelService.get_model_by_id(payload.base_model_id)
+
                     dataset = await DatasetService.get_dataset_by_id(payload.dataset_id)
                     model_dir = Path(str(settings.models_dir / str(id)))
                     model_dir.mkdir(parents=True)
@@ -71,11 +75,13 @@ class TrainingWorker(BaseProcessWorker):
                         policy=payload.policy,
                         properties={},
                         train_job_id=job.id,
+                        parent_model_id=payload.base_model_id,
+                        version=base_model.version + 1 if base_model else 1,
                         created_at=None,
                     )
 
                     self.interrupt_event.clear()
-                    await asyncio.create_task(self._train_model(job, model, snapshot))
+                    await asyncio.create_task(self._train_model(job, model, snapshot, payload, base_model))
             await asyncio.sleep(0.5)
 
     async def setup(self) -> None:
@@ -88,7 +94,9 @@ class TrainingWorker(BaseProcessWorker):
         with logger.contextualize(worker=self.__class__.__name__):
             await TrainingService.abort_orphan_jobs()
 
-    async def _train_model(self, job: Job, model: Model, snapshot: Snapshot):
+    async def _train_model(
+        self, job: Job, model: Model, snapshot: Snapshot, payload: TrainJobPayload, base_model: Model | None = None
+    ):
         settings = get_settings()
         await JobService.update_job_status(job_id=job.id, status=JobStatus.RUNNING, message="Training started")
         dispatcher = TrainingTrackingDispatcher(
@@ -102,9 +110,13 @@ class TrainingWorker(BaseProcessWorker):
             l_dm = LeRobotDataModule(
                 repo_id="snapshot",  # doesnt matter for loading the data.
                 root=snapshot.path,
-                train_batch_size=8,
+                train_batch_size=payload.batch_size,
             )
-            policy = setup_policy(model)
+
+            if base_model is not None:
+                policy = load_policy(base_model)
+            else:
+                policy = setup_policy(model)
 
             checkpoint_callback = ModelCheckpoint(
                 dirpath=path,
@@ -127,7 +139,7 @@ class TrainingWorker(BaseProcessWorker):
                 ],
                 accelerator=get_torch_device(),
                 strategy=get_lightning_strategy(),
-                max_steps=10000,
+                max_steps=payload.max_steps,
             )
 
             dispatcher.start()

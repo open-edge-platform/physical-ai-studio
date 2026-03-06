@@ -1,4 +1,18 @@
-import { Button, Content, DialogTrigger, Divider, Flex, Heading, IllustratedMessage, Text, View, Well } from '@geti/ui';
+import { useState } from 'react';
+
+import {
+    Button,
+    Content,
+    DialogContainer,
+    DialogTrigger,
+    Divider,
+    Flex,
+    Heading,
+    IllustratedMessage,
+    Text,
+    View,
+    Well,
+} from '@geti/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import useWebSocket from 'react-use-websocket';
 
@@ -8,9 +22,17 @@ import { useProjectId } from '../../features/projects/use-project';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
 import { TrainingHeader, TrainingRow } from './job-table.component';
 import { ModelHeader, ModelRow } from './model-table.component';
-import { SchemaTrainJob, TrainModelModal } from './train-model';
+import { SchemaTrainJob, TrainModelDialog } from './train-model-dialog';
 
-const ModelList = ({ models, jobs }: { models: SchemaModel[]; jobs: SchemaJob[] }) => {
+const ModelList = ({
+    models,
+    jobs,
+    onRetrain,
+}: {
+    models: SchemaModel[];
+    jobs: SchemaJob[];
+    onRetrain: (model: SchemaModel) => void;
+}) => {
     const sortedModels = models.toSorted(
         (a, b) => new Date(b.created_at!).getTime() - new Date(a.created_at!).getTime()
     );
@@ -32,6 +54,7 @@ const ModelList = ({ models, jobs }: { models: SchemaModel[]; jobs: SchemaJob[] 
                     model={model}
                     trainingJob={model.train_job_id ? jobsById.get(model.train_job_id) : undefined}
                     onDelete={() => deleteModel(model)}
+                    onRetrain={() => onRetrain(model)}
                 />
             ))}
         </View>
@@ -87,6 +110,7 @@ export const Index = () => {
     });
 
     const jobs = useProjectJobs(project_id);
+    const [retrainModel, setRetrainModel] = useState<SchemaModel | null>(null);
 
     const {} = useWebSocket(fetchClient.PATH('/api/jobs/ws'), {
         shouldReconnect: () => true,
@@ -140,7 +164,7 @@ export const Index = () => {
                             <View margin={'size-100'}>
                                 <DialogTrigger>
                                     <Button variant='accent'>Train model</Button>
-                                    {TrainModelModal}
+                                    {(close) => <TrainModelDialog close={close} />}
                                 </DialogTrigger>
                             </View>
                         </IllustratedMessage>
@@ -150,19 +174,32 @@ export const Index = () => {
                         <Flex justifyContent={'end'} marginBottom='size-300'>
                             <DialogTrigger>
                                 <Button variant='secondary'>Train model</Button>
-                                {(close) =>
-                                    TrainModelModal((job) => {
-                                        if (job) addJob(job);
-                                        close();
-                                    })
-                                }
+                                {(close) => (
+                                    <TrainModelDialog
+                                        close={(job) => {
+                                            if (job) addJob(job);
+                                            close();
+                                        }}
+                                    />
+                                )}
                             </DialogTrigger>
                         </Flex>
                         <JobList jobs={jobs.filter((m) => m.type === 'training') as SchemaTrainJob[]} />
-                        {hasModels && <ModelList models={models} jobs={jobs} />}
+                        {hasModels && <ModelList models={models} jobs={jobs} onRetrain={setRetrainModel} />}
                     </View>
                 )}
             </Flex>
+            <DialogContainer onDismiss={() => setRetrainModel(null)}>
+                {retrainModel && (
+                    <TrainModelDialog
+                        baseModel={retrainModel}
+                        close={(job) => {
+                            if (job) addJob(job);
+                            setRetrainModel(null);
+                        }}
+                    />
+                )}
+            </DialogContainer>
         </Flex>
     );
 };

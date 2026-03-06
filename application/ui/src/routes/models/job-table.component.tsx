@@ -2,7 +2,7 @@ import { Button, Flex, Grid, ProgressBar, Text, View } from '@geti/ui';
 
 import { GRID_COLUMNS } from './constants';
 import { SingleBadge, SplitBadge } from './split-badge.component';
-import { SchemaTrainJob } from './train-model';
+import { SchemaTrainJob } from './train-model-dialog';
 import { durationBetween, elapsedSince } from './utils';
 
 import classes from './model-table.module.scss';
