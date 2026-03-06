@@ -11,26 +11,7 @@
 #
 # ================================================================
 
-services:
-  physical-ai-studio-cpu:
-    profiles: [cpu]
-    container_name: physical-ai-studio
-    image: ${REGISTRY:-ghcr.io/open-edge-platform/}physical-ai-studio-cpu:${IMAGE_TAG:-main}
-    build:
-      context: ../../
-      dockerfile: application/docker/Dockerfile
-      target: physical-ai-studio-cpu
-      additional_contexts:
-        libs: ../../library
-      args:
-        - APP_UID=${APP_UID:-1000}
-        - APP_GID=${APP_GID:-1000}
-        - HTTP_PROXY=${HTTP_PROXY}
-        - HTTPS_PROXY=${HTTPS_PROXY}
-        - NO_PROXY=${NO_PROXY}
-        - http_proxy=${http_proxy}
-        - https_proxy=${https_proxy}
-        - no_proxy=${no_proxy}
+x-common: &common
     ports:
       - "${PORT:-7860}:${PORT:-7860}"
     environment:
@@ -114,13 +95,38 @@ services:
     #    # Intel RealSense cameras
     #    # - /dev/bus/usb:/dev/bus/usb
 
+x-common-build: &common-build
+    context: ../../
+    dockerfile: application/docker/Dockerfile
+    additional_contexts:
+      libs: ../../library
+    args:
+      - APP_UID=${APP_UID:-1000}
+      - APP_GID=${APP_GID:-1000}
+      - HTTP_PROXY=${HTTP_PROXY}
+      - HTTPS_PROXY=${HTTPS_PROXY}
+      - NO_PROXY=${NO_PROXY}
+      - http_proxy=${http_proxy}
+      - https_proxy=${https_proxy}
+      - no_proxy=${no_proxy}
+
+services:
+  physical-ai-studio-cpu:
+    <<: *common
+    profiles: [cpu]
+    container_name: physical-ai-studio-cpu
+    image: ${REGISTRY:-ghcr.io/open-edge-platform/}physical-ai-studio-cpu:${IMAGE_TAG:-main}
+    build:
+      <<: *common-build
+      target: physical-ai-studio-cpu
+
   physical-ai-studio-xpu:
-    extends:
-      service: physical-ai-studio-cpu
+    <<: *common
     profiles: [xpu]
-    container_name: physical-ai-studio
+    container_name: physical-ai-studio-xpu
     image: ${REGISTRY:-ghcr.io/open-edge-platform/}physical-ai-studio-xpu:${IMAGE_TAG:-main}
     build:
+      <<: *common-build
       target: physical-ai-studio-xpu
     # --- Non-privileged XPU additions
     # When running in non-privileged mode, add these to grant
@@ -134,12 +140,12 @@ services:
     #   - /dev/dri:/dev/dri         # Intel GPU device nodes
 
   physical-ai-studio-cuda:
-    extends:
-      service: physical-ai-studio-cpu
+    <<: *common
     profiles: [cuda]
-    container_name: physical-ai-studio
+    container_name: physical-ai-studio-cuda
     image: ${REGISTRY:-ghcr.io/open-edge-platform/}physical-ai-studio-cuda:${IMAGE_TAG:-main}
     build:
+      <<: *common-build
       target: physical-ai-studio-cuda
     deploy:
       resources:
