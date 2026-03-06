@@ -69,9 +69,6 @@ Install [node v24](https://nodejs.org/en/download) (we recommend using nvm), and
 cd ui
 nvm use
 npm install
-# Download the OpenAPI spec and generate types (assumed backend is running at http://localhost:7860)
-npm run build:api:download && npm run build:api 
-# Start the acutal UI
 npm run start
 ```
 
