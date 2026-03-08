@@ -71,7 +71,7 @@ COPY --link --from=web-ui /home/app/web_ui/dist /app/application/ui/
 # This separation ensures that source-only changes do not invalidate
 # the expensive uv sync layers in the device-specific builders below.
 # ===========================================================================
-FROM python:${PYTHON_VERSION}-slim@sha256:f3fa41d74a768c2fce8016b98c191ae8c1bacd8f1152870a3f9f87d350920b7c AS builder-base
+FROM python:${PYTHON_VERSION}-slim@sha256:ccc7089399c8bb65dd1fb3ed6d55efa538a3f5e7fca3f5988ac3b5b87e593bf0 AS builder-base
 
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0
@@ -144,7 +144,7 @@ RUN --mount=type=cache,id=uv-cuda,target=/root/.cache/uv \
 # variables, and directory structure. Healthcheck is defined in
 # docker-compose.yaml (not here) so it can reference runtime PORT.
 # ===========================================================================
-FROM python:${PYTHON_VERSION}-slim@sha256:f3fa41d74a768c2fce8016b98c191ae8c1bacd8f1152870a3f9f87d350920b7c AS runtime-base
+FROM python:${PYTHON_VERSION}-slim@sha256:ccc7089399c8bb65dd1fb3ed6d55efa538a3f5e7fca3f5988ac3b5b87e593bf0 AS runtime-base
 
 # OCI image metadata
 ARG GIT_SHA=unknown
