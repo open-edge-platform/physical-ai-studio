@@ -1,4 +1,6 @@
 import torch
+import numpy as np
+from unittest.mock import patch
 import asyncio
 from workers.inference.inference_environment_integration import InferenceEnvironmentIntegration
 from uuid import UUID
@@ -67,6 +69,22 @@ test_environment = {
     ]
 }
 
+class FakeFrameSourceCamera:
+    def connect(self):
+        pass
+
+    def start_async(self):
+        pass
+
+    def get_latest_frame(self):
+        return True, np.zeros([480,640,3],dtype=np.uint8)
+
+    def stop(self):
+        pass
+
+    def disconnect(self):
+        pass
+
 
 @pytest.fixture
 def inference_environment_integration():
@@ -78,10 +96,12 @@ def inference_environment_integration():
     factory = RobotClientFactory(robot_manager, calibration_service)
     environment = EnvironmentWithRelations.model_validate(test_environment)
 
-    subject = InferenceEnvironmentIntegration(environment, factory)
-    asyncio.run(subject.setup())
-    yield subject
-    asyncio.run(subject.teardown())
+    with patch("workers.inference.inference_environment_integration.create_frames_source_from_camera",
+               return_value=FakeFrameSourceCamera()):
+        subject = InferenceEnvironmentIntegration(environment, factory)
+        asyncio.run(subject.setup())
+        yield subject
+        asyncio.run(subject.teardown())
 
 class TestInferenceEnvironmentIntegration:
     # TODO: Hardware in the loop. FIX
