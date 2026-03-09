@@ -7,6 +7,7 @@ import pytest
 
 from robots.robot_client_factory import RobotClientFactory
 from schemas.environment import EnvironmentWithRelations
+from schemas.model import Model
 from services.robot_calibration_service import RobotCalibrationService
 from settings import get_settings
 from utils.serial_robot_tools import RobotConnectionManager
@@ -18,11 +19,30 @@ from .fixtures import test_environment
 def get_next_item_from_queue_of_type(queue: Queue, event: str) -> dict | None:
     while not queue.empty():
         item = queue.get()
-        print(item)
         if item["event"] == event:
             return item
 
     return None
+
+
+class ControllableSyncMixedModelIntegration:
+    action: dict | None = None
+
+    def __init__(self):
+        self._setup_gate = Event()
+
+    async def setup(self) -> None:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._setup_gate.wait)
+
+    def allow_setup(self) -> None:
+        self._setup_gate.set()
+
+    def select_action(self, obs):
+        return self.action
+
+    async def teardown(self):
+        pass
 
 
 class ControllableEnvironmentIntegration:
@@ -113,3 +133,31 @@ class TestInferenceWorker:
         assert observation is not None
         assert observation["event"] == "observations"
         assert observation["data"] == {"foo": "bar"}
+
+    def test_load_model(self, inference_worker: InferenceWorker):
+        report = inference_worker.queue.get()
+        assert report["event"] == "state"
+        model_mock = ControllableSyncMixedModelIntegration()
+
+        model = Model.model_validate(
+            {
+                "name": "foo",
+                "policy": "act",
+                "path": "/dev/null",
+                "project_id": "35b48dc9-31df-40be-b295-08ae1d5378b1",
+                "dataset_id": "93cffdc2-db6d-47bf-ac0c-4e5a727cbf0d",
+                "properties": {},
+                "snapshot_id": "f5e2cb67-3df2-4f16-bdfd-8b0782dd9e02",
+            }
+        )
+
+        with patch("workers.inference_worker.SyncMixedModelIntegration", return_value=model_mock):
+            inference_worker.load_model(model, "torch")
+        report = inference_worker.queue.get()
+        assert report["event"] == "state"
+        assert not report["data"]["model_loaded"]
+
+        model_mock.allow_setup()
+        report = inference_worker.queue.get()
+        assert report["event"] == "state"
+        assert report["data"]["model_loaded"]
