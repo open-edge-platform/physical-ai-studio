@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react';
+
 import { Button, ButtonGroup, Flex, Heading, Icon, ProgressCircle, Text, ToastQueue, View } from '@geti/ui';
 import { ChevronLeft } from '@geti/ui/icons';
 
@@ -12,6 +14,37 @@ interface RecordingViewerProps {
     recordingConfig: SchemaTeleoperationConfig;
 }
 
+export function useHotkeys(keys: string[], callback: (e: KeyboardEvent) => void) {
+    const callbackRef = useRef(callback);
+
+    // keep latest callback without retriggering effect
+    useEffect(() => {
+        callbackRef.current = callback;
+    }, [callback]);
+
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            const active = document.activeElement as HTMLElement | null;
+            const tag = active?.tagName;
+
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || active?.isContentEditable) {
+                return;
+            }
+
+            if (keys.includes(e.key)) {
+                if (e.key === ' ' || e.key === 'Enter') {
+                    e.preventDefault();
+                }
+
+                callbackRef.current(e);
+            }
+        };
+
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [keys]);
+}
+
 export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
     const { startEpisode, saveEpisode, cancelEpisode, observation, state } = useTeleoperation(
         recordingConfig,
@@ -23,6 +56,22 @@ export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
     const backPath = paths.project.datasets.show({
         dataset_id: recordingConfig.dataset.id!,
         project_id: recordingConfig.dataset.project_id,
+    });
+
+    useHotkeys(['Enter', ' '], () => {
+        if (state.is_recording) {
+            if (!saveEpisode.isPending) {
+                saveEpisode.mutate();
+            }
+        } else {
+            startEpisode();
+        }
+    });
+
+    useHotkeys(['Escape'], () => {
+        if (state.is_recording && !saveEpisode.isPending) {
+            cancelEpisode();
+        }
     });
 
     if (!state.initialized) {
