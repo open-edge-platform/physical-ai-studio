@@ -1,4 +1,3 @@
-from schemas.environment import EnvironmentWithRelations
 import asyncio
 import multiprocessing as mp
 from queue import Empty
@@ -16,7 +15,8 @@ from api.dependencies import (
 )
 from core.scheduler import Scheduler
 from exceptions import ResourceNotFoundError
-from schemas import TeleoperationConfig, Model
+from schemas import Model, TeleoperationConfig
+from schemas.environment import EnvironmentWithRelations
 from services import DatasetService
 from utils.serialize_utils import to_python_primitive
 from workers.inference_worker import InferenceWorker
@@ -143,7 +143,7 @@ async def inference_websocket(
                 if data["event"] == "start_task":
                     task_index = data["data"]["task_index"]
                     process.start_task(task_index)
-                if data["event"] == "stop":
+                if data["event"] == "stop_task":
                     process.stop()
                     process.join(timeout=5)
                 if data["event"] == "disconnect":

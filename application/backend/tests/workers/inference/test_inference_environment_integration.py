@@ -1,12 +1,12 @@
-from frame_source.video_capture_base import VideoCaptureBase
-from robots.robot_client import RobotClient
 import asyncio
-from unittest.mock import patch, MagicMock, Mock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import numpy as np
 import pytest
 import torch
+from frame_source.video_capture_base import VideoCaptureBase
 
+from robots.robot_client import RobotClient
 from robots.robot_client_factory import RobotClientFactory
 from schemas.environment import EnvironmentWithRelations
 from workers.inference.inference_environment_integration import InferenceEnvironmentIntegration
@@ -56,7 +56,7 @@ def mock_robot_client():
         "elbow_flex.pos",
         "wrist_flex.pos",
         "wrist_roll.pos",
-        "gripper.pos"
+        "gripper.pos",
     ]
     client.connect = AsyncMock()
     client.disconnect = AsyncMock()

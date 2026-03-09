@@ -1,17 +1,18 @@
-from schemas.environment import EnvironmentWithRelations
 import asyncio
 import base64
-from loguru import logger
-from frame_source.video_capture_base import VideoCaptureBase
 
 import cv2
 import numpy as np
 import torch
+from frame_source.video_capture_base import VideoCaptureBase
+from loguru import logger
 from physicalai.data import Observation
 
 from robots.robot_client import RobotClient
 from robots.robot_client_factory import RobotClientFactory
+from schemas.environment import EnvironmentWithRelations
 from workers.camera_worker import create_frames_source_from_camera
+
 
 class CameraFrameProcessor:
     @staticmethod
@@ -22,6 +23,7 @@ class CameraFrameProcessor:
 
 class InferenceEnvironmentIntegration:
     """Integration class for the inference version of an environment."""
+
     environment: EnvironmentWithRelations
     robot_client_factory: RobotClientFactory
     action_keys: list[str] = []
@@ -65,6 +67,8 @@ class InferenceEnvironmentIntegration:
 
             return observation
 
+        return None
+
     def format_observation_for_reporting(self, observation: dict, timestamp: float) -> dict:
         if self.cameras:
             camera_images = {
@@ -79,7 +83,7 @@ class InferenceEnvironmentIntegration:
             "timestamp": timestamp,
         }
 
-    def format_model_input_observation(self, raw_observation: dict) -> Observation:
+    def format_model_input_observation(self, raw_observation: dict, task: str | None = None) -> Observation:  # noqa: ARG002
         observation = self._to_lerobot_observations(raw_observation)
         state = (
             torch.tensor([value for key, value in observation.items() if key in self.action_keys]).unsqueeze(0).float()
@@ -96,6 +100,7 @@ class InferenceEnvironmentIntegration:
         return Observation(
             state=state,
             images=images,
+            # task=task, # TODO: Implement tasks.
         )
 
     def _base_64_encode_observation(self, observation: np.ndarray | None) -> str:

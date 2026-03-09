@@ -26,7 +26,7 @@ from .base import BaseThreadWorker
 
 class InferenceState(BaseModel):
     is_running: bool = False
-    task_index: int = 0
+    task: str | None = None
     model_loaded: bool = False
     environment_loaded: bool = False
     error: bool = False  # TODO: Allow saving of state.
@@ -62,12 +62,13 @@ class InferenceWorker(BaseThreadWorker):
         self.robot_client_factory = RobotClientFactory(robot_manager, calibration_service)
         self.events = {"interrupt": Event(), "new_model": Event(), "new_environment": Event()}
 
-    def start_task(self, task_index: int) -> None:
+    def start_task(self, task: str) -> None:
         logger.info("start")
         if self.ready_for_inference:
             if self.model_integration is not None:
                 self.model_integration.reset()
             self.state.is_running = True
+            self.state.task = task
             self.start_episode_t = time.perf_counter()
         self._report_state()
 
@@ -75,7 +76,6 @@ class InferenceWorker(BaseThreadWorker):
         """Stop inference."""
         logger.info("stop")
         self.state.is_running = False
-        self.events["interrupt"].set()
         self._report_state()
 
     def disconnect(self) -> None:
@@ -143,9 +143,13 @@ class InferenceWorker(BaseThreadWorker):
                     observation = await self.environment_integration.get_observation()
                     timestamp = time.perf_counter() - self.start_episode_t
                     if observation:
-                        report_observation = self.environment_integration.format_observation_for_reporting(observation, timestamp)
-                        if self.state.is_running:
-                            model_observation = self.environment_integration.format_model_input_observation(observation)
+                        report_observation = self.environment_integration.format_observation_for_reporting(
+                            observation, timestamp
+                        )
+                        if self.state.is_running and self.model_integration:
+                            model_observation = self.environment_integration.format_model_input_observation(
+                                observation, task=self.state.task
+                            )
                             action = self.model_integration.select_action(model_observation)
                             if action is not None:
                                 logger.info(action)

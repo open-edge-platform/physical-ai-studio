@@ -1,13 +1,12 @@
-import { ActionButton, DialogTrigger, Button, Grid, Item, Key, Link, Menu, MenuTrigger, Text, View } from '@geti/ui';
+import { ActionButton, Button, DialogTrigger, Grid, Item, Key, Menu, MenuTrigger, Text, View } from '@geti/ui';
 import { MoreMenu } from '@geti/ui/icons';
 
 import { SchemaJob, SchemaModel } from '../../api/openapi-spec';
-import { paths } from '../../router';
 import { GRID_COLUMNS } from './constants';
+import { StartInferenceDialog } from './start-model-modal.component';
 import { durationBetween } from './utils';
 
 import classes from './model-table.module.scss';
-import { StartInferenceDialog } from './start-model-modal.component';
 
 export const ModelHeader = () => {
     return (
@@ -51,7 +50,7 @@ export const ModelRow = ({
             <Text>{model.policy.toUpperCase()}</Text>
             <View>
                 <DialogTrigger>
-                    <Button variant="secondary">Run model</Button>
+                    <Button variant='secondary'>Run model</Button>
                     {(close) => StartInferenceDialog(close, model.project_id, model.id!)}
                 </DialogTrigger>
             </View>

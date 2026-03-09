@@ -1,9 +1,10 @@
-import { ButtonGroup, Divider, Dialog, Heading, Content, Button } from '@geti/ui';
-import { BackendSelection, defaultBackend } from '../../features/configuration/shared/backend-selection';
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
-import { paths } from '../../router';
 
+import { Button, ButtonGroup, Content, Dialog, Divider, Heading } from '@geti/ui';
+import { useNavigate } from 'react-router';
+
+import { BackendSelection, defaultBackend } from '../../features/configuration/shared/backend-selection';
+import { paths } from '../../router';
 
 export const StartInferenceDialog = (close: () => void, project_id: string, model_id: string) => {
     const [backend, setBackend] = useState<string>(defaultBackend);
@@ -11,12 +12,14 @@ export const StartInferenceDialog = (close: () => void, project_id: string, mode
     const navigate = useNavigate();
     const onStart = () => {
         close();
-        navigate(paths.project.models.inference({
-            project_id,
-            model_id,
-            backend
-        }))
-    }
+        navigate(
+            paths.project.models.inference({
+                project_id,
+                model_id,
+                backend,
+            })
+        );
+    };
 
     return (
         <Dialog>
@@ -34,5 +37,5 @@ export const StartInferenceDialog = (close: () => void, project_id: string, mode
                 </Button>
             </ButtonGroup>
         </Dialog>
-    )
-}
+    );
+};

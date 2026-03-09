@@ -3,21 +3,31 @@ import { useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 
 import { fetchClient } from '../../../api/client';
-import { SchemaInferenceConfig } from '../../../api/openapi-spec';
+import { SchemaEnvironmentWithRelations, SchemaModel } from '../../../api/openapi-spec';
 import useWebSocketWithResponse from '../../../components/websockets/use-websocket-with-response';
 
 interface InferenceState {
-    initialized: boolean;
+    model_loaded: boolean;
+    environment_loaded: boolean;
     is_running: boolean;
     task_index: number;
     error: boolean;
 }
 
+const createInferenceState = (): InferenceState => {
+    return {
+        model_loaded: false,
+        environment_loaded: false,
+        is_running: false,
+        task_index: 0,
+        error: false,
+    };
+};
+
 interface InferenceApiJsonResponse<T> {
     event: string;
     data: T;
 }
-
 export interface Observation {
     timestamp: number;
     state: { [joint: string]: number }; // robot joint state before inference
@@ -25,37 +35,19 @@ export interface Observation {
     cameras: { [key: string]: string };
 }
 
-const createInferenceState = (): InferenceState => {
-    return {
-        initialized: false,
-        is_running: false,
-        task_index: 0,
-        error: false,
-    };
-};
-
-export const useInference = (setup: SchemaInferenceConfig, onError: (error: string) => void) => {
+export const useInference = (onError: (error: string) => void) => {
     const [state, setState] = useState<InferenceState>(createInferenceState());
     const observation = useRef<Observation | undefined>(undefined);
 
-    const { sendJsonMessage, sendJsonMessageAndWait } = useWebSocketWithResponse(
+    const { sendJsonMessage, sendJsonMessageAndWait, readyState } = useWebSocketWithResponse(
         fetchClient.PATH('/api/record/inference/ws'),
         {
             shouldReconnect: () => true,
             onMessage: (event: WebSocketEventMap['message']) => onMessage(event),
-            onOpen: () => init.mutate(),
             onClose: () => setState(createInferenceState()),
             onError: console.error,
         }
     );
-
-    const init = useMutation({
-        mutationFn: async () =>
-            await sendJsonMessageAndWait<InferenceApiJsonResponse<InferenceState>>(
-                { event: 'initialize', data: setup },
-                (data) => data['data']['initialized'] == true
-            ),
-    });
 
     const onMessage = ({ data }: WebSocketEventMap['message']) => {
         const message = JSON.parse(data) as InferenceApiJsonResponse<unknown>;
@@ -71,6 +63,22 @@ export const useInference = (setup: SchemaInferenceConfig, onError: (error: stri
         }
     };
 
+    const loadEnvironment = useMutation({
+        mutationFn: async (environment: SchemaEnvironmentWithRelations) =>
+            await sendJsonMessageAndWait<InferenceApiJsonResponse<InferenceState>>(
+                { event: 'load_environment', data: environment },
+                (data) => data['data']['environment_loaded'] == true // TODO: Handle errors?
+            ),
+    });
+
+    const loadModel = useMutation({
+        mutationFn: async (properties: { model: SchemaModel; backend: string }) =>
+            await sendJsonMessageAndWait<InferenceApiJsonResponse<InferenceState>>(
+                { event: 'load_model', data: properties },
+                ({ data }) => data['model_loaded'] == true // TODO: Handle errors?
+            ),
+    });
+
     const startTask = (taskIndex: number) => {
         sendJsonMessage({
             event: 'start_task',
@@ -78,24 +86,24 @@ export const useInference = (setup: SchemaInferenceConfig, onError: (error: stri
         });
     };
 
-    const disconnect = () => {
+    const stopTask = () => {
         sendJsonMessage({
-            event: 'disconnect',
-            data: {},
-        });
-    };
-    const stop = () => {
-        sendJsonMessage({
-            event: 'stop',
+            event: 'stop_task',
             data: {},
         });
     };
 
+    const readyForInference = state.environment_loaded && state.model_loaded;
+    const isConnected = readyState === 1;
+
     return {
-        state,
-        startTask,
-        stop,
-        disconnect,
         observation,
+        state,
+        loadEnvironment,
+        loadModel,
+        startTask,
+        stopTask,
+        readyForInference,
+        isConnected,
     };
 };
