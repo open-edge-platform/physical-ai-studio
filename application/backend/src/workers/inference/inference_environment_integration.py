@@ -1,6 +1,7 @@
 from schemas.environment import EnvironmentWithRelations
 import asyncio
 import base64
+from loguru import logger
 from frame_source.video_capture_base import VideoCaptureBase
 
 import cv2
@@ -20,10 +21,10 @@ class CameraFrameProcessor:
 
 
 class InferenceEnvironmentIntegration:
+    """Integration class for the inference version of an environment."""
     environment: EnvironmentWithRelations
     robot_client_factory: RobotClientFactory
     action_keys: list[str] = []
-    camera_keys: list[str] = []
     follower: RobotClient | None = None
     cameras: dict[str, VideoCaptureBase] | None = None
 
@@ -40,12 +41,17 @@ class InferenceEnvironmentIntegration:
         self.cameras = {str(camera.id): create_frames_source_from_camera(camera) for camera in self.environment.cameras}
 
         for camera in self.cameras.values():
-            # camera.attach_processor(CameraFrameProcessor()) # TODO Not working. Fix in framesource
             camera.connect()
             camera.start_async()
 
         await asyncio.sleep(1)  # sleep for camera warmup. TODO: Refactor start_async to proper camera wrapper
         await self.follower.connect()
+
+    async def set_joints_state(self, actions: dict, goal_time: float) -> None:
+        """Set joints on robot"""
+        if self.follower:
+            logger.info(actions)
+            await self.follower.set_joints_state(actions, goal_time)
 
     async def get_observation(self) -> dict | None:
         if self.follower and self.cameras:
@@ -60,9 +66,6 @@ class InferenceEnvironmentIntegration:
             return observation
 
     def format_observation_for_reporting(self, observation: dict, timestamp: float) -> dict:
-        # Discard batch for both actions and state
-        # TODO: Use camera id  for reporting.
-
         if self.cameras:
             camera_images = {
                 camera: self._base_64_encode_observation(cv2.cvtColor(observation[camera], cv2.COLOR_RGB2BGR))
@@ -113,5 +116,4 @@ class InferenceEnvironmentIntegration:
             await self.follower.disconnect()
         if self.cameras:
             for camera in self.cameras.values():
-                # camera.attach_processor(CameraFrameProcessor()) # TODO Not working. Fix in framesource
                 camera.stop()

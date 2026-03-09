@@ -35,7 +35,7 @@ class SyncMixedModelIntegration:
             offset = int(inference_result.time * self.fps)
             logger.debug(f"Got inference from inference_poller: {inference_result.data.shape} with offset {offset}")
             self.queue_mixer.add(inference_result.data, offset)
-            self.queue_mixer.lerp_duration = offset  # inference time should be a good guide for now.
+            self.queue_mixer.lerp_duration = max(offset, 1)  # inference time should be a good guide for now.
 
         if not self.inference_poller.busy:
             self.inference_poller.run_inference(observation)

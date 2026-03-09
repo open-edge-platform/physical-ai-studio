@@ -1,4 +1,4 @@
-import { ActionButton, Grid, Item, Key, Link, Menu, MenuTrigger, Text, View } from '@geti/ui';
+import { ActionButton, DialogTrigger, Button, Grid, Item, Key, Link, Menu, MenuTrigger, Text, View } from '@geti/ui';
 import { MoreMenu } from '@geti/ui/icons';
 
 import { SchemaJob, SchemaModel } from '../../api/openapi-spec';
@@ -7,6 +7,7 @@ import { GRID_COLUMNS } from './constants';
 import { durationBetween } from './utils';
 
 import classes from './model-table.module.scss';
+import { StartInferenceDialog } from './start-model-modal.component';
 
 export const ModelHeader = () => {
     return (
@@ -48,14 +49,12 @@ export const ModelRow = ({
             <Text>{new Date(model.created_at!).toLocaleString()}</Text>
             <Text UNSAFE_className={duration ? undefined : classes.modelInfo}>{duration ?? '—'}</Text>
             <Text>{model.policy.toUpperCase()}</Text>
-            <Link
-                href={paths.project.models.inference({
-                    project_id: model.project_id,
-                    model_id: model.id!,
-                })}
-            >
-                Run model
-            </Link>
+            <View>
+                <DialogTrigger>
+                    <Button variant="secondary">Run model</Button>
+                    {(close) => StartInferenceDialog(close, model.project_id, model.id!)}
+                </DialogTrigger>
+            </View>
             <View>
                 <MenuTrigger>
                     <ActionButton isQuiet UNSAFE_style={{ fill: 'var(--spectrum-gray-900)' }} aria-label='options'>

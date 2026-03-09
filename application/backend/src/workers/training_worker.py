@@ -84,7 +84,7 @@ class TrainingWorker(BaseProcessWorker):
             await TrainingService.abort_orphan_jobs()
 
     async def teardown(self) -> None:
-        super().teardown()
+        await super().teardown()
         with logger.contextualize(worker=self.__class__.__name__):
             await TrainingService.abort_orphan_jobs()
 

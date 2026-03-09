@@ -1,3 +1,4 @@
+from schemas.environment import EnvironmentWithRelations
 import asyncio
 import multiprocessing as mp
 from queue import Empty
@@ -15,7 +16,7 @@ from api.dependencies import (
 )
 from core.scheduler import Scheduler
 from exceptions import ResourceNotFoundError
-from schemas import InferenceConfig, TeleoperationConfig
+from schemas import TeleoperationConfig, Model
 from services import DatasetService
 from utils.serialize_utils import to_python_primitive
 from workers.inference_worker import InferenceWorker
@@ -119,14 +120,11 @@ async def inference_websocket(
 ) -> None:
     """Robot control websocket."""
     await websocket.accept()
-    data = await websocket.receive_json("text")
-    config = InferenceConfig.model_validate(data["data"])
     queue: mp.Queue = mp.Queue()
     process = InferenceWorker(
         stop_event=scheduler.mp_stop_event,
         robot_manager=robot_manager,
         calibration_service=calibration_service,
-        config=config,
         queue=queue,
     )
     process.start()
@@ -135,6 +133,13 @@ async def inference_websocket(
         try:
             while True:
                 data = await websocket.receive_json("text")
+                if data["event"] == "load_environment":
+                    environment = EnvironmentWithRelations.model_validate(data["data"])
+                    process.load_environment(environment)
+                if data["event"] == "load_model":
+                    model = Model.model_validate(data["data"]["model"])
+                    backend = data["data"]["backend"]
+                    process.load_model(model, backend)
                 if data["event"] == "start_task":
                     task_index = data["data"]["task_index"]
                     process.start_task(task_index)

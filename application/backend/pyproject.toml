@@ -46,7 +46,7 @@ xpu = [
 ]
 
 tests = [
-    "pytest"
+    "pytest",
 ]
 
 # --- PyTorch index configuration ---
