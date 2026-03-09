@@ -1,73 +1,109 @@
-import torch
-import numpy as np
-from unittest.mock import patch
+from robots.robot_client import RobotClient
 import asyncio
-from workers.inference.inference_environment_integration import InferenceEnvironmentIntegration
-from uuid import UUID
 import datetime
-from schemas.environment import EnvironmentWithRelations
-from robots.robot_client_factory import RobotClientFactory
-import pytest
-from settings import get_settings
+from unittest.mock import patch, MagicMock, AsyncMock
+from uuid import UUID
 
-from utils.serial_robot_tools import RobotConnectionManager
-from services.robot_calibration_service import RobotCalibrationService
+import numpy as np
+import pytest
+import torch
+
+from robots.robot_client_factory import RobotClientFactory
+from schemas.environment import EnvironmentWithRelations
+from workers.inference.inference_environment_integration import InferenceEnvironmentIntegration
 
 test_environment = {
-    'id': UUID('7656679b-25fe-4af5-a19d-73e7df16f384'),
-    'created_at': datetime.datetime(2026, 3, 3, 9, 36, 13),
-    'updated_at': datetime.datetime(2026, 3, 3, 9, 36, 13),
-    'name': 'Home Setup',
-    'robots': [
+    "id": UUID("7656679b-25fe-4af5-a19d-73e7df16f384"),
+    "created_at": datetime.datetime(2026, 3, 3, 9, 36, 13),
+    "updated_at": datetime.datetime(2026, 3, 3, 9, 36, 13),
+    "name": "Home Setup",
+    "robots": [
         {
-            'robot': {
-                'id': UUID('c3f3f886-8813-4b3b-ba48-165cdaa39995'),
-                'created_at': datetime.datetime(2026, 3, 3, 9, 35, 9),
-                'updated_at': datetime.datetime(2026, 3, 3, 9, 35, 9),
-                'name': 'Khaos',
-                'connection_string': '',
-                'serial_number': '5AA9017083',
-                'type': 'SO101_Follower',
-                'active_calibration_id': UUID('877e5a03-47a6-4383-b15f-807259cd9691')
+            "robot": {
+                "id": UUID("c3f3f886-8813-4b3b-ba48-165cdaa39995"),
+                "created_at": datetime.datetime(2026, 3, 3, 9, 35, 9),
+                "updated_at": datetime.datetime(2026, 3, 3, 9, 35, 9),
+                "name": "Khaos",
+                "connection_string": "",
+                "serial_number": "5AA9017083",
+                "type": "SO101_Follower",
+                "active_calibration_id": UUID("877e5a03-47a6-4383-b15f-807259cd9691"),
             },
-            'tele_operator': {
-                'type': 'robot',
-                'robot_id': UUID('9da8143e-ea83-4811-88a8-5b4b02ee234d'),
-                'robot': {
-                    'id': UUID('9da8143e-ea83-4811-88a8-5b4b02ee234d'),
-                    'created_at': datetime.datetime(2026, 3, 3, 9, 35, 19),
-                    'updated_at': datetime.datetime(2026, 3, 3, 9, 35, 19),
-                    'name': 'Khronos',
-                    'connection_string': '',
-                    'serial_number': '5A7A016060',
-                    'type': 'SO101_Leader',
-                    'active_calibration_id': UUID('40399827-95bd-4151-bc20-893a5f51db8b')
-                }
-            }
+            "tele_operator": {
+                "type": "robot",
+                "robot_id": UUID("9da8143e-ea83-4811-88a8-5b4b02ee234d"),
+                "robot": {
+                    "id": UUID("9da8143e-ea83-4811-88a8-5b4b02ee234d"),
+                    "created_at": datetime.datetime(2026, 3, 3, 9, 35, 19),
+                    "updated_at": datetime.datetime(2026, 3, 3, 9, 35, 19),
+                    "name": "Khronos",
+                    "connection_string": "",
+                    "serial_number": "5A7A016060",
+                    "type": "SO101_Leader",
+                    "active_calibration_id": UUID("40399827-95bd-4151-bc20-893a5f51db8b"),
+                },
+            },
         }
-    ], 'cameras': [
+    ],
+    "cameras": [
         {
-            'id': '3ed60255-04ae-407b-8e2c-c3281847a4e0',
-            'driver': 'usb_camera',
-            'created_at': datetime.datetime(2026, 3, 3, 9, 35, 53),
-            'updated_at': datetime.datetime(2026, 3, 3, 9, 35, 53),
-            'name': 'grabber',
-            'fingerprint': '/dev/video0:0',
-            'hardware_name': 'Innomaker-U20CAM-1080p-S1: Inno',
-            'payload': {'width': 640, 'height': 480, 'fps': 30, 'exposure': None, 'gain': None}
+            "id": "3ed60255-04ae-407b-8e2c-c3281847a4e0",
+            "driver": "usb_camera",
+            "created_at": datetime.datetime(2026, 3, 3, 9, 35, 53),
+            "updated_at": datetime.datetime(2026, 3, 3, 9, 35, 53),
+            "name": "grabber",
+            "fingerprint": "/dev/video0:0",
+            "hardware_name": "Innomaker-U20CAM-1080p-S1: Inno",
+            "payload": {"width": 640, "height": 480, "fps": 30, "exposure": None, "gain": None},
         },
         {
-            'id': '4629e172-2aa7-4fde-86b1-e19eb1d210ff',
-            'driver': 'usb_camera',
-            'created_at': datetime.datetime(2026, 3, 3, 9, 35, 46),
-            'updated_at': datetime.datetime(2026, 3, 3, 9, 35, 46),
-            'name': 'front',
-            'fingerprint': '/dev/video6:6',
-            'hardware_name': 'Intel(R) RealSense(TM) Depth Ca',
-            'payload': {'width': 640, 'height': 480, 'fps': 30, 'exposure': None, 'gain': None}
-        }
-    ]
+            "id": "4629e172-2aa7-4fde-86b1-e19eb1d210ff",
+            "driver": "usb_camera",
+            "created_at": datetime.datetime(2026, 3, 3, 9, 35, 46),
+            "updated_at": datetime.datetime(2026, 3, 3, 9, 35, 46),
+            "name": "front",
+            "fingerprint": "/dev/video6:6",
+            "hardware_name": "Intel(R) RealSense(TM) Depth Ca",
+            "payload": {"width": 640, "height": 480, "fps": 30, "exposure": None, "gain": None},
+        },
+    ],
 }
+
+
+@pytest.fixture
+def mock_robot_client():
+    client = MagicMock(spec=RobotClient)
+    client.features.return_value = [
+        "shoulder_pan.pos",
+        "shoulder_lift.pos",
+        "elbow_flex.pos",
+        "wrist_flex.pos",
+        "wrist_roll.pos",
+        "gripper.pos"
+    ]
+    client.connect = AsyncMock()
+    client.disconnect = AsyncMock()
+    client.read_state = AsyncMock(
+        return_value={
+            "state": {
+                "shoulder_pan.pos": -8.705526116578355,
+                "shoulder_lift.pos": -98.16753926701571,
+                "elbow_flex.pos": 95.98393574297188,
+                "wrist_flex.pos": 73.85993485342019,
+                "wrist_roll.pos": -13.84615384615384,
+                "gripper.pos": 26.885644768856448,
+            }
+        }
+    )
+    return client
+
+
+@pytest.fixture
+def mock_robot_client_factory(mock_robot_client):
+    factory = MagicMock(spec=RobotClientFactory)
+    factory.build = AsyncMock(return_value=mock_robot_client)
+    return factory
+
 
 class FakeFrameSourceCamera:
     def connect(self):
@@ -77,7 +113,7 @@ class FakeFrameSourceCamera:
         pass
 
     def get_latest_frame(self):
-        return True, np.zeros([480,640,3],dtype=np.uint8)
+        return True, np.zeros([480, 640, 3], dtype=np.uint8)
 
     def stop(self):
         pass
@@ -87,32 +123,31 @@ class FakeFrameSourceCamera:
 
 
 @pytest.fixture
-def inference_environment_integration():
-
-    robot_manager = RobotConnectionManager()
-    asyncio.run(robot_manager.find_robots())
-    settings = get_settings()
-    calibration_service = RobotCalibrationService(robot_manager, settings)
-    factory = RobotClientFactory(robot_manager, calibration_service)
+def inference_environment_integration(mock_robot_client_factory):
     environment = EnvironmentWithRelations.model_validate(test_environment)
+    factory = mock_robot_client_factory
 
-    with patch("workers.inference.inference_environment_integration.create_frames_source_from_camera",
-               return_value=FakeFrameSourceCamera()):
+    with patch(
+        "workers.inference.inference_environment_integration.create_frames_source_from_camera",
+        return_value=FakeFrameSourceCamera(),
+    ):
         subject = InferenceEnvironmentIntegration(environment, factory)
         asyncio.run(subject.setup())
         yield subject
         asyncio.run(subject.teardown())
 
+
 class TestInferenceEnvironmentIntegration:
-    # TODO: Hardware in the loop. FIX
     def test_get_observation(self, inference_environment_integration: InferenceEnvironmentIntegration):
         observation = asyncio.run(inference_environment_integration.get_observation())
         assert observation is not None
         assert "shoulder_pan.pos" in observation
-        assert "3ed60255-04ae-407b-8e2c-c3281847a4e0" in observation  #camera id 1
-        assert "4629e172-2aa7-4fde-86b1-e19eb1d210ff" in observation  #camera id 2
+        assert "3ed60255-04ae-407b-8e2c-c3281847a4e0" in observation  # camera id 1
+        assert "4629e172-2aa7-4fde-86b1-e19eb1d210ff" in observation  # camera id 2
 
-    def test_transform_observation_to_model_input(self, inference_environment_integration: InferenceEnvironmentIntegration):
+    def test_transform_observation_to_model_input(
+        self, inference_environment_integration: InferenceEnvironmentIntegration
+    ):
         observation = asyncio.run(inference_environment_integration.get_observation())
         assert observation is not None
         phy_ai_obs = inference_environment_integration.format_model_input_observation(observation)
@@ -122,10 +157,12 @@ class TestInferenceEnvironmentIntegration:
         assert "front" in phy_ai_obs.images
         assert "grabber" in phy_ai_obs.images
 
-    def test_transform_observation_to_report_to_ui(self, inference_environment_integration: InferenceEnvironmentIntegration):
+    def test_transform_observation_to_report_to_ui(
+        self, inference_environment_integration: InferenceEnvironmentIntegration
+    ):
         observation = asyncio.run(inference_environment_integration.get_observation())
         assert observation is not None
         report_obs = inference_environment_integration.format_observation_for_reporting(observation, 0)
         assert "shoulder_pan.pos" in report_obs["state"]
-        assert "3ed60255-04ae-407b-8e2c-c3281847a4e0" in report_obs["cameras"]  #camera id 1
-        assert "4629e172-2aa7-4fde-86b1-e19eb1d210ff" in report_obs["cameras"]  #camera id 2
+        assert "3ed60255-04ae-407b-8e2c-c3281847a4e0" in report_obs["cameras"]  # camera id 1
+        assert "4629e172-2aa7-4fde-86b1-e19eb1d210ff" in report_obs["cameras"]  # camera id 2

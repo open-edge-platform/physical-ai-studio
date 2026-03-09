@@ -6,7 +6,6 @@ from frame_source.video_capture_base import VideoCaptureBase
 import cv2
 import numpy as np
 import torch
-from loguru import logger
 from physicalai.data import Observation
 
 from robots.robot_client import RobotClient
@@ -39,7 +38,6 @@ class InferenceEnvironmentIntegration:
         self.action_keys = self.follower.features()
 
         self.cameras = {str(camera.id): create_frames_source_from_camera(camera) for camera in self.environment.cameras}
-        logger.info(self.cameras)
 
         for camera in self.cameras.values():
             # camera.attach_processor(CameraFrameProcessor()) # TODO Not working. Fix in framesource
