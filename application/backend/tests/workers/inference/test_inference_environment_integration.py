@@ -11,40 +11,7 @@ from robots.robot_client_factory import RobotClientFactory
 from schemas.environment import EnvironmentWithRelations
 from workers.inference.inference_environment_integration import InferenceEnvironmentIntegration
 
-test_environment = {
-    "id": "7656679b-25fe-4af5-a19d-73e7df16f384",
-    "name": "Home Setup",
-    "robots": [
-        {
-            "robot": {
-                "id": "c3f3f886-8813-4b3b-ba48-165cdaa39995",
-                "name": "Khaos",
-                "connection_string": "",
-                "serial_number": "5AA9017083",
-                "type": "SO101_Follower",
-            },
-            "tele_operator": {"type": "none"},
-        }
-    ],
-    "cameras": [
-        {
-            "id": "3ed60255-04ae-407b-8e2c-c3281847a4e0",
-            "driver": "usb_camera",
-            "name": "grabber",
-            "fingerprint": "/dev/video0:0",
-            "hardware_name": None,
-            "payload": {"width": 640, "height": 480, "fps": 30},
-        },
-        {
-            "id": "4629e172-2aa7-4fde-86b1-e19eb1d210ff",
-            "driver": "usb_camera",
-            "name": "front",
-            "fingerprint": "/dev/video6:6",
-            "hardware_name": None,
-            "payload": {"width": 640, "height": 480, "fps": 30},
-        },
-    ],
-}
+from .fixtures import test_environment
 
 
 @pytest.fixture

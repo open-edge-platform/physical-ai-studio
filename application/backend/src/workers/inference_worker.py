@@ -16,8 +16,6 @@ from robots.robot_client import RobotClient
 from robots.robot_client_factory import RobotClientFactory
 from schemas import Model
 from schemas.environment import EnvironmentWithRelations
-from services.robot_calibration_service import RobotCalibrationService
-from utils.serial_robot_tools import RobotConnectionManager
 from workers.inference.inference_environment_integration import InferenceEnvironmentIntegration
 from workers.inference.sync_mixed_model_integration import SyncMixedModelIntegration
 
@@ -53,13 +51,12 @@ class InferenceWorker(BaseThreadWorker):
         self,
         stop_event: EventClass,
         queue: Queue,
-        calibration_service: RobotCalibrationService,
-        robot_manager: RobotConnectionManager,
+        robot_client_factory: RobotClientFactory,
     ):
         super().__init__(stop_event=stop_event)
         self.queue = queue
         self.state = InferenceState()
-        self.robot_client_factory = RobotClientFactory(robot_manager, calibration_service)
+        self.robot_client_factory = robot_client_factory
         self.events = {"interrupt": Event(), "new_model": Event(), "new_environment": Event()}
 
     def start_task(self, task: str) -> None:
@@ -157,6 +154,7 @@ class InferenceWorker(BaseThreadWorker):
                                 report_observation["actions"] = formatted_actions
                                 await self.environment_integration.set_joints_state(formatted_actions, 1 / 30)
                                 # self._report_action(observation, formatted_actions, timestamp)
+                        logger.info(report_observation)
                         self._report_observation(report_observation)
                 dt_s = time.perf_counter() - start_loop_t
                 wait_time = 1 / 30 - dt_s

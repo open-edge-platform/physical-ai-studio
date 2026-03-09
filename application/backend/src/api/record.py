@@ -15,6 +15,7 @@ from api.dependencies import (
 )
 from core.scheduler import Scheduler
 from exceptions import ResourceNotFoundError
+from robots.robot_client_factory import RobotClientFactory
 from schemas import Model, TeleoperationConfig
 from schemas.environment import EnvironmentWithRelations
 from services import DatasetService
@@ -123,8 +124,10 @@ async def inference_websocket(
     queue: mp.Queue = mp.Queue()
     process = InferenceWorker(
         stop_event=scheduler.mp_stop_event,
-        robot_manager=robot_manager,
-        calibration_service=calibration_service,
+        robot_client_factory=RobotClientFactory(
+            robot_manager=robot_manager,
+            calibration_service=calibration_service,
+        ),
         queue=queue,
     )
     process.start()
