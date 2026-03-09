@@ -13,58 +13,36 @@ from schemas.environment import EnvironmentWithRelations
 from workers.inference.inference_environment_integration import InferenceEnvironmentIntegration
 
 test_environment = {
-    "id": UUID("7656679b-25fe-4af5-a19d-73e7df16f384"),
-    "created_at": datetime.datetime(2026, 3, 3, 9, 36, 13),
-    "updated_at": datetime.datetime(2026, 3, 3, 9, 36, 13),
+    "id": "7656679b-25fe-4af5-a19d-73e7df16f384",
     "name": "Home Setup",
     "robots": [
         {
             "robot": {
-                "id": UUID("c3f3f886-8813-4b3b-ba48-165cdaa39995"),
-                "created_at": datetime.datetime(2026, 3, 3, 9, 35, 9),
-                "updated_at": datetime.datetime(2026, 3, 3, 9, 35, 9),
+                "id": "c3f3f886-8813-4b3b-ba48-165cdaa39995",
                 "name": "Khaos",
                 "connection_string": "",
                 "serial_number": "5AA9017083",
                 "type": "SO101_Follower",
-                "active_calibration_id": UUID("877e5a03-47a6-4383-b15f-807259cd9691"),
             },
-            "tele_operator": {
-                "type": "robot",
-                "robot_id": UUID("9da8143e-ea83-4811-88a8-5b4b02ee234d"),
-                "robot": {
-                    "id": UUID("9da8143e-ea83-4811-88a8-5b4b02ee234d"),
-                    "created_at": datetime.datetime(2026, 3, 3, 9, 35, 19),
-                    "updated_at": datetime.datetime(2026, 3, 3, 9, 35, 19),
-                    "name": "Khronos",
-                    "connection_string": "",
-                    "serial_number": "5A7A016060",
-                    "type": "SO101_Leader",
-                    "active_calibration_id": UUID("40399827-95bd-4151-bc20-893a5f51db8b"),
-                },
-            },
+            "tele_operator": {"type": "none"},
         }
     ],
     "cameras": [
         {
             "id": "3ed60255-04ae-407b-8e2c-c3281847a4e0",
             "driver": "usb_camera",
-            "created_at": datetime.datetime(2026, 3, 3, 9, 35, 53),
-            "updated_at": datetime.datetime(2026, 3, 3, 9, 35, 53),
             "name": "grabber",
             "fingerprint": "/dev/video0:0",
-            "hardware_name": "Innomaker-U20CAM-1080p-S1: Inno",
-            "payload": {"width": 640, "height": 480, "fps": 30, "exposure": None, "gain": None},
+            "hardware_name": None,
+            "payload": {"width": 640, "height": 480, "fps": 30},
         },
         {
             "id": "4629e172-2aa7-4fde-86b1-e19eb1d210ff",
             "driver": "usb_camera",
-            "created_at": datetime.datetime(2026, 3, 3, 9, 35, 46),
-            "updated_at": datetime.datetime(2026, 3, 3, 9, 35, 46),
             "name": "front",
             "fingerprint": "/dev/video6:6",
-            "hardware_name": "Intel(R) RealSense(TM) Depth Ca",
-            "payload": {"width": 640, "height": 480, "fps": 30, "exposure": None, "gain": None},
+            "hardware_name": None,
+            "payload": {"width": 640, "height": 480, "fps": 30},
         },
     ],
 }
