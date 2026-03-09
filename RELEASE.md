@@ -1,7 +1,7 @@
 # Physical AI Studio release process
 
 > [!NOTE]
-> This document will be updated once technical implementation will be available.
+> This document will be updated once the technical implementation is available.
 
 ## Table of Contents
 
@@ -30,9 +30,9 @@
 The `physical-ai-studio` repository releases the following binary artifacts:
 
 - `library` - Python package (`physicalai-train`) published to PyPI;
-- `application` container images for different architectures - `physical-ai-studio-xpu`, `physical-ai-studio-cuda` and `physical-ai-studio-cpu` - pushed to `ghcr.io`.
+- `application` - container images for different architectures - `physical-ai-studio-xpu`, `physical-ai-studio-cuda`, and `physical-ai-studio-cpu` - pushed to `ghcr.io`.
 
-The following container images names are used:
+The following container image names are used:
 
 - `ghcr.io/open-edge-platform/physical-ai-studio-xpu`;
 - `ghcr.io/open-edge-platform/physical-ai-studio-cpu`;
@@ -52,8 +52,8 @@ but in most cases there will be separate releases.
 
 ## Versioning
 
-This repository uses Semantic Versioning format `<major>.<minor>.<patch>`.
-As there are different release cadences for the `application` and the `library`, a single repo is used to track two different versions simultaneously.
+This repository uses the Semantic Versioning format `<major>.<minor>.<patch>`.
+As the `application` and the `library` have different release cadences, a single repository is used to track two different versions simultaneously.
 
 In the following sections, we use:
 
@@ -62,8 +62,8 @@ In the following sections, we use:
 
 ## Release branches, tags and `VERSION` files format
 
-To identify artifact versions and tags this repo uses [PEP 440](https://peps.python.org/pep-0440/).
-Although the scope of PEP 440 is Python packages, this repo extends usage where applicable for unification purposes.
+To identify artifact versions and tags, this repository uses [PEP 440](https://peps.python.org/pep-0440/).
+Although the scope of PEP 440 is Python packages, this repository extends its usage where applicable for unification purposes.
 
 ### Release branches naming convention
 
@@ -78,7 +78,7 @@ To distinguish release branches for `library` and `application`, this repository
 
 ### GitHub tags for release candidates
 
-To distinguish release candidates tag for `library` and `application`, this repository uses `lib` and `app` strings included in the tag name.
+To distinguish release candidate tags for `library` and `application`, this repository uses `lib` and `app` strings in the tag name.
 Tags are used for both regular and patch release candidates.
 
 | Artifact to be released | GitHub tag format                                    | Example                          |
@@ -107,7 +107,7 @@ For patch release `patch` > `0`.
 ### Tagging binary release candidates
 
 Semantic Versioning is used for released binary artifacts. Tags are used for both regular and patch release candidates.
-These tags are included in the following way.
+These tags are used in the following way.
 
 - Python package: tag is included in metadata that is used by the Python registry and in the Python wheel file name.
 - Container image: tag is included as a container image tag.
@@ -137,12 +137,12 @@ For patch release `patch` > `0`.
 
 ### `VERSION` files format
 
-As there are different release cadences for the `application` and the `library`, this repo uses two separate `VERSION` files:
+As the `application` and the `library` have different release cadences, this repository uses two separate `VERSION` files:
 
-- `/application/VERSION` to track `application` version;
-- `/library/VERSION` to track `library` versions.
+- `/application/VERSION` to track the `application` version;
+- `/library/VERSION` to track the `library` version.
 
-There shall be no repo root-level `VERSION` file.
+There must be no repository root-level `VERSION` file.
 
 `pyproject.toml` uses `dynamic = ["version"]` instead of a hardcoded value.
 
@@ -173,10 +173,10 @@ RC should be publicly available to encourage community testing and feedback. Pro
 1. Create a release branch from `main` following the naming convention `release/app-<app-major>.<app-minor>`. The part `<app-major>.<app-minor>` is taken from the `/application/VERSION` file. Release branch name example: `release/app-0.1`.
 2. Increment the version in the `/application/VERSION` file in the `main` branch to prepare for the next development cycle. Example: `0.1.0` → `0.2.0`
 3. Once the team decides that the release branch is ready for release candidate creation, create and push the first `application` RC GitHub tag following the naming convention `app/v<app-major>.<app-minor>.0rc1` (e.g., `app/v0.1.0rc1`) on the release branch.
-4. Pushing the RC tag triggers the CI, which builds container images release candidates with RC tag (example: `0.1.0rc1`) and uploads (with signature) the release candidates into `ghcr.io`.
-5. Test the RC artifacts with necessary manual tests (end-to-end / acceptance, security).
+4. Pushing the RC tag triggers the CI, which builds container image release candidates with the RC tag (example: `0.1.0rc1`) and uploads the signed release candidates to `ghcr.io`.
+5. Test the RC artifacts using the necessary manual tests (end-to-end / acceptance, security).
 6. If changes are required, apply them to the release branch and create a new RC tag (e.g., `app/v0.1.0rc2`).
-7. Once the quality of release candidate `rc-N` is acceptable, members of the team start the release process by manually launching the dedicated release workflow with the proper inputs (RC tag to be released) to promote approved release candidate to release. The release promotion workflow performs the following actions:
+7. Once the quality of release candidate `rc-N` is acceptable, team members start the release process by manually launching the dedicated release workflow with the proper inputs (the RC tag to be released) to promote the approved release candidate to a release. The release promotion workflow performs the following actions:
    - tag the approved-for-release RC commit with the release GitHub tag (e.g., `app/v0.1.0`);
    - re-tag approved release candidate with release version tag (e.g., `0.1.0rc2` -> `0.1.0`);
    - sign it with Cosign (keyless mode).
@@ -188,10 +188,10 @@ RC should be publicly available to encourage community testing and feedback. Pro
 
 1. Increment the patch version (e.g., `0.1.0` → `0.1.1`) in the `/application/VERSION` file in the existing release branch (e.g., `release/app-0.1`).
 2. Once the team decides that the release branch is ready for release candidate creation, create and push the first `application` RC GitHub tag (e.g., `app/v0.1.1rc1`) on the release branch.
-3. Pushing the RC tag triggers the CI, which builds container images release candidates with RC tag (example: `0.1.1rc1`) and uploads (with signature) the release candidates into `ghcr.io`.
-4. Test the RC artifacts with necessary manual tests (end-to-end / acceptance, security).
+3. Pushing the RC tag triggers the CI, which builds container image release candidates with the RC tag (example: `0.1.1rc1`) and uploads the signed release candidates to `ghcr.io`.
+4. Test the RC artifacts using the necessary manual tests (end-to-end / acceptance, security).
 5. If changes are required, apply them to the release branch and create a new RC tag (e.g., `app/v0.1.1rc2`).
-6. Once the quality of release candidate `rc-N` is acceptable, members of the team start the release process by manually launching the dedicated release workflow with the proper inputs (RC tag to be released) to promote approved release candidate to release. The release promotion workflow performs the following actions:
+6. Once the quality of release candidate `rc-N` is acceptable, team members start the release process by manually launching the dedicated release workflow with the proper inputs (the RC tag to be released) to promote the approved release candidate to a release. The release promotion workflow performs the following actions:
    - tag the approved-for-release RC commit with the release GitHub tag (e.g., `app/v0.1.1`);
    - re-tag approved release candidate with release version tag (e.g., `0.1.1rc2` -> `0.1.1`);
    - sign it with Cosign (keyless mode).
@@ -206,9 +206,9 @@ RC should be publicly available to encourage community testing and feedback. Pro
 2. Increment the version in the `/library/VERSION` file in the `main` branch to prepare for the next development cycle. Example: `0.1.0` → `0.2.0`
 3. Once the team decides that the release branch is ready for release candidate creation, create and push the first `library` RC GitHub tag (e.g., `lib/v0.1.0rc1`) on the release branch.
 4. Pushing the RC tag triggers the CI, which builds the `library` release candidate and uploads it to `test.pypi.org` with a proper version (e.g., `0.1.0rc1`).
-5. Test the RC artifacts with necessary manual tests (end-to-end / acceptance, security).
+5. Test the RC artifacts using the necessary manual tests (end-to-end / acceptance, security).
 6. If changes are required, apply them to the release branch and create a new RC tag (e.g., `lib/v0.1.0rc2`).
-7. Once the quality of release candidate `rc-N` is acceptable, members of the team start the release process by manually launching the dedicated release workflow with the proper inputs (RC tag to be released). The release workflow performs the following actions:
+7. Once the quality of release candidate `rc-N` is acceptable, team members start the release process by manually launching the dedicated release workflow with the proper inputs (the RC tag to be released). The release workflow performs the following actions:
    - tag the approved-for-release RC commit with the release GitHub tag (e.g., `lib/v0.1.0`);
    - rebuild the package from the tagged commit with the release version (e.g., `0.1.0`);
    - publish to PyPI (`pypi.org`) and sign it using keyless signing.
@@ -221,9 +221,9 @@ RC should be publicly available to encourage community testing and feedback. Pro
 1. Increment the patch version (e.g., `0.1.0` → `0.1.1`) in the `/library/VERSION` file in the existing release branch (e.g., `release/lib-0.1`).
 2. Once the team decides that the release branch is ready for release candidate creation, create and push the first `library` RC GitHub tag (e.g., `lib/v0.1.1rc1`) on the release branch.
 3. Pushing the RC tag triggers the CI, which builds the `library` release candidate and uploads it to `test.pypi.org` with a proper version (e.g., `0.1.1rc1`).
-4. Test the RC artifacts with necessary manual tests (end-to-end / acceptance, security).
+4. Test the RC artifacts using the necessary manual tests (end-to-end / acceptance, security).
 5. If changes are required, apply them to the release branch and create a new RC tag (e.g., `lib/v0.1.1rc2`).
-6. Once the quality of release candidate `rc-N` is acceptable, members of the team start the release process by manually launching the dedicated release workflow with the proper inputs (RC tag to be released). The release workflow performs the following actions:
+6. Once the quality of release candidate `rc-N` is acceptable, team members start the release process by manually launching the dedicated release workflow with the proper inputs (the RC tag to be released). The release workflow performs the following actions:
    - tag the approved-for-release RC commit with the release GitHub tag (e.g., `lib/v0.1.1`);
    - rebuild the package from the tagged commit with the release version (e.g., `0.1.1`);
    - publish to PyPI (`pypi.org`) and sign it using keyless signing.
