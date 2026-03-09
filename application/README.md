@@ -26,7 +26,7 @@ The application provides a graphical interface to:
 | ------------------------- | ------------------------------------------------------------- | ------------------------------------- |
 | **[Backend](./backend/)** | FastAPI server for data management and training orchestration | [Backend README](./backend/README.md) |
 | **[UI](./ui/)**           | React web application                                         | [UI README](./ui/README.md)           |
-| **[Docker](./docker/)**   | All-in-one containerized deployment                           | [Docker README](./docker/readme.md)   |
+| **[Docker](./docker/)**   | All-in-one containerized deployment                           | [Docker README](./docker/README.md)   |
 
 ## Quick Start
 
@@ -42,7 +42,7 @@ cp .env.example .env
 docker compose up
 ```
 
-Application runs at http://localhost:7860. See the [Docker README](./docker/readme.md) for
+Application runs at http://localhost:7860. See the [Docker README](./docker/README.md) for
 hardware configuration (Intel XPU, NVIDIA CUDA) and device setup.
 
 ### Native

@@ -62,7 +62,7 @@ cp .env.example .env
 docker compose --profile xpu up # or use --profile cuda, --profile cpu
 ```
 
-Application runs at http://localhost:7860. See the [Docker README](./application/docker/readme.md) for
+Application runs at http://localhost:7860. See the [Docker README](./application/docker/README.md) for
 hardware configuration (Intel XPU, NVIDIA CUDA) and device setup.
 
 #### Native: installation & running
