@@ -1,4 +1,4 @@
-import { ActionButton, Flex, Button, DialogTrigger, Grid, Item, Key, Menu, MenuTrigger, Text, View } from '@geti/ui';
+import { ActionButton, Button, DialogTrigger, Flex, Grid, Item, Key, Menu, MenuTrigger, Text, View } from '@geti/ui';
 import { MoreMenu } from '@geti/ui/icons';
 
 import { SchemaJob, SchemaModel } from '../../api/openapi-spec';
