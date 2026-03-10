@@ -4,15 +4,9 @@ on:
   schedule:
     - cron: "0 0 * * *"
   push:
-    branches:
-      - main
-      - release/lib-*.*
-      - release/app-*.*
+    branches: ["main", "release/**"]
   pull_request:
-    branches:
-      - main
-      - release/lib-*.*
-      - release/app-*.*
+    branches: ["main", "release/**"]
 
 permissions: {}
 

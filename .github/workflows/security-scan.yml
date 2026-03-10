@@ -34,13 +34,11 @@ on:
   push:
     branches:
       - main
-      - release/lib-*.*
-      - release/app-*.*
+      - releases/**
   pull_request:
     branches:
       - main
-      - release/lib-*.*
-      - release/app-*.*
+      - releases/**
 
 permissions: {} # No permissions by default
 
