@@ -21,6 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read # Checkout code
+      packages: write # Push/pull registry build cache on GHCR
 
     strategy:
       fail-fast: false
@@ -33,7 +34,17 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Log in to Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build Docker image
         uses: ./.github/actions/docker-build
         with:
           device: ${{ matrix.device }}
+          # Fork PRs cannot write packages to the upstream org, so disable
+          # cache export to avoid 403 errors from GHCR.
+          cache-write: ${{ github.event.pull_request.head.repo.full_name == github.repository }}

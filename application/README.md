@@ -26,36 +26,11 @@ The application provides a graphical interface to:
 | ------------------------- | ------------------------------------------------------------- | ------------------------------------- |
 | **[Backend](./backend/)** | FastAPI server for data management and training orchestration | [Backend README](./backend/README.md) |
 | **[UI](./ui/)**           | React web application                                         | [UI README](./ui/README.md)           |
-| **[Docker](./docker/)**   | All-in-one containerized deployment                           | [Docker README](./docker/readme.md)   |
+| **[Docker](./docker/)**   | All-in-one containerized deployment                           | [Docker README](./docker/README.md)   |
 
 ## Quick Start
 
 Full setup instructions in component READMEs. Quick reference:
-
-### Backend
-
-```bash
-cd backend
-uv sync
-source .venv/bin/activate
-./run.sh
-```
-
-Backend runs at http://localhost:8000
-
-### Frontend
-
-```bash
-cd ui
-nvm use
-npm install
-# Download the OpenAPI spec and generate types (assumed backend is running at http://localhost:7860)
-npm run build:api:download && npm run build:api 
-# Start the acutal UI
-npm run start
-```
-
-UI runs at http://localhost:3000
 
 ### Docker (recommended)
 
@@ -67,8 +42,37 @@ cp .env.example .env
 docker compose up
 ```
 
-Application runs at http://localhost:7860. See the [Docker README](./docker/readme.md) for
+Application runs at http://localhost:7860. See the [Docker README](./docker/README.md) for
 hardware configuration (Intel XPU, NVIDIA CUDA) and device setup.
+
+### Native
+
+Or run the application natively in development mode.
+
+#### Backend
+
+Install the [uv package manager](https://docs.astral.sh/uv/getting-started/installation/), then run the commands below,
+
+```bash
+cd backend
+uv sync --extra xpu # or `--extra cpu` or `--extra cuda`
+./run.sh
+```
+
+Backend runs at http://localhost:7860
+
+#### Frontend
+
+Install [node v24](https://nodejs.org/en/download) (we recommend using nvm), and run the commands below,
+
+```bash
+cd ui
+nvm use
+npm install
+npm run start
+```
+
+UI runs at http://localhost:3000
 
 ## Getting started
 

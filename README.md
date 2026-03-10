@@ -47,7 +47,27 @@ For users who prefer a visual interface for end-to-end workflow:
 
 [Application Documentation →](./application/README.md)
 
-#### Installation & Running
+#### Docker
+
+Run the full application (backend + UI) in a single container:
+
+```bash
+# Clone the repository
+git clone https://github.com/open-edge-platform/physical-ai-studio.git
+cd physical-ai-studio
+
+# Setup and run docker services 
+cd application/docker
+cp .env.example .env
+docker compose --profile xpu up # or use --profile cuda, --profile cpu
+```
+
+Application runs at http://localhost:7860. See the [Docker README](./application/docker/README.md) for
+hardware configuration (Intel XPU, NVIDIA CUDA) and device setup.
+
+#### Native: installation & running
+
+Run the application in development mode, using [uv package manager](https://docs.astral.sh/uv/getting-started/installation/) and [node v24](https://nodejs.org/en/download) (we recommend using nvm)
 
 ```bash
 # Clone the repository
@@ -55,9 +75,8 @@ git clone https://github.com/open-edge-platform/physical-ai-studio.git
 cd physical-ai-studio
 
 # Install and run backend
-cd application/backend && uv sync
-source .venv/bin/activate
-uvicorn src.main:app --reload
+cd application/backend && uv sync --extra xpu # or --extra cpu, --extra cuda
+./run.sh
 
 # In a new terminal: install and run UI
 cd application/ui 
@@ -69,18 +88,6 @@ npm run build:api:download && npm run build:api && npm run start
 
 Open http://localhost:3000 in your browser.
 
-##### Docker
-
-Run the full application (backend + UI) in a single container:
-
-```bash
-cd docker
-cp .env.example .env
-docker compose up
-```
-
-Application runs at http://localhost:7860. See the [Docker README](./docker/readme.md) for
-hardware configuration (Intel XPU, NVIDIA CUDA) and device setup.
 
 ### Library (Python/CLI)
 
