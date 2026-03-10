@@ -2,9 +2,7 @@ name: Backend
 on:
   push:
     branches:
-      - main
-      - release/lib-*.*
-      - release/app-*.*
+      - "main"
   pull_request:
 
 permissions: {} # No permissions by default on workflow level

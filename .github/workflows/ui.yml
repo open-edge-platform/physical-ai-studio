@@ -4,9 +4,7 @@ permissions: {} # No permissions by default on workflow level
 on:
   push:
     branches:
-      - main
-      - release/lib-*.*
-      - release/app-*.*
+      - "main"
   pull_request:
   workflow_dispatch: # run on request (no need for PR)
 
@@ -79,6 +77,7 @@ jobs:
         name: Install dependencies
         working-directory: "application/ui"
         run: npm ci
+
 
       - &download-openapi-spec
         name: Download OpenAPI spec artifact
