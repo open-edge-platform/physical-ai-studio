@@ -162,3 +162,30 @@ class TestInferenceWorker:
         environment_integration.get_observation = AsyncMock(return_value=test_observation)
         wait_until_message_from_queue(worker.queue, "observations")
         model_integration.select_action.assert_called_with(test_observation)
+
+    def test_stop_causes_model_inference_to_not_be_called(
+        self, loaded_inference_worker: InferenceWorker, environment_integration, model_integration, test_observation
+    ):
+        worker = loaded_inference_worker
+        worker.start_task("foo")
+        report = wait_until_message_from_queue(worker.queue, "state")
+        assert report["data"]["is_running"]
+        environment_integration.get_observation = AsyncMock(return_value=test_observation)
+        worker.stop()
+        # clear existing queue and wait for next observation
+        report = wait_until_message_from_queue(worker.queue, "state")
+        assert not report["data"]["is_running"]
+        clear_queue(worker.queue)
+        model_integration.select_action.reset()  # Reset mock of model select action
+        wait_until_message_from_queue(worker.queue, "observations")
+        model_integration.select_action.assert_not_called()
+
+    def test_disconnect_causes_teardown(
+        self, loaded_inference_worker: InferenceWorker, environment_integration, model_integration, test_observation
+    ):
+        worker = loaded_inference_worker
+        worker.disconnect()
+        worker.join()
+
+        model_integration.teardown.assert_called()
+        environment_integration.teardown.assert_awaited_once()
