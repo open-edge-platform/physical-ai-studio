@@ -8,6 +8,7 @@ from frame_source.video_capture_base import VideoCaptureBase
 
 from workers.inference.inference_environment_integration import InferenceEnvironmentIntegration
 
+
 @pytest.fixture
 def mock_camera():
     camera = MagicMock(spec=VideoCaptureBase)

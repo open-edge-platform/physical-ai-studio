@@ -4,16 +4,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from robots.robot_client_factory import RobotClientFactory
 from schemas.environment import EnvironmentWithRelations
-from services.robot_calibration_service import RobotCalibrationService
-from settings import get_settings
-from utils.serial_robot_tools import RobotConnectionManager
 from workers.inference.inference_environment_integration import InferenceEnvironmentIntegration
 from workers.inference.sync_mixed_model_integration import SyncMixedModelIntegration
 from workers.inference_worker import InferenceWorker
 
-from .queue_utils import thread_flush, clear_queue, wait_until_message_from_queue
+from .queue_utils import clear_queue, thread_flush, wait_until_message_from_queue
+
 
 @pytest.fixture
 def model_integration():
@@ -27,7 +24,16 @@ def model_integration():
     mock.setup = controlled_setup
     mock.allow_setup = gate.set
     mock.teardown = MagicMock()
-    mock.select_action = MagicMock(return_value=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6])
+    mock.select_action = MagicMock(
+        return_value=[
+            -11.076923076923077,
+            56.043956043956044,
+            -10.197802197802197,
+            69.45054945054945,
+            -24.791208791208792,
+            12.364425162689804,
+        ]
+    )
     return mock
 
 
@@ -51,19 +57,13 @@ def environment_integration():
 
 
 @pytest.fixture
-def inference_worker():
+def inference_worker(mock_robot_client_factory):
     stop_event = Event()
-    robot_manager = RobotConnectionManager()
-    settings = get_settings()
-    calibration_service = RobotCalibrationService(robot_manager, settings)
     queue = Queue()
 
     process = InferenceWorker(
         stop_event=stop_event,
-        robot_client_factory=RobotClientFactory(
-            robot_manager=robot_manager,
-            calibration_service=calibration_service,
-        ),
+        robot_client_factory=mock_robot_client_factory,
         queue=queue,
     )
     process.start()
@@ -73,9 +73,9 @@ def inference_worker():
     process.disconnect()
     process.join(timeout=5)
 
+
 @pytest.fixture
 def loaded_inference_worker(inference_worker, environment_integration, model_integration, test_model, test_environment):
-
     with patch("workers.inference_worker.SyncMixedModelIntegration", return_value=model_integration):
         inference_worker.load_model(test_model, "torch")
 
@@ -93,6 +93,7 @@ def loaded_inference_worker(inference_worker, environment_integration, model_int
     assert state.environment_loaded
 
     return inference_worker
+
 
 class TestInferenceWorker:
     def test_initialize(self, inference_worker: InferenceWorker):
@@ -121,7 +122,9 @@ class TestInferenceWorker:
         assert report["event"] == "state"
         assert report["data"]["environment_loaded"]
 
-    def test_get_observations_once_environment_loaded(self, inference_worker: InferenceWorker, environment_integration, test_environment):
+    def test_get_observations_once_environment_loaded(
+        self, inference_worker: InferenceWorker, environment_integration, test_environment
+    ):
         environment_integration.get_observation = AsyncMock(return_value={"foo": "bar"})
 
         environment = EnvironmentWithRelations.model_validate(test_environment)
@@ -148,11 +151,9 @@ class TestInferenceWorker:
         assert report["event"] == "state"
         assert report["data"]["model_loaded"]
 
-    def test_model_are_requested_with_actions(self,
-                                              loaded_inference_worker: InferenceWorker,
-                                              environment_integration,
-                                              model_integration,
-                                              test_observation):
+    def test_model_are_requested_with_actions(
+        self, loaded_inference_worker: InferenceWorker, environment_integration, model_integration, test_observation
+    ):
         worker = loaded_inference_worker
         worker.start_task("foo")
         report = wait_until_message_from_queue(worker.queue, "state")

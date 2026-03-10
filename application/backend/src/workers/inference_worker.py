@@ -144,7 +144,6 @@ class InferenceWorker(BaseThreadWorker):
                             observation, timestamp
                         )
                         if self.state.is_running and self.model_integration:
-
                             model_observation = self.environment_integration.format_model_input_observation(
                                 observation, task=self.state.task
                             )
