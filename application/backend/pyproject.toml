@@ -186,3 +186,7 @@ markers = [
     "requires_download: marks tests that require downloading external datasets",
     "integration: marks tests as integration tests",
 ]
+filterwarnings = [
+  "ignore:XPU device count is zero!:UserWarning",
+  "ignore:This process.*is multi-threaded:DeprecationWarning", # using actual queues in tests
+]
