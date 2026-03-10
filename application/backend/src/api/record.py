@@ -137,7 +137,7 @@ async def inference_websocket(
             while True:
                 data = await websocket.receive_json("text")
                 if data["event"] == "load_environment":
-                    environment = EnvironmentWithRelations.model_validate(data["data"])
+                    environment = EnvironmentWithRelations.model_validate(data["data"]["environment"])
                     process.load_environment(environment)
                 if data["event"] == "load_model":
                     model = Model.model_validate(data["data"]["model"])
@@ -152,7 +152,8 @@ async def inference_websocket(
                 if data["event"] == "disconnect":
                     process.disconnect()
                     break
-        except Exception:
+        except Exception as e:
+            logger.error(f"Incoming task stopped: {e}")
             logger.info("Except: disconnected!")
 
     async def handle_outgoing():
