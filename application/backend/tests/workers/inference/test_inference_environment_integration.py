@@ -1,53 +1,12 @@
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np
 import pytest
 import torch
 from frame_source.video_capture_base import VideoCaptureBase
 
-from robots.robot_client import RobotClient
-from robots.robot_client_factory import RobotClientFactory
-from schemas.environment import EnvironmentWithRelations
 from workers.inference.inference_environment_integration import InferenceEnvironmentIntegration
-
-from .fixtures import test_environment
-
-
-@pytest.fixture
-def mock_robot_client():
-    client = MagicMock(spec=RobotClient)
-    client.features.return_value = [
-        "shoulder_pan.pos",
-        "shoulder_lift.pos",
-        "elbow_flex.pos",
-        "wrist_flex.pos",
-        "wrist_roll.pos",
-        "gripper.pos",
-    ]
-    client.connect = AsyncMock()
-    client.disconnect = AsyncMock()
-    client.read_state = AsyncMock(
-        return_value={
-            "state": {
-                "shoulder_pan.pos": -8.705526116578355,
-                "shoulder_lift.pos": -98.16753926701571,
-                "elbow_flex.pos": 95.98393574297188,
-                "wrist_flex.pos": 73.85993485342019,
-                "wrist_roll.pos": -13.84615384615384,
-                "gripper.pos": 26.885644768856448,
-            }
-        }
-    )
-    return client
-
-
-@pytest.fixture
-def mock_robot_client_factory(mock_robot_client):
-    factory = MagicMock(spec=RobotClientFactory)
-    factory.build = AsyncMock(return_value=mock_robot_client)
-    return factory
-
 
 @pytest.fixture
 def mock_camera():
@@ -61,15 +20,14 @@ def mock_camera():
 
 
 @pytest.fixture
-def inference_environment_integration(mock_robot_client_factory, mock_camera):
-    environment = EnvironmentWithRelations.model_validate(test_environment)
+def inference_environment_integration(mock_robot_client_factory, mock_camera, test_environment):
     factory = mock_robot_client_factory
 
     with patch(
         "workers.inference.inference_environment_integration.create_frames_source_from_camera",
         return_value=mock_camera,
     ):
-        subject = InferenceEnvironmentIntegration(environment, factory)
+        subject = InferenceEnvironmentIntegration(test_environment, factory)
         asyncio.run(subject.setup())
         yield subject
         asyncio.run(subject.teardown())

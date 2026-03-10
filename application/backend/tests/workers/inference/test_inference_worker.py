@@ -1,5 +1,4 @@
 import asyncio
-import time
 from multiprocessing import Event, Queue
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -7,7 +6,6 @@ import pytest
 
 from robots.robot_client_factory import RobotClientFactory
 from schemas.environment import EnvironmentWithRelations
-from schemas.model import Model
 from services.robot_calibration_service import RobotCalibrationService
 from settings import get_settings
 from utils.serial_robot_tools import RobotConnectionManager
@@ -15,36 +13,7 @@ from workers.inference.inference_environment_integration import InferenceEnviron
 from workers.inference.sync_mixed_model_integration import SyncMixedModelIntegration
 from workers.inference_worker import InferenceWorker
 
-from .fixtures import test_environment, test_model, test_observation
-
-
-def wait_until_message_from_queue(queue: Queue, event: str, timeout: float=1):
-    t = time.perf_counter()
-    while time.perf_counter() - t < timeout:
-        item = get_next_item_from_queue_of_type(queue, event)
-        if item is not None:
-            return item
-
-        thread_flush()
-
-    raise TimeoutError(f"No message in queue of event type: {event}")
-
-
-def get_next_item_from_queue_of_type(queue: Queue, event: str) -> dict | None:
-    while not queue.empty():
-        item = queue.get()
-        if item["event"] == event:
-            return item
-
-    return None
-
-def clear_queue(queue: Queue) -> None:
-    while not queue.empty():
-        queue.get()
-
-def thread_flush():
-    """Small sleep to allow thread to work thru."""
-    time.sleep(0.01)
+from .queue_utils import thread_flush, clear_queue, wait_until_message_from_queue
 
 @pytest.fixture
 def model_integration():
@@ -105,16 +74,15 @@ def inference_worker():
     process.join(timeout=5)
 
 @pytest.fixture
-def loaded_inference_worker(inference_worker, environment_integration, model_integration):
+def loaded_inference_worker(inference_worker, environment_integration, model_integration, test_model, test_environment):
 
-    model = Model.model_validate(test_model)
     with patch("workers.inference_worker.SyncMixedModelIntegration", return_value=model_integration):
-        inference_worker.load_model(model, "torch")
+        inference_worker.load_model(test_model, "torch")
 
-    environment = EnvironmentWithRelations.model_validate(test_environment)
     with patch("workers.inference_worker.InferenceEnvironmentIntegration", return_value=environment_integration):
-        inference_worker.load_environment(environment)
+        inference_worker.load_environment(test_environment)
     model_integration.allow_setup()
+    thread_flush()
     environment_integration.allow_setup()
     thread_flush()
     clear_queue(inference_worker.queue)
@@ -128,7 +96,7 @@ def loaded_inference_worker(inference_worker, environment_integration, model_int
 
 class TestInferenceWorker:
     def test_initialize(self, inference_worker: InferenceWorker):
-        report = inference_worker.queue.get()
+        report = wait_until_message_from_queue(inference_worker.queue, "state")
         assert report["event"] == "state"
         assert report["data"] == {
             "is_running": False,
@@ -138,40 +106,40 @@ class TestInferenceWorker:
             "error": False,
         }
 
-    def test_load_environment(self, inference_worker: InferenceWorker, environment_integration):
-        report = inference_worker.queue.get()
+    def test_load_environment(self, inference_worker: InferenceWorker, environment_integration, test_environment):
+        report = wait_until_message_from_queue(inference_worker.queue, "state")
         assert report["event"] == "state"
         environment = EnvironmentWithRelations.model_validate(test_environment)
         with patch("workers.inference_worker.InferenceEnvironmentIntegration", return_value=environment_integration):
             inference_worker.load_environment(environment)
-        report = inference_worker.queue.get()
+        report = wait_until_message_from_queue(inference_worker.queue, "state")
         assert report["event"] == "state"
         assert not report["data"]["environment_loaded"]
 
         environment_integration.allow_setup()
-        report = inference_worker.queue.get()
+        report = wait_until_message_from_queue(inference_worker.queue, "state")
         assert report["event"] == "state"
         assert report["data"]["environment_loaded"]
 
-    def test_get_observations_once_environment_loaded(self, inference_worker: InferenceWorker, environment_integration):
+    def test_get_observations_once_environment_loaded(self, inference_worker: InferenceWorker, environment_integration, test_environment):
+        environment_integration.get_observation = AsyncMock(return_value={"foo": "bar"})
+
         environment = EnvironmentWithRelations.model_validate(test_environment)
         with patch("workers.inference_worker.InferenceEnvironmentIntegration", return_value=environment_integration):
             inference_worker.load_environment(environment)
         environment_integration.allow_setup()
-        environment_integration.get_observation = AsyncMock(return_value={"foo": "bar"})
         observation = wait_until_message_from_queue(inference_worker.queue, "observations")
         assert observation is not None
         assert observation["event"] == "observations"
         assert observation["data"] == {"foo": "bar"}
 
-    def test_load_model(self, inference_worker: InferenceWorker, model_integration):
-        report = inference_worker.queue.get()
+    def test_load_model(self, inference_worker: InferenceWorker, model_integration, test_model):
+        report = wait_until_message_from_queue(inference_worker.queue, "state")
         assert report["event"] == "state"
-        model = Model.model_validate(test_model)
 
         with patch("workers.inference_worker.SyncMixedModelIntegration", return_value=model_integration):
-            inference_worker.load_model(model, "torch")
-        report = inference_worker.queue.get()
+            inference_worker.load_model(test_model, "torch")
+        report = wait_until_message_from_queue(inference_worker.queue, "state")
         assert report["event"] == "state"
         assert not report["data"]["model_loaded"]
 
@@ -183,7 +151,8 @@ class TestInferenceWorker:
     def test_model_are_requested_with_actions(self,
                                               loaded_inference_worker: InferenceWorker,
                                               environment_integration,
-                                              model_integration):
+                                              model_integration,
+                                              test_observation):
         worker = loaded_inference_worker
         worker.start_task("foo")
         report = wait_until_message_from_queue(worker.queue, "state")
