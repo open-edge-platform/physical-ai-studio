@@ -2,7 +2,10 @@ name: Docker Build
 
 on:
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - release/lib-*.*
+      - release/app-*.*
     paths:
       - "library/**"
       - "application/**"
