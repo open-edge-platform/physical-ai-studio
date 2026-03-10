@@ -45,3 +45,13 @@ test_observation = {
     '3ed60255-04ae-407b-8e2c-c3281847a4e0': np.zeros([480, 640, 3], dtype=np.uint8),
     '4629e172-2aa7-4fde-86b1-e19eb1d210ff': np.zeros([480, 640, 3], dtype=np.uint8)
 }
+
+test_model = {
+    "name": "foo",
+    "policy": "act",
+    "path": "/dev/null",
+    "project_id": "35b48dc9-31df-40be-b295-08ae1d5378b1",
+    "dataset_id": "93cffdc2-db6d-47bf-ac0c-4e5a727cbf0d",
+    "properties": {},
+    "snapshot_id": "f5e2cb67-3df2-4f16-bdfd-8b0782dd9e02",
+}

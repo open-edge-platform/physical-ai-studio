@@ -1,9 +1,7 @@
-from workers.inference.sync_mixed_model_integration import SyncMixedModelIntegration
-from workers.inference.inference_environment_integration import InferenceEnvironmentIntegration
 import asyncio
 import time
 from multiprocessing import Event, Queue
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -13,9 +11,11 @@ from schemas.model import Model
 from services.robot_calibration_service import RobotCalibrationService
 from settings import get_settings
 from utils.serial_robot_tools import RobotConnectionManager
+from workers.inference.inference_environment_integration import InferenceEnvironmentIntegration
+from workers.inference.sync_mixed_model_integration import SyncMixedModelIntegration
 from workers.inference_worker import InferenceWorker
 
-from .fixtures import test_environment, test_observation
+from .fixtures import test_environment, test_model, test_observation
 
 
 def wait_until_message_from_queue(queue: Queue, event: str, timeout: float=1):
@@ -107,18 +107,7 @@ def inference_worker():
 @pytest.fixture
 def loaded_inference_worker(inference_worker, environment_integration, model_integration):
 
-    model = Model.model_validate(
-        {
-            "name": "foo",
-            "policy": "act",
-            "path": "/dev/null",
-            "project_id": "35b48dc9-31df-40be-b295-08ae1d5378b1",
-            "dataset_id": "93cffdc2-db6d-47bf-ac0c-4e5a727cbf0d",
-            "properties": {},
-            "snapshot_id": "f5e2cb67-3df2-4f16-bdfd-8b0782dd9e02",
-        }
-    )
-
+    model = Model.model_validate(test_model)
     with patch("workers.inference_worker.SyncMixedModelIntegration", return_value=model_integration):
         inference_worker.load_model(model, "torch")
 
@@ -178,17 +167,7 @@ class TestInferenceWorker:
     def test_load_model(self, inference_worker: InferenceWorker, model_integration):
         report = inference_worker.queue.get()
         assert report["event"] == "state"
-        model = Model.model_validate(
-            {
-                "name": "foo",
-                "policy": "act",
-                "path": "/dev/null",
-                "project_id": "35b48dc9-31df-40be-b295-08ae1d5378b1",
-                "dataset_id": "93cffdc2-db6d-47bf-ac0c-4e5a727cbf0d",
-                "properties": {},
-                "snapshot_id": "f5e2cb67-3df2-4f16-bdfd-8b0782dd9e02",
-            }
-        )
+        model = Model.model_validate(test_model)
 
         with patch("workers.inference_worker.SyncMixedModelIntegration", return_value=model_integration):
             inference_worker.load_model(model, "torch")
