@@ -21,5 +21,9 @@ export const Index = () => {
         }
     );
 
-    return <InferenceViewer environment={initialEnvironment} model={model} backend={backend} />;
+    const { data: tasks } = $api.useSuspenseQuery('get', '/api/models/{model_id}/tasks', {
+        params: { query: { uuid: model_id } },
+    });
+
+    return <InferenceViewer environment={initialEnvironment} model={model} backend={backend} tasks={tasks} />;
 };

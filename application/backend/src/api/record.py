@@ -144,8 +144,8 @@ async def inference_websocket(
                     backend = data["data"]["backend"]
                     process.load_model(model, backend)
                 if data["event"] == "start_task":
-                    task_index = data["data"]["task_index"]
-                    process.start_task(task_index)
+                    task = data["data"]
+                    process.start_task(task)
                 if data["event"] == "stop_task":
                     process.stop()
                     process.join(timeout=5)

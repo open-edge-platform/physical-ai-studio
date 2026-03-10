@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import {
     Button,
@@ -15,20 +15,20 @@ import {
 } from '@geti/ui';
 import { Back, Pause, Play } from '@geti/ui/icons';
 
-import { $api } from '../../../api/client';
 import { SchemaEnvironmentWithRelations, SchemaModel } from '../../../api/openapi-spec';
 import { ErrorMessage } from '../../../components/error-page/error-page';
+import { useProjectId } from '../../../features/projects/use-project';
 import { RobotViewer } from '../../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
 import { paths } from '../../../router';
 import { CameraView } from '../../datasets/camera-view';
 import { Observation, useInference } from './use-inference';
-import { useInferenceParams } from './use-inference-params';
 
 interface InferenceViewerProps {
     environment: SchemaEnvironmentWithRelations;
     model: SchemaModel;
     backend: string;
+    tasks: string[];
 }
 
 const getVisualisationSourceFromObservation = (observation: Observation | undefined): { [joint: string]: number } => {
@@ -42,28 +42,17 @@ const getVisualisationSourceFromObservation = (observation: Observation | undefi
     }
 };
 
-export const InferenceViewer = ({ environment, model, backend }: InferenceViewerProps) => {
-    const { project_id, model_id } = useInferenceParams();
+export const InferenceViewer = ({ environment, model, backend, tasks }: InferenceViewerProps) => {
+    const { project_id } = useProjectId();
 
-    const { data: tasks } = $api.useSuspenseQuery('get', '/api/models/{model_id}/tasks', {
-        params: { query: { uuid: model_id } },
-    });
     const [task, setTask] = useState<string>(tasks[0] ?? '');
 
-    const { observation, readyForInference, state, startTask, stopTask, loadEnvironment, loadModel, isConnected } =
-        useInference(ToastQueue.negative);
-
-    useEffect(() => {
-        if (!state.model_loaded) {
-            loadModel.mutate({ model, backend });
-        }
-    }, [isConnected, model, backend, state.model_loaded, loadModel]);
-
-    useEffect(() => {
-        if (!state.environment_loaded) {
-            loadEnvironment.mutate(environment);
-        }
-    }, [isConnected, environment, state.environment_loaded, loadEnvironment]);
+    const { observation, readyForInference, state, startTask, stopTask } = useInference(
+        environment,
+        model,
+        backend,
+        ToastQueue.negative
+    );
 
     const visualisation_source = getVisualisationSourceFromObservation(observation.current);
 
@@ -91,10 +80,6 @@ export const InferenceViewer = ({ environment, model, backend }: InferenceViewer
         );
     }
 
-    const onStart = () => {
-        startTask(tasks.indexOf(task));
-    };
-
     return (
         <RobotModelsProvider>
             <Flex flex direction={'column'} height={'100%'} position={'relative'}>
@@ -110,12 +95,16 @@ export const InferenceViewer = ({ environment, model, backend }: InferenceViewer
                     </ComboBox>
                     <ButtonGroup>
                         {state.is_running ? (
-                            <Button variant='primary' onPress={stopTask}>
+                            <Button variant='primary' isPending={stopTask.isPending} onPress={() => stopTask.mutate()}>
                                 <Pause fill='white' />
                                 Stop
                             </Button>
                         ) : (
-                            <Button variant='primary' onPress={onStart}>
+                            <Button
+                                variant='primary'
+                                isPending={startTask.isPending}
+                                onPress={() => startTask.mutate(task)}
+                            >
                                 <Play fill='white' />
                                 Play
                             </Button>

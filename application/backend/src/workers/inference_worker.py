@@ -120,8 +120,6 @@ class InferenceWorker(BaseThreadWorker):
     async def run_loop(self) -> None:
         """inference loop."""
         try:
-            logger.info("run loop")
-
             self.state.is_running = False
             self.start_episode_t = time.perf_counter()
 
@@ -164,6 +162,7 @@ class InferenceWorker(BaseThreadWorker):
             self.events["new_model"].clear()
             await self.model_integration.setup()
             self.state.model_loaded = True
+            logger.info("reporting state from new_model")
             self._report_state()
 
     async def _handle_setup_environment(self) -> None:
@@ -171,6 +170,7 @@ class InferenceWorker(BaseThreadWorker):
             self.events["new_environment"].clear()
             await self.environment_integration.setup()
             self.state.environment_loaded = True
+            logger.info("reporting state from setup_environment")
             self._report_state()
 
     async def teardown(self) -> None:

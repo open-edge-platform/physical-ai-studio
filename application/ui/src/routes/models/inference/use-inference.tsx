@@ -35,17 +35,28 @@ export interface Observation {
     cameras: { [key: string]: string };
 }
 
-export const useInference = (onError: (error: string) => void) => {
+export const useInference = (
+    environment: SchemaEnvironmentWithRelations,
+    model: SchemaModel,
+    backend: string,
+    onError: (error: string) => void
+) => {
     const [state, setState] = useState<InferenceState>(createInferenceState());
     const observation = useRef<Observation | undefined>(undefined);
 
-    const { sendJsonMessage, sendJsonMessageAndWait, readyState } = useWebSocketWithResponse(
+    const onOpen = () => {
+        loadEnvironment.mutate(environment);
+        loadModel.mutate({ model, backend });
+    };
+
+    const { sendJsonMessageAndWait, readyState } = useWebSocketWithResponse(
         fetchClient.PATH('/api/record/inference/ws'),
         {
             shouldReconnect: () => true,
             onMessage: (event: WebSocketEventMap['message']) => onMessage(event),
-            onClose: () => setState(createInferenceState()),
             onError: console.error,
+            onClose: () => setState(createInferenceState()),
+            onOpen,
         }
     );
 
@@ -64,34 +75,40 @@ export const useInference = (onError: (error: string) => void) => {
     };
 
     const loadEnvironment = useMutation({
-        mutationFn: async (environment: SchemaEnvironmentWithRelations) =>
+        meta: { skipInvalidation: true },
+        mutationFn: async (env: SchemaEnvironmentWithRelations) =>
             await sendJsonMessageAndWait<InferenceApiJsonResponse<InferenceState>>(
-                { event: 'load_environment', data: environment },
-                (data) => data['data']['environment_loaded'] == true // TODO: Handle errors?
+                { event: 'load_environment', data: { environment: env } },
+                (data) => data['data']['environment_loaded']
             ),
     });
 
     const loadModel = useMutation({
+        meta: { skipInvalidation: true },
         mutationFn: async (properties: { model: SchemaModel; backend: string }) =>
             await sendJsonMessageAndWait<InferenceApiJsonResponse<InferenceState>>(
                 { event: 'load_model', data: properties },
-                ({ data }) => data['model_loaded'] == true // TODO: Handle errors?
+                ({ data }) => data['model_loaded']
             ),
     });
 
-    const startTask = (taskIndex: number) => {
-        sendJsonMessage({
-            event: 'start_task',
-            data: { task_index: taskIndex },
-        });
-    };
+    const startTask = useMutation({
+        meta: { skipInvalidation: true },
+        mutationFn: async (task: string) =>
+            await sendJsonMessageAndWait<InferenceApiJsonResponse<InferenceState>>(
+                { event: 'start_task', data: task },
+                ({ data }) => data['is_running']
+            ),
+    });
 
-    const stopTask = () => {
-        sendJsonMessage({
-            event: 'stop_task',
-            data: {},
-        });
-    };
+    const stopTask = useMutation({
+        meta: { skipInvalidation: true },
+        mutationFn: async () =>
+            await sendJsonMessageAndWait<InferenceApiJsonResponse<InferenceState>>(
+                { event: 'stop_task', data: {} },
+                ({ data }) => data['is_running'] == false
+            ),
+    });
 
     const readyForInference = state.environment_loaded && state.model_loaded;
     const isConnected = readyState === 1;
