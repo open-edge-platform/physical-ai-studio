@@ -30,7 +30,7 @@
 The `physical-ai-studio` repository releases the following binary artifacts:
 
 - `library` - Python package (`physicalai-train`) published to PyPI;
-- `application` - container images for different architectures - `physical-ai-studio-xpu`, `physical-ai-studio-cuda`, and `physical-ai-studio-cpu` - pushed to `ghcr.io`.
+- `application` - container images for different architectures pushed to `ghcr.io`.
 
 The following container image names are used:
 
@@ -78,7 +78,7 @@ To distinguish release branches for `library` and `application`, this repository
 
 ### GitHub tags for release candidates
 
-To distinguish release candidate tags for `library` and `application`, this repository uses `lib` and `app` strings in the tag name.
+To distinguish release candidate GitHub tags for `library` and `application`, this repository uses `lib` and `app` strings in the tag name.
 Tags are used for both regular and patch release candidates.
 
 | Artifact to be released | GitHub tag format                                    | Example                          |
@@ -106,7 +106,7 @@ For patch release `patch` > `0`.
 
 ### Tagging binary release candidates
 
-Semantic Versioning is used for released binary artifacts. Tags are used for both regular and patch release candidates.
+Semantic Versioning is used for binary artifacts. Tags are used for both regular and patch release candidates.
 These tags are used in the following way.
 
 - Python package: tag is included in metadata that is used by the Python registry and in the Python wheel file name.
@@ -178,7 +178,7 @@ RC should be publicly available to encourage community testing and feedback. Pro
 6. If changes are required, apply them to the release branch and create a new RC tag (e.g., `app/v0.1.0rc2`).
 7. Once the quality of release candidate `rc-N` is acceptable, team members start the release process by manually launching the dedicated release workflow with the proper inputs (the RC tag to be released) to promote the approved release candidate to a release. The release promotion workflow performs the following actions:
    - tag the approved-for-release RC commit with the release GitHub tag (e.g., `app/v0.1.0`);
-   - re-tag approved release candidate with release version tag (e.g., `0.1.0rc2` -> `0.1.0`);
+   - re-tag approved container images RC with release version tag (e.g., `0.1.0rc2` -> `0.1.0`);
    - sign it with Cosign (keyless mode).
 
 8. Compile release notes for the new version (this is currently a manual task and will be automated in future iterations).
@@ -193,8 +193,8 @@ RC should be publicly available to encourage community testing and feedback. Pro
 5. If changes are required, apply them to the release branch and create a new RC tag (e.g., `app/v0.1.1rc2`).
 6. Once the quality of release candidate `rc-N` is acceptable, team members start the release process by manually launching the dedicated release workflow with the proper inputs (the RC tag to be released) to promote the approved release candidate to a release. The release promotion workflow performs the following actions:
    - tag the approved-for-release RC commit with the release GitHub tag (e.g., `app/v0.1.1`);
-   - re-tag approved release candidate with release version tag (e.g., `0.1.1rc2` -> `0.1.1`);
-   - sign it with Cosign (keyless mode).
+   - re-tag approved container images RC with release version tag (e.g., `0.1.1rc2` -> `0.1.1`);
+   - sign container images with Cosign (keyless mode).
 7. Compile release notes for the new version (this is currently a manual task and will be automated in future iterations).
 8. Create a GitHub release and publish the release notes on the GitHub Releases page. The name of the GitHub release should allow consumers to easily find the appropriate release notes, for example: `Physical AI Studio v0.1.1`.
 
