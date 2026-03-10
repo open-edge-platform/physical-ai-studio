@@ -1,13 +1,10 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import asyncio
-import base64
 import time
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
 
-import cv2
-import numpy as np
 from lerobot.utils.robot_utils import precise_sleep
 from loguru import logger
 from pydantic import BaseModel
@@ -202,9 +199,6 @@ class InferenceWorker(BaseThreadWorker):
         logger.error(f"error: {data}")
         self.queue.put(data)
 
-    def _report_trajectory(self, trajectory: list[dict]):
-        self.queue.put({"event": "trajectory", "data": {"trajectory": trajectory}})
-
     def _report_observation(self, data: dict):
         """Report observation to queue."""
         self.queue.put(
@@ -213,9 +207,3 @@ class InferenceWorker(BaseThreadWorker):
                 "data": data,
             }
         )
-
-    def _base_64_encode_observation(self, observation: np.ndarray | None) -> str:
-        if observation is None:
-            return ""
-        _, imagebytes = cv2.imencode(".jpg", observation)
-        return base64.b64encode(imagebytes).decode()
