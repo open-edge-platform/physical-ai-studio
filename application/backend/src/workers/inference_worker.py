@@ -144,17 +144,16 @@ class InferenceWorker(BaseThreadWorker):
                             observation, timestamp
                         )
                         if self.state.is_running and self.model_integration:
+
                             model_observation = self.environment_integration.format_model_input_observation(
                                 observation, task=self.state.task
                             )
                             action = self.model_integration.select_action(model_observation)
                             if action is not None:
-                                logger.info(action)
                                 formatted_actions = dict(zip(self.environment_integration.action_keys, action))
                                 report_observation["actions"] = formatted_actions
                                 await self.environment_integration.set_joints_state(formatted_actions, 1 / 30)
                                 # self._report_action(observation, formatted_actions, timestamp)
-                        logger.info(report_observation)
                         self._report_observation(report_observation)
                 dt_s = time.perf_counter() - start_loop_t
                 wait_time = 1 / 30 - dt_s
