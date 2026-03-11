@@ -15,17 +15,19 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import torch
-
+from safetensors.torch import load_file
+from huggingface_hub import hf_hub_download
 from physicalai.data.observation import ACTION, IMAGES
+from physicalai.data.dataset import Dataset
 from physicalai.policies.base import Policy
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 from .config import PI05Config
-from .model import PI05Model, pad_vector
+from .model import PI05Model
+from .preprocessor import make_pi05_preprocessors
 
 if TYPE_CHECKING:
     from physicalai.data import Observation
-    from physicalai.gyms import Gym
 
     from .preprocessor import PI05Postprocessor, PI05Preprocessor
 
@@ -175,8 +177,6 @@ class PI05(Policy):
 
         Called by both lazy (setup) and eager (checkpoint) paths.
         """
-        from .preprocessor import make_pi05_preprocessors  # noqa: PLC0415
-
         self.model = PI05Model(self.config)
 
         if self.config.gradient_checkpointing:
@@ -228,8 +228,7 @@ class PI05(Policy):
             ...     n_action_steps=10,
             ...     device="cuda",
             ... )
-        """
-        from safetensors.torch import load_file  # noqa: PLC0415
+        """        
 
         path = Path(pretrained_name_or_path)
         is_local = path.is_dir()
@@ -241,18 +240,25 @@ class PI05(Policy):
             preprocessor_file = path / "policy_preprocessor.json"
             preprocessor_dir = path
         else:
-            from huggingface_hub import hf_hub_download  # noqa: PLC0415
-
             hub_kwargs = {
                 k: v
                 for k, v in kwargs.items()
-                if k in ("cache_dir", "force_download", "resume_download", "proxies", "token", "revision", "local_files_only")
+                if k
+                in (
+                    "cache_dir",
+                    "force_download",
+                    "resume_download",
+                    "proxies",
+                    "token",
+                    "revision",
+                    "local_files_only",
+                )
             }
             config_file = Path(hf_hub_download(pretrained_name_or_path, "config.json", **hub_kwargs))
             weights_file = Path(hf_hub_download(pretrained_name_or_path, "model.safetensors", **hub_kwargs))
             try:
                 preprocessor_file = Path(
-                    hf_hub_download(pretrained_name_or_path, "policy_preprocessor.json", **hub_kwargs)
+                    hf_hub_download(pretrained_name_or_path, "policy_preprocessor.json", **hub_kwargs),
                 )
                 preprocessor_dir = preprocessor_file.parent
 
@@ -389,7 +395,6 @@ class PI05(Policy):
         by ``state_file`` in each pipeline step). The keys are flat:
         ``"observation.state.q01"``, ``"action.q99"``, etc.
         """
-        from safetensors.torch import load_file  # noqa: PLC0415
 
         stats: dict[str, dict[str, Any]] = {}
 
@@ -458,14 +463,7 @@ class PI05(Policy):
                 shape = tuple(shape)
                 dim = shape[0] if shape else 1
 
-                if "state" in feat_name.lower():
-                    stats[feat_name] = {
-                        "name": feat_name,
-                        "shape": shape,
-                        "mean": [0.0] * dim,
-                        "std": [1.0] * dim,
-                    }
-                elif feat_name == ACTION or "action" in feat_name.lower():
+                if "state" in feat_name.lower() or feat_name == ACTION or "action" in feat_name.lower():
                     stats[feat_name] = {
                         "name": feat_name,
                         "shape": shape,
@@ -520,8 +518,8 @@ class PI05(Policy):
             q01 = feat_stats["q01"]
             q99 = feat_stats["q99"]
             if isinstance(q01, list) and isinstance(q99, list):
-                mean = [(a + b) / 2.0 for a, b in zip(q01, q99)]
-                std = [max((b - a) / 2.0, 1e-8) for a, b in zip(q01, q99)]
+                mean = [(a + b) / 2.0 for a, b in zip(q01, q99, strict=False)]
+                std = [max((b - a) / 2.0, 1e-8) for a, b in zip(q01, q99, strict=False)]
                 return mean, std
 
         # MIN_MAX: min/max → mean/std
@@ -529,8 +527,8 @@ class PI05(Policy):
             mn = feat_stats["min"]
             mx = feat_stats["max"]
             if isinstance(mn, list) and isinstance(mx, list):
-                mean = [(a + b) / 2.0 for a, b in zip(mn, mx)]
-                std = [max((b - a) / 2.0, 1e-8) for a, b in zip(mn, mx)]
+                mean = [(a + b) / 2.0 for a, b in zip(mn, mx, strict=False)]
+                std = [max((b - a) / 2.0, 1e-8) for a, b in zip(mn, mx, strict=False)]
                 return mean, std
 
         return None, None
@@ -548,8 +546,7 @@ class PI05(Policy):
 
             # Strip "model." prefix — HF checkpoint wraps everything
             # under the policy's `self.model`, but we load into PI05Model directly.
-            if new_key.startswith("model."):
-                new_key = new_key[len("model."):]
+            new_key = new_key.removeprefix("model.")
 
             # Skip adaRMS mismatch keys for expert
             if re.match(
@@ -591,8 +588,6 @@ class PI05(Policy):
 
         if self.model is not None:
             return
-
-        from physicalai.data.dataset import Dataset  # noqa: PLC0415
 
         datamodule = self.trainer.datamodule  # type: ignore[attr-defined]
         train_dataset = datamodule.train_dataset
@@ -722,15 +717,3 @@ class PI05(Policy):
                 gradient_clip_val=clip_val,
                 gradient_clip_algorithm=gradient_clip_algorithm or "norm",
             )
-
-    @property
-    def observation_delta_indices(self) -> None:
-        return None
-
-    @property
-    def action_delta_indices(self) -> list[int]:
-        return list(range(self.config.chunk_size))
-
-    @property
-    def reward_delta_indices(self) -> None:
-        return None

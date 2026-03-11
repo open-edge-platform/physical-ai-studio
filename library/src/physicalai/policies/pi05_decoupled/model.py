@@ -156,11 +156,10 @@ def resize_with_pad_torch(
         if images.dim() == 3:  # noqa: PLR2004
             images = images.unsqueeze(0)
         images = images.permute(0, 3, 1, 2)
-    else:
-        if images.dim() == 3:  # noqa: PLR2004
-            images = images.unsqueeze(0)
+    elif images.dim() == 3:  # noqa: PLR2004
+        images = images.unsqueeze(0)
 
-    _batch_size, _channels, cur_height, cur_width = images.shape
+    _, _, cur_height, cur_width = images.shape
 
     ratio = max(cur_width / width, cur_height / height)
     resized_height = int(cur_height / ratio)
@@ -240,7 +239,11 @@ def compute_layer_complete(
     )
     cos, sin = paligemma.model.language_model.rotary_emb(dummy_tensor, position_ids)
     query_states, key_states = modeling_gemma.apply_rotary_pos_emb(
-        query_states, key_states, cos, sin, unsqueeze_dim=1
+        query_states,
+        key_states,
+        cos,
+        sin,
+        unsqueeze_dim=1,
     )
     batch_size = query_states.shape[0]
     scaling = paligemma.model.language_model.layers[layer_idx].self_attn.scaling
@@ -300,13 +303,21 @@ def get_gemma_config(variant: str) -> GemmaVariantConfig:
     """Return config for the specified Gemma variant."""
     if variant == "gemma_300m":
         return GemmaVariantConfig(
-            width=1024, depth=18, mlp_dim=4096,
-            num_heads=8, num_kv_heads=1, head_dim=256,
+            width=1024,
+            depth=18,
+            mlp_dim=4096,
+            num_heads=8,
+            num_kv_heads=1,
+            head_dim=256,
         )
     if variant == "gemma_2b":
         return GemmaVariantConfig(
-            width=2048, depth=18, mlp_dim=16_384,
-            num_heads=8, num_kv_heads=1, head_dim=256,
+            width=2048,
+            depth=18,
+            mlp_dim=16_384,
+            num_heads=8,
+            num_kv_heads=1,
+            head_dim=256,
         )
     msg = f"Unknown variant: {variant}"
     raise ValueError(msg)
@@ -584,7 +595,11 @@ class PI05Model(nn.Module):
         """Apply gradient checkpointing if enabled."""
         if self.gradient_checkpointing_enabled and self.training:
             return torch.utils.checkpoint.checkpoint(
-                func, *args, use_reentrant=False, preserve_rng_state=False, **kwargs
+                func,
+                *args,
+                use_reentrant=False,
+                preserve_rng_state=False,
+                **kwargs,
             )
         return func(*args, **kwargs)
 
@@ -595,8 +610,11 @@ class PI05Model(nn.Module):
 
     def sample_noise(self, shape: tuple, device: torch.device) -> Tensor:
         return torch.normal(
-            mean=0.0, std=1.0, size=shape,
-            dtype=torch.float32, device=device,
+            mean=0.0,
+            std=1.0,
+            size=shape,
+            dtype=torch.float32,
+            device=device,
         )
 
     def sample_time(self, bsize: int, device: torch.device) -> Tensor:
@@ -753,7 +771,12 @@ class PI05Model(nn.Module):
             return suffix_out
 
         suffix_out = self._apply_checkpoint(
-            forward_func, prefix_embs, suffix_embs, att_2d_masks_4d, position_ids, adarms_cond
+            forward_func,
+            prefix_embs,
+            suffix_embs,
+            att_2d_masks_4d,
+            position_ids,
+            adarms_cond,
         )
 
         suffix_out = suffix_out[:, -self.config.chunk_size :]

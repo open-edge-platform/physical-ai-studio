@@ -106,10 +106,7 @@ class PI05Config(Config):
     def __post_init__(self) -> None:
         """Validate configuration parameters after initialization."""
         if self.n_action_steps > self.chunk_size:
-            msg = (
-                f"n_action_steps ({self.n_action_steps}) cannot be greater than "
-                f"chunk_size ({self.chunk_size})"
-            )
+            msg = f"n_action_steps ({self.n_action_steps}) cannot be greater than chunk_size ({self.chunk_size})"
             raise ValueError(msg)
 
         if self.paligemma_variant not in ("gemma_300m", "gemma_2b"):

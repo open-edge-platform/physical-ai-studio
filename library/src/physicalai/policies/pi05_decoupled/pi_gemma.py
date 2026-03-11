@@ -28,6 +28,8 @@ from __future__ import annotations
 import torch
 from torch import nn
 
+import logging
+
 try:
     from transformers.cache_utils import DynamicCache
     from transformers.masking_utils import create_causal_mask
@@ -50,13 +52,13 @@ except ImportError as e:
 
 
 __all__ = [
-    "PiGemmaModel",
+    "PaliGemmaForConditionalGenerationWithPiGemma",
+    "PaliGemmaModelWithPiGemma",
     "PiGemmaForCausalLM",
+    "PiGemmaModel",
     "PiGemmaRMSNorm",
     "_gated_residual",
     "layernorm_forward",
-    "PaliGemmaModelWithPiGemma",
-    "PaliGemmaForConditionalGenerationWithPiGemma",
 ]
 
 
@@ -151,14 +153,16 @@ def _get_pi_gemma_decoder_layer_base():
             self.hidden_size = config.hidden_size
             self.self_attn = GemmaAttention(config=config, layer_idx=layer_idx)
             self.mlp = GemmaMLP(config)
-            cond_dim = (
-                getattr(config, "adarms_cond_dim", None) if getattr(config, "use_adarms", False) else None
-            )
+            cond_dim = getattr(config, "adarms_cond_dim", None) if getattr(config, "use_adarms", False) else None
             self.input_layernorm = PiGemmaRMSNorm(
-                config.hidden_size, eps=config.rms_norm_eps, cond_dim=cond_dim
+                config.hidden_size,
+                eps=config.rms_norm_eps,
+                cond_dim=cond_dim,
             )
             self.post_attention_layernorm = PiGemmaRMSNorm(
-                config.hidden_size, eps=config.rms_norm_eps, cond_dim=cond_dim
+                config.hidden_size,
+                eps=config.rms_norm_eps,
+                cond_dim=cond_dim,
             )
 
         def forward(
@@ -205,7 +209,7 @@ class PiGemmaModel(GemmaModel):  # type: ignore[misc]
         cond_dim = getattr(config, "adarms_cond_dim", None)
         pi_gemma_decoder_layer_base = _get_pi_gemma_decoder_layer_base()
         self.layers = nn.ModuleList(
-            [pi_gemma_decoder_layer_base(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
+            [pi_gemma_decoder_layer_base(config, layer_idx) for layer_idx in range(config.num_hidden_layers)],
         )
         self.norm = PiGemmaRMSNorm(config.hidden_size, eps=config.rms_norm_eps, cond_dim=cond_dim)
 
@@ -224,9 +228,7 @@ class PiGemmaModel(GemmaModel):  # type: ignore[misc]
         **kwargs,
     ) -> BaseModelOutputWithPast:
         """Forward pass with optional AdaRMS conditioning."""
-        output_attentions = (
-            output_attentions if output_attentions is not None else self.config.output_attentions
-        )
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
@@ -237,11 +239,8 @@ class PiGemmaModel(GemmaModel):  # type: ignore[misc]
             raise ValueError(msg)
 
         if self.gradient_checkpointing and self.training and use_cache:
-            import logging  # noqa: PLC0415
-
-            logging.warning(
-                "`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`."
-            )
+            msg = "`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`."
+            logging.warning(msg)
             use_cache = False
 
         if inputs_embeds is None:
@@ -253,7 +252,9 @@ class PiGemmaModel(GemmaModel):  # type: ignore[misc]
         if cache_position is None:
             past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
             cache_position = torch.arange(
-                past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1], device=inputs_embeds.device
+                past_seen_tokens,
+                past_seen_tokens + inputs_embeds.shape[1],
+                device=inputs_embeds.device,
             )
 
         if position_ids is None:
@@ -261,8 +262,6 @@ class PiGemmaModel(GemmaModel):  # type: ignore[misc]
 
         causal_mask = create_causal_mask(
             config=self.config,
-            # @deprecate_kwarg("input_embeds", version="5.6.0", new_name="inputs_embeds")
-            # inputs_embeds=inputs_embeds, 
             input_embeds=inputs_embeds,
             attention_mask=attention_mask,
             cache_position=cache_position,

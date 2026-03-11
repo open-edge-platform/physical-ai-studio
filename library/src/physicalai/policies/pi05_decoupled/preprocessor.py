@@ -17,13 +17,10 @@ Handles:
 from __future__ import annotations
 
 import logging
-from copy import deepcopy
 from typing import Any, cast
 
 import numpy as np
 import torch
-import torch.nn.functional as F  # noqa: N812
-
 from physicalai.data import Feature, FeatureType, NormalizationParameters
 from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, Observation
 from physicalai.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
@@ -128,6 +125,13 @@ class PI05Preprocessor(torch.nn.Module):
 
         # Preprocess images
         images, img_masks = self._preprocess_images(batch)
+
+        # Append empty cameras as -1-filled images with zero masks
+        if self.empty_cameras > 0 and len(images) > 0:
+            for _ in range(self.empty_cameras):
+                images.append(torch.ones_like(images[-1]) * -1)
+                img_masks.append(torch.zeros_like(img_masks[-1]))
+
         batch[IMAGES] = images
         batch["image_masks"] = img_masks
 
@@ -181,13 +185,6 @@ class PI05Preprocessor(torch.nn.Module):
             mask = torch.ones(bsize, dtype=torch.bool, device=device)
             images.append(img)
             img_masks.append(mask)
-
-        # Add empty camera images (padded with -1, mask=0) to match training config
-        for _ in range(self.empty_cameras):
-            empty_img = torch.ones_like(images[-1]) * -1
-            empty_mask = torch.zeros(images[-1].shape[0], dtype=torch.bool, device=device)
-            images.append(empty_img)
-            img_masks.append(empty_mask)
 
         return images, img_masks
 
@@ -288,7 +285,7 @@ def make_pi05_preprocessors(
             # Map HF feature names (e.g. "observation.state") to Observation
             # field names (e.g. "state") so the normalizer can match batch keys.
             raw_name = str(stat["name"])
-            mapped_name = raw_name.split("observation.")[-1] if "observation." in raw_name else raw_name
+            mapped_name = raw_name.rsplit("observation.", maxsplit=1)[-1] if "observation." in raw_name else raw_name
 
             features[mapped_name] = Feature(
                 name=mapped_name,
