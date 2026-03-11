@@ -57,7 +57,6 @@ class InferenceWorker(BaseThreadWorker):
         self.events = {"interrupt": Event(), "new_model": Event(), "new_environment": Event()}
 
     def start_task(self, task: str) -> None:
-        logger.info("start")
         if self.ready_for_inference:
             if self.model_integration is not None:
                 self.model_integration.reset()
@@ -68,7 +67,6 @@ class InferenceWorker(BaseThreadWorker):
 
     def stop(self) -> None:
         """Stop inference."""
-        logger.info("stop")
         self.state.is_running = False
         self._report_state()
 
@@ -188,7 +186,6 @@ class InferenceWorker(BaseThreadWorker):
 
     def _report_state(self):
         state = {"event": "state", "data": self.state.model_dump()}
-        logger.info(f"inference state: {state}")
         self.queue.put(state)
 
     def _report_error(self, error: BaseException):

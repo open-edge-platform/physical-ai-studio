@@ -5,7 +5,6 @@ import cv2
 import numpy as np
 import torch
 from frame_source.video_capture_base import VideoCaptureBase
-from loguru import logger
 from physicalai.data import Observation
 
 from robots.robot_client import RobotClient
@@ -52,7 +51,6 @@ class InferenceEnvironmentIntegration:
     async def set_joints_state(self, actions: dict, goal_time: float) -> None:
         """Set joints on robot"""
         if self.follower:
-            logger.info(actions)
             await self.follower.set_joints_state(actions, goal_time)
 
     async def get_observation(self) -> dict | None:
