@@ -198,7 +198,7 @@ class PI05(Policy):
         cls,
         pretrained_name_or_path: str | Path,
         *,
-        n_action_steps: int | None = None,
+        n_action_steps: int | None = 10,
         num_inference_steps: int | None = None,
         compile_model: bool | None = None,
         compile_mode: str | None = None,
@@ -232,7 +232,7 @@ class PI05(Policy):
             ...     n_action_steps=10,
             ...     device="cuda",
             ... )
-        """        
+        """
 
         path = Path(pretrained_name_or_path)
         is_local = path.is_dir()

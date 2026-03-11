@@ -19,7 +19,6 @@
 
 from __future__ import annotations
 
-import copy
 import logging
 import math
 from typing import TYPE_CHECKING, Literal
@@ -35,6 +34,7 @@ from .pi_gemma import (
     _gated_residual,
     layernorm_forward,
 )
+from transformers.cache_utils import DynamicCache
 
 if TYPE_CHECKING:
     from transformers.models.gemma import modeling_gemma
@@ -83,7 +83,7 @@ def create_sinusoidal_pos_embedding(
         msg = "The time tensor is expected to be of shape `(batch_size, )`."
         raise ValueError(msg)
 
-    dtype = get_safe_dtype(torch.float64, device.type)
+    dtype = torch.float32 if torch.onnx.is_in_onnx_export() else get_safe_dtype(torch.float64, device.type)
     fraction = torch.linspace(0.0, 1.0, dimension // 2, dtype=dtype, device=device)
     period = min_period * (max_period / min_period) ** fraction
 
@@ -197,6 +197,18 @@ def resize_with_pad_torch(
         padded_images = padded_images.permute(0, 2, 3, 1)
 
     return padded_images
+
+
+def _clone_kv_cache(past_key_values):
+    """Create a clone of a DynamicCache with cloned tensors.
+
+    copy.deepcopy is not traceable by torch.jit / torch.onnx.export,
+    so we manually clone the underlying key/value tensors instead.
+    """
+    cloned = DynamicCache()
+    for layer_idx, (key_states, value_states) in enumerate(past_key_values):
+        cloned.update(key_states.clone(), value_states.clone(), layer_idx)
+    return cloned
 
 
 def compute_layer_complete(
@@ -611,6 +623,7 @@ class PI05Model(nn.Module):
         return torch.where(att_2d_masks_4d, 0.0, OPENPI_ATTENTION_MASK_VALUE)
 
     def sample_noise(self, shape: tuple, device: torch.device) -> Tensor:
+        """Sample noise for the model."""
         return torch.normal(
             mean=0.0,
             std=1.0,
@@ -620,6 +633,7 @@ class PI05Model(nn.Module):
         )
 
     def sample_time(self, bsize: int, device: torch.device) -> Tensor:
+        """Sample time values for the model."""
         time_beta = sample_beta(
             self.config.time_sampling_beta_alpha,
             self.config.time_sampling_beta_beta,
@@ -869,7 +883,11 @@ class PI05Model(nn.Module):
         full_att_2d_masks_4d = self._prepare_attention_masks_4d(full_att_2d_masks)
         self.paligemma_with_expert.gemma_expert.model.config._attn_implementation = "eager"  # noqa: SLF001
 
-        past_key_values = copy.deepcopy(past_key_values)
+        # Deep-copy the KV cache so that HF's attention layers (which always call
+        # past_key_values.update() in-place) don't corrupt the original prefix
+        # cache across denoising steps.  copy.deepcopy is not traceable for ONNX,
+        # so we clone tensors manually when exporting.
+        past_key_values = _clone_kv_cache(past_key_values)
         outputs_embeds, _ = self.paligemma_with_expert.forward(
             attention_mask=full_att_2d_masks_4d,
             position_ids=position_ids,
