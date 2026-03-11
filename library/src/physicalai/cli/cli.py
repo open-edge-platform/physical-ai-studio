@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 r"""Unified CLI for physicalai extending LightningCLI with benchmark support.
@@ -55,7 +55,7 @@ from lightning.pytorch.cli import LightningArgumentParser, LightningCLI
 
 from physicalai.data import DataModule
 from physicalai.policies.base import Policy
-from physicalai.train.trainer import Trainer
+from physicalai.train import Trainer
 
 if TYPE_CHECKING:
     from physicalai.benchmark import Benchmark
