@@ -125,8 +125,7 @@ class InferenceWorker(BaseThreadWorker):
                 if self.state.error:
                     return
 
-                await self._handle_new_model_load()
-                await self._handle_setup_environment()
+                await asyncio.gather(self._handle_new_model_load(), self._handle_setup_environment())
 
                 start_loop_t = time.perf_counter()
                 if self.environment_integration:
