@@ -217,6 +217,8 @@ class PI05(Policy):
             pretrained_name_or_path: HuggingFace repo ID or local path.
             n_action_steps: Override number of action steps to execute.
             num_inference_steps: Override denoising steps for inference.
+            compile_model: Override whether to use torch.compile.
+            compile_mode: Override torch compile mode.
             device: Device to place the model on after loading.
             **kwargs: Extra arguments forwarded to ``huggingface_hub.hf_hub_download``.
 

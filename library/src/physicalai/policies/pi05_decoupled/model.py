@@ -572,8 +572,10 @@ class PI05Model(nn.Module):
 
         if config.compile_model:
             torch.set_float32_matmul_precision("high")
-            self.sample_actions = torch.compile(self.sample_actions, mode=config.compile_mode)
-            self.forward = torch.compile(self.forward, mode=config.compile_mode)
+            # TODO(Eugene): max-autotune currently failed. set to default for now, need further investigation.
+            compile_mode = "default"  # config.compile_mode
+            self.sample_actions = torch.compile(self.sample_actions, mode=compile_mode)
+            self.forward = torch.compile(self.forward, mode=compile_mode)
 
     def gradient_checkpointing_enable(self) -> None:
         """Enable gradient checkpointing for memory optimization."""

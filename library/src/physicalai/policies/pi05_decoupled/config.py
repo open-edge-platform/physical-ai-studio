@@ -88,7 +88,7 @@ class PI05Config(Config):
 
     gradient_checkpointing: bool = False
     compile_model: bool = False
-    compile_mode: str = "max-autotune"
+    compile_mode: str = "default"
 
     freeze_vision_encoder: bool = False
     train_expert_only: bool = False
