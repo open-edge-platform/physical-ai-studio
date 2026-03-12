@@ -7,7 +7,15 @@ from fastapi.exceptions import HTTPException
 from fastapi.requests import HTTPConnection
 
 from core.scheduler import Scheduler
-from services import DatasetService, JobService, ModelService, ProjectCameraService, ProjectService, RobotService
+from services import (
+    DatasetService,
+    EpisodeThumbnailService,
+    JobService,
+    ModelService,
+    ProjectCameraService,
+    ProjectService,
+    RobotService,
+)
 from services.environment_service import EnvironmentService
 from services.event_processor import EventProcessor
 from services.robot_calibration_service import RobotCalibrationService
@@ -79,6 +87,12 @@ def get_environment_service() -> EnvironmentService:
 def get_dataset_service() -> DatasetService:
     """Provides a DatasetService instance for managing datasets."""
     return DatasetService()
+
+
+@lru_cache
+def get_episode_thumbnail_service() -> EpisodeThumbnailService:
+    """Provides a service for building episode thumbnails."""
+    return EpisodeThumbnailService()
 
 
 @lru_cache

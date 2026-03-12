@@ -1,20 +1,20 @@
 import { Checkbox, Flex, View, VirtualizedListLayout } from '@geti/ui';
 import { clsx } from 'clsx';
 
-import { SchemaEpisode } from '../../api/openapi-spec';
+import { fetchClient } from '../../api/client';
 import { EpisodeTag } from '../../features/datasets/episodes/episode-tag';
-import { useDataset } from './dataset-provider';
+import { EpisodeSummary, useDataset } from './dataset-provider';
 
 import classes from './episode-list.module.scss';
 
 interface EpisodeListProps {
-    episodes: SchemaEpisode[];
+    episodes: EpisodeSummary[];
     onSelect: (index: number) => void;
     currentEpisode: number;
 }
 
 export const EpisodeList = ({ episodes, onSelect, currentEpisode }: EpisodeListProps) => {
-    const { selectedEpisodes, setSelectedEpisodes } = useDataset();
+    const { dataset_id, selectedEpisodes, setSelectedEpisodes } = useDataset();
 
     const toggleSelection = (episodeIndex: number) => {
         setSelectedEpisodes((list) =>
@@ -31,29 +31,44 @@ export const EpisodeList = ({ episodes, onSelect, currentEpisode }: EpisodeListP
                 layoutOptions={{ rowHeight: 190 }}
                 idFormatter={(episode) => `${episode.episode_index}`}
                 textValueFormatter={(episode) => `Episode ${episode.episode_index + 1}`}
-                renderItem={(episode) => (
-                    <View
-                        UNSAFE_className={clsx({
-                            [classes.episodeItem]: true,
-                            [classes.active]: currentEpisode === episode.episode_index,
-                        })}
-                    >
-                        <img
-                            alt={`Camera frame of ${episode.episode_index}`}
-                            src={`data:image/jpg;base64,${episode.thumbnail}`}
-                            className={classes.episodeImage}
-                            onClick={() => onSelect(episode.episode_index)}
-                        />
-                        <Flex alignItems={'center'} justifyContent={'space-between'} height='size-400' width='100%'>
-                            <EpisodeTag episode={episode} variant='small' />
-                            <Checkbox
-                                isSelected={selectedEpisodes.includes(episode.episode_index)}
-                                onPress={() => toggleSelection(episode.episode_index)}
-                                UNSAFE_className={classes.episodeCheckbox}
+                renderItem={(episode) => {
+                    const thumbnailSrc = fetchClient.PATH(
+                        '/api/dataset/{dataset_id}/episodes/{episode_index}/thumbnail',
+                        {
+                            params: {
+                                path: {
+                                    dataset_id,
+                                    episode_index: episode.episode_index,
+                                },
+                                query: { height: 240, width: 320 },
+                            },
+                        }
+                    );
+
+                    return (
+                        <View
+                            UNSAFE_className={clsx({
+                                [classes.episodeItem]: true,
+                                [classes.active]: currentEpisode === episode.episode_index,
+                            })}
+                        >
+                            <img
+                                alt={`Camera frame of ${episode.episode_index}`}
+                                src={thumbnailSrc}
+                                className={classes.episodeImage}
+                                onClick={() => onSelect(episode.episode_index)}
                             />
-                        </Flex>
-                    </View>
-                )}
+                            <Flex alignItems={'center'} justifyContent={'space-between'} height='size-400' width='100%'>
+                                <EpisodeTag episode={episode} variant='small' />
+                                <Checkbox
+                                    isSelected={selectedEpisodes.includes(episode.episode_index)}
+                                    onPress={() => toggleSelection(episode.episode_index)}
+                                    UNSAFE_className={classes.episodeCheckbox}
+                                />
+                            </Flex>
+                        </View>
+                    );
+                }}
             />
         </View>
     );
