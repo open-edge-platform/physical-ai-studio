@@ -3,7 +3,6 @@ import base64
 
 import cv2
 import numpy as np
-import torch
 from frame_source.video_capture_base import VideoCaptureBase
 from physicalai.data import Observation
 
@@ -11,13 +10,6 @@ from robots.robot_client import RobotClient
 from robots.robot_client_factory import RobotClientFactory
 from schemas.environment import EnvironmentWithRelations
 from workers.camera_worker import create_frames_source_from_camera
-
-
-class CameraFrameProcessor:
-    @staticmethod
-    def process(frame: np.ndarray) -> np.ndarray:
-        """Post process camera frame."""
-        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
 
 class InferenceEnvironmentIntegration:
@@ -57,11 +49,10 @@ class InferenceEnvironmentIntegration:
         if self.follower and self.cameras:
             observation = (await self.follower.read_state())["state"]
             for camera_id, camera in self.cameras.items():
-                _success, camera_frame = camera.get_latest_frame()  # HWC
+                _success, camera_frame = camera.read()  # HWC
                 if camera_frame is None:
                     raise Exception("Camera frame is None")
-                processed_frame = CameraFrameProcessor.process(camera_frame)
-                observation[camera_id] = processed_frame
+                observation[camera_id] = camera_frame
 
             return observation
 
@@ -69,10 +60,7 @@ class InferenceEnvironmentIntegration:
 
     def format_observation_for_reporting(self, observation: dict, timestamp: float) -> dict:
         if self.cameras:
-            camera_images = {
-                camera: self._base_64_encode_observation(cv2.cvtColor(observation[camera], cv2.COLOR_RGB2BGR))
-                for camera in self.cameras
-            }
+            camera_images = {camera: self._base_64_encode_observation(observation[camera]) for camera in self.cameras}
 
         return {
             "state": {key: observation[key] for key in self.action_keys},
@@ -83,17 +71,14 @@ class InferenceEnvironmentIntegration:
 
     def format_model_input_observation(self, raw_observation: dict, task: str | None = None) -> Observation:  # noqa: ARG002
         observation = self._remap_camera_observations(raw_observation)
-        state = (
-            torch.tensor([value for key, value in observation.items() if key in self.action_keys]).unsqueeze(0).float()
-        )
+        state = np.array([[value for key, value in observation.items() if key in self.action_keys]], dtype=np.float32)
         images: dict = {}
         for camera in self.environment.cameras:
             camera_name = camera.name.lower()
-            # change image to 0..1 and swap R & B channels.
-            images[camera_name] = torch.from_numpy(observation[camera_name])
-            images[camera_name] = images[camera_name].float() / 255
-            images[camera_name] = images[camera_name].permute(2, 0, 1).contiguous()
-            images[camera_name] = images[camera_name].unsqueeze(0)
+            # SWAP HWC, RGB2BGR and in float 0..1 range.
+            images[camera_name] = np.ascontiguousarray(
+                observation[camera_name][..., ::-1].transpose(2, 0, 1).astype(np.float32)[np.newaxis] / 255
+            )
 
         return Observation(
             state=state,
