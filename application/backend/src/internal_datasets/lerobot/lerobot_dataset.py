@@ -17,7 +17,7 @@ from loguru import logger
 
 from internal_datasets.dataset_client import DatasetClient
 from internal_datasets.mutations.recording_mutation import RecordingMutation
-from schemas import Episode, EpisodeVideo
+from schemas import Episode, EpisodeVideo, StreamingEncodingSettings
 from settings import get_settings
 
 
@@ -29,25 +29,16 @@ class InternalLeRobotDataset(DatasetClient):
     _teleop_action_processor: RobotProcessorPipeline
     _robot_action_processor: RobotProcessorPipeline
     _robot_observation_processor: RobotProcessorPipeline
-    _streaming_encoding: bool
-    _vcodec: str
-    _encoder_threads: int | None
-    _encoder_queue_maxsize: int
+    _streaming_encoding_settings: StreamingEncodingSettings
 
     def __init__(
         self,
         dataset_path: Path,
         *,
-        streaming_encoding: bool = True,
-        vcodec: str = "auto",
-        encoder_threads: int | None = None,
-        encoder_queue_maxsize: int = 60,
+        streaming_encoding_settings: StreamingEncodingSettings | None = None,
     ):
         self.path = dataset_path
-        self._streaming_encoding = streaming_encoding
-        self._vcodec = vcodec
-        self._encoder_threads = encoder_threads
-        self._encoder_queue_maxsize = encoder_queue_maxsize
+        self._streaming_encoding_settings = streaming_encoding_settings or StreamingEncodingSettings()
         self.load_dataset()
 
         self._teleop_action_processor, self._robot_action_processor, self._robot_observation_processor = (
@@ -60,10 +51,7 @@ class InternalLeRobotDataset(DatasetClient):
             self._dataset = LeRobotDataset(
                 str(uuid4()),
                 self.path,
-                streaming_encoding=self._streaming_encoding,
-                vcodec=self._vcodec,
-                encoder_threads=self._encoder_threads,
-                encoder_queue_maxsize=self._encoder_queue_maxsize,
+                **self._streaming_encoding_settings.model_dump(),
             )
             self.has_episodes = self._dataset.num_episodes > 0
 
@@ -83,17 +71,14 @@ class InternalLeRobotDataset(DatasetClient):
             features=features,
             robot_type=robot_type,
             use_videos=True,
-            streaming_encoding=self._streaming_encoding,
-            vcodec=self._vcodec,
-            encoder_threads=self._encoder_threads,
-            encoder_queue_maxsize=self._encoder_queue_maxsize,
+            **self._streaming_encoding_settings.model_dump(),
         )
         self.has_episodes = False
 
     def delete_episodes(self, episode_indices: list[int], output_path: Path) -> DatasetClient:
         """Copy over repo without given episode_indices to output_path."""
         lerobot_delete_episodes(dataset=self._dataset, episode_indices=episode_indices, output_dir=output_path)
-        return InternalLeRobotDataset(output_path)
+        return InternalLeRobotDataset(output_path, streaming_encoding_settings=self._streaming_encoding_settings)
 
     def get_tasks(self) -> list[str]:
         """Get Tasks in dataset."""
@@ -216,10 +201,7 @@ class InternalLeRobotDataset(DatasetClient):
         logger.info(f"Creating cache dataset {cache_dir}")
         cache_dataset = InternalLeRobotDataset(
             cache_dir,
-            streaming_encoding=self._streaming_encoding,
-            vcodec=self._vcodec,
-            encoder_threads=self._encoder_threads,
-            encoder_queue_maxsize=self._encoder_queue_maxsize,
+            streaming_encoding_settings=self._streaming_encoding_settings,
         )
         if self.exists_on_disk:
             shutil.copytree(self.path, cache_dir)
