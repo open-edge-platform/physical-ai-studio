@@ -6,7 +6,12 @@ import { useNavigate } from 'react-router';
 import { BackendSelection, defaultBackend } from '../../features/configuration/shared/backend-selection';
 import { paths } from '../../router';
 
-export const StartInferenceDialog = (close: () => void, project_id: string, model_id: string) => {
+interface StartInferenceDialogProps {
+    close: () => void;
+    project_id: string;
+    model_id: string;
+}
+export const StartInferenceDialog = ({ close, project_id, model_id }: StartInferenceDialogProps) => {
     const [backend, setBackend] = useState<string>(defaultBackend);
 
     const navigate = useNavigate();

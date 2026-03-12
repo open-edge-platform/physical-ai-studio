@@ -82,7 +82,7 @@ class InferenceEnvironmentIntegration:
         }
 
     def format_model_input_observation(self, raw_observation: dict, task: str | None = None) -> Observation:  # noqa: ARG002
-        observation = self._to_lerobot_observations(raw_observation)
+        observation = self._remap_camera_observations(raw_observation)
         state = (
             torch.tensor([value for key, value in observation.items() if key in self.action_keys]).unsqueeze(0).float()
         )
@@ -107,7 +107,7 @@ class InferenceEnvironmentIntegration:
         _, imagebytes = cv2.imencode(".jpg", observation)
         return base64.b64encode(imagebytes).decode()
 
-    def _to_lerobot_observations(self, observations: dict) -> dict:
+    def _remap_camera_observations(self, observations: dict) -> dict:
         """Remap camera observations from camera ID keys to lowercase camera name keys."""
         lerobot_observations = dict(observations)
         for camera in self.environment.cameras:

@@ -63,7 +63,9 @@ export const ModelRow = ({
             <View>
                 <DialogTrigger>
                     <Button variant='secondary'>Run model</Button>
-                    {(close) => StartInferenceDialog(close, model.project_id, model.id!)}
+                    {(close) => (
+                        <StartInferenceDialog close={close} project_id={model.project_id} model_id={model.id!} />
+                    )}
                 </DialogTrigger>
             </View>
             <View>

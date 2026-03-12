@@ -24,7 +24,7 @@ class InferenceState(BaseModel):
     task: str | None = None
     model_loaded: bool = False
     environment_loaded: bool = False
-    error: bool = False  # TODO: Allow saving of state.
+    error: bool = False
 
 
 class InferenceWorker(BaseThreadWorker):
@@ -75,7 +75,6 @@ class InferenceWorker(BaseThreadWorker):
         self.events["interrupt"].set()
 
     def load_model(self, model: Model, backend: str) -> None:
-        # // TODO: Unload existing model worker
         try:
             self.model_integration = SyncMixedModelIntegration(
                 model=model,
@@ -144,7 +143,6 @@ class InferenceWorker(BaseThreadWorker):
                                 formatted_actions = dict(zip(self.environment_integration.action_keys, action))
                                 report_observation["actions"] = formatted_actions
                                 await self.environment_integration.set_joints_state(formatted_actions, 1 / 30)
-                                # self._report_action(observation, formatted_actions, timestamp)
                         self._report_observation(report_observation)
                 dt_s = time.perf_counter() - start_loop_t
                 wait_time = 1 / 30 - dt_s
