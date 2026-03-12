@@ -129,24 +129,26 @@ export const CameraForm = () => {
 
     return (
         <>
-            <ul style={{ width: '100%' }}>
-                <Flex direction='column' gap='size-100' width='100%'>
-                    {environmentForm.camera_ids.map((id) => (
-                        <CameraListItem
-                            key={id}
-                            cameraId={id}
-                            onRemove={() => {
-                                setEnvironmentForm((oldForm) => {
-                                    return {
-                                        ...oldForm,
-                                        camera_ids: oldForm.camera_ids.filter((cameraId) => cameraId !== id),
-                                    };
-                                });
-                            }}
-                        />
-                    ))}
-                </Flex>
-            </ul>
+            {environmentForm.camera_ids.length > 0 && (
+                <ul style={{ width: '100%' }}>
+                    <Flex direction='column' gap='size-100' width='100%'>
+                        {environmentForm.camera_ids.map((id) => (
+                            <CameraListItem
+                                key={id}
+                                cameraId={id}
+                                onRemove={() => {
+                                    setEnvironmentForm((oldForm) => {
+                                        return {
+                                            ...oldForm,
+                                            camera_ids: oldForm.camera_ids.filter((cameraId) => cameraId !== id),
+                                        };
+                                    });
+                                }}
+                            />
+                        ))}
+                    </Flex>
+                </ul>
+            )}
 
             {isAdding ? (
                 <Well
