@@ -16,7 +16,7 @@ def mock_camera():
     camera.start_async = Mock
     camera.stop = Mock()
     camera.disconnect = Mock()
-    camera.get_latest_frame.return_value = (True, np.zeros([480, 640, 3], dtype=np.uint8))
+    camera.read.return_value = (True, np.zeros([480, 640, 3], dtype=np.uint8))
     return camera
 
 
