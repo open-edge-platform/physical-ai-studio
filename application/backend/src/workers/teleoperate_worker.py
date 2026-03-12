@@ -132,7 +132,13 @@ class TeleoperateWorker(BaseThreadWorker):
             if self.loop is None:
                 raise RuntimeError("The event loop must be set.")
             self.loop.run_until_complete(self.setup_environment())
-            self.dataset = InternalLeRobotDataset(Path(self.config.dataset.path))
+            self.dataset = InternalLeRobotDataset(
+                Path(self.config.dataset.path),
+                streaming_encoding=self.config.streaming_encoding,
+                vcodec=self.config.vcodec,
+                encoder_threads=self.config.encoder_threads,
+                encoder_queue_maxsize=self.config.encoder_queue_maxsize,
+            )
 
             if self.leader is None or self.follower is None or self.dataset is None:
                 raise RuntimeError("Environment setup failed.")

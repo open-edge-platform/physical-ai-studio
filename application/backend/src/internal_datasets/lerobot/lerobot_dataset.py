@@ -29,9 +29,25 @@ class InternalLeRobotDataset(DatasetClient):
     _teleop_action_processor: RobotProcessorPipeline
     _robot_action_processor: RobotProcessorPipeline
     _robot_observation_processor: RobotProcessorPipeline
+    _streaming_encoding: bool
+    _vcodec: str
+    _encoder_threads: int | None
+    _encoder_queue_maxsize: int
 
-    def __init__(self, dataset_path: Path):
+    def __init__(
+        self,
+        dataset_path: Path,
+        *,
+        streaming_encoding: bool = True,
+        vcodec: str = "auto",
+        encoder_threads: int | None = None,
+        encoder_queue_maxsize: int = 60,
+    ):
         self.path = dataset_path
+        self._streaming_encoding = streaming_encoding
+        self._vcodec = vcodec
+        self._encoder_threads = encoder_threads
+        self._encoder_queue_maxsize = encoder_queue_maxsize
         self.load_dataset()
 
         self._teleop_action_processor, self._robot_action_processor, self._robot_observation_processor = (
@@ -41,15 +57,36 @@ class InternalLeRobotDataset(DatasetClient):
     def load_dataset(self) -> None:
         """Load dataset."""
         if self._check_repository_exists(self.path):
-            self._dataset = LeRobotDataset(str(uuid4()), self.path)
+            self._dataset = LeRobotDataset(
+                str(uuid4()),
+                self.path,
+                streaming_encoding=self._streaming_encoding,
+                vcodec=self._vcodec,
+                encoder_threads=self._encoder_threads,
+                encoder_queue_maxsize=self._encoder_queue_maxsize,
+            )
             self.has_episodes = self._dataset.num_episodes > 0
 
-    def create(self, fps: int, features: dict, robot_type: str) -> None:
+    def create(
+        self,
+        fps: int,
+        features: dict,
+        robot_type: str,
+    ) -> None:
         """Create LeRobot dataset."""
         if self._check_repository_exists(self.path):
             raise Exception(f"Dataset already exists at {self.path}")
         self._dataset = LeRobotDataset.create(
-            repo_id=str(uuid4()), root=self.path, fps=fps, features=features, robot_type=robot_type, use_videos=True
+            repo_id=str(uuid4()),
+            root=self.path,
+            fps=fps,
+            features=features,
+            robot_type=robot_type,
+            use_videos=True,
+            streaming_encoding=self._streaming_encoding,
+            vcodec=self._vcodec,
+            encoder_threads=self._encoder_threads,
+            encoder_queue_maxsize=self._encoder_queue_maxsize,
         )
         self.has_episodes = False
 
@@ -72,6 +109,9 @@ class InternalLeRobotDataset(DatasetClient):
 
     def prepare_for_writing(self) -> None:
         """Start image writer &"""
+        if getattr(self._dataset, "_streaming_encoder", None) is not None:
+            logger.info("Streaming encoding enabled; skipping image writer startup")
+            return
         num_threads = 4 * len(self._dataset.meta.camera_keys)
         self._dataset.start_image_writer(
             num_processes=0,
@@ -174,12 +214,18 @@ class InternalLeRobotDataset(DatasetClient):
         cache_dir = settings.cache_dir / str(uuid4())
 
         logger.info(f"Creating cache dataset {cache_dir}")
+        cache_dataset = InternalLeRobotDataset(
+            cache_dir,
+            streaming_encoding=self._streaming_encoding,
+            vcodec=self._vcodec,
+            encoder_threads=self._encoder_threads,
+            encoder_queue_maxsize=self._encoder_queue_maxsize,
+        )
         if self.exists_on_disk:
             shutil.copytree(self.path, cache_dir)
-            cache_dataset = InternalLeRobotDataset(cache_dir)
+            cache_dataset.load_dataset()
         else:
-            cache_dataset = InternalLeRobotDataset(cache_dir)
-            cache_dataset.create(fps, features, robot_type)
+            cache_dataset.create(fps=fps, features=features, robot_type=robot_type)
 
         return RecordingMutation(self, cache_dataset)
 

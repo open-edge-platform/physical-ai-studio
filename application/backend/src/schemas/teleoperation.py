@@ -9,6 +9,10 @@ class TeleoperationConfig(BaseModel):
     task: str
     dataset: Dataset
     environment: EnvironmentWithRelations
+    streaming_encoding: bool = True
+    vcodec: str = "auto"
+    encoder_threads: int | None = None
+    encoder_queue_maxsize: int = 60
 
 
 class InferenceConfig(BaseModel):
