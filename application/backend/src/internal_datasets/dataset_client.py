@@ -38,6 +38,10 @@ class DatasetClient(ABC):
         """Get Video path of specific episode and camera."""
 
     @abstractmethod
+    def get_video_keys(self) -> list[str]:
+        """Get the video keys used to record the dataset"""
+
+    @abstractmethod
     def create(self, fps: int, features: dict, robot_type: str) -> None:
         """Create dataset."""
 
