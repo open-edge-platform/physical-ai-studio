@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+
 import { Button, ButtonGroup, Flex, Heading, Icon, ProgressCircle, Text, ToastQueue, View } from '@geti/ui';
 import { ChevronLeft } from '@geti/ui/icons';
 
@@ -17,6 +19,25 @@ export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
         recordingConfig,
         ToastQueue.negative
     );
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'ArrowRight') {
+                if (state.is_recording && !saveEpisode.isPending) {
+                    saveEpisode.mutate();
+                } else if (!state.is_recording) {
+                    startEpisode();
+                }
+            } else if (e.key === 'ArrowLeft') {
+                if (state.is_recording && !saveEpisode.isPending) {
+                    cancelEpisode();
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [state.is_recording, saveEpisode, startEpisode, cancelEpisode]);
 
     const robots = (recordingConfig.environment.robots ?? []).map(({ robot }) => robot);
 
