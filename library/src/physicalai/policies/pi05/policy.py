@@ -195,11 +195,13 @@ class Pi05(Policy):
         Called by both lazy (setup) and eager (checkpoint) paths.
         """
         self.model = Pi05Model(
+            dataset_stats,
             paligemma_variant=self.config.paligemma_variant,
             action_expert_variant=self.config.action_expert_variant,
             dtype=self.config.dtype,
             chunk_size=self.config.chunk_size,
             max_action_dim=self.config.max_action_dim,
+            n_action_steps=self.config.n_action_steps,
             num_inference_steps=self.config.num_inference_steps,
             time_sampling_beta_alpha=self.config.time_sampling_beta_alpha,
             time_sampling_beta_beta=self.config.time_sampling_beta_beta,
@@ -419,15 +421,6 @@ class Pi05(Policy):
 
         processed_batch = self._preprocessor(batch.to(self.device).to_dict())
         actions = self.model.predict_action_chunk(processed_batch)
-
-        # Unpad actions to actual action dimension
-        if self._dataset_stats is not None:
-            original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
-            actions = actions[:, :, :original_action_dim]
-
-        # Clip to n_action_steps so the action queue receives the first N actions,
-        # not the last N (deque maxlen silently discards earlier items on extend).
-        actions = actions[:, : self._n_action_steps]
 
         return self._postprocessor({ACTION: actions})[ACTION]
 

@@ -549,12 +549,14 @@ class Pi05Model(nn.Module):
 
     def __init__(  # noqa: PLR0913
         self,
+        dataset_stats: dict[str, dict[str, list[float] | str | tuple[int, ...]]],
         *,
         paligemma_variant: Literal["gemma_300m", "gemma_2b"] = "gemma_2b",
         action_expert_variant: Literal["gemma_300m", "gemma_2b"] = "gemma_300m",
         dtype: Literal["bfloat16", "float32"] = "float32",
         chunk_size: int = 50,
         max_action_dim: int = 32,
+        n_action_steps: int | None = None,
         num_inference_steps: int = 10,
         time_sampling_beta_alpha: float = 1.5,
         time_sampling_beta_beta: float = 1.0,
@@ -570,11 +572,14 @@ class Pi05Model(nn.Module):
         """Initialize Pi05Model.
 
         Args:
+            dataset_stats: Dictionary containing dataset statistics for normalization
+                and action dimension inference.
             paligemma_variant: Gemma variant for the VLM backbone.
             action_expert_variant: Gemma variant for the action expert.
             dtype: Precision for model weights.
             chunk_size: Number of action steps to predict.
             max_action_dim: Maximum dimension for action vectors.
+            n_action_steps: Number of action steps to return. If None, returns all.
             num_inference_steps: Number of decoding steps for flow matching.
             time_sampling_beta_alpha: Alpha parameter for beta distribution time sampling.
             time_sampling_beta_beta: Beta parameter for beta distribution time sampling.
@@ -593,7 +598,9 @@ class Pi05Model(nn.Module):
         super().__init__()
         self._chunk_size = chunk_size
         self._max_action_dim = max_action_dim
+        self._n_action_steps = n_action_steps
         self._num_inference_steps = num_inference_steps
+        self._dataset_stats = dataset_stats
         self._time_sampling_beta_alpha = time_sampling_beta_alpha
         self._time_sampling_beta_beta = time_sampling_beta_beta
         self._time_sampling_scale = time_sampling_scale
@@ -904,13 +911,24 @@ class Pi05Model(nn.Module):
                 "tokenized_prompt", and "tokenized_prompt_mask".
 
         Returns:
-            Denoised action tensor.
+            Denoised action tensor, unpadded and clipped to n_action_steps.
         """
         images = batch[IMAGES]
         img_masks = batch["image_masks"]
         tokens = batch["tokenized_prompt"]
         masks = batch["tokenized_prompt_mask"]
-        return self.sample_actions(images, img_masks, tokens, masks)
+        actions = self.sample_actions(images, img_masks, tokens, masks)
+
+        # Unpad actions to actual action dimension
+        original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
+        actions = actions[:, :, :original_action_dim]
+
+        # Clip to n_action_steps so the action queue receives the first N actions,
+        # not the last N (deque maxlen silently discards earlier items on extend).
+        if self._n_action_steps is not None:
+            actions = actions[:, : self._n_action_steps]
+
+        return actions
 
     @torch.no_grad()
     def sample_actions(  # noqa: PLR0914
