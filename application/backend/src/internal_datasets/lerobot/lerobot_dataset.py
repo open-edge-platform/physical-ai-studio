@@ -35,10 +35,10 @@ class InternalLeRobotDataset(DatasetClient):
         self,
         dataset_path: Path,
         *,
-        streaming_encoding_settings: StreamingEncodingSettings | None = None,
+        streaming_encoding_settings: StreamingEncodingSettings = StreamingEncodingSettings(),
     ):
         self.path = dataset_path
-        self._streaming_encoding_settings = streaming_encoding_settings or StreamingEncodingSettings()
+        self._streaming_encoding_settings = streaming_encoding_settings.with_resolved_vcodec()
         self.load_dataset()
 
         self._teleop_action_processor, self._robot_action_processor, self._robot_observation_processor = (
