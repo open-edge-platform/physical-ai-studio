@@ -255,7 +255,7 @@ class TestModelUtilities:
 
     def test_pad_vector_shorter(self) -> None:
         """Test pad_vector pads shorter vectors."""
-        from physicalai.policies.pi05.model import pad_vector
+        from physicalai.policies.pi05.preprocessor import pad_vector
 
         v = torch.randn(2, 7)
         padded = pad_vector(v, 32)
@@ -265,7 +265,7 @@ class TestModelUtilities:
 
     def test_pad_vector_equal(self) -> None:
         """Test pad_vector with equal dimensions (no-op)."""
-        from physicalai.policies.pi05.model import pad_vector
+        from physicalai.policies.pi05.preprocessor import pad_vector
 
         v = torch.randn(2, 32)
         padded = pad_vector(v, 32)
@@ -274,7 +274,7 @@ class TestModelUtilities:
 
     def test_pad_vector_longer(self) -> None:
         """Test pad_vector with longer vector (no-op)."""
-        from physicalai.policies.pi05.model import pad_vector
+        from physicalai.policies.pi05.preprocessor import pad_vector
 
         v = torch.randn(2, 64)
         padded = pad_vector(v, 32)
@@ -282,7 +282,7 @@ class TestModelUtilities:
 
     def test_resize_with_pad_shape(self) -> None:
         """Test resize_with_pad produces correct output shape."""
-        from physicalai.policies.pi05.model import resize_with_pad_torch
+        from physicalai.policies.pi05.preprocessor import resize_with_pad_torch
 
         img = torch.rand(2, 480, 640, 3)  # [B, H, W, C]
         result = resize_with_pad_torch(img, 224, 224)
@@ -290,7 +290,7 @@ class TestModelUtilities:
 
     def test_resize_with_pad_channels_first(self) -> None:
         """Test resize_with_pad with channels-first format."""
-        from physicalai.policies.pi05.model import resize_with_pad_torch
+        from physicalai.policies.pi05.preprocessor import resize_with_pad_torch
 
         img = torch.rand(2, 3, 480, 640)  # [B, C, H, W]
         result = resize_with_pad_torch(img, 224, 224)
@@ -298,7 +298,7 @@ class TestModelUtilities:
 
     def test_resize_with_pad_3d(self) -> None:
         """Test resize_with_pad with 3D input (no batch dim)."""
-        from physicalai.policies.pi05.model import resize_with_pad_torch
+        from physicalai.policies.pi05.preprocessor import resize_with_pad_torch
 
         img = torch.rand(480, 640, 3)  # [H, W, C]
         result = resize_with_pad_torch(img, 224, 224)
@@ -306,7 +306,7 @@ class TestModelUtilities:
 
     def test_resize_with_pad_uint8(self) -> None:
         """Test resize_with_pad with uint8 images."""
-        from physicalai.policies.pi05.model import resize_with_pad_torch
+        from physicalai.policies.pi05.preprocessor import resize_with_pad_torch
 
         img = torch.randint(0, 256, (2, 480, 640, 3), dtype=torch.uint8)
         result = resize_with_pad_torch(img, 224, 224)
@@ -315,7 +315,7 @@ class TestModelUtilities:
 
     def test_resize_with_pad_unsupported_dtype(self) -> None:
         """Test resize_with_pad raises error for unsupported dtype."""
-        from physicalai.policies.pi05.model import resize_with_pad_torch
+        from physicalai.policies.pi05.preprocessor import resize_with_pad_torch
 
         img = torch.rand(2, 480, 640, 3).to(torch.float16)
         with pytest.raises(ValueError, match="Unsupported image dtype"):
@@ -326,7 +326,7 @@ class TestModelUtilities:
         from physicalai.policies.pi05.model import create_sinusoidal_pos_embedding
 
         time = torch.tensor([0.1, 0.5, 0.9])
-        emb = create_sinusoidal_pos_embedding(time, 64, min_period=4e-3, max_period=4.0)
+        emb = create_sinusoidal_pos_embedding(time, 64, min_period=4e-3, max_period=4.0, device=time.device)
         assert emb.shape == (3, 64)
 
     def test_create_sinusoidal_pos_embedding_odd_dim(self) -> None:
@@ -335,7 +335,7 @@ class TestModelUtilities:
 
         time = torch.tensor([0.5])
         with pytest.raises(ValueError, match="divisible by 2"):
-            create_sinusoidal_pos_embedding(time, 65, min_period=4e-3, max_period=4.0)
+            create_sinusoidal_pos_embedding(time, 65, min_period=4e-3, max_period=4.0, device=time.device)
 
     def test_create_sinusoidal_pos_embedding_wrong_ndim(self) -> None:
         """Test sinusoidal embedding raises for wrong ndim."""
@@ -343,7 +343,7 @@ class TestModelUtilities:
 
         time = torch.tensor([[0.5]])  # 2D instead of 1D
         with pytest.raises(ValueError, match="batch_size"):
-            create_sinusoidal_pos_embedding(time, 64, min_period=4e-3, max_period=4.0)
+            create_sinusoidal_pos_embedding(time, 64, min_period=4e-3, max_period=4.0, device=time.device)
 
     def test_sample_beta(self) -> None:
         """Test sample_beta returns correct shape."""

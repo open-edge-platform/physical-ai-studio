@@ -68,7 +68,7 @@ class Pi05(Policy):
         Training:
 
         >>> policy = Pi05(optimizer_lr=2.5e-5)
-        >>> trainer = physicalai.Trainer(max_epochs=100)
+        >>> trainer = physicalai.train.Trainer(max_epochs=100)
         >>> trainer.fit(policy, datamodule)
 
         Inference:
