@@ -1,17 +1,16 @@
 import asyncio
 import base64
-from loguru import logger
 
 import cv2
 import numpy as np
-from frame_source.video_capture_base import VideoCaptureBase
+from loguru import logger
 from physicalai.data import Observation
 
 from robots.robot_client import RobotClient
 from robots.robot_client_factory import RobotClientFactory
 from schemas.environment import EnvironmentWithRelations
-from workers.camera_worker import create_frames_source_from_camera
 from utils.async_camera_capture import AsyncCameraCapture
+from workers.camera_worker import create_frames_source_from_camera
 
 
 class InferenceEnvironmentIntegration:
@@ -21,7 +20,7 @@ class InferenceEnvironmentIntegration:
     robot_client_factory: RobotClientFactory
     action_keys: list[str] = []
     follower: RobotClient | None = None
-    cameras: dict[str, VideoCaptureBase] | None = None
+    frame_captures: dict[str, AsyncCameraCapture]
 
     def __init__(self, environment: EnvironmentWithRelations, robot_client_factory: RobotClientFactory):
         self.environment = environment

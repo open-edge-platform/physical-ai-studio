@@ -1,13 +1,14 @@
 import asyncio
 import time
-from dataclasses import dataclass
-from typing import Optional, Tuple, Callable
-
-import cv2
-import numpy as np
-from loguru import logger
-from tenacity import RetryError, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+
+import numpy as np
+from frame_source.video_capture_base import VideoCaptureBase
+from loguru import logger
+from tenacity import RetryError
+
 
 class EmptyFrameError(RuntimeError):
     pass
@@ -15,47 +16,11 @@ class EmptyFrameError(RuntimeError):
 
 @dataclass
 class LatestFrame:
-    frame: Optional[np.ndarray] = None
+    frame: np.ndarray | None = None
     t_perf: float = 0.0
     ok: bool = False
-    error: Optional[str] = None
+    error: str | None = None
     seq: int = 0  # increments on every successful new frame
-
-
-class FPSCounter:
-    """Simple rolling FPS counter (EMA-smoothed)."""
-    def __init__(self, smoothing: float = 0.9):
-        self.smoothing = smoothing
-        self.last_t = None
-        self.fps = 0.0
-
-    def update(self) -> float:
-        now = time.time()
-        if self.last_t is None:
-            self.last_t = now
-            return self.fps
-        dt = now - self.last_t
-        self.last_t = now
-        if dt > 0:
-            inst = 1.0 / dt
-            self.fps = (self.smoothing * self.fps) + ((1.0 - self.smoothing) * inst)
-        return self.fps
-
-def draw_fps(frame, fps: float, org=(10, 30)):
-    return frame
-    text = f"FPS: {fps:.1f}"
-    cv2.putText(
-        frame,
-        text,
-        org,
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.9,
-        (0, 255, 0),
-        2,
-        cv2.LINE_AA,
-    )
-    return frame
-
 
 
 class AsyncCameraCapture:
@@ -71,9 +36,9 @@ class AsyncCameraCapture:
 
     def __init__(
         self,
-        camera,
+        camera: VideoCaptureBase,
         fps: float,
-        process_fn: Optional[Callable[[np.ndarray], np.ndarray]] = None,  # e.g. BGR->RGB
+        process_fn: Callable[[np.ndarray], np.ndarray] | None = None,  # e.g. BGR->RGB
         use_cached_on_failure: bool = True,
     ):
         self.camera = camera
@@ -84,11 +49,10 @@ class AsyncCameraCapture:
         self._latest = LatestFrame()
         self._lock = asyncio.Lock()
         self._stop_evt = asyncio.Event()
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
 
-        self._last_good_frame: Optional[np.ndarray] = None
+        self._last_good_frame: np.ndarray | None = None
         self._seq = 0
-        self.fps_counter = FPSCounter()
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="cam")
 
     async def start(self) -> None:
@@ -117,13 +81,13 @@ class AsyncCameraCapture:
             except Exception:
                 logger.info("Failed disconnecting camera. Ignoring")
 
-    async def get_latest(self) -> Tuple[Optional[np.ndarray], float, bool, Optional[str], int]:
+    async def get_latest(self) -> tuple[np.ndarray | None, float, bool, str | None, int]:
         """Non-blocking snapshot: (frame, t_perf, ok, error, seq)."""
         async with self._lock:
             lf = self._latest
             return lf.frame, lf.t_perf, lf.ok, lf.error, lf.seq
 
-    async def _set_latest(self, frame: Optional[np.ndarray], ok: bool, error: Optional[str], seq: int) -> None:
+    async def _set_latest(self, frame: np.ndarray | None, ok: bool, error: str | None, seq: int) -> None:
         async with self._lock:
             self._latest = LatestFrame(
                 frame=frame,
@@ -146,9 +110,6 @@ class AsyncCameraCapture:
                 if self.process_fn is not None:
                     frame = self.process_fn(frame)
 
-                fps = self.fps_counter.update()
-                frame = draw_fps(frame, fps)
-
                 self._last_good_frame = frame
                 self._seq += 1
                 await self._set_latest(frame=frame, ok=True, error=None, seq=self._seq)
@@ -157,7 +118,7 @@ class AsyncCameraCapture:
                 error = f"retry_exhausted: {e}"
                 logger.error(error)
                 if self.use_cached_on_failure and self._last_good_frame is not None:
-                    # Serve cached frame (don’t bump seq; not a new frame)
+                    # Serve cached frame (don't bump seq; not a new frame)
                     await self._set_latest(
                         frame=self._last_good_frame,
                         ok=True,
@@ -184,7 +145,7 @@ class AsyncCameraCapture:
                 if sleep_time > 0:
                     try:
                         await asyncio.wait_for(self._stop_evt.wait(), timeout=sleep_time)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         pass
 
     def _read_frame_with_retry(self) -> np.ndarray:

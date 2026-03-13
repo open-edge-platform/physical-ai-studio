@@ -28,15 +28,6 @@ from workers.camera_worker import create_frames_source_from_camera
 from .base import BaseThreadWorker
 
 
-class CameraFrameProcessor:
-    @staticmethod
-    def process(frame: np.ndarray) -> np.ndarray:
-        """Post process camera frame."""
-        if isinstance(frame, np.ndarray):
-            return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        return None
-
-
 class TeleoperateState(BaseModel):
     initialized: bool = False
     is_recording: bool = False
@@ -51,7 +42,7 @@ class TeleoperateWorker(BaseThreadWorker):
     state: TeleoperateState
 
     config: TeleoperationConfig
-    fps: float = 30
+    fps: int = 30
     robot_client_factory: RobotClientFactory
 
     action_keys: list[str] = []
@@ -63,6 +54,7 @@ class TeleoperateWorker(BaseThreadWorker):
     follower: RobotClient | None = None
     cameras: dict[str, VideoCaptureBase] = {}
     recording_mutation = None
+    frame_captures: dict[str, AsyncCameraCapture]
 
     def __init__(
         self,
@@ -124,7 +116,6 @@ class TeleoperateWorker(BaseThreadWorker):
             cap = AsyncCameraCapture(
                 camera=cam,
                 fps=cam_cfg.payload.fps,
-                process_fn=CameraFrameProcessor.process,  # BGR->RGB, etc.
                 use_cached_on_failure=True,
             )
             await cap.start()
