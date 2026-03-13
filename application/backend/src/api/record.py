@@ -4,6 +4,7 @@ from queue import Empty
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, WebSocket
+from fastapi.responses import Response
 from loguru import logger
 
 from api.dependencies import (
@@ -14,12 +15,21 @@ from api.dependencies import (
 )
 from core.scheduler import Scheduler
 from exceptions import ResourceNotFoundError
-from schemas import InferenceConfig, TeleoperationConfig
+from robots.robot_client_factory import RobotClientFactory
+from schemas import Model, TeleoperationConfig
+from schemas.environment import EnvironmentWithRelations
 from services import DatasetService
 from utils.serialize_utils import to_python_primitive
-from workers import InferenceWorker, TeleoperateWorker
+from workers.inference_worker import InferenceWorker
+from workers.teleoperate_worker import TeleoperateWorker
 
 router = APIRouter(prefix="/api/record")
+
+
+@router.get("/teleoperate/ws", tags=["WebSocket"], summary="Teleoperation (WebSocket)", status_code=426)
+async def teleoperate_websocket_openapi() -> Response:
+    """This endpoint requires a WebSocket connection. Use `wss://` to connect."""
+    return Response(status_code=426)
 
 
 @router.websocket("/teleoperate/ws")
@@ -96,6 +106,12 @@ async def teleoperate_websocket(
     logger.info("websocket handling done...")
 
 
+@router.get("/inference/ws", tags=["WebSocket"], summary="Inference (WebSocket)", status_code=426)
+async def inference_websocket_openapi() -> Response:
+    """This endpoint requires a WebSocket connection. Use `wss://` to connect."""
+    return Response(status_code=426)
+
+
 @router.websocket("/inference/ws")
 async def inference_websocket(
     websocket: WebSocket,
@@ -105,14 +121,13 @@ async def inference_websocket(
 ) -> None:
     """Robot control websocket."""
     await websocket.accept()
-    data = await websocket.receive_json("text")
-    config = InferenceConfig.model_validate(data["data"])
     queue: mp.Queue = mp.Queue()
     process = InferenceWorker(
         stop_event=scheduler.mp_stop_event,
-        robot_manager=robot_manager,
-        calibration_service=calibration_service,
-        config=config,
+        robot_client_factory=RobotClientFactory(
+            robot_manager=robot_manager,
+            calibration_service=calibration_service,
+        ),
         queue=queue,
     )
     process.start()
@@ -121,16 +136,24 @@ async def inference_websocket(
         try:
             while True:
                 data = await websocket.receive_json("text")
+                if data["event"] == "load_environment":
+                    environment = EnvironmentWithRelations.model_validate(data["data"]["environment"])
+                    process.load_environment(environment)
+                if data["event"] == "load_model":
+                    model = Model.model_validate(data["data"]["model"])
+                    backend = data["data"]["backend"]
+                    process.load_model(model, backend)
                 if data["event"] == "start_task":
-                    task_index = data["data"]["task_index"]
-                    process.start_task(task_index)
-                if data["event"] == "stop":
+                    task = data["data"]
+                    process.start_task(task)
+                if data["event"] == "stop_task":
                     process.stop()
                     process.join(timeout=5)
                 if data["event"] == "disconnect":
                     process.disconnect()
                     break
-        except Exception:
+        except Exception as e:
+            logger.error(f"Incoming task stopped: {e}")
             logger.info("Except: disconnected!")
 
     async def handle_outgoing():

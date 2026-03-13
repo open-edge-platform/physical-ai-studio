@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 
 import { Disclosure, DisclosurePanel, DisclosureTitle, Divider, Flex, Text, View, Well } from '@geti/ui';
 
-import { $api } from '../../api/client';
+import { $api, fetchClient } from '../../api/client';
 import { SchemaDatasetOutput, SchemaEpisode, SchemaEpisodeVideo } from '../../api/openapi-spec';
 import EpisodeChart from '../../components/episode-chart/episode-chart';
 import { EpisodeTag } from '../../features/datasets/episodes/episode-tag';
@@ -22,7 +22,14 @@ interface VideoView {
     episodeVideo: SchemaEpisodeVideo;
 }
 const VideoView = ({ dataset_id, cameraName, aspectRatio, time, episodeVideo }: VideoView) => {
-    const url = `/api/dataset/${dataset_id}/video/${episodeVideo.path}`;
+    const url = fetchClient.PATH('/api/dataset/{dataset_id}/video/{video_path}', {
+        params: {
+            path: {
+                dataset_id,
+                video_path: episodeVideo.path,
+            },
+        },
+    });
 
     const videoRef = useRef<HTMLVideoElement>(null);
 

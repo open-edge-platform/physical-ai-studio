@@ -81,7 +81,7 @@ export const paths = {
         },
         models: {
             index: models,
-            inference: models.path('/:model_id/inference'),
+            inference: models.path('/:model_id/inference/:backend'),
         },
     },
 };
@@ -181,7 +181,7 @@ export const router = createBrowserRouter([
                                 height={'100%'}
                             >
                                 <RobotsTabNavigation />
-                                <View gridArea='content'>
+                                <View gridArea='content' height='100%' minHeight={0}>
                                     <Outlet />
                                 </View>
                             </Grid>

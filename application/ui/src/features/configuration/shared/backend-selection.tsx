@@ -12,6 +12,8 @@ export const availableBackends = [
     //{ id: 'torch_export_ir', name: 'Torch Export IR' },
 ];
 
+export const defaultBackend = availableBackends[0].id;
+
 export const BackendSelection = ({ backend, setBackend }: BackendSelectionProps) => {
     return (
         <Picker

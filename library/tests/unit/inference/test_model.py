@@ -10,13 +10,37 @@ import numpy as np
 import pytest
 import torch
 
-from physicalai.data.observation import Observation
 from physicalai.export.mixin_export import ExportBackend
+from physicalai.inference.adapters import RuntimeAdapter
 from physicalai.inference.model import InferenceModel
 
 
+class TestAdapter(RuntimeAdapter):
+    def __init__(self, device: torch.device | str = "cpu") -> None:
+        self.device = torch.device(device)
+        self._policy: torch.nn.Module | None = None
+        self._input_names: list[str] = []
+        self._output_names: list[str] = []
+
+    def load(self, model_path: Path | str) -> None:
+        pass
+
+    def predict(self, inputs: dict[str, np.ndarray]):
+        pass
+
+    @property
+    def input_names(self) -> list[str]:
+        return []
+
+    @property
+    def output_names(self) -> list[str]:
+        return []
+
+
 def test_exported_metadata_controls_action_queue(
-    tmp_path: Path, mock_adapter: MagicMock, sample_observation: Observation
+    tmp_path: Path,
+    mock_adapter: MagicMock,
+    sample_observation: dict[str, np.ndarray],
 ) -> None:
     export_dir = tmp_path / "exports"
     export_dir.mkdir()
@@ -78,19 +102,20 @@ def mock_export_dir(tmp_path: Path) -> Path:
 def mock_adapter():
     """Create mock adapter for testing."""
     adapter = MagicMock()
-    adapter.input_names = ["observation.state", "observation.image"]
+    adapter.input_names = ["state", "images"]
     adapter.output_names = ["actions"]
     adapter.predict.return_value = {"actions": np.random.randn(1, 10, 2)}
+    adapter.default_device.return_value = "cpu"
     return adapter
 
 
 @pytest.fixture
-def sample_observation() -> Observation:
-    """Create sample observation for testing."""
-    return Observation(
-        state=torch.randn(1, 4),
-        images=torch.randn(1, 3, 224, 224),
-    )
+def sample_observation() -> dict[str, np.ndarray]:
+    """Create sample observation dict for testing."""
+    return {
+        "state": np.random.randn(1, 4).astype(np.float32),
+        "images": np.random.randn(1, 3, 224, 224).astype(np.float32),
+    }
 
 
 class TestInferenceModelInit:
@@ -210,7 +235,13 @@ class TestAutoDetection:
             ("physicalai.policies.dummy.Dummy", "dummy"),
         ],
     )
-    def test_policy_detection(self, tmp_path: Path, mock_adapter: MagicMock, policy_class: str, expected_name: str) -> None:
+    def test_policy_detection(
+        self,
+        tmp_path: Path,
+        mock_adapter: MagicMock,
+        policy_class: str,
+        expected_name: str,
+    ) -> None:
         """Test policy name detection from metadata."""
         import yaml
 
@@ -227,7 +258,13 @@ class TestAutoDetection:
         ("file_ext", "expected_backend"),
         [(".xml", ExportBackend.OPENVINO), (".onnx", ExportBackend.ONNX), (".pt2", ExportBackend.TORCH_EXPORT_IR)],
     )
-    def test_backend_detection(self, tmp_path: Path, mock_adapter: MagicMock, file_ext: str, expected_backend: ExportBackend) -> None:
+    def test_backend_detection(
+        self,
+        tmp_path: Path,
+        mock_adapter: MagicMock,
+        file_ext: str,
+        expected_backend: ExportBackend,
+    ) -> None:
         """Test backend detection from file extensions."""
         export_dir = tmp_path / "exports"
         export_dir.mkdir()
@@ -264,9 +301,27 @@ class TestAutoDetection:
         else:
             expected_device = "cuda" if cuda_available else "cpu"
 
+        # Configure mock to return the expected device
+        mock_adapter.default_device.return_value = expected_device
+
         with patch("torch.cuda.is_available", return_value=cuda_available):
             with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
                 assert InferenceModel(export_dir, device="auto").device == expected_device
+
+    def test_device_setting(
+        self,
+        tmp_path: Path,
+        mock_adapter: MagicMock,
+    ) -> None:
+        """Test manual device setting."""
+        export_dir = tmp_path / "exports"
+        export_dir.mkdir()
+        backend_file = "model.onnx"
+        (export_dir / backend_file).touch()
+
+        expected_device = "xpu"
+        with patch("physicalai.inference.model.get_adapter", return_value=TestAdapter(device=expected_device)):
+            assert InferenceModel(export_dir, device=expected_device).device == expected_device
 
 
 class TestSelectAction:
@@ -276,7 +331,7 @@ class TestSelectAction:
         self,
         mock_export_dir: Path,
         mock_adapter: MagicMock,
-        sample_observation: Observation,
+        sample_observation: dict[str, np.ndarray],
     ) -> None:
         """Test action selection without action queue."""
         # Configure for non-chunked policy
@@ -290,7 +345,7 @@ class TestSelectAction:
 
             action = model.select_action(sample_observation)
 
-            assert isinstance(action, torch.Tensor)
+            assert isinstance(action, np.ndarray)
             assert action.shape == (1, 2)  # (batch, action_dim)
             mock_adapter.predict.assert_called_once()
 
@@ -298,7 +353,7 @@ class TestSelectAction:
         self,
         mock_export_dir: Path,
         mock_adapter: MagicMock,
-        sample_observation: Observation,
+        sample_observation: dict[str, np.ndarray],
     ) -> None:
         """Test action selection with action queue for chunked policy."""
         with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
@@ -324,7 +379,7 @@ class TestSelectAction:
         self,
         mock_export_dir: Path,
         mock_adapter: MagicMock,
-        sample_observation: Observation,
+        sample_observation: dict[str, np.ndarray],
     ) -> None:
         """Test action queue refills when empty."""
         with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
@@ -350,153 +405,127 @@ class TestSelectAction:
         """Test reset() clears action queue."""
         with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
-            model._action_queue.extend([torch.randn(1, 2) for _ in range(5)])
+            model._action_queue.extend([np.random.randn(1, 2).astype(np.float32) for _ in range(5)])
 
             model.reset()
             assert len(model._action_queue) == 0
 
+    def test_select_action_with_numpy_dict_input(
+        self,
+        mock_export_dir: Path,
+        mock_adapter: MagicMock,
+    ) -> None:
+        """Test select_action with dict[str, np.ndarray] returns np.ndarray (no backward compat wrap)."""
+        with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
+            model = InferenceModel(mock_export_dir)
+            model.use_action_queue = False
+            model.chunk_size = 1
+
+            # Mock adapter returns (1, 1, 2) - remove temporal dim
+            mock_adapter.predict.return_value = {"actions": np.random.randn(1, 1, 2)}
+
+            # Pass dict[str, np.ndarray] directly
+            numpy_input = {"state": np.random.randn(1, 3).astype(np.float32),
+                           "images": np.random.randn(1, 3, 224, 224).astype(np.float32)}
+            action = model.select_action(numpy_input)
+
+            assert isinstance(action, np.ndarray)
+            assert action.shape == (1, 2)  # (batch, action_dim)
+            mock_adapter.predict.assert_called_once()
+
 
 class TestInputPreparation:
-    """Test observation-to-input conversion."""
+    """Test observation-to-input filtering."""
 
-    def test_prepare_inputs_first_party(
+    def test_prepare_inputs_filters_to_adapter_input_names(
         self,
         mock_export_dir: Path,
         mock_adapter: MagicMock,
     ) -> None:
-        """Test input preparation with first-party naming (state, images)."""
+        """Test _prepare_inputs filters observation to adapter's expected input names."""
         mock_adapter.input_names = ["state", "images"]
-
         with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
 
-            obs = Observation(
-                state=torch.randn(1, 4),
-                images=torch.randn(1, 3, 224, 224),
-            )
+            inputs = {
+                "state": np.random.randn(1, 4).astype(np.float32),
+                "images": np.random.randn(1, 3, 224, 224).astype(np.float32),
+                "action": np.random.randn(1, 2).astype(np.float32),
+                "episode_index": np.array([0]),
+                "task": np.array([1]),
+            }
 
-            inputs = model._prepare_inputs(obs)
+            result = model._prepare_inputs(inputs)
 
-            assert "state" in inputs
-            assert "images" in inputs
-            assert isinstance(inputs["state"], np.ndarray)
-            assert isinstance(inputs["images"], np.ndarray)
+            assert set(result.keys()) == {"state", "images"}
+            np.testing.assert_array_equal(result["state"], inputs["state"])
+            np.testing.assert_array_equal(result["images"], inputs["images"])
+            assert "action" not in result
+            assert "episode_index" not in result
+            assert "task" not in result
 
-    def test_prepare_inputs_lerobot(
+    def test_prepare_inputs_passthrough_when_no_input_names(
         self,
         mock_export_dir: Path,
         mock_adapter: MagicMock,
     ) -> None:
-        """Test input preparation with LeRobot naming (observation.state, observation.image)."""
-        mock_adapter.input_names = ["observation.state", "observation.image"]
-
+        """Test _prepare_inputs passes through when adapter has no input names."""
+        mock_adapter.input_names = []
         with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
 
-            obs = Observation(
-                state=torch.randn(1, 4),
-                images=torch.randn(1, 3, 224, 224),
-            )
+            inputs = {
+                "state": np.random.randn(1, 4).astype(np.float32),
+                "extra": np.random.randn(1, 2).astype(np.float32),
+            }
 
-            inputs = model._prepare_inputs(obs)
+            result = model._prepare_inputs(inputs)
 
-            assert "observation.state" in inputs
-            assert "observation.image" in inputs
+            assert result is inputs
 
-    def test_prepare_inputs_handles_none_values(
+    def test_prepare_inputs_only_matching_keys(
         self,
         mock_export_dir: Path,
         mock_adapter: MagicMock,
     ) -> None:
-        """Test input preparation skips None values."""
-        mock_adapter.input_names = ["state", "images"]
-
+        """Test _prepare_inputs returns only keys that exist in both observation and input_names."""
+        mock_adapter.input_names = ["state", "images", "extra_input"]
         with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
 
-            obs = Observation(state=torch.randn(1, 4), images=torch.randn(1, 3, 224, 224), action=None)
-            inputs = model._prepare_inputs(obs)
+            inputs = {
+                "state": np.random.randn(1, 4).astype(np.float32),
+                "images": np.random.randn(1, 3, 224, 224).astype(np.float32),
+                "extra_input": np.random.randn(1, 2).astype(np.float32),
+                "unrelated": np.random.randn(1, 2).astype(np.float32),
+            }
 
-            assert "state" in inputs
-            assert "images" in inputs
-            assert "action" not in inputs
+            result = model._prepare_inputs(inputs)
 
-    def test_prepare_inputs_numpy_passthrough(
+            assert set(result.keys()) == {"state", "images", "extra_input"}
+            assert "unrelated" not in result
+
+    def test_prepare_inputs_nested_payload_handling(
         self,
         mock_export_dir: Path,
         mock_adapter: MagicMock,
     ) -> None:
-        """Test input preparation handles numpy arrays directly."""
-        mock_adapter.input_names = ["state"]
-
+        """Test nested key handling for dotted adapter inputs."""
         with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
 
-            state_np = np.random.randn(1, 4)
-            obs = Observation(state=state_np, images=None)
-            inputs = model._prepare_inputs(obs)
+            mock_adapter.input_names = ["state", "images.top"]
+            inputs = {
+                "state": np.random.randn(1, 4).astype(np.float32),
+                "images": {
+                    "top": np.random.randn(1, 3, 224, 224).astype(np.float32),
+                },
+                "action": np.random.randn(1, 2).astype(np.float32),
+            }
 
-            assert np.array_equal(inputs["state"], state_np)
-
-
-class TestFieldMapping:
-    """Test field mapping between observation and model inputs."""
-
-    @pytest.mark.parametrize(
-        ("obs_fields", "model_inputs", "expected"),
-        [
-            # First-party naming
-            ({"state": 1}, {"state"}, {"state": "state"}),
-            ({"images": 1}, {"images"}, {"images": "images"}),
-            # LeRobot naming
-            ({"state": 1}, {"observation.state"}, {"state": "observation.state"}),
-            ({"images": 1}, {"observation.image"}, {"images": "observation.image"}),
-            # Mixed
-            (
-                {"state": 1, "images": 1},
-                {"state", "observation.image"},
-                {"state": "state", "images": "observation.image"},
-            ),
-            # No match
-            ({"unknown": 1}, {"state"}, {}),
-        ],
-    )
-    def test_build_field_mapping(
-        self,
-        obs_fields: dict[str, int],
-        model_inputs: set[str],
-        expected: dict[str, str],
-    ) -> None:
-        """Test field mapping handles different naming conventions."""
-        mapping = InferenceModel._build_field_mapping(obs_fields, model_inputs)
-        assert mapping == expected
-
-    def test_exact_match_first_party(self) -> None:
-        """Test exact matches for first-party naming convention."""
-        obs_dict = {
-            "state": np.array([1.0, 2.0]),
-            "images": [np.random.randn(3, 224, 224)],
-        }
-        expected_inputs = {"state", "images"}
-
-        mapping = InferenceModel._build_field_mapping(obs_dict, expected_inputs)
-
-        assert mapping == {"state": "state", "images": "images"}
-
-    def test_exact_match_lerobot(self) -> None:
-        """Test exact matches for LeRobot naming convention."""
-        obs_dict = {
-            "state": np.array([1.0, 2.0]),
-            "images": [np.random.randn(3, 224, 224)],
-        }
-        expected_inputs = {"observation.state", "observation.image"}
-
-        mapping = InferenceModel._build_field_mapping(obs_dict, expected_inputs)
-
-        assert mapping == {
-            "state": "observation.state",
-            "images": "observation.image",
-        }
+            result = model._prepare_inputs(inputs)
+            assert set(result.keys()) == {"state", "images.top"}
+            assert "action" not in result
 
 
 class TestActionOutputKey:

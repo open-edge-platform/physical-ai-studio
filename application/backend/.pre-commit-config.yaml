@@ -40,3 +40,15 @@ repos:
           - types-PyYAML
           - types-setuptools
           - types-aiofiles
+
+  # ========================================================================== #
+  # ALEMBIC MIGRATION CHECKS                                                   #
+  # ========================================================================== #
+  - repo: local
+    hooks:
+      - id: check-alembic-heads
+        name: Check for multiple Alembic migration heads
+        entry: bash scripts/check_alembic_heads.sh
+        language: system
+        pass_filenames: false
+        files: 'src/alembic/versions/.*\.py$'

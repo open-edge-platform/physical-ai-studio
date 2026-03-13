@@ -46,6 +46,8 @@
 
     --spectrum-high-contrast-button-face: var(--spectrum-global-color-gray-50);
     --spectrum-high-contrast-gray-text: var(--spectrum-global-color-gray-500);
+
+    --spectrum-yellow-visual-color: var(--brand-daisy);
 }
 
 body,

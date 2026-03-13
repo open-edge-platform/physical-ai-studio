@@ -1,3 +1,5 @@
+from loguru import logger
+
 from internal_datasets.dataset_client import DatasetClient
 from schemas import Episode
 
@@ -37,7 +39,7 @@ class RecordingMutation:
 
     def teardown(self) -> None:
         """If mutation exists apply and then remove cache."""
-        print(f"Teardown recording mutation. Has mutation {self.has_mutation}")
+        logger.debug(f"Teardown recording mutation. Has mutation {self.has_mutation}")
         self.cache_dataset.finalize()
         if self.has_mutation:
             self.source_dataset.overwrite(self.cache_dataset)

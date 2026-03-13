@@ -21,7 +21,8 @@ const queryClient = new QueryClient({
         },
     },
     mutationCache: new MutationCache({
-        onSuccess: () => {
+        onSuccess: (_data, _variables, _context, mutation) => {
+            if (mutation.options.meta?.skipInvalidation) return;
             queryClient.invalidateQueries();
         },
     }),

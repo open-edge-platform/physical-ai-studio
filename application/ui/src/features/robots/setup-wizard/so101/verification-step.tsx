@@ -11,10 +11,11 @@ import { paths } from '../../../../router';
 import { useProjectId } from '../../../projects/use-project';
 import { useRobotForm } from '../../robot-form/provider';
 import { useRobotModels } from '../../robot-models-context';
+import { InlineAlert } from '../shared/inline-alert';
 import { CalibrationResult } from './use-setup-websocket';
 import { useSetupActions, useSetupState } from './wizard-provider';
 
-import classes from './setup-wizard.module.scss';
+import classes from '../shared/setup-wizard.module.scss';
 
 // ---------------------------------------------------------------------------
 // Hook: sync normalized joint state from the setup websocket to the URDF model
@@ -178,17 +179,13 @@ export const VerificationStep = () => {
 
     return (
         <Flex direction='column' gap='size-300'>
-            <div className={classes.successBox}>
-                <Text>
-                    Robot setup is complete. Move the robot arm to verify that the 3D visualization matches the physical
-                    robot, then save.
-                </Text>
-            </div>
+            <InlineAlert variant='success'>
+                Robot setup is complete. Move the robot arm to verify that the 3D visualization matches the physical
+                robot, then save.
+            </InlineAlert>
 
             {!wsState.isConnected && (
-                <div className={classes.warningBox}>
-                    <Text>WebSocket disconnected — 3D preview is not updating.</Text>
-                </div>
+                <InlineAlert variant='warning'>WebSocket disconnected — 3D preview is not updating.</InlineAlert>
             )}
 
             <div className={classes.sectionCard}>
@@ -212,11 +209,7 @@ export const VerificationStep = () => {
                 </Flex>
             </div>
 
-            {(wsState.error || saveError) && (
-                <div className={classes.warningBox}>
-                    <Text>{saveError ?? wsState.error}</Text>
-                </div>
-            )}
+            {(wsState.error || saveError) && <InlineAlert variant='warning'>{saveError ?? wsState.error}</InlineAlert>}
 
             <Flex gap='size-200' justifyContent='space-between'>
                 <Button variant='secondary' onPress={goBack}>

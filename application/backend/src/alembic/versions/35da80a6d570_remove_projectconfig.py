@@ -1,7 +1,7 @@
 """Remove ProjectConfig
 
 Revision ID: 35da80a6d570
-Revises: b4d12e6dce4e
+Revises: 28ad0f531995
 Create Date: 2026-01-29 15:43:58.306900
 
 """

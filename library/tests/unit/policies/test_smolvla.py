@@ -152,6 +152,7 @@ class TestSmolVLAPreprocessor:
             stats=None,
             image_resolution=(512, 512),
             max_token_len=48,
+            token_pad_type="longest",
         )
         assert callable(preprocessor)
         assert callable(postprocessor)
@@ -192,12 +193,14 @@ class TestSmolVLAPreprocessor:
             max_action_dim=16,
             image_resolution=(256, 256),
             max_token_len=64,
+            padding="max_length",
         )
 
         assert preprocessor.max_state_dim == 64
         assert preprocessor.max_action_dim == 16
         assert preprocessor.image_resolution == (256, 256)
         assert preprocessor.max_token_len == 64
+        assert preprocessor.padding == "max_length"
 
     def test_newline_processor_adds_newline(self) -> None:
         """Test newline processor adds newline to task strings."""

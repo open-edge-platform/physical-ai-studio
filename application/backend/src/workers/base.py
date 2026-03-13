@@ -87,13 +87,13 @@ class BaseProcessWorker(mp.Process, StoppableMixin, ABC):
 
     # Hooks to be implemented by subclasses
 
-    def setup(self) -> None:
+    async def setup(self) -> None:
         """Allocate resources and initialize settings. Called once in the child process."""
-        # Logging needs to be re-setup in child processes because settings are non-pickable.
-        # from core.logging import setup_logging
+        # Logging must be re-setup in child processes because loguru sinks don't
+        # transfer across process boundaries and settings are non-picklable.
+        from core.logging import setup_logging
 
-        # setup_logging()
-        # TODO IMPLEMENT LOGGING
+        setup_logging()
 
     @abstractmethod
     async def run_loop(self) -> None:
@@ -103,7 +103,7 @@ class BaseProcessWorker(mp.Process, StoppableMixin, ABC):
         """
         ...
 
-    def teardown(self) -> None:
+    async def teardown(self) -> None:
         """Release resources (optional)."""
 
     # Internal + final run orchestration
@@ -146,13 +146,13 @@ class BaseProcessWorker(mp.Process, StoppableMixin, ABC):
             asyncio.set_event_loop(self.loop)
 
             try:
-                self.setup()
+                self.loop.run_until_complete(self.setup())
                 self.loop.run_until_complete(self.run_loop())
             except Exception:
                 logger.exception(f"Unhandled exception in {self.name}")
             finally:
                 try:
-                    self.teardown()
+                    self.loop.run_until_complete(self.teardown())
                 finally:
                     self.loop.run_until_complete(self.loop.shutdown_asyncgens())
                     self.loop.close()

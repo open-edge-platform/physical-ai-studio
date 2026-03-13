@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import asyncio
-import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -12,7 +11,8 @@ from uuid import uuid4
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import CSVLogger
 
-from models.utils import setup_policy
+from core.logging.utils import job_logging_ctx
+from models.utils import load_policy, setup_policy
 from services.snapshot_service import SnapshotService
 from settings import get_settings
 
@@ -51,46 +51,52 @@ class TrainingWorker(BaseProcessWorker):
 
             job = await job_service.get_pending_train_job()
             if job is not None:
-                payload = TrainJobPayload.model_validate(job.payload)
-                id = uuid4()
+                with job_logging_ctx(job_id=str(job.id)):
+                    payload = TrainJobPayload.model_validate(job.payload)
+                    id = uuid4()
 
-                dataset = await DatasetService.get_dataset_by_id(payload.dataset_id)
-                model_dir = Path(str(settings.models_dir / str(id)))
-                model_dir.mkdir(parents=True)
-                snapshot_dir = model_dir / SnapshotService.generate_snapshot_folder_name()
-                snapshot = await SnapshotService.create_snapshot_for_dataset(dataset, destination=snapshot_dir)
+                    base_model = None
+                    if payload.base_model_id is not None:
+                        base_model = await ModelService.get_model_by_id(payload.base_model_id)
 
-                model = Model(
-                    id=id,
-                    project_id=payload.project_id,
-                    dataset_id=payload.dataset_id,
-                    path=str(model_dir),
-                    name=payload.model_name,
-                    snapshot_id=snapshot.id,
-                    policy=payload.policy,
-                    properties={},
-                    created_at=None,
-                )
+                    dataset = await DatasetService.get_dataset_by_id(payload.dataset_id)
+                    model_dir = Path(str(settings.models_dir / str(id)))
+                    model_dir.mkdir(parents=True)
+                    snapshot_dir = model_dir / SnapshotService.generate_snapshot_folder_name()
+                    snapshot = await SnapshotService.create_snapshot_for_dataset(dataset, destination=snapshot_dir)
 
-                self.interrupt_event.clear()
-                await asyncio.create_task(self._train_model(job, model, snapshot))
+                    model = Model(
+                        id=id,
+                        project_id=payload.project_id,
+                        dataset_id=payload.dataset_id,
+                        path=str(model_dir),
+                        name=payload.model_name,
+                        snapshot_id=snapshot.id,
+                        policy=payload.policy,
+                        properties={},
+                        train_job_id=job.id,
+                        parent_model_id=payload.base_model_id,
+                        version=base_model.version + 1 if base_model else 1,
+                        created_at=None,
+                    )
+
+                    self.interrupt_event.clear()
+                    await asyncio.create_task(self._train_model(job, model, snapshot, payload, base_model))
             await asyncio.sleep(0.5)
 
-    def setup(self) -> None:
-        super().setup()
+    async def setup(self) -> None:
+        await super().setup()
         with logger.contextualize(worker=self.__class__.__name__):
-            if self.loop is None:
-                raise RuntimeError("The event loop must be set.")
-            self.loop.run_until_complete(TrainingService.abort_orphan_jobs())
+            await TrainingService.abort_orphan_jobs()
 
-    def teardown(self) -> None:
-        super().teardown()
+    async def teardown(self) -> None:
+        await super().teardown()
         with logger.contextualize(worker=self.__class__.__name__):
-            if self.loop is None:
-                raise RuntimeError("The event loop must be set.")
-            self.loop.run_until_complete(TrainingService.abort_orphan_jobs())
+            await TrainingService.abort_orphan_jobs()
 
-    async def _train_model(self, job: Job, model: Model, snapshot: Snapshot):
+    async def _train_model(
+        self, job: Job, model: Model, snapshot: Snapshot, payload: TrainJobPayload, base_model: Model | None = None
+    ):
         settings = get_settings()
         await JobService.update_job_status(job_id=job.id, status=JobStatus.RUNNING, message="Training started")
         dispatcher = TrainingTrackingDispatcher(
@@ -104,9 +110,13 @@ class TrainingWorker(BaseProcessWorker):
             l_dm = LeRobotDataModule(
                 repo_id="snapshot",  # doesnt matter for loading the data.
                 root=snapshot.path,
-                train_batch_size=8,
+                train_batch_size=payload.batch_size,
             )
-            policy = setup_policy(model)
+
+            if base_model is not None:
+                policy = load_policy(base_model)
+            else:
+                policy = setup_policy(model)
 
             checkpoint_callback = ModelCheckpoint(
                 dirpath=path,
@@ -129,7 +139,7 @@ class TrainingWorker(BaseProcessWorker):
                 ],
                 accelerator=get_torch_device(),
                 strategy=get_lightning_strategy(),
-                max_steps=10000,
+                max_steps=payload.max_steps,
             )
 
             dispatcher.start()
@@ -145,11 +155,11 @@ class TrainingWorker(BaseProcessWorker):
             model = await ModelService.create_model(model)
             self.queue.put((EventType.MODEL_UPDATE, model))
         except Exception as e:
-            logger.error(f"Training failed: {e}")
-            logger.error(traceback.format_exc())
+            logger.exception(f"Training failed: {e}")
             job = await JobService.update_job_status(
                 job_id=job.id, status=JobStatus.FAILED, message=f"Training failed: {e}"
             )
         self.interrupt_event.set()
-        dispatcher.join(timeout=10)
+        if dispatcher.is_alive():
+            dispatcher.join(timeout=10)
         self.queue.put((EventType.JOB_UPDATE, job))
