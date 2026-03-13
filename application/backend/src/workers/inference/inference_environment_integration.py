@@ -38,11 +38,7 @@ class InferenceEnvironmentIntegration:
             cam_id = str(cam_cfg.id)
             cam = create_frames_source_from_camera(cam_cfg)  # gives you the object with connect/read
 
-            cap = AsyncCameraCapture(
-                camera=cam,
-                fps=cam_cfg.payload.fps,
-                use_cached_on_failure=True,
-            )
+            cap = AsyncCameraCapture(camera=cam, fps=cam_cfg.payload.fps, use_cached_on_failure=True)
             await cap.start()
             self.frame_captures[cam_id] = cap
 

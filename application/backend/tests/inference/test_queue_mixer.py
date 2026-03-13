@@ -35,7 +35,7 @@ class TestQueueMixer:
         queue_mixer = QueueMixer()
         queue_mixer.add(np.array([]))
         queue_mixer.add(np.array([1, 2, 3, 4]))
-        assert queue_mixer.queue.tolist() == [1,2,3,4]
+        assert queue_mixer.queue.tolist() == [1, 2, 3, 4]
 
     def test_empty_queue(self):
         queue_mixer = QueueMixer()
