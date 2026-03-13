@@ -21,7 +21,6 @@ from typing import Any, cast
 
 import numpy as np
 import torch
-
 from physicalai.data import Feature, FeatureType, NormalizationParameters
 from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, Observation
 from physicalai.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType

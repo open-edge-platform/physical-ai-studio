@@ -160,7 +160,7 @@ class TestFromConfigMixin:
         assert SampleModel.from_config(SampleModelConfig()).hidden_size == 128
         assert SampleModel.from_config(SampleModelDataclass()).hidden_size == 128
 
-    def test_recursive_parameter(self):
+    def test_recursive_parameter(self) -> None:
         """Test recursive parameter for nested structures."""
 
         @dataclass
@@ -173,7 +173,7 @@ class TestFromConfigMixin:
             nested: Nested = field(default_factory=Nested)
 
         class Model(FromConfig):
-            def __init__(self, hidden_size: int, nested=None):
+            def __init__(self, hidden_size: int, nested: Nested | None = None) -> None:
                 self.hidden_size = hidden_size
                 self.nested = nested
 

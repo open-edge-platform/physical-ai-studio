@@ -15,12 +15,11 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import torch
 from huggingface_hub import hf_hub_download
-from safetensors.torch import load_file
-
 from physicalai.data.dataset import Dataset
 from physicalai.data.observation import ACTION, IMAGES
 from physicalai.policies.base import Policy
 from physicalai.train.utils import reformat_dataset_to_match_policy
+from safetensors.torch import load_file
 
 from .config import Pi05Config
 from .model import Pi05Model
