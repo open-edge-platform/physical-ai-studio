@@ -309,8 +309,8 @@ class PiGemmaModel(GemmaModel):  # type: ignore[misc]
 
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
-        all_hidden_states = () if output_hidden_states else None
-        all_self_attns = () if output_attentions else None
+        all_hidden_states: tuple[torch.Tensor, ...] | None = () if output_hidden_states else None
+        all_self_attns: tuple[torch.Tensor, ...] | None = () if output_attentions else None
 
         for decoder_layer in self.layers[: self.config.num_hidden_layers]:
             if output_hidden_states and all_hidden_states is not None:

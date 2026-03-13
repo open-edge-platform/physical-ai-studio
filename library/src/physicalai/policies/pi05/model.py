@@ -989,7 +989,7 @@ class Pi05Model(nn.Module):
     def denoise_step(  # noqa: PLR0914
         self,
         prefix_pad_masks: Tensor,
-        past_key_values: list,
+        past_key_values: DynamicCache | None,
         x_t: Tensor,
         timestep: Tensor,
     ) -> Tensor:
