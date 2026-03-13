@@ -11,15 +11,16 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import torch
 from huggingface_hub import hf_hub_download
+from safetensors.torch import load_file
+
 from physicalai.data.dataset import Dataset
 from physicalai.data.observation import ACTION, IMAGES
 from physicalai.policies.base import Policy
 from physicalai.train.utils import reformat_dataset_to_match_policy
-from safetensors.torch import load_file
 
 from .config import Pi05Config
 from .model import Pi05Model
@@ -76,15 +77,14 @@ class Pi05(Policy):
         >>> action = policy.select_action(obs)
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(  # noqa: PLR0913, PLR0917
         self,
         # Pretrained model id
         pretrained_name_or_path: str | Path | None = None,
-
         # Model architecture
         paligemma_variant: str = "gemma_2b",
         action_expert_variant: str = "gemma_300m",
-        dtype: str = "float32",
+        dtype: Literal["bfloat16", "float32"] = "float32",
         # Input / output structure
         n_obs_steps: int = 1,
         chunk_size: int = 50,
@@ -125,6 +125,7 @@ class Pi05(Policy):
         # Eager initialization
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
     ) -> None:
+        """Initialize Pi05 policy."""
         super().__init__(n_action_steps=n_action_steps)
 
         weight_file = None
@@ -193,10 +194,8 @@ class Pi05(Policy):
 
         Called by both lazy (setup) and eager (checkpoint) paths.
         """
-        
         self.model = Pi05Model(self.config)
         if weights_file is not None:
-
             # load raw state dict
             original_sd = load_file(str(weights_file))
 
@@ -220,7 +219,7 @@ class Pi05(Policy):
 
             # Apply dtype/precision
             self.model.paligemma_with_expert.to_bfloat16_for_selected_params(self.config.dtype)
-            self.model.paligemma_with_expert._set_requires_grad()
+            self.model.paligemma_with_expert._set_requires_grad()  # noqa: SLF001
 
         if self.config.gradient_checkpointing:
             self.model.gradient_checkpointing_enable()
@@ -236,7 +235,7 @@ class Pi05(Policy):
 
         self._dataset_stats = dataset_stats
 
-    def _from_hf(
+    def _from_hf(  # noqa: PLR6301
         self,
         pretrained_name_or_path: str | Path,
         *,
@@ -244,7 +243,7 @@ class Pi05(Policy):
         num_inference_steps: int | None = None,
         compile_model: bool = False,
         compile_mode: str | None = "max-autotune",
-        **kwargs: Any,
+        **kwargs: Any,  # noqa: ANN401
     ) -> tuple[Pi05Config, dict[str, dict[str, list[float] | str | tuple]], Path]:
         """Load pretrained Pi05 from a HuggingFace model repo.
 
@@ -283,7 +282,7 @@ class Pi05(Policy):
                 k: v
                 for k, v in kwargs.items()
                 if k
-                in (
+                in {
                     "cache_dir",
                     "force_download",
                     "resume_download",
@@ -291,7 +290,7 @@ class Pi05(Policy):
                     "token",
                     "revision",
                     "local_files_only",
-                )
+                }
             }
             config_file = Path(hf_hub_download(pretrained_name_or_path, "config.json", **hub_kwargs))
             weights_file = Path(hf_hub_download(pretrained_name_or_path, "model.safetensors", **hub_kwargs))
@@ -302,18 +301,18 @@ class Pi05(Policy):
                 preprocessor_dir = preprocessor_file.parent
 
                 # Also download referenced state files
-                with open(preprocessor_file) as f:
-                    _preproc = json.load(f)
-                for _step in _preproc.get("steps", []):
-                    sf = _step.get("state_file")
+                with Path(preprocessor_file).open(encoding="utf-8") as f:
+                    preproc_data = json.load(f)
+                for step in preproc_data.get("steps", []):
+                    sf = step.get("state_file")
                     if sf:
                         hf_hub_download(pretrained_name_or_path, sf, **hub_kwargs)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 preprocessor_file = None
                 preprocessor_dir = None
 
         # --- parse config.json ---
-        with open(config_file) as f:
+        with Path(config_file).open(encoding="utf-8") as f:
             hf_config = json.load(f)
 
         # from_dict skips unknown keys and coerces lists→tuples via type hints
@@ -328,7 +327,7 @@ class Pi05(Policy):
             config_kwargs["compile_model"] = compile_model
         if compile_mode is not None:
             config_kwargs["compile_mode"] = compile_mode
-        config = Pi05Config(**config_kwargs)            
+        config = Pi05Config(**config_kwargs)
 
         # --- build dataset_stats from HF artefacts ---
         dataset_stats = _extract_dataset_stats(hf_config, preprocessor_file, preprocessor_dir)
@@ -339,6 +338,9 @@ class Pi05(Policy):
         """Set up model from datamodule (lazy initialization path).
 
         Called by Lightning before fit/validate/test/predict.
+
+        Raises:
+            TypeError: If the train dataset is not a physicalai Dataset.
         """
         del stage
 
@@ -365,6 +367,12 @@ class Pi05(Policy):
 
         Training mode: returns (loss, loss_dict).
         Eval mode: returns action chunk predictions.
+
+        Returns:
+            Loss tuple in training mode, or action tensor in eval mode.
+
+        Raises:
+            ValueError: If the model is not initialized.
         """
         if self.training:
             if self.model is None or self._preprocessor is None:
@@ -394,6 +402,9 @@ class Pi05(Policy):
 
         Returns:
             Action chunk tensor after post-processing.
+
+        Raises:
+            ValueError: If the model is not initialized.
         """
         if self.model is None or self._preprocessor is None or self._postprocessor is None:
             msg = "Model is not initialized"
@@ -419,14 +430,22 @@ class Pi05(Policy):
         return self._postprocessor({ACTION: actions})[ACTION]
 
     def training_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
-        """Lightning training step."""
+        """Lightning training step.
+
+        Returns:
+            Training loss tensor.
+        """
         del batch_idx
         loss, loss_dict = self(batch)
         self.log("train/loss", loss_dict["loss"], prog_bar=True)
         return loss
 
     def configure_optimizers(self) -> dict[str, Any]:
-        """Configure optimizer and scheduler."""
+        """Configure optimizer and scheduler.
+
+        Returns:
+            Dict with optimizer and lr_scheduler config.
+        """
         params = [p for p in self.parameters() if p.requires_grad]
 
         optimizer = torch.optim.AdamW(

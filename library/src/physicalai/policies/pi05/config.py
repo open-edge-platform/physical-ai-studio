@@ -17,10 +17,9 @@ Example (API):
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from physicalai.config import Config
-
-DEFAULT_IMAGE_SIZE = 224
 
 
 @dataclass(frozen=True)
@@ -63,7 +62,7 @@ class Pi05Config(Config):
 
     paligemma_variant: str = "gemma_2b"
     action_expert_variant: str = "gemma_300m"
-    dtype: str = "float32"
+    dtype: Literal["bfloat16", "float32"] = "float32"
 
     n_obs_steps: int = 1
     chunk_size: int = 50
@@ -80,7 +79,7 @@ class Pi05Config(Config):
     min_period: float = 4e-3
     max_period: float = 4.0
 
-    image_resolution: tuple[int, int] = (DEFAULT_IMAGE_SIZE, DEFAULT_IMAGE_SIZE)
+    image_resolution: tuple[int, int] = (224, 224)
 
     empty_cameras: int = 0
 
@@ -104,19 +103,23 @@ class Pi05Config(Config):
     scheduler_decay_lr: float = 2.5e-6
 
     def __post_init__(self) -> None:
-        """Validate configuration parameters after initialization."""
+        """Validate configuration parameters after initialization.
+
+        Raises:
+            ValueError: If configuration parameters are invalid.
+        """
         if self.n_action_steps > self.chunk_size:
             msg = f"n_action_steps ({self.n_action_steps}) cannot be greater than chunk_size ({self.chunk_size})"
             raise ValueError(msg)
 
-        if self.paligemma_variant not in ("gemma_300m", "gemma_2b"):
+        if self.paligemma_variant not in {"gemma_300m", "gemma_2b"}:
             msg = f"Invalid paligemma_variant: {self.paligemma_variant}"
             raise ValueError(msg)
 
-        if self.action_expert_variant not in ("gemma_300m", "gemma_2b"):
+        if self.action_expert_variant not in {"gemma_300m", "gemma_2b"}:
             msg = f"Invalid action_expert_variant: {self.action_expert_variant}"
             raise ValueError(msg)
 
-        if self.dtype not in ("bfloat16", "float32"):
+        if self.dtype not in {"bfloat16", "float32"}:
             msg = f"Invalid dtype: {self.dtype}"
             raise ValueError(msg)

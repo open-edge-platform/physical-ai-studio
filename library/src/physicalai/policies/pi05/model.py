@@ -21,14 +21,15 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import TYPE_CHECKING, Literal
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Literal
 
 import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import Tensor, nn
 from transformers.cache_utils import DynamicCache
 
-from .config import DEFAULT_IMAGE_SIZE, Pi05Config
+from .config import Pi05Config
 from .pi_gemma import (
     PaliGemmaForConditionalGenerationWithPiGemma,
     PiGemmaForCausalLM,
@@ -37,7 +38,11 @@ from .pi_gemma import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from transformers.models.gemma import modeling_gemma
+
+    from .config import Pi05Config
 
 try:
     from transformers.models.auto import CONFIG_MAPPING
@@ -56,7 +61,11 @@ def get_safe_dtype(
     target_dtype: torch.dtype,
     device_type: str,
 ) -> torch.dtype:
-    """Get a safe dtype for the given device type."""
+    """Get a safe dtype for the given device type.
+
+    Returns:
+        Safe torch dtype for the target device.
+    """
     if device_type == "mps" and target_dtype == torch.float64:
         return torch.float32
     if device_type == "cpu":
@@ -72,9 +81,16 @@ def create_sinusoidal_pos_embedding(
     dimension: int,
     min_period: float,
     max_period: float,
-    device: torch.device = torch.device("cpu"),
+    device: torch.device,
 ) -> Tensor:
-    """Compute sine-cosine positional embedding vectors for scalar positions."""
+    """Compute sine-cosine positional embedding vectors for scalar positions.
+
+    Returns:
+        Tensor of sine-cosine positional embeddings.
+
+    Raises:
+        ValueError: If dimension is not divisible by 2 or time is not 1D.
+    """
     if dimension % 2 != 0:
         msg = f"dimension ({dimension}) must be divisible by 2"
         raise ValueError(msg)
@@ -102,7 +118,11 @@ def sample_beta(
     bsize: int,
     device: torch.device,
 ) -> Tensor:
-    """Sample from Beta distribution (CPU-safe for MPS)."""
+    """Sample from Beta distribution (CPU-safe for MPS).
+
+    Returns:
+        Sampled tensor of shape (bsize,).
+    """
     alpha_t = torch.tensor(alpha, dtype=torch.float32)
     beta_t = torch.tensor(beta, dtype=torch.float32)
     dist = torch.distributions.Beta(alpha_t, beta_t)
@@ -117,6 +137,12 @@ def make_att_2d_masks(
 
     Tokens can attend to valid input tokens which have a cumulative mask_ar
     smaller or equal to theirs.
+
+    Returns:
+        2D boolean attention mask tensor.
+
+    Raises:
+        ValueError: If att_masks or pad_masks are not 2D.
     """
     if att_masks.ndim != 2:  # noqa: PLR2004
         msg = f"att_masks must be 2D, got {att_masks.ndim}D"
@@ -132,13 +158,17 @@ def make_att_2d_masks(
 
 
 def pad_vector(vector: Tensor, new_dim: int) -> Tensor:
-    """Pad the last dimension of a vector to new_dim with zeros."""
+    """Pad the last dimension of a vector to new_dim with zeros.
+
+    Returns:
+        Padded vector tensor.
+    """
     if vector.shape[-1] >= new_dim:
         return vector
     return F.pad(vector, (0, new_dim - vector.shape[-1]))
 
 
-def resize_with_pad_torch(
+def resize_with_pad_torch(  # noqa: PLR0914
     images: torch.Tensor,
     height: int,
     width: int,
@@ -154,6 +184,9 @@ def resize_with_pad_torch(
 
     Returns:
         Resized and padded tensor.
+
+    Raises:
+        ValueError: If image dtype is unsupported.
     """
     channels_last = images.shape[-1] <= 4  # noqa: PLR2004
     if channels_last:
@@ -203,11 +236,14 @@ def resize_with_pad_torch(
     return padded_images
 
 
-def _clone_kv_cache(past_key_values):
+def _clone_kv_cache(past_key_values: DynamicCache) -> DynamicCache:
     """Create a clone of a DynamicCache with cloned tensors.
 
     copy.deepcopy is not traceable by torch.jit / torch.onnx.export,
     so we manually clone the underlying key/value tensors instead.
+
+    Returns:
+        Cloned DynamicCache instance.
     """
     cloned = DynamicCache()
     for layer_idx, (key_states, value_states) in enumerate(past_key_values):
@@ -215,7 +251,7 @@ def _clone_kv_cache(past_key_values):
     return cloned
 
 
-def compute_layer_complete(
+def compute_layer_complete(  # noqa: PLR0914
     layer_idx: int,
     inputs_embeds: list[Tensor],
     attention_mask: Tensor,
@@ -224,7 +260,11 @@ def compute_layer_complete(
     paligemma: PaliGemmaForConditionalGenerationWithPiGemma,
     gemma_expert: PiGemmaForCausalLM,
 ) -> list[Tensor]:
-    """Complete layer computation function for gradient checkpointing."""
+    """Complete layer computation function for gradient checkpointing.
+
+    Returns:
+        List of output embedding tensors for each model.
+    """
     models = [paligemma.model.language_model, gemma_expert.model]
     query_states = []
     key_states = []
@@ -232,7 +272,7 @@ def compute_layer_complete(
     gates = []
     for i, hidden_states in enumerate(inputs_embeds):
         layer = models[i].layers[layer_idx]
-        hidden_states, gate = layernorm_forward(layer.input_layernorm, hidden_states, adarms_cond[i])
+        hidden_states, gate = layernorm_forward(layer.input_layernorm, hidden_states, adarms_cond[i])  # noqa: PLW2901
         gates.append(gate)
         input_shape = hidden_states.shape[:-1]
         hidden_shape = (*input_shape, -1, layer.self_attn.head_dim)
@@ -284,7 +324,7 @@ def compute_layer_complete(
             att_output = att_output.to(layer.self_attn.o_proj.weight.dtype)
         out_emb = layer.self_attn.o_proj(att_output[:, start_pos:end_pos])
         out_emb = _gated_residual(hidden_states, out_emb, gates[i])
-        after_first_residual = out_emb.clone()
+        after_first_residual = out_emb.clone()  # type: ignore[union-attr]
         out_emb, gate = layernorm_forward(layer.post_attention_layernorm, out_emb, adarms_cond[i])
         if layer.mlp.up_proj.weight.dtype == torch.bfloat16:
             out_emb = out_emb.to(dtype=torch.bfloat16)
@@ -295,28 +335,27 @@ def compute_layer_complete(
     return outputs_embeds
 
 
+@dataclass
 class GemmaVariantConfig:
     """Configuration for Gemma model variants."""
 
-    def __init__(
-        self,
-        width: int,
-        depth: int,
-        mlp_dim: int,
-        num_heads: int,
-        num_kv_heads: int,
-        head_dim: int,
-    ):
-        self.width = width
-        self.depth = depth
-        self.mlp_dim = mlp_dim
-        self.num_heads = num_heads
-        self.num_kv_heads = num_kv_heads
-        self.head_dim = head_dim
+    width: int
+    depth: int
+    mlp_dim: int
+    num_heads: int
+    num_kv_heads: int
+    head_dim: int
 
 
 def get_gemma_config(variant: str) -> GemmaVariantConfig:
-    """Return config for the specified Gemma variant."""
+    """Return config for the specified Gemma variant.
+
+    Returns:
+        Configuration for the Gemma variant.
+
+    Raises:
+        ValueError: If variant is unknown.
+    """
     if variant == "gemma_300m":
         return GemmaVariantConfig(
             width=1024,
@@ -348,10 +387,11 @@ class PaliGemmaWithExpertModel(nn.Module):
         action_expert_config: GemmaVariantConfig,
         use_adarms: list[bool] | None = None,
         precision: Literal["bfloat16", "float32"] = "bfloat16",
-        image_size: int = DEFAULT_IMAGE_SIZE,
-        freeze_vision_encoder: bool = False,
-        train_expert_only: bool = False,
-    ):
+        image_size: int = 224,
+        freeze_vision_encoder: bool = False,  # noqa: FBT001, FBT002
+        train_expert_only: bool = False,  # noqa: FBT001, FBT002
+    ) -> None:
+        """Initialize PaliGemmaWithExpertModel."""
         if use_adarms is None:
             use_adarms = [False, False]
         super().__init__()
@@ -403,6 +443,11 @@ class PaliGemmaWithExpertModel(nn.Module):
         self,
         precision: Literal["bfloat16", "float32"] = "bfloat16",
     ) -> None:
+        """Convert selected parameters to bfloat16 precision.
+
+        Raises:
+            ValueError: If precision is not 'bfloat16' or 'float32'.
+        """
         if precision == "bfloat16":
             self.to(dtype=torch.bfloat16)
         elif precision == "float32":
@@ -434,7 +479,8 @@ class PaliGemmaWithExpertModel(nn.Module):
             for param in self.paligemma.parameters():
                 param.requires_grad = False
 
-    def train(self, mode: bool = True):
+    def train(self, mode: bool = True) -> None:  # noqa: FBT001, FBT002
+        """Set training mode, keeping frozen modules in eval."""
         super().train(mode)
         if self.freeze_vision_encoder:
             self.paligemma.model.vision_tower.eval()
@@ -442,6 +488,11 @@ class PaliGemmaWithExpertModel(nn.Module):
             self.paligemma.eval()
 
     def embed_image(self, image: torch.Tensor) -> torch.Tensor:
+        """Embed image through vision tower and projector.
+
+        Returns:
+            Image embedding tensor.
+        """
         out_dtype = image.dtype
         if image.dtype != torch.float32:
             image = image.to(torch.float32)
@@ -453,6 +504,11 @@ class PaliGemmaWithExpertModel(nn.Module):
         return features
 
     def embed_language_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Embed language tokens.
+
+        Returns:
+            Language token embedding tensor.
+        """
         return self.paligemma.model.language_model.embed_tokens(tokens)
 
     def forward(
@@ -461,11 +517,22 @@ class PaliGemmaWithExpertModel(nn.Module):
         position_ids: torch.LongTensor | None = None,
         past_key_values: list[torch.FloatTensor] | None = None,
         inputs_embeds: list[torch.FloatTensor] | None = None,
-        use_cache: bool | None = None,
+        use_cache: bool | None = None,  # noqa: FBT001
         adarms_cond: list[torch.Tensor] | None = None,
-    ):
+    ) -> tuple[list[Tensor | None], DynamicCache | None]:
+        """Forward pass combining PaliGemma and action expert.
+
+        Returns:
+            Tuple of (output embeddings list, prefix past key values).
+
+        Raises:
+            ValueError: If inputs_embeds is None.
+        """
         if adarms_cond is None:
             adarms_cond = [None, None]
+        if inputs_embeds is None:
+            msg = "inputs_embeds must not be None"
+            raise ValueError(msg)
         if inputs_embeds[1] is None:
             prefix_output = self.paligemma.model.language_model.forward(
                 inputs_embeds=inputs_embeds[0],
@@ -525,7 +592,10 @@ class PaliGemmaWithExpertModel(nn.Module):
                         gemma_expert=self.gemma_expert,
                     )
 
-            def compute_final_norms(inputs_embeds, adarms_cond):
+            def compute_final_norms(
+                inputs_embeds: list[Tensor],
+                adarms_cond: list[Tensor | None],
+            ) -> list[Tensor]:
                 outputs_embeds = []
                 for i, hidden_states in enumerate(inputs_embeds):
                     out_emb, _ = layernorm_forward(models[i].norm, hidden_states, adarms_cond[i])
@@ -557,7 +627,12 @@ class Pi05Model(nn.Module):
     separated from the Lightning wrapper.
     """
 
-    def __init__(self, config: Pi05Config):
+    def __init__(self, config: Pi05Config) -> None:
+        """Initialize Pi05Model.
+
+        Raises:
+            ValueError: If image resolution is not square.
+        """
         super().__init__()
         self.config = config
 
@@ -588,10 +663,11 @@ class Pi05Model(nn.Module):
 
         if config.compile_model:
             torch.set_float32_matmul_precision("high")
-            # TODO(Eugene): max-autotune currently failed. set to default for now, need further investigation.
+            # TODO(Eugene): max-autotune currently failed.  # noqa: TD003, FIX002
+            # Set to default for now, need further investigation.
             compile_mode = "default"  # config.compile_mode
-            self.sample_actions = torch.compile(self.sample_actions, mode=compile_mode)
-            self.forward = torch.compile(self.forward, mode=compile_mode)
+            self.sample_actions = torch.compile(self.sample_actions, mode=compile_mode)  # type: ignore[method-assign]
+            self.forward = torch.compile(self.forward, mode=compile_mode)  # type: ignore[method-assign]
 
     def gradient_checkpointing_enable(self) -> None:
         """Enable gradient checkpointing for memory optimization."""
@@ -599,7 +675,7 @@ class Pi05Model(nn.Module):
         self.paligemma_with_expert.paligemma.model.language_model.gradient_checkpointing = True
         self.paligemma_with_expert.paligemma.model.vision_tower.gradient_checkpointing = True
         self.paligemma_with_expert.gemma_expert.model.gradient_checkpointing = True
-        msg = f"Enabled gradient checkpointing for Pi05Model"
+        msg = "Enabled gradient checkpointing for Pi05Model"
         logger.info(msg)
 
     def gradient_checkpointing_disable(self) -> None:
@@ -608,11 +684,15 @@ class Pi05Model(nn.Module):
         self.paligemma_with_expert.paligemma.model.language_model.gradient_checkpointing = False
         self.paligemma_with_expert.paligemma.model.vision_tower.gradient_checkpointing = False
         self.paligemma_with_expert.gemma_expert.model.gradient_checkpointing = False
-        msg = f"Disabled gradient checkpointing for Pi05Model"
+        msg = "Disabled gradient checkpointing for Pi05Model"
         logger.info(msg)
 
-    def _apply_checkpoint(self, func, *args, **kwargs):
-        """Apply gradient checkpointing if enabled."""
+    def _apply_checkpoint(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+        """Apply gradient checkpointing if enabled.
+
+        Returns:
+            Result of the function call.
+        """
         if self.gradient_checkpointing_enabled and self.training:
             return torch.utils.checkpoint.checkpoint(
                 func,
@@ -623,13 +703,21 @@ class Pi05Model(nn.Module):
             )
         return func(*args, **kwargs)
 
-    def _prepare_attention_masks_4d(self, att_2d_masks: Tensor) -> Tensor:
-        """Prepare 4D attention masks for transformer."""
+    def _prepare_attention_masks_4d(self, att_2d_masks: Tensor) -> Tensor:  # noqa: PLR6301
+        """Prepare 4D attention masks for transformer.
+
+        Returns:
+            4D attention mask tensor.
+        """
         att_2d_masks_4d = att_2d_masks[:, None, :, :]
         return torch.where(att_2d_masks_4d, 0.0, OPENPI_ATTENTION_MASK_VALUE)
 
-    def sample_noise(self, shape: tuple, device: torch.device) -> Tensor:
-        """Sample noise for the model."""
+    def sample_noise(self, shape: tuple, device: torch.device) -> Tensor:  # noqa: PLR6301
+        """Sample noise for the model.
+
+        Returns:
+            Noise tensor.
+        """
         if torch.jit.is_tracing() or torch.onnx.is_in_onnx_export():
             return torch.zeros(shape, dtype=torch.float32, device=device)
         return torch.normal(
@@ -641,7 +729,11 @@ class Pi05Model(nn.Module):
         )
 
     def sample_time(self, bsize: int, device: torch.device) -> Tensor:
-        """Sample time values for the model."""
+        """Sample time values for the model.
+
+        Returns:
+            Time tensor.
+        """
         if torch.jit.is_tracing() or torch.onnx.is_in_onnx_export():
             alpha = self.config.time_sampling_beta_alpha
             beta = self.config.time_sampling_beta_beta
@@ -663,14 +755,18 @@ class Pi05Model(nn.Module):
         tokens: Tensor,
         masks: Tensor,
     ) -> tuple[Tensor, Tensor, Tensor]:
-        """Embed images with SigLIP and language tokens with embedding layer."""
+        """Embed images with SigLIP and language tokens with embedding layer.
+
+        Returns:
+            Tuple of (embeddings, padding masks, attention masks).
+        """
         embs = []
         pad_masks = []
         att_masks = []
 
         for img, img_mask in zip(images, img_masks, strict=True):
 
-            def image_embed_func(img):
+            def image_embed_func(img: Tensor) -> Tensor:
                 return self.paligemma_with_expert.embed_image(img)
 
             img_emb = self._apply_checkpoint(image_embed_func, img)
@@ -680,7 +776,7 @@ class Pi05Model(nn.Module):
             pad_masks.append(img_mask[:, None].expand(bsize, num_img_embs))
             att_masks += [0] * num_img_embs
 
-        def lang_embed_func(tokens):
+        def lang_embed_func(tokens: Tensor) -> Tensor:
             lang_emb = self.paligemma_with_expert.embed_language_tokens(tokens)
             lang_emb_dim = lang_emb.shape[-1]
             return lang_emb * math.sqrt(lang_emb_dim)
@@ -706,7 +802,11 @@ class Pi05Model(nn.Module):
         noisy_actions: Tensor,
         timestep: Tensor,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
-        """Embed noisy_actions and timestep for Expert Gemma processing."""
+        """Embed noisy_actions and timestep for Expert Gemma processing.
+
+        Returns:
+            Tuple of (embeddings, padding masks, attention masks, adarms conditioning).
+        """
         embs = []
         pad_masks = []
         att_masks = []
@@ -720,12 +820,12 @@ class Pi05Model(nn.Module):
         )
         time_emb = time_emb.type(dtype=timestep.dtype)
 
-        def action_proj_func(noisy_actions):
+        def action_proj_func(noisy_actions: Tensor) -> Tensor:
             return self.action_in_proj(noisy_actions)
 
         action_emb = self._apply_checkpoint(action_proj_func, noisy_actions)
 
-        def time_mlp_func(time_emb):
+        def time_mlp_func(time_emb: Tensor) -> Tensor:
             x = self.time_mlp_in(time_emb)
             x = F.silu(x)
             x = self.time_mlp_out(x)
@@ -749,7 +849,7 @@ class Pi05Model(nn.Module):
 
         return embs, pad_masks, att_masks, adarms_cond
 
-    def forward(
+    def forward(  # noqa: PLR0914
         self,
         images: list[Tensor],
         img_masks: list[Tensor],
@@ -759,7 +859,11 @@ class Pi05Model(nn.Module):
         noise: Tensor | None = None,
         time: Tensor | None = None,
     ) -> Tensor:
-        """Training forward pass: compute flow matching loss."""
+        """Training forward pass: compute flow matching loss.
+
+        Returns:
+            Per-element MSE loss tensor.
+        """
         if noise is None:
             noise = self.sample_noise(actions.shape, actions.device)
 
@@ -788,7 +892,13 @@ class Pi05Model(nn.Module):
 
         att_2d_masks_4d = self._prepare_attention_masks_4d(att_2d_masks)
 
-        def forward_func(prefix_embs, suffix_embs, att_2d_masks_4d, position_ids, adarms_cond):
+        def forward_func(
+            prefix_embs: Tensor,
+            suffix_embs: Tensor,
+            att_2d_masks_4d: Tensor,
+            position_ids: Tensor,
+            adarms_cond: Tensor,
+        ) -> Tensor:
             (_, suffix_out), _ = self.paligemma_with_expert.forward(
                 attention_mask=att_2d_masks_4d,
                 position_ids=position_ids,
@@ -811,7 +921,7 @@ class Pi05Model(nn.Module):
         suffix_out = suffix_out[:, -self.config.chunk_size :]
         suffix_out = suffix_out.to(dtype=torch.float32)
 
-        def action_out_proj_func(suffix_out):
+        def action_out_proj_func(suffix_out: Tensor) -> Tensor:
             return self.action_out_proj(suffix_out)
 
         v_t = self._apply_checkpoint(action_out_proj_func, suffix_out)
@@ -819,7 +929,7 @@ class Pi05Model(nn.Module):
         return F.mse_loss(u_t, v_t, reduction="none")
 
     @torch.no_grad()
-    def sample_actions(
+    def sample_actions(  # noqa: PLR0914
         self,
         images: list[Tensor],
         img_masks: list[Tensor],
@@ -828,7 +938,11 @@ class Pi05Model(nn.Module):
         noise: Tensor | None = None,
         num_steps: int | None = None,
     ) -> Tensor:
-        """Inference forward pass: sample actions via iterative denoising."""
+        """Inference forward pass: sample actions via iterative denoising.
+
+        Returns:
+            Denoised action tensor.
+        """
         if num_steps is None:
             num_steps = self.config.num_inference_steps
 
@@ -868,18 +982,22 @@ class Pi05Model(nn.Module):
                 timestep=time_tensor,
             )
 
-            x_t = x_t + dt * v_t
+            x_t += dt * v_t
 
         return x_t
 
-    def denoise_step(
+    def denoise_step(  # noqa: PLR0914
         self,
         prefix_pad_masks: Tensor,
         past_key_values: list,
         x_t: Tensor,
         timestep: Tensor,
     ) -> Tensor:
-        """Apply one denoising step of noise x_t at a given timestep."""
+        """Apply one denoising step of noise x_t at a given timestep.
+
+        Returns:
+            Velocity prediction tensor for this denoising step.
+        """
         suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(x_t, timestep)
 
         suffix_len = suffix_pad_masks.shape[1]
@@ -910,7 +1028,7 @@ class Pi05Model(nn.Module):
             adarms_cond=[None, adarms_cond],
         )
 
-        suffix_out = outputs_embeds[1]
-        suffix_out = suffix_out[:, -self.config.chunk_size :]
+        suffix_out = outputs_embeds[1]  # type: ignore[index]
+        suffix_out = suffix_out[:, -self.config.chunk_size :]  # type: ignore[index]
         suffix_out = suffix_out.to(dtype=torch.float32)
         return self.action_out_proj(suffix_out)

@@ -14,20 +14,28 @@ Handles:
 
 from __future__ import annotations
 
+import json
 import logging
 import re
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import torch
 from safetensors.torch import load_file
-import json
+
 from physicalai.data.observation import ACTION
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import torch
 
 logger = logging.getLogger(__name__)
 
 
-def extract_dataset_stats(hf_config: dict[str, Any], preprocessor_file: Path | None, preprocessor_dir: Path | None) -> dict[str, dict[str, Any]]:
+def extract_dataset_stats(
+    hf_config: dict[str, Any],
+    preprocessor_file: Path | None,
+    preprocessor_dir: Path | None,
+) -> dict[str, dict[str, Any]]:
     """Build ``dataset_stats`` dict that ``make_pi05_preprocessors`` expects.
 
     The stats format expected by the preprocessor is:
@@ -36,32 +44,41 @@ def extract_dataset_stats(hf_config: dict[str, Any], preprocessor_file: Path | N
     Lerobot models use QUANTILES normalization with q01/q99 stats.
     We convert to mean/std that produces an equivalent [-1, 1] mapping:
     ``mean = (q01 + q99) / 2``  and  ``std = (q99 - q01) / 2``.
+
+    Returns:
+        Dataset stats dict mapping feature names to stat dicts.
     """
     stats: dict[str, dict[str, Any]] = {}
 
     # Try to extract stats from preprocessor config + state file
     if preprocessor_file is not None and preprocessor_file.exists():
         try:
-            with open(preprocessor_file) as f:
+            with preprocessor_file.open(encoding="utf-8") as f:
                 preproc_config = json.load(f)
             stats = parse_preprocessor_stats(preproc_config, hf_config, preprocessor_dir)
             if stats:
                 return stats
-        except Exception:
-            msg = f"Could not parse preprocessor file, falling back to config.json"
+        except Exception:  # noqa: BLE001
+            msg = "Could not parse preprocessor file, falling back to config.json"
             logger.debug(msg)
 
     # Fallback: build minimal stats from config.json features
-    stats = parse_config_features(hf_config)
-    return stats
+    return parse_config_features(hf_config)
 
 
-def parse_preprocessor_stats(preproc_config: dict[str, Any], hf_config: dict[str, Any], preprocessor_dir: Path | None) -> dict[str, dict[str, Any]]:
+def parse_preprocessor_stats(
+    preproc_config: dict[str, Any],
+    hf_config: dict[str, Any],
+    preprocessor_dir: Path | None,
+) -> dict[str, dict[str, Any]]:
     """Extract normalization stats from lerobot's policy_preprocessor.json.
 
     Lerobot stores the stats in a separate safetensors file (referenced
     by ``state_file`` in each pipeline step). The keys are flat:
     ``"observation.state.q01"``, ``"action.q99"``, etc.
+
+    Returns:
+        Dict mapping feature names to stat dicts with mean/std.
     """
     stats: dict[str, dict[str, Any]] = {}
 
@@ -113,6 +130,9 @@ def parse_config_features(hf_config: dict[str, Any]) -> dict[str, dict[str, Any]
 
     When no preprocessor stats file is available, build identity-like stats
     from feature shapes in the config.
+
+    Returns:
+        Dict mapping feature names to stat dicts.
     """
     stats: dict[str, dict[str, Any]] = {}
 
@@ -141,7 +161,11 @@ def parse_config_features(hf_config: dict[str, Any]) -> dict[str, dict[str, Any]
 
 
 def resolve_feature_shape(feat_name: str, hf_config: dict[str, Any], feat_stats: dict[str, Any]) -> tuple[int, ...]:
-    """Resolve shape for a feature, checking config features then stat tensors."""
+    """Resolve shape for a feature, checking config features then stat tensors.
+
+    Returns:
+        Tuple representing the feature shape.
+    """
     # Check config features
     for section in ("input_features", "output_features"):
         features = hf_config.get(section, {})
@@ -165,6 +189,9 @@ def convert_normalization_stats(feat_stats: dict[str, Any]) -> tuple[list[float]
     Handles QUANTILES (q01/q99), MIN_MAX (min/max), and MEAN_STD (mean/std).
     QUANTILES conversion: mean = (q01+q99)/2, std = (q99-q01)/2.
     MIN_MAX conversion:   mean = (min+max)/2, std = (max-min)/2.
+
+    Returns:
+        Tuple of (mean, std) lists, or (None, None) if conversion fails.
     """
     # Already has mean/std
     if "mean" in feat_stats and "std" in feat_stats:
@@ -198,6 +225,9 @@ def fix_state_dict_keys(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.
     """Fix state dict keys to match Pi05Model architecture.
 
     Adapted from lerobot's ``Pi05Policy._fix_pytorch_state_dict_keys``.
+
+    Returns:
+        State dict with corrected key names.
     """
     fixed: dict[str, torch.Tensor] = {}
 

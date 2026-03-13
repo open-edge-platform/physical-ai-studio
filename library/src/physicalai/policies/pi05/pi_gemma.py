@@ -26,6 +26,7 @@ Requires: transformers library.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import torch
 from torch import nn
@@ -42,6 +43,7 @@ try:
         GemmaMLP,
         GemmaModel,
     )
+    from transformers.models.paligemma.configuration_paligemma import PaliGemmaConfig  # noqa: TC002
     from transformers.models.paligemma.modeling_paligemma import (
         PaliGemmaForConditionalGeneration,
         PaliGemmaModel,
@@ -49,6 +51,8 @@ try:
 except ImportError as e:
     msg = "Pi05 requires the transformers library. Install with: uv pip install transformers"
     raise ImportError(msg) from e
+
+logger = logging.getLogger(__name__)
 
 
 __all__ = [
@@ -67,7 +71,11 @@ def _gated_residual(
     y: torch.Tensor | None,
     gate: torch.Tensor | None,
 ) -> torch.Tensor | None:
-    """Gated residual: x + y when gate is None, else x + y * gate."""
+    """Gated residual: x + y when gate is None, else x + y * gate.
+
+    Returns:
+        Combined tensor, or None if both inputs are None.
+    """
     if x is None and y is None:
         return None
     if x is None or y is None:
@@ -86,6 +94,9 @@ def layernorm_forward(
 
     If cond is not None, use conditional norm (AdaRMS).
     Otherwise, use normal gemma norm.
+
+    Returns:
+        Tuple of (normalized hidden states, gate tensor or None).
     """
     if cond is not None:
         return layernorm(x, cond=cond)
@@ -100,7 +111,8 @@ class PiGemmaRMSNorm(nn.Module):
     forward(x, cond=None) returns (output, gate) for use with _gated_residual.
     """
 
-    def __init__(self, dim: int, eps: float = 1e-6, cond_dim: int | None = None):
+    def __init__(self, dim: int, eps: float = 1e-6, cond_dim: int | None = None) -> None:
+        """Initialize PiGemmaRMSNorm."""
         super().__init__()
         self.eps = eps
         self.dim = dim
@@ -121,10 +133,18 @@ class PiGemmaRMSNorm(nn.Module):
         x: torch.Tensor,
         cond: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Compute adaptive RMS normalization.
+
+        Returns:
+            Tuple of (normalized tensor, gate tensor or None).
+
+        Raises:
+            ValueError: If cond dimension does not match expected cond_dim.
+        """
         dtype = x.dtype
         normed = self._norm(x)
         if cond is None or self.dense is None:
-            normed = normed * (1.0 + self.weight.float())
+            normed *= 1.0 + self.weight.float()
             return normed.type_as(x), None
         if cond.shape[-1] != self.cond_dim:
             msg = f"Expected cond dim {self.cond_dim}, got {cond.shape[-1]}"
@@ -137,18 +157,19 @@ class PiGemmaRMSNorm(nn.Module):
         return normed.to(dtype), gate.to(dtype)
 
     def extra_repr(self) -> str:
+        """Return string representation of module parameters."""
         if self.dense is not None:
             return f"dim={self.dim}, eps={self.eps}, adaptive=True, cond_dim={self.cond_dim}"
         return f"dim={self.dim}, eps={self.eps}"
 
 
-def _get_pi_gemma_decoder_layer_base():
+def _get_pi_gemma_decoder_layer_base() -> type:
     """Return base class for PiGemmaDecoderLayer."""
 
     class _PiGemmaDecoderLayerBase(GradientCheckpointingLayer):
         """Decoder layer with PiGemmaRMSNorm and gated residuals."""
 
-        def __init__(self, config: GemmaConfig, layer_idx: int):
+        def __init__(self, config: GemmaConfig, layer_idx: int) -> None:
             super().__init__()
             self.hidden_size = config.hidden_size
             self.self_attn = GemmaAttention(config=config, layer_idx=layer_idx)
@@ -170,13 +191,18 @@ def _get_pi_gemma_decoder_layer_base():
             hidden_states: torch.Tensor,
             attention_mask: torch.Tensor | None = None,
             position_ids: torch.LongTensor | None = None,
-            past_key_values=None,
-            use_cache: bool = False,
+            past_key_values: DynamicCache | None = None,
+            use_cache: bool = False,  # noqa: FBT001, FBT002
             cache_position: torch.LongTensor | None = None,
             position_embeddings: tuple[torch.Tensor, torch.Tensor] | None = None,
             adarms_cond: torch.Tensor | None = None,
-            **kwargs,
+            **kwargs: Any,  # noqa: ANN401
         ) -> torch.Tensor:
+            """Forward pass through decoder layer.
+
+            Returns:
+                Updated hidden states tensor.
+            """
             residual = hidden_states
             hidden_states, gate = self.input_layernorm(hidden_states, cond=adarms_cond)
             hidden_states, _ = self.self_attn(
@@ -196,7 +222,7 @@ def _get_pi_gemma_decoder_layer_base():
             hidden_states, gate = self.post_attention_layernorm(hidden_states, cond=adarms_cond)
             hidden_states = self.mlp(hidden_states)
             hidden_states = _gated_residual(residual, hidden_states, gate)
-            return hidden_states
+            return hidden_states  # noqa: RET504
 
     return _PiGemmaDecoderLayerBase
 
@@ -204,7 +230,8 @@ def _get_pi_gemma_decoder_layer_base():
 class PiGemmaModel(GemmaModel):  # type: ignore[misc]
     """GemmaModel extended with AdaRMS and gated residuals."""
 
-    def __init__(self, config: GemmaConfig, **kwargs):
+    def __init__(self, config: GemmaConfig, **kwargs: Any) -> None:  # noqa: ANN401
+        """Initialize PiGemmaModel."""
         super().__init__(config, **kwargs)
         cond_dim = getattr(config, "adarms_cond_dim", None)
         pi_gemma_decoder_layer_base = _get_pi_gemma_decoder_layer_base()
@@ -213,21 +240,28 @@ class PiGemmaModel(GemmaModel):  # type: ignore[misc]
         )
         self.norm = PiGemmaRMSNorm(config.hidden_size, eps=config.rms_norm_eps, cond_dim=cond_dim)
 
-    def forward(
+    def forward(  # noqa: PLR0914
         self,
         input_ids: torch.LongTensor | None = None,
         attention_mask: torch.Tensor | None = None,
         position_ids: torch.LongTensor | None = None,
         past_key_values: DynamicCache | None = None,
         inputs_embeds: torch.FloatTensor | None = None,
-        use_cache: bool | None = None,
-        output_attentions: bool | None = None,
-        output_hidden_states: bool | None = None,
+        use_cache: bool | None = None,  # noqa: FBT001
+        output_attentions: bool | None = None,  # noqa: FBT001
+        output_hidden_states: bool | None = None,  # noqa: FBT001
         cache_position: torch.LongTensor | None = None,
         adarms_cond: torch.Tensor | None = None,
-        **kwargs,
+        **kwargs: Any,  # noqa: ANN401
     ) -> BaseModelOutputWithPast:
-        """Forward pass with optional AdaRMS conditioning."""
+        """Forward pass with optional AdaRMS conditioning.
+
+        Returns:
+            Model output with last hidden state and optional caches/attentions.
+
+        Raises:
+            ValueError: If input_ids and inputs_embeds are not exclusively specified.
+        """
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
@@ -240,7 +274,7 @@ class PiGemmaModel(GemmaModel):  # type: ignore[misc]
 
         if self.gradient_checkpointing and self.training and use_cache:
             msg = "`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`."
-            logging.warning(msg)
+            logger.warning(msg)
             use_cache = False
 
         if inputs_embeds is None:
@@ -279,7 +313,7 @@ class PiGemmaModel(GemmaModel):  # type: ignore[misc]
         all_self_attns = () if output_attentions else None
 
         for decoder_layer in self.layers[: self.config.num_hidden_layers]:
-            if output_hidden_states:
+            if output_hidden_states and all_hidden_states is not None:
                 all_hidden_states += (hidden_states,)
 
             layer_outputs = decoder_layer(
@@ -297,12 +331,12 @@ class PiGemmaModel(GemmaModel):  # type: ignore[misc]
 
             hidden_states = layer_outputs
 
-            if output_attentions:
+            if output_attentions and all_self_attns is not None:
                 all_self_attns += (layer_outputs[1],)
 
         hidden_states, _ = self.norm(hidden_states, adarms_cond)
 
-        if output_hidden_states:
+        if output_hidden_states and all_hidden_states is not None:
             all_hidden_states += (hidden_states,)
 
         return BaseModelOutputWithPast(
@@ -316,7 +350,8 @@ class PiGemmaModel(GemmaModel):  # type: ignore[misc]
 class PiGemmaForCausalLM(GemmaForCausalLM):  # type: ignore[misc]
     """Causal LM wrapper using PiGemmaModel for the action expert."""
 
-    def __init__(self, config: GemmaConfig, **kwargs):
+    def __init__(self, config: GemmaConfig, **kwargs: Any) -> None:  # noqa: ANN401
+        """Initialize PiGemmaForCausalLM."""
         super().__init__(config, **kwargs)
         self.model = PiGemmaModel(config)
 
@@ -324,7 +359,8 @@ class PiGemmaForCausalLM(GemmaForCausalLM):  # type: ignore[misc]
 class PaliGemmaModelWithPiGemma(PaliGemmaModel):
     """PaliGemmaModel whose language_model is PiGemmaModel."""
 
-    def __init__(self, config):
+    def __init__(self, config: PaliGemmaConfig) -> None:
+        """Initialize PaliGemmaModelWithPiGemma."""
         super().__init__(config)
         self.language_model = PiGemmaModel(config.text_config)
 
@@ -332,10 +368,12 @@ class PaliGemmaModelWithPiGemma(PaliGemmaModel):
 class PaliGemmaForConditionalGenerationWithPiGemma(PaliGemmaForConditionalGeneration):
     """PaliGemmaForConditionalGeneration using PiGemma decoder."""
 
-    def __init__(self, config):
+    def __init__(self, config: PaliGemmaConfig) -> None:
+        """Initialize PaliGemmaForConditionalGenerationWithPiGemma."""
         super().__init__(config)
         self.model = PaliGemmaModelWithPiGemma(config)
 
     @property
-    def language_model(self):
+    def language_model(self) -> PiGemmaModel:
+        """Return the language model component."""
         return self.model.language_model

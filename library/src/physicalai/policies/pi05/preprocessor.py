@@ -21,6 +21,7 @@ from typing import Any, cast
 
 import numpy as np
 import torch
+
 from physicalai.data import Feature, FeatureType, NormalizationParameters
 from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, Observation
 from physicalai.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
@@ -64,6 +65,7 @@ class Pi05Preprocessor(torch.nn.Module):
         tokenizer_name: str = "google/paligemma-3b-pt-224",
         empty_cameras: int = 0,
     ) -> None:
+        """Initialize Pi05Preprocessor."""
         super().__init__()
 
         self.max_state_dim = max_state_dim
@@ -210,7 +212,11 @@ class Pi05Preprocessor(torch.nn.Module):
 
     @property
     def tokenizer(self) -> Any:  # noqa: ANN401
-        """Lazy-load PaliGemma tokenizer."""
+        """Lazy-load PaliGemma tokenizer.
+
+        Raises:
+            ImportError: If transformers is not installed.
+        """
         if self._tokenizer is None:
             try:
                 from transformers import AutoTokenizer  # noqa: PLC0415
@@ -235,6 +241,7 @@ class Pi05Postprocessor(torch.nn.Module):
         self,
         features: dict[str, Feature] | None = None,
     ) -> None:
+        """Initialize Pi05Postprocessor."""
         super().__init__()
 
         if features is not None:
@@ -244,7 +251,11 @@ class Pi05Postprocessor(torch.nn.Module):
             self._action_denormalizer = torch.nn.Identity()
 
     def forward(self, batch: dict[str, Any]) -> dict[str, torch.Tensor]:
-        """Denormalize actions."""
+        """Denormalize actions.
+
+        Returns:
+            Batch dict with denormalized actions.
+        """
         batch = dict(batch)
         if ACTION in batch:
             batch[ACTION] = self._action_denormalizer({ACTION: batch[ACTION]})[ACTION]
@@ -268,6 +279,7 @@ def make_pi05_preprocessors(
         stats: Dataset statistics as nested dicts.
         image_resolution: Target image resolution.
         max_token_len: Maximum token length.
+        empty_cameras: Number of empty camera slots to add.
 
     Returns:
         Tuple of (preprocessor, postprocessor).
