@@ -1,11 +1,12 @@
 import asyncio
-import multiprocessing as mp
-from queue import Empty
+from queue import Empty, Queue
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, WebSocket
 from fastapi.responses import Response
 from loguru import logger
+import time
+import traceback
 
 from api.dependencies import (
     RobotCalibrationServiceDep,
@@ -15,10 +16,13 @@ from api.dependencies import (
 )
 from core.scheduler import Scheduler
 from exceptions import ResourceNotFoundError
-from schemas import InferenceConfig, TeleoperationConfig
+from robots.robot_client_factory import RobotClientFactory
+from schemas import Model, TeleoperationConfig
+from schemas.environment import EnvironmentWithRelations
 from services import DatasetService
 from utils.serialize_utils import to_python_primitive
-from workers import InferenceWorker, TeleoperateWorker
+from workers.inference_worker import InferenceWorker
+from workers.teleoperate_worker import TeleoperateWorker
 
 router = APIRouter(prefix="/api/record")
 
@@ -46,7 +50,7 @@ async def teleoperate_websocket(
     except ResourceNotFoundError:
         dataset = await dataset_service.create_dataset(config.dataset)
         await websocket.send_json({"event": "dataset", "data": dataset.model_dump()})
-    queue: mp.Queue = mp.Queue()
+    queue: Queue = Queue()
     process = TeleoperateWorker(
         stop_event=scheduler.mp_stop_event,
         robot_manager=robot_manager,
@@ -77,12 +81,16 @@ async def teleoperate_websocket(
         try:
             while True:
                 try:
-                    message = to_python_primitive(queue.get_nowait())
+                    start_time = time.perf_counter()
+                    message = queue.get()
                     await websocket.send_json(message)
+                    end_time = time.perf_counter()
+                    logger.info(f"time took: {end_time - start_time}, qsize remaining: {queue.qsize()}")
                 except Empty:
-                    await asyncio.sleep(0.05)
+                    pass
         except Exception as e:
             logger.error(f"Outgoing task stopped: {e}")
+            logger.error(traceback.format_exc())
 
     incoming_task = asyncio.create_task(handle_incoming())
     outgoing_task = asyncio.create_task(handle_outgoing())
@@ -94,12 +102,12 @@ async def teleoperate_websocket(
 
     for task in pending:
         task.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
 
     if process is not None:
         process.stop()
         process.join(10)
 
-    queue.close()
     logger.info("websocket handling done...")
 
 
@@ -118,14 +126,13 @@ async def inference_websocket(
 ) -> None:
     """Robot control websocket."""
     await websocket.accept()
-    data = await websocket.receive_json("text")
-    config = InferenceConfig.model_validate(data["data"])
-    queue: mp.Queue = mp.Queue()
+    queue: Queue = Queue()
     process = InferenceWorker(
         stop_event=scheduler.mp_stop_event,
-        robot_manager=robot_manager,
-        calibration_service=calibration_service,
-        config=config,
+        robot_client_factory=RobotClientFactory(
+            robot_manager=robot_manager,
+            calibration_service=calibration_service,
+        ),
         queue=queue,
     )
     process.start()
@@ -134,16 +141,24 @@ async def inference_websocket(
         try:
             while True:
                 data = await websocket.receive_json("text")
+                if data["event"] == "load_environment":
+                    environment = EnvironmentWithRelations.model_validate(data["data"]["environment"])
+                    process.load_environment(environment)
+                if data["event"] == "load_model":
+                    model = Model.model_validate(data["data"]["model"])
+                    backend = data["data"]["backend"]
+                    process.load_model(model, backend)
                 if data["event"] == "start_task":
-                    task_index = data["data"]["task_index"]
-                    process.start_task(task_index)
-                if data["event"] == "stop":
+                    task = data["data"]
+                    process.start_task(task)
+                if data["event"] == "stop_task":
                     process.stop()
                     process.join(timeout=5)
                 if data["event"] == "disconnect":
                     process.disconnect()
                     break
-        except Exception:
+        except Exception as e:
+            logger.error(f"Incoming task stopped: {e}")
             logger.info("Except: disconnected!")
 
     async def handle_outgoing():
@@ -174,5 +189,4 @@ async def inference_websocket(
         process.disconnect()
         process.join(10)
 
-    queue.close()
     logger.info("websocket handling done...")

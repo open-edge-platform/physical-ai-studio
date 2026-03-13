@@ -21,6 +21,18 @@ inputs:
     description: "Newline-separated image labels (from docker/metadata-action)"
     required: false
     default: ""
+  cache-write:
+    description: >
+      Write build cache to the registry (true/false). Set to false for
+      fork PRs where GITHUB_TOKEN cannot write to the org's packages.
+    required: false
+    default: "true"
+  use-cache:
+    description: >
+      Enable build cache (true/false). Should be disabled for RC and release
+      builds to ensure reproducibility and prevent cache poisoning attacks.
+    required: false
+    default: "true"
 
 outputs:
   digest:
@@ -53,5 +65,16 @@ runs:
         # When not pushing, validate the build and populate the cache only.
         outputs: ${{ inputs.push != 'true' && 'type=cacheonly' || '' }}
         build-args: GIT_SHA=${{ github.sha }}
-        cache-from: type=gha,scope=${{ inputs.device }}
-        cache-to: type=gha,mode=max,scope=${{ inputs.device }}
+        # Disable all caching (local and remote) when use-cache=false to
+        # ensure reproducible builds for RC/release without any cached layers.
+        no-cache: ${{ inputs.use-cache != 'true' }}
+        # Registry-based cache: each device variant gets its own cache
+        # image in GHCR, avoiding the 10 GB GHA cache limit that caused
+        # cache thrashing across cpu/xpu/cuda scopes (~18-20 GB total).
+        # The caller must log in to ghcr.io before invoking this action.
+        # Cache reads always work (public packages); writes require
+        # packages:write which fork PRs do not have.
+        # Cache is disabled for RC/release builds (use-cache=false)
+        # to prevent cache poisoning and ensure reproducible builds.
+        cache-from: ${{ inputs.use-cache == 'true' && format('type=registry,ref=ghcr.io/open-edge-platform/physical-ai-studio-{0}:buildcache', inputs.device) || '' }}
+        cache-to: ${{ inputs.cache-write == 'true' && inputs.use-cache == 'true' && format('type=registry,ref=ghcr.io/open-edge-platform/physical-ai-studio-{0}:buildcache,mode=max', inputs.device) || '' }}

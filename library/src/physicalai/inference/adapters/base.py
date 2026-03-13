@@ -74,6 +74,14 @@ class RuntimeAdapter(ABC):
             List of output tensor names
         """
 
+    def default_device(self) -> str:  # noqa: PLR6301
+        """Get default device for this runtime.
+
+        Returns:
+            Default device name ('cpu', 'GPU', etc.)
+        """
+        return "cpu"
+
     def __repr__(self) -> str:
         """Return string representation of the adapter."""
         return f"{self.__class__.__name__}(device={self.device})"

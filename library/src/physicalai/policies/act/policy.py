@@ -12,6 +12,7 @@ from physicalai.export.mixin_export import Export, ExportBackend
 from physicalai.gyms import Gym
 from physicalai.policies.act.config import ACTConfig
 from physicalai.policies.act.model import ACT as ACTModel  # noqa: N811
+from physicalai.policies.act.preprocessor import ACTPreprocessor
 from physicalai.policies.base import Policy
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
@@ -87,6 +88,7 @@ class ACT(Export, Policy):
         vision_backbone: str = "resnet18",
         pretrained_backbone_weights: str | None = "ResNet18_Weights.IMAGENET1K_V1",
         replace_final_stride_with_dilation: bool = False,
+        max_image_size: int = 768,
         pre_norm: bool = False,
         dim_model: int = 512,
         n_heads: int = 8,
@@ -122,6 +124,7 @@ class ACT(Export, Policy):
             vision_backbone=vision_backbone,
             pretrained_backbone_weights=pretrained_backbone_weights,
             replace_final_stride_with_dilation=replace_final_stride_with_dilation,
+            max_image_size=max_image_size,
             pre_norm=pre_norm,
             dim_model=dim_model,
             n_heads=n_heads,
@@ -148,8 +151,7 @@ class ACT(Export, Policy):
         # Model will be built in setup() or immediately if env_action_dim provided
         self.model: ACTModel | None = None
 
-        # Preprocessor/postprocessor set in setup() or _initialize_model()
-        self._preprocessor = None
+        self._preprocessor = ACTPreprocessor(image_resolution=(self.config.max_image_size, self.config.max_image_size))
         self._postprocessor = None
 
         # Eager initialization if dataset_stats is provided
@@ -267,7 +269,7 @@ class ACT(Export, Policy):
         if self.model is None:
             msg = "ACT model is not initialized."
             raise RuntimeError(msg)
-        return self.model.predict_action_chunk(inference_batch)
+        return self.model.predict_action_chunk(self._preprocessor(inference_batch))
 
     # select_action() is inherited from Policy base class - uses queue with predict_action_chunk()
 
@@ -293,7 +295,8 @@ class ACT(Export, Policy):
             if self.model is None:
                 msg = "ACT model is not initialized."
                 raise RuntimeError(msg)
-            return self.model(batch.to_dict())
+            processed_batch = self._preprocessor(batch.to_dict())
+            return self.model(processed_batch)
 
         # During evaluation, return action chunk predictions
         return self.predict_action_chunk(batch)
@@ -315,7 +318,7 @@ class ACT(Export, Policy):
         if self.model is None:
             msg = "ACT model is not initialized."
             raise RuntimeError(msg)
-        loss, loss_dict = self.model(batch.to_dict())  # noqa: RUF059
+        loss, loss_dict = self.forward(batch)  # noqa: RUF059
         self.log("train/loss_step", loss, on_step=True, on_epoch=False, prog_bar=True, logger=True)
         self.log(
             "train/loss",

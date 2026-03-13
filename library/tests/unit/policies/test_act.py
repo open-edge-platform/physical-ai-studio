@@ -3,14 +3,17 @@
 
 import copy
 import tempfile
+from unittest.mock import patch
 import pytest
 import torch
 import numpy as np
 import lightning
 
 from physicalai.data import Observation
+from physicalai.data.observation import IMAGES
 from physicalai.policies import ACT
 from physicalai.policies.act.model import ACT as ACTModel
+from physicalai.policies.act.preprocessor import ACTPreprocessor
 
 
 class TestACTolicy:
@@ -60,6 +63,13 @@ class TestACTolicy:
 
         assert "loss" in loss
         assert loss["loss"] >= 0
+
+    def test_training_step_call(self, policy, batch):
+        policy.model.train()
+
+        with patch.object(policy, "forward", wraps=policy.forward) as mock_forward:
+            policy.training_step(batch, 0)
+            mock_forward.assert_called_once()
 
     def test_predict_action_chunk_with_explain(self, policy, batch):
         """Test predict_action_chunk_with_explain method."""
@@ -187,3 +197,141 @@ class TestACTolicy:
         finally:
             import os
             os.unlink(export_path)
+
+
+class TestACTPreprocessor:
+    """Tests for ACTPreprocessor."""
+
+    @staticmethod
+    def _img(b: int = 2, c: int = 3, h: int = 480, w: int = 640) -> torch.Tensor:
+        return torch.rand(b, c, h, w)
+
+    def test_default_resolution(self):
+        pre = ACTPreprocessor()
+        assert pre.image_resolution == (512, 512)
+
+    def test_custom_resolution(self):
+        pre = ACTPreprocessor(image_resolution=(224, 224))
+        assert pre.image_resolution == (224, 224)
+
+    def test_resize_max_no_op_when_within_bounds(self):
+        """Images already within bounds are returned unchanged."""
+        img = self._img(h=64, w=64)
+        out = ACTPreprocessor._resize_max(img, max_width=128, max_height=128)
+        assert out.shape == img.shape
+        assert out is img  # no copy expected
+
+    def test_resize_max_reduces_oversized_image(self):
+        """Oversized images are downscaled to fit within the max bounds."""
+        img = self._img(h=480, w=640)
+        out = ACTPreprocessor._resize_max(img, max_width=320, max_height=240)
+        assert out.shape[2] <= 240
+        assert out.shape[3] <= 320
+
+    def test_resize_max_preserves_aspect_ratio(self):
+        """Aspect ratio is maintained after resizing."""
+        img = self._img(h=400, w=200)  # 2:1 height:width
+        out = ACTPreprocessor._resize_max(img, max_width=100, max_height=100)
+        out_h, out_w = out.shape[2], out.shape[3]
+        assert abs(out_h / out_w - 2.0) < 0.05
+
+    def test_resize_max_fits_exactly(self):
+        """An image exactly at the limit is not resized."""
+        img = self._img(h=128, w=128)
+        out = ACTPreprocessor._resize_max(img, max_width=128, max_height=128)
+        assert out.shape[2] == 128
+        assert out.shape[3] == 128
+
+    def test_resize_max_raises_on_wrong_ndim(self):
+        """Non-4D tensors raise ValueError."""
+        img_3d = torch.rand(3, 64, 64)
+        with pytest.raises(ValueError, match="b,c,h,w"):
+            ACTPreprocessor._resize_max(img_3d, max_width=64, max_height=64)
+
+    # ------------------------------------------------------------------
+    # forward – flat batch with images as a direct tensor
+    # ------------------------------------------------------------------
+
+    def test_forward_flat_tensor_images_resized(self):
+        """Images stored as a flat tensor under the IMAGES key are resized."""
+        pre = ACTPreprocessor(image_resolution=(64, 64))
+        batch = {IMAGES: self._img(h=128, w=128), "state": torch.rand(2, 3)}
+        out = pre(batch)
+        assert out[IMAGES].shape[2] <= 64
+        assert out[IMAGES].shape[3] <= 64
+
+    def test_forward_flat_tensor_images_no_resize_when_small(self):
+        """Small images are not resized."""
+        pre = ACTPreprocessor(image_resolution=(256, 256))
+        img = self._img(h=64, w=64)
+        batch = {IMAGES: img}
+        out = pre(batch)
+        assert out[IMAGES].shape == img.shape
+
+    def test_forward_does_not_mutate_input(self):
+        """forward() operates on a copy and does not mutate the original batch."""
+        pre = ACTPreprocessor(image_resolution=(64, 64))
+        img = self._img(h=256, w=256)
+        batch = {IMAGES: img}
+        original_shape = img.shape
+        pre(batch)
+        assert batch[IMAGES].shape == original_shape
+
+    # ------------------------------------------------------------------
+    # forward – nested dict images (multiple cameras)
+    # ------------------------------------------------------------------
+
+    def test_forward_dict_images_all_cameras_resized(self):
+        """All camera images inside a dict are resized."""
+        pre = ACTPreprocessor(image_resolution=(64, 64))
+        batch = {
+            IMAGES: {
+                "top": self._img(h=256, w=256),
+                "wrist": self._img(h=480, w=640),
+            }
+        }
+        out = pre(batch)
+        for key in ("top", "wrist"):
+            assert out[IMAGES][key].shape[2] <= 64
+            assert out[IMAGES][key].shape[3] <= 64
+
+    def test_forward_dict_images_preserves_other_keys(self):
+        """Non-image keys in the batch are preserved unchanged."""
+        pre = ACTPreprocessor(image_resolution=(64, 64))
+        state = torch.rand(2, 8)
+        batch = {
+            IMAGES: {"top": self._img(h=128, w=128)},
+            "state": state,
+        }
+        out = pre(batch)
+        assert torch.equal(out["state"], state)
+
+    # ------------------------------------------------------------------
+    # forward – flattened observation dict (images.camera keys)
+    # ------------------------------------------------------------------
+
+    def test_forward_flat_keys_images_resized(self):
+        """Images stored under flat 'images.camera' keys are resized."""
+        pre = ACTPreprocessor(image_resolution=(64, 64))
+        batch = {
+            "images.top": self._img(h=256, w=256),
+            "images.wrist": self._img(h=128, w=128),
+            "state": torch.rand(2, 3),
+        }
+        out = pre(batch)
+        assert out["images.top"].shape[2] <= 64
+        assert out["images.top"].shape[3] <= 64
+        assert out["images.wrist"].shape[2] <= 64
+        assert out["images.wrist"].shape[3] <= 64
+
+    def test_forward_flat_keys_is_pad_skipped(self):
+        """Keys containing 'is_pad' are not treated as images and are left untouched."""
+        pre = ACTPreprocessor(image_resolution=(64, 64))
+        pad_tensor = torch.zeros(2, 100, dtype=torch.bool)
+        batch = {
+            "images.top": self._img(h=128, w=128),
+            "images.top_is_pad": pad_tensor,
+        }
+        out = pre(batch)
+        # is_pad tensor should be identical (not passed through _resize_max)
+        assert torch.equal(out["images.top_is_pad"], pad_tensor)

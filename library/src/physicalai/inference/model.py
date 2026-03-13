@@ -10,17 +10,13 @@ from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import yaml
 
-from physicalai.data.constants import ACTION, IMAGES, STATE
 from physicalai.export.backends import ExportBackend
 from physicalai.inference.adapters import get_adapter
 
 if TYPE_CHECKING:
-    import numpy as np
-    import torch
-
-    from physicalai.data import Observation
     from physicalai.inference.adapters.base import RuntimeAdapter
 
 
@@ -98,7 +94,7 @@ class InferenceModel:
         self.adapter.load(model_path)
 
         # State management for stateful policies
-        self._action_queue: deque[torch.Tensor] = deque()
+        self._action_queue: deque[np.ndarray] = deque()
         self.use_action_queue = self.metadata.get("use_action_queue", False)
         self.chunk_size = self.metadata.get("chunk_size", 1)
 
@@ -126,7 +122,7 @@ class InferenceModel:
         """
         return cls(export_dir=export_dir, **kwargs)
 
-    def select_action(self, observation: Observation) -> torch.Tensor:
+    def select_action(self, observation: dict[str, np.ndarray]) -> np.ndarray:
         """Select action for given observation.
 
         Matches PyTorch policy API for seamless transition from
@@ -136,10 +132,10 @@ class InferenceModel:
         automatically and returns one action at a time.
 
         Args:
-            observation: Robot observation (images, states, etc.)
+            observation: Robot observation as a dict mapping input names to numpy arrays.
 
         Returns:
-            Action tensor to execute. Shape: (batch_size, action_dim)
+            Action array to execute. Shape: (batch_size, action_dim)
                 or (action_dim,) for single observation
 
         Examples:
@@ -159,23 +155,21 @@ class InferenceModel:
 
         # Extract actions from outputs
         action_key = self._get_action_output_key(outputs)
-        import torch  # noqa: PLC0415
-
-        actions = torch.from_numpy(outputs[action_key])
+        actions: np.ndarray = outputs[action_key]
 
         # Manage action queue for chunked policies
         if self.use_action_queue and self.chunk_size > 1:
             # actions shape: (batch, chunk_size, action_dim)
             # Queue shape: (chunk_size, batch, action_dim)
-            batch_actions = actions.transpose(0, 1)
+            batch_actions = np.transpose(actions, (1, 0, 2))
             self._action_queue.extend(batch_actions)
             return self._action_queue.popleft()
 
         # For non-chunked policies, return directly
         # Remove temporal dimension if present: (batch, 1, action_dim) -> (batch, action_dim)
         temporal_dim = 3
-        if actions.dim() == temporal_dim and actions.shape[1] == 1:
-            actions = actions.squeeze(1)
+        if actions.ndim == temporal_dim and actions.shape[1] == 1:
+            actions = np.squeeze(actions, axis=1)
 
         return actions
 
@@ -196,139 +190,51 @@ class InferenceModel:
         """
         self._action_queue.clear()
 
-    def _prepare_inputs(self, observation: Observation) -> dict[str, np.ndarray | Observation]:
-        """Convert observation to model input format.
+    def _prepare_inputs(self, observation: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        """Flatten and filter observation dict for the adapter.
 
-        Handles both first-party (state, images) and LeRobot (observation.*, action)
-        naming conventions by mapping Observation fields to expected model inputs.
-        Returns the original Observation object when the model expects
-        a single "Observation" input.
+        Flattens nested dicts using dot notation (e.g., ``{"obs": {"image": x}}``
+        becomes ``{"obs.image": x}``), then filters to only the keys the adapter
+        expects.
 
         Args:
-            observation: Robot observation
+            observation: Observation dict mapping input names to arrays. Values
+                may be nested dicts, which are flattened with dot-separated keys.
 
         Returns:
-            Dictionary mapping input names to numpy arrays or the input Observation
+            Flat dict containing only the adapter's expected inputs. If the
+            adapter has no declared input names, returns `observation` unchanged.
 
         Raises:
-            ValueError: If required model inputs are missing from observation
+            KeyError: If an expected adapter input is not found in the
+                (flattened) observation.
         """
-        import numpy as np  # noqa: PLC0415
+        expected = self.adapter.input_names
 
-        # Convert observation to numpy arrays using unified .to() API
-        obs_numpy = observation.to_numpy()
-
-        # Convert observation to dict format
-        obs_dict = obs_numpy.to_dict()
-
-        # Get model input names - prefer metadata over adapter when available
-        # Metadata contains semantic names (e.g., "observation_state")
-        # Adapter may return internal node names for some backends (e.g., OpenVINO Cast nodes)
-        if "input_names" in self.metadata:
-            expected_input_names = self.metadata["input_names"]
-            adapter_input_names = list(self.adapter.input_names)
-        else:
-            expected_input_names = list(self.adapter.input_names)
-            adapter_input_names = expected_input_names
-
-        expected_inputs = set(expected_input_names)
-
-        if expected_inputs == {"observation"}:
-            return {"observation": observation}
-
-        # Build mapping from observation fields to expected input names
-        # This handles different naming conventions:
-        # - First-party: "state", "images" -> "state", "images"
-        # - LeRobot: "state", "images" -> "observation.state", "observation.image"
-        field_mapping = self._build_field_mapping(obs_dict, expected_inputs)
-
-        # Build inputs using the mapping
-        inputs = {}
-        for obs_key, model_key in field_mapping.items():
-            value = obs_dict[obs_key]
-
-            # Skip None values
-            if value is None:
-                continue
-
-            # Handle images (can be list or single tensor)
-            if obs_key == "images" and isinstance(value, list):
-                # For LeRobot, take first image from list
-                # NOTE: Multiple camera support will be added in future
-                if len(value) > 0:
-                    value = value[0]
+        if expected:
+            flat_observation: dict[str, np.ndarray] = {}
+            for key, value in observation.items():
+                if isinstance(value, dict):
+                    key_entries = []
+                    for sub_key, sub_value in value.items():
+                        flat_observation[f"{key}.{sub_key}"] = sub_value
+                        key_entries.append(f"{key}.{sub_key}")
                 else:
-                    continue
+                    flat_observation[key] = value
 
-            # Add to inputs (already numpy arrays after to_numpy())
-            if isinstance(value, np.ndarray):
-                inputs[model_key] = value
-            else:
-                # Handle nested structures if needed
-                inputs[model_key] = np.array(value)
+            filtered: dict[str, np.ndarray] = {}
+            for k in expected:
+                if k in flat_observation:
+                    filtered[k] = flat_observation[k]
+                else:
+                    msg = (
+                        f"Expected input '{k}' not found in observation.\n"
+                        f"Available keys: {list(flat_observation.keys())}"
+                    )
+                    raise KeyError(msg)
 
-        # Validate all expected inputs are present
-        missing_inputs = expected_inputs - set(inputs.keys())
-        if missing_inputs:
-            available_fields = list(obs_dict.keys())
-            msg = f"Missing required model inputs: {missing_inputs}. Available observation fields: {available_fields}"
-            raise ValueError(msg)
-
-        # If adapter uses different names (e.g., OpenVINO Cast nodes), map by position
-        if expected_input_names != adapter_input_names:
-            # Reorder inputs to match expected order, then use adapter input names (indices)
-            return {adapter_input_names[i]: inputs[expected_input_names[i]] for i in range(len(expected_input_names))}
-
-        return inputs
-
-    @staticmethod
-    def _build_field_mapping(obs_dict: dict[str, Any], expected_inputs: set[str]) -> dict[str, str]:
-        """Build mapping from observation fields to model input names.
-
-        Supports both first-party and LeRobot naming conventions.
-
-        Args:
-            obs_dict: Observation dictionary with keys like "state", "images"
-            expected_inputs: Set of expected model input names
-
-        Returns:
-            Dictionary mapping observation keys to model input names
-        """
-        mapping = {}
-
-        # Dummy matching for exact matches
-        mapping = {key: key for key in obs_dict if key in expected_inputs}
-
-        if len(mapping) == len(expected_inputs):
-            return mapping
-
-        # Common observation fields with their possible model input names
-        # Supports both first-party (e.g., "state") and LeRobot (e.g., "observation.state") conventions
-        # NOTE: ONNX converts dots to underscores in input names
-        obs_fields = {
-            STATE: [STATE, f"observation.{STATE}", f"observation_{STATE}"],
-            IMAGES: [
-                IMAGES,
-                "image",
-                "observation.image",
-                f"observation.{IMAGES}",
-                "observation_image",
-                f"observation_{IMAGES}",
-            ],
-            ACTION: [ACTION],
-        }
-
-        for obs_key, possible_model_keys in obs_fields.items():
-            if obs_key not in obs_dict:
-                continue
-
-            # Find which model key matches expected inputs
-            for model_key in possible_model_keys:
-                if model_key in expected_inputs:
-                    mapping[obs_key] = model_key
-                    break
-
-        return mapping
+            return filtered
+        return observation
 
     @staticmethod
     def _get_action_output_key(outputs: dict[str, np.ndarray]) -> str:
@@ -431,22 +337,14 @@ class InferenceModel:
         raise ValueError(msg)
 
     def _detect_device(self) -> str:
-        """Auto-detect best available device.
+        """Auto-detect best available device using adapter-native detection.
 
         Returns:
             Device name
         """
-        # For OpenVINO, prefer CPU as default (most compatible)
-        if self.backend == ExportBackend.OPENVINO:
-            return "CPU"
-
-        # For ONNX/Torch Export IR, check CUDA availability
-        import torch  # noqa: PLC0415
-
-        if torch.cuda.is_available():
-            return "cuda"
-
-        return "cpu"
+        # Create a lightweight adapter instance to query its preferred device
+        adapter = get_adapter(self.backend, device="cpu")
+        return adapter.default_device()
 
     def _get_model_path(self) -> Path:
         """Get path to model file based on backend.

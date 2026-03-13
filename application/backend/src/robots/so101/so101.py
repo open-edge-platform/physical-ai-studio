@@ -89,6 +89,7 @@ class So101(RobotClient):
         try:
             async with self._bus_lock, asyncio.timeout(HARDWARE_TIMEOUT_CONNECT):
                 await asyncio.to_thread(self._connect_impl)
+            self.configure()
         except TimeoutError:
             logger.error("Timeout connecting to robot")
             raise
@@ -98,7 +99,6 @@ class So101(RobotClient):
 
     def _connect_impl(self) -> None:
         self.bus.connect()
-        self.configure()
 
     async def disconnect(self) -> None:
         """Disconnect from the robot."""

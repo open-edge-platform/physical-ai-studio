@@ -45,6 +45,10 @@ xpu = [
     "pytorch-triton-xpu ; sys_platform == 'linux' or sys_platform == 'win32'",
 ]
 
+tests = [
+    "pytest",
+]
+
 # --- PyTorch index configuration ---
 # torch is a transitive dependency (via lightning, lerobot) that defaults to
 # PyPI's fat CUDA wheel on Linux. Source routing here directs uv to fetch
@@ -172,3 +176,17 @@ max-args = 7
 python_version = "3.12"
 ignore_missing_imports = true
 show_error_codes = true
+
+[tool.pytest.ini_options]
+addopts = ["--strict-markers", "--strict-config", "--showlocals", "-ra"]
+testpaths = "tests"
+pythonpath = "src"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "requires_download: marks tests that require downloading external datasets",
+    "integration: marks tests as integration tests",
+]
+filterwarnings = [
+  "ignore:XPU device count is zero!:UserWarning",
+  "ignore:This process.*is multi-threaded:DeprecationWarning", # using actual queues in tests
+]

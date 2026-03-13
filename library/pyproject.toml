@@ -37,6 +37,7 @@ dependencies = [
     "pymunk>=6.6.0,<7.0.0",
     "onnx",
     "onnxruntime",
+    "onnxscript",
     "openvino>=2025.0",
     "jsonargparse[signatures]>=4.27.0", # This could be extra
     "pydantic",                         # This could be extra

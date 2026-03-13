@@ -1,14 +1,14 @@
 import asyncio
 import base64
 import time
-from multiprocessing import Event, Queue
+from queue import Queue
+from multiprocessing import Event
 from multiprocessing.synchronize import Event as EventClass
 from pathlib import Path
 
 import cv2
 import numpy as np
 from frame_source.video_capture_base import VideoCaptureBase
-from lerobot.utils.robot_utils import precise_sleep
 from loguru import logger
 from pydantic import BaseModel
 
@@ -252,7 +252,7 @@ class TeleoperateWorker(BaseThreadWorker):
 
                 dt_s = time.perf_counter() - start_loop_t
                 wait_time = 1 / self.fps - dt_s
-                precise_sleep(wait_time)
+                await asyncio.sleep(wait_time)
         except Exception as e:
             self.error = True
             logger.exception(f"Teleoperation loop error: {e}")
@@ -274,7 +274,6 @@ class TeleoperateWorker(BaseThreadWorker):
     def _on_save(self) -> None:
         logger.info("save")
         self.events["save"].clear()
-        precise_sleep(0.3)  # TODO check if neccesary
         if self.recording_mutation is not None:
             new_episode = self.recording_mutation.save_episode(self.config.task)
             self._report_episode(new_episode)
@@ -284,7 +283,6 @@ class TeleoperateWorker(BaseThreadWorker):
     def _on_reset(self) -> None:
         logger.info("reset")
         self.events["reset"].clear()
-        precise_sleep(0.3)  # TODO check if neccesary
         if self.recording_mutation is not None:
             self.recording_mutation.discard_buffer()
         self.state.is_recording = False
@@ -293,10 +291,6 @@ class TeleoperateWorker(BaseThreadWorker):
     async def teardown(self) -> None:
         """Disconnect robots and close queue."""
         logger.info("Teardown")
-        try:
-            self.queue.cancel_join_thread()
-        except Exception as e:
-            logger.warning(f"Failed cancelling queue join thread: {e}")
 
         if self.recording_mutation:
             self.recording_mutation.teardown()
@@ -322,8 +316,6 @@ class TeleoperateWorker(BaseThreadWorker):
 
         # Wait for .5 seconds before closing queue to allow messages through
         await asyncio.sleep(0.5)
-
-        self.queue.close()
 
         import threading
 

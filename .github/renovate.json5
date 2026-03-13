@@ -129,11 +129,10 @@
       matchDepNames: ["docker/dockerfile"],
     },
 
-    // Disable non-security and lock file upgrades for npm
-    // Lock is updated manually
+    // Disable non-security upgrades for npm, except lock file update
     {
       enabled: false,
-      matchManagers: ["npm"],
+      matchDatasources: ["npm"],
     },
 
     // NPM version in package.json is updated manually

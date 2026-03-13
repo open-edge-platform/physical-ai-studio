@@ -81,7 +81,7 @@ export const paths = {
         },
         models: {
             index: models,
-            inference: models.path('/:model_id/inference'),
+            inference: models.path('/:model_id/inference/:backend'),
         },
     },
 };
