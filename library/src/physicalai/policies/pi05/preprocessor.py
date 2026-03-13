@@ -52,6 +52,7 @@ class Pi05Preprocessor(torch.nn.Module):
         features: Dictionary mapping feature names to Feature objects for normalization.
         max_token_len: Maximum tokenized prompt length.
         tokenizer_name: HuggingFace tokenizer name for PaliGemma.
+        empty_cameras: Number of empty camera slots to add as -1-filled images.
     """
 
     def __init__(
@@ -80,14 +81,14 @@ class Pi05Preprocessor(torch.nn.Module):
         else:
             self._state_action_normalizer = torch.nn.Identity()
 
-    def forward(self, batch: dict[str, Any]) -> dict[str, torch.Tensor]:
+    def forward(self, batch: dict[str, Any]) -> dict[str, Any]:
         """Process a batch for Pi05 model input.
 
         Args:
             batch: Dictionary containing STATE, TASK (text), image keys, and optionally ACTION.
 
         Returns:
-            Dictionary with tokenized_prompt, tokenized_prompt_mask, image tensors,
+            Dictionary with tokenized_prompt, tokenized_prompt_mask, image tensor lists,
             image_masks, and optionally padded/normalized ACTION.
         """
         # Normalize state/action
