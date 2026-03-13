@@ -92,7 +92,6 @@ class InferenceWorker(BaseThreadWorker):
 
     def load_environment(self, environment: EnvironmentWithRelations) -> None:
         """Setup environment."""
-
         try:
             self.environment_integration = InferenceEnvironmentIntegration(
                 environment=environment, robot_client_factory=self.robot_client_factory
