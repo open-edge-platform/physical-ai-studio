@@ -1,4 +1,6 @@
-import { Button, ButtonGroup, Flex, Heading, Icon, ProgressCircle, Text, ToastQueue, View } from '@geti/ui';
+import { useEffect } from 'react';
+
+import { Button, ButtonGroup, Flex, Heading, Icon, Keyboard, ProgressCircle, Text, ToastQueue, View } from '@geti/ui';
 import { ChevronLeft } from '@geti/ui/icons';
 
 import { SchemaTeleoperationConfig } from '../../../api/openapi-spec';
@@ -7,6 +9,8 @@ import { RobotModelsProvider } from '../../../features/robots/robot-models-conte
 import { paths } from '../../../router';
 import { CameraView } from './../camera-view';
 import { useTeleoperation } from './use-teleoperation';
+
+import classes from './recording-viewer.module.scss';
 
 interface RecordingViewerProps {
     recordingConfig: SchemaTeleoperationConfig;
@@ -17,6 +21,25 @@ export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
         recordingConfig,
         ToastQueue.negative
     );
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'ArrowRight') {
+                if (state.is_recording && !saveEpisode.isPending) {
+                    saveEpisode.mutate();
+                } else if (!state.is_recording) {
+                    startEpisode();
+                }
+            } else if (e.key === 'ArrowLeft') {
+                if (state.is_recording && !saveEpisode.isPending) {
+                    cancelEpisode();
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [state.is_recording, saveEpisode, startEpisode, cancelEpisode]);
 
     const robots = (recordingConfig.environment.robots ?? []).map(({ robot }) => robot);
 
@@ -70,15 +93,18 @@ export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
                 {state.is_recording ? (
                     <ButtonGroup alignSelf='end'>
                         <Button isDisabled={saveEpisode.isPending} variant={'negative'} onPress={cancelEpisode}>
-                            Discard
+                            <Text>Discard</Text>
+                            <Keyboard UNSAFE_className={classes.hotkey}>←</Keyboard>
                         </Button>
                         <Button isPending={saveEpisode.isPending} onPress={() => saveEpisode.mutate()}>
-                            Accept
+                            <Text>Accept</Text>
+                            <Keyboard UNSAFE_className={classes.hotkey}>→</Keyboard>
                         </Button>
                     </ButtonGroup>
                 ) : (
                     <Button onPress={startEpisode} alignSelf={'center'}>
-                        Start episode
+                        <Text>Start episode</Text>
+                        <Keyboard UNSAFE_className={classes.hotkey}>→</Keyboard>
                     </Button>
                 )}
             </Flex>

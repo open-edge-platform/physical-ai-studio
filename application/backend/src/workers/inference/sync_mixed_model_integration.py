@@ -1,6 +1,5 @@
 from multiprocessing.synchronize import Event as EventClass
 
-from loguru import logger
 from physicalai.data import Observation
 
 from schemas import Model
@@ -33,9 +32,8 @@ class SyncMixedModelIntegration:
         if self.inference_poller.has_result():
             inference_result = self.inference_poller.get_result()
             offset = int(inference_result.time * self.fps)
-            logger.debug(f"Got inference from inference_poller: {inference_result.data.shape} with offset {offset}")
             self.queue_mixer.add(inference_result.data, offset)
-            self.queue_mixer.lerp_duration = offset  # inference time should be a good guide for now.
+            self.queue_mixer.lerp_duration = max(offset, 1)  # inference time should be a good guide for now.
 
         if not self.inference_poller.busy:
             self.inference_poller.run_inference(observation)
@@ -49,11 +47,8 @@ class SyncMixedModelIntegration:
         self.inference_poller.reset()
 
     async def setup(self) -> None:
-        logger.info("Starting model worker from integration")
         self.model_worker.start()
-        logger.info("Awaiting for model loaded...")
         await self.model_worker.wait_for_loading_to_complete()
-        logger.info("Model loaded wait complete.")
 
     def teardown(self) -> None:
         self.model_worker.stop()

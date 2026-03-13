@@ -1,31 +1,29 @@
-import { Suspense, useState } from 'react';
-
-import { Content, Divider, Flex, Heading, Loading, Well } from '@geti/ui';
-
-import { SchemaInferenceConfig } from '../../../api/openapi-spec';
-import { InferenceSetup } from '../../../features/configuration/inference/inference-setup';
+import { $api } from '../../../api/client';
 import { InferenceViewer } from './inference-viewer';
 import { useInferenceParams } from './use-inference-params';
 
 export const Index = () => {
-    const { model_id } = useInferenceParams();
-    const [config, setConfig] = useState<SchemaInferenceConfig>();
+    const { project_id, model_id, backend } = useInferenceParams();
 
-    if (!config) {
-        return (
-            <Flex flex width='100%' justifyContent={'center'}>
-                <Well margin={'size-200'} width={'600px'}>
-                    <Heading>Inference Setup</Heading>
-                    <Divider />
-                    <Content>
-                        <Suspense fallback={<Loading mode='overlay' />}>
-                            <InferenceSetup model_id={model_id} onDone={setConfig} />
-                        </Suspense>
-                    </Content>
-                </Well>
-            </Flex>
-        );
-    } else {
-        return <InferenceViewer config={config} />;
-    }
+    const { data: model } = $api.useSuspenseQuery('get', '/api/models/{model_id}', {
+        params: { query: { uuid: model_id } },
+    });
+
+    const { data: dataset } = $api.useSuspenseQuery('get', '/api/dataset/{dataset_id}', {
+        params: { path: { dataset_id: model.dataset_id } },
+    });
+
+    const { data: initialEnvironment } = $api.useSuspenseQuery(
+        'get',
+        '/api/projects/{project_id}/environments/{environment_id}',
+        {
+            params: { path: { project_id, environment_id: dataset.environment_id } },
+        }
+    );
+
+    const { data: tasks } = $api.useSuspenseQuery('get', '/api/models/{model_id}/tasks', {
+        params: { query: { uuid: model_id } },
+    });
+
+    return <InferenceViewer environment={initialEnvironment} model={model} backend={backend} tasks={tasks} />;
 };

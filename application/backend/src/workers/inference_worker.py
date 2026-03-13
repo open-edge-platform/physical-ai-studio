@@ -1,41 +1,29 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import asyncio
-import base64
 import time
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
 
-import cv2
-import numpy as np
-import torch
 from lerobot.utils.robot_utils import precise_sleep
 from loguru import logger
-from physicalai.data import Observation
 from pydantic import BaseModel
 
 from robots.robot_client import RobotClient
 from robots.robot_client_factory import RobotClientFactory
-from schemas import InferenceConfig
-from services.robot_calibration_service import RobotCalibrationService
-from utils.serial_robot_tools import RobotConnectionManager
-from workers.camera_worker import create_frames_source_from_camera
+from schemas import Model
+from schemas.environment import EnvironmentWithRelations
+from workers.inference.inference_environment_integration import InferenceEnvironmentIntegration
 from workers.inference.sync_mixed_model_integration import SyncMixedModelIntegration
 
 from .base import BaseThreadWorker
 
 
-class CameraFrameProcessor:
-    @staticmethod
-    def process(frame: np.ndarray) -> np.ndarray:
-        """Post process camera frame."""
-        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-
 class InferenceState(BaseModel):
     is_running: bool = False
-    task_index: int = 0
-    initialized: bool = False
+    task: str | None = None
+    model_loaded: bool = False
+    environment_loaded: bool = False
     error: bool = False
 
 
@@ -44,139 +32,118 @@ class InferenceWorker(BaseThreadWorker):
 
     robot_client_factory: RobotClientFactory
 
-    events: dict[str, EventClass]
     queue: Queue
     state: InferenceState
-    model_worker: SyncMixedModelIntegration  # TODO: rename
+    model_integration: SyncMixedModelIntegration | None = None
+    environment_integration: InferenceEnvironmentIntegration | None = None
     fps: int = 30
 
     follower: RobotClient
     action_keys: list[str] = []
     camera_keys: list[str] = []
 
+    events: dict[str, EventClass]
+
     def __init__(
         self,
         stop_event: EventClass,
         queue: Queue,
-        config: InferenceConfig,
-        calibration_service: RobotCalibrationService,
-        robot_manager: RobotConnectionManager,
+        robot_client_factory: RobotClientFactory,
     ):
         super().__init__(stop_event=stop_event)
-        self.config = config
         self.queue = queue
         self.state = InferenceState()
-        self.robot_client_factory = RobotClientFactory(robot_manager, calibration_service)
+        self.robot_client_factory = robot_client_factory
+        self.events = {"interrupt": Event(), "new_model": Event(), "new_environment": Event()}
 
-        # Model Worker that handles inference in separate process.
-        self.model_worker = SyncMixedModelIntegration(
-            model=config.model,
-            backend=config.backend,
-            stop_event=stop_event,
-            fps=self.fps,
-        )
-
-        self.events = {
-            "stop": Event(),
-            "start": Event(),
-            "disconnect": Event(),
-        }
-        self.action_queue: list[list[float]] = []
-
-    def start_task(self, task_index: int) -> None:
-        """Start specific task index"""
-        self.config.task_index = task_index
-        self.events["start"].set()
+    def start_task(self, task: str) -> None:
+        if self.ready_for_inference:
+            if self.model_integration is not None:
+                self.model_integration.reset()
+            self.state.is_running = True
+            self.state.task = task
+            self.start_episode_t = time.perf_counter()
+        self._report_state()
 
     def stop(self) -> None:
         """Stop inference."""
-        self.events["stop"].set()
+        self.state.is_running = False
+        self._report_state()
 
     def disconnect(self) -> None:
         """Stop inference and teardown."""
-        self.events["disconnect"].set()
+        self.events["interrupt"].set()
 
-    async def setup_environment(self) -> None:
+    def load_model(self, model: Model, backend: str) -> None:
+        try:
+            self.model_integration = SyncMixedModelIntegration(
+                model=model,
+                backend=backend,
+                stop_event=self._stop_event,
+                fps=self.fps,
+            )
+            self.state.model_loaded = False
+            self.events["new_model"].set()
+            self._report_state()
+        except Exception as e:
+            self.model_integration = None
+            self.state.error = True
+            self._report_error(e)
+
+    def load_environment(self, environment: EnvironmentWithRelations) -> None:
         """Setup environment."""
 
-        robot = self.config.environment.robots[0]  # Assume 1 arm for now.
-
-        self.follower = await self.robot_client_factory.build(robot.robot)
-        self.cameras = {
-            str(camera.id): create_frames_source_from_camera(camera) for camera in self.config.environment.cameras
-        }
-        for camera in self.cameras.values():
-            # camera.attach_processor(CameraFrameProcessor()) # TODO Not working. Fix in framesource
-            camera.connect()
-            camera.start_async()
-
-        await asyncio.sleep(1)  # sleep for camera warmup. TODO: Refactor start_async to proper camera wrapper
-        await self.follower.connect()
-
-        await self.model_worker.setup()
+        try:
+            self.environment_integration = InferenceEnvironmentIntegration(
+                environment=environment, robot_client_factory=self.robot_client_factory
+            )
+            self.events["new_environment"].set()
+            self.state.environment_loaded = False
+            self._report_state()
+        except Exception as e:
+            self.environment_integration = None
+            self.state.error = True
+            self._report_error(e)
 
     def setup(self) -> None:
         """Set up robots, cameras and dataset."""
-        logger.info("connect to robot, cameras and setup dataset")
-        try:
-            if self.loop is None:
-                raise RuntimeError("The event loop must be set.")
-            self.loop.run_until_complete(self.setup_environment())
-
-            self.action_keys = self.follower.features()
-            self.camera_keys = list(self.cameras)
-
-            for camera in self.cameras.values():
-                camera.start_async()
-
-            self.state.initialized = True
-            logger.info("inference all setup, reporting state")
-        except Exception as e:
-            self.state.error = True
-            self._report_error(e)
         self._report_state()
+
+    @property
+    def ready_for_inference(self) -> bool:
+        """Check if model and environment is loaded and no errors occurred."""
+        return self.state.environment_loaded and self.state.model_loaded and not self.state.error
 
     async def run_loop(self) -> None:
         """inference loop."""
         try:
-            logger.info("run loop")
-            self.events["start"].clear()
-            self.events["stop"].clear()
-            self.events["disconnect"].clear()
-
             self.state.is_running = False
-            start_episode_t = time.perf_counter()
+            self.start_episode_t = time.perf_counter()
 
-            while not self.should_stop() and not self.events["disconnect"].is_set():
-                if not self.state.initialized or self.state.error:
+            while not self.should_stop() and not self.events["interrupt"].is_set():
+                if self.state.error:
                     return
 
+                await asyncio.gather(self._handle_new_model_load(), self._handle_setup_environment())
+
                 start_loop_t = time.perf_counter()
-                if self.events["start"].is_set():
-                    start_episode_t = time.perf_counter()
-                    await self._on_start()
-
-                if self.events["stop"].is_set():
-                    await self._on_stop()
-
-                state = (await self.follower.read_state())["state"]
-                for camera_id, camera in self.cameras.items():
-                    _success, camera_frame = camera.get_latest_frame()  # HWC
-                    if camera_frame is None:
-                        raise Exception("Camera frame is None")
-                    processed_frame = CameraFrameProcessor.process(camera_frame)
-                    state[camera_id] = processed_frame
-
-                timestamp = time.perf_counter() - start_episode_t
-                if self.state.is_running:
-                    observation = self._build_geti_action_observation(state)
-                    action = self.model_worker.select_action(observation)
-                    if action is not None:
-                        formatted_actions = dict(zip(self.action_keys, action))
-                        await self.follower.set_joints_state(formatted_actions, 1 / 30)
-                        self._report_action(formatted_actions, state, timestamp)
-                else:
-                    self._report_action(None, state, timestamp)
+                if self.environment_integration:
+                    observation = await self.environment_integration.get_observation()
+                    timestamp = time.perf_counter() - self.start_episode_t
+                    if observation:
+                        report_observation = self.environment_integration.format_observation_for_reporting(
+                            observation, timestamp
+                        )
+                        if self.state.is_running and self.model_integration:
+                            model_observation = self.environment_integration.format_model_input_observation(
+                                observation, task=self.state.task
+                            )
+                            action = self.model_integration.select_action(model_observation)
+                            if action is not None:
+                                formatted_actions = dict(zip(self.environment_integration.action_keys, action))
+                                report_observation["actions"] = formatted_actions
+                                await self.environment_integration.set_joints_state(formatted_actions, 1 / 30)
+                        self._report_observation(report_observation)
                 dt_s = time.perf_counter() - start_loop_t
                 wait_time = 1 / 30 - dt_s
 
@@ -185,27 +152,29 @@ class InferenceWorker(BaseThreadWorker):
             logger.exception(f"Inference loop error: {e}")
             self._report_error(e)
 
-    async def _on_start(self) -> None:
-        logger.info("start")
-        self.events["start"].clear()
-        precise_sleep(0.3)  # TODO check if neccesary
-        self.model_worker.reset()
-        self.state.is_running = True
-        self._report_state()
+    async def _handle_new_model_load(self) -> None:
+        if self.model_integration and self.events["new_model"].is_set():
+            self.events["new_model"].clear()
+            await self.model_integration.setup()
+            self.state.model_loaded = True
+            logger.info("reporting state from new_model")
+            self._report_state()
 
-    async def _on_stop(self) -> None:
-        logger.info("stop")
-        self.events["stop"].clear()
-        precise_sleep(0.3)  # TODO check if neccesary
-        self.state.is_running = False
-        self._report_state()
+    async def _handle_setup_environment(self) -> None:
+        if self.environment_integration and self.events["new_environment"].is_set():
+            self.events["new_environment"].clear()
+            await self.environment_integration.setup()
+            self.state.environment_loaded = True
+            logger.info("reporting state from setup_environment")
+            self._report_state()
 
     async def teardown(self) -> None:
         """Disconnect robots and close queue."""
-        if self.follower.is_connected:
-            await self.follower.disconnect()
+        if self.environment_integration:
+            await self.environment_integration.teardown()
 
-        self.model_worker.teardown()
+        if self.model_integration is not None:
+            self.model_integration.teardown()
 
         # Wait for .5 seconds before closing queue to allow messages through
         await asyncio.sleep(0.5)
@@ -214,7 +183,6 @@ class InferenceWorker(BaseThreadWorker):
 
     def _report_state(self):
         state = {"event": "state", "data": self.state.model_dump()}
-        logger.info(f"inference state: {state}")
         self.queue.put(state)
 
     def _report_error(self, error: BaseException):
@@ -225,52 +193,11 @@ class InferenceWorker(BaseThreadWorker):
         logger.error(f"error: {data}")
         self.queue.put(data)
 
-    def _report_trajectory(self, trajectory: list[dict]):
-        self.queue.put({"event": "trajectory", "data": {"trajectory": trajectory}})
-
-    def _report_action(self, actions: dict | None, observation: dict, timestamp: float):
+    def _report_observation(self, data: dict):
         """Report observation to queue."""
         self.queue.put(
             {
                 "event": "observations",
-                "data": {
-                    "actions": actions,
-                    "state": {key: observation.get(key, 0) for key in self.action_keys},
-                    "cameras": {
-                        key: self._base_64_encode_observation(cv2.cvtColor(observation[key], cv2.COLOR_RGB2BGR))
-                        for key in self.camera_keys
-                        if key in observation
-                    },
-                    "timestamp": timestamp,
-                },
+                "data": data,
             }
         )
-
-    def _build_geti_action_observation(self, robot_observation: dict) -> Observation:
-        state = (
-            torch.tensor([value for key, value in robot_observation.items() if key in self.action_keys])
-            .unsqueeze(0)
-            .float()
-        )
-        images: dict = {}
-        for camera in self.config.environment.cameras:
-            frame = robot_observation[str(camera.id)]
-
-            # Camera name is used to reference its feature
-            camera_name = camera.name.lower()
-            # change image to 0..1 and swap R & B channels.
-            images[camera_name] = torch.from_numpy(frame)
-            images[camera_name] = images[camera_name].float() / 255
-            images[camera_name] = images[camera_name].permute(2, 0, 1).contiguous()
-            images[camera_name] = images[camera_name].unsqueeze(0)
-
-        return Observation(
-            state=state,
-            images=images,
-        )
-
-    def _base_64_encode_observation(self, observation: np.ndarray | None) -> str:
-        if observation is None:
-            return ""
-        _, imagebytes = cv2.imencode(".jpg", observation)
-        return base64.b64encode(imagebytes).decode()

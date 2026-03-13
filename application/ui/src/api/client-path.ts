@@ -1,4 +1,4 @@
-import { createFinalURL, createQuerySerializer } from 'openapi-fetch';
+import { createFinalURL, createQuerySerializer, defaultPathSerializer } from 'openapi-fetch';
 import type { HttpMethod, RequiredKeysOf } from 'openapi-typescript-helpers';
 
 import type { paths } from './openapi-spec';
@@ -31,6 +31,7 @@ export function createPathHelper<Paths extends paths>(baseUrl: string) {
             baseUrl,
             params: options?.params || {},
             querySerializer: defaultQuerySerializer,
+            pathSerializer: defaultPathSerializer,
         });
 
         const unresolved = url.match(PATH_PARAM_RE);
