@@ -17,7 +17,7 @@ from loguru import logger
 
 from internal_datasets.dataset_client import DatasetClient
 from internal_datasets.mutations.recording_mutation import RecordingMutation
-from schemas import Episode, EpisodeVideo
+from schemas import Episode, EpisodeVideo, StreamingEncodingSettings
 from settings import get_settings
 
 
@@ -29,9 +29,16 @@ class InternalLeRobotDataset(DatasetClient):
     _teleop_action_processor: RobotProcessorPipeline
     _robot_action_processor: RobotProcessorPipeline
     _robot_observation_processor: RobotProcessorPipeline
+    _streaming_encoding_settings: StreamingEncodingSettings
 
-    def __init__(self, dataset_path: Path):
+    def __init__(
+        self,
+        dataset_path: Path,
+        *,
+        streaming_encoding_settings: StreamingEncodingSettings = StreamingEncodingSettings(),
+    ):
         self.path = dataset_path
+        self._streaming_encoding_settings = streaming_encoding_settings.with_resolved_vcodec()
         self.load_dataset()
 
         self._teleop_action_processor, self._robot_action_processor, self._robot_observation_processor = (
@@ -41,22 +48,37 @@ class InternalLeRobotDataset(DatasetClient):
     def load_dataset(self) -> None:
         """Load dataset."""
         if self._check_repository_exists(self.path):
-            self._dataset = LeRobotDataset(str(uuid4()), self.path)
+            self._dataset = LeRobotDataset(
+                str(uuid4()),
+                self.path,
+                **self._streaming_encoding_settings.model_dump(),
+            )
             self.has_episodes = self._dataset.num_episodes > 0
 
-    def create(self, fps: int, features: dict, robot_type: str) -> None:
+    def create(
+        self,
+        fps: int,
+        features: dict,
+        robot_type: str,
+    ) -> None:
         """Create LeRobot dataset."""
         if self._check_repository_exists(self.path):
             raise Exception(f"Dataset already exists at {self.path}")
         self._dataset = LeRobotDataset.create(
-            repo_id=str(uuid4()), root=self.path, fps=fps, features=features, robot_type=robot_type, use_videos=True
+            repo_id=str(uuid4()),
+            root=self.path,
+            fps=fps,
+            features=features,
+            robot_type=robot_type,
+            use_videos=True,
+            **self._streaming_encoding_settings.model_dump(),
         )
         self.has_episodes = False
 
     def delete_episodes(self, episode_indices: list[int], output_path: Path) -> DatasetClient:
         """Copy over repo without given episode_indices to output_path."""
         lerobot_delete_episodes(dataset=self._dataset, episode_indices=episode_indices, output_dir=output_path)
-        return InternalLeRobotDataset(output_path)
+        return InternalLeRobotDataset(output_path, streaming_encoding_settings=self._streaming_encoding_settings)
 
     def get_tasks(self) -> list[str]:
         """Get Tasks in dataset."""
@@ -72,6 +94,9 @@ class InternalLeRobotDataset(DatasetClient):
 
     def prepare_for_writing(self) -> None:
         """Start image writer &"""
+        if getattr(self._dataset, "_streaming_encoder", None) is not None:
+            logger.info("Streaming encoding enabled; skipping image writer startup")
+            return
         num_threads = 4 * len(self._dataset.meta.camera_keys)
         self._dataset.start_image_writer(
             num_processes=0,
@@ -174,12 +199,15 @@ class InternalLeRobotDataset(DatasetClient):
         cache_dir = settings.cache_dir / str(uuid4())
 
         logger.info(f"Creating cache dataset {cache_dir}")
+        cache_dataset = InternalLeRobotDataset(
+            cache_dir,
+            streaming_encoding_settings=self._streaming_encoding_settings,
+        )
         if self.exists_on_disk:
             shutil.copytree(self.path, cache_dir)
-            cache_dataset = InternalLeRobotDataset(cache_dir)
+            cache_dataset.load_dataset()
         else:
-            cache_dataset = InternalLeRobotDataset(cache_dir)
-            cache_dataset.create(fps, features, robot_type)
+            cache_dataset.create(fps=fps, features=features, robot_type=robot_type)
 
         return RecordingMutation(self, cache_dataset)
 

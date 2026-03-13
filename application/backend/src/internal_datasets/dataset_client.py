@@ -10,8 +10,12 @@ if TYPE_CHECKING:
 
 class DatasetClient(ABC):
     type: str
-    exists_on_disk: bool = False
     has_episodes: bool = False
+
+    @property
+    @abstractmethod
+    def exists_on_disk(self) -> bool:
+        """Whether the dataset exists on disk."""
 
     @abstractmethod
     def prepare_for_writing(self) -> None:
