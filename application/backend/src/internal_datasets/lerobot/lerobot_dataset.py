@@ -17,7 +17,7 @@ from loguru import logger
 
 from internal_datasets.dataset_client import DatasetClient
 from internal_datasets.mutations.recording_mutation import RecordingMutation
-from schemas import Episode, EpisodeVideo
+from schemas import Episode, EpisodeInfo, EpisodeVideo
 from settings import get_settings
 
 
@@ -70,6 +70,35 @@ class InternalLeRobotDataset(DatasetClient):
         full_camera_name = f"observation.images.{camera}"
         return Path(metadata.root) / Path(metadata.get_video_file_path(episode, full_camera_name))
 
+    def get_video_keys(self) -> list[str]:
+        return list(self._dataset.meta.video_keys)
+
+    def get_episode_thumbnail_png(
+        self,
+        episode_index: int,
+        video_key: str,
+        width: int = 320,
+        height: int = 240,
+    ) -> tuple[bytes, Path] | None:
+        if not self.exists_on_disk:
+            return None
+
+        metadata = self._dataset.meta
+        episode = self._find_episode_metadata(episode_index)
+        if episode is None:
+            return None
+
+        video_path = Path(metadata.root) / Path(metadata.get_video_file_path(episode_index, video_key))
+        if not video_path.is_file():
+            return None
+
+        image_key = video_key if video_key in self._dataset.meta.camera_keys else f"observation.images.{video_key}"
+        thumbnail_png = self._build_thumbnail_png_bytes(episode, image_key, width, height)
+        if thumbnail_png is None:
+            return None
+
+        return thumbnail_png, video_path
+
     def prepare_for_writing(self) -> None:
         """Start image writer &"""
         num_threads = 4 * len(self._dataset.meta.camera_keys)
@@ -94,36 +123,35 @@ class InternalLeRobotDataset(DatasetClient):
 
         if not self.exists_on_disk:
             return []
+
+        return [self._build_episode_from_metadata(episode) for episode in self._dataset.meta.episodes]
+
+    def find_episode(self, episode_index: int) -> Episode | None:
+        """Find episode by index or return None."""
+        if not self.exists_on_disk:
+            return None
+
+        episode = self._find_episode_metadata(episode_index)
+        if episode is None:
+            return None
+
+        return self._build_episode_from_metadata(episode)
+
+    def get_episode_infos(self) -> list[EpisodeInfo]:
+        """Get lightweight episode summaries."""
+        if not self.exists_on_disk:
+            return []
+
         metadata = self._dataset.meta
-        episodes = metadata.episodes
-
-        image_keys = self._dataset.meta.camera_keys
-        image_key = image_keys[0]
-
-        result = []
-        action_feature_names = self._dataset.features.get("action", {}).get("names", [])
-        for episode in episodes:
-            episode_index = episode["episode_index"]
-            thumbnail = self._build_thumbnail(episode, image_key) if len(image_keys) > 0 else None
-            result.append(
-                Episode(
-                    actions=self._get_episode_actions(episode).tolist(),
-                    fps=metadata.fps,
-                    videos={
-                        video_key: EpisodeVideo(
-                            start=episode[f"videos/{video_key}/from_timestamp"],
-                            end=episode[f"videos/{video_key}/to_timestamp"],
-                            path=str(metadata.get_video_file_path(episode_index, video_key)),
-                        )
-                        for video_key in self._dataset.meta.video_keys
-                    },
-                    action_keys=action_feature_names,
-                    thumbnail=thumbnail,
-                    **episode,
-                )
+        return [
+            EpisodeInfo(
+                episode_index=episode["episode_index"],
+                tasks=episode["tasks"],
+                length=episode["length"],
+                fps=metadata.fps,
             )
-
-        return result
+            for episode in metadata.episodes
+        ]
 
     def add_frame(self, obs: dict, act: dict, task: str) -> None:
         """Add frame to recording buffer."""
@@ -212,8 +240,6 @@ class InternalLeRobotDataset(DatasetClient):
                 video_timestamps[video_key].end += offset
 
         action_feature_names = self._dataset.features.get("action", {}).get("names", [])
-        camera_key = self._dataset.meta.camera_keys[0]
-        thumbnail = self._build_thumbnail_from_buffer(data, camera_key)
         return Episode(
             episode_index=episode_index,
             length=len(data["frame_index"]),
@@ -222,7 +248,6 @@ class InternalLeRobotDataset(DatasetClient):
             actions=data["action"].tolist(),
             videos=video_timestamps,
             action_keys=action_feature_names,
-            thumbnail=thumbnail,
         )
 
     def _build_episode_data_from_buffer(self) -> dict:
@@ -270,16 +295,51 @@ class InternalLeRobotDataset(DatasetClient):
         actions = self._dataset.hf_dataset["action"][from_idx:to_idx]
         return torch.stack(actions)
 
-    def _build_thumbnail_from_buffer(self, episode_buffer: dict, image_key: str) -> str | None:
-        thumbnail_size = (320, 240)
+    def _build_episode_from_metadata(self, episode: dict) -> Episode:
+        metadata = self._dataset.meta
+        episode_index = episode["episode_index"]
+        action_feature_names = self._dataset.features.get("action", {}).get("names", [])
 
-        image_path = episode_buffer[image_key][-1]
-        image = cv2.imread(image_path)
-        if image is None:
+        return Episode(
+            actions=self._get_episode_actions(episode).tolist(),
+            fps=metadata.fps,
+            videos={
+                video_key: EpisodeVideo(
+                    start=episode[f"videos/{video_key}/from_timestamp"],
+                    end=episode[f"videos/{video_key}/to_timestamp"],
+                    path=str(metadata.get_video_file_path(episode_index, video_key)),
+                )
+                for video_key in self._dataset.meta.video_keys
+            },
+            action_keys=action_feature_names,
+            thumbnail=None,
+            **episode,
+        )
+
+    def _find_episode_metadata(self, episode_index: int) -> dict | None:
+        for episode in self._dataset.meta.episodes:
+            if episode["episode_index"] == episode_index:
+                return episode
+        return None
+
+    def _build_thumbnail_png_bytes(self, episode: dict, image_key: str, width: int, height: int) -> bytes | None:
+        if image_key not in self._dataset.meta.camera_keys:
             return None
-        thumbnail = cv2.resize(image, thumbnail_size)
-        _, imagebytes = cv2.imencode(".jpg", thumbnail)
-        return base64.b64encode(imagebytes).decode()
+
+        from_idx = int(episode["dataset_from_index"])
+        try:
+            image = self._dataset[from_idx][image_key].permute(1, 2, 0).detach().numpy()
+        except Exception:
+            return None
+
+        rescaled = (image * 255).clip(0, 255).astype(np.uint8)
+        resized = cv2.resize(rescaled, (width, height))
+        bgr_image = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
+        encoded, imagebytes = cv2.imencode(".png", bgr_image)
+        if not encoded:
+            return None
+
+        return imagebytes.tobytes()
 
     def _build_thumbnail(self, episode: dict, image_key: str) -> str:
         thumbnail_size = (320, 240)

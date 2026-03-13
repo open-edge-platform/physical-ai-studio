@@ -10,6 +10,7 @@ class EpisodeInfo(BaseModel):
     episode_index: int
     tasks: list[str]
     length: int
+    fps: int
 
 
 class EpisodeVideo(BaseModel):
@@ -26,7 +27,6 @@ class Episode(BaseModel):
     actions: list[list[float]]
     action_keys: list[str]
     videos: dict[str, EpisodeVideo]
-    thumbnail: str | None
 
 
 class LeRobotDatasetInfo(BaseModel):
