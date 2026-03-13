@@ -15,11 +15,12 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import torch
 from huggingface_hub import hf_hub_download
+from safetensors.torch import load_file
+
 from physicalai.data.dataset import Dataset
-from physicalai.data.observation import ACTION, IMAGES
+from physicalai.data.observation import ACTION
 from physicalai.policies.base import Policy
 from physicalai.train.utils import reformat_dataset_to_match_policy
-from safetensors.torch import load_file
 
 from .config import Pi05Config
 from .model import Pi05Model
@@ -193,7 +194,24 @@ class Pi05(Policy):
 
         Called by both lazy (setup) and eager (checkpoint) paths.
         """
-        self.model = Pi05Model(self.config)
+        self.model = Pi05Model(
+            paligemma_variant=self.config.paligemma_variant,
+            action_expert_variant=self.config.action_expert_variant,
+            dtype=self.config.dtype,
+            chunk_size=self.config.chunk_size,
+            max_action_dim=self.config.max_action_dim,
+            num_inference_steps=self.config.num_inference_steps,
+            time_sampling_beta_alpha=self.config.time_sampling_beta_alpha,
+            time_sampling_beta_beta=self.config.time_sampling_beta_beta,
+            time_sampling_scale=self.config.time_sampling_scale,
+            time_sampling_offset=self.config.time_sampling_offset,
+            min_period=self.config.min_period,
+            max_period=self.config.max_period,
+            image_resolution=self.config.image_resolution,
+            freeze_vision_encoder=self.config.freeze_vision_encoder,
+            train_expert_only=self.config.train_expert_only,
+            compile_model=self.config.compile_model,
+        )
         if weights_file is not None:
             # load raw state dict
             original_sd = load_file(str(weights_file))
@@ -379,17 +397,7 @@ class Pi05(Policy):
                 raise ValueError(msg)
 
             processed_batch = self._preprocessor(batch.to_dict())
-            images = processed_batch[IMAGES]
-            img_masks = processed_batch["image_masks"]
-            tokens = processed_batch["tokenized_prompt"]
-            masks = processed_batch["tokenized_prompt_mask"]
-            actions = processed_batch[ACTION]
-
-            losses = self.model.forward(images, img_masks, tokens, masks, actions)
-
-            loss = losses.mean()
-            loss_dict = {"loss": loss.item()}
-            return loss, loss_dict
+            return self.model(processed_batch)
         return self.predict_action_chunk(batch)
 
     @torch.no_grad()
@@ -410,12 +418,7 @@ class Pi05(Policy):
             raise ValueError(msg)
 
         processed_batch = self._preprocessor(batch.to(self.device).to_dict())
-        images = processed_batch[IMAGES]
-        img_masks = processed_batch["image_masks"]
-        tokens = processed_batch["tokenized_prompt"]
-        masks = processed_batch["tokenized_prompt_mask"]
-
-        actions = self.model.sample_actions(images, img_masks, tokens, masks)
+        actions = self.model.predict_action_chunk(processed_batch)
 
         # Unpad actions to actual action dimension
         if self._dataset_stats is not None:

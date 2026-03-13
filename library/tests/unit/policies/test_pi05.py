@@ -402,18 +402,18 @@ class TestModelUtilities:
 
     def test_get_safe_dtype_cpu(self) -> None:
         """Test get_safe_dtype returns float32 for bfloat16 on CPU."""
-        from physicalai.policies.pi05.model import get_safe_dtype
+        from physicalai.policies.pi05.model import _get_safe_dtype
 
-        assert get_safe_dtype(torch.bfloat16, "cpu") == torch.float32
-        assert get_safe_dtype(torch.float64, "cpu") == torch.float64
-        assert get_safe_dtype(torch.float32, "cpu") == torch.float32
+        assert _get_safe_dtype(torch.bfloat16, "cpu") == torch.float32
+        assert _get_safe_dtype(torch.float64, "cpu") == torch.float64
+        assert _get_safe_dtype(torch.float32, "cpu") == torch.float32
 
     def test_get_safe_dtype_cuda(self) -> None:
         """Test get_safe_dtype returns target dtype for CUDA."""
-        from physicalai.policies.pi05.model import get_safe_dtype
+        from physicalai.policies.pi05.model import _get_safe_dtype
 
-        assert get_safe_dtype(torch.bfloat16, "cuda") == torch.bfloat16
-        assert get_safe_dtype(torch.float32, "cuda") == torch.float32
+        assert _get_safe_dtype(torch.bfloat16, "cuda") == torch.bfloat16
+        assert _get_safe_dtype(torch.float32, "cuda") == torch.float32
 
 
 # ============================================================================ #

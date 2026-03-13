@@ -19,8 +19,9 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any
 
-from physicalai.data.observation import ACTION
 from safetensors.torch import load_file
+
+from physicalai.data.observation import ACTION
 
 if TYPE_CHECKING:
     from pathlib import Path

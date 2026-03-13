@@ -29,7 +29,8 @@ import torch.nn.functional as F  # noqa: N812
 from torch import Tensor, nn
 from transformers.cache_utils import DynamicCache
 
-from .config import Pi05Config
+from physicalai.data.observation import ACTION, IMAGES
+
 from .pi_gemma import (
     PaliGemmaForConditionalGenerationWithPiGemma,
     PiGemmaForCausalLM,
@@ -41,8 +42,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from transformers.models.gemma import modeling_gemma
-
-    from .config import Pi05Config
 
 try:
     from transformers.models.auto import CONFIG_MAPPING
@@ -57,7 +56,7 @@ logger = logging.getLogger(__name__)
 OPENPI_ATTENTION_MASK_VALUE = -2.3819763e38
 
 
-def get_safe_dtype(
+def _get_safe_dtype(
     target_dtype: torch.dtype,
     device_type: str,
 ) -> torch.dtype:
@@ -102,7 +101,7 @@ def create_sinusoidal_pos_embedding(
     dtype = (
         torch.float32
         if torch.jit.is_tracing() or torch.onnx.is_in_onnx_export()
-        else get_safe_dtype(torch.float64, device.type)
+        else _get_safe_dtype(torch.float64, device.type)
     )
     fraction = torch.linspace(0.0, 1.0, dimension // 2, dtype=dtype, device=device)
     period = min_period * (max_period / min_period) ** fraction
@@ -548,45 +547,90 @@ class Pi05Model(nn.Module):
     separated from the Lightning wrapper.
     """
 
-    def __init__(self, config: Pi05Config) -> None:
+    def __init__(  # noqa: PLR0913
+        self,
+        *,
+        paligemma_variant: Literal["gemma_300m", "gemma_2b"] = "gemma_2b",
+        action_expert_variant: Literal["gemma_300m", "gemma_2b"] = "gemma_300m",
+        dtype: Literal["bfloat16", "float32"] = "float32",
+        chunk_size: int = 50,
+        max_action_dim: int = 32,
+        num_inference_steps: int = 10,
+        time_sampling_beta_alpha: float = 1.5,
+        time_sampling_beta_beta: float = 1.0,
+        time_sampling_scale: float = 0.999,
+        time_sampling_offset: float = 0.001,
+        min_period: float = 4e-3,
+        max_period: float = 4.0,
+        image_resolution: tuple[int, int] = (224, 224),
+        freeze_vision_encoder: bool = False,
+        train_expert_only: bool = False,
+        compile_model: bool = False,
+    ) -> None:
         """Initialize Pi05Model.
+
+        Args:
+            paligemma_variant: Gemma variant for the VLM backbone.
+            action_expert_variant: Gemma variant for the action expert.
+            dtype: Precision for model weights.
+            chunk_size: Number of action steps to predict.
+            max_action_dim: Maximum dimension for action vectors.
+            num_inference_steps: Number of decoding steps for flow matching.
+            time_sampling_beta_alpha: Alpha parameter for beta distribution time sampling.
+            time_sampling_beta_beta: Beta parameter for beta distribution time sampling.
+            time_sampling_scale: Scale factor for time sampling.
+            time_sampling_offset: Offset for time sampling.
+            min_period: Minimum period for sine-cosine positional encoding.
+            max_period: Maximum period for sine-cosine positional encoding.
+            image_resolution: Target image resolution (height, width). Must be square.
+            freeze_vision_encoder: Whether to freeze the vision encoder during training.
+            train_expert_only: Whether to train only the action expert.
+            compile_model: Whether to use torch.compile.
 
         Raises:
             ValueError: If image resolution is not square.
         """
         super().__init__()
-        self.config = config
+        self._chunk_size = chunk_size
+        self._max_action_dim = max_action_dim
+        self._num_inference_steps = num_inference_steps
+        self._time_sampling_beta_alpha = time_sampling_beta_alpha
+        self._time_sampling_beta_beta = time_sampling_beta_beta
+        self._time_sampling_scale = time_sampling_scale
+        self._time_sampling_offset = time_sampling_offset
+        self._min_period = min_period
+        self._max_period = max_period
 
-        paligemma_config = get_gemma_config(config.paligemma_variant)
-        action_expert_config = get_gemma_config(config.action_expert_variant)
+        paligemma_config = get_gemma_config(paligemma_variant)
+        action_expert_config = get_gemma_config(action_expert_variant)
 
-        if config.image_resolution[0] != config.image_resolution[1]:
-            msg = f"PaliGemma expects square image resolution, invalid: {config.image_resolution}"
+        if image_resolution[0] != image_resolution[1]:
+            msg = f"PaliGemma expects square image resolution, invalid: {image_resolution}"
             raise ValueError(msg)
 
         self.paligemma_with_expert = PaliGemmaWithExpertModel(
             paligemma_config,
             action_expert_config,
             use_adarms=[False, True],
-            precision=config.dtype,
-            image_size=config.image_resolution[0],
-            freeze_vision_encoder=config.freeze_vision_encoder,
-            train_expert_only=config.train_expert_only,
+            precision=dtype,
+            image_size=image_resolution[0],
+            freeze_vision_encoder=freeze_vision_encoder,
+            train_expert_only=train_expert_only,
         )
 
-        self.action_in_proj = nn.Linear(config.max_action_dim, action_expert_config.width)
-        self.action_out_proj = nn.Linear(action_expert_config.width, config.max_action_dim)
+        self.action_in_proj = nn.Linear(max_action_dim, action_expert_config.width)
+        self.action_out_proj = nn.Linear(action_expert_config.width, max_action_dim)
 
         self.time_mlp_in = nn.Linear(action_expert_config.width, action_expert_config.width)
         self.time_mlp_out = nn.Linear(action_expert_config.width, action_expert_config.width)
 
         self.gradient_checkpointing_enabled = False
 
-        if config.compile_model:
+        if compile_model:
             torch.set_float32_matmul_precision("high")
             # TODO(Eugene): max-autotune currently failed.  # noqa: TD003, FIX002
             # Set to default for now, need further investigation.
-            compile_mode = "default"  # config.compile_mode
+            compile_mode = "default"
             self.sample_actions = torch.compile(self.sample_actions, mode=compile_mode)  # type: ignore[method-assign]
             self.forward = torch.compile(self.forward, mode=compile_mode)  # type: ignore[method-assign]
 
@@ -656,17 +700,17 @@ class Pi05Model(nn.Module):
             Time tensor.
         """
         if torch.jit.is_tracing() or torch.onnx.is_in_onnx_export():
-            alpha = self.config.time_sampling_beta_alpha
-            beta = self.config.time_sampling_beta_beta
+            alpha = self._time_sampling_beta_alpha
+            beta = self._time_sampling_beta_beta
             time_beta = torch.full((bsize,), alpha / (alpha + beta), device=device, dtype=torch.float32)  # Beta mean
         else:
             time_beta = sample_beta(
-                self.config.time_sampling_beta_alpha,
-                self.config.time_sampling_beta_beta,
+                self._time_sampling_beta_alpha,
+                self._time_sampling_beta_beta,
                 bsize,
                 device,
             )
-        time = time_beta * self.config.time_sampling_scale + self.config.time_sampling_offset
+        time = time_beta * self._time_sampling_scale + self._time_sampling_offset
         return time.to(dtype=torch.float32, device=device)
 
     def embed_prefix(
@@ -735,8 +779,8 @@ class Pi05Model(nn.Module):
         time_emb = create_sinusoidal_pos_embedding(
             timestep,
             self.action_in_proj.out_features,
-            min_period=self.config.min_period,
-            max_period=self.config.max_period,
+            min_period=self._min_period,
+            max_period=self._max_period,
             device=timestep.device,
         )
         time_emb = time_emb.type(dtype=timestep.dtype)
@@ -761,7 +805,7 @@ class Pi05Model(nn.Module):
         action_time_mask = torch.ones(bsize, action_time_dim, dtype=torch.bool, device=timestep.device)
         pad_masks.append(action_time_mask)
 
-        att_masks += [1] + ([0] * (self.config.chunk_size - 1))
+        att_masks += [1] + ([0] * (self._chunk_size - 1))
 
         embs = torch.cat(embs, dim=1)
         pad_masks = torch.cat(pad_masks, dim=1)
@@ -772,24 +816,25 @@ class Pi05Model(nn.Module):
 
     def forward(  # noqa: PLR0914
         self,
-        images: list[Tensor],
-        img_masks: list[Tensor],
-        tokens: Tensor,
-        masks: Tensor,
-        actions: Tensor,
-        noise: Tensor | None = None,
-        time: Tensor | None = None,
-    ) -> Tensor:
+        batch: dict[str, Any],
+    ) -> tuple[Tensor, dict[str, float]]:
         """Training forward pass: compute flow matching loss.
 
-        Returns:
-            Per-element MSE loss tensor.
-        """
-        if noise is None:
-            noise = self.sample_noise(actions.shape, actions.device)
+        Args:
+            batch: Preprocessed batch dict containing IMAGES, "image_masks",
+                "tokenized_prompt", "tokenized_prompt_mask", and ACTION.
 
-        if time is None:
-            time = self.sample_time(actions.shape[0], actions.device)
+        Returns:
+            Tuple of (mean loss tensor, loss dict with "loss" key).
+        """
+        images = batch[IMAGES]
+        img_masks = batch["image_masks"]
+        tokens = batch["tokenized_prompt"]
+        masks = batch["tokenized_prompt_mask"]
+        actions = batch[ACTION]
+
+        noise = self.sample_noise(actions.shape, actions.device)
+        time = self.sample_time(actions.shape[0], actions.device)
 
         time_expanded = time[:, None, None]
         x_t = time_expanded * noise + (1 - time_expanded) * actions
@@ -839,7 +884,7 @@ class Pi05Model(nn.Module):
             adarms_cond,
         )
 
-        suffix_out = suffix_out[:, -self.config.chunk_size :]
+        suffix_out = suffix_out[:, -self._chunk_size :]
         suffix_out = suffix_out.to(dtype=torch.float32)
 
         def action_out_proj_func(suffix_out: Tensor) -> Tensor:
@@ -847,7 +892,25 @@ class Pi05Model(nn.Module):
 
         v_t = self._apply_checkpoint(action_out_proj_func, suffix_out)
 
-        return F.mse_loss(u_t, v_t, reduction="none")
+        losses = F.mse_loss(u_t, v_t, reduction="none")
+        loss = losses.mean()
+        return loss, {"loss": loss.item()}
+
+    def predict_action_chunk(self, batch: dict[str, Any]) -> Tensor:
+        """Predict a chunk of actions from a preprocessed batch.
+
+        Args:
+            batch: Preprocessed batch dict containing IMAGES, "image_masks",
+                "tokenized_prompt", and "tokenized_prompt_mask".
+
+        Returns:
+            Denoised action tensor.
+        """
+        images = batch[IMAGES]
+        img_masks = batch["image_masks"]
+        tokens = batch["tokenized_prompt"]
+        masks = batch["tokenized_prompt_mask"]
+        return self.sample_actions(images, img_masks, tokens, masks)
 
     @torch.no_grad()
     def sample_actions(  # noqa: PLR0914
@@ -865,13 +928,13 @@ class Pi05Model(nn.Module):
             Denoised action tensor.
         """
         if num_steps is None:
-            num_steps = self.config.num_inference_steps
+            num_steps = self._num_inference_steps
 
         bsize = tokens.shape[0]
         device = tokens.device
 
         if noise is None:
-            actions_shape = (bsize, self.config.chunk_size, self.config.max_action_dim)
+            actions_shape = (bsize, self._chunk_size, self._max_action_dim)
             noise = self.sample_noise(actions_shape, device)
 
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, tokens, masks)
@@ -950,6 +1013,6 @@ class Pi05Model(nn.Module):
         )
 
         suffix_out = outputs_embeds[1]  # type: ignore[index]
-        suffix_out = suffix_out[:, -self.config.chunk_size :]  # type: ignore[index]
+        suffix_out = suffix_out[:, -self._chunk_size :]  # type: ignore[index]
         suffix_out = suffix_out.to(dtype=torch.float32)
         return self.action_out_proj(suffix_out)
