@@ -39,6 +39,7 @@ dependencies = [
     "onnxruntime",
     "onnxscript",
     "openvino>=2025.0",
+    "openvino_tokenizers>=2025.0",
     "jsonargparse[signatures]>=4.27.0", # This could be extra
     "pydantic",                         # This could be extra
 ]
