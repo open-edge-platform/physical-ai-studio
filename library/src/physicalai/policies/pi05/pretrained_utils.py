@@ -1,7 +1,7 @@
-# Copyright 2025 Physical Intelligence and The HuggingFace Inc. team.
-
 # Copyright 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
+
+# Copyright 2025 Physical Intelligence and The HuggingFace Inc. team.
 
 """Utilities for loading pretrained Pi05 weights from HuggingFace/lerobot format.
 
