@@ -28,6 +28,7 @@ import torch.nn.functional as F  # noqa: N812
 from physicalai.data import Feature, FeatureType, NormalizationParameters
 from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, TASK, Observation
 from physicalai.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
+from physicalai.policies.utils.prepocess import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 
 logger = logging.getLogger(__name__)
 
@@ -119,12 +120,12 @@ class SmolVLAPreprocessor(torch.nn.Module):
         """
         batch = self._newline_processor(batch)
         tokens, masks = self._tokenize(batch[TASK])
-        batch["tokenized_prompt"] = tokens.to(batch[STATE].device)
-        batch["tokenized_prompt_mask"] = masks.to(batch[STATE].device)
+        batch[TOKENIZED_PROMPT] = tokens.to(batch[STATE].device)
+        batch[TOKENIZED_PROMPT_MASK] = masks.to(batch[STATE].device)
 
         images, img_masks = self._preprocess_images(batch)
         batch[IMAGES] = images
-        batch["image_masks"] = img_masks
+        batch[IMAGE_MASKS] = img_masks
 
         return self._state_action_normalizer(batch)
 

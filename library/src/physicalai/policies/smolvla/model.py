@@ -18,6 +18,7 @@ import torch.nn.functional as F  # noqa: N812
 from torch import nn
 
 from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, TASK, FeatureType
+from physicalai.policies.utils.prepocess import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -163,12 +164,12 @@ class SmolVLAModel(nn.Module):
         """
         if self.training:
             batch = self._preprocess_batch(batch)
-            images, img_masks = batch[IMAGES], batch["image_masks"]
+            images, img_masks = batch[IMAGES], batch[IMAGE_MASKS]
             state = self._prepare_state(batch)
             actions = self._prepare_action(batch)
 
-            lang_tokens = batch["tokenized_prompt"]
-            lang_masks = batch["tokenized_prompt_mask"]
+            lang_tokens = batch[TOKENIZED_PROMPT]
+            lang_masks = batch[TOKENIZED_PROMPT_MASK]
             actions_is_pad = batch.get(EXTRA + ".actions_id_pad")
             loss_dict = {}
             losses = self._model.forward(images, img_masks, lang_tokens, lang_masks, state, actions)
@@ -204,10 +205,10 @@ class SmolVLAModel(nn.Module):
                 action dimensions from the dataset statistics.
         """
         processed_batch = self._preprocess_batch(batch)
-        images, img_masks = processed_batch[IMAGES], processed_batch["image_masks"]
+        images, img_masks = processed_batch[IMAGES], processed_batch[IMAGE_MASKS]
         state = self._prepare_state(processed_batch)
-        lang_tokens = processed_batch["tokenized_prompt"]
-        lang_masks = processed_batch["tokenized_prompt_mask"]
+        lang_tokens = processed_batch[TOKENIZED_PROMPT]
+        lang_masks = processed_batch[TOKENIZED_PROMPT_MASK]
 
         actions = self._model.sample_actions(
             images,
