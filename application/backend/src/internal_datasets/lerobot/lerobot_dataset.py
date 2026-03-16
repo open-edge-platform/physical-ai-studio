@@ -156,13 +156,12 @@ class InternalLeRobotDataset(DatasetClient):
     def add_frame(self, obs: dict, act: dict, task: str) -> None:
         """Add frame to recording buffer."""
         frame = self._process_frame(obs, act, task)
+        logger.info(f"adding processed frame: {frame}")
         self._dataset.add_frame(frame)
 
-    def save_episode(self, task: str) -> Episode:
+    def save_episode(self) -> None:
         """Save current recording buffer as episode."""
-        new_episode = self._build_episode_from_buffer(self._dataset.meta.latest_episode, task)
         self._dataset.save_episode()
-        return new_episode
 
     def discard_buffer(self) -> None:
         """Discard current recording buffer."""

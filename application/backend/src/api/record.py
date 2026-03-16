@@ -16,7 +16,7 @@ from api.dependencies import (
 from core.scheduler import Scheduler
 from exceptions import ResourceNotFoundError
 from robots.robot_client_factory import RobotClientFactory
-from schemas import Model, TeleoperationConfig
+from schemas import Model, TeleoperationConfig, Dataset
 from schemas.environment import EnvironmentWithRelations
 from services import DatasetService
 from utils.serialize_utils import to_python_primitive
@@ -143,12 +143,21 @@ async def inference_websocket(
                     model = Model.model_validate(data["data"]["model"])
                     backend = data["data"]["backend"]
                     process.load_model(model, backend)
+                if data["event"] == "load_dataset":
+                    dataset = Dataset.model_validate(data["data"]["dataset"])
+                    process.load_dataset(dataset)
+                if data["event"] == "start_recording":
+                    task = data["data"]["task"]
+                    process.start_recording(task)
+                if data["event"] == "save_episode":
+                    process.save_episode()
+                if data["event"] == "discard_episode":
+                    process.discard_episode()
                 if data["event"] == "start_task":
-                    task = data["data"]
+                    task = data["data"]["task"]
                     process.start_task(task)
                 if data["event"] == "stop_task":
                     process.stop()
-                    process.join(timeout=5)
                 if data["event"] == "disconnect":
                     process.disconnect()
                     break

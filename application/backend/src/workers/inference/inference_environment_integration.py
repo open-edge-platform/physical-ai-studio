@@ -20,6 +20,7 @@ class InferenceEnvironmentIntegration:
     robot_client_factory: RobotClientFactory
     action_keys: list[str] = []
     follower: RobotClient | None = None
+    leader: RobotClient | None = None
     frame_captures: dict[str, AsyncCameraCapture]
 
     def __init__(self, environment: EnvironmentWithRelations, robot_client_factory: RobotClientFactory):
@@ -31,6 +32,8 @@ class InferenceEnvironmentIntegration:
         robot = self.environment.robots[0]  # TODO: Handle multiple robots?
 
         self.follower = await self.robot_client_factory.build(robot.robot)
+        if robot.tele_operator and robot.tele_operator.robot is not None:
+            self.leader = await self.robot_client_factory.build(robot.tele_operator.robot)
         self.action_keys = self.follower.features()
 
         self.frame_captures = {}
@@ -48,6 +51,8 @@ class InferenceEnvironmentIntegration:
 
         await asyncio.sleep(1)  # sleep for camera warmup
         await self.follower.connect()
+        if self.leader:
+            await self.leader.connect()
 
     async def set_joints_state(self, actions: dict, goal_time: float) -> None:
         """Set joints on robot"""
@@ -66,6 +71,13 @@ class InferenceEnvironmentIntegration:
             return observation
 
         return None
+
+    async def set_follower_position_from_leader(self, goal_time: float) -> dict | None:
+        """Directly set the follower position based on leader."""
+        if self.leader is not None:
+            actions = (await self.leader.read_state())["state"]
+            await self.set_joints_state(actions, goal_time)
+            return actions
 
     def format_observation_for_reporting(self, observation: dict, timestamp: float) -> dict:
         camera_keys = [str(camera.id) for camera in self.environment.cameras]
@@ -95,6 +107,16 @@ class InferenceEnvironmentIntegration:
             # task=task, # TODO: Implement tasks.
         )
 
+    def format_observation_for_dataset(self, raw_observation: dict) -> dict:
+        """Format observation for dataset frame input."""
+        observation = self._remap_camera_observations(raw_observation)
+        for camera in self.environment.cameras:
+            camera_name = camera.name.lower()
+            # RGB2BGR
+            observation[camera_name] = np.ascontiguousarray(observation[camera_name][..., ::-1])
+
+        return observation
+
     def _base_64_encode_observation(self, observation: np.ndarray | None) -> str:
         if observation is None:
             return ""
@@ -111,6 +133,9 @@ class InferenceEnvironmentIntegration:
     async def teardown(self) -> None:
         if self.follower:
             await self.follower.disconnect()
+
+        if self.leader:
+            await self.leader.disconnect()
 
         for cap in self.frame_captures.values():
             try:

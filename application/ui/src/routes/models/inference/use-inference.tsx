@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 
 import { fetchClient } from '../../../api/client';
-import { SchemaEnvironmentWithRelations, SchemaModel } from '../../../api/openapi-spec';
+import { SchemaDatasetOutput, SchemaEnvironmentWithRelations, SchemaModel } from '../../../api/openapi-spec';
 import useWebSocketWithResponse from '../../../components/websockets/use-websocket-with-response';
 
 interface InferenceState {
@@ -12,15 +12,19 @@ interface InferenceState {
     is_running: boolean;
     task_index: number;
     error: boolean;
+    is_recording: boolean;
+    dataset_loaded: boolean;
 }
 
 const createInferenceState = (): InferenceState => {
     return {
         model_loaded: false,
         environment_loaded: false,
+        dataset_loaded: false,
         is_running: false,
         task_index: 0,
         error: false,
+        is_recording: false,
     };
 };
 
@@ -35,18 +39,25 @@ export interface Observation {
     cameras: { [key: string]: string };
 }
 
-export const useInference = (
-    environment: SchemaEnvironmentWithRelations,
-    model: SchemaModel,
-    backend: string,
-    onError: (error: string) => void
-) => {
+interface useInferenceProps {
+    environment: SchemaEnvironmentWithRelations;
+    model?: SchemaModel;
+    dataset?: SchemaDatasetOutput;
+    backend?: string;
+    onError: (error: string) => void;
+}
+export const useInference = ({environment, model, dataset, backend, onError}: useInferenceProps) => {
     const [state, setState] = useState<InferenceState>(createInferenceState());
     const observation = useRef<Observation | undefined>(undefined);
 
     const onOpen = () => {
         loadEnvironment.mutate(environment);
-        loadModel.mutate({ model, backend });
+        if (model && backend) {
+            loadModel.mutate({ model, backend });
+        }
+        if (dataset) {
+            loadDataset.mutate(dataset);
+        }
     };
 
     const { sendJsonMessageAndWait, readyState } = useWebSocketWithResponse(
@@ -74,6 +85,15 @@ export const useInference = (
         }
     };
 
+    const loadDataset = useMutation({
+        meta: { skipInvalidation: true },
+        mutationFn: async (dataset: SchemaDatasetOutput) =>
+            await sendJsonMessageAndWait<InferenceApiJsonResponse<InferenceState>>(
+                { event: 'load_dataset', data: { dataset } },
+                (data) => data['data']['dataset_loaded']
+            ),
+    });
+
     const loadEnvironment = useMutation({
         meta: { skipInvalidation: true },
         mutationFn: async (env: SchemaEnvironmentWithRelations) =>
@@ -96,7 +116,7 @@ export const useInference = (
         meta: { skipInvalidation: true },
         mutationFn: async (task: string) =>
             await sendJsonMessageAndWait<InferenceApiJsonResponse<InferenceState>>(
-                { event: 'start_task', data: task },
+                { event: 'start_task', data: { task }},
                 ({ data }) => data['is_running']
             ),
     });
@@ -110,7 +130,38 @@ export const useInference = (
             ),
     });
 
+    const startEpisode = useMutation({
+        mutationFn: async (task: string) => {
+            const message = await sendJsonMessageAndWait<InferenceApiJsonResponse<InferenceState>>(
+                { event: 'start_recording', data: { task} },
+                ({ data }) => data['is_recording'] == true
+            );
+            return message;
+        },
+    });
+
+    const saveEpisode = useMutation({
+        mutationFn: async () => {
+            const message = await sendJsonMessageAndWait<InferenceApiJsonResponse<InferenceState>>(
+                { event: 'save_episode', data: {} },
+                ({ data }) => data['is_recording'] == false
+            );
+            return message;
+        },
+    });
+
+    const discardEpisode = useMutation({
+        mutationFn: async () => {
+            const message = await sendJsonMessageAndWait<InferenceApiJsonResponse<InferenceState>>(
+                { event: 'discard_episode', data: {} },
+                ({ data }) => data['is_recording'] == false
+            );
+            return message;
+        },
+    });
+
     const readyForInference = state.environment_loaded && state.model_loaded;
+    const readyForRecording = state.environment_loaded && state.dataset_loaded;
     const isConnected = readyState === 1;
 
     return {
@@ -118,9 +169,14 @@ export const useInference = (
         state,
         loadEnvironment,
         loadModel,
+        loadDataset,
         startTask,
         stopTask,
         readyForInference,
+        readyForRecording,
+        startEpisode,
+        saveEpisode,
+        discardEpisode,
         isConnected,
     };
 };

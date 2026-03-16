@@ -48,10 +48,12 @@ export const InferenceViewer = ({ environment, model, backend, tasks }: Inferenc
     const [task, setTask] = useState<string>(tasks[0] ?? '');
 
     const { observation, readyForInference, state, startTask, stopTask } = useInference(
-        environment,
-        model,
-        backend,
-        ToastQueue.negative
+        {
+            environment,
+            model,
+            backend,
+            onError: ToastQueue.negative
+        }
     );
 
     const visualisation_source = getVisualisationSourceFromObservation(observation.current);
