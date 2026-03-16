@@ -11,7 +11,7 @@ from __future__ import annotations
 import copy
 import logging
 import math
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import torch
 import torch.nn.functional as F  # noqa: N812
@@ -285,12 +285,16 @@ class SmolVLAModel(nn.Module):
             >>> print(extra_args)
             {'onnx': {'output_names': ['action']}}
         """
-        extra_args = {}
+        extra_args: dict[str, Any] = {}
         extra_args["onnx"] = {
             "output_names": ["action"],
         }
         extra_args["openvino"] = {
             "output": ["action"],
+            "compress_to_fp16": False,
+            "export_tokenizer": True,
+            "exporter_kwargs": {},
+            "preprocessing_type": "smolvla",
         }
         extra_args["torch_export_ir"] = {}
         extra_args["torch"] = {
@@ -768,6 +772,9 @@ class VLAFlowMatching(nn.Module):
 
     @staticmethod
     def _sample_noise(shape: tuple[int, ...], device: torch.device) -> torch.Tensor:
+        if torch.jit.is_tracing() or torch.onnx.is_in_onnx_export():
+            return torch.zeros(shape, dtype=torch.float32, device=device)
+
         return torch.normal(
             mean=0.0,
             std=1.0,
