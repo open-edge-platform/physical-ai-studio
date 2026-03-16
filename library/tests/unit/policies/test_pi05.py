@@ -260,71 +260,71 @@ class TestModelUtilities:
 
     def test_pad_vector_shorter(self) -> None:
         """Test pad_vector pads shorter vectors."""
-        from physicalai.policies.pi05.preprocessor import pad_vector
+        from physicalai.policies.pi05.preprocessor import _pad_vector
 
         v = torch.randn(2, 7)
-        padded = pad_vector(v, 32)
+        padded = _pad_vector(v, 32)
         assert padded.shape == (2, 32)
         torch.testing.assert_close(padded[:, :7], v)
         assert (padded[:, 7:] == 0).all()
 
     def test_pad_vector_equal(self) -> None:
         """Test pad_vector with equal dimensions (no-op)."""
-        from physicalai.policies.pi05.preprocessor import pad_vector
+        from physicalai.policies.pi05.preprocessor import _pad_vector
 
         v = torch.randn(2, 32)
-        padded = pad_vector(v, 32)
+        padded = _pad_vector(v, 32)
         assert padded.shape == (2, 32)
         torch.testing.assert_close(padded, v)
 
     def test_pad_vector_longer(self) -> None:
         """Test pad_vector with longer vector (no-op)."""
-        from physicalai.policies.pi05.preprocessor import pad_vector
+        from physicalai.policies.pi05.preprocessor import _pad_vector
 
         v = torch.randn(2, 64)
-        padded = pad_vector(v, 32)
+        padded = _pad_vector(v, 32)
         assert padded.shape == (2, 64)
 
     def test_resize_with_pad_shape(self) -> None:
         """Test resize_with_pad produces correct output shape."""
-        from physicalai.policies.pi05.preprocessor import resize_with_pad_torch
+        from physicalai.policies.pi05.preprocessor import _resize_with_pad_torch
 
         img = torch.rand(2, 480, 640, 3)  # [B, H, W, C]
-        result = resize_with_pad_torch(img, 224, 224)
+        result = _resize_with_pad_torch(img, 224, 224)
         assert result.shape == (2, 224, 224, 3)
 
     def test_resize_with_pad_channels_first(self) -> None:
         """Test resize_with_pad with channels-first format."""
-        from physicalai.policies.pi05.preprocessor import resize_with_pad_torch
+        from physicalai.policies.pi05.preprocessor import _resize_with_pad_torch
 
         img = torch.rand(2, 3, 480, 640)  # [B, C, H, W]
-        result = resize_with_pad_torch(img, 224, 224)
+        result = _resize_with_pad_torch(img, 224, 224)
         assert result.shape == (2, 3, 224, 224)
 
     def test_resize_with_pad_3d(self) -> None:
         """Test resize_with_pad with 3D input (no batch dim)."""
-        from physicalai.policies.pi05.preprocessor import resize_with_pad_torch
+        from physicalai.policies.pi05.preprocessor import _resize_with_pad_torch
 
         img = torch.rand(480, 640, 3)  # [H, W, C]
-        result = resize_with_pad_torch(img, 224, 224)
+        result = _resize_with_pad_torch(img, 224, 224)
         assert result.shape == (1, 224, 224, 3)
 
     def test_resize_with_pad_uint8(self) -> None:
         """Test resize_with_pad with uint8 images."""
-        from physicalai.policies.pi05.preprocessor import resize_with_pad_torch
+        from physicalai.policies.pi05.preprocessor import _resize_with_pad_torch
 
         img = torch.randint(0, 256, (2, 480, 640, 3), dtype=torch.uint8)
-        result = resize_with_pad_torch(img, 224, 224)
+        result = _resize_with_pad_torch(img, 224, 224)
         assert result.dtype == torch.uint8
         assert result.shape == (2, 224, 224, 3)
 
     def test_resize_with_pad_unsupported_dtype(self) -> None:
         """Test resize_with_pad raises error for unsupported dtype."""
-        from physicalai.policies.pi05.preprocessor import resize_with_pad_torch
+        from physicalai.policies.pi05.preprocessor import _resize_with_pad_torch
 
         img = torch.rand(2, 480, 640, 3).to(torch.float16)
         with pytest.raises(ValueError, match="Unsupported image dtype"):
-            resize_with_pad_torch(img, 224, 224)
+            _resize_with_pad_torch(img, 224, 224)
 
     def test_create_sinusoidal_pos_embedding_shape(self) -> None:
         """Test sinusoidal positional embedding has correct shape."""

@@ -34,7 +34,7 @@ NORM_MAP = {
 }
 
 
-def pad_vector(vector: torch.Tensor, new_dim: int) -> torch.Tensor:
+def _pad_vector(vector: torch.Tensor, new_dim: int) -> torch.Tensor:
     """Pad the last dimension of a vector to new_dim with zeros.
 
     Returns:
@@ -45,7 +45,7 @@ def pad_vector(vector: torch.Tensor, new_dim: int) -> torch.Tensor:
     return F.pad(vector, (0, new_dim - vector.shape[-1]))
 
 
-def resize_with_pad_torch(  # noqa: PLR0914
+def _resize_with_pad_torch(  # noqa: PLR0914
     images: torch.Tensor,
     height: int,
     width: int,
@@ -159,7 +159,7 @@ class Pi05Preprocessor(torch.nn.Module):
         else:
             self._state_action_normalizer = torch.nn.Identity()
 
-    def forward(self, batch: dict[str, Any]) -> dict[str, Any]:
+    def forward(self, batch: dict[str, Any]) -> dict[str, torch.Tensor]:
         """Process a batch for Pi05 model input.
 
         Args:
@@ -212,12 +212,19 @@ class Pi05Preprocessor(torch.nn.Module):
                 images.append(torch.ones_like(images[-1]) * -1)
                 img_masks.append(torch.zeros_like(img_masks[-1]))
 
+        if images:
+            images = torch.stack(images, dim=0)
+            img_masks = torch.stack(img_masks, dim=0)
+        else:
+            images = torch.empty(0, device=batch[STATE].device)
+            img_masks = torch.empty(0, device=batch[STATE].device)
+
         batch[IMAGES] = images
         batch["image_masks"] = img_masks
 
         # Pad actions if present
         if ACTION in batch and batch[ACTION] is not None:
-            batch[ACTION] = pad_vector(batch[ACTION], self.max_action_dim)
+            batch[ACTION] = _pad_vector(batch[ACTION], self.max_action_dim)
 
         return batch
 
@@ -253,7 +260,7 @@ class Pi05Preprocessor(torch.nn.Module):
 
             # Resize with padding
             if img.shape[1:3] != tuple(self.image_resolution):
-                img = resize_with_pad_torch(img, *self.image_resolution)
+                img = _resize_with_pad_torch(img, *self.image_resolution)
 
             # Normalize [0,1] -> [-1,1]
             img = img * 2.0 - 1.0

@@ -710,8 +710,8 @@ class Pi05Model(nn.Module):
 
     def embed_prefix(
         self,
-        images: list[Tensor],
-        img_masks: list[Tensor],
+        images: Tensor,
+        img_masks: Tensor,
         tokens: Tensor,
         masks: Tensor,
     ) -> tuple[Tensor, Tensor, Tensor]:
