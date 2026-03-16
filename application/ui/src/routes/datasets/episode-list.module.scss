@@ -1,17 +1,26 @@
 .episodePreviewList {
-    padding: 0px;
-    overflow-y: auto;
-    max-height: '100%';
+    height: 100%;
+    width: 250px;
 }
 
 .episodeItem {
     background-color: var(--spectrum-global-color-gray-200);
     padding: 8px;
     margin: 0 var(--spectrum-global-dimension-size-250);
-    margin-bottom: var(--spectrum-global-dimension-size-125);
     border: 2px solid transparent;
     border-radius: 4px;
     position: relative;
+    width: 200px;
+    height: 180px;
+    box-sizing: border-box;
+}
+
+.episodeImage {
+    object-fit: contain;
+    width: 180px;
+    height: 135px;
+    display: block;
+    margin: 0 auto;
 }
 
 .episodeItem:hover {
@@ -24,7 +33,5 @@
 }
 
 .episodeCheckbox {
-    position: absolute;
-    bottom: 0px;
-    right: 0px;
+    padding-right: var(--spectrum-global-dimension-size-50);
 }

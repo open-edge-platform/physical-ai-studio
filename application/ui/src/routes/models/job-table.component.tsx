@@ -1,5 +1,7 @@
-import { Button, Flex, Grid, ProgressBar, Text, View } from '@geti/ui';
+import { ActionButton, Button, Flex, Grid, Item, Key, Menu, MenuTrigger, ProgressBar, Text, View } from '@geti/ui';
+import { MoreMenu } from '@geti/ui/icons';
 
+import { $api } from '../../api/client';
 import { GRID_COLUMNS } from './constants';
 import { SingleBadge, SplitBadge } from './split-badge.component';
 import { SchemaTrainJob } from './train-model-dialog';
@@ -55,6 +57,34 @@ const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
     }
 };
 
+const JobMenu = ({ trainJob }: { trainJob: SchemaTrainJob }) => {
+    const deleteJobMutation = $api.useMutation('delete', '/api/jobs/{job_id}');
+    const onAction = (key: Key) => {
+        const action = key.toString();
+        if (action === 'delete') {
+            deleteJobMutation.mutate({
+                params: { path: { job_id: trainJob.id! } },
+            });
+        }
+    };
+
+    return (
+        <MenuTrigger>
+            <ActionButton
+                isQuiet
+                UNSAFE_style={{ fill: 'var(--spectrum-gray-900)' }}
+                aria-label='Job options'
+                isDisabled={deleteJobMutation.isPending}
+            >
+                <MoreMenu />
+            </ActionButton>
+            <Menu onAction={onAction}>
+                <Item key='delete'>Delete</Item>
+            </Menu>
+        </MenuTrigger>
+    );
+};
+
 export const TrainingRow = ({ trainJob, onInterrupt }: { trainJob: SchemaTrainJob; onInterrupt: () => void }) => {
     const loss = trainJob.extra_info && (trainJob.extra_info['train/loss_step'] as number | undefined);
 
@@ -72,6 +102,11 @@ export const TrainingRow = ({ trainJob, onInterrupt }: { trainJob: SchemaTrainJo
                         </Button>
                     )}
                 </View>
+                {trainJob.status === 'failed' && (
+                    <View>
+                        <JobMenu trainJob={trainJob} />
+                    </View>
+                )}
             </Grid>
 
             {trainJob.status === 'running' && (

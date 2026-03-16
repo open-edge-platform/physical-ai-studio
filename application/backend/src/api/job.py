@@ -5,7 +5,7 @@ from fastapi import APIRouter, Body, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
 from loguru import logger
 
-from api.dependencies import get_event_processor_ws, get_job_service, get_scheduler, validate_uuid
+from api.dependencies import get_event_processor_ws, get_job_id, get_job_service, get_scheduler
 from core.scheduler import Scheduler
 from schemas import Job
 from schemas.job import JobStatus, TrainJobPayload
@@ -23,6 +23,15 @@ async def list_jobs(
     return await job_service.get_job_list()
 
 
+@router.delete("/{job_id}")
+async def delete_job(
+    job_id: Annotated[UUID, Depends(get_job_id)],
+    job_service: Annotated[JobService, Depends(get_job_service)],
+) -> None:
+    """Delete a job. Only allows deleting failed jobs"""
+    await job_service.delete_job(job_id)
+
+
 @router.post(":train")
 async def submit_train_job(
     job_service: Annotated[JobService, Depends(get_job_service)],
@@ -34,7 +43,7 @@ async def submit_train_job(
 
 @router.post("/{job_id}:interrupt")
 async def interrupt_job(
-    job_id: Annotated[UUID, Depends(validate_uuid)],
+    job_id: Annotated[UUID, Depends(get_job_id)],
     job_service: Annotated[JobService, Depends(get_job_service)],
     scheduler: Annotated[Scheduler, Depends(get_scheduler)],
 ) -> None:

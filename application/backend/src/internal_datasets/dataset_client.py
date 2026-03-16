@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from schemas import Episode
+from schemas import Episode, EpisodeInfo
 
 if TYPE_CHECKING:
     from internal_datasets.mutations.recording_mutation import RecordingMutation
@@ -22,12 +22,34 @@ class DatasetClient(ABC):
         """Get episodes of dataset."""
 
     @abstractmethod
+    def get_episode_infos(self) -> list[EpisodeInfo]:
+        """Get episode summaries without heavy frame/action data."""
+
+    @abstractmethod
+    def find_episode(self, episode_index: int) -> Episode | None:
+        """Find episode by index or return None."""
+
+    @abstractmethod
     def get_tasks(self) -> list[str]:
         """Get Tasks in dataset."""
 
     @abstractmethod
     def get_video_path(self, episode: int, camera: str) -> Path:
         """Get Video path of specific episode and camera."""
+
+    @abstractmethod
+    def get_video_keys(self) -> list[str]:
+        """Get the video keys used to record the dataset"""
+
+    @abstractmethod
+    def get_episode_thumbnail_png(
+        self,
+        episode_index: int,
+        video_key: str,
+        width: int = 320,
+        height: int = 240,
+    ) -> tuple[bytes, Path] | None:
+        """Build a PNG thumbnail and return bytes with source video path."""
 
     @abstractmethod
     def create(self, fps: int, features: dict, robot_type: str) -> None:
