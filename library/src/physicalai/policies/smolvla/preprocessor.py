@@ -28,7 +28,7 @@ import torch.nn.functional as F  # noqa: N812
 from physicalai.data import Feature, FeatureType, NormalizationParameters
 from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, TASK, Observation
 from physicalai.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
-from physicalai.policies.utils.prepocess import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
+from physicalai.policies.utils.preprocess import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 
 logger = logging.getLogger(__name__)
 

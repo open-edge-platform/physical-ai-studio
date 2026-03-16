@@ -25,6 +25,7 @@ import torch.nn.functional as F  # noqa: N812
 from physicalai.data import Feature, FeatureType, NormalizationParameters
 from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, Observation
 from physicalai.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
+from physicalai.policies.utils.preprocess import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 
 logger = logging.getLogger(__name__)
 
@@ -200,8 +201,8 @@ class Pi05Preprocessor(torch.nn.Module):
 
         # Tokenize
         tokens, masks = self._tokenize(full_prompts)
-        batch["tokenized_prompt"] = tokens.to(state.device)
-        batch["tokenized_prompt_mask"] = masks.to(state.device)
+        batch[TOKENIZED_PROMPT] = tokens.to(state.device)
+        batch[TOKENIZED_PROMPT_MASK] = masks.to(state.device)
 
         # Preprocess images
         images, img_masks = self._preprocess_images(batch)
@@ -220,7 +221,7 @@ class Pi05Preprocessor(torch.nn.Module):
             img_masks = torch.empty(0, device=batch[STATE].device)
 
         batch[IMAGES] = images
-        batch["image_masks"] = img_masks
+        batch[IMAGE_MASKS] = img_masks
 
         # Pad actions if present
         if ACTION in batch and batch[ACTION] is not None:

@@ -18,6 +18,7 @@ from torch import Tensor, nn
 from transformers.cache_utils import DynamicCache
 
 from physicalai.data.observation import ACTION, IMAGES
+from physicalai.policies.utils.preprocess import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 
 from .pi_gemma import (
     PaliGemmaForConditionalGenerationWithPiGemma,
@@ -816,16 +817,16 @@ class Pi05Model(nn.Module):
         """Training forward pass: compute flow matching loss.
 
         Args:
-            batch: Preprocessed batch dict containing IMAGES, "image_masks",
-                "tokenized_prompt", "tokenized_prompt_mask", and ACTION.
+            batch: Preprocessed batch dict containing IMAGES, IMAGE_MASKS,
+                TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK, and ACTION.
 
         Returns:
             Tuple of (mean loss tensor, loss dict with "loss" key).
         """
         images = batch[IMAGES]
-        img_masks = batch["image_masks"]
-        tokens = batch["tokenized_prompt"]
-        masks = batch["tokenized_prompt_mask"]
+        img_masks = batch[IMAGE_MASKS]
+        tokens = batch[TOKENIZED_PROMPT]
+        masks = batch[TOKENIZED_PROMPT_MASK]
         actions = batch[ACTION]
 
         noise = self.sample_noise(actions.shape, actions.device)
@@ -895,16 +896,16 @@ class Pi05Model(nn.Module):
         """Predict a chunk of actions from a preprocessed batch.
 
         Args:
-            batch: Preprocessed batch dict containing IMAGES, "image_masks",
-                "tokenized_prompt", and "tokenized_prompt_mask".
+            batch: Preprocessed batch dict containing IMAGES, IMAGE_MASKS,
+                TOKENIZED_PROMPT, and TOKENIZED_PROMPT_MASK.
 
         Returns:
             Denoised action tensor, unpadded and clipped to n_action_steps.
         """
         images = batch[IMAGES]
-        img_masks = batch["image_masks"]
-        tokens = batch["tokenized_prompt"]
-        masks = batch["tokenized_prompt_mask"]
+        img_masks = batch[IMAGE_MASKS]
+        tokens = batch[TOKENIZED_PROMPT]
+        masks = batch[TOKENIZED_PROMPT_MASK]
         actions = self.sample_actions(images, img_masks, tokens, masks)
 
         # Unpad actions to actual action dimension
