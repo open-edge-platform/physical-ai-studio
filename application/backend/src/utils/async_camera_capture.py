@@ -1,6 +1,6 @@
 import asyncio
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
@@ -55,14 +55,19 @@ class AsyncCameraCapture:
         self._seq = 0
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="cam")
 
-    async def start(self) -> None:
+    async def start(self, callback_fn: Callable[[np.ndarray], Awaitable[None]] | None = None) -> None:
         """Connect camera and start background capture task."""
         # connect() is sync in your world; keep it off the event loop.
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(self._executor, self.camera.connect)  # same thread as reads
         self._stop_evt.clear()
         if self._task is None:
-            self._task = asyncio.create_task(self._capture_loop(), name="AsyncCameraCaptureLoop")
+            self._task = asyncio.create_task(self._capture_loop(callback_fn), name="AsyncCameraCaptureLoop")
+
+    async def wait(self) -> None:
+        """Block until the capture loop finishes (use after start())."""
+        if self._task is not None:
+            await self._task
 
     async def stop(self) -> None:
         """Stop background task and disconnect camera."""
@@ -97,7 +102,7 @@ class AsyncCameraCapture:
                 seq=seq,
             )
 
-    async def _capture_loop(self) -> None:
+    async def _capture_loop(self, callback_fn: Callable[[np.ndarray], Awaitable[None]] | None = None) -> None:  # noqa: PLR0912
         target_dt = 1.0 / self.fps if self.fps > 0 else 0.0
         logger.info("Start capture loop")
         loop = asyncio.get_running_loop()
@@ -113,6 +118,8 @@ class AsyncCameraCapture:
                 self._last_good_frame = frame
                 self._seq += 1
                 await self._set_latest(frame=frame, ok=True, error=None, seq=self._seq)
+                if callback_fn:
+                    await callback_fn(frame)
 
             except RetryError as e:
                 error = f"retry_exhausted: {e}"
