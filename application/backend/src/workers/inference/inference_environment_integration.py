@@ -1,3 +1,4 @@
+import asyncio
 import base64
 
 import cv2
@@ -45,6 +46,7 @@ class InferenceEnvironmentIntegration:
             await cap.start()
             self.frame_captures[cam_id] = cap
 
+        await asyncio.sleep(1)  # sleep for camera warmup
         await self.follower.connect()
 
     async def set_joints_state(self, actions: dict, goal_time: float) -> None:
