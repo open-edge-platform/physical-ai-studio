@@ -173,7 +173,7 @@ class Export:
             input_sample = self._get_default_export_input_sample()
 
         if input_sample is None:
-            msg = "An input sample must be provided for OpenVINO export, or the model must implement "
+            msg = "An input sample must be provided for ONNX export, or the model must implement "
             "`sample_input` property."
             raise RuntimeError(msg)
 
@@ -305,9 +305,10 @@ class Export:
             - Additional export arguments can be specified through the model's export configuration
               and will be merged with the provided export_kwargs.
         """
-        if input_sample is None and hasattr(self.model, "sample_input"):
-            input_sample = self.model.sample_input
-        elif input_sample is None:
+        if input_sample is None:
+            input_sample = self._get_default_export_input_sample()
+
+        if input_sample is None:
             msg = (
                 "An input sample must be provided for Torch Export IR export, "
                 "or the model must implement `sample_input` property."
