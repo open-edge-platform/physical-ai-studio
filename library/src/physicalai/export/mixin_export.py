@@ -11,6 +11,7 @@ from typing import Any
 
 import lightning
 import openvino
+import openvino_tokenizers
 import torch
 import yaml
 
@@ -26,6 +27,7 @@ class Export:
     """Mixin class for exporting torch model checkpoints."""
 
     model: torch.nn.Module
+    _preprocessor: torch.nn.Module
 
     def _create_metadata(
         self,
@@ -219,9 +221,10 @@ class Export:
             - The model is set to evaluation mode before conversion.
             - Output names can be specified in export_kwargs using the "output" key.
         """
-        if input_sample is None and hasattr(self.model, "sample_input"):
-            input_sample = self.model.sample_input
-        elif input_sample is None:
+        if input_sample is None:
+            input_sample = self._get_default_export_input_sample()
+
+        if input_sample is None:
             msg = "An input sample must be provided for OpenVINO export, or the model must implement "
             "`sample_input` property."
             raise RuntimeError(msg)
@@ -229,37 +232,39 @@ class Export:
         model_path = self._prepare_export_path(output_path, ".xml")
         export_dir = model_path.parent
 
-        extra_model_args = self._get_export_extra_args(ExportBackend.OPENVINO)
-        extra_model_args.update(export_kwargs)
-
         arg_name = self._get_forward_arg_name()
-
-        output_names = extra_model_args.get("output", None)
-        if output_names is not None:
-            extra_model_args.pop("output")
-
-        compress_to_fp16 = extra_model_args.get("compress_to_fp16", None)
-        if compress_to_fp16 is not None:
-            extra_model_args.pop("compress_to_fp16")
-        else:
-            compress_to_fp16 = False
-
         input_shapes = [openvino.Shape(tuple(tensor.shape)) for tensor in input_sample.values()]
 
-        self.model.eval()
+        extra_model_args = self._get_export_extra_args(ExportBackend.OPENVINO)
+        output_names = extra_model_args.get("output", None)
+        compress_to_fp16 = extra_model_args.get("compress_to_fp16", False)
+        export_tokenizer = extra_model_args.get("export_tokenizer", False)
+        extra_export_kwargs = extra_model_args.get("exporter_kwargs", {})
+        preprocessing_type = extra_model_args.get("preprocessing_type", "")
+        extra_export_kwargs.update(export_kwargs)
 
+        self.model.eval()
         ov_model = openvino.convert_model(
             self.model,
             example_input={arg_name: input_sample},
             input=input_shapes,
-            **extra_model_args,
+            **extra_export_kwargs,
         )
         _postprocess_openvino_model(ov_model, output_names)
 
         openvino.save_model(ov_model, str(model_path), compress_to_fp16=compress_to_fp16)
 
+        if export_tokenizer:
+            ov_tokenizer = openvino_tokenizers.convert_tokenizer(
+                self._preprocessor.tokenizer,
+                with_detokenizer=False,
+                max_length=self._preprocessor.max_token_len,
+                use_max_padding=True,
+            )
+            openvino.save_model(ov_tokenizer, export_dir / "tokenizer.xml")
+
         # Create metadata files
-        self._create_metadata(export_dir, ExportBackend.OPENVINO)
+        self._create_metadata(export_dir, ExportBackend.OPENVINO, preprocessing_type=preprocessing_type)
 
     @torch.no_grad()
     def to_torch_export_ir(
@@ -357,6 +362,25 @@ class Export:
         else:
             msg = f"Unsupported export backend: {backend}"
             raise ValueError(msg)
+
+    def _get_default_export_input_sample(self) -> dict[str, torch.Tensor] | None:
+        """Retrieve a default export input sample for the model.
+
+        This method attempts to obtain a sample input from the model if available,
+        processes it through the preprocessor, and filters the result to return only
+        torch.Tensor values.
+
+        Returns:
+            dict[str, torch.Tensor] | None: A dictionary containing string keys mapped to
+                torch.Tensor values extracted from the processed sample input. Returns None
+                if the model does not have a 'sample_input' attribute.
+        """
+        if hasattr(self.model, "sample_input"):
+            input_sample = self.model.sample_input
+            processed_sample = self._preprocessor(input_sample)
+            return {k: v for k, v in processed_sample.items() if isinstance(v, torch.Tensor)}
+
+        return None
 
     def _get_export_extra_args(self, backend: ExportBackend | str) -> dict[str, Any]:
         """Retrieve extra export arguments for a specific format.
