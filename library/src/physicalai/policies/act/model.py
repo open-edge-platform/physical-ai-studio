@@ -249,7 +249,10 @@ class ACT(nn.Module, FromConfig):
         """
         extra_args: dict[str, Any] = {}
         extra_args["onnx"] = {
-            "output_names": ["action"],
+            "exporter_kwargs": {
+                "output_names": ["action"],
+            },
+            "preprocessing_type": "image_resize",
         }
         extra_args["openvino"] = {
             "output": ["action"],

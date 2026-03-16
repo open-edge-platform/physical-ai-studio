@@ -287,7 +287,11 @@ class SmolVLAModel(nn.Module):
         """
         extra_args: dict[str, Any] = {}
         extra_args["onnx"] = {
-            "output_names": ["action"],
+            "export_tokenizer": True,
+            "exporter_kwargs": {
+                "output_names": ["action"],
+            },
+            "preprocessing_type": "smolvla",
         }
         extra_args["openvino"] = {
             "output": ["action"],

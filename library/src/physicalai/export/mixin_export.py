@@ -169,19 +169,22 @@ class Export:
             RuntimeError: If input sample is not provided and the model does not
                 implement `sample_input` property.
         """
-        if input_sample is None and hasattr(self.model, "sample_input"):
-            input_sample = self.model.sample_input
-        elif input_sample is None:
-            msg = (
-                "An input sample must be provided for ONNX export, or the model must implement `sample_input` property."
-            )
+        if input_sample is None:
+            input_sample = self._get_default_export_input_sample()
+
+        if input_sample is None:
+            msg = "An input sample must be provided for OpenVINO export, or the model must implement "
+            "`sample_input` property."
             raise RuntimeError(msg)
 
         model_path = self._prepare_export_path(output_path, ".onnx")
         export_dir = model_path.parent
 
         extra_model_args = self._get_export_extra_args(ExportBackend.ONNX)
-        extra_model_args.update(export_kwargs)
+        export_tokenizer = extra_model_args.get("export_tokenizer", False)
+        extra_export_kwargs = extra_model_args.get("exporter_kwargs", {})
+        preprocessing_type = extra_model_args.get("preprocessing_type", "")
+        extra_export_kwargs.update(export_kwargs)
 
         arg_name = self._get_forward_arg_name()
 
@@ -192,11 +195,18 @@ class Export:
             kwargs={arg_name: input_sample},
             f=str(model_path),
             input_names=list(input_sample.keys()),
-            **extra_model_args,
+            **extra_export_kwargs,
         )
 
+        if export_tokenizer:
+            msg = (
+                "Tokenizer export is not supported for ONNX backend."
+                " Please use OpenVINO backend for exporting tokenizers."
+            )
+            raise RuntimeError(msg)
+
         # Create metadata files
-        self._create_metadata(export_dir, ExportBackend.ONNX)
+        self._create_metadata(export_dir, ExportBackend.ONNX, preprocessing_type=preprocessing_type)
 
     @torch.no_grad()
     def to_openvino(
