@@ -892,8 +892,7 @@ class Pi05Model(nn.Module):
             losses = F.mse_loss(u_t, v_t, reduction="none")
             loss = losses.mean()
             return loss, {"loss": loss.item()}
-        else:
-            return self.predict_action_chunk(batch)
+        return self.predict_action_chunk(batch)
 
     def predict_action_chunk(self, batch: dict[str, Any]) -> Tensor:
         """Predict a chunk of actions from a preprocessed batch.

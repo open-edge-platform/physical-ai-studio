@@ -10,10 +10,12 @@ from pathlib import Path
 from typing import Any
 
 import lightning
+import onnx
 import openvino
 import openvino_tokenizers
 import torch
 import yaml
+from onnxruntime_extensions import gen_processing_models
 
 from physicalai.export.backends import ExportBackend
 from physicalai.train import __version__
@@ -199,11 +201,20 @@ class Export:
         )
 
         if export_tokenizer:
-            msg = (
-                "Tokenizer export is not supported for ONNX backend."
-                " Please use OpenVINO backend for exporting tokenizers."
-            )
-            raise RuntimeError(msg)
+            onnx_tokenizer = gen_processing_models(
+                self._preprocessor.exportable_tokenizer,
+                pre_kwargs={
+                    "padding": "max_length",
+                    "truncation": True,
+                    "max_length": self._preprocessor.max_token_len,
+                },
+            )[0]
+            if onnx_tokenizer is not None:
+                onnx.save(onnx_tokenizer, export_dir / "tokenizer.onnx")
+            else:
+                msg = (
+                    "Failed to convert tokenizer to ONNX format. The tokenizer may not be compatible with ONNX export."
+                )
 
         # Create metadata files
         self._create_metadata(export_dir, ExportBackend.ONNX, preprocessing_type=preprocessing_type)
@@ -266,7 +277,7 @@ class Export:
 
         if export_tokenizer:
             ov_tokenizer = openvino_tokenizers.convert_tokenizer(
-                self._preprocessor.tokenizer,
+                self._preprocessor.exportable_tokenizer,
                 with_detokenizer=False,
                 max_length=self._preprocessor.max_token_len,
                 use_max_padding=True,
