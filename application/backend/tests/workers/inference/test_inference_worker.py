@@ -104,7 +104,8 @@ class TestInferenceWorker:
             "task": None,
             "model_loaded": False,
             "environment_loaded": False,
-            "error": False,
+            "is_recording": False,
+            "dataset_loaded": False
         }
 
     def test_load_environment(self, inference_worker: InferenceWorker, environment_integration, test_environment):

@@ -8,7 +8,7 @@ from physicalai.data import Observation
 
 from robots.robot_client import RobotClient
 from robots.robot_client_factory import RobotClientFactory
-from schemas.environment import EnvironmentWithRelations
+from schemas.environment import EnvironmentWithRelations, TeleoperatorRobotWithRobot
 from utils.async_camera_capture import AsyncCameraCapture
 from workers.camera_worker import create_frames_source_from_camera
 
@@ -32,7 +32,7 @@ class InferenceEnvironmentIntegration:
         robot = self.environment.robots[0]  # TODO: Handle multiple robots?
 
         self.follower = await self.robot_client_factory.build(robot.robot)
-        if robot.tele_operator and robot.tele_operator.robot is not None:
+        if robot.tele_operator is TeleoperatorRobotWithRobot and robot.tele_operator.robot is not None:
             self.leader = await self.robot_client_factory.build(robot.tele_operator.robot)
         self.action_keys = self.follower.features()
 

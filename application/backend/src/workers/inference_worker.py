@@ -76,7 +76,7 @@ class InferenceWorker(BaseThreadWorker):
         self.events = WorkerEvents()
 
     def start_task(self, task: str) -> None:
-        if self.ready_for_inference:
+        if self.state.model_loaded and self.state.environment_loaded:
             if self.model_integration is not None:
                 self.model_integration.reset()
             self.state.is_running = True
