@@ -10,14 +10,14 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import Tensor, nn
 from transformers.cache_utils import DynamicCache
 
-from physicalai.data.observation import ACTION, IMAGES
+from physicalai.data.observation import ACTION, IMAGES, STATE, TASK
 from physicalai.policies.utils.preprocess import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 
 from .pi_gemma import (
@@ -669,6 +669,49 @@ class Pi05Model(nn.Module):
         return extra_args
 
     @property
+    def sample_input(self) -> dict[str, torch.Tensor | str]:
+        """Generate a sample input dictionary for the model with random tensors.
+
+        This method creates a dictionary containing sample input tensors that match the expected
+        input format of the model. The tensors are randomly initialized and have shapes derived
+        from the model's configuration.
+
+        Returns:
+            dict[str, torch.Tensor | dict[str, torch.Tensor]]: A dictionary with two keys
+                - 'state': A tensor representing the robot state with shape (1, *state_feature.shape).
+                - 'images': Either a single tensor or a dictionary of tensors representing visual inputs,
+                    depending on the number of image features configured.
+
+        Note:
+            The batch dimension (first dimension) is set to 1 for all tensors.
+            The tensors are created on the same device as the model's parameters.
+        """
+        device = next(self.paligemma_with_expert.parameters()).device
+
+        sample_input = {}
+
+        num_image_features = sum(1 for key in self._dataset_stats if "image" in key)
+
+        for feature_id in self._dataset_stats:
+            if STATE in feature_id:
+                state_feature = self._dataset_stats[feature_id]
+                sample_input[STATE] = torch.randn(1, *cast("tuple", state_feature["shape"]), device=device)
+            elif "image" in feature_id:
+                image_feature = self._dataset_stats[feature_id]
+                if num_image_features == 1:
+                    sample_input[IMAGES] = torch.randn(1, *cast("tuple", image_feature["shape"]), device=device)
+                else:
+                    sample_input[IMAGES + "." + str(image_feature["name"])] = torch.randn(
+                        1,
+                        *cast("tuple", image_feature["shape"]),
+                        device=device,
+                    )
+
+        sample_input[TASK] = "sample_task"
+
+        return sample_input
+
+    @property
     def reward_delta_indices(self) -> None:
         """Return reward indices.
 
@@ -890,7 +933,7 @@ class Pi05Model(nn.Module):
         Returns:
             Tuple of (mean loss tensor, loss dict with "loss" key).
         """
-        if self.train:
+        if self.training:
             images = batch[IMAGES]
             img_masks = batch[IMAGE_MASKS]
             tokens = batch[TOKENIZED_PROMPT]
