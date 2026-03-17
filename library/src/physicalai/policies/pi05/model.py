@@ -647,7 +647,7 @@ class Pi05Model(nn.Module):
         """
         extra_args: dict[str, Any] = {}
         extra_args["onnx"] = {
-            "export_tokenizer": True,
+            "export_tokenizer": False,
             "exporter_kwargs": {
                 "output_names": ["action"],
             },
@@ -795,9 +795,8 @@ class Pi05Model(nn.Module):
             mean=0.0,
             std=1.0,
             size=shape,
-            dtype=torch.float32,
             device=device,
-        )
+        ).to(dtype=torch.float32)
 
     def sample_time(self, bsize: int, device: torch.device) -> Tensor:
         """Sample time values for the model.
