@@ -3,14 +3,10 @@ import numpy as np
 
 class QueueMixer:
     """
-    QueueMixer class that takes at most two queues and intrapolates between them to
-    gradually move from one to the other.
+    QueueMixer class that merges incoming queues in a gradual way.
+    After receiving a new queue it initially favors the old queue, but slowly moves to new one.
 
     lerp_duration: float => is in duration in index time.
-
-    At first queue it will simply act as a list
-    Once a second queue is added it will slowly move from the first to the second queue.
-    Once it has fully moved to the second queue it will replace the first queue with the second.
     """
 
     queue: np.ndarray | None = None
@@ -25,7 +21,7 @@ class QueueMixer:
             # No queue? Plain set queue without offset
             self.queue = row
         else:
-            # Already have a queue, add new as second queue
+            # Already have a queue merge new queue
             # self.queue = self.merge_queues(self.queue, row[offset:])
             remaining_queue = self.queue[self.index :]
             upcoming_queue = row[offset:]
