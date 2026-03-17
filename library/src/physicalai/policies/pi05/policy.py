@@ -59,7 +59,7 @@ class Pi05(Policy):
         tokenizer_max_length: Maximum tokenizer length. Default: 200.
         gradient_checkpointing: Enable gradient checkpointing. Default: False.
         freeze_vision_encoder: Freeze vision encoder. Default: False.
-        train_expert_only: Train only action expert. Default: False.
+        train_expert_only: Train only action expert. Default: True.
         optimizer_lr: Learning rate. Default: 2.5e-5.
         dataset_stats: Dataset stats for eager initialization. Default: None.
 
@@ -110,7 +110,7 @@ class Pi05(Policy):
         compile_mode: str = "max-autotune",
         # Finetuning
         freeze_vision_encoder: bool = False,
-        train_expert_only: bool = False,
+        train_expert_only: bool = True,
         # Optimizer
         optimizer_lr: float = 2.5e-5,
         optimizer_betas: tuple[float, float] = (0.9, 0.95),

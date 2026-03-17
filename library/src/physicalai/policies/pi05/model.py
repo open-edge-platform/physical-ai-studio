@@ -297,7 +297,7 @@ class PaliGemmaWithExpertModel(nn.Module):
         precision: Literal["bfloat16", "float32"] = "bfloat16",
         image_size: int = 224,
         freeze_vision_encoder: bool = False,  # noqa: FBT001, FBT002
-        train_expert_only: bool = False,  # noqa: FBT001, FBT002
+        train_expert_only: bool = True,  # noqa: FBT001, FBT002
     ) -> None:
         """Initialize PaliGemmaWithExpertModel."""
         if use_adarms is None:
@@ -554,7 +554,7 @@ class Pi05Model(nn.Module):
         max_period: float = 4.0,
         image_resolution: tuple[int, int] = (224, 224),
         freeze_vision_encoder: bool = False,
-        train_expert_only: bool = False,
+        train_expert_only: bool = True,
         compile_model: bool = False,
     ) -> None:
         """Initialize Pi05Model.
@@ -1022,3 +1022,26 @@ class Pi05Model(nn.Module):
         suffix_out = suffix_out[:, -self._chunk_size :]  # type: ignore[index]
         suffix_out = suffix_out.to(dtype=torch.float32)
         return self.action_out_proj(suffix_out)
+
+    @property
+    def sample_input(self) -> dict[str, Any]:
+        """Return a sample input dict for tracing and ONNX export."""
+        bsize = 2
+        num_images = 1
+        num_tokens = 4
+        image_size = self.paligemma_with_expert.paligemma.config.vision_config.image_size
+        max_action_dim = self._max_action_dim
+
+        sample_images = [torch.randn(bsize, 3, image_size, image_size)]
+        sample_img_masks = [torch.ones(bsize, image_size * image_size, dtype=torch.bool)]
+        sample_tokens = torch.randint(0, self.paligemma_with_expert.paligemma.config.text_config.vocab_size, (bsize, num_tokens))
+        sample_masks = torch.ones(bsize, num_tokens, dtype=torch.bool)
+
+        return {
+            IMAGES: sample_images,
+            "image_masks": sample_img_masks,
+            "tokenized_prompt": sample_tokens,
+            "tokenized_prompt_mask": sample_masks,
+            "noise": torch.randn(bsize, self._chunk_size, max_action_dim),
+            "num_steps": self._num_inference_steps,
+        }

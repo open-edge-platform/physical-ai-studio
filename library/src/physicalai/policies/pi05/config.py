@@ -49,7 +49,7 @@ class Pi05Config(Config):
         compile_model: Whether to use torch.compile. Defaults to False.
         compile_mode: Torch compile mode. Defaults to "max-autotune".
         freeze_vision_encoder: Whether to freeze vision encoder during training. Defaults to False.
-        train_expert_only: Whether to train only the action expert. Defaults to False.
+        train_expert_only: Whether to train only the action expert. Defaults to True.
         optimizer_lr: Learning rate for the optimizer. Defaults to 2.5e-5.
         optimizer_betas: Beta coefficients for Adam optimizer. Defaults to (0.9, 0.95).
         optimizer_eps: Epsilon for optimizer numerical stability. Defaults to 1e-8.
@@ -90,7 +90,7 @@ class Pi05Config(Config):
     compile_mode: str = "default"
 
     freeze_vision_encoder: bool = False
-    train_expert_only: bool = False
+    train_expert_only: bool = True
 
     optimizer_lr: float = 2.5e-5
     optimizer_betas: tuple[float, float] = (0.9, 0.95)
