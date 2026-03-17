@@ -133,6 +133,7 @@ class Pi05(Policy):
                 pretrained_name_or_path,
                 n_action_steps=n_action_steps,
                 num_inference_steps=num_inference_steps,
+                max_state_dim=max_state_dim,
                 compile_model=compile_model,
                 compile_mode=compile_mode,
             )
@@ -259,6 +260,7 @@ class Pi05(Policy):
         *,
         n_action_steps: int | None = 10,
         num_inference_steps: int | None = None,
+        max_state_dim: int | None = None,
         compile_model: bool = False,
         compile_mode: str | None = "max-autotune",
         **kwargs: Any,  # noqa: ANN401
@@ -333,19 +335,20 @@ class Pi05(Policy):
         with Path(config_file).open(encoding="utf-8") as f:
             hf_config = json.load(f)
 
-        # from_dict skips unknown keys and coerces lists→tuples via type hints
-        config_kwargs = Pi05Config.from_dict(hf_config).to_dict()
-
-        # Allow caller overrides
+        # Apply caller overrides before from_dict so they get coerced properly
         if n_action_steps is not None:
-            config_kwargs["n_action_steps"] = n_action_steps
+            hf_config["n_action_steps"] = n_action_steps
         if num_inference_steps is not None:
-            config_kwargs["num_inference_steps"] = num_inference_steps
+            hf_config["num_inference_steps"] = num_inference_steps
+        if max_state_dim is not None:
+            hf_config["max_state_dim"] = max_state_dim
         if compile_model is not None:
-            config_kwargs["compile_model"] = compile_model
+            hf_config["compile_model"] = compile_model
         if compile_mode is not None:
-            config_kwargs["compile_mode"] = compile_mode
-        config = Pi05Config(**config_kwargs)
+            hf_config["compile_mode"] = compile_mode
+
+        # from_dict skips unknown keys and coerces lists→tuples via type hints
+        config = Pi05Config.from_dict(hf_config)
 
         # --- build dataset_stats from HF artefacts ---
         dataset_stats = _extract_dataset_stats(hf_config, preprocessor_file, preprocessor_dir)
