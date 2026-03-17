@@ -36,6 +36,8 @@ async def handle_incoming(websocket: WebSocket, process: RobotControlWorker) -> 
                     process.load_model(Model.model_validate(payload["model"]), payload["backend"])
                 case "load_dataset":
                     process.load_dataset(Dataset.model_validate(payload["dataset"]))
+                case "set_follower_source":
+                    process.set_follower_source(payload["follower_source"])
                 case "start_recording":
                     process.start_recording(payload["task"])
                 case "save_episode":

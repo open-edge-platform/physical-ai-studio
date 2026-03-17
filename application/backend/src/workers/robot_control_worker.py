@@ -5,6 +5,7 @@ import time
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
 from pathlib import Path
+from typing import Literal
 
 from loguru import logger
 from pydantic import BaseModel
@@ -24,12 +25,12 @@ from .base import BaseThreadWorker
 
 
 class RobotControlState(BaseModel):
-    is_running: bool = False
     task: str | None = None
     model_loaded: bool = False
     dataset_loaded: bool = False
     environment_loaded: bool = False
     is_recording: bool = False
+    follower_source: Literal["model", "teleoperation"] | None = None
 
 
 class WorkerEvents:
@@ -78,8 +79,8 @@ class RobotControlWorker(BaseThreadWorker):
         if self.state.model_loaded and self.state.environment_loaded:
             if self.model_integration is not None:
                 self.model_integration.reset()
-            self.state.is_running = True
             self.state.task = task
+            self.state.follower_source = "model"
             self.start_episode_t = time.perf_counter()
         self._report_state()
 
@@ -99,12 +100,16 @@ class RobotControlWorker(BaseThreadWorker):
 
     def stop(self) -> None:
         """Stop inference."""
-        self.state.is_running = False
+        self.state.follower_source = None
         self._report_state()
 
     def disconnect(self) -> None:
         """Stop inference and teardown."""
         self.events.interrupt.set()
+
+    def set_follower_source(self, follower_source: Literal["model", "teleoperation"] | None) -> None:
+        self.state.follower_source = follower_source
+        self._report_state()
 
     def load_model(self, model: Model, backend: str) -> None:
         try:
@@ -151,7 +156,6 @@ class RobotControlWorker(BaseThreadWorker):
     async def run_loop(self) -> None:
         """inference loop."""
         try:
-            self.state.is_running = False
             self.start_episode_t = time.perf_counter()
 
             while not self.should_stop() and not self.events.interrupt.is_set():
@@ -164,30 +168,39 @@ class RobotControlWorker(BaseThreadWorker):
                     self._handle_discard_episode(),
                 )
 
+                goal_time = 1 / self.fps
                 start_loop_t = time.perf_counter()
                 if self.environment_integration:
-                    actions = await self.environment_integration.set_follower_position_from_leader(1 / self.fps)
                     observation = await self.environment_integration.get_observation()
                     timestamp = time.perf_counter() - self.start_episode_t
                     if observation:
                         report_observation = self.environment_integration.format_observation_for_reporting(
                             observation, timestamp
                         )
-                        if self.state.is_running and self.model_integration:
-                            dataset_observation = self.environment_integration.format_model_input_observation(
-                                observation, task=self.state.task
-                            )
-                            action = self.model_integration.select_action(dataset_observation)
-                            if action is not None:
-                                formatted_actions = dict(zip(self.environment_integration.action_keys, action))
-                                report_observation["actions"] = formatted_actions
-                                await self.environment_integration.set_joints_state(formatted_actions, 1 / 30)
+
+                        actions = None
+                        match self.state.follower_source:
+                            case "teleoperator":
+                                actions = await self.environment_integration.set_follower_position_from_leader(
+                                    goal_time
+                                )
+                            case "model":
+                                logger.info("Doing model things...")
+                                if self.model_integration:
+                                    dataset_observation = self.environment_integration.format_model_input_observation(
+                                        observation, task=self.state.task
+                                    )
+                                    action = self.model_integration.select_action(dataset_observation)
+                                    if action is not None:
+                                        actions = dict(zip(self.environment_integration.action_keys, action))
+                                        report_observation["actions"] = actions
+                                        await self.environment_integration.set_joints_state(actions, goal_time)
 
                         if (
                             self.state.is_recording
                             and self.ready_for_recording
-                            and actions
                             and self.state.task
+                            and actions
                             and self.recording_mutation
                         ):
                             dataset_observation = self.environment_integration.format_observation_for_dataset(
@@ -196,7 +209,7 @@ class RobotControlWorker(BaseThreadWorker):
                             self.recording_mutation.add_frame(dataset_observation, actions, self.state.task)
                         self._report_observation(report_observation)
                 dt_s = time.perf_counter() - start_loop_t
-                wait_time = 1 / 30 - dt_s
+                wait_time = goal_time - dt_s
 
                 if wait_time > 0:
                     await asyncio.sleep(wait_time)

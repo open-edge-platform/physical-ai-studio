@@ -94,7 +94,7 @@ export const InferenceViewer = ({ environment, model, backend, tasks }: Inferenc
                         ))}
                     </ComboBox>
                     <ButtonGroup>
-                        {state.is_running ? (
+                        {state.follower_source === 'model' ? (
                             <Button variant='primary' isPending={stopTask.isPending} onPress={() => stopTask.mutate()}>
                                 <Pause fill='white' />
                                 Stop

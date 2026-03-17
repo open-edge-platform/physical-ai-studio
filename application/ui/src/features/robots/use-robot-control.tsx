@@ -6,14 +6,16 @@ import { fetchClient } from '../../api/client';
 import { SchemaDatasetOutput, SchemaEnvironmentWithRelations, SchemaModel } from '../../api/openapi-spec';
 import useWebSocketWithResponse from '../../components/websockets/use-websocket-with-response';
 
+type FollowerSource = 'teleoperator' | 'model' | null;
+
 interface RobotControlState {
     model_loaded: boolean;
     environment_loaded: boolean;
-    is_running: boolean;
     task_index: number;
     error: boolean;
     is_recording: boolean;
     dataset_loaded: boolean;
+    follower_source: FollowerSource;
 }
 
 const createRobotControlState = (): RobotControlState => {
@@ -21,10 +23,10 @@ const createRobotControlState = (): RobotControlState => {
         model_loaded: false,
         environment_loaded: false,
         dataset_loaded: false,
-        is_running: false,
         task_index: 0,
         error: false,
         is_recording: false,
+        follower_source: null,
     };
 };
 
@@ -54,9 +56,11 @@ export const useRobotControl = ({ environment, model, dataset, backend, onError 
         loadEnvironment.mutate(environment);
         if (model && backend) {
             loadModel.mutate({ model, backend });
+            setFollowerSource.mutate('model');
         }
         if (dataset) {
             loadDataset.mutate(dataset);
+            setFollowerSource.mutate('teleoperator');
         }
     };
 
@@ -117,7 +121,7 @@ export const useRobotControl = ({ environment, model, dataset, backend, onError 
         mutationFn: async (task: string) =>
             await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'start_task', data: { task } },
-                ({ data }) => data['is_running']
+                ({ data }) => data['follower_source'] === 'model'
             ),
     });
 
@@ -126,7 +130,7 @@ export const useRobotControl = ({ environment, model, dataset, backend, onError 
         mutationFn: async () =>
             await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'stop_task', data: {} },
-                ({ data }) => data['is_running'] == false
+                ({ data }) => data['follower_source'] === null
             ),
     });
 
@@ -160,6 +164,16 @@ export const useRobotControl = ({ environment, model, dataset, backend, onError 
         },
     });
 
+    const setFollowerSource = useMutation({
+        mutationFn: async (follower_source: FollowerSource) => {
+            const message = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
+                { event: 'set_follower_source', data: { follower_source } },
+                ({ data }) => data['follower_source'] == follower_source
+            );
+            return message;
+        },
+    });
+
     const readyForInference = state.environment_loaded && state.model_loaded;
     const readyForRecording = state.environment_loaded && state.dataset_loaded;
     const isConnected = readyState === 1;
@@ -174,6 +188,7 @@ export const useRobotControl = ({ environment, model, dataset, backend, onError 
         stopTask,
         readyForInference,
         readyForRecording,
+        setFollowerSource,
         startEpisode,
         saveEpisode,
         discardEpisode,

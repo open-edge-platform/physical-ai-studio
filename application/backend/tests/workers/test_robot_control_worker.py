@@ -101,12 +101,12 @@ class TestRobotControlWorker:
         report = wait_until_message_from_queue(inference_worker.queue, "state")
         assert report["event"] == "state"
         assert report["data"] == {
-            "is_running": False,
             "task": None,
             "model_loaded": False,
             "environment_loaded": False,
             "is_recording": False,
             "dataset_loaded": False,
+            "follower_source": None,
         }
 
     def test_load_environment(self, inference_worker: RobotControlWorker, environment_integration, test_environment):
@@ -160,7 +160,7 @@ class TestRobotControlWorker:
         worker.start_task("foo")
         report = wait_until_message_from_queue(worker.queue, "state")
         assert report is not None
-        assert report["data"]["is_running"]
+        assert report["data"]["follower_source"] == "model"
         environment_integration.get_observation = AsyncMock(return_value=test_observation)
         wait_until_message_from_queue(worker.queue, "observations")
         model_integration.select_action.assert_called_with(test_observation)
@@ -171,14 +171,14 @@ class TestRobotControlWorker:
         worker = loaded_inference_worker
         worker.start_task("foo")
         report = wait_until_message_from_queue(worker.queue, "state")
-        assert report["data"]["is_running"]
+        assert report["data"]["follower_source"] == "model"
         environment_integration.get_observation = AsyncMock(return_value=test_observation)
         worker.stop()
         # clear existing queue and wait for next observation
         report = wait_until_message_from_queue(worker.queue, "state")
-        assert not report["data"]["is_running"]
+        assert report["data"]["follower_source"] is None
         clear_queue(worker.queue)
-        model_integration.select_action.reset()  # Reset mock of model select action
+        model_integration.select_action.reset_mock()  # Reset mock of model select action
         wait_until_message_from_queue(worker.queue, "observations")
         model_integration.select_action.assert_not_called()
 
@@ -191,3 +191,25 @@ class TestRobotControlWorker:
 
         model_integration.teardown.assert_called()
         environment_integration.teardown.assert_awaited_once()
+
+    def test_starting_task_sets_follower_source_to_model(
+        self, loaded_inference_worker: RobotControlWorker, environment_integration, model_integration, test_observation
+    ):
+        worker = loaded_inference_worker
+        worker.start_task("foo")
+        assert worker.state.follower_source == "model"
+
+    def test_select_follower_input(
+        self, loaded_inference_worker: RobotControlWorker, environment_integration, model_integration, test_observation
+    ):
+        environment_integration.get_observation = AsyncMock(return_value=test_observation)
+        worker = loaded_inference_worker
+        worker.start_task("foo")  # start task automatically sets follower input to model
+        wait_until_message_from_queue(worker.queue, "observations")
+        model_integration.select_action.assert_called_with(test_observation)
+        worker.set_follower_source(None)
+        wait_until_message_from_queue(worker.queue, "state")
+        clear_queue(worker.queue)
+        model_integration.select_action.reset_mock()  # Reset mock of model select action
+        wait_until_message_from_queue(worker.queue, "observations")
+        model_integration.select_action.assert_not_called()
