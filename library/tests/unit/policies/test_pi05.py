@@ -328,54 +328,54 @@ class TestModelUtilities:
 
     def test_create_sinusoidal_pos_embedding_shape(self) -> None:
         """Test sinusoidal positional embedding has correct shape."""
-        from physicalai.policies.pi05.model import create_sinusoidal_pos_embedding
+        from physicalai.policies.pi05.model import _create_sinusoidal_pos_embedding
 
         time = torch.tensor([0.1, 0.5, 0.9])
-        emb = create_sinusoidal_pos_embedding(time, 64, min_period=4e-3, max_period=4.0, device=time.device)
+        emb = _create_sinusoidal_pos_embedding(time, 64, min_period=4e-3, max_period=4.0, device=time.device)
         assert emb.shape == (3, 64)
 
     def test_create_sinusoidal_pos_embedding_odd_dim(self) -> None:
         """Test sinusoidal embedding raises for odd dimension."""
-        from physicalai.policies.pi05.model import create_sinusoidal_pos_embedding
+        from physicalai.policies.pi05.model import _create_sinusoidal_pos_embedding
 
         time = torch.tensor([0.5])
         with pytest.raises(ValueError, match="divisible by 2"):
-            create_sinusoidal_pos_embedding(time, 65, min_period=4e-3, max_period=4.0, device=time.device)
+            _create_sinusoidal_pos_embedding(time, 65, min_period=4e-3, max_period=4.0, device=time.device)
 
     def test_create_sinusoidal_pos_embedding_wrong_ndim(self) -> None:
         """Test sinusoidal embedding raises for wrong ndim."""
-        from physicalai.policies.pi05.model import create_sinusoidal_pos_embedding
+        from physicalai.policies.pi05.model import _create_sinusoidal_pos_embedding
 
         time = torch.tensor([[0.5]])  # 2D instead of 1D
         with pytest.raises(ValueError, match="batch_size"):
-            create_sinusoidal_pos_embedding(time, 64, min_period=4e-3, max_period=4.0, device=time.device)
+            _create_sinusoidal_pos_embedding(time, 64, min_period=4e-3, max_period=4.0, device=time.device)
 
     def test_sample_beta(self) -> None:
         """Test sample_beta returns correct shape."""
-        from physicalai.policies.pi05.model import sample_beta
+        from physicalai.policies.pi05.model import _sample_beta
 
-        result = sample_beta(1.5, 1.0, 4, torch.device("cpu"))
+        result = _sample_beta(1.5, 1.0, 4, torch.device("cpu"))
         assert result.shape == (4,)
         assert (result >= 0).all() and (result <= 1).all()
 
     def test_make_att_2d_masks_shape(self) -> None:
         """Test make_att_2d_masks returns correct shape."""
-        from physicalai.policies.pi05.model import make_att_2d_masks
+        from physicalai.policies.pi05.model import _make_att_2d_masks
 
         pad_masks = torch.ones(2, 10, dtype=torch.bool)
         att_masks = torch.zeros(2, 10, dtype=torch.bool)
-        result = make_att_2d_masks(pad_masks, att_masks)
+        result = _make_att_2d_masks(pad_masks, att_masks)
         assert result.shape == (2, 10, 10)
         assert result.dtype == torch.bool
 
     def test_make_att_2d_masks_wrong_ndim(self) -> None:
         """Test make_att_2d_masks raises for wrong ndim."""
-        from physicalai.policies.pi05.model import make_att_2d_masks
+        from physicalai.policies.pi05.model import _make_att_2d_masks
 
         pad_masks = torch.ones(2, 3, 10, dtype=torch.bool)  # 3D
         att_masks = torch.zeros(2, 10, dtype=torch.bool)
         with pytest.raises(ValueError, match="2D"):
-            make_att_2d_masks(pad_masks, att_masks)
+            _make_att_2d_masks(pad_masks, att_masks)
 
     def test_get_gemma_config_300m(self) -> None:
         """Test get_gemma_config for gemma_300m variant."""

@@ -64,7 +64,7 @@ def _get_safe_dtype(
     return target_dtype
 
 
-def create_sinusoidal_pos_embedding(
+def _create_sinusoidal_pos_embedding(
     time: torch.Tensor,
     dimension: int,
     min_period: float,
@@ -100,7 +100,7 @@ def create_sinusoidal_pos_embedding(
     return torch.cat([torch.sin(sin_input), torch.cos(sin_input)], dim=1)
 
 
-def sample_beta(
+def _sample_beta(
     alpha: float,
     beta: float,
     bsize: int,
@@ -117,7 +117,7 @@ def sample_beta(
     return dist.sample((bsize,)).to(device)
 
 
-def make_att_2d_masks(
+def _make_att_2d_masks(
     pad_masks: Tensor,
     att_masks: Tensor,
 ) -> Tensor:
@@ -160,7 +160,7 @@ def _clone_kv_cache(past_key_values: DynamicCache) -> DynamicCache:
     return cloned
 
 
-def compute_layer_complete(  # noqa: PLR0914
+def _compute_layer_complete(  # noqa: PLR0914
     layer_idx: int,
     inputs_embeds: list[Tensor],
     attention_mask: Tensor,
@@ -479,7 +479,7 @@ class PaliGemmaWithExpertModel(nn.Module):
             for layer_idx in range(num_layers):
                 if use_gradient_checkpointing:
                     inputs_embeds = torch.utils.checkpoint.checkpoint(
-                        compute_layer_complete,
+                        _compute_layer_complete,
                         layer_idx,
                         inputs_embeds,
                         attention_mask,
@@ -491,7 +491,7 @@ class PaliGemmaWithExpertModel(nn.Module):
                         gemma_expert=self.gemma_expert,
                     )
                 else:
-                    inputs_embeds = compute_layer_complete(
+                    inputs_embeds = _compute_layer_complete(
                         layer_idx,
                         inputs_embeds,
                         attention_mask,
@@ -630,6 +630,44 @@ class Pi05Model(nn.Module):
             self.sample_actions = torch.compile(self.sample_actions, mode=compile_mode)  # type: ignore[method-assign]
             self.forward = torch.compile(self.forward, mode=compile_mode)  # type: ignore[method-assign]
 
+    @property
+    def extra_export_args(self) -> dict:
+        """Additional export arguments for model conversion.
+
+        This property provides extra configuration parameters needed when exporting
+        the model to different formats, particularly ONNX format.
+
+        Returns:
+            dict: A dictionary containing format-specific export arguments.
+
+        Example:
+            >>> extra_args = model.extra_export_args()
+            >>> print(extra_args)
+            {'onnx': {'output_names': ['action']}}
+        """
+        extra_args: dict[str, Any] = {}
+        extra_args["onnx"] = {
+            "export_tokenizer": True,
+            "exporter_kwargs": {
+                "output_names": ["action"],
+            },
+            "preprocessing_type": "pi05",
+        }
+        extra_args["openvino"] = {
+            "output": ["action"],
+            "compress_to_fp16": True,
+            "export_tokenizer": True,
+            "exporter_kwargs": {},
+            "preprocessing_type": "pi05",
+        }
+        extra_args["torch_export_ir"] = {}
+        extra_args["torch"] = {
+            "input_names": ["observation"],
+            "output_names": ["action"],
+        }
+
+        return extra_args
+
     def gradient_checkpointing_enable(self) -> None:
         """Enable gradient checkpointing for memory optimization."""
         self.gradient_checkpointing_enabled = True
@@ -700,7 +738,7 @@ class Pi05Model(nn.Module):
             beta = self._time_sampling_beta_beta
             time_beta = torch.full((bsize,), alpha / (alpha + beta), device=device, dtype=torch.float32)  # Beta mean
         else:
-            time_beta = sample_beta(
+            time_beta = _sample_beta(
                 self._time_sampling_beta_alpha,
                 self._time_sampling_beta_beta,
                 bsize,
@@ -772,7 +810,7 @@ class Pi05Model(nn.Module):
         pad_masks = []
         att_masks = []
 
-        time_emb = create_sinusoidal_pos_embedding(
+        time_emb = _create_sinusoidal_pos_embedding(
             timestep,
             self.action_in_proj.out_features,
             min_period=self._min_period,
@@ -850,7 +888,7 @@ class Pi05Model(nn.Module):
             pad_masks_combined = torch.cat([prefix_pad_masks, suffix_pad_masks], dim=1)
             att_masks_combined = torch.cat([prefix_att_masks, suffix_att_masks], dim=1)
 
-            att_2d_masks = make_att_2d_masks(pad_masks_combined, att_masks_combined)
+            att_2d_masks = _make_att_2d_masks(pad_masks_combined, att_masks_combined)
             position_ids = torch.cumsum(pad_masks_combined, dim=1) - 1
 
             att_2d_masks_4d = self._prepare_attention_masks_4d(att_2d_masks)
@@ -947,7 +985,7 @@ class Pi05Model(nn.Module):
             noise = self.sample_noise(actions_shape, device)
 
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, tokens, masks)
-        prefix_att_2d_masks = make_att_2d_masks(prefix_pad_masks, prefix_att_masks)
+        prefix_att_2d_masks = _make_att_2d_masks(prefix_pad_masks, prefix_att_masks)
         prefix_position_ids = torch.cumsum(prefix_pad_masks, dim=1) - 1
 
         prefix_att_2d_masks_4d = self._prepare_attention_masks_4d(prefix_att_2d_masks)
@@ -998,7 +1036,7 @@ class Pi05Model(nn.Module):
         prefix_len = prefix_pad_masks.shape[1]
 
         prefix_pad_2d_masks = prefix_pad_masks[:, None, :].expand(batch_size, suffix_len, prefix_len)
-        suffix_att_2d_masks = make_att_2d_masks(suffix_pad_masks, suffix_att_masks)
+        suffix_att_2d_masks = _make_att_2d_masks(suffix_pad_masks, suffix_att_masks)
         full_att_2d_masks = torch.cat([prefix_pad_2d_masks, suffix_att_2d_masks], dim=2)
 
         prefix_offsets = torch.sum(prefix_pad_masks, dim=-1)[:, None]
