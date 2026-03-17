@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID
@@ -5,15 +6,27 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi.responses import FileResponse
 from loguru import logger
+from starlette.background import BackgroundTask
 
-from api.dependencies import HTTPException, get_dataset_id, get_dataset_service, get_episode_thumbnail_service
+from api.dependencies import (
+    HTTPException,
+    get_dataset_download_service,
+    get_dataset_id,
+    get_dataset_service,
+    get_episode_thumbnail_service,
+)
 from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
 from internal_datasets.mutations.delete_episode_mutation import DeleteEpisodesMutation
 from internal_datasets.utils import get_internal_dataset
 from schemas import Dataset, Episode, EpisodeInfo
-from services import DatasetService, EpisodeThumbnailService
+from services import DatasetDownloadService, DatasetService, EpisodeThumbnailService
 
 router = APIRouter(prefix="/api/dataset", tags=["Dataset"])
+
+
+def _safe_archive_name(name: str) -> str:
+    sanitized = re.sub(r"[^A-Za-z0-9_.-]+", "-", name).strip(".-")
+    return sanitized or "dataset"
 
 
 @router.get("/{dataset_id}")
@@ -125,6 +138,29 @@ async def dataset_video_endpoint(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
 
     return FileResponse(requested_path)
+
+
+@router.get("/{dataset_id}/download")
+async def dataset_download_endpoint(
+    dataset_id: Annotated[UUID, Depends(get_dataset_id)],
+    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
+    dataset_download_service: Annotated[DatasetDownloadService, Depends(get_dataset_download_service)],
+) -> FileResponse:
+    """Download dataset folder as a zip archive."""
+    dataset = await dataset_service.get_dataset_by_id(dataset_id)
+    dataset_path = Path(dataset.path).resolve()
+
+    if not dataset_path.exists() or not dataset_path.is_dir():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset path not found.")
+
+    archive_path = dataset_download_service.create_dataset_archive(dataset_path)
+    filename = f"{_safe_archive_name(dataset.name)}.zip"
+    return FileResponse(
+        archive_path,
+        media_type="application/zip",
+        filename=filename,
+        background=BackgroundTask(archive_path.unlink, missing_ok=True),
+    )
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

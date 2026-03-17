@@ -21,6 +21,7 @@ import { SchemaDatasetOutput } from '../../api/openapi-spec';
 import { useProject, useProjectId } from '../../features/projects/use-project';
 import { paths } from '../../router';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
+import { DatasetDownloadButton } from './dataset-download-button';
 import { DatasetProvider } from './dataset-provider';
 import { DatasetViewer } from './dataset-viewer';
 import { NewDatasetDialogContainer, NewDatasetLink } from './new-dataset.component';
@@ -61,8 +62,8 @@ const Datasets = ({ datasets }: DatasetsProps) => {
     return (
         <Flex height='100%'>
             <Tabs onSelectionChange={onSelectionChange} selectedKey={dataset_id} flex='1' margin={'size-200'}>
-                <Flex alignItems={'end'}>
-                    <TabList flex={1}>
+                <Flex>
+                    <TabList flex='1 1 auto' minWidth='0px'>
                         {[
                             ...datasets.map((data) => (
                                 <Item
@@ -79,6 +80,19 @@ const Datasets = ({ datasets }: DatasetsProps) => {
                             </Item>,
                         ]}
                     </TabList>
+
+                    {dataset_id && (
+                        <View
+                            borderBottomColor={'gray-300'}
+                            borderBottomWidth={'thick'}
+                            UNSAFE_style={{
+                                display: 'flex',
+                                flex: '0 0 auto',
+                            }}
+                        >
+                            <DatasetDownloadButton datasetId={dataset_id} />
+                        </View>
+                    )}
                 </Flex>
                 <TabPanels UNSAFE_style={{ border: 'none' }} marginTop={'size-200'}>
                     <Item key={dataset_id}>
