@@ -20,9 +20,9 @@ import { ErrorMessage } from '../../../components/error-page/error-page';
 import { useProjectId } from '../../../features/projects/use-project';
 import { RobotViewer } from '../../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
+import { Observation, useRobotControl } from '../../../features/robots/use-robot-control';
 import { paths } from '../../../router';
 import { CameraView } from '../../datasets/camera-view';
-import { Observation, useInference } from './use-inference';
 
 interface InferenceViewerProps {
     environment: SchemaEnvironmentWithRelations;
@@ -47,14 +47,12 @@ export const InferenceViewer = ({ environment, model, backend, tasks }: Inferenc
 
     const [task, setTask] = useState<string>(tasks[0] ?? '');
 
-    const { observation, readyForInference, state, startTask, stopTask } = useInference(
-        {
-            environment,
-            model,
-            backend,
-            onError: ToastQueue.negative
-        }
-    );
+    const { observation, readyForInference, state, startTask, stopTask } = useRobotControl({
+        environment,
+        model,
+        backend,
+        onError: ToastQueue.negative,
+    });
 
     const visualisation_source = getVisualisationSourceFromObservation(observation.current);
 

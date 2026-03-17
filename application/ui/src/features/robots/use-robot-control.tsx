@@ -2,11 +2,11 @@ import { useRef, useState } from 'react';
 
 import { useMutation } from '@tanstack/react-query';
 
-import { fetchClient } from '../../../api/client';
-import { SchemaDatasetOutput, SchemaEnvironmentWithRelations, SchemaModel } from '../../../api/openapi-spec';
-import useWebSocketWithResponse from '../../../components/websockets/use-websocket-with-response';
+import { fetchClient } from '../../api/client';
+import { SchemaDatasetOutput, SchemaEnvironmentWithRelations, SchemaModel } from '../../api/openapi-spec';
+import useWebSocketWithResponse from '../../components/websockets/use-websocket-with-response';
 
-interface InferenceState {
+interface RobotControlState {
     model_loaded: boolean;
     environment_loaded: boolean;
     is_running: boolean;
@@ -16,7 +16,7 @@ interface InferenceState {
     dataset_loaded: boolean;
 }
 
-const createInferenceState = (): InferenceState => {
+const createRobotControlState = (): RobotControlState => {
     return {
         model_loaded: false,
         environment_loaded: false,
@@ -28,7 +28,7 @@ const createInferenceState = (): InferenceState => {
     };
 };
 
-interface InferenceApiJsonResponse<T> {
+interface RobotControlApiJsonResponse<T> {
     event: string;
     data: T;
 }
@@ -39,15 +39,15 @@ export interface Observation {
     cameras: { [key: string]: string };
 }
 
-interface useInferenceProps {
+interface useRobotControlProps {
     environment: SchemaEnvironmentWithRelations;
     model?: SchemaModel;
     dataset?: SchemaDatasetOutput;
     backend?: string;
     onError: (error: string) => void;
 }
-export const useInference = ({environment, model, dataset, backend, onError}: useInferenceProps) => {
-    const [state, setState] = useState<InferenceState>(createInferenceState());
+export const useRobotControl = ({ environment, model, dataset, backend, onError }: useRobotControlProps) => {
+    const [state, setState] = useState<RobotControlState>(createRobotControlState());
     const observation = useRef<Observation | undefined>(undefined);
 
     const onOpen = () => {
@@ -66,18 +66,18 @@ export const useInference = ({environment, model, dataset, backend, onError}: us
             shouldReconnect: () => true,
             onMessage: (event: WebSocketEventMap['message']) => onMessage(event),
             onError: console.error,
-            onClose: () => setState(createInferenceState()),
+            onClose: () => setState(createRobotControlState()),
             onOpen,
         }
     );
 
     const onMessage = ({ data }: WebSocketEventMap['message']) => {
-        const message = JSON.parse(data) as InferenceApiJsonResponse<unknown>;
+        const message = JSON.parse(data) as RobotControlApiJsonResponse<unknown>;
         if (message['event'] === 'observations') {
             observation.current = message['data'] as Observation;
         }
         if (message['event'] === 'state') {
-            setState(message['data'] as InferenceState);
+            setState(message['data'] as RobotControlState);
         }
 
         if (message['event'] === 'error') {
@@ -87,9 +87,9 @@ export const useInference = ({environment, model, dataset, backend, onError}: us
 
     const loadDataset = useMutation({
         meta: { skipInvalidation: true },
-        mutationFn: async (dataset: SchemaDatasetOutput) =>
-            await sendJsonMessageAndWait<InferenceApiJsonResponse<InferenceState>>(
-                { event: 'load_dataset', data: { dataset } },
+        mutationFn: async (datasetConfig: SchemaDatasetOutput) =>
+            await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
+                { event: 'load_dataset', data: { dataset: datasetConfig } },
                 (data) => data['data']['dataset_loaded']
             ),
     });
@@ -97,7 +97,7 @@ export const useInference = ({environment, model, dataset, backend, onError}: us
     const loadEnvironment = useMutation({
         meta: { skipInvalidation: true },
         mutationFn: async (env: SchemaEnvironmentWithRelations) =>
-            await sendJsonMessageAndWait<InferenceApiJsonResponse<InferenceState>>(
+            await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'load_environment', data: { environment: env } },
                 (data) => data['data']['environment_loaded']
             ),
@@ -106,7 +106,7 @@ export const useInference = ({environment, model, dataset, backend, onError}: us
     const loadModel = useMutation({
         meta: { skipInvalidation: true },
         mutationFn: async (properties: { model: SchemaModel; backend: string }) =>
-            await sendJsonMessageAndWait<InferenceApiJsonResponse<InferenceState>>(
+            await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'load_model', data: properties },
                 ({ data }) => data['model_loaded']
             ),
@@ -115,8 +115,8 @@ export const useInference = ({environment, model, dataset, backend, onError}: us
     const startTask = useMutation({
         meta: { skipInvalidation: true },
         mutationFn: async (task: string) =>
-            await sendJsonMessageAndWait<InferenceApiJsonResponse<InferenceState>>(
-                { event: 'start_task', data: { task }},
+            await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
+                { event: 'start_task', data: { task } },
                 ({ data }) => data['is_running']
             ),
     });
@@ -124,7 +124,7 @@ export const useInference = ({environment, model, dataset, backend, onError}: us
     const stopTask = useMutation({
         meta: { skipInvalidation: true },
         mutationFn: async () =>
-            await sendJsonMessageAndWait<InferenceApiJsonResponse<InferenceState>>(
+            await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'stop_task', data: {} },
                 ({ data }) => data['is_running'] == false
             ),
@@ -132,8 +132,8 @@ export const useInference = ({environment, model, dataset, backend, onError}: us
 
     const startEpisode = useMutation({
         mutationFn: async (task: string) => {
-            const message = await sendJsonMessageAndWait<InferenceApiJsonResponse<InferenceState>>(
-                { event: 'start_recording', data: { task} },
+            const message = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
+                { event: 'start_recording', data: { task } },
                 ({ data }) => data['is_recording'] == true
             );
             return message;
@@ -142,7 +142,7 @@ export const useInference = ({environment, model, dataset, backend, onError}: us
 
     const saveEpisode = useMutation({
         mutationFn: async () => {
-            const message = await sendJsonMessageAndWait<InferenceApiJsonResponse<InferenceState>>(
+            const message = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'save_episode', data: {} },
                 ({ data }) => data['is_recording'] == false
             );
@@ -152,7 +152,7 @@ export const useInference = ({environment, model, dataset, backend, onError}: us
 
     const discardEpisode = useMutation({
         mutationFn: async () => {
-            const message = await sendJsonMessageAndWait<InferenceApiJsonResponse<InferenceState>>(
+            const message = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'discard_episode', data: {} },
                 ({ data }) => data['is_recording'] == false
             );

@@ -2,9 +2,9 @@ from multiprocessing.synchronize import Event as EventClass
 
 from physicalai.data import Observation
 
-from schemas import Model
 from control.inference_poller import InferencePoller
 from control.queue_mixer import QueueMixer
+from schemas import Model
 from workers.model_worker import ModelWorker
 
 

@@ -3,13 +3,12 @@ from multiprocessing import Event, Queue
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from tests.queue_utils import clear_queue, thread_flush, wait_until_message_from_queue
 
-from schemas.environment import EnvironmentWithRelations
 from control.environment_integration import EnvironmentIntegration
 from control.sync_mixed_model_integration import SyncMixedModelIntegration
+from schemas.environment import EnvironmentWithRelations
 from workers.robot_control_worker import RobotControlWorker
-
-from tests.queue_utils import clear_queue, thread_flush, wait_until_message_from_queue
 
 
 @pytest.fixture

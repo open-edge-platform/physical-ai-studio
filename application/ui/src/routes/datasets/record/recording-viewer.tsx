@@ -1,28 +1,36 @@
 import { useEffect } from 'react';
 
-import { Button, ButtonGroup, Flex, Heading, Keyboard, ProgressCircle, StatusLight, Text, ToastQueue, View } from '@geti/ui';
+import { Button, ButtonGroup, Flex, Heading, Keyboard, ProgressCircle, StatusLight, Text, ToastQueue } from '@geti/ui';
 
 import { SchemaTeleoperationConfig } from '../../../api/openapi-spec';
 import { RobotViewer } from '../../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
+import { Observation, useRobotControl } from '../../../features/robots/use-robot-control';
 import { paths } from '../../../router';
 import { CameraView } from './../camera-view';
 
 import classes from './recording-viewer.module.scss';
-import { useInference } from '../../models/inference/use-inference';
 
 interface RecordingViewerProps {
     recordingConfig: SchemaTeleoperationConfig;
 }
 
+const getActionObservationSource = (observation?: Observation): { [joint: string]: number } | undefined => {
+    if (observation === undefined) {
+        return undefined;
+    }
+    if (observation.actions !== null) {
+        return observation.actions;
+    }
+    return observation.state;
+};
+
 export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
-    const { observation, state, startEpisode, discardEpisode, saveEpisode, readyForRecording } = useInference(
-        {
-            environment: recordingConfig.environment,
-            dataset: recordingConfig.dataset,
-            onError: ToastQueue.negative
-        }
-    );
+    const { observation, state, startEpisode, discardEpisode, saveEpisode, readyForRecording } = useRobotControl({
+        environment: recordingConfig.environment,
+        dataset: recordingConfig.dataset,
+        onError: ToastQueue.negative,
+    });
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -34,14 +42,14 @@ export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
                 }
             } else if (e.key === 'ArrowLeft') {
                 if (state.is_recording && !saveEpisode.isPending) {
-                    discardEpisode.mutate()
+                    discardEpisode.mutate();
                 }
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [state.is_recording, saveEpisode, startEpisode, discardEpisode]);
+    }, [state.is_recording, saveEpisode, startEpisode, discardEpisode, recordingConfig.task]);
 
     const robots = (recordingConfig.environment.robots ?? []).map(({ robot }) => robot);
 
@@ -67,9 +75,9 @@ export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
             </Flex>
         );
     }
-
-    const action_values = observation.current === undefined ? undefined : Object.values(observation.current['state']); // TODO: Use actions?
-    const action_keys = observation.current === undefined ? undefined : Object.keys(observation.current['state']);
+    const observation_source = getActionObservationSource(observation.current);
+    const action_values = observation_source === undefined ? undefined : Object.values(observation_source);
+    const action_keys = observation_source === undefined ? undefined : Object.keys(observation_source);
 
     return (
         <RobotModelsProvider>
@@ -86,7 +94,11 @@ export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
                 </Flex>
                 {state.is_recording ? (
                     <ButtonGroup alignSelf='end'>
-                        <Button isDisabled={saveEpisode.isPending} variant={'negative'} onPress={() => discardEpisode.mutate()}>
+                        <Button
+                            isDisabled={saveEpisode.isPending}
+                            variant={'negative'}
+                            onPress={() => discardEpisode.mutate()}
+                        >
                             <Text>Discard</Text>
                             <Keyboard UNSAFE_className={classes.hotkey}>←</Keyboard>
                         </Button>
