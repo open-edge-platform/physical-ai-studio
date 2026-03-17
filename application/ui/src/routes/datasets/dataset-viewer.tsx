@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import {
     ActionButton,
@@ -15,7 +15,9 @@ import {
     View,
 } from '@geti/ui';
 import { Add, Delete } from '@geti/ui/icons';
+import { useQuery } from '@tanstack/react-query';
 
+import { SchemaEpisode } from '../../api/openapi-spec';
 import { useDeleteEpisodeQuery } from '../../features/datasets/episodes/use-episodes';
 import { paths } from '../../router';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
@@ -27,7 +29,37 @@ export const DatasetViewer = () => {
     const { dataset, episodes, selectedEpisodes, setSelectedEpisodes } = useDataset();
 
     const { deleteEpisodes, isPending } = useDeleteEpisodeQuery(dataset.id!);
-    const [currentEpisode, setCurrentEpisode] = useState<number>(0);
+    const [currentEpisode, setCurrentEpisode] = useState<number | null>(null);
+
+    useEffect(() => {
+        if (episodes.length > 0 && currentEpisode === null) {
+            setCurrentEpisode(episodes[0].episode_index);
+        }
+    }, [episodes, currentEpisode]);
+
+    const currentEpisodeIndex = useMemo(() => {
+        if (currentEpisode !== null && episodes.some((episode) => episode.episode_index === currentEpisode)) {
+            return currentEpisode;
+        }
+
+        return episodes[0]?.episode_index ?? null;
+    }, [currentEpisode, episodes]);
+
+    const { data: selectedEpisode, isLoading: isEpisodeLoading } = useQuery({
+        queryKey: ['dataset-episode', dataset.id, currentEpisodeIndex],
+        enabled: currentEpisodeIndex !== null,
+        queryFn: async (): Promise<SchemaEpisode> => {
+            const response = await fetch(
+                `/api/dataset/${encodeURIComponent(dataset.id!)}/episodes/${encodeURIComponent(currentEpisodeIndex!)}`
+            );
+
+            if (!response.ok) {
+                throw new Error(`Failed to load episode ${currentEpisodeIndex}`);
+            }
+
+            return (await response.json()) as SchemaEpisode;
+        },
+    });
 
     const recordPath = paths.project.datasets.record({ project_id: dataset.project_id, dataset_id: dataset.id! });
 
@@ -52,7 +84,11 @@ export const DatasetViewer = () => {
         <Flex direction={'row'} height={'100%'} flex gap={'size-100'}>
             {isPending && <Loading mode='overlay' />}
             <View flex={1}>
-                <EpisodeViewer episode={episodes[currentEpisode]} dataset={dataset} />
+                {isEpisodeLoading || !selectedEpisode ? (
+                    <Loading />
+                ) : (
+                    <EpisodeViewer episode={selectedEpisode} dataset={dataset} />
+                )}
             </View>
             <Divider orientation='vertical' size='S' />
             <Flex direction='column'>
@@ -87,7 +123,11 @@ export const DatasetViewer = () => {
                         </DialogTrigger>
                     </Flex>
                 )}
-                <EpisodeList episodes={episodes} onSelect={setCurrentEpisode} currentEpisode={currentEpisode} />
+                <EpisodeList
+                    episodes={episodes}
+                    onSelect={setCurrentEpisode}
+                    currentEpisode={currentEpisodeIndex ?? -1}
+                />
             </Flex>
         </Flex>
     );

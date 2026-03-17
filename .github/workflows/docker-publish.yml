@@ -40,7 +40,7 @@ jobs:
           echo "short-sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to Container Registry
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -48,7 +48,7 @@ jobs:
 
       - name: Extract metadata (tags, labels)
         id: meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
         with:
           images: ghcr.io/open-edge-platform/physical-ai-studio-${{ matrix.device }}
           tags: |
@@ -74,6 +74,6 @@ jobs:
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Sign Docker image
-        uses: open-edge-platform/geti-ci/actions/sign-image@9b1ef60a8b2b802da428621e192c322960f4b3d5
+        uses: open-edge-platform/geti-ci/actions/sign-image@cc6fbe840db6ebd16ebd18d409f475bff5a8c182
         with:
           image-uri: ${{ steps.primary-tag.outputs.tag }}

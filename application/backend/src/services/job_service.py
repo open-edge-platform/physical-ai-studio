@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 
 from db import get_async_db_session_ctx
-from exceptions import DuplicateJobException, ResourceNotFoundError, ResourceType
+from exceptions import DuplicateJobException, ResourceInUseError, ResourceNotFoundError, ResourceType
 from repositories import JobRepository
 from schemas import Job
 from schemas.job import JobStatus, JobType, TrainJobPayload
@@ -74,3 +74,16 @@ class JobService:
             if status in {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELED}:
                 updates["end_time"] = datetime.datetime.now(tz=datetime.UTC)
             return await repo.update(job, updates)
+
+    @staticmethod
+    async def delete_job(job_id: UUID) -> None:
+        async with get_async_db_session_ctx() as session:
+            repo = JobRepository(session)
+            job: Job | None = await repo.get_by_id(job_id)
+            if job is None:
+                raise ResourceNotFoundError(ResourceType.JOB, str(job_id))
+
+            if job.status != "failed":
+                raise ResourceInUseError(ResourceType.JOB, str(job_id))
+
+            await repo.delete_by_id(job_id)

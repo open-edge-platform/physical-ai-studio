@@ -1,12 +1,19 @@
 import { createContext, Dispatch, ReactNode, SetStateAction, useContext, useState } from 'react';
 
 import { $api } from '../../api/client';
-import { SchemaDatasetOutput, SchemaEpisode } from '../../api/openapi-spec';
+import { SchemaDatasetOutput } from '../../api/openapi-spec';
+
+type EpisodeSummary = {
+    episode_index: number;
+    tasks: string[];
+    length: number;
+    fps: number;
+};
 
 type DatasetContextValue = null | {
     dataset_id: string;
     dataset: SchemaDatasetOutput;
-    episodes: SchemaEpisode[];
+    episodes: EpisodeSummary[];
     setSelectedEpisodes: Dispatch<SetStateAction<number[]>>;
     selectedEpisodes: number[];
 };
@@ -55,3 +62,5 @@ export const useDataset = () => {
     if (!ctx) throw new Error('useDataset must be used within DatasetProvider');
     return ctx;
 };
+
+export type { EpisodeSummary };
