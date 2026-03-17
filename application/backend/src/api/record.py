@@ -136,31 +136,27 @@ async def inference_websocket(
         try:
             while True:
                 data = await websocket.receive_json("text")
-                if data["event"] == "load_environment":
-                    environment = EnvironmentWithRelations.model_validate(data["data"]["environment"])
-                    process.load_environment(environment)
-                if data["event"] == "load_model":
-                    model = Model.model_validate(data["data"]["model"])
-                    backend = data["data"]["backend"]
-                    process.load_model(model, backend)
-                if data["event"] == "load_dataset":
-                    dataset = Dataset.model_validate(data["data"]["dataset"])
-                    process.load_dataset(dataset)
-                if data["event"] == "start_recording":
-                    task = data["data"]["task"]
-                    process.start_recording(task)
-                if data["event"] == "save_episode":
-                    process.save_episode()
-                if data["event"] == "discard_episode":
-                    process.discard_episode()
-                if data["event"] == "start_task":
-                    task = data["data"]["task"]
-                    process.start_task(task)
-                if data["event"] == "stop_task":
-                    process.stop()
-                if data["event"] == "disconnect":
-                    process.disconnect()
-                    break
+                payload = data.get("data", {})
+                match data["event"]:
+                    case "load_environment":
+                        process.load_environment(EnvironmentWithRelations.model_validate(payload["environment"]))
+                    case "load_model":
+                        process.load_model(Model.model_validate(payload["model"]), payload["backend"])
+                    case "load_dataset":
+                        process.load_dataset(Dataset.model_validate(payload["dataset"]))
+                    case "start_recording":
+                        process.start_recording(payload["task"])
+                    case "save_episode":
+                        process.save_episode()
+                    case "discard_episode":
+                        process.discard_episode()
+                    case "start_task":
+                        process.start_task(payload["task"])
+                    case "stop_task":
+                        process.stop()
+                    case "disconnect":
+                        process.disconnect()
+                        break
         except Exception as e:
             logger.error(f"Incoming task stopped: {e}")
             logger.info("Except: disconnected!")
