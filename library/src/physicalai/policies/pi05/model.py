@@ -813,7 +813,7 @@ class Pi05Model(nn.Module):
     def forward(  # noqa: PLR0914
         self,
         batch: dict[str, Any],
-    ) -> tuple[Tensor, dict[str, float]]:
+    ) -> tuple[Tensor, dict[str, float]] | Tensor:
         """Training forward pass: compute flow matching loss.
 
         Args:
@@ -823,74 +823,77 @@ class Pi05Model(nn.Module):
         Returns:
             Tuple of (mean loss tensor, loss dict with "loss" key).
         """
-        images = batch[IMAGES]
-        img_masks = batch[IMAGE_MASKS]
-        tokens = batch[TOKENIZED_PROMPT]
-        masks = batch[TOKENIZED_PROMPT_MASK]
-        actions = batch[ACTION]
+        if self.train:
+            images = batch[IMAGES]
+            img_masks = batch[IMAGE_MASKS]
+            tokens = batch[TOKENIZED_PROMPT]
+            masks = batch[TOKENIZED_PROMPT_MASK]
+            actions = batch[ACTION]
 
-        noise = self.sample_noise(actions.shape, actions.device)
-        time = self.sample_time(actions.shape[0], actions.device)
+            noise = self.sample_noise(actions.shape, actions.device)
+            time = self.sample_time(actions.shape[0], actions.device)
 
-        time_expanded = time[:, None, None]
-        x_t = time_expanded * noise + (1 - time_expanded) * actions
-        u_t = noise - actions
+            time_expanded = time[:, None, None]
+            x_t = time_expanded * noise + (1 - time_expanded) * actions
+            u_t = noise - actions
 
-        prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, tokens, masks)
-        suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(x_t, time)
+            prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, tokens, masks)
+            suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(x_t, time)
 
-        if (
-            self.paligemma_with_expert.paligemma.model.language_model.layers[0].self_attn.q_proj.weight.dtype
-            == torch.bfloat16
-        ):
-            suffix_embs = suffix_embs.to(dtype=torch.bfloat16)
-            prefix_embs = prefix_embs.to(dtype=torch.bfloat16)
+            if (
+                self.paligemma_with_expert.paligemma.model.language_model.layers[0].self_attn.q_proj.weight.dtype
+                == torch.bfloat16
+            ):
+                suffix_embs = suffix_embs.to(dtype=torch.bfloat16)
+                prefix_embs = prefix_embs.to(dtype=torch.bfloat16)
 
-        pad_masks_combined = torch.cat([prefix_pad_masks, suffix_pad_masks], dim=1)
-        att_masks_combined = torch.cat([prefix_att_masks, suffix_att_masks], dim=1)
+            pad_masks_combined = torch.cat([prefix_pad_masks, suffix_pad_masks], dim=1)
+            att_masks_combined = torch.cat([prefix_att_masks, suffix_att_masks], dim=1)
 
-        att_2d_masks = make_att_2d_masks(pad_masks_combined, att_masks_combined)
-        position_ids = torch.cumsum(pad_masks_combined, dim=1) - 1
+            att_2d_masks = make_att_2d_masks(pad_masks_combined, att_masks_combined)
+            position_ids = torch.cumsum(pad_masks_combined, dim=1) - 1
 
-        att_2d_masks_4d = self._prepare_attention_masks_4d(att_2d_masks)
+            att_2d_masks_4d = self._prepare_attention_masks_4d(att_2d_masks)
 
-        def forward_func(
-            prefix_embs: Tensor,
-            suffix_embs: Tensor,
-            att_2d_masks_4d: Tensor,
-            position_ids: Tensor,
-            adarms_cond: Tensor,
-        ) -> Tensor:
-            (_, suffix_out), _ = self.paligemma_with_expert.forward(
-                attention_mask=att_2d_masks_4d,
-                position_ids=position_ids,
-                past_key_values=None,
-                inputs_embeds=[prefix_embs, suffix_embs],
-                use_cache=False,
-                adarms_cond=[None, adarms_cond],
+            def forward_func(
+                prefix_embs: Tensor,
+                suffix_embs: Tensor,
+                att_2d_masks_4d: Tensor,
+                position_ids: Tensor,
+                adarms_cond: Tensor,
+            ) -> Tensor:
+                (_, suffix_out), _ = self.paligemma_with_expert.forward(
+                    attention_mask=att_2d_masks_4d,
+                    position_ids=position_ids,
+                    past_key_values=None,
+                    inputs_embeds=[prefix_embs, suffix_embs],
+                    use_cache=False,
+                    adarms_cond=[None, adarms_cond],
+                )
+                return suffix_out
+
+            suffix_out = self._apply_checkpoint(
+                forward_func,
+                prefix_embs,
+                suffix_embs,
+                att_2d_masks_4d,
+                position_ids,
+                adarms_cond,
             )
-            return suffix_out
 
-        suffix_out = self._apply_checkpoint(
-            forward_func,
-            prefix_embs,
-            suffix_embs,
-            att_2d_masks_4d,
-            position_ids,
-            adarms_cond,
-        )
+            suffix_out = suffix_out[:, -self._chunk_size :]
+            suffix_out = suffix_out.to(dtype=torch.float32)
 
-        suffix_out = suffix_out[:, -self._chunk_size :]
-        suffix_out = suffix_out.to(dtype=torch.float32)
+            def action_out_proj_func(suffix_out: Tensor) -> Tensor:
+                return self.action_out_proj(suffix_out)
 
-        def action_out_proj_func(suffix_out: Tensor) -> Tensor:
-            return self.action_out_proj(suffix_out)
+            v_t = self._apply_checkpoint(action_out_proj_func, suffix_out)
 
-        v_t = self._apply_checkpoint(action_out_proj_func, suffix_out)
-
-        losses = F.mse_loss(u_t, v_t, reduction="none")
-        loss = losses.mean()
-        return loss, {"loss": loss.item()}
+            losses = F.mse_loss(u_t, v_t, reduction="none")
+            loss = losses.mean()
+            return loss, {"loss": loss.item()}
+        else:
+            return self.predict_action_chunk(batch)
 
     def predict_action_chunk(self, batch: dict[str, Any]) -> Tensor:
         """Predict a chunk of actions from a preprocessed batch.
