@@ -3,12 +3,13 @@ import base64
 
 import cv2
 import numpy as np
-from frame_source.video_capture_base import VideoCaptureBase
+from loguru import logger
 from physicalai.data import Observation
 
 from robots.robot_client import RobotClient
 from robots.robot_client_factory import RobotClientFactory
 from schemas.environment import EnvironmentWithRelations
+from utils.async_camera_capture import AsyncCameraCapture
 from workers.camera_worker import create_frames_source_from_camera
 
 
@@ -19,11 +20,12 @@ class InferenceEnvironmentIntegration:
     robot_client_factory: RobotClientFactory
     action_keys: list[str] = []
     follower: RobotClient | None = None
-    cameras: dict[str, VideoCaptureBase] | None = None
+    frame_captures: dict[str, AsyncCameraCapture]
 
     def __init__(self, environment: EnvironmentWithRelations, robot_client_factory: RobotClientFactory):
         self.environment = environment
         self.robot_client_factory = robot_client_factory
+        self.frame_captures = {}
 
     async def setup(self) -> None:
         robot = self.environment.robots[0]  # TODO: Handle multiple robots?
@@ -31,11 +33,14 @@ class InferenceEnvironmentIntegration:
         self.follower = await self.robot_client_factory.build(robot.robot)
         self.action_keys = self.follower.features()
 
-        self.cameras = {str(camera.id): create_frames_source_from_camera(camera) for camera in self.environment.cameras}
+        self.frame_captures = {}
+        for cam_cfg in self.environment.cameras:
+            cam_id = str(cam_cfg.id)
+            cam = create_frames_source_from_camera(cam_cfg)  # gives you the object with connect/read
 
-        for camera in self.cameras.values():
-            camera.connect()
-            camera.start_async()
+            cap = AsyncCameraCapture(camera=cam, fps=cam_cfg.payload.fps, use_cached_on_failure=True)
+            await cap.start()
+            self.frame_captures[cam_id] = cap
 
         await asyncio.sleep(1)  # sleep for camera warmup. TODO: Refactor start_async to proper camera wrapper
         await self.follower.connect()
@@ -46,21 +51,21 @@ class InferenceEnvironmentIntegration:
             await self.follower.set_joints_state(actions, goal_time)
 
     async def get_observation(self) -> dict | None:
-        if self.follower and self.cameras:
+        if self.follower and self.frame_captures:
             observation = (await self.follower.read_state())["state"]
-            for camera_id, camera in self.cameras.items():
-                _success, camera_frame = camera.read()  # HWC
-                if camera_frame is None:
-                    raise Exception("Camera frame is None")
-                observation[camera_id] = camera_frame
+
+            for cam_id, cap in self.frame_captures.items():
+                frame, t_perf, ok, err, seq = await cap.get_latest()
+                if ok and frame is not None:
+                    observation[cam_id] = frame
 
             return observation
 
         return None
 
     def format_observation_for_reporting(self, observation: dict, timestamp: float) -> dict:
-        if self.cameras:
-            camera_images = {camera: self._base_64_encode_observation(observation[camera]) for camera in self.cameras}
+        camera_keys = [str(camera.id) for camera in self.environment.cameras]
+        camera_images = {camera: self._base_64_encode_observation(observation[camera]) for camera in camera_keys}
 
         return {
             "state": {key: observation[key] for key in self.action_keys},
@@ -102,6 +107,9 @@ class InferenceEnvironmentIntegration:
     async def teardown(self) -> None:
         if self.follower:
             await self.follower.disconnect()
-        if self.cameras:
-            for camera in self.cameras.values():
-                camera.stop()
+
+        for cap in self.frame_captures.values():
+            try:
+                await cap.stop()
+            except Exception:
+                logger.info("Failed stopping a camera thread. Ignoring")
