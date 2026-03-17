@@ -1,29 +1,29 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-from internal_datasets.mutations.recording_mutation import RecordingMutation
-from internal_datasets.dataset_client import DatasetClient
 import asyncio
 import time
-from pathlib import Path
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
+from pathlib import Path
 
 from loguru import logger
 from pydantic import BaseModel
 
+from control.environment_integration import EnvironmentIntegration
+from control.sync_mixed_model_integration import SyncMixedModelIntegration
+from internal_datasets.dataset_client import DatasetClient
 from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
-from utils.dataset import build_lerobot_dataset_features
+from internal_datasets.mutations.recording_mutation import RecordingMutation
 from robots.robot_client_factory import RobotClientFactory
 from schemas import Model
-from schemas.dataset import Episode, Dataset
+from schemas.dataset import Dataset, Episode
 from schemas.environment import EnvironmentWithRelations
-from workers.inference.inference_environment_integration import InferenceEnvironmentIntegration
-from workers.inference.sync_mixed_model_integration import SyncMixedModelIntegration
+from utils.dataset import build_lerobot_dataset_features
 
 from .base import BaseThreadWorker
 
 
-class InferenceState(BaseModel):
+class RobotControlState(BaseModel):
     is_running: bool = False
     task: str | None = None
     model_loaded: bool = False
@@ -43,16 +43,15 @@ class WorkerEvents:
         self.start_recording_mutation = Event()
 
 
-
-class InferenceWorker(BaseThreadWorker):
-    ROLE: str = "InferenceWorker"
+class RobotControlWorker(BaseThreadWorker):
+    ROLE: str = "RobotControlWorker"
 
     robot_client_factory: RobotClientFactory
 
     queue: Queue
-    state: InferenceState
+    state: RobotControlState
     model_integration: SyncMixedModelIntegration | None = None
-    environment_integration: InferenceEnvironmentIntegration | None = None
+    environment_integration: EnvironmentIntegration | None = None
     dataset: DatasetClient | None = None
     recording_mutation: RecordingMutation | None = None
 
@@ -71,7 +70,7 @@ class InferenceWorker(BaseThreadWorker):
     ):
         super().__init__(stop_event=stop_event)
         self.queue = queue
-        self.state = InferenceState()
+        self.state = RobotControlState()
         self.robot_client_factory = robot_client_factory
         self.events = WorkerEvents()
 
@@ -125,7 +124,7 @@ class InferenceWorker(BaseThreadWorker):
     def load_environment(self, environment: EnvironmentWithRelations) -> None:
         """Setup environment."""
         try:
-            self.environment_integration = InferenceEnvironmentIntegration(
+            self.environment_integration = EnvironmentIntegration(
                 environment=environment, robot_client_factory=self.robot_client_factory
             )
             self.events.new_environment.set()
@@ -184,9 +183,16 @@ class InferenceWorker(BaseThreadWorker):
                                 report_observation["actions"] = formatted_actions
                                 await self.environment_integration.set_joints_state(formatted_actions, 1 / 30)
 
-                        if self.state.is_recording and self.ready_for_recording and actions:
-                            dataset_observation = self.environment_integration.format_observation_for_dataset(observation)
-                            logger.info(f"adding frame: {dataset_observation} {actions} {self.state.task}")
+                        if (
+                            self.state.is_recording
+                            and self.ready_for_recording
+                            and actions
+                            and self.state.task
+                            and self.recording_mutation
+                        ):
+                            dataset_observation = self.environment_integration.format_observation_for_dataset(
+                                observation
+                            )
                             self.recording_mutation.add_frame(dataset_observation, actions, self.state.task)
                         self._report_observation(report_observation)
                 dt_s = time.perf_counter() - start_loop_t
@@ -197,7 +203,7 @@ class InferenceWorker(BaseThreadWorker):
                 else:
                     await asyncio.sleep(0)
         except Exception as e:
-            logger.exception(f"Inference loop error: {e}")
+            logger.exception(f"RobotControl loop error: {e}")
             self._report_error(e)
 
     async def _handle_new_model_load(self) -> None:
@@ -239,7 +245,9 @@ class InferenceWorker(BaseThreadWorker):
     async def _handle_start_mutation(self):
         if self.dataset and self.environment_integration and self.events.start_recording_mutation.is_set():
             self.events.start_recording_mutation.clear()
-            features = await build_lerobot_dataset_features(self.environment_integration.environment, self.robot_client_factory)
+            features = await build_lerobot_dataset_features(
+                self.environment_integration.environment, self.robot_client_factory
+            )
 
             self.recording_mutation = self.dataset.start_recording_mutation(
                 fps=self.fps,

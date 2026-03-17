@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from workers.inference.inference_result import InferenceResult
+from control.inference_result import InferenceResult
 
 if TYPE_CHECKING:
     from multiprocessing import Queue

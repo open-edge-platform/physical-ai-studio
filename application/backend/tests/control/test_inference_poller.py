@@ -5,8 +5,8 @@ import numpy as np
 import pytest
 from physicalai.data import Observation
 
-from workers.inference.inference_poller import InferencePoller
-from workers.inference.inference_result import InferenceResult
+from control.inference_poller import InferencePoller
+from control.inference_result import InferenceResult
 
 
 @pytest.fixture

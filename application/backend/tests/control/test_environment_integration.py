@@ -6,7 +6,7 @@ import pytest
 import torch
 from frame_source.video_capture_base import VideoCaptureBase
 
-from workers.inference.inference_environment_integration import InferenceEnvironmentIntegration
+from control.environment_integration import EnvironmentIntegration
 
 
 @pytest.fixture
@@ -31,17 +31,17 @@ def inference_environment_integration(event_loop, mock_robot_client_factory, moc
     factory = mock_robot_client_factory
 
     with patch(
-        "workers.inference.inference_environment_integration.create_frames_source_from_camera",
+        "control.environment_integration.create_frames_source_from_camera",
         return_value=mock_camera,
     ):
-        subject = InferenceEnvironmentIntegration(test_environment, factory)
+        subject = EnvironmentIntegration(test_environment, factory)
         event_loop.run_until_complete(subject.setup())
         yield subject
         event_loop.run_until_complete(subject.teardown())
 
 
 class TestInferenceEnvironmentIntegration:
-    def test_get_observation(self, inference_environment_integration: InferenceEnvironmentIntegration, event_loop):
+    def test_get_observation(self, inference_environment_integration: EnvironmentIntegration, event_loop):
         observation = event_loop.run_until_complete(inference_environment_integration.get_observation())
         assert observation is not None
         assert "shoulder_pan.pos" in observation
@@ -49,7 +49,7 @@ class TestInferenceEnvironmentIntegration:
         assert "4629e172-2aa7-4fde-86b1-e19eb1d210ff" in observation  # camera id 2
 
     def test_transform_observation_to_model_input(
-        self, inference_environment_integration: InferenceEnvironmentIntegration, event_loop
+        self, inference_environment_integration: EnvironmentIntegration, event_loop
     ):
         observation = event_loop.run_until_complete(inference_environment_integration.get_observation())
         assert observation is not None
@@ -61,7 +61,7 @@ class TestInferenceEnvironmentIntegration:
         assert "grabber" in phy_ai_obs.images
 
     def test_transform_observation_to_report_to_ui(
-        self, inference_environment_integration: InferenceEnvironmentIntegration, event_loop
+        self, inference_environment_integration: EnvironmentIntegration, event_loop
     ):
         observation = event_loop.run_until_complete(inference_environment_integration.get_observation())
         assert observation is not None

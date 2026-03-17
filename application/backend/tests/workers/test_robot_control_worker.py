@@ -5,11 +5,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from schemas.environment import EnvironmentWithRelations
-from workers.inference.inference_environment_integration import InferenceEnvironmentIntegration
-from workers.inference.sync_mixed_model_integration import SyncMixedModelIntegration
-from workers.inference_worker import InferenceWorker
+from control.environment_integration import EnvironmentIntegration
+from control.sync_mixed_model_integration import SyncMixedModelIntegration
+from workers.robot_control_worker import RobotControlWorker
 
-from .queue_utils import clear_queue, thread_flush, wait_until_message_from_queue
+from tests.queue_utils import clear_queue, thread_flush, wait_until_message_from_queue
 
 
 @pytest.fixture
@@ -39,12 +39,14 @@ def model_integration():
 
 @pytest.fixture
 def environment_integration():
-    mock = MagicMock(spec=InferenceEnvironmentIntegration)
+    mock = MagicMock(spec=EnvironmentIntegration)
 
     gate = Event()
 
     async def controlled_setup():
+        print("controll setup")
         await asyncio.get_event_loop().run_in_executor(None, gate.wait)
+        print("controll setup done")
 
     mock.setup = controlled_setup
     mock.allow_setup = gate.set
@@ -61,7 +63,7 @@ def inference_worker(mock_robot_client_factory):
     stop_event = Event()
     queue = Queue()
 
-    process = InferenceWorker(
+    process = RobotControlWorker(
         stop_event=stop_event,
         robot_client_factory=mock_robot_client_factory,
         queue=queue,
@@ -76,10 +78,10 @@ def inference_worker(mock_robot_client_factory):
 
 @pytest.fixture
 def loaded_inference_worker(inference_worker, environment_integration, model_integration, test_model, test_environment):
-    with patch("workers.inference_worker.SyncMixedModelIntegration", return_value=model_integration):
+    with patch("workers.robot_control_worker.SyncMixedModelIntegration", return_value=model_integration):
         inference_worker.load_model(test_model, "torch")
 
-    with patch("workers.inference_worker.InferenceEnvironmentIntegration", return_value=environment_integration):
+    with patch("workers.robot_control_worker.EnvironmentIntegration", return_value=environment_integration):
         inference_worker.load_environment(test_environment)
     model_integration.allow_setup()
     thread_flush()
@@ -95,8 +97,8 @@ def loaded_inference_worker(inference_worker, environment_integration, model_int
     return inference_worker
 
 
-class TestInferenceWorker:
-    def test_initialize(self, inference_worker: InferenceWorker):
+class TestRobotControlWorker:
+    def test_initialize(self, inference_worker: RobotControlWorker):
         report = wait_until_message_from_queue(inference_worker.queue, "state")
         assert report["event"] == "state"
         assert report["data"] == {
@@ -105,14 +107,14 @@ class TestInferenceWorker:
             "model_loaded": False,
             "environment_loaded": False,
             "is_recording": False,
-            "dataset_loaded": False
+            "dataset_loaded": False,
         }
 
-    def test_load_environment(self, inference_worker: InferenceWorker, environment_integration, test_environment):
+    def test_load_environment(self, inference_worker: RobotControlWorker, environment_integration, test_environment):
         report = wait_until_message_from_queue(inference_worker.queue, "state")
         assert report["event"] == "state"
         environment = EnvironmentWithRelations.model_validate(test_environment)
-        with patch("workers.inference_worker.InferenceEnvironmentIntegration", return_value=environment_integration):
+        with patch("workers.robot_control_worker.EnvironmentIntegration", return_value=environment_integration):
             inference_worker.load_environment(environment)
         report = wait_until_message_from_queue(inference_worker.queue, "state")
         assert report["event"] == "state"
@@ -124,12 +126,12 @@ class TestInferenceWorker:
         assert report["data"]["environment_loaded"]
 
     def test_get_observations_once_environment_loaded(
-        self, inference_worker: InferenceWorker, environment_integration, test_environment
+        self, inference_worker: RobotControlWorker, environment_integration, test_environment
     ):
         environment_integration.get_observation = AsyncMock(return_value={"foo": "bar"})
 
         environment = EnvironmentWithRelations.model_validate(test_environment)
-        with patch("workers.inference_worker.InferenceEnvironmentIntegration", return_value=environment_integration):
+        with patch("workers.robot_control_worker.EnvironmentIntegration", return_value=environment_integration):
             inference_worker.load_environment(environment)
         environment_integration.allow_setup()
         observation = wait_until_message_from_queue(inference_worker.queue, "observations")
@@ -137,11 +139,11 @@ class TestInferenceWorker:
         assert observation["event"] == "observations"
         assert observation["data"] == {"foo": "bar"}
 
-    def test_load_model(self, inference_worker: InferenceWorker, model_integration, test_model):
+    def test_load_model(self, inference_worker: RobotControlWorker, model_integration, test_model):
         report = wait_until_message_from_queue(inference_worker.queue, "state")
         assert report["event"] == "state"
 
-        with patch("workers.inference_worker.SyncMixedModelIntegration", return_value=model_integration):
+        with patch("workers.robot_control_worker.SyncMixedModelIntegration", return_value=model_integration):
             inference_worker.load_model(test_model, "torch")
         report = wait_until_message_from_queue(inference_worker.queue, "state")
         assert report["event"] == "state"
@@ -153,7 +155,7 @@ class TestInferenceWorker:
         assert report["data"]["model_loaded"]
 
     def test_model_are_requested_with_actions(
-        self, loaded_inference_worker: InferenceWorker, environment_integration, model_integration, test_observation
+        self, loaded_inference_worker: RobotControlWorker, environment_integration, model_integration, test_observation
     ):
         worker = loaded_inference_worker
         worker.start_task("foo")
@@ -165,7 +167,7 @@ class TestInferenceWorker:
         model_integration.select_action.assert_called_with(test_observation)
 
     def test_stop_causes_model_inference_to_not_be_called(
-        self, loaded_inference_worker: InferenceWorker, environment_integration, model_integration, test_observation
+        self, loaded_inference_worker: RobotControlWorker, environment_integration, model_integration, test_observation
     ):
         worker = loaded_inference_worker
         worker.start_task("foo")
@@ -182,7 +184,7 @@ class TestInferenceWorker:
         model_integration.select_action.assert_not_called()
 
     def test_disconnect_causes_teardown(
-        self, loaded_inference_worker: InferenceWorker, environment_integration, model_integration, test_observation
+        self, loaded_inference_worker: RobotControlWorker, environment_integration, model_integration, test_observation
     ):
         worker = loaded_inference_worker
         worker.disconnect()

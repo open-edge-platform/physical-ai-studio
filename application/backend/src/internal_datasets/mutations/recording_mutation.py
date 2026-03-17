@@ -1,7 +1,6 @@
 from loguru import logger
 
 from internal_datasets.dataset_client import DatasetClient
-from schemas import Episode
 
 
 class RecordingMutation:

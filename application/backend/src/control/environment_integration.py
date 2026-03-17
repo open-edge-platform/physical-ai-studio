@@ -13,7 +13,7 @@ from utils.async_camera_capture import AsyncCameraCapture
 from workers.camera_worker import create_frames_source_from_camera
 
 
-class InferenceEnvironmentIntegration:
+class EnvironmentIntegration:
     """Integration class for the inference version of an environment."""
 
     environment: EnvironmentWithRelations
@@ -32,7 +32,7 @@ class InferenceEnvironmentIntegration:
         robot = self.environment.robots[0]  # TODO: Handle multiple robots?
 
         self.follower = await self.robot_client_factory.build(robot.robot)
-        if robot.tele_operator is TeleoperatorRobotWithRobot and robot.tele_operator.robot is not None:
+        if isinstance(robot.tele_operator, TeleoperatorRobotWithRobot) and robot.tele_operator.robot is not None:
             self.leader = await self.robot_client_factory.build(robot.tele_operator.robot)
         self.action_keys = self.follower.features()
 
@@ -78,6 +78,7 @@ class InferenceEnvironmentIntegration:
             actions = (await self.leader.read_state())["state"]
             await self.set_joints_state(actions, goal_time)
             return actions
+        return None
 
     def format_observation_for_reporting(self, observation: dict, timestamp: float) -> dict:
         camera_keys = [str(camera.id) for camera in self.environment.cameras]

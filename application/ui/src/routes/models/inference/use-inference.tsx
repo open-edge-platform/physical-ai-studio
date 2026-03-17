@@ -61,7 +61,7 @@ export const useInference = ({environment, model, dataset, backend, onError}: us
     };
 
     const { sendJsonMessageAndWait, readyState } = useWebSocketWithResponse(
-        fetchClient.PATH('/api/record/inference/ws'),
+        fetchClient.PATH('/api/record/robot_control/ws'),
         {
             shouldReconnect: () => true,
             onMessage: (event: WebSocketEventMap['message']) => onMessage(event),
