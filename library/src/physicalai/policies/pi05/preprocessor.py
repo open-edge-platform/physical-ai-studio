@@ -307,11 +307,38 @@ class Pi05Preprocessor(torch.nn.Module):
             try:
                 from transformers import AutoTokenizer  # noqa: PLC0415
 
-                self._tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_name)  # nosec B615
+                self._tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_name, use_fast=True)  # nosec B615
             except ImportError as e:
                 msg = "Tokenizer requires transformers. Install with: uv pip install transformers"
                 raise ImportError(msg) from e
         return self._tokenizer
+
+    @property
+    def exportable_tokenizer(self) -> Any:  # noqa: ANN401
+        """Get tokenizer for export.
+
+        This method is used during model export to retrieve the tokenizer for
+        conversion to ONNX or OpenVINO format. It simply returns the same
+        tokenizer instance used during preprocessing.
+
+        Returns:
+            The tokenizer instance used by this preprocessor.
+
+        Raises:
+            ImportError: If transformers library is not installed.
+        """
+        try:
+            from transformers import AutoTokenizer  # noqa: PLC0415
+
+            # Revision pinned for reproducibility and security
+            tokenizer = AutoTokenizer.from_pretrained(
+                self.tokenizer_name,
+                use_fast=False,
+            )
+        except ImportError as e:
+            msg = "Tokenizer requires transformers. Install with: pip install transformers"
+            raise ImportError(msg) from e
+        return tokenizer
 
 
 class Pi05Postprocessor(torch.nn.Module):
