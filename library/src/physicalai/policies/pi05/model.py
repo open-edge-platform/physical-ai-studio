@@ -668,6 +668,35 @@ class Pi05Model(nn.Module):
 
         return extra_args
 
+    @property
+    def reward_delta_indices(self) -> None:
+        """Return reward indices.
+
+        Currently returns `None` as rewards are not implemented.
+
+        Returns:
+            None
+        """
+        return None
+
+    @property
+    def action_delta_indices(self) -> list[int]:
+        """Get indices of actions relative to the current timestep.
+
+        Returns:
+            list[int]: A list of relative action indices.
+        """
+        return list(range(self._chunk_size))
+
+    @property
+    def observation_delta_indices(self) -> None:
+        """Get indices of observations relative to the current timestep.
+
+        Returns:
+            None
+        """
+        return None
+
     def gradient_checkpointing_enable(self) -> None:
         """Enable gradient checkpointing for memory optimization."""
         self.gradient_checkpointing_enabled = True
