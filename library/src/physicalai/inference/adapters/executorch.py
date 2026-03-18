@@ -34,12 +34,6 @@ class ExecuTorchAdapter(RuntimeAdapter):
         >>> adapter = ExecuTorchAdapter()
         >>> adapter.load(Path("model.pte"))
         >>> outputs = adapter.predict({"state": state_array})
-
-    Attributes:
-        _program: Loaded ExecuTorch program instance.
-        _method: Loaded ExecuTorch callable method (typically "forward").
-        _input_names: Ordered list of model input names.
-        _output_names: Ordered list of model output names.
     """
 
     def __init__(self, device: str = "cpu", **kwargs: Any) -> None:
