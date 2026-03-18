@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """Unit tests for mixin_export module."""
@@ -124,11 +124,19 @@ class ModelWithDictInput(torch.nn.Module):
         return {"data": torch.randn(1, 10)}
 
 
+class IdentityPreprocessor(torch.nn.Module):
+    """Identity preprocessor that returns input as-is."""
+
+    def forward(self, x: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        return x
+
+
 class ExportWrapper(Export):
     """Wrapper class for testing Export mixin."""
 
     def __init__(self, model: torch.nn.Module):
         self.model = model
+        self._preprocessor = IdentityPreprocessor()
 
     @property
     def metadata_extra(self) -> dict[str, Any]:
