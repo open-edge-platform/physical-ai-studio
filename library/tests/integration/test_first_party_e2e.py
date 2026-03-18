@@ -23,7 +23,7 @@ from physicalai.policies.base.policy import Policy
 from physicalai.train import Trainer
 
 # Export backend constants
-EXPORT_BACKENDS = ["openvino", "onnx", "torch_export_ir"]
+EXPORT_BACKENDS = ["openvino", "onnx", "torch_export_ir", "executorch"]
 
 # Policy names for parametrization
 FIRST_PARTY_VLA_POLICIES = ["groot", "pi0", "smolvla", "pi05"]
@@ -81,6 +81,8 @@ class ExportE2ETests:
     @pytest.mark.parametrize("backend", EXPORT_BACKENDS)
     def test_export_to_backend(self, trained_policy: Policy, backend: str, tmp_path: Path) -> None:
         """Test that trained policy can be exported to different backends."""
+        if backend == "executorch":
+            pytest.importorskip("executorch")
         export_dir = tmp_path / f"{trained_policy.__class__.__name__.lower()}_{backend}"
         trained_policy.export(export_dir, backend)
 
@@ -96,6 +98,8 @@ class ExportE2ETests:
             assert any(export_dir.glob("*.pt"))
         elif backend == "torch_export_ir":
             assert any(export_dir.glob("*.pt2"))
+        elif backend == "executorch":
+            assert any(export_dir.glob("*.pte"))
 
     @pytest.mark.parametrize("backend", EXPORT_BACKENDS)
     def test_inference_with_exported_model(
@@ -106,6 +110,8 @@ class ExportE2ETests:
         tmp_path: Path,
     ) -> None:
         """Test that exported model can be loaded and used for inference."""
+        if backend == "executorch":
+            pytest.importorskip("executorch")
         export_dir = tmp_path / f"{trained_policy.__class__.__name__.lower()}_{backend}"
         trained_policy.export(export_dir, backend)
 
@@ -132,6 +138,8 @@ class ExportE2ETests:
         tmp_path: Path,
     ) -> None:
         """Test numerical consistency between training and inference outputs."""
+        if backend == "executorch":
+            pytest.importorskip("executorch")
         policy_name = trained_policy.__class__.__name__.lower()
         export_dir = tmp_path / f"{policy_name}_{backend}"
 
