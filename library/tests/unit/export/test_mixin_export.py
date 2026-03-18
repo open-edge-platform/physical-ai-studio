@@ -367,6 +367,22 @@ class TestToOpenVINO:
         assert output_path.exists()
         assert (tmp_path / "model.bin").exists()
 
+    def test_to_openvino_via_onnx(self, tmp_path):
+        """Test OpenVINO export via ONNX intermediate model."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        model.extra_export_args = {
+            ExportBackend.OPENVINO: {
+                "via_onnx": True,
+            }
+        }
+        wrapper = ExportWrapper(model)
+
+        output_path = tmp_path / "model.xml"
+        wrapper.to_openvino(output_path)
+
+        assert output_path.exists()
+        assert (tmp_path / "model.bin").exists()
+
 
 class TestToTorchExportIR:
     """Tests for to_torch_export_ir method."""

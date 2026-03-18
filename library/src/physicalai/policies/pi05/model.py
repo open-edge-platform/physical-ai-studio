@@ -656,6 +656,7 @@ class Pi05Model(nn.Module):
         extra_args["openvino"] = {
             "output": ["action"],
             "compress_to_fp16": True,
+            "via_onnx": True,
             "export_tokenizer": True,
             "exporter_kwargs": {},
             "preprocessing_type": "pi05",

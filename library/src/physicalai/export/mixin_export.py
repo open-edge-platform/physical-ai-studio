@@ -4,6 +4,7 @@
 """Mixin classes for exporting PyTorch models."""
 
 import inspect
+import tempfile
 from collections.abc import Mapping
 from os import PathLike
 from pathlib import Path
@@ -191,12 +192,10 @@ class Export:
         arg_name = self._get_forward_arg_name()
 
         self.model.eval()
-        torch.onnx.export(
-            self.model,
-            args=(),
-            kwargs={arg_name: input_sample},
-            f=str(model_path),
-            input_names=list(input_sample.keys()),
+        self._onnx_core_export_step(
+            model_path=model_path,
+            input_sample=input_sample,
+            arg_name=arg_name,
             **extra_export_kwargs,
         )
 
@@ -262,15 +261,32 @@ class Export:
         export_tokenizer = extra_model_args.get("export_tokenizer", False)
         extra_export_kwargs = extra_model_args.get("exporter_kwargs", {})
         preprocessing_type = extra_model_args.get("preprocessing_type", "")
+
+        via_onnx = extra_model_args.get("via_onnx", False)
+        if via_onnx:
+            extra_model_args = self._get_export_extra_args(ExportBackend.ONNX)
+            extra_export_kwargs = extra_model_args.get("exporter_kwargs", {})
+
         extra_export_kwargs.update(export_kwargs)
 
         self.model.eval()
-        ov_model = openvino.convert_model(
-            self.model,
-            example_input={arg_name: input_sample},
-            input=input_shapes,
-            **extra_export_kwargs,
-        )
+
+        if via_onnx:
+            with tempfile.NamedTemporaryFile(suffix=".onnx") as tmp:
+                self._onnx_core_export_step(
+                    model_path=Path(tmp.name),
+                    input_sample=input_sample,
+                    arg_name=arg_name,
+                    **extra_export_kwargs,
+                )
+                ov_model = openvino.convert_model(tmp.name)
+        else:
+            ov_model = openvino.convert_model(
+                self.model,
+                example_input={arg_name: input_sample},
+                input=input_shapes,
+                **extra_export_kwargs,
+            )
         _postprocess_openvino_model(ov_model, output_names)
 
         openvino.save_model(ov_model, str(model_path), compress_to_fp16=compress_to_fp16)
@@ -384,6 +400,30 @@ class Export:
         else:
             msg = f"Unsupported export backend: {backend}"
             raise ValueError(msg)
+
+    def _onnx_core_export_step(
+        self,
+        model_path: Path,
+        input_sample: dict[str, torch.Tensor],
+        arg_name: str,
+        **export_kwargs: dict,
+    ) -> None:
+        """Run torch.onnx.export and save the model to a file.
+
+        Args:
+            model_path: Path where the ONNX model will be saved.
+            input_sample: Input tensors for tracing.
+            arg_name: Name of the forward method's first positional argument.
+            **export_kwargs: Additional keyword arguments for torch.onnx.export.
+        """
+        torch.onnx.export(
+            self.model,
+            args=(),
+            kwargs={arg_name: input_sample},
+            f=str(model_path),
+            input_names=list(input_sample.keys()),
+            **export_kwargs,
+        )
 
     def _get_default_export_input_sample(self) -> dict[str, torch.Tensor] | None:
         """Retrieve a default export input sample for the model.
