@@ -2930,12 +2930,12 @@ requires-dist = [
     { name = "safetensors", marker = "extra == 'pi0'", specifier = ">=0.4.3,<1.0.0" },
     { name = "safetensors", marker = "extra == 'smolvla'", specifier = ">=0.4.3,<1.0.0" },
     { name = "timm", marker = "extra == 'groot'", specifier = ">=1.0.0,<1.1.0" },
-    { name = "torch", marker = "extra == 'cpu'", specifier = "==2.7.1+cpu", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-train", extra = "cpu" } },
-    { name = "torch", marker = "extra == 'cu128'", specifier = ">=2.4.0,<=2.8.0", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-train", extra = "cu128" } },
+    { name = "torch", marker = "extra == 'cpu'", specifier = "<2.11", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-train", extra = "cpu" } },
+    { name = "torch", marker = "extra == 'cu128'", specifier = "<2.11", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-train", extra = "cu128" } },
     { name = "torch", marker = "extra == 'xpu'", specifier = "<2.11", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-train", extra = "xpu" } },
-    { name = "torchvision", marker = "extra == 'cpu'", specifier = "==0.22.1+cpu", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-train", extra = "cpu" } },
-    { name = "torchvision", marker = "extra == 'cu128'", specifier = ">=0.19.0", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-train", extra = "cu128" } },
-    { name = "torchvision", marker = "extra == 'xpu'", specifier = "<=0.26.0", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-train", extra = "xpu" } },
+    { name = "torchvision", marker = "extra == 'cpu'", specifier = "<0.26.0", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-train", extra = "cpu" } },
+    { name = "torchvision", marker = "extra == 'cu128'", specifier = "<0.26.0", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-train", extra = "cu128" } },
+    { name = "torchvision", marker = "extra == 'xpu'", specifier = "<0.26.0", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-train", extra = "xpu" } },
     { name = "transformers", marker = "extra == 'groot'", specifier = ">=4.54.0,<5.0.0" },
     { name = "transformers", marker = "extra == 'pi0'", specifier = ">=4.54.0,<5.0.0" },
     { name = "transformers", marker = "extra == 'smolvla'", specifier = ">=4.53.0,<5.0.0" },
@@ -4837,10 +4837,10 @@ dependencies = [
     { name = "torch", version = "2.6.0+xpu", source = { registry = "https://download.pytorch.org/whl/xpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-18-physical-ai-studio-xpu') or (sys_platform == 'win32' and extra == 'extra-18-physical-ai-studio-xpu') or (sys_platform == 'emscripten' and extra != 'extra-18-physical-ai-studio-cpu' and extra != 'extra-18-physical-ai-studio-cuda') or (extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-cuda') or (extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-xpu') or (extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu')" },
 ]
 wheels = [
-    { url = "https://download.pytorch.org/whl/xpu/torchvision-0.21.0%2Bxpu-cp312-cp312-linux_x86_64.whl", hash = "sha256:e0b7801be7a166de980ae7a1b4e2720e4509acb59d12f57679edf399529dd9e2" },
-    { url = "https://download.pytorch.org/whl/xpu/torchvision-0.21.0%2Bxpu-cp312-cp312-win_amd64.whl", hash = "sha256:2811cc38920fca14632fc023d6b46e532e9bca7a7ccefa657fba977e1c2ec506" },
-    { url = "https://download.pytorch.org/whl/xpu/torchvision-0.21.0%2Bxpu-cp313-cp313-linux_x86_64.whl", hash = "sha256:1535870d76eb0c7c45092b02e824c1fb890a27f1c02f7cdafb2e737f15cabab0" },
-    { url = "https://download.pytorch.org/whl/xpu/torchvision-0.21.0%2Bxpu-cp313-cp313-win_amd64.whl", hash = "sha256:92798e5ef76df6f5182722e7242863d08788846e041bad1e1bcd067f1497c957" },
+    { url = "https://download-r2.pytorch.org/whl/xpu/torchvision-0.21.0%2Bxpu-cp312-cp312-linux_x86_64.whl", hash = "sha256:e0b7801be7a166de980ae7a1b4e2720e4509acb59d12f57679edf399529dd9e2" },
+    { url = "https://download-r2.pytorch.org/whl/xpu/torchvision-0.21.0%2Bxpu-cp312-cp312-win_amd64.whl", hash = "sha256:2811cc38920fca14632fc023d6b46e532e9bca7a7ccefa657fba977e1c2ec506" },
+    { url = "https://download-r2.pytorch.org/whl/xpu/torchvision-0.21.0%2Bxpu-cp313-cp313-linux_x86_64.whl", hash = "sha256:1535870d76eb0c7c45092b02e824c1fb890a27f1c02f7cdafb2e737f15cabab0" },
+    { url = "https://download-r2.pytorch.org/whl/xpu/torchvision-0.21.0%2Bxpu-cp313-cp313-win_amd64.whl", hash = "sha256:92798e5ef76df6f5182722e7242863d08788846e041bad1e1bcd067f1497c957" },
 ]
 
 [[package]]
@@ -4860,12 +4860,12 @@ dependencies = [
     { name = "torch", version = "2.7.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version < '3.14' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-18-physical-ai-studio-cpu') or (python_full_version >= '3.14' and extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-cuda') or (python_full_version >= '3.14' and extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-xpu') or (platform_machine != 'aarch64' and extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-cuda') or (platform_machine != 'aarch64' and extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-xpu') or (platform_machine != 'aarch64' and extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu') or (platform_python_implementation != 'CPython' and extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-cuda') or (platform_python_implementation != 'CPython' and extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-xpu') or (platform_python_implementation != 'CPython' and extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu') or (sys_platform != 'linux' and extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-cuda') or (sys_platform != 'linux' and extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-xpu') or (sys_platform != 'linux' and extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu') or (extra != 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu')" },
 ]
 wheels = [
-    { url = "https://download.pytorch.org/whl/cpu/torchvision-0.22.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:153f1790e505bd6da123e21eee6e83e2e155df05c0fe7d56347303067d8543c5" },
-    { url = "https://download.pytorch.org/whl/cpu/torchvision-0.22.1-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:964414eef19459d55a10e886e2fca50677550e243586d1678f65e3f6f6bac47a" },
-    { url = "https://download.pytorch.org/whl/cpu/torchvision-0.22.1-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:9c3ae3319624c43cc8127020f46c14aa878406781f0899bb6283ae474afeafbf" },
-    { url = "https://download.pytorch.org/whl/cpu/torchvision-0.22.1-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:4a614a6a408d2ed74208d0ea6c28a2fbb68290e9a7df206c5fef3f0b6865d307" },
-    { url = "https://download.pytorch.org/whl/cpu/torchvision-0.22.1-cp313-cp313t-macosx_11_0_arm64.whl", hash = "sha256:043d9e35ed69c2e586aff6eb9e2887382e7863707115668ac9d140da58f42cba" },
-    { url = "https://download.pytorch.org/whl/cpu/torchvision-0.22.1-cp313-cp313t-manylinux_2_28_aarch64.whl", hash = "sha256:27142bcc8a984227a6dcf560985e83f52b82a7d3f5fe9051af586a2ccc46ef26" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchvision-0.22.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:153f1790e505bd6da123e21eee6e83e2e155df05c0fe7d56347303067d8543c5" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchvision-0.22.1-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:964414eef19459d55a10e886e2fca50677550e243586d1678f65e3f6f6bac47a" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchvision-0.22.1-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:9c3ae3319624c43cc8127020f46c14aa878406781f0899bb6283ae474afeafbf" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchvision-0.22.1-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:4a614a6a408d2ed74208d0ea6c28a2fbb68290e9a7df206c5fef3f0b6865d307" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchvision-0.22.1-cp313-cp313t-macosx_11_0_arm64.whl", hash = "sha256:043d9e35ed69c2e586aff6eb9e2887382e7863707115668ac9d140da58f42cba" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchvision-0.22.1-cp313-cp313t-manylinux_2_28_aarch64.whl", hash = "sha256:27142bcc8a984227a6dcf560985e83f52b82a7d3f5fe9051af586a2ccc46ef26" },
 ]
 
 [[package]]
@@ -4882,9 +4882,9 @@ dependencies = [
     { name = "torch", version = "2.7.1+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(python_full_version < '3.14' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-18-physical-ai-studio-cuda') or (python_full_version >= '3.14' and extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu') or (platform_machine != 'aarch64' and extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu') or (platform_python_implementation != 'CPython' and extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu') or (sys_platform != 'linux' and extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu') or (extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-cuda') or (extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-xpu')" },
 ]
 wheels = [
-    { url = "https://download.pytorch.org/whl/cu128/torchvision-0.22.1-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:2ad7fe412b821333fc05b4046263d77c14ba86f3965366adbada8dc397ea45b4" },
-    { url = "https://download.pytorch.org/whl/cu128/torchvision-0.22.1-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:75f519ebe412ced95d727c71c30c68084cc6fd36347b88f338e88ff9d07a3ac8" },
-    { url = "https://download.pytorch.org/whl/cu128/torchvision-0.22.1-cp313-cp313t-manylinux_2_28_aarch64.whl", hash = "sha256:f6565fd22e04e51f9600f34a3a20b120ee9f5a73161bfcb79c826225054aa44e" },
+    { url = "https://download-r2.pytorch.org/whl/cu128/torchvision-0.22.1-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:2ad7fe412b821333fc05b4046263d77c14ba86f3965366adbada8dc397ea45b4" },
+    { url = "https://download-r2.pytorch.org/whl/cu128/torchvision-0.22.1-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:75f519ebe412ced95d727c71c30c68084cc6fd36347b88f338e88ff9d07a3ac8" },
+    { url = "https://download-r2.pytorch.org/whl/cu128/torchvision-0.22.1-cp313-cp313t-manylinux_2_28_aarch64.whl", hash = "sha256:f6565fd22e04e51f9600f34a3a20b120ee9f5a73161bfcb79c826225054aa44e" },
 ]
 
 [[package]]
@@ -4943,12 +4943,12 @@ dependencies = [
     { name = "torch", version = "2.7.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and sys_platform == 'darwin' and extra == 'extra-18-physical-ai-studio-cpu') or (python_full_version >= '3.14' and sys_platform == 'linux' and extra == 'extra-18-physical-ai-studio-cpu') or (python_full_version < '3.14' and sys_platform == 'linux' and extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-cuda') or (python_full_version < '3.14' and sys_platform == 'linux' and extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-xpu') or (python_full_version < '3.14' and sys_platform == 'linux' and extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-18-physical-ai-studio-cpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-18-physical-ai-studio-cpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-18-physical-ai-studio-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu') or (sys_platform == 'darwin' and extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-cuda') or (sys_platform == 'darwin' and extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-xpu') or (sys_platform == 'darwin' and extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu') or (sys_platform == 'linux' and extra != 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu')" },
 ]
 wheels = [
-    { url = "https://download.pytorch.org/whl/cpu/torchvision-0.22.1%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:b5fa7044bd82c6358e8229351c98070cf3a7bf4a6e89ea46352ae6c65745ef94" },
-    { url = "https://download.pytorch.org/whl/cpu/torchvision-0.22.1%2Bcpu-cp312-cp312-win_amd64.whl", hash = "sha256:433cb4dbced7291f17064cea08ac1e5aebd02ec190e1c207d117ad62a8961f2b" },
-    { url = "https://download.pytorch.org/whl/cpu/torchvision-0.22.1%2Bcpu-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:a93c21f18c33a819616b3dda7655aa4de40b219682c654175b6bbeb65ecc2e5f" },
-    { url = "https://download.pytorch.org/whl/cpu/torchvision-0.22.1%2Bcpu-cp313-cp313-win_amd64.whl", hash = "sha256:34c914ad4728b81848ac802c5fc5eeb8de8ff4058cc59c1463a74ce4f4fbf0d8" },
-    { url = "https://download.pytorch.org/whl/cpu/torchvision-0.22.1%2Bcpu-cp313-cp313t-manylinux_2_28_x86_64.whl", hash = "sha256:ab7ae82529887c704c1b5d1d5198f65dc777d04fc3858b374503a6deedb82b19" },
-    { url = "https://download.pytorch.org/whl/cpu/torchvision-0.22.1%2Bcpu-cp313-cp313t-win_amd64.whl", hash = "sha256:b2d1c4bdbfd8e6c779dc810a6171b56224f1332fc46986810d4081bed1633804" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchvision-0.22.1%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:b5fa7044bd82c6358e8229351c98070cf3a7bf4a6e89ea46352ae6c65745ef94" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchvision-0.22.1%2Bcpu-cp312-cp312-win_amd64.whl", hash = "sha256:433cb4dbced7291f17064cea08ac1e5aebd02ec190e1c207d117ad62a8961f2b" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchvision-0.22.1%2Bcpu-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:a93c21f18c33a819616b3dda7655aa4de40b219682c654175b6bbeb65ecc2e5f" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchvision-0.22.1%2Bcpu-cp313-cp313-win_amd64.whl", hash = "sha256:34c914ad4728b81848ac802c5fc5eeb8de8ff4058cc59c1463a74ce4f4fbf0d8" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchvision-0.22.1%2Bcpu-cp313-cp313t-manylinux_2_28_x86_64.whl", hash = "sha256:ab7ae82529887c704c1b5d1d5198f65dc777d04fc3858b374503a6deedb82b19" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchvision-0.22.1%2Bcpu-cp313-cp313t-win_amd64.whl", hash = "sha256:b2d1c4bdbfd8e6c779dc810a6171b56224f1332fc46986810d4081bed1633804" },
 ]
 
 [[package]]
@@ -4978,12 +4978,12 @@ dependencies = [
     { name = "torch", version = "2.7.1+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(python_full_version >= '3.14' and extra == 'extra-18-physical-ai-studio-cuda') or (python_full_version < '3.14' and extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu') or (platform_machine != 'aarch64' and extra == 'extra-18-physical-ai-studio-cuda') or (platform_python_implementation != 'CPython' and extra == 'extra-18-physical-ai-studio-cuda') or (sys_platform != 'linux' and extra == 'extra-18-physical-ai-studio-cuda') or (extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-cuda') or (extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-xpu')" },
 ]
 wheels = [
-    { url = "https://download.pytorch.org/whl/cu128/torchvision-0.22.1%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:f64ef9bb91d71ab35d8384912a19f7419e35928685bc67544d58f45148334373" },
-    { url = "https://download.pytorch.org/whl/cu128/torchvision-0.22.1%2Bcu128-cp312-cp312-win_amd64.whl", hash = "sha256:650561ba326d21021243f5e064133dc62dc64d52f79623db5cd76637a9665f96" },
-    { url = "https://download.pytorch.org/whl/cu128/torchvision-0.22.1%2Bcu128-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:bc4fef193917b51db6b409acd3ffdec9286d877baac0aee5dcfbb72592d00bfc" },
-    { url = "https://download.pytorch.org/whl/cu128/torchvision-0.22.1%2Bcu128-cp313-cp313-win_amd64.whl", hash = "sha256:eb784cc75a66f3336a04ff3a992bf74160842132db69e8bdbb58b5ab9422c345" },
-    { url = "https://download.pytorch.org/whl/cu128/torchvision-0.22.1%2Bcu128-cp313-cp313t-manylinux_2_28_x86_64.whl", hash = "sha256:02faf51fbf5070592768fa935327d13a484b745faef38b0fee01d85cfb35f5bc" },
-    { url = "https://download.pytorch.org/whl/cu128/torchvision-0.22.1%2Bcu128-cp313-cp313t-win_amd64.whl", hash = "sha256:e5320bb2c9f69636f3dc18abc3291fe8c8e448cb9ef0112510a5413a5af3f8f2" },
+    { url = "https://download-r2.pytorch.org/whl/cu128/torchvision-0.22.1%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:f64ef9bb91d71ab35d8384912a19f7419e35928685bc67544d58f45148334373" },
+    { url = "https://download-r2.pytorch.org/whl/cu128/torchvision-0.22.1%2Bcu128-cp312-cp312-win_amd64.whl", hash = "sha256:650561ba326d21021243f5e064133dc62dc64d52f79623db5cd76637a9665f96" },
+    { url = "https://download-r2.pytorch.org/whl/cu128/torchvision-0.22.1%2Bcu128-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:bc4fef193917b51db6b409acd3ffdec9286d877baac0aee5dcfbb72592d00bfc" },
+    { url = "https://download-r2.pytorch.org/whl/cu128/torchvision-0.22.1%2Bcu128-cp313-cp313-win_amd64.whl", hash = "sha256:eb784cc75a66f3336a04ff3a992bf74160842132db69e8bdbb58b5ab9422c345" },
+    { url = "https://download-r2.pytorch.org/whl/cu128/torchvision-0.22.1%2Bcu128-cp313-cp313t-manylinux_2_28_x86_64.whl", hash = "sha256:02faf51fbf5070592768fa935327d13a484b745faef38b0fee01d85cfb35f5bc" },
+    { url = "https://download-r2.pytorch.org/whl/cu128/torchvision-0.22.1%2Bcu128-cp313-cp313t-win_amd64.whl", hash = "sha256:e5320bb2c9f69636f3dc18abc3291fe8c8e448cb9ef0112510a5413a5af3f8f2" },
 ]
 
 [[package]]
@@ -5010,12 +5010,12 @@ dependencies = [
     { name = "torch", version = "2.7.1+xpu", source = { registry = "https://download.pytorch.org/whl/xpu" }, marker = "(python_full_version < '3.14' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-18-physical-ai-studio-xpu') or (python_full_version >= '3.14' and sys_platform == 'linux' and extra != 'extra-18-physical-ai-studio-cpu' and extra != 'extra-18-physical-ai-studio-cuda') or (python_full_version >= '3.14' and extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra != 'extra-18-physical-ai-studio-cpu' and extra != 'extra-18-physical-ai-studio-cuda') or (platform_machine != 'aarch64' and extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu') or (sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32' and extra != 'extra-18-physical-ai-studio-cpu' and extra != 'extra-18-physical-ai-studio-cuda') or (sys_platform != 'linux' and extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu') or (sys_platform == 'darwin' and extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu') or (sys_platform == 'emscripten' and extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu') or (sys_platform == 'win32' and extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu') or (sys_platform == 'win32' and extra != 'extra-18-physical-ai-studio-cpu' and extra != 'extra-18-physical-ai-studio-cuda' and extra != 'extra-18-physical-ai-studio-xpu') or (extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-cuda') or (extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-xpu')" },
 ]
 wheels = [
-    { url = "https://download.pytorch.org/whl/xpu/torchvision-0.22.1%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:1ff1f98d70846352c7f56833bedab1a055ead27b11c120b8c719063ee0383554" },
-    { url = "https://download.pytorch.org/whl/xpu/torchvision-0.22.1%2Bxpu-cp312-cp312-win_amd64.whl", hash = "sha256:5b462c156f4e2097e1e53649d3f298ce352fa4c5d1e6addd360375b10ebd6c67" },
-    { url = "https://download.pytorch.org/whl/xpu/torchvision-0.22.1%2Bxpu-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:f46945344ea911a70309231eaaf3b80c96f6646ce5515dc89aa94f94144e310e" },
-    { url = "https://download.pytorch.org/whl/xpu/torchvision-0.22.1%2Bxpu-cp313-cp313-win_amd64.whl", hash = "sha256:fa87b3677cd1af67ce423004283c1bde80e3571f391182a3e89b485e18e3c70f" },
-    { url = "https://download.pytorch.org/whl/xpu/torchvision-0.22.1%2Bxpu-cp313-cp313t-manylinux_2_28_x86_64.whl", hash = "sha256:ff998a6cb990f18a4708c1b6c388fbd1111c3f9be47dfaf280154d1334350fd2" },
-    { url = "https://download.pytorch.org/whl/xpu/torchvision-0.22.1%2Bxpu-cp313-cp313t-win_amd64.whl", hash = "sha256:164daf7b4f2476eb84492eb0cf8b8f440e363d29b01bbe6657109e72df12d018" },
+    { url = "https://download-r2.pytorch.org/whl/xpu/torchvision-0.22.1%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:1ff1f98d70846352c7f56833bedab1a055ead27b11c120b8c719063ee0383554" },
+    { url = "https://download-r2.pytorch.org/whl/xpu/torchvision-0.22.1%2Bxpu-cp312-cp312-win_amd64.whl", hash = "sha256:5b462c156f4e2097e1e53649d3f298ce352fa4c5d1e6addd360375b10ebd6c67" },
+    { url = "https://download-r2.pytorch.org/whl/xpu/torchvision-0.22.1%2Bxpu-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:f46945344ea911a70309231eaaf3b80c96f6646ce5515dc89aa94f94144e310e" },
+    { url = "https://download-r2.pytorch.org/whl/xpu/torchvision-0.22.1%2Bxpu-cp313-cp313-win_amd64.whl", hash = "sha256:fa87b3677cd1af67ce423004283c1bde80e3571f391182a3e89b485e18e3c70f" },
+    { url = "https://download-r2.pytorch.org/whl/xpu/torchvision-0.22.1%2Bxpu-cp313-cp313t-manylinux_2_28_x86_64.whl", hash = "sha256:ff998a6cb990f18a4708c1b6c388fbd1111c3f9be47dfaf280154d1334350fd2" },
+    { url = "https://download-r2.pytorch.org/whl/xpu/torchvision-0.22.1%2Bxpu-cp313-cp313t-win_amd64.whl", hash = "sha256:164daf7b4f2476eb84492eb0cf8b8f440e363d29b01bbe6657109e72df12d018" },
 ]
 
 [[package]]
