@@ -121,9 +121,14 @@ class ExecuTorchAdapter(RuntimeAdapter):
             if missing_inputs:
                 msg = f"Missing required inputs: {missing_inputs}. Expected: {self._input_names}"
                 raise ValueError(msg)
-            ordered_inputs = [torch.from_numpy(inputs[name]) for name in self._input_names]
+            ordered_inputs = [
+                value if isinstance(value, torch.Tensor) else torch.from_numpy(value)
+                for value in (inputs[name] for name in self._input_names)
+            ]
         else:
-            ordered_inputs = [torch.from_numpy(value) for value in inputs.values()]
+            ordered_inputs = [
+                value if isinstance(value, torch.Tensor) else torch.from_numpy(value) for value in inputs.values()
+            ]
 
         outputs = self._method.execute(ordered_inputs)
 
