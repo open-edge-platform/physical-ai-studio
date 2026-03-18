@@ -10,7 +10,7 @@ export const Index = () => {
     });
 
     const { data: dataset } = $api.useSuspenseQuery('get', '/api/dataset/{dataset_id}', {
-        params: { path: { dataset_id: model.dataset_id } },
+        params: { path: { dataset_id: model.dataset_id! } },
     });
 
     const { data: initialEnvironment } = $api.useSuspenseQuery(
