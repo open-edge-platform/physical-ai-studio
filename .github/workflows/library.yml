@@ -69,4 +69,4 @@ jobs:
           MUJOCO_GL: egl
           PYOPENGL_PLATFORM: egl
         run: |
-          uv run pytest tests/unit
+          uv run --no-sync pytest tests/unit
