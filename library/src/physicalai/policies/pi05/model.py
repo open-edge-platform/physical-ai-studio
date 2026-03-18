@@ -657,7 +657,7 @@ class Pi05Model(nn.Module):
             "output": ["action"],
             "compress_to_fp16": True,
             "via_onnx": True,
-            "export_tokenizer": True,
+            "export_tokenizer": False,
             "exporter_kwargs": {},
             "preprocessing_type": "pi05",
         }
