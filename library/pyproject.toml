@@ -93,6 +93,9 @@ smolvla = [
 # ExecuTorch runtime for edge/mobile deployment
 executorch = ["executorch>=1.1.0"]
 
+# ExecuTorch with OpenVINO delegate (requires nncf for export)
+executorch-openvino = ["executorch>=1.1.0", "nncf>=3.0.0"]
+
 # All optional dependencies
 all = [
     "physicalai-train[tests]",

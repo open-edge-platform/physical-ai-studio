@@ -335,8 +335,13 @@ class Export:
             input_sample: A sample input tensor dictionary used to trace/export the model.
                 If ``None``, attempts to use the model's ``sample_input`` property.
             delegate: ExecuTorch delegate backend to use. Defaults to ``None``
-                (portable mode, no delegation). Supported values are ``"openvino"``
-                for OpenVINO delegation (requires ``nncf``) and ``None`` for portable mode.
+                (portable mode, no delegation). Supported values:
+
+                - ``None``: Portable mode — no delegation, uses ExecuTorch portable ops.
+                - ``"xnnpack"``: XNNPACK delegation — optimized CPU kernels for ARM/x86.
+                  Works out-of-the-box with ``pip install executorch``.
+                - ``"openvino"``: OpenVINO delegation — requires ``nncf`` for export and a
+                  custom-built ExecuTorch runtime with OpenVINO backend for inference.
             delegate_config: Optional delegate-specific configuration. For ``"openvino"``,
                 supports ``{"device": "CPU"}`` (or other supported target device).
             **export_kwargs: Additional keyword arguments passed to ``torch.export.export``.
@@ -386,10 +391,14 @@ class Export:
 
                 compile_spec = [CompileSpec("device", (delegate_config or {}).get("device", "CPU").encode())]
                 partitioner = OpenvinoPartitioner(compile_spec)
+            elif delegate == "xnnpack":
+                from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+
+                partitioner = XnnpackPartitioner()
             elif delegate is None:
                 partitioner = None
             else:
-                msg = f"Unsupported ExecuTorch delegate: {delegate!r}. Supported delegates: 'openvino', None"
+                msg = f"Unsupported ExecuTorch delegate: {delegate!r}. Supported delegates: 'openvino', 'xnnpack', None"
                 raise ValueError(msg)
         except ImportError as e:
             msg = f"ExecuTorch delegate dependencies are required for delegate={delegate!r}."
