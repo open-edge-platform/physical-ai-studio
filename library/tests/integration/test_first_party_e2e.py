@@ -26,7 +26,7 @@ from physicalai.train import Trainer
 EXPORT_BACKENDS = ["openvino", "onnx", "torch_export_ir"]
 
 # Policy names for parametrization
-FIRST_PARTY_VLA_POLICIES = ["groot", "pi0", "smolvla"]
+FIRST_PARTY_VLA_POLICIES = ["groot", "pi0", "smolvla", "pi05"]
 FIRST_PARTY_POLICIES_WITH_EXPORT = ["act"]
 
 
@@ -187,6 +187,13 @@ class TestE2ECore(CoreE2ETests):
                 tune_visual=False,
                 tune_projector=True,
                 tune_diffusion_model=False,
+            )
+        if policy_name == "pi05":
+            return get_policy(
+                policy_name,
+                source="physicalai",
+                freeze_vision_encoder=True,
+                train_expert_only=True,
             )
         # Other VLA policies use defaults (already memory-efficient)
         return get_policy(policy_name, source="physicalai")

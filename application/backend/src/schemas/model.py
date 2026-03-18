@@ -13,9 +13,9 @@ class Model(BaseIDModel):
     policy: str
     properties: dict
     project_id: Annotated[UUID, Field(description="Project Unique identifier")]
-    dataset_id: Annotated[UUID, Field(description="Dataset Unique identifier")]
-    snapshot_id: Annotated[UUID, Field(description="Snapshot Unique identifier")]
-    train_job_id: UUID | None = Field(None, description="ID of the training job for this model")
+    dataset_id: Annotated[UUID | None, Field(None, description="Dataset Unique identifier")]
+    snapshot_id: Annotated[UUID | None, Field(None, description="Snapshot Unique identifier")]
+    train_job_id: UUID | None = Field(None, description="ID of the training job that created this model")
     parent_model_id: UUID | None = Field(None, description="Parent model this was retrained from")
     version: int = Field(1, description="Model version, incremented on each retrain")
     created_at: datetime | None = Field(None)

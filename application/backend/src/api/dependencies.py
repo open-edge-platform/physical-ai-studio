@@ -8,6 +8,7 @@ from fastapi.requests import HTTPConnection
 
 from core.scheduler import Scheduler
 from services import (
+    DatasetDownloadService,
     DatasetService,
     EpisodeThumbnailService,
     JobService,
@@ -87,6 +88,12 @@ def get_environment_service() -> EnvironmentService:
 def get_dataset_service() -> DatasetService:
     """Provides a DatasetService instance for managing datasets."""
     return DatasetService()
+
+
+@lru_cache
+def get_dataset_download_service() -> DatasetDownloadService:
+    """Provides a DatasetDownloadService instance for dataset exports."""
+    return DatasetDownloadService()
 
 
 @lru_cache
