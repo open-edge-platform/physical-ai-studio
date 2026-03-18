@@ -317,6 +317,98 @@ class Export:
         # Create metadata files
         self._create_metadata(export_dir, ExportBackend.TORCH_EXPORT_IR)
 
+    @torch.no_grad()
+    def to_executorch(
+        self,
+        output_path: PathLike | str,
+        input_sample: dict[str, torch.Tensor] | None = None,
+        *,
+        delegate: str | None = "openvino",
+        delegate_config: dict[str, Any] | None = None,
+        **export_kwargs: Any,
+    ) -> Path:
+        """Export the model to ExecuTorch format.
+
+        Args:
+            output_path: Directory or file path where the ExecuTorch model will be saved.
+                If directory, creates ``{policy_name}.pte``. If file, uses as-is.
+            input_sample: A sample input tensor dictionary used to trace/export the model.
+                If ``None``, attempts to use the model's ``sample_input`` property.
+            delegate: ExecuTorch delegate backend to use. Supported values are
+                ``"openvino"`` for OpenVINO delegation and ``None`` to disable delegation.
+            delegate_config: Optional delegate-specific configuration. For ``"openvino"``,
+                supports ``{"device": "CPU"}`` (or other supported target device).
+            **export_kwargs: Additional keyword arguments passed to ``torch.export.export``.
+
+        Returns:
+            Path: Path to the exported ``.pte`` model file.
+
+        Raises:
+            RuntimeError: If input sample is not provided and the model does not
+                implement ``sample_input`` property.
+            ImportError: If the required ``executorch`` package (or selected delegate
+                dependencies) is not installed.
+            ValueError: If an unsupported delegate is specified.
+        """
+        if input_sample is None and hasattr(self.model, "sample_input"):
+            input_sample = self.model.sample_input
+        elif input_sample is None:
+            msg = (
+                "An input sample must be provided for ExecuTorch export, "
+                "or the model must implement `sample_input` property."
+            )
+            raise RuntimeError(msg)
+
+        model_path = self._prepare_export_path(output_path, ".pte")
+        export_dir = model_path.parent
+
+        extra_model_args = self._get_export_extra_args(ExportBackend.EXECUTORCH)
+        extra_model_args.update(export_kwargs)
+
+        try:
+            from executorch.exir import to_edge_transform_and_lower
+        except ImportError as e:
+            msg = "executorch package is required for ExecuTorch export. Install with: pip install executorch"
+            raise ImportError(msg) from e
+
+        self.model.eval()
+        aten_dialect = torch.export.export(
+            self.model,
+            args=(input_sample,),
+            **extra_model_args,
+        )
+
+        try:
+            if delegate == "openvino":
+                from executorch.backends.openvino.partitioner import OpenvinoPartitioner
+                from executorch.exir.backend.backend_details import CompileSpec
+
+                compile_spec = [CompileSpec("device", (delegate_config or {}).get("device", "CPU").encode())]
+                partitioner = OpenvinoPartitioner(compile_spec)
+            elif delegate is None:
+                partitioner = None
+            else:
+                msg = f"Unsupported ExecuTorch delegate: {delegate!r}. Supported delegates: 'openvino', None"
+                raise ValueError(msg)
+        except ImportError as e:
+            msg = f"ExecuTorch delegate dependencies are required for delegate={delegate!r}."
+            raise ImportError(msg) from e
+
+        if partitioner is not None:
+            edge_program = to_edge_transform_and_lower(aten_dialect, partitioner=[partitioner])
+        else:
+            edge_program = to_edge_transform_and_lower(aten_dialect)
+
+        exec_program = edge_program.to_executorch()
+
+        with open(model_path, "wb") as f:
+            exec_program.write_to_file(f)
+
+        # Create metadata files
+        self._create_metadata(export_dir, ExportBackend.EXECUTORCH, input_names=list(input_sample.keys()))
+
+        return model_path
+
     def export(
         self,
         output_path: PathLike | str,
@@ -352,6 +444,8 @@ class Export:
             self.to_openvino(output_path, input_sample, **export_kwargs)
         elif backend == ExportBackend.TORCH_EXPORT_IR:
             self.to_torch_export_ir(output_path, input_sample, **export_kwargs)
+        elif backend == ExportBackend.EXECUTORCH:
+            self.to_executorch(output_path, input_sample, **export_kwargs)
         elif backend == ExportBackend.TORCH:
             self.to_torch(output_path)
         else:
