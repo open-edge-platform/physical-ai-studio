@@ -129,17 +129,20 @@ class TestExecuTorchIntegration:
         mock_exir = MagicMock()
         mock_exir.to_edge_transform_and_lower.return_value = mock_edge_program
 
-        with patch.dict(
-            sys.modules,
-            {
-                "executorch": MagicMock(),
-                "executorch.exir": mock_exir,
-                "executorch.backends": MagicMock(),
-                "executorch.backends.openvino": MagicMock(),
-                "executorch.backends.openvino.partitioner": MagicMock(),
-                "executorch.exir.backend": MagicMock(),
-                "executorch.exir.backend.backend_details": MagicMock(),
-            },
+        with (
+            patch.dict(
+                sys.modules,
+                {
+                    "executorch": MagicMock(),
+                    "executorch.exir": mock_exir,
+                    "executorch.backends": MagicMock(),
+                    "executorch.backends.openvino": MagicMock(),
+                    "executorch.backends.openvino.partitioner": MagicMock(),
+                    "executorch.exir.backend": MagicMock(),
+                    "executorch.exir.backend.backend_details": MagicMock(),
+                },
+            ),
+            patch("torch.export.export", return_value=MagicMock()),
         ):
             wrapper.to_executorch(tmp_path / "model.pte")
 
