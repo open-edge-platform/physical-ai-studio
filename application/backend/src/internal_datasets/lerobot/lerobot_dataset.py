@@ -156,7 +156,6 @@ class InternalLeRobotDataset(DatasetClient):
     def add_frame(self, obs: dict, act: dict, task: str) -> None:
         """Add frame to recording buffer."""
         frame = self._process_frame(obs, act, task)
-        logger.info(f"adding processed frame: {frame}")
         self._dataset.add_frame(frame)
 
     def save_episode(self) -> None:
