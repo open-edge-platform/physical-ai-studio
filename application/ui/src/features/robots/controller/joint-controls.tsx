@@ -1,68 +1,41 @@
-import { useState } from 'react';
+import { Dispatch, SetStateAction, useState } from 'react';
 
-import { ActionButton, Flex, Grid, Heading, minmax, repeat, Slider, View } from '@geti/ui';
+import { ActionButton, Flex, Grid, Heading, minmax, repeat, Slider, Switch, View } from '@geti/ui';
 import { ChevronDownSmallLight } from '@geti/ui/icons';
+import { radToDeg } from 'three/src/math/MathUtils.js';
 
-const Joint = ({
-    name,
-    value,
-    minValue,
-    maxValue,
-    decreaseKey,
-    increaseKey,
-}: {
+import { urdfPathForType, useRobotModels } from '../robot-models-context';
+import { useJointState, useSynchronizeModelJoints } from '../use-joint-state';
+import { useRobot, useRobotId } from '../use-robot';
+
+type JointState = {
     name: string;
     value: number;
-    minValue: number;
-    maxValue: number;
-    decreaseKey: string;
-    increaseKey: string;
-}) => {
+    rangeMin: number;
+    rangeMax: number;
+};
+type JointsState = Array<JointState>;
+
+const Joint = ({ joint }: { joint: JointState }) => {
     return (
         <li>
-            <View
-                backgroundColor={'gray-50'}
-                padding='size-115'
-                UNSAFE_style={{
-                    //border: '1px solid var(--spectrum-global-color-gray-200)',
-                    borderRadius: '4px',
-                }}
-            >
+            <View backgroundColor={'gray-50'} padding='size-115' UNSAFE_style={{ borderRadius: '4px' }}>
                 <Grid areas={['name value', 'slider slider']} gap='size-100'>
                     <div style={{ gridArea: 'name' }}>
-                        <span>{name}</span>
+                        <span>{joint.name}</span>
                     </div>
                     <div style={{ gridArea: 'value', display: 'flex', justifyContent: 'end' }}>
-                        <span style={{ color: 'var(--energy-blue-light)' }}>{value}</span>
+                        <span style={{ color: 'var(--energy-blue-light)' }}>{joint.value.toFixed(2)}&deg;</span>
                     </div>
                     <Flex gridArea='slider' gap='size-200'>
-                        <View
-                            backgroundColor={'gray-100'}
-                            paddingY='size-50'
-                            paddingX='size-150'
-                            UNSAFE_style={{
-                                borderRadius: '4px',
-                            }}
-                        >
-                            <kbd>{decreaseKey}</kbd>
-                        </View>
                         <Slider
-                            aria-label={name}
-                            defaultValue={value}
-                            minValue={minValue}
-                            maxValue={maxValue}
+                            aria-label={joint.name}
+                            value={joint.value}
+                            minValue={joint.rangeMin}
+                            maxValue={joint.rangeMax}
                             flexGrow={1}
+                            isDisabled={true}
                         />
-                        <View
-                            backgroundColor={'gray-100'}
-                            paddingY='size-50'
-                            paddingX='size-150'
-                            UNSAFE_style={{
-                                borderRadius: '4px',
-                            }}
-                        >
-                            <kbd>{increaseKey}</kbd>
-                        </View>
                     </Flex>
                 </Grid>
             </View>
@@ -70,123 +43,88 @@ const Joint = ({
     );
 };
 
-const Joints = () => {
-    const joints = [
-        { name: 'J1', value: 70, rangeMin: 0, rangeMax: 90, decreaseKey: 'q', increaseKey: '1' },
-        { name: 'J2', value: 20, rangeMin: 0, rangeMax: 90, decreaseKey: '2', increaseKey: '2' },
-        { name: 'J3', value: 80, rangeMin: 0, rangeMax: 90, decreaseKey: 'e', increaseKey: '3' },
-        { name: 'J4', value: 60, rangeMin: 0, rangeMax: 90, decreaseKey: 'r', increaseKey: '4' },
-        { name: 'J5', value: 10, rangeMin: 0, rangeMax: 90, decreaseKey: 't', increaseKey: '5' },
-        { name: 'J6', value: 84, rangeMin: 0, rangeMax: 90, decreaseKey: 'y', increaseKey: '6' },
-    ];
-
+const Joints = ({ joints }: { joints: JointsState }) => {
     return (
         <ul>
             <Grid gap='size-50' columns={repeat('auto-fit', minmax('size-4600', '1fr'))}>
                 {joints.map((joint) => {
-                    return (
-                        <Joint
-                            key={joint.name}
-                            name={joint.name}
-                            value={joint.value}
-                            minValue={joint.rangeMin}
-                            maxValue={joint.rangeMax}
-                            decreaseKey={joint.decreaseKey}
-                            increaseKey={joint.increaseKey}
-                        />
-                    );
+                    return <Joint key={joint.name} joint={joint} />;
                 })}
             </Grid>
         </ul>
     );
 };
 
-const CompoundMovements = () => {
-    return (
-        <>
-            <Heading level={4}>Compound movements</Heading>
-            <ul>
-                <Flex gap='size-50'>
-                    <li>
-                        <View
-                            backgroundColor={'gray-50'}
-                            padding='size-115'
-                            UNSAFE_style={{
-                                //border: '1px solid var(--spectrum-global-color-gray-200)',
-                                borderRadius: '4px',
-                            }}
-                        >
-                            <Flex gap='size-100' alignItems={'center'}>
-                                <span>Jaw down & up</span>
-                                <View
-                                    backgroundColor={'gray-100'}
-                                    paddingY='size-50'
-                                    paddingX='size-150'
-                                    UNSAFE_style={{
-                                        borderRadius: '4px',
-                                    }}
-                                >
-                                    <kbd>i</kbd>
-                                </View>
-                                <View
-                                    backgroundColor={'gray-100'}
-                                    paddingY='size-50'
-                                    paddingX='size-150'
-                                    UNSAFE_style={{
-                                        borderRadius: '4px',
-                                    }}
-                                >
-                                    <kbd>8</kbd>
-                                </View>
-                            </Flex>
-                        </View>
-                    </li>
-                    <li>
-                        <View
-                            backgroundColor={'gray-50'}
-                            padding='size-115'
-                            UNSAFE_style={{
-                                //border: '1px solid var(--spectrum-global-color-gray-200)',
-                                borderRadius: '4px',
-                            }}
-                        >
-                            <Flex gap='size-100' alignItems={'center'}>
-                                <span>Jaw backward & forward</span>
-                                <View
-                                    backgroundColor={'gray-100'}
-                                    paddingY='size-50'
-                                    paddingX='size-150'
-                                    UNSAFE_style={{
-                                        borderRadius: '4px',
-                                    }}
-                                >
-                                    <kbd>u</kbd>
-                                </View>
-                                <View
-                                    backgroundColor={'gray-100'}
-                                    paddingY='size-50'
-                                    paddingX='size-150'
-                                    UNSAFE_style={{
-                                        borderRadius: '4px',
-                                    }}
-                                >
-                                    <kbd>o</kbd>
-                                </View>
-                            </Flex>
-                        </View>
-                    </li>
-                </Flex>
-            </ul>
-        </>
-    );
+// Get the default stationary joint setting with min and max range based on the urdf model
+const useModelJoints = (): JointsState => {
+    const { getModel } = useRobotModels();
+
+    const robot = useRobot();
+    const model = getModel(urdfPathForType(robot.type));
+
+    const modelJoints = Object.values(model?.joints ?? {});
+    const joints: JointsState = modelJoints
+        .filter((joint) => joint.jointType !== 'fixed')
+        .map((joint) => {
+            const rangeMax = radToDeg(joint.limit.upper);
+            const rangeMin = radToDeg(joint.limit.lower);
+
+            return { name: joint.name, value: 0, rangeMin, rangeMax };
+        })
+        .toReversed();
+
+    return joints;
 };
 
-export const JointControls = () => {
-    const [collapsed, setCollapsed] = useState(false);
+// Combine the joint range of the urdf model with actual joint state from robot
+const useRobotJointsState = (): JointsState => {
+    const robot = useRobot();
+    const modelJoints = useModelJoints();
+
+    const { project_id, robot_id } = useRobotId();
+    const { joints } = useJointState(project_id, robot_id);
+    useSynchronizeModelJoints(joints, urdfPathForType(robot.type));
+
+    return joints.map((joint) => {
+        const modelJoint = modelJoints.find(({ name }) => name === joint.name);
+        const rangeMax = modelJoint === undefined ? 180 : radToDeg(modelJoint.rangeMax);
+        const rangeMin = modelJoint === undefined ? -180 : radToDeg(modelJoint.rangeMin);
+
+        return { ...joint, rangeMin, rangeMax };
+    });
+};
+
+const EnabledJointControls = ({ isExpanded }: { isExpanded: boolean }) => {
+    const joints = useRobotJointsState();
+
+    if (isExpanded) {
+        return <Joints joints={joints} />;
+    }
+
+    return null;
+};
+
+const DisabledJointsControls = ({ isExpanded }: { isExpanded: boolean }) => {
+    const joints: JointsState = useModelJoints();
+
+    if (isExpanded) {
+        return <Joints joints={joints} />;
+    }
+
+    return null;
+};
+
+export const JointControls = ({
+    isConnected,
+    setIsConnected,
+}: {
+    isConnected: boolean;
+    setIsConnected: Dispatch<SetStateAction<boolean>>;
+}) => {
+    const [isExpanded, setIsExpanded] = useState(true);
 
     return (
         <View
-            isHidden
             gridArea='controls'
             backgroundColor={'gray-100'}
             padding='size-100'
@@ -196,14 +134,14 @@ export const JointControls = () => {
             }}
         >
             <Flex direction='column' gap='size-50'>
-                <div>
-                    <ActionButton onPress={() => setCollapsed((c) => !c)}>
+                <Flex justifyContent={'space-between'}>
+                    <ActionButton onPress={() => setIsExpanded((c) => !c)}>
                         <Heading level={4} marginX='size-100'>
                             <Flex alignItems='center' gap='size-100'>
                                 <ChevronDownSmallLight
                                     fill='white'
                                     style={{
-                                        transform: collapsed ? '' : 'rotate(180deg)',
+                                        transform: isExpanded ? 'rotate(180deg)' : '',
                                         animation: 'transform ease-in-out 0.1s',
                                     }}
                                 />
@@ -211,12 +149,15 @@ export const JointControls = () => {
                             </Flex>
                         </Heading>
                     </ActionButton>
-                </div>
-                {collapsed === false && (
-                    <>
-                        <Joints />
-                        <CompoundMovements />
-                    </>
+
+                    <Switch isSelected={isConnected} onChange={setIsConnected}>
+                        Connect
+                    </Switch>
+                </Flex>
+                {isConnected ? (
+                    <EnabledJointControls isExpanded={isExpanded} />
+                ) : (
+                    <DisabledJointsControls isExpanded={isExpanded} />
                 )}
             </Flex>
         </View>

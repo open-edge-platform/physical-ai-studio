@@ -18,12 +18,8 @@ export type EnvironmentFormState = EnvironmentForm | null;
 export const EnvironmentFormContext = createContext<EnvironmentFormState>(null);
 export const SetEnvironmentFormContext = createContext<Dispatch<SetStateAction<EnvironmentForm>> | null>(null);
 
-export const useEnvironmentFormBody = (environment_id: string): SchemaEnvironmentInput | null => {
+export const useEnvironmentFormBody = (environment_id: string) => {
     const environmentForm = useEnvironmentForm();
-
-    if (environmentForm === undefined) {
-        return null;
-    }
 
     return {
         id: environment_id,
@@ -41,7 +37,7 @@ export const useEnvironmentFormBody = (environment_id: string): SchemaEnvironmen
                         : { type: 'none' },
             };
         }),
-    };
+    } satisfies SchemaEnvironmentInput;
 };
 
 export const EnvironmentFormProvider = ({

@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import { Button, ButtonGroup, Flex, Grid, View } from '@geti/ui';
 
 import { $api } from '../../api/client';
@@ -16,6 +18,8 @@ export const Robot = () => {
         : () => {
               identifyMutation.mutate({ body: robot });
           };
+
+    const [isConnected, setIsConnected] = useState(false);
 
     return (
         <View padding='size-400' height='100%' minHeight='0'>
@@ -40,10 +44,22 @@ export const Robot = () => {
                             </ButtonGroup>
                         </Flex>
                     </View>
-                    <View gridArea='robot-viewer' overflow='auto' minHeight={0}>
+                    <View
+                        gridArea='robot-viewer'
+                        overflow='auto'
+                        minHeight={0}
+                        UNSAFE_style={
+                            isConnected
+                                ? undefined
+                                : {
+                                      filter: 'grayscale(0.8)',
+                                      opacity: 0.5,
+                                  }
+                        }
+                    >
                         <RobotViewer robot={robot} />
                     </View>
-                    <JointControls />
+                    <JointControls isConnected={isConnected} setIsConnected={setIsConnected} />
                 </Grid>
             </RobotModelsProvider>
         </View>
