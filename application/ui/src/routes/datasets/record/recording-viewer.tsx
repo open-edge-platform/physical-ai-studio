@@ -1,8 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Button, ButtonGroup, Flex, Heading, Keyboard, ProgressCircle, StatusLight, Text, ToastQueue } from '@geti/ui';
 
-import { SchemaTeleoperationConfig } from '../../../api/openapi-spec';
+import { SchemaDatasetOutput, SchemaEnvironmentWithRelations } from '../../../api/openapi-spec';
 import { RobotViewer } from '../../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
 import { Observation, useRobotControl } from '../../../features/robots/use-robot-control';
@@ -12,7 +12,8 @@ import { CameraView } from './../camera-view';
 import classes from './recording-viewer.module.scss';
 
 interface RecordingViewerProps {
-    recordingConfig: SchemaTeleoperationConfig;
+    environment: SchemaEnvironmentWithRelations;
+    dataset: SchemaDatasetOutput;
 }
 
 const getActionObservationSource = (observation?: Observation): { [joint: string]: number } | undefined => {
@@ -25,12 +26,14 @@ const getActionObservationSource = (observation?: Observation): { [joint: string
     return observation.state;
 };
 
-export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
+export const RecordingViewer = ({ environment, dataset }: RecordingViewerProps) => {
     const { observation, state, startEpisode, discardEpisode, saveEpisode, readyForRecording } = useRobotControl({
-        environment: recordingConfig.environment,
-        dataset: recordingConfig.dataset,
+        environment,
+        dataset,
         onError: ToastQueue.negative,
     });
+
+    const [task, _setTask] = useState<string>(dataset.default_task);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -38,7 +41,7 @@ export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
                 if (state.is_recording && !saveEpisode.isPending) {
                     saveEpisode.mutate();
                 } else if (!state.is_recording) {
-                    startEpisode.mutate(recordingConfig.task);
+                    startEpisode.mutate(task);
                 }
             } else if (e.key === 'ArrowLeft') {
                 if (state.is_recording && !saveEpisode.isPending) {
@@ -49,13 +52,13 @@ export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [state.is_recording, saveEpisode, startEpisode, discardEpisode, recordingConfig.task]);
+    }, [state.is_recording, saveEpisode, startEpisode, discardEpisode, task]);
 
-    const robots = (recordingConfig.environment.robots ?? []).map(({ robot }) => robot);
+    const robots = (environment.robots ?? []).map(({ robot }) => robot);
 
     const backPath = paths.project.datasets.show({
-        dataset_id: recordingConfig.dataset.id!,
-        project_id: recordingConfig.dataset.project_id,
+        dataset_id: dataset.id!,
+        project_id: dataset.project_id,
     });
 
     if (!readyForRecording) {
@@ -84,7 +87,7 @@ export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
             <Flex direction={'column'} height={'100%'} position={'relative'}>
                 <Flex direction={'row'} flex gap={'size-100'}>
                     <Flex direction={'column'} alignContent={'start'} flex gap={'size-30'}>
-                        {recordingConfig.environment.cameras!.map((camera) => (
+                        {environment.cameras!.map((camera) => (
                             <CameraView key={camera.id} camera={camera} observation={observation} />
                         ))}
                     </Flex>
@@ -108,7 +111,7 @@ export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
                         </Button>
                     </ButtonGroup>
                 ) : (
-                    <Button onPress={() => startEpisode.mutate(recordingConfig.task)} alignSelf={'center'}>
+                    <Button onPress={() => startEpisode.mutate(task)} alignSelf={'center'}>
                         <Text>Start episode</Text>
                         <Keyboard UNSAFE_className={classes.hotkey}>→</Keyboard>
                     </Button>

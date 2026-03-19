@@ -25,6 +25,7 @@ def _make_dataset(path: Path) -> Dataset:
     return Dataset(
         id=uuid4(),
         name="Dataset Export @ 2026",
+        default_task="Do the thing",
         path=str(path),
         project_id=uuid4(),
         environment_id=uuid4(),

@@ -174,7 +174,6 @@ class DatasetDB(Base):
     )
 
 
-
 class SnapshotDB(Base):
     __tablename__ = "snapshots"
 

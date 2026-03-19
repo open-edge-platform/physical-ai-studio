@@ -123,11 +123,9 @@ def loaded_teleoperation_worker(
         robot_control_worker.load_dataset(test_dataset)
     thread_flush()
     clear_queue(robot_control_worker.queue)
-
-    state = robot_control_worker.state
-    assert state is not None
-    assert state.dataset_loaded
-    assert state.environment_loaded
+    state = wait_until_message_from_queue(robot_control_worker.queue, "state")["data"]
+    assert state["environment_loaded"]
+    assert state["dataset_loaded"]
 
     return robot_control_worker
 

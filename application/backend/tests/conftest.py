@@ -132,6 +132,7 @@ def test_dataset():
         {
             "name": "Collect blocks",
             "path": "/some/path/to/dataset",
+            "default_task": "Collect blocks",
             "project_id": "35b48dc9-31df-40be-b295-08ae1d5378b1",
             "environment_id": "7656679b-25fe-4af5-a19d-73e7df16f384",
         }

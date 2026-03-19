@@ -254,7 +254,12 @@ class RobotControlWorker(BaseThreadWorker):
             self._report_state()
 
     async def _handle_start_mutation(self):
-        if self.dataset and self.environment_integration and self.events.start_recording_mutation.is_set():
+        if (
+            self.dataset
+            and self.environment_integration
+            and self.state.environment_loaded
+            and self.events.start_recording_mutation.is_set()
+        ):
             self.events.start_recording_mutation.clear()
             features = self.environment_integration.build_lerobot_dataset_features()
 
