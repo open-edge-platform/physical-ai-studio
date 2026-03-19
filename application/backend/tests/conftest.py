@@ -5,6 +5,7 @@ import pytest
 
 from robots.robot_client import RobotClient
 from robots.robot_client_factory import RobotClientFactory
+from schemas.dataset import Dataset
 from schemas.environment import EnvironmentWithRelations
 from schemas.model import Model
 
@@ -85,6 +86,18 @@ def test_environment():
 
 
 @pytest.fixture
+def test_actions():
+    return {
+        "shoulder_pan.pos": -11.076923076923077,
+        "shoulder_lift.pos": 56.043956043956044,
+        "elbow_flex.pos": -10.197802197802197,
+        "wrist_flex.pos": 69.45054945054945,
+        "wrist_roll.pos": -24.791208791208792,
+        "gripper.pos": 12.364425162689804,
+    }
+
+
+@pytest.fixture
 def test_observation():
     return {
         "shoulder_pan.pos": -11.076923076923077,
@@ -109,5 +122,17 @@ def test_model():
             "dataset_id": "93cffdc2-db6d-47bf-ac0c-4e5a727cbf0d",
             "properties": {},
             "snapshot_id": "f5e2cb67-3df2-4f16-bdfd-8b0782dd9e02",
+        }
+    )
+
+
+@pytest.fixture
+def test_dataset():
+    return Dataset.model_validate(
+        {
+            "name": "Collect blocks",
+            "path": "/some/path/to/dataset",
+            "project_id": "35b48dc9-31df-40be-b295-08ae1d5378b1",
+            "environment_id": "7656679b-25fe-4af5-a19d-73e7df16f384",
         }
     )

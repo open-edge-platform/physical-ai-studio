@@ -6,7 +6,7 @@ import { fetchClient } from '../../api/client';
 import { SchemaDatasetOutput, SchemaEnvironmentWithRelations, SchemaModel } from '../../api/openapi-spec';
 import useWebSocketWithResponse from '../../components/websockets/use-websocket-with-response';
 
-type FollowerSource = 'teleoperator' | 'model' | null;
+type FollowerSource = 'teleoperation' | 'model' | null;
 
 interface RobotControlState {
     model_loaded: boolean;
@@ -60,7 +60,7 @@ export const useRobotControl = ({ environment, model, dataset, backend, onError 
         }
         if (dataset) {
             loadDataset.mutate(dataset);
-            setFollowerSource.mutate('teleoperator');
+            setFollowerSource.mutate('teleoperation');
         }
     };
 

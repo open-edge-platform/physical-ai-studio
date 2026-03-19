@@ -19,7 +19,6 @@ from robots.robot_client_factory import RobotClientFactory
 from schemas import Model
 from schemas.dataset import Dataset, Episode
 from schemas.environment import EnvironmentWithRelations
-from utils.dataset import build_lerobot_dataset_features
 
 from .base import BaseThreadWorker
 
@@ -180,12 +179,11 @@ class RobotControlWorker(BaseThreadWorker):
 
                         actions = None
                         match self.state.follower_source:
-                            case "teleoperator":
+                            case "teleoperation":
                                 actions = await self.environment_integration.set_follower_position_from_leader(
                                     goal_time
                                 )
                             case "model":
-                                logger.info("Doing model things...")
                                 if self.model_integration:
                                     dataset_observation = self.environment_integration.format_model_input_observation(
                                         observation, task=self.state.task
@@ -258,9 +256,7 @@ class RobotControlWorker(BaseThreadWorker):
     async def _handle_start_mutation(self):
         if self.dataset and self.environment_integration and self.events.start_recording_mutation.is_set():
             self.events.start_recording_mutation.clear()
-            features = await build_lerobot_dataset_features(
-                self.environment_integration.environment, self.robot_client_factory
-            )
+            features = self.environment_integration.build_lerobot_dataset_features()
 
             self.recording_mutation = self.dataset.start_recording_mutation(
                 fps=self.fps,

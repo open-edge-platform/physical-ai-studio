@@ -1,14 +1,19 @@
 import asyncio
 import base64
+from typing import Any
 
 import cv2
 import numpy as np
+from lerobot.datasets.pipeline_features import aggregate_pipeline_dataset_features, create_initial_features
+from lerobot.datasets.utils import combine_feature_dicts
+from lerobot.processor import make_default_processors
 from loguru import logger
 from physicalai.data import Observation
 
 from robots.robot_client import RobotClient
 from robots.robot_client_factory import RobotClientFactory
 from schemas.environment import EnvironmentWithRelations, TeleoperatorRobotWithRobot
+from schemas.project_camera import Camera
 from utils.async_camera_capture import AsyncCameraCapture
 from workers.camera_worker import create_frames_source_from_camera
 
@@ -53,6 +58,34 @@ class EnvironmentIntegration:
         await self.follower.connect()
         if self.leader:
             await self.leader.connect()
+
+    def build_lerobot_dataset_features(self, use_videos: bool = True) -> dict:
+        """Build lerobot dataset features."""
+        teleop_action_processor, _robot_action_processor, robot_observation_processor = make_default_processors()
+
+        if self.follower is None:
+            raise ValueError("Can only build features with follower")
+        action_features: dict[str, Any] = {}
+        observation_features: dict[str, Any] = {}
+        for feature in self.follower.features():
+            action_features[feature] = float
+            observation_features[feature] = float
+
+        for camera in self.environment.cameras:
+            observation_features[camera.name.lower()] = self._get_camera_features(camera)
+
+        return combine_feature_dicts(
+            aggregate_pipeline_dataset_features(
+                pipeline=teleop_action_processor,
+                initial_features=create_initial_features(action=action_features),
+                use_videos=use_videos,
+            ),
+            aggregate_pipeline_dataset_features(
+                pipeline=robot_observation_processor,
+                initial_features=create_initial_features(observation=observation_features),
+                use_videos=use_videos,
+            ),
+        )
 
     async def set_joints_state(self, actions: dict, goal_time: float) -> None:
         """Set joints on robot"""
@@ -130,6 +163,16 @@ class EnvironmentIntegration:
         for camera in self.environment.cameras:
             lerobot_observations[camera.name.lower()] = lerobot_observations.pop(str(camera.id))
         return lerobot_observations
+
+    @staticmethod
+    def _get_camera_features(camera: Camera) -> tuple[int, int, int]:
+        """Get features of a camera.
+
+        Note: This works for 'now', but ip cameras etc should probably just get a frame before returning this.
+        """
+        if camera.payload is None or camera.payload.height is None or camera.payload.width is None:
+            raise ValueError("Cannot get features of camera without payload.")
+        return (camera.payload.height, camera.payload.width, 3)
 
     async def teardown(self) -> None:
         if self.follower:
