@@ -4,15 +4,19 @@
 """Mixin classes for exporting PyTorch models."""
 
 import inspect
+import tempfile
 from collections.abc import Mapping
 from os import PathLike
 from pathlib import Path
 from typing import Any
 
 import lightning
+import onnx
 import openvino
+import openvino_tokenizers
 import torch
 import yaml
+from onnxruntime_extensions import gen_processing_models
 
 from physicalai.export.backends import ExportBackend
 from physicalai.train import __version__
@@ -26,6 +30,7 @@ class Export:
     """Mixin class for exporting torch model checkpoints."""
 
     model: torch.nn.Module
+    _preprocessor: torch.nn.Module
 
     def _create_metadata(
         self,
@@ -167,34 +172,51 @@ class Export:
             RuntimeError: If input sample is not provided and the model does not
                 implement `sample_input` property.
         """
-        if input_sample is None and hasattr(self.model, "sample_input"):
-            input_sample = self.model.sample_input
-        elif input_sample is None:
-            msg = (
-                "An input sample must be provided for ONNX export, or the model must implement `sample_input` property."
-            )
+        if input_sample is None:
+            input_sample = self._get_default_export_input_sample()
+
+        if input_sample is None:
+            msg = "An input sample must be provided for ONNX export, or the model must implement "
+            "`sample_input` property."
             raise RuntimeError(msg)
 
         model_path = self._prepare_export_path(output_path, ".onnx")
         export_dir = model_path.parent
 
         extra_model_args = self._get_export_extra_args(ExportBackend.ONNX)
-        extra_model_args.update(export_kwargs)
+        export_tokenizer = extra_model_args.get("export_tokenizer", False)
+        extra_export_kwargs = extra_model_args.get("exporter_kwargs", {})
+        preprocessing_type = extra_model_args.get("preprocessing_type", "")
+        extra_export_kwargs.update(export_kwargs)
 
         arg_name = self._get_forward_arg_name()
 
         self.model.eval()
-        torch.onnx.export(
-            self.model,
-            args=(),
-            kwargs={arg_name: input_sample},
-            f=str(model_path),
-            input_names=list(input_sample.keys()),
-            **extra_model_args,
+        self._onnx_core_export_step(
+            model_path=model_path,
+            input_sample=input_sample,
+            arg_name=arg_name,
+            **extra_export_kwargs,
         )
 
+        if export_tokenizer:
+            onnx_tokenizer = gen_processing_models(
+                self._preprocessor.exportable_tokenizer,
+                pre_kwargs={
+                    "padding": "max_length",
+                    "truncation": True,
+                    "max_length": self._preprocessor.max_token_len,
+                },
+            )[0]
+            if onnx_tokenizer is not None:
+                onnx.save(onnx_tokenizer, export_dir / "tokenizer.onnx")
+            else:
+                msg = (
+                    "Failed to convert tokenizer to ONNX format. The tokenizer may not be compatible with ONNX export."
+                )
+
         # Create metadata files
-        self._create_metadata(export_dir, ExportBackend.ONNX)
+        self._create_metadata(export_dir, ExportBackend.ONNX, preprocessing_type=preprocessing_type)
 
     @torch.no_grad()
     def to_openvino(
@@ -219,9 +241,10 @@ class Export:
             - The model is set to evaluation mode before conversion.
             - Output names can be specified in export_kwargs using the "output" key.
         """
-        if input_sample is None and hasattr(self.model, "sample_input"):
-            input_sample = self.model.sample_input
-        elif input_sample is None:
+        if input_sample is None:
+            input_sample = self._get_default_export_input_sample()
+
+        if input_sample is None:
             msg = "An input sample must be provided for OpenVINO export, or the model must implement "
             "`sample_input` property."
             raise RuntimeError(msg)
@@ -229,37 +252,56 @@ class Export:
         model_path = self._prepare_export_path(output_path, ".xml")
         export_dir = model_path.parent
 
-        extra_model_args = self._get_export_extra_args(ExportBackend.OPENVINO)
-        extra_model_args.update(export_kwargs)
-
         arg_name = self._get_forward_arg_name()
-
-        output_names = extra_model_args.get("output", None)
-        if output_names is not None:
-            extra_model_args.pop("output")
-
-        compress_to_fp16 = extra_model_args.get("compress_to_fp16", None)
-        if compress_to_fp16 is not None:
-            extra_model_args.pop("compress_to_fp16")
-        else:
-            compress_to_fp16 = False
-
         input_shapes = [openvino.Shape(tuple(tensor.shape)) for tensor in input_sample.values()]
+
+        extra_model_args = self._get_export_extra_args(ExportBackend.OPENVINO)
+        output_names = extra_model_args.get("output", None)
+        compress_to_fp16 = extra_model_args.get("compress_to_fp16", False)
+        export_tokenizer = extra_model_args.get("export_tokenizer", False)
+        extra_export_kwargs = extra_model_args.get("exporter_kwargs", {})
+        preprocessing_type = extra_model_args.get("preprocessing_type", "")
+
+        via_onnx = extra_model_args.get("via_onnx", False)
+        if via_onnx:
+            extra_model_args = self._get_export_extra_args(ExportBackend.ONNX)
+            extra_export_kwargs = extra_model_args.get("exporter_kwargs", {})
+
+        extra_export_kwargs.update(export_kwargs)
 
         self.model.eval()
 
-        ov_model = openvino.convert_model(
-            self.model,
-            example_input={arg_name: input_sample},
-            input=input_shapes,
-            **extra_model_args,
-        )
+        if via_onnx:
+            with tempfile.NamedTemporaryFile(suffix=".onnx") as tmp:
+                self._onnx_core_export_step(
+                    model_path=Path(tmp.name),
+                    input_sample=input_sample,
+                    arg_name=arg_name,
+                    **extra_export_kwargs,
+                )
+                ov_model = openvino.convert_model(tmp.name)
+        else:
+            ov_model = openvino.convert_model(
+                self.model,
+                example_input={arg_name: input_sample},
+                input=input_shapes,
+                **extra_export_kwargs,
+            )
         _postprocess_openvino_model(ov_model, output_names)
 
         openvino.save_model(ov_model, str(model_path), compress_to_fp16=compress_to_fp16)
 
+        if export_tokenizer:
+            ov_tokenizer = openvino_tokenizers.convert_tokenizer(
+                self._preprocessor.exportable_tokenizer,
+                with_detokenizer=False,
+                max_length=self._preprocessor.max_token_len,
+                use_max_padding=True,
+            )
+            openvino.save_model(ov_tokenizer, export_dir / "tokenizer.xml")
+
         # Create metadata files
-        self._create_metadata(export_dir, ExportBackend.OPENVINO)
+        self._create_metadata(export_dir, ExportBackend.OPENVINO, preprocessing_type=preprocessing_type)
 
     @torch.no_grad()
     def to_torch_export_ir(
@@ -290,9 +332,10 @@ class Export:
             - Additional export arguments can be specified through the model's export configuration
               and will be merged with the provided export_kwargs.
         """
-        if input_sample is None and hasattr(self.model, "sample_input"):
-            input_sample = self.model.sample_input
-        elif input_sample is None:
+        if input_sample is None:
+            input_sample = self._get_default_export_input_sample()
+
+        if input_sample is None:
             msg = (
                 "An input sample must be provided for Torch Export IR export, "
                 "or the model must implement `sample_input` property."
@@ -357,6 +400,49 @@ class Export:
         else:
             msg = f"Unsupported export backend: {backend}"
             raise ValueError(msg)
+
+    def _onnx_core_export_step(
+        self,
+        model_path: Path,
+        input_sample: dict[str, torch.Tensor],
+        arg_name: str,
+        **export_kwargs: dict,
+    ) -> None:
+        """Run torch.onnx.export and save the model to a file.
+
+        Args:
+            model_path: Path where the ONNX model will be saved.
+            input_sample: Input tensors for tracing.
+            arg_name: Name of the forward method's first positional argument.
+            **export_kwargs: Additional keyword arguments for torch.onnx.export.
+        """
+        torch.onnx.export(
+            self.model,
+            args=(),
+            kwargs={arg_name: input_sample},
+            f=str(model_path),
+            input_names=list(input_sample.keys()),
+            **export_kwargs,
+        )
+
+    def _get_default_export_input_sample(self) -> dict[str, torch.Tensor] | None:
+        """Retrieve a default export input sample for the model.
+
+        This method attempts to obtain a sample input from the model if available,
+        processes it through the preprocessor, and filters the result to return only
+        torch.Tensor values.
+
+        Returns:
+            dict[str, torch.Tensor] | None: A dictionary containing string keys mapped to
+                torch.Tensor values extracted from the processed sample input. Returns None
+                if the model does not have a 'sample_input' attribute.
+        """
+        if hasattr(self.model, "sample_input"):
+            input_sample = self.model.sample_input
+            processed_sample = self._preprocessor(input_sample)
+            return {k: v for k, v in processed_sample.items() if isinstance(v, torch.Tensor)}
+
+        return None
 
     def _get_export_extra_args(self, backend: ExportBackend | str) -> dict[str, Any]:
         """Retrieve extra export arguments for a specific format.

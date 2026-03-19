@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """Unit tests for mixin_export module."""
@@ -124,11 +124,19 @@ class ModelWithDictInput(torch.nn.Module):
         return {"data": torch.randn(1, 10)}
 
 
+class IdentityPreprocessor(torch.nn.Module):
+    """Identity preprocessor that returns input as-is."""
+
+    def forward(self, x: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        return x
+
+
 class ExportWrapper(Export):
     """Wrapper class for testing Export mixin."""
 
     def __init__(self, model: torch.nn.Module):
         self.model = model
+        self._preprocessor = IdentityPreprocessor()
 
     @property
     def metadata_extra(self) -> dict[str, Any]:
@@ -355,6 +363,22 @@ class TestToOpenVINO:
 
         output_path = tmp_path / "model.xml"
         wrapper.export(backend="openvino", output_path=output_path)
+
+        assert output_path.exists()
+        assert (tmp_path / "model.bin").exists()
+
+    def test_to_openvino_via_onnx(self, tmp_path):
+        """Test OpenVINO export via ONNX intermediate model."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        model.extra_export_args = {
+            ExportBackend.OPENVINO: {
+                "via_onnx": True,
+            }
+        }
+        wrapper = ExportWrapper(model)
+
+        output_path = tmp_path / "model.xml"
+        wrapper.to_openvino(output_path)
 
         assert output_path.exists()
         assert (tmp_path / "model.bin").exists()

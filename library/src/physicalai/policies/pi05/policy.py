@@ -18,6 +18,7 @@ from safetensors.torch import load_file
 
 from physicalai.data.dataset import Dataset
 from physicalai.data.observation import ACTION
+from physicalai.export import Export
 from physicalai.policies.base import Policy
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
@@ -35,7 +36,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class Pi05(Policy):
+class Pi05(Export, Policy):
     """Pi05 Policy - Physical Intelligence's flow matching VLA model.
 
     Lightning wrapper for training and inference with Pi05 model.
