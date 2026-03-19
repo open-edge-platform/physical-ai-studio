@@ -36,7 +36,7 @@ class ExecuTorchAdapter(RuntimeAdapter):
         >>> outputs = adapter.predict({"state": state_array})
     """
 
-    def __init__(self, device: str = "cpu", **kwargs: Any) -> None:
+    def __init__(self, device: str = "cpu", **kwargs: Any) -> None:  # noqa: ANN401
         """Initialize ExecuTorchAdapter.
 
         Args:
@@ -44,8 +44,8 @@ class ExecuTorchAdapter(RuntimeAdapter):
             **kwargs: Additional backend-specific adapter options.
         """
         super().__init__(device, **kwargs)
-        self._program = None
-        self._method = None
+        self._program: Any = None
+        self._method: Any = None
         self._input_names: list[str] = []
         self._output_names: list[str] = []
 
@@ -74,7 +74,7 @@ class ExecuTorchAdapter(RuntimeAdapter):
             runtime = Runtime.get()
             self._program = runtime.load_program(model_path)
             self._method = self._program.load_method("forward")
-        except Exception as exc:
+        except (RuntimeError, OSError) as exc:
             msg = f"Failed to load ExecuTorch program from {model_path}: {exc}"
             raise RuntimeError(msg) from exc
 
@@ -88,7 +88,7 @@ class ExecuTorchAdapter(RuntimeAdapter):
                 output_names = metadata.get("output_names", [])
                 self._input_names = [str(name) for name in input_names]
                 self._output_names = [str(name) for name in output_names]
-            except Exception as exc:
+            except (OSError, yaml.YAMLError, TypeError, ValueError) as exc:
                 logger.warning("Failed to read metadata from %s: %s", metadata_path, exc)
                 self._input_names = []
                 self._output_names = []
@@ -151,5 +151,9 @@ class ExecuTorchAdapter(RuntimeAdapter):
         return self._output_names
 
     def default_device(self) -> str:  # noqa: PLR6301
-        """Get default ExecuTorch device."""
+        """Get default ExecuTorch device.
+
+        Returns:
+            str: The default device string for ExecuTorch runtime.
+        """
         return "cpu"

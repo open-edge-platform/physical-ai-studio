@@ -325,7 +325,7 @@ class Export:
         *,
         delegate: str | None = None,
         delegate_config: dict[str, Any] | None = None,
-        **export_kwargs: Any,
+        **export_kwargs: dict,
     ) -> Path:
         """Export the model to ExecuTorch format.
 
@@ -372,7 +372,7 @@ class Export:
         extra_model_args.update(export_kwargs)
 
         try:
-            from executorch.exir import to_edge_transform_and_lower
+            from executorch.exir import to_edge_transform_and_lower  # noqa: PLC0415
         except ImportError as e:
             msg = "executorch package is required for ExecuTorch export. Install with: pip install executorch"
             raise ImportError(msg) from e
@@ -386,13 +386,15 @@ class Export:
 
         try:
             if delegate == "openvino":
-                from executorch.backends.openvino.partitioner import OpenvinoPartitioner
-                from executorch.exir.backend.backend_details import CompileSpec
+                from executorch.backends.openvino.partitioner import OpenvinoPartitioner  # noqa: PLC0415
+                from executorch.exir.backend.backend_details import CompileSpec  # noqa: PLC0415
 
                 compile_spec = [CompileSpec("device", (delegate_config or {}).get("device", "CPU").encode())]
                 partitioner = OpenvinoPartitioner(compile_spec)
             elif delegate == "xnnpack":
-                from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+                from executorch.backends.xnnpack.partition.xnnpack_partitioner import (  # noqa: PLC0415
+                    XnnpackPartitioner,
+                )
 
                 partitioner = XnnpackPartitioner()
             elif delegate is None:
@@ -411,11 +413,15 @@ class Export:
 
         exec_program = edge_program.to_executorch()
 
-        with open(model_path, "wb") as f:
+        with model_path.open("wb") as f:
             exec_program.write_to_file(f)
 
         # Create metadata files
-        self._create_metadata(export_dir, ExportBackend.EXECUTORCH, input_names=list(input_sample.keys()))
+        self._create_metadata(
+            export_dir,
+            ExportBackend.EXECUTORCH,
+            input_names=list(input_sample.keys()),  # type: ignore[arg-type, union-attr]
+        )
 
         return model_path
 
