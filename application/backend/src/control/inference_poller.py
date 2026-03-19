@@ -40,3 +40,5 @@ class InferencePoller:
         """Clear the queue, but dont touch busy to prevent desyncs from active inference."""
         if self.has_result():
             self.output_queue.get_nowait()
+
+        self.busy = False
