@@ -1,6 +1,18 @@
 import { useEffect, useState } from 'react';
 
-import { Button, ButtonGroup, Flex, Heading, Keyboard, ProgressCircle, StatusLight, Text, ToastQueue } from '@geti/ui';
+import {
+    Button,
+    ButtonGroup,
+    ComboBox,
+    Flex,
+    Heading,
+    Item,
+    Keyboard,
+    ProgressCircle,
+    StatusLight,
+    Text,
+    ToastQueue,
+} from '@geti/ui';
 
 import { SchemaDatasetOutput, SchemaEnvironmentWithRelations } from '../../../api/openapi-spec';
 import { RobotViewer } from '../../../features/robots/controller/robot-viewer';
@@ -33,7 +45,7 @@ export const RecordingViewer = ({ environment, dataset }: RecordingViewerProps) 
         onError: ToastQueue.negative,
     });
 
-    const [task, _setTask] = useState<string>(dataset.default_task);
+    const [task, setTask] = useState<string>(dataset.default_task);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -61,6 +73,12 @@ export const RecordingViewer = ({ environment, dataset }: RecordingViewerProps) 
         project_id: dataset.project_id,
     });
 
+    const onStart = () => {
+        if (task !== '') {
+            startEpisode.mutate(task);
+        }
+    };
+
     if (!readyForRecording) {
         return (
             <Flex width='100%' height={'100%'} alignItems={'center'} justifyContent={'center'} direction={'column'}>
@@ -85,6 +103,20 @@ export const RecordingViewer = ({ environment, dataset }: RecordingViewerProps) 
     return (
         <RobotModelsProvider>
             <Flex direction={'column'} height={'100%'} position={'relative'}>
+                <Flex alignItems={'center'} gap='size-100' height='size-400' margin='size-200'>
+                    <ComboBox
+                        isReadOnly={state.is_recording}
+                        name='Task'
+                        flex
+                        isRequired
+                        allowsCustomValue
+                        inputValue={task}
+                        onInputChange={setTask}
+                    >
+                        <Item key={dataset.default_task}>{dataset.default_task}</Item>
+                    </ComboBox>
+                </Flex>
+
                 <Flex direction={'row'} flex gap={'size-100'}>
                     <Flex direction={'column'} alignContent={'start'} flex gap={'size-30'}>
                         {environment.cameras!.map((camera) => (
@@ -111,7 +143,7 @@ export const RecordingViewer = ({ environment, dataset }: RecordingViewerProps) 
                         </Button>
                     </ButtonGroup>
                 ) : (
-                    <Button onPress={() => startEpisode.mutate(task)} alignSelf={'center'}>
+                    <Button onPress={onStart} isDisabled={task === ''} alignSelf={'center'}>
                         <Text>Start episode</Text>
                         <Keyboard UNSAFE_className={classes.hotkey}>→</Keyboard>
                     </Button>

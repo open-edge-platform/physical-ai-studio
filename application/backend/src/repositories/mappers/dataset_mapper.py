@@ -21,5 +21,4 @@ class DatasetMapper(IBaseMapper):
     @staticmethod
     def from_schema(model: DatasetDB) -> Dataset:
         """Convert Dataset db entity to schema."""
-        print(model)
         return Dataset.model_validate(model, from_attributes=True)
