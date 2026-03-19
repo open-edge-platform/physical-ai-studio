@@ -58,7 +58,7 @@ def environment_integration():
 
 
 @pytest.fixture
-def inference_worker(mock_robot_client_factory):
+def robot_control_worker(mock_robot_client_factory):
     stop_event = Event()
     queue = Queue()
 
@@ -76,29 +76,29 @@ def inference_worker(mock_robot_client_factory):
 
 
 @pytest.fixture
-def loaded_inference_worker(inference_worker, environment_integration, model_integration, test_model, test_environment):
+def loaded_inference_worker(robot_control_worker, environment_integration, model_integration, test_model, test_environment):
     with patch("workers.robot_control_worker.SyncMixedModelIntegration", return_value=model_integration):
-        inference_worker.load_model(test_model, "torch")
+        robot_control_worker.load_model(test_model, "torch")
 
     with patch("workers.robot_control_worker.EnvironmentIntegration", return_value=environment_integration):
-        inference_worker.load_environment(test_environment)
+        robot_control_worker.load_environment(test_environment)
     model_integration.allow_setup()
     thread_flush()
     environment_integration.allow_setup()
     thread_flush()
-    clear_queue(inference_worker.queue)
+    clear_queue(robot_control_worker.queue)
 
-    state = inference_worker.state
+    state = robot_control_worker.state
     assert state is not None
     assert state.model_loaded
     assert state.environment_loaded
 
-    return inference_worker
+    return robot_control_worker
 
 
 class TestRobotControlWorker:
-    def test_initialize(self, inference_worker: RobotControlWorker):
-        report = wait_until_message_from_queue(inference_worker.queue, "state")
+    def test_initialize(self, robot_control_worker: RobotControlWorker):
+        report = wait_until_message_from_queue(robot_control_worker.queue, "state")
         assert report["event"] == "state"
         assert report["data"] == {
             "task": None,
@@ -109,47 +109,47 @@ class TestRobotControlWorker:
             "follower_source": None,
         }
 
-    def test_load_environment(self, inference_worker: RobotControlWorker, environment_integration, test_environment):
-        report = wait_until_message_from_queue(inference_worker.queue, "state")
+    def test_load_environment(self, robot_control_worker: RobotControlWorker, environment_integration, test_environment):
+        report = wait_until_message_from_queue(robot_control_worker.queue, "state")
         assert report["event"] == "state"
         environment = EnvironmentWithRelations.model_validate(test_environment)
         with patch("workers.robot_control_worker.EnvironmentIntegration", return_value=environment_integration):
-            inference_worker.load_environment(environment)
-        report = wait_until_message_from_queue(inference_worker.queue, "state")
+            robot_control_worker.load_environment(environment)
+        report = wait_until_message_from_queue(robot_control_worker.queue, "state")
         assert report["event"] == "state"
         assert not report["data"]["environment_loaded"]
 
         environment_integration.allow_setup()
-        report = wait_until_message_from_queue(inference_worker.queue, "state")
+        report = wait_until_message_from_queue(robot_control_worker.queue, "state")
         assert report["event"] == "state"
         assert report["data"]["environment_loaded"]
 
     def test_get_observations_once_environment_loaded(
-        self, inference_worker: RobotControlWorker, environment_integration, test_environment
+        self, robot_control_worker: RobotControlWorker, environment_integration, test_environment
     ):
         environment_integration.get_observation = AsyncMock(return_value={"foo": "bar"})
 
         environment = EnvironmentWithRelations.model_validate(test_environment)
         with patch("workers.robot_control_worker.EnvironmentIntegration", return_value=environment_integration):
-            inference_worker.load_environment(environment)
+            robot_control_worker.load_environment(environment)
         environment_integration.allow_setup()
-        observation = wait_until_message_from_queue(inference_worker.queue, "observations")
+        observation = wait_until_message_from_queue(robot_control_worker.queue, "observations")
         assert observation is not None
         assert observation["event"] == "observations"
         assert observation["data"] == {"foo": "bar"}
 
-    def test_load_model(self, inference_worker: RobotControlWorker, model_integration, test_model):
-        report = wait_until_message_from_queue(inference_worker.queue, "state")
+    def test_load_model(self, robot_control_worker: RobotControlWorker, model_integration, test_model):
+        report = wait_until_message_from_queue(robot_control_worker.queue, "state")
         assert report["event"] == "state"
 
         with patch("workers.robot_control_worker.SyncMixedModelIntegration", return_value=model_integration):
-            inference_worker.load_model(test_model, "torch")
-        report = wait_until_message_from_queue(inference_worker.queue, "state")
+            robot_control_worker.load_model(test_model, "torch")
+        report = wait_until_message_from_queue(robot_control_worker.queue, "state")
         assert report["event"] == "state"
         assert not report["data"]["model_loaded"]
 
         model_integration.allow_setup()
-        report = inference_worker.queue.get()
+        report = robot_control_worker.queue.get()
         assert report["event"] == "state"
         assert report["data"]["model_loaded"]
 
