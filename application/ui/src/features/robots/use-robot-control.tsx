@@ -56,7 +56,6 @@ export const useRobotControl = ({ environment, model, dataset, backend, onError 
         loadEnvironment.mutate(environment);
         if (model && backend) {
             loadModel.mutate({ model, backend });
-            setFollowerSource.mutate('model');
         }
         if (dataset) {
             loadDataset.mutate(dataset);
