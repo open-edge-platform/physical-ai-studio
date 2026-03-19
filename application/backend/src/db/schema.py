@@ -156,6 +156,7 @@ class DatasetDB(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
     environment_id: Mapped[str] = mapped_column(ForeignKey("project_environments.id"))
+    default_task: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
     environment: Mapped["ProjectEnvironmentDB"] = relationship("ProjectEnvironmentDB", back_populates="datasets")
     project: Mapped["ProjectDB"] = relationship("ProjectDB", back_populates="datasets")
@@ -171,6 +172,7 @@ class DatasetDB(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+
 
 
 class SnapshotDB(Base):

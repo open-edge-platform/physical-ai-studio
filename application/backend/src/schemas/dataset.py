@@ -42,6 +42,7 @@ class LeRobotDatasetInfo(BaseModel):
 class Dataset(BaseIDModel):
     name: str = "Default Name"
     path: str
+    default_task: str
     project_id: Annotated[UUID, Field(description="Unique identifier")]
     environment_id: Annotated[UUID, Field(description="Unique identifier")]
 
@@ -50,6 +51,7 @@ class Dataset(BaseIDModel):
             "example": {
                 "id": "fec4a691-76ee-4f66-8dea-aad3110e16d6",
                 "name": "Collect blocks",
+                "default_task": "Collect block",
                 "path": "/some/path/to/dataset",
                 "project_id": "7b073838-99d3-42ff-9018-4e901eb047fc",
                 "environment_id": "e7d4bef8-158d-6c1g-c435-20ffb2chc675",
