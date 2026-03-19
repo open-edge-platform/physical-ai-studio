@@ -103,7 +103,6 @@ all = [
     "physicalai-train[pi0]",
     "physicalai-train[groot]",
     "physicalai-train[smolvla]",
-    "physicalai-train[executorch]",
 ]
 
 [project.scripts]
@@ -126,7 +125,11 @@ dev = [
 # ============================================================================ #
 [tool.uv]
 
-conflicts = [[{ extra = "cpu" }, { extra = "cu128" }, { extra = "xpu" }]]
+conflicts = [
+    [{ extra = "cpu" }, { extra = "cu128" }, { extra = "xpu" }],
+    [{ extra = "executorch" }, { extra = "xpu" }],
+    [{ extra = "executorch-openvino" }, { extra = "xpu" }],
+]
 
 # PyTorch index configuration
 [[tool.uv.index]]
