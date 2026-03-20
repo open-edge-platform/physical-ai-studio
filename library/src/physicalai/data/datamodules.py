@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import fields
 from typing import TYPE_CHECKING, Any, Literal
@@ -21,6 +22,8 @@ from torch.utils.data import DataLoader, Dataset
 if TYPE_CHECKING:
     from physicalai.data import Dataset
     from physicalai.gyms import Gym
+
+logger = logging.getLogger(__name__)
 
 #: Maximum number of workers used by the ``"auto"`` heuristic.
 _AUTO_NUM_WORKERS_CAP = 8
@@ -154,6 +157,7 @@ class DataModule(LightningDataModule):
         self.train_dataset: Dataset = train_dataset
         self.train_batch_size: int = train_batch_size
         self.num_workers: int = resolve_auto_num_workers() if num_workers == "auto" else num_workers
+        logger.info("DataLoader workers: %d%s", self.num_workers, " (auto)" if num_workers == "auto" else "")
 
         # gym environments
         self.val_gym: Gym | None = val_gym

@@ -119,3 +119,29 @@ class TestDataModuleTrainDataloader:
         dm = DataModule(train_dataset=dummy_dataset())
         dl = dm.train_dataloader()
         assert dl.pin_memory is True
+
+
+class TestDataModuleLogging:
+    """Tests for DataModule num_workers logging."""
+
+    def test_logs_auto_num_workers(self, dummy_dataset, caplog):
+        import logging
+
+        from physicalai.data import DataModule
+
+        with caplog.at_level(logging.INFO, logger="physicalai.data.datamodules"):
+            with patch("physicalai.data.datamodules.resolve_auto_num_workers", return_value=6):
+                DataModule(train_dataset=dummy_dataset())
+
+        assert "DataLoader workers: 6 (auto)" in caplog.text
+
+    def test_logs_explicit_num_workers(self, dummy_dataset, caplog):
+        import logging
+
+        from physicalai.data import DataModule
+
+        with caplog.at_level(logging.INFO, logger="physicalai.data.datamodules"):
+            DataModule(train_dataset=dummy_dataset(), num_workers=2)
+
+        assert "DataLoader workers: 2" in caplog.text
+        assert "(auto)" not in caplog.text
