@@ -237,7 +237,6 @@ class LeRobotDataModule(DataModule):
             batch_size=self.train_batch_size,
             shuffle=True,
             drop_last=True,
-            pin_memory=True,
         )
 
 

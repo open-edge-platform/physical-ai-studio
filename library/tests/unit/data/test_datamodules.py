@@ -104,7 +104,7 @@ class TestDataModuleValidation:
 
 
 class TestDataModuleTrainDataloader:
-    """Tests for DataModule.train_dataloader pin_memory and num_workers."""
+    """Tests for DataModule.train_dataloader num_workers."""
 
     def test_train_dataloader_uses_configured_num_workers(self, dummy_dataset):
         from physicalai.data import DataModule
@@ -112,13 +112,6 @@ class TestDataModuleTrainDataloader:
         dm = DataModule(train_dataset=dummy_dataset(), num_workers=3)
         dl = dm.train_dataloader()
         assert dl.num_workers == 3
-
-    def test_train_dataloader_pin_memory_enabled(self, dummy_dataset):
-        from physicalai.data import DataModule
-
-        dm = DataModule(train_dataset=dummy_dataset())
-        dl = dm.train_dataloader()
-        assert dl.pin_memory is True
 
 
 class TestDataModuleLogging:

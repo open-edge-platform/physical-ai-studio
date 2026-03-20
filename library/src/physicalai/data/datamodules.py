@@ -216,7 +216,6 @@ class DataModule(LightningDataModule):
             batch_size=self.train_batch_size,
             shuffle=True,
             drop_last=True,
-            pin_memory=True,
             collate_fn=_collate_observations,
         )
 
