@@ -6,21 +6,39 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import fields
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import torch
 from lightning.pytorch import LightningDataModule
-from torch.utils.data import DataLoader, Dataset
-
 from physicalai.data.gym import GymDataset
 from physicalai.data.observation import Observation
 from physicalai.gyms.step_limit import with_step_limit
+from torch.utils.data import DataLoader, Dataset
 
 if TYPE_CHECKING:
     from physicalai.data import Dataset
     from physicalai.gyms import Gym
+
+#: Maximum number of workers used by the ``"auto"`` heuristic.
+_AUTO_NUM_WORKERS_CAP = 8
+
+
+def resolve_auto_num_workers() -> int:
+    """Resolve the number of DataLoader workers for ``"auto"`` mode.
+
+    The heuristic returns ``min(cpu_count, _AUTO_NUM_WORKERS_CAP)``.
+    Falls back to ``0`` (main-process loading) when the CPU count cannot be determined.
+
+    Returns:
+        int: Number of workers to use.
+    """
+    cpu_count = os.cpu_count()
+    if cpu_count is None:
+        return 0
+    return min(cpu_count, _AUTO_NUM_WORKERS_CAP)
 
 
 def _collate_gym(batch: list[Any]) -> Gym:
@@ -110,6 +128,7 @@ class DataModule(LightningDataModule):
         self,
         train_dataset: Dataset,
         train_batch_size: int = 16,
+        num_workers: int | Literal["auto"] = "auto",
         val_gym: Gym | None = None,
         num_rollouts_val: int = 10,
         test_gym: Gym | None = None,
@@ -121,6 +140,8 @@ class DataModule(LightningDataModule):
         Args:
             train_dataset (ActionDataset): Dataset for training.
             train_batch_size (int): Batch size for training DataLoader.
+            num_workers (int | Literal["auto"]): Number of DataLoader workers.
+                ``"auto"`` (default) uses ``min(cpu_count, 8)``.
             val_gym (Gym | None): Validation environment.
             num_rollouts_val (int): Number of rollouts to run for validation environments.
             test_gym (Gym | None): Test environment.
@@ -132,6 +153,7 @@ class DataModule(LightningDataModule):
         # dataset
         self.train_dataset: Dataset = train_dataset
         self.train_batch_size: int = train_batch_size
+        self.num_workers: int = resolve_auto_num_workers() if num_workers == "auto" else num_workers
 
         # gym environments
         self.val_gym: Gym | None = val_gym
@@ -146,6 +168,18 @@ class DataModule(LightningDataModule):
         if self.max_episode_steps:
             self.val_gym = with_step_limit(self.val_gym, max_steps=self.max_episode_steps) if self.val_gym else None
             self.test_gym = with_step_limit(self.test_gym, max_steps=self.max_episode_steps) if self.test_gym else None
+
+    @property
+    def batch_size(self) -> int:
+        """Alias for ``train_batch_size``.
+
+        Lightning's ``Tuner.scale_batch_size`` reads and writes this attribute.
+        """
+        return self.train_batch_size
+
+    @batch_size.setter
+    def batch_size(self, value: int) -> None:
+        self.train_batch_size = value
 
     def setup(self, stage: str) -> None:
         """Set up datasets depending on the stage (fit or test).
@@ -173,10 +207,11 @@ class DataModule(LightningDataModule):
         """
         return DataLoader(
             self.train_dataset,
-            num_workers=4,
+            num_workers=self.num_workers,
             batch_size=self.train_batch_size,
             shuffle=True,
             drop_last=True,
+            pin_memory=True,
             collate_fn=_collate_observations,
         )
 

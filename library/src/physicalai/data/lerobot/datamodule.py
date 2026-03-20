@@ -77,6 +77,7 @@ class LeRobotDataModule(DataModule):
         root: str | Path | None = None,
         episodes: list[int] | None = None,
         train_batch_size: int = 16,
+        num_workers: int | Literal["auto"] = "auto",
         image_transforms: Callable | None = None,
         delta_timestamps: dict[str, list[float]] | None = None,
         tolerance_s: float = 1e-4,
@@ -107,6 +108,8 @@ class LeRobotDataModule(DataModule):
                 Defaults to `None`.
             train_batch_size (int, optional): Batch size for the training DataLoader.
                 Defaults to `16`.
+            num_workers (int | Literal["auto"], optional): Number of DataLoader workers.
+                ``"auto"`` (default) uses ``min(cpu_count, 8)``.
             image_transforms (Callable | None, optional): Transformations to apply to images.
                 Defaults to `None`.
             delta_timestamps (dict[str, list[float]] | None, optional): Mapping of signal keys
@@ -205,6 +208,7 @@ class LeRobotDataModule(DataModule):
         super().__init__(
             train_dataset=train_dataset,
             train_batch_size=train_batch_size,
+            num_workers=num_workers,
             val_gym=val_gym,
             num_rollouts_val=num_rollouts_val,
             test_gym=test_gym,
@@ -229,10 +233,11 @@ class LeRobotDataModule(DataModule):
         # For lerobot format, use default PyTorch collate to preserve dict structure
         return DataLoader(
             self.train_dataset,
-            num_workers=4,
+            num_workers=self.num_workers,
             batch_size=self.train_batch_size,
             shuffle=True,
             drop_last=True,
+            pin_memory=True,
         )
 
 

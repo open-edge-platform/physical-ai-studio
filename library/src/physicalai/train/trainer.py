@@ -5,11 +5,19 @@
 
 # ruff: noqa: ANN401
 
-from typing import Any
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING, Any, Literal
 
 import lightning
 
 from physicalai.train.callbacks import PolicyDatasetInteraction
+
+if TYPE_CHECKING:
+    from lightning.pytorch import LightningDataModule, LightningModule
+
+logger = logging.getLogger(__name__)
 
 
 class Trainer(lightning.Trainer):
@@ -58,8 +66,9 @@ class Trainer(lightning.Trainer):
     def __init__(  # noqa: PLR0913
         self,
         *,
-        # physicalai-specific parameter
+        # physicalai-specific parameters
         experiment_name: str | None = None,
+        auto_scale_batch_size: bool | Literal["binsearch", "power"] = False,
         # Hardware
         accelerator: str | Any = "auto",
         strategy: str | Any = "auto",
@@ -121,6 +130,9 @@ class Trainer(lightning.Trainer):
         Key Parameters:
             experiment_name: Name for this experiment (creates subdirectory in default_root_dir).
                            If provided, overrides Lightning's default "lightning_logs" name.
+            auto_scale_batch_size: Run the Lightning Tuner's batch-size finder before training.
+                ``False`` (default) disables it.  ``True`` or ``"power"`` uses exponential scaling.
+                ``"binsearch"`` uses binary search for a tighter fit.
             default_root_dir: Root directory for experiments (default: "experiments" instead of current dir)
             accelerator: Hardware accelerator ('auto', 'cpu', 'gpu', 'tpu', 'ipu', 'mps')
             max_epochs: Maximum number of epochs to train
@@ -190,4 +202,39 @@ class Trainer(lightning.Trainer):
             reload_dataloaders_every_n_epochs=reload_dataloaders_every_n_epochs,
             barebones=barebones,
             model_registry=model_registry,
+        )
+
+        self._auto_scale_batch_size = auto_scale_batch_size
+
+    def fit(
+        self,
+        model: LightningModule,
+        train_dataloaders: Any = None,
+        val_dataloaders: Any = None,
+        datamodule: LightningDataModule | None = None,
+        ckpt_path: Any = None,
+        weights_only: bool | None = None,
+    ) -> None:
+        """Run ``Tuner.scale_batch_size`` (if configured) then train.
+
+        When ``auto_scale_batch_size`` was passed to ``__init__``, the Lightning
+        Tuner mutates the datamodule's ``batch_size`` attribute in-place before
+        training begins.  All arguments are forwarded to
+        ``lightning.Trainer.fit``.
+        """
+        if self._auto_scale_batch_size:
+            from lightning.pytorch.tuner.tuning import Tuner  # noqa: PLC0415
+
+            mode = "power" if self._auto_scale_batch_size is True else str(self._auto_scale_batch_size)
+            tuner = Tuner(self)
+            logger.info("Running batch-size finder (mode=%s)…", mode)
+            tuner.scale_batch_size(model, datamodule=datamodule, mode=mode)
+
+        super().fit(
+            model,
+            train_dataloaders=train_dataloaders,
+            val_dataloaders=val_dataloaders,
+            datamodule=datamodule,
+            ckpt_path=ckpt_path,
+            weights_only=weights_only,
         )
