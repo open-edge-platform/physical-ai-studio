@@ -122,8 +122,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
                                         <Content>
                                             <Text>
                                                 Automatically finds the largest batch size that fits in GPU
-                                                memory before training starts. When enabled, the manual batch
-                                                size value is used as the starting point.
+                                                memory before training starts.
                                             </Text>
                                         </Content>
                                     </ContextualHelp>
