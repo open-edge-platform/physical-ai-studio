@@ -14,10 +14,11 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 import torch
 from lightning.pytorch import LightningDataModule
+from torch.utils.data import DataLoader, Dataset
+
 from physicalai.data.gym import GymDataset
 from physicalai.data.observation import Observation
 from physicalai.gyms.step_limit import with_step_limit
-from torch.utils.data import DataLoader, Dataset
 
 if TYPE_CHECKING:
     from physicalai.data import Dataset
