@@ -23,8 +23,38 @@ if TYPE_CHECKING:
 
 if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
+    from lerobot.datasets.transforms import ImageTransforms, ImageTransformsConfig
 else:
     LeRobotDataset = None
+    ImageTransforms = None
+    ImageTransformsConfig = None
+
+
+def _resolve_image_transforms(
+    image_transforms: Callable | None,
+    *,
+    use_default_image_transforms: bool,
+) -> Callable | None:
+    """Resolve image transforms for LeRobot datasets.
+
+    Args:
+        image_transforms: User-provided transforms to apply to images.
+        use_default_image_transforms: Enable LeRobot's default training transforms.
+
+    Returns:
+        Callable | None: Resolved transforms to pass to LeRobotDataset.
+
+    Raises:
+        ImportError: If LeRobot transform classes are unavailable when default transforms are enabled.
+    """
+    if image_transforms is not None or not use_default_image_transforms:
+        return image_transforms
+
+    if ImageTransforms is None or ImageTransformsConfig is None:
+        msg = "LeRobot image transforms are not available. Install dependencies with: uv sync --all-extras."
+        raise ImportError(msg)
+
+    return ImageTransforms(ImageTransformsConfig(enable=True))
 
 
 class _LeRobotDatasetAdapter(Dataset):
@@ -56,6 +86,7 @@ class _LeRobotDatasetAdapter(Dataset):
         download_videos: bool = True,
         video_backend: str | None = None,
         batch_encoding_size: int = 1,
+        use_default_image_transforms: bool = False,
     ) -> None:
         """Initialize a _LeRobotDatasetAdapter.
 
@@ -84,6 +115,9 @@ class _LeRobotDatasetAdapter(Dataset):
                 Defaults to `None`.
             batch_encoding_size (int, optional): Number of samples per encoded batch.
                 Defaults to `1`.
+            use_default_image_transforms (bool, optional): Use LeRobot's standard training
+                image augmentation pipeline when `image_transforms` is not provided.
+                Defaults to `False`.
 
         Raises:
             ImportError: If `lerobot` is not installed.
@@ -91,8 +125,13 @@ class _LeRobotDatasetAdapter(Dataset):
         super().__init__()
 
         if LeRobotDataset is None:
-            msg = "LeRobotDataset is not available. Install lerobot with: uv pip install lerobot."
+            msg = "LeRobotDataset is not available. Install dependencies with: uv sync --all-extras."
             raise ImportError(msg)
+
+        image_transforms = _resolve_image_transforms(
+            image_transforms,
+            use_default_image_transforms=use_default_image_transforms,
+        )
 
         # All arguments are passed
         self._lerobot_dataset = LeRobotDataset(

@@ -85,6 +85,7 @@ class LeRobotDataModule(DataModule):
         download_videos: bool = True,
         video_backend: str | None = None,
         batch_encoding_size: int = 1,
+        use_default_image_transforms: bool = False,
         data_format: Literal["physicalai", "lerobot"] | DataFormat = "physicalai",
         # Base DataModule parameters (val/test gyms)
         val_gym: Gym | None = None,
@@ -124,6 +125,9 @@ class LeRobotDataModule(DataModule):
                 Defaults to `None`.
             batch_encoding_size (int, optional): Number of samples per encoded batch.
                 Defaults to `1`.
+            use_default_image_transforms (bool, optional): Use LeRobot's standard training
+                image augmentation pipeline when `image_transforms` is not provided.
+                Defaults to `False`.
             data_format (Literal["physicalai", "lerobot"] | DataFormat, optional):
                 Output format for the data. Use "physicalai" for the native `Observation` format,
                 or "lerobot" for LeRobot's original dict format.
@@ -178,6 +182,7 @@ class LeRobotDataModule(DataModule):
                     download_videos=download_videos,
                     video_backend=video_backend,
                     batch_encoding_size=batch_encoding_size,
+                    use_default_image_transforms=use_default_image_transforms,
                 )
             else:
                 if LeRobotDataset is None:
