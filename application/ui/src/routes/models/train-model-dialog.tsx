@@ -5,6 +5,7 @@ import {
     ButtonGroup,
     Checkbox,
     Content,
+    ContextualHelp,
     Dialog,
     Disclosure,
     DisclosurePanel,
@@ -17,6 +18,7 @@ import {
     Key,
     NumberField,
     Picker,
+    Text,
     TextField,
 } from '@geti/ui';
 
@@ -108,7 +110,35 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
                         </DisclosureTitle>
                         <DisclosurePanel UNSAFE_style={{ padding: 0 }}>
                             <Flex direction='column' gap='size-150' width='100%'>
+                                <Flex direction='row' gap='size-100' alignItems='center'>
+                                    <Checkbox
+                                        isSelected={autoScaleBatchSize}
+                                        onChange={setAutoScaleBatchSize}
+                                    >
+                                        Auto scale batch size
+                                    </Checkbox>
+                                    <ContextualHelp variant='info'>
+                                        <Heading>Auto scale batch size</Heading>
+                                        <Content>
+                                            <Text>
+                                                Automatically finds the largest batch size that fits in GPU
+                                                memory before training starts. When enabled, the manual batch
+                                                size value is used as the starting point.
+                                            </Text>
+                                        </Content>
+                                    </ContextualHelp>
+                                </Flex>
                                 <Flex direction='row' gap='size-150' width='100%'>
+                                    <NumberField
+                                        label='Batch Size'
+                                        value={batchSize}
+                                        onChange={setBatchSize}
+                                        minValue={1}
+                                        maxValue={256}
+                                        step={1}
+                                        isDisabled={autoScaleBatchSize}
+                                        flex
+                                    />
                                     <NumberField
                                         label='Max Steps'
                                         value={maxSteps}
@@ -117,36 +147,44 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
                                         maxValue={100000}
                                         step={100}
                                         flex
-                                    />
-                                    <NumberField
-                                        label='Batch Size'
-                                        value={batchSize}
-                                        onChange={setBatchSize}
-                                        minValue={1}
-                                        maxValue={256}
-                                        step={1}
-                                        flex
+                                        contextualHelp={
+                                            <ContextualHelp variant='info'>
+                                                <Heading>Max steps</Heading>
+                                                <Content>
+                                                    <Text>
+                                                        Total number of gradient update steps. Training will stop
+                                                        after this many steps regardless of epochs.
+                                                    </Text>
+                                                </Content>
+                                            </ContextualHelp>
+                                        }
                                     />
                                 </Flex>
-                                <Flex direction='row' gap='size-150' width='100%' alignItems='end'>
-                                    <Picker
-                                        label='Data Workers'
-                                        selectedKey={numWorkers}
-                                        onSelectionChange={setNumWorkers}
-                                        flex
-                                    >
-                                        <Item key='auto'>Auto</Item>
-                                        <Item key='0'>0 (main process)</Item>
-                                        <Item key='1'>1</Item>
-                                        <Item key='2'>2</Item>
-                                        <Item key='4'>4</Item>
-                                        <Item key='8'>8</Item>
-                                        <Item key='16'>16</Item>
-                                    </Picker>
-                                </Flex>
-                                <Checkbox isSelected={autoScaleBatchSize} onChange={setAutoScaleBatchSize}>
-                                    Auto scale batch size
-                                </Checkbox>
+                                <Picker
+                                    label='Data Workers'
+                                    selectedKey={numWorkers}
+                                    onSelectionChange={setNumWorkers}
+                                    contextualHelp={
+                                        <ContextualHelp variant='info'>
+                                            <Heading>Data workers</Heading>
+                                            <Content>
+                                                <Text>
+                                                    Number of parallel processes for loading training data. Auto
+                                                    selects a value based on available CPU cores. More workers
+                                                    can speed up training but use more memory.
+                                                </Text>
+                                            </Content>
+                                        </ContextualHelp>
+                                    }
+                                >
+                                    <Item key='auto'>Auto</Item>
+                                    <Item key='0'>0 (main process)</Item>
+                                    <Item key='1'>1</Item>
+                                    <Item key='2'>2</Item>
+                                    <Item key='4'>4</Item>
+                                    <Item key='8'>8</Item>
+                                    <Item key='16'>16</Item>
+                                </Picker>
                             </Flex>
                         </DisclosurePanel>
                     </Disclosure>
