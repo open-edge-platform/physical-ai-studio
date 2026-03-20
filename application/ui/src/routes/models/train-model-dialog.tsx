@@ -3,6 +3,7 @@ import { useState } from 'react';
 import {
     Button,
     ButtonGroup,
+    Checkbox,
     Content,
     Dialog,
     Disclosure,
@@ -45,6 +46,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
     const [selectedDataset, setSelectedDataset] = useState<Key | null>(defaultDatasetId);
     const [maxSteps, setMaxSteps] = useState<number>(defaultMaxSteps);
     const [batchSize, setBatchSize] = useState<number>(8);
+    const [numWorkers, setNumWorkers] = useState<Key | null>('auto');
+    const [autoScaleBatchSize, setAutoScaleBatchSize] = useState<boolean>(false);
 
     const trainMutation = $api.useMutation('post', '/api/jobs:train');
 
@@ -62,6 +65,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
             policy: selectedPolicy.toString(),
             max_steps: maxSteps,
             batch_size: batchSize,
+            num_workers: numWorkers === 'auto' ? 'auto' : Number(numWorkers),
+            auto_scale_batch_size: autoScaleBatchSize,
             ...extraPayload,
         };
         trainMutation.mutateAsync({ body: payload }).then((response) => {
@@ -102,25 +107,46 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
                             Advanced settings
                         </DisclosureTitle>
                         <DisclosurePanel UNSAFE_style={{ padding: 0 }}>
-                            <Flex direction='row' gap='size-150' width='100%'>
-                                <NumberField
-                                    label='Max Steps'
-                                    value={maxSteps}
-                                    onChange={setMaxSteps}
-                                    minValue={100}
-                                    maxValue={100000}
-                                    step={100}
-                                    flex
-                                />
-                                <NumberField
-                                    label='Batch Size'
-                                    value={batchSize}
-                                    onChange={setBatchSize}
-                                    minValue={1}
-                                    maxValue={256}
-                                    step={1}
-                                    flex
-                                />
+                            <Flex direction='column' gap='size-150' width='100%'>
+                                <Flex direction='row' gap='size-150' width='100%'>
+                                    <NumberField
+                                        label='Max Steps'
+                                        value={maxSteps}
+                                        onChange={setMaxSteps}
+                                        minValue={100}
+                                        maxValue={100000}
+                                        step={100}
+                                        flex
+                                    />
+                                    <NumberField
+                                        label='Batch Size'
+                                        value={batchSize}
+                                        onChange={setBatchSize}
+                                        minValue={1}
+                                        maxValue={256}
+                                        step={1}
+                                        flex
+                                    />
+                                </Flex>
+                                <Flex direction='row' gap='size-150' width='100%' alignItems='end'>
+                                    <Picker
+                                        label='Data Workers'
+                                        selectedKey={numWorkers}
+                                        onSelectionChange={setNumWorkers}
+                                        flex
+                                    >
+                                        <Item key='auto'>Auto</Item>
+                                        <Item key='0'>0 (main process)</Item>
+                                        <Item key='1'>1</Item>
+                                        <Item key='2'>2</Item>
+                                        <Item key='4'>4</Item>
+                                        <Item key='8'>8</Item>
+                                        <Item key='16'>16</Item>
+                                    </Picker>
+                                </Flex>
+                                <Checkbox isSelected={autoScaleBatchSize} onChange={setAutoScaleBatchSize}>
+                                    Auto scale batch size
+                                </Checkbox>
                             </Flex>
                         </DisclosurePanel>
                     </Disclosure>

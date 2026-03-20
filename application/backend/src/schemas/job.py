@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_serializer
@@ -48,6 +48,10 @@ class TrainJobPayload(BaseModel):
     model_name: str
     max_steps: int = Field(default=100, ge=100, le=100_000, description="Number of training steps")
     batch_size: int = Field(default=8, ge=1, le=256, description="Training batch size")
+    num_workers: int | Literal["auto"] = Field(default="auto", description="DataLoader workers ('auto' or 0-16)")
+    auto_scale_batch_size: bool | Literal["binsearch", "power"] = Field(
+        default=False, description="Run Lightning Tuner batch-size finder before training"
+    )
     base_model_id: UUID | None = Field(default=None, description="Model ID to resume training from")
 
     @field_serializer("project_id")
