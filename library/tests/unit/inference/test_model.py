@@ -1,7 +1,7 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for InferenceModel."""
+"""Unit tests for InferenceModel and inference runners."""
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -13,6 +13,12 @@ import torch
 from physicalai.export.mixin_export import ExportBackend
 from physicalai.inference.adapters import RuntimeAdapter
 from physicalai.inference.model import InferenceModel
+from physicalai.inference.runners import (
+    ActionChunking,
+    InferenceRunner,
+    SinglePass,
+    get_runner,
+)
 
 
 class TestAdapter(RuntimeAdapter):
@@ -25,8 +31,8 @@ class TestAdapter(RuntimeAdapter):
     def load(self, model_path: Path | str) -> None:
         pass
 
-    def predict(self, inputs: dict[str, np.ndarray]):
-        pass
+    def predict(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        return {}
 
     @property
     def input_names(self) -> list[str]:
@@ -63,6 +69,8 @@ def test_exported_metadata_controls_action_queue(
     with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
         model = InferenceModel(export_dir)
 
+        assert isinstance(model.runner, ActionChunking)
+
         mock_adapter.predict.return_value = {"actions": np.random.randn(1, 3, 2)}
 
         action1 = model.select_action(sample_observation)
@@ -75,11 +83,9 @@ def test_exported_metadata_controls_action_queue(
 
 @pytest.fixture
 def mock_export_dir(tmp_path: Path) -> Path:
-    """Create mock export directory with metadata."""
     export_dir = tmp_path / "exports"
     export_dir.mkdir()
 
-    # Create metadata
     metadata = {
         "policy_class": "physicalai.policies.act.ACT",
         "backend": "openvino",
@@ -91,7 +97,28 @@ def mock_export_dir(tmp_path: Path) -> Path:
     with (export_dir / "metadata.yaml").open("w") as f:
         yaml.dump(metadata, f)
 
-    # Create dummy model file
+    (export_dir / "act.xml").touch()
+    (export_dir / "act.bin").touch()
+
+    return export_dir
+
+
+@pytest.fixture
+def mock_export_dir_no_queue(tmp_path: Path) -> Path:
+    export_dir = tmp_path / "exports_no_queue"
+    export_dir.mkdir()
+
+    metadata = {
+        "policy_class": "physicalai.policies.act.ACT",
+        "backend": "openvino",
+        "use_action_queue": False,
+        "chunk_size": 1,
+    }
+    import yaml
+
+    with (export_dir / "metadata.yaml").open("w") as f:
+        yaml.dump(metadata, f)
+
     (export_dir / "act.xml").touch()
     (export_dir / "act.bin").touch()
 
@@ -100,7 +127,6 @@ def mock_export_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def mock_adapter():
-    """Create mock adapter for testing."""
     adapter = MagicMock()
     adapter.input_names = ["state", "images"]
     adapter.output_names = ["actions"]
@@ -111,7 +137,6 @@ def mock_adapter():
 
 @pytest.fixture
 def sample_observation() -> dict[str, np.ndarray]:
-    """Create sample observation dict for testing."""
     return {
         "state": np.random.randn(1, 4).astype(np.float32),
         "images": np.random.randn(1, 3, 224, 224).astype(np.float32),
@@ -119,10 +144,7 @@ def sample_observation() -> dict[str, np.ndarray]:
 
 
 class TestInferenceModelInit:
-    """Test InferenceModel initialization and auto-detection."""
-
     def test_init_with_valid_directory(self, mock_export_dir: Path, mock_adapter: MagicMock) -> None:
-        """Test initialization with valid export directory."""
         with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
 
@@ -131,9 +153,9 @@ class TestInferenceModelInit:
             assert model.backend == ExportBackend.OPENVINO
             assert model.use_action_queue is True
             assert model.chunk_size == 10
+            assert isinstance(model.runner, ActionChunking)
 
     def test_init_with_nonexistent_directory(self) -> None:
-        """Test initialization fails with nonexistent directory."""
         with pytest.raises(FileNotFoundError, match="Export directory not found"):
             InferenceModel("/nonexistent/path")
 
@@ -153,8 +175,6 @@ class TestInferenceModelInit:
         expected: ExportBackend,
         file_ext: str,
     ) -> None:
-        """Test initialization with explicit backend specification."""
-        # Create export dir with appropriate model file
         export_dir = tmp_path / "exports"
         export_dir.mkdir()
         (export_dir / f"model{file_ext}").touch()
@@ -169,16 +189,42 @@ class TestInferenceModelInit:
             assert model.backend == expected
 
     def test_load_classmethod(self, mock_export_dir: Path, mock_adapter: MagicMock) -> None:
-        """Test convenience load() classmethod."""
         with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
             model = InferenceModel.load(mock_export_dir)
             assert isinstance(model, InferenceModel)
             assert model.policy_name == "act"
 
+    def test_init_auto_selects_single_pass_runner(
+        self,
+        mock_export_dir_no_queue: Path,
+        mock_adapter: MagicMock,
+    ) -> None:
+        with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
+            model = InferenceModel(mock_export_dir_no_queue)
+            assert isinstance(model.runner, SinglePass)
+
+    def test_init_auto_selects_action_chunking_runner(
+        self,
+        mock_export_dir: Path,
+        mock_adapter: MagicMock,
+    ) -> None:
+        with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
+            model = InferenceModel(mock_export_dir)
+            assert isinstance(model.runner, ActionChunking)
+            assert model.runner.chunk_size == 10
+
+    def test_init_with_explicit_runner(
+        self,
+        mock_export_dir: Path,
+        mock_adapter: MagicMock,
+    ) -> None:
+        explicit_runner = SinglePass()
+        with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
+            model = InferenceModel(mock_export_dir, runner=explicit_runner)
+            assert model.runner is explicit_runner
+
 
 class TestMetadataLoading:
-    """Test metadata loading from different formats."""
-
     @pytest.mark.parametrize(
         ("format_type", "metadata_content"),
         [
@@ -193,7 +239,6 @@ class TestMetadataLoading:
         format_type: str,
         metadata_content: dict,
     ) -> None:
-        """Test loading metadata from YAML and JSON formats."""
         export_dir = tmp_path / "exports"
         export_dir.mkdir()
 
@@ -215,7 +260,6 @@ class TestMetadataLoading:
             assert model.metadata == metadata_content
 
     def test_no_metadata_fallback(self, tmp_path: Path, mock_adapter: MagicMock) -> None:
-        """Test graceful handling when no metadata file exists."""
         export_dir = tmp_path / "exports"
         export_dir.mkdir()
         (export_dir / "model.onnx").touch()
@@ -225,8 +269,6 @@ class TestMetadataLoading:
 
 
 class TestAutoDetection:
-    """Test auto-detection of policy name, backend, and device."""
-
     @pytest.mark.parametrize(
         ("policy_class", "expected_name"),
         [
@@ -242,7 +284,6 @@ class TestAutoDetection:
         policy_class: str,
         expected_name: str,
     ) -> None:
-        """Test policy name detection from metadata."""
         import yaml
 
         export_dir = tmp_path / "exports"
@@ -265,7 +306,6 @@ class TestAutoDetection:
         file_ext: str,
         expected_backend: ExportBackend,
     ) -> None:
-        """Test backend detection from file extensions."""
         export_dir = tmp_path / "exports"
         export_dir.mkdir()
         (export_dir / f"model{file_ext}").touch()
@@ -290,18 +330,15 @@ class TestAutoDetection:
         backend_type: str,
         cuda_available: bool,
     ) -> None:
-        """Test device detection based on backend and CUDA availability."""
         export_dir = tmp_path / "exports"
         export_dir.mkdir()
         (export_dir / backend_file).touch()
 
-        # OpenVINO always uses CPU, others use cuda/cpu based on availability
         if backend_type == "openvino":
             expected_device = "CPU"
         else:
             expected_device = "cuda" if cuda_available else "cpu"
 
-        # Configure mock to return the expected device
         mock_adapter.default_device.return_value = expected_device
 
         with patch("torch.cuda.is_available", return_value=cuda_available):
@@ -313,7 +350,6 @@ class TestAutoDetection:
         tmp_path: Path,
         mock_adapter: MagicMock,
     ) -> None:
-        """Test manual device setting."""
         export_dir = tmp_path / "exports"
         export_dir.mkdir()
         backend_file = "model.onnx"
@@ -325,28 +361,21 @@ class TestAutoDetection:
 
 
 class TestSelectAction:
-    """Test action selection with different configurations."""
-
     def test_select_action_no_queue(
         self,
-        mock_export_dir: Path,
+        mock_export_dir_no_queue: Path,
         mock_adapter: MagicMock,
         sample_observation: dict[str, np.ndarray],
     ) -> None:
-        """Test action selection without action queue."""
-        # Configure for non-chunked policy
         with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
-            model = InferenceModel(mock_export_dir)
-            model.use_action_queue = False
-            model.chunk_size = 1
+            model = InferenceModel(mock_export_dir_no_queue)
 
-            # Mock adapter returns (1, 1, 2) - remove temporal dim
             mock_adapter.predict.return_value = {"actions": np.random.randn(1, 1, 2)}
 
             action = model.select_action(sample_observation)
 
             assert isinstance(action, np.ndarray)
-            assert action.shape == (1, 2)  # (batch, action_dim)
+            assert action.shape == (1, 2)
             mock_adapter.predict.assert_called_once()
 
     def test_select_action_with_queue(
@@ -355,25 +384,20 @@ class TestSelectAction:
         mock_adapter: MagicMock,
         sample_observation: dict[str, np.ndarray],
     ) -> None:
-        """Test action selection with action queue for chunked policy."""
         with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
-            model.use_action_queue = True
-            model.chunk_size = 10
+            assert isinstance(model.runner, ActionChunking)
 
-            # Mock returns chunk of 10 actions: (batch=1, chunk=10, action_dim=2)
             mock_adapter.predict.return_value = {"actions": np.random.randn(1, 10, 2)}
 
-            # First call should populate queue
             action1 = model.select_action(sample_observation)
             assert action1.shape == (1, 2)
-            assert len(model._action_queue) == 9  # 10 - 1 returned
+            assert len(model.runner._action_queue) == 9
 
-            # Next calls should use queue without inference
             action2 = model.select_action(sample_observation)
             assert action2.shape == (1, 2)
-            assert len(model._action_queue) == 8
-            mock_adapter.predict.assert_called_once()  # Still only called once
+            assert len(model.runner._action_queue) == 8
+            mock_adapter.predict.assert_called_once()
 
     def test_select_action_queue_refill(
         self,
@@ -381,68 +405,94 @@ class TestSelectAction:
         mock_adapter: MagicMock,
         sample_observation: dict[str, np.ndarray],
     ) -> None:
-        """Test action queue refills when empty."""
         with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
-            model.use_action_queue = True
-            model.chunk_size = 3
+            assert isinstance(model.runner, ActionChunking)
 
-            mock_adapter.predict.return_value = {"actions": np.random.randn(1, 3, 2)}
+            mock_adapter.predict.return_value = {"actions": np.random.randn(1, 10, 2)}
 
-            # Exhaust queue
-            for _ in range(3):
+            for _ in range(10):
                 model.select_action(sample_observation)
 
-            assert len(model._action_queue) == 0
+            assert len(model.runner._action_queue) == 0
             mock_adapter.predict.assert_called_once()
 
-            # Next call should refill
             model.select_action(sample_observation)
-            assert len(model._action_queue) == 2
+            assert len(model.runner._action_queue) == 9
             assert mock_adapter.predict.call_count == 2
 
     def test_reset_clears_queue(self, mock_export_dir: Path, mock_adapter: MagicMock) -> None:
-        """Test reset() clears action queue."""
         with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
-            model._action_queue.extend([np.random.randn(1, 2).astype(np.float32) for _ in range(5)])
+            assert isinstance(model.runner, ActionChunking)
+            model.runner._action_queue.extend([np.random.randn(1, 2).astype(np.float32) for _ in range(5)])
 
             model.reset()
-            assert len(model._action_queue) == 0
+            assert len(model.runner._action_queue) == 0
 
     def test_select_action_with_numpy_dict_input(
         self,
-        mock_export_dir: Path,
+        mock_export_dir_no_queue: Path,
         mock_adapter: MagicMock,
     ) -> None:
-        """Test select_action with dict[str, np.ndarray] returns np.ndarray (no backward compat wrap)."""
         with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
-            model = InferenceModel(mock_export_dir)
-            model.use_action_queue = False
-            model.chunk_size = 1
+            model = InferenceModel(mock_export_dir_no_queue)
 
-            # Mock adapter returns (1, 1, 2) - remove temporal dim
             mock_adapter.predict.return_value = {"actions": np.random.randn(1, 1, 2)}
 
-            # Pass dict[str, np.ndarray] directly
-            numpy_input = {"state": np.random.randn(1, 3).astype(np.float32),
-                           "images": np.random.randn(1, 3, 224, 224).astype(np.float32)}
+            numpy_input = {
+                "state": np.random.randn(1, 3).astype(np.float32),
+                "images": np.random.randn(1, 3, 224, 224).astype(np.float32),
+            }
             action = model.select_action(numpy_input)
 
             assert isinstance(action, np.ndarray)
-            assert action.shape == (1, 2)  # (batch, action_dim)
+            assert action.shape == (1, 2)
             mock_adapter.predict.assert_called_once()
 
 
-class TestInputPreparation:
-    """Test observation-to-input filtering."""
+class TestCallAPI:
+    def test_call_delegates_to_runner(
+        self,
+        mock_export_dir_no_queue: Path,
+        mock_adapter: MagicMock,
+        sample_observation: dict[str, np.ndarray],
+    ) -> None:
+        with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
+            model = InferenceModel(mock_export_dir_no_queue)
 
+            mock_adapter.predict.return_value = {"actions": np.random.randn(1, 1, 2)}
+
+            action = model(sample_observation)
+
+            assert isinstance(action, np.ndarray)
+            assert action.shape == (1, 2)
+
+    def test_call_and_select_action_return_same(
+        self,
+        mock_export_dir_no_queue: Path,
+        mock_adapter: MagicMock,
+        sample_observation: dict[str, np.ndarray],
+    ) -> None:
+        fixed_output = np.random.randn(1, 1, 2)
+        with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
+            model = InferenceModel(mock_export_dir_no_queue)
+
+            mock_adapter.predict.return_value = {"actions": fixed_output.copy()}
+            action_call = model(sample_observation)
+
+            mock_adapter.predict.return_value = {"actions": fixed_output.copy()}
+            action_select = model.select_action(sample_observation)
+
+            np.testing.assert_array_equal(action_call, action_select)
+
+
+class TestInputPreparation:
     def test_prepare_inputs_filters_to_adapter_input_names(
         self,
         mock_export_dir: Path,
         mock_adapter: MagicMock,
     ) -> None:
-        """Test _prepare_inputs filters observation to adapter's expected input names."""
         mock_adapter.input_names = ["state", "images"]
         with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
@@ -469,7 +519,6 @@ class TestInputPreparation:
         mock_export_dir: Path,
         mock_adapter: MagicMock,
     ) -> None:
-        """Test _prepare_inputs passes through when adapter has no input names."""
         mock_adapter.input_names = []
         with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
@@ -488,7 +537,6 @@ class TestInputPreparation:
         mock_export_dir: Path,
         mock_adapter: MagicMock,
     ) -> None:
-        """Test _prepare_inputs returns only keys that exist in both observation and input_names."""
         mock_adapter.input_names = ["state", "images", "extra_input"]
         with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
@@ -510,7 +558,6 @@ class TestInputPreparation:
         mock_export_dir: Path,
         mock_adapter: MagicMock,
     ) -> None:
-        """Test nested key handling for dotted adapter inputs."""
         with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
 
@@ -529,8 +576,6 @@ class TestInputPreparation:
 
 
 class TestActionOutputKey:
-    """Test action output key detection."""
-
     @pytest.mark.parametrize(
         ("outputs", "expected_key"),
         [
@@ -538,18 +583,15 @@ class TestActionOutputKey:
             ({"action": np.array([1, 2])}, "action"),
             ({"output": np.array([1, 2])}, "output"),
             ({"pred_actions": np.array([1, 2])}, "pred_actions"),
-            ({"custom_key": np.array([1, 2])}, "custom_key"),  # Fallback to first
+            ({"custom_key": np.array([1, 2])}, "custom_key"),
         ],
     )
     def test_get_action_output_key(self, outputs: dict[str, np.ndarray], expected_key: str) -> None:
-        """Test action output key detection with different naming."""
         key = InferenceModel._get_action_output_key(outputs)
         assert key == expected_key
 
 
 class TestModelPathResolution:
-    """Test model file path resolution."""
-
     @pytest.mark.parametrize(
         ("backend", "file_ext"),
         [
@@ -565,7 +607,6 @@ class TestModelPathResolution:
         backend: ExportBackend,
         file_ext: str,
     ) -> None:
-        """Test model path resolution with policy name."""
         export_dir = tmp_path / "exports"
         export_dir.mkdir()
         model_file = export_dir / f"act{file_ext}"
@@ -581,7 +622,6 @@ class TestModelPathResolution:
         tmp_path: Path,
         mock_adapter: MagicMock,
     ) -> None:
-        """Test model path resolution without policy name."""
         export_dir = tmp_path / "exports"
         export_dir.mkdir()
         model_file = export_dir / "model.onnx"
@@ -597,11 +637,9 @@ class TestModelPathResolution:
         tmp_path: Path,
         mock_adapter: MagicMock,
     ) -> None:
-        """Test model path resolution raises when file not found."""
         export_dir = tmp_path / "exports"
         export_dir.mkdir()
 
-        # Add metadata so policy name detection works
         import yaml
 
         with (export_dir / "metadata.yaml").open("w") as f:
@@ -616,10 +654,7 @@ class TestModelPathResolution:
 
 
 class TestRepr:
-    """Test string representation."""
-
     def test_repr(self, mock_export_dir: Path, mock_adapter: MagicMock) -> None:
-        """Test __repr__ returns informative string."""
         with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
             model = InferenceModel(mock_export_dir)
             repr_str = repr(model)
@@ -628,3 +663,114 @@ class TestRepr:
             assert "act" in repr_str
             assert "openvino" in repr_str
             assert model.device in repr_str
+            assert "ActionChunking" in repr_str
+
+
+class TestGetRunnerFactory:
+    def test_returns_single_pass_by_default(self) -> None:
+        runner = get_runner({})
+        assert isinstance(runner, SinglePass)
+
+    def test_returns_single_pass_when_queue_disabled(self) -> None:
+        runner = get_runner({"use_action_queue": False})
+        assert isinstance(runner, SinglePass)
+
+    def test_returns_action_chunking_when_queue_enabled(self) -> None:
+        runner = get_runner({"use_action_queue": True, "chunk_size": 5})
+        assert isinstance(runner, ActionChunking)
+        assert runner.chunk_size == 5
+
+    def test_returns_action_chunking_default_chunk_size(self) -> None:
+        runner = get_runner({"use_action_queue": True})
+        assert isinstance(runner, ActionChunking)
+        assert runner.chunk_size == 1
+
+    def test_action_chunking_wraps_single_pass(self) -> None:
+        runner = get_runner({"use_action_queue": True, "chunk_size": 5})
+        assert isinstance(runner, ActionChunking)
+        assert isinstance(runner.runner, SinglePass)
+
+
+class TestSinglePass:
+    def test_run_squeezes_temporal_dim(self) -> None:
+        adapter = MagicMock()
+        adapter.predict.return_value = {"actions": np.random.randn(1, 1, 4)}
+
+        runner = SinglePass()
+        action = runner.run(adapter, {"input": np.zeros(1)})
+
+        assert action.shape == (1, 4)
+
+    def test_run_no_squeeze_when_no_temporal_dim(self) -> None:
+        adapter = MagicMock()
+        adapter.predict.return_value = {"actions": np.random.randn(1, 4)}
+
+        runner = SinglePass()
+        action = runner.run(adapter, {"input": np.zeros(1)})
+
+        assert action.shape == (1, 4)
+
+    def test_reset_is_noop(self) -> None:
+        runner = SinglePass()
+        runner.reset()
+
+
+class TestActionChunking:
+    def test_run_enqueues_and_returns_first(self) -> None:
+        adapter = MagicMock()
+        adapter.predict.return_value = {"actions": np.random.randn(1, 5, 2)}
+
+        runner = ActionChunking(runner=SinglePass(), chunk_size=5)
+        action = runner.run(adapter, {"input": np.zeros(1)})
+
+        assert action.shape == (1, 2)
+        assert len(runner._action_queue) == 4
+
+    def test_run_returns_from_queue_without_inference(self) -> None:
+        adapter = MagicMock()
+        adapter.predict.return_value = {"actions": np.random.randn(1, 3, 2)}
+
+        runner = ActionChunking(runner=SinglePass(), chunk_size=3)
+        runner.run(adapter, {"input": np.zeros(1)})
+        runner.run(adapter, {"input": np.zeros(1)})
+
+        adapter.predict.assert_called_once()
+
+    def test_run_refills_when_empty(self) -> None:
+        adapter = MagicMock()
+        adapter.predict.return_value = {"actions": np.random.randn(1, 2, 2)}
+
+        runner = ActionChunking(runner=SinglePass(), chunk_size=2)
+        runner.run(adapter, {"input": np.zeros(1)})
+        runner.run(adapter, {"input": np.zeros(1)})
+
+        assert adapter.predict.call_count == 1
+
+        runner.run(adapter, {"input": np.zeros(1)})
+        assert adapter.predict.call_count == 2
+
+    def test_reset_clears_queue(self) -> None:
+        adapter = MagicMock()
+        adapter.predict.return_value = {"actions": np.random.randn(1, 5, 2)}
+
+        runner = ActionChunking(runner=SinglePass(), chunk_size=5)
+        runner.run(adapter, {"input": np.zeros(1)})
+        assert len(runner._action_queue) == 4
+
+        runner.reset()
+        assert len(runner._action_queue) == 0
+
+    def test_repr(self) -> None:
+        runner = ActionChunking(runner=SinglePass(), chunk_size=10)
+        assert "ActionChunking" in repr(runner)
+        assert "chunk_size=10" in repr(runner)
+
+    def test_reset_delegates_to_inner_runner(self) -> None:
+        inner = MagicMock(spec=InferenceRunner)
+        runner = ActionChunking(runner=inner, chunk_size=5)
+        runner._action_queue.extend([np.zeros((1, 2)) for _ in range(3)])
+
+        runner.reset()
+
+        assert len(runner._action_queue) == 0
+        inner.reset.assert_called_once()
