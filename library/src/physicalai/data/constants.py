@@ -13,6 +13,11 @@ TASK = "task"
 STATE = "state"
 IMAGES = "images"
 
+# Preprocessing-related fields
+TOKENIZED_PROMPT = "tokenized_prompt"
+TOKENIZED_PROMPT_MASK = "tokenized_prompt_mask"
+IMAGE_MASKS = "image_masks"
+
 # Optional RL & metadata fields
 NEXT_REWARD = "next_reward"
 NEXT_SUCCESS = "next_success"

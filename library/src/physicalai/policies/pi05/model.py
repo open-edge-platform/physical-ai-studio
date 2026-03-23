@@ -17,8 +17,8 @@ import torch.nn.functional as F  # noqa: N812
 from torch import Tensor, nn
 from transformers.cache_utils import DynamicCache
 
+from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.data.observation import ACTION, IMAGES, STATE, TASK
-from physicalai.policies.utils.preprocess import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 
 from .pi_gemma import (
     PaliGemmaForConditionalGenerationWithPiGemma,
