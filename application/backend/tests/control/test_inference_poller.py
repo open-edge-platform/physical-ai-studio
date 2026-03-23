@@ -5,8 +5,8 @@ import numpy as np
 import pytest
 from physicalai.data import Observation
 
-from workers.inference.inference_poller import InferencePoller
-from workers.inference.inference_result import InferenceResult
+from control.inference_poller import InferencePoller
+from control.inference_result import InferenceResult
 
 
 @pytest.fixture
@@ -54,7 +54,7 @@ class TestInferencePoller:
         assert poller.run_inference(Observation())
         poller.reset()
         assert not poller.has_result()
-        assert poller.busy
+        assert not poller.busy
         poller.output_queue.put_nowait(InferenceResult(time=0, data=np.array([])))
         time.sleep(0.01)  # let feeder thread flush to pipe
         assert poller.has_result()

@@ -5,7 +5,6 @@ from .job import Job
 from .model import Model
 from .project import Project
 from .robot import LeRobotConfig, NetworkIpRobotConfig, Robot, SerialPortInfo
-from .teleoperation import InferenceConfig, TeleoperationConfig
 
 __all__ = [
     "CalibrationConfig",
@@ -15,7 +14,6 @@ __all__ = [
     "Episode",
     "EpisodeInfo",
     "EpisodeVideo",
-    "InferenceConfig",
     "Job",
     "LeRobotConfig",
     "LeRobotDatasetInfo",
@@ -25,5 +23,4 @@ __all__ = [
     "Robot",
     "SerialPortInfo",
     "Snapshot",
-    "TeleoperationConfig",
 ]

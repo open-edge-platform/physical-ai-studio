@@ -64,7 +64,7 @@ class DatasetClient(ABC):
         """Add frame to recording buffer."""
 
     @abstractmethod
-    def save_episode(self, task: str) -> Episode:
+    def save_episode(self) -> None:
         """Save current recording buffer as episode."""
 
     @abstractmethod

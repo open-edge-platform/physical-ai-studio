@@ -158,11 +158,9 @@ class InternalLeRobotDataset(DatasetClient):
         frame = self._process_frame(obs, act, task)
         self._dataset.add_frame(frame)
 
-    def save_episode(self, task: str) -> Episode:
+    def save_episode(self) -> None:
         """Save current recording buffer as episode."""
-        new_episode = self._build_episode_from_buffer(self._dataset.meta.latest_episode, task)
         self._dataset.save_episode()
-        return new_episode
 
     def discard_buffer(self) -> None:
         """Discard current recording buffer."""
