@@ -256,6 +256,7 @@ class ACT(nn.Module, FromConfig):
             "compress_to_fp16": False,
         }
         extra_args["torch_export_ir"] = {}
+        extra_args["executorch"] = {}
         extra_args["torch"] = {
             "input_names": ["observation"],
             "output_names": ["action"],

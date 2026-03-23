@@ -13,6 +13,7 @@ class ExportBackend(StrEnum):
     OPENVINO = "openvino"
     TORCH = "torch"
     TORCH_EXPORT_IR = "torch_export_ir"
+    EXECUTORCH = "executorch"
 
 
 __all__ = ["ExportBackend"]

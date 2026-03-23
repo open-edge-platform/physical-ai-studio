@@ -437,4 +437,10 @@ class ACT(Export, Policy):
         Returns:
             list[str | ExportBackend]: A list of supported export backends.
         """
-        return [ExportBackend.TORCH, ExportBackend.OPENVINO, ExportBackend.ONNX, ExportBackend.TORCH_EXPORT_IR]
+        return [
+            ExportBackend.TORCH,
+            ExportBackend.OPENVINO,
+            ExportBackend.ONNX,
+            ExportBackend.TORCH_EXPORT_IR,
+            ExportBackend.EXECUTORCH,
+        ]

@@ -5,6 +5,7 @@
 
 from dataclasses import dataclass
 from typing import Any
+from unittest.mock import MagicMock, patch
 
 import onnx
 import pytest
@@ -375,7 +376,7 @@ class TestToTorchExportIR:
         assert output_path.exists()
 
         # Verify the exported program can be loaded
-        loaded_program = torch.export.load(output_path) # nosec
+        loaded_program = torch.export.load(output_path)  # nosec
         assert loaded_program is not None
 
     def test_to_torch_export_ir_with_provided_input_sample(self, tmp_path):
@@ -391,7 +392,7 @@ class TestToTorchExportIR:
         assert output_path.exists()
         assert ExportBackend.TORCH_EXPORT_IR in wrapper.supported_export_backends()
         # Verify the exported program can be loaded
-        loaded_program = torch.export.load(output_path) # nosec
+        loaded_program = torch.export.load(output_path)  # nosec
         assert loaded_program is not None
 
     def test_to_torch_export_ir_kwargs_override_model_args(self, tmp_path):
@@ -415,7 +416,7 @@ class TestToTorchExportIR:
         assert ExportBackend.TORCH_EXPORT_IR in wrapper.supported_export_backends()
 
         # Verify the exported program can be loaded
-        loaded_program = torch.export.load(output_path) # nosec
+        loaded_program = torch.export.load(output_path)  # nosec
         assert loaded_program is not None
 
     def test_to_torch_export_ir_with_multiple_inputs(self, tmp_path):
@@ -430,7 +431,7 @@ class TestToTorchExportIR:
         assert output_path.exists()
 
         # Verify the exported program can be loaded
-        loaded_program = torch.export.load(output_path) # nosec
+        loaded_program = torch.export.load(output_path)  # nosec
         assert loaded_program is not None
 
     def test_to_torch_export_ir_with_dict_input(self, tmp_path):
@@ -445,7 +446,7 @@ class TestToTorchExportIR:
         assert output_path.exists()
 
         # Verify the exported program can be loaded
-        loaded_program = torch.export.load(output_path) # nosec
+        loaded_program = torch.export.load(output_path)  # nosec
         assert loaded_program is not None
 
     def test_to_torch_export_ir_without_sample_input_raises_error(self, tmp_path):
@@ -489,3 +490,146 @@ class TestToTorchExportIR:
         # Verify the exported program can be loaded
         loaded_program = torch.export.load(output_path)  # nosec
         assert loaded_program is not None
+
+
+class TestToExecutorch:
+    """Tests for to_executorch method."""
+
+    def _mock_executorch_modules(self):
+        """Create mock modules for executorch lazy imports.
+
+        Returns a dict of mock modules and key mock objects for assertions.
+        """
+        mock_exir = MagicMock()
+        mock_to_edge = MagicMock()
+        mock_exir.to_edge_transform_and_lower = mock_to_edge
+
+        mock_edge_program = MagicMock()
+        mock_to_edge.return_value = mock_edge_program
+
+        mock_exec_program = MagicMock()
+        mock_edge_program.to_executorch.return_value = mock_exec_program
+
+        mock_openvino_partitioner_mod = MagicMock()
+        mock_backend_details_mod = MagicMock()
+
+        modules = {
+            "executorch": MagicMock(),
+            "executorch.exir": mock_exir,
+            "executorch.backends": MagicMock(),
+            "executorch.backends.openvino": MagicMock(),
+            "executorch.backends.openvino.partitioner": mock_openvino_partitioner_mod,
+            "executorch.exir.backend": MagicMock(),
+            "executorch.exir.backend.backend_details": mock_backend_details_mod,
+        }
+
+        return {
+            "modules": modules,
+            "mock_to_edge": mock_to_edge,
+            "mock_edge_program": mock_edge_program,
+            "mock_exec_program": mock_exec_program,
+            "mock_openvino_partitioner_mod": mock_openvino_partitioner_mod,
+            "mock_backend_details_mod": mock_backend_details_mod,
+        }
+
+    def test_to_executorch_happy_path(self, tmp_path):
+        """Test full ExecuTorch export flow with mocked executorch modules."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        mocks = self._mock_executorch_modules()
+
+        with patch.dict("sys.modules", mocks["modules"]), patch("torch.export.export") as mock_torch_export:
+            mock_torch_export.return_value = MagicMock()  # aten_dialect
+
+            result = wrapper.to_executorch(tmp_path / "model.pte")
+
+            # Assert write_to_file was called (writes .pte content)
+            mocks["mock_exec_program"].write_to_file.assert_called_once()
+
+            # Assert metadata.yaml was created
+            assert (tmp_path / "metadata.yaml").exists()
+
+            # Assert .pte file was created (open() creates it even with mocked write)
+            assert (tmp_path / "model.pte").exists()
+
+            # Verify metadata contains input_names
+            import yaml
+
+            with open(tmp_path / "metadata.yaml") as f:
+                metadata = yaml.safe_load(f)
+            assert "input_names" in metadata
+
+            assert result == tmp_path / "model.pte"
+
+    def test_to_executorch_no_sample_input(self, tmp_path):
+        """Test that RuntimeError is raised when model has no sample_input."""
+        model = SimpleModel(SimpleConfig())
+        wrapper = ExportWrapper(model)
+
+        with pytest.raises(RuntimeError, match="input sample"):
+            wrapper.to_executorch(tmp_path / "model.pte")
+
+    def test_to_executorch_import_error(self, tmp_path):
+        """Test that ImportError is raised when executorch is not installed."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        with patch.dict("sys.modules", {"executorch.exir": None}), pytest.raises(ImportError):
+            wrapper.to_executorch(tmp_path / "model.pte")
+
+    def test_to_executorch_unsupported_delegate(self, tmp_path):
+        """Test that ValueError is raised for unsupported delegate."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        mocks = self._mock_executorch_modules()
+
+        with (
+            patch.dict("sys.modules", mocks["modules"]),
+            patch("torch.export.export", return_value=MagicMock()),
+            pytest.raises(ValueError, match="Unsupported"),
+        ):
+            wrapper.to_executorch(tmp_path / "model.pte", delegate="unsupported_delegate")
+
+    def test_to_executorch_no_delegate(self, tmp_path):
+        """Test ExecuTorch export in portable mode (no partitioner)."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        mocks = self._mock_executorch_modules()
+
+        with patch.dict("sys.modules", mocks["modules"]), patch("torch.export.export") as mock_torch_export:
+            mock_torch_export.return_value = MagicMock()
+
+            wrapper.to_executorch(tmp_path / "model.pte", delegate=None)
+
+            # Assert to_edge_transform_and_lower was called without partitioner kwarg
+            mocks["mock_to_edge"].assert_called_once()
+            call_args = mocks["mock_to_edge"].call_args
+            assert "partitioner" not in (call_args.kwargs or {})
+
+    def test_to_executorch_custom_delegate_config(self, tmp_path):
+        """Test ExecuTorch export with custom delegate configuration."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        mocks = self._mock_executorch_modules()
+        mock_compile_spec = mocks["mock_backend_details_mod"].CompileSpec
+
+        with patch.dict("sys.modules", mocks["modules"]), patch("torch.export.export") as mock_torch_export:
+            mock_torch_export.return_value = MagicMock()
+
+            wrapper.to_executorch(tmp_path / "model.pte", delegate="openvino", delegate_config={"device": "GPU"})
+
+            # Assert CompileSpec was called with ("device", b"GPU")
+            mock_compile_spec.assert_called_once_with("device", b"GPU")
+
+    def test_export_dispatches_to_executorch(self, tmp_path):
+        """Test that export() dispatcher calls to_executorch()."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        with patch.object(wrapper, "to_executorch") as mock_to_executorch:
+            wrapper.export(backend=ExportBackend.EXECUTORCH, output_path=tmp_path / "model.pte")
+            mock_to_executorch.assert_called_once()

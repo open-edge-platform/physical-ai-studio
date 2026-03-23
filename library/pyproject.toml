@@ -90,6 +90,12 @@ smolvla = [
     "safetensors>=0.4.3,<1.0.0",
 ]
 
+# ExecuTorch runtime for edge/mobile deployment
+executorch = ["executorch>=1.1.0"]
+
+# ExecuTorch with OpenVINO delegate (requires nncf for export)
+executorch-openvino = ["executorch>=1.1.0", "nncf>=3.0.0"]
+
 # All optional dependencies
 all = [
     "physicalai-train[tests]",
@@ -119,7 +125,11 @@ dev = [
 # ============================================================================ #
 [tool.uv]
 
-conflicts = [[{ extra = "cpu" }, { extra = "cu128" }, { extra = "xpu" }]]
+conflicts = [
+    [{ extra = "cpu" }, { extra = "cu128" }, { extra = "xpu" }],
+    [{ extra = "executorch" }, { extra = "xpu" }],
+    [{ extra = "executorch-openvino" }, { extra = "xpu" }],
+]
 
 # PyTorch index configuration
 [[tool.uv.index]]
