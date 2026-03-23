@@ -36,16 +36,16 @@ class StreamingEncodingSettings(BaseModel):
     @staticmethod
     def _vcodec_candidates() -> list[str]:
         return [
-            resolve_vcodec("auto"),
-            "h264_videotoolbox",
-            "hevc_videotoolbox",
-            "h264_nvenc",
-            "hevc_nvenc",
-            "h264_vaapi",
-            "h264_qsv",
-            "libsvtav1",
-            "libx264",
-            "h264",
+            "h264_videotoolbox", # macOS
+            "hevc_videotoolbox", # macOS
+            "av1_qsv",  # Intel QSV
+            "h264_qsv", # Intel QSV
+            "h264_nvenc", # NVIDIA NVENC
+            "hevc_nvenc", # NVIDIA NVENC
+            "h264_vaapi", # Intel/AMD VA-API
+            "libsvtav1", # SVT-AV1, open source SW AV1
+            "libx264", # open source SW H.264
+            "h264", # Proprietary H.264
         ]
 
     @staticmethod
@@ -54,11 +54,12 @@ class StreamingEncodingSettings(BaseModel):
             import av
 
             encoder = av.CodecContext.create(vcodec, "w")
+            pix_fmt = "nv12" if vcodec.endswith("qsv") else "yuv420p"
             setattr(encoder, "width", 320)
             setattr(encoder, "height", 240)
             setattr(encoder, "framerate", Fraction(30, 1))
             setattr(encoder, "time_base", Fraction(1, 30))
-            setattr(encoder, "pix_fmt", "yuv420p")
+            setattr(encoder, "pix_fmt", pix_fmt)
             encoder.open()
             return True
         except Exception as exc:
