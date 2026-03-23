@@ -170,7 +170,8 @@ class Export:
 
         Raises:
             RuntimeError: If input sample is not provided and the model does not
-                implement `sample_input` property.
+                implement `sample_input` property. Also if export is failed due to other issues
+                like wrong export options.
         """
         if input_sample is None:
             input_sample = self._get_default_export_input_sample()
@@ -214,6 +215,7 @@ class Export:
                 msg = (
                     "Failed to convert tokenizer to ONNX format. The tokenizer may not be compatible with ONNX export."
                 )
+                raise RuntimeError(msg)
 
         # Create metadata files
         self._create_metadata(export_dir, ExportBackend.ONNX, preprocessing_type=preprocessing_type)
@@ -235,7 +237,9 @@ class Export:
             **export_kwargs (dict): Additional keyword arguments to pass to the OpenVINO conversion process.
 
         Raises:
-            RuntimeError: If no input sample is provided and the model does not implement a `sample_input` property.
+            RuntimeError: If input sample is not provided and the model does not
+                implement `sample_input` property. Also if export is failed due to other issues
+                like wrong export options.
 
         Notes:
             - The model is set to evaluation mode before conversion.
@@ -298,7 +302,14 @@ class Export:
                 max_length=self._preprocessor.max_token_len,
                 use_max_padding=True,
             )
-            openvino.save_model(ov_tokenizer, export_dir / "tokenizer.xml")
+            if ov_tokenizer is not None:
+                openvino.save_model(ov_tokenizer, export_dir / "tokenizer.xml")
+            else:
+                msg = (
+                    "Failed to convert tokenizer to OpenVINO format. "
+                    "The tokenizer may not be compatible with OpenVINO export."
+                )
+                raise RuntimeError(msg)
 
         # Create metadata files
         self._create_metadata(export_dir, ExportBackend.OPENVINO, preprocessing_type=preprocessing_type)
