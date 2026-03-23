@@ -12,7 +12,8 @@ from .act import ACT, ACTConfig, ACTModel
 from .base import PolicyLike
 from .groot import Groot, GrootConfig, GrootModel
 from .lerobot import get_lerobot_policy
-from .pi0 import Pi0, Pi0Config, Pi0Model, Pi05, Pi05Config
+from .pi0 import Pi0, Pi0Config, Pi0Model
+from .pi05 import Pi05, Pi05Config, Pi05Model
 from .smolvla import SmolVLA, SmolVLAConfig, SmolVLAModel
 
 if TYPE_CHECKING:
@@ -33,6 +34,7 @@ __all__ = [
     "Pi0Model",
     "Pi05",
     "Pi05Config",
+    "Pi05Model",
     # Protocol
     "PolicyLike",
     # SmolVLA

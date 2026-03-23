@@ -15,14 +15,15 @@ export const SubmitNewEnvironmentButton = () => {
 
     const environment_id = uuidv4();
     const body = useEnvironmentFormBody(environment_id);
+    const isDisabled = body.name.length === 0 || body.robots.length === 0 || body.camera_ids.length === 0;
 
     return (
         <Button
             variant='accent'
             isPending={addEnvironmentMutation.isPending}
-            isDisabled={body === null}
+            isDisabled={isDisabled}
             onPress={async () => {
-                if (body === null) {
+                if (isDisabled) {
                     return;
                 }
 

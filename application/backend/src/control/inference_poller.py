@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from workers.inference.inference_result import InferenceResult
+from control.inference_result import InferenceResult
 
 if TYPE_CHECKING:
     from multiprocessing import Queue
@@ -40,3 +40,5 @@ class InferencePoller:
         """Clear the queue, but dont touch busy to prevent desyncs from active inference."""
         if self.has_result():
             self.output_queue.get_nowait()
+
+        self.busy = False

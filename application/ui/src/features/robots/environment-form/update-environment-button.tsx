@@ -15,14 +15,15 @@ export const UpdateEnvironmentButton = () => {
         '/api/projects/{project_id}/environments/{environment_id}'
     );
     const body = useEnvironmentFormBody(environment_id);
+    const isDisabled = body.name.length === 0 || body.robots.length === 0 || body.camera_ids.length === 0;
 
     return (
         <Button
             variant='accent'
             isPending={updateEnvironmentsMutation.isPending}
-            isDisabled={body === null}
+            isDisabled={isDisabled}
             onPress={async () => {
-                if (body === null) {
+                if (isDisabled) {
                     return;
                 }
 

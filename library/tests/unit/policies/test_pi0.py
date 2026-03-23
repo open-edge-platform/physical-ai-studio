@@ -265,7 +265,6 @@ class TestGetPolicy:
 
         policy = get_policy("pi05", source="physicalai")
         assert policy.__class__.__name__ == "Pi05"
-        assert policy.config.variant == "pi05"
 
     def test_case_insensitive(self) -> None:
         """Test policy name is case-insensitive."""

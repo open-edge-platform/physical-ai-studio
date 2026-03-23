@@ -13,6 +13,7 @@ class DatasetMapper(IBaseMapper):
             id=str(db_schema.id),
             name=db_schema.name,
             path=db_schema.path,
+            default_task=db_schema.default_task,
             project_id=str(db_schema.project_id),
             environment_id=str(db_schema.environment_id),
         )

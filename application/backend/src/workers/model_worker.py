@@ -7,9 +7,9 @@ from multiprocessing.synchronize import Event as EventClass
 from loguru import logger
 from physicalai.inference import InferenceModel
 
+from control.inference_result import InferenceResult
 from models.utils import load_inference_model
 from schemas import Model
-from workers.inference.inference_result import InferenceResult
 
 from .base import BaseProcessWorker
 

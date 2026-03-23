@@ -28,6 +28,7 @@ interface NewDatasetFormProps {
 const NewDatasetForm = ({ project_id, onDone }: NewDatasetFormProps) => {
     const saveMutation = $api.useMutation('post', '/api/dataset');
     const [name, setName] = useState<string>('');
+    const [defaultTask, setDefaultTask] = useState<string>('');
     const { geti_action_dataset_path } = useSettings();
 
     const { data: environments } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/environments', {
@@ -51,6 +52,7 @@ const NewDatasetForm = ({ project_id, onDone }: NewDatasetFormProps) => {
                     name,
                     project_id,
                     environment_id: environmentId,
+                    default_task: defaultTask,
                     path: `${geti_action_dataset_path}/${makeNameSafeForPath(name)}`,
                 },
             });
@@ -82,6 +84,15 @@ const NewDatasetForm = ({ project_id, onDone }: NewDatasetFormProps) => {
                         label='Dataset name'
                         value={name}
                         onChange={setName}
+                    />
+
+                    <TextField
+                        // eslint-disable-next-line jsx-a11y/no-autofocus
+                        autoFocus
+                        width='100%'
+                        label='Task'
+                        value={defaultTask}
+                        onChange={setDefaultTask}
                     />
                 </Content>
                 <ButtonGroup>

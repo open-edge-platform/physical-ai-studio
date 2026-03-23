@@ -156,6 +156,7 @@ class DatasetDB(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
     environment_id: Mapped[str] = mapped_column(ForeignKey("project_environments.id"))
+    default_task: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
     environment: Mapped["ProjectEnvironmentDB"] = relationship("ProjectEnvironmentDB", back_populates="datasets")
     project: Mapped["ProjectDB"] = relationship("ProjectDB", back_populates="datasets")
@@ -200,17 +201,19 @@ class ModelDB(Base):
     properties: Mapped[JSON] = mapped_column(JSON(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
-    dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id"))
+    dataset_id: Mapped[str | None] = mapped_column(ForeignKey("datasets.id"), nullable=True)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
-    snapshot_id: Mapped[str] = mapped_column(ForeignKey("snapshots.id"))
-    train_job_id: Mapped[str | None] = mapped_column(ForeignKey("jobs.id", ondelete="RESTRICT"), nullable=True)
+    snapshot_id: Mapped[str | None] = mapped_column(ForeignKey("snapshots.id"), nullable=True)
     parent_model_id: Mapped[str | None] = mapped_column(
         ForeignKey("models.id", ondelete="SET NULL"), nullable=True, default=None
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    train_job_id: Mapped[str | None] = mapped_column(
+        ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True, default=None
+    )
     project: Mapped["ProjectDB"] = relationship("ProjectDB", back_populates="models")
-    dataset: Mapped["DatasetDB"] = relationship("DatasetDB", back_populates="models")
-    snapshot: Mapped["SnapshotDB"] = relationship("SnapshotDB", back_populates="models")
+    dataset: Mapped["DatasetDB | None"] = relationship("DatasetDB", back_populates="models")
+    snapshot: Mapped["SnapshotDB | None"] = relationship("SnapshotDB", back_populates="models")
     training_job: Mapped["JobDB"] = relationship("JobDB", back_populates="model", foreign_keys=[train_job_id])
 
 

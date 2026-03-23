@@ -1,65 +1,125 @@
-import { Button, ButtonGroup, Flex, Heading, Icon, ProgressCircle, Text, ToastQueue, View } from '@geti/ui';
-import { ChevronLeft } from '@geti/ui/icons';
+import { useEffect, useState } from 'react';
 
-import { SchemaTeleoperationConfig } from '../../../api/openapi-spec';
+import {
+    Button,
+    ButtonGroup,
+    ComboBox,
+    Flex,
+    Heading,
+    Item,
+    Keyboard,
+    ProgressCircle,
+    StatusLight,
+    Text,
+    ToastQueue,
+} from '@geti/ui';
+
+import { SchemaDatasetOutput, SchemaEnvironmentWithRelations } from '../../../api/openapi-spec';
 import { RobotViewer } from '../../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
+import { Observation, useRobotControl } from '../../../features/robots/use-robot-control';
 import { paths } from '../../../router';
 import { CameraView } from './../camera-view';
-import { useTeleoperation } from './use-teleoperation';
+
+import classes from './recording-viewer.module.scss';
 
 interface RecordingViewerProps {
-    recordingConfig: SchemaTeleoperationConfig;
+    environment: SchemaEnvironmentWithRelations;
+    dataset: SchemaDatasetOutput;
 }
 
-export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
-    const { startEpisode, saveEpisode, cancelEpisode, observation, state } = useTeleoperation(
-        recordingConfig,
-        ToastQueue.negative
-    );
+const getActionObservationSource = (observation?: Observation): { [joint: string]: number } | undefined => {
+    if (observation === undefined) {
+        return undefined;
+    }
+    if (observation.actions !== null) {
+        return observation.actions;
+    }
+    return observation.state;
+};
 
-    const robots = (recordingConfig.environment.robots ?? []).map(({ robot }) => robot);
-
-    const backPath = paths.project.datasets.show({
-        dataset_id: recordingConfig.dataset.id!,
-        project_id: recordingConfig.dataset.project_id,
+export const RecordingViewer = ({ environment, dataset }: RecordingViewerProps) => {
+    const { observation, state, startEpisode, discardEpisode, saveEpisode, readyForRecording } = useRobotControl({
+        environment,
+        dataset,
+        onError: ToastQueue.negative,
     });
 
-    if (!state.initialized) {
-        return (
-            <Flex
-                width='100%'
-                height={'100%'}
-                direction='column'
-                gap={'size-100'}
-                alignItems={'center'}
-                justifyContent={'center'}
-            >
-                <Heading>Initializing</Heading>
-                <ProgressCircle isIndeterminate />
+    const [task, setTask] = useState<string>(dataset.default_task);
 
-                <Button href={backPath}>Cancel</Button>
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'ArrowRight') {
+                if (state.is_recording && !saveEpisode.isPending) {
+                    saveEpisode.mutate();
+                } else if (!state.is_recording) {
+                    startEpisode.mutate(task);
+                }
+            } else if (e.key === 'ArrowLeft') {
+                if (state.is_recording && !saveEpisode.isPending) {
+                    discardEpisode.mutate();
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [state.is_recording, saveEpisode, startEpisode, discardEpisode, task]);
+
+    const robots = (environment.robots ?? []).map(({ robot }) => robot);
+
+    const backPath = paths.project.datasets.show({
+        dataset_id: dataset.id!,
+        project_id: dataset.project_id,
+    });
+
+    const onStart = () => {
+        if (task !== '') {
+            startEpisode.mutate(task);
+        }
+    };
+
+    if (!readyForRecording) {
+        return (
+            <Flex width='100%' height={'100%'} alignItems={'center'} justifyContent={'center'} direction={'column'}>
+                <Heading level={2}>
+                    <Text>Initializing</Text>
+                    <ProgressCircle marginStart='size-200' size='S' isIndeterminate alignSelf={'center'} />
+                </Heading>
+                <Flex direction='column' margin='size-200'>
+                    <StatusLight variant={state.dataset_loaded ? 'positive' : 'yellow'}>Dataset</StatusLight>
+                    <StatusLight variant={state.environment_loaded ? 'positive' : 'yellow'}>Environment</StatusLight>
+                </Flex>
+                <Button variant={'secondary'} href={backPath}>
+                    Cancel
+                </Button>
             </Flex>
         );
     }
-
-    const action_values = observation.current === undefined ? undefined : Object.values(observation.current['actions']);
-    const action_keys = observation.current === undefined ? undefined : Object.keys(observation.current['actions']);
+    const observation_source = getActionObservationSource(observation.current);
+    const action_values = observation_source === undefined ? undefined : Object.values(observation_source);
+    const action_keys = observation_source === undefined ? undefined : Object.keys(observation_source);
 
     return (
         <RobotModelsProvider>
             <Flex direction={'column'} height={'100%'} position={'relative'}>
-                <View height='size-800'>
-                    <Button href={backPath} alignSelf={'start'}>
-                        <Icon>
-                            <ChevronLeft color='white' fill='white' />
-                        </Icon>
-                        <Text>Stop recording</Text>
-                    </Button>
-                </View>
+                <Flex alignItems={'center'} gap='size-100' height='size-400' margin='size-200'>
+                    <ComboBox
+                        isReadOnly={state.is_recording}
+                        name='Task'
+                        flex
+                        isRequired
+                        allowsCustomValue
+                        inputValue={task}
+                        onInputChange={setTask}
+                    >
+                        <Item key={dataset.default_task}>{dataset.default_task}</Item>
+                    </ComboBox>
+                </Flex>
+
                 <Flex direction={'row'} flex gap={'size-100'}>
                     <Flex direction={'column'} alignContent={'start'} flex gap={'size-30'}>
-                        {recordingConfig.environment.cameras!.map((camera) => (
+                        {environment.cameras!.map((camera) => (
                             <CameraView key={camera.id} camera={camera} observation={observation} />
                         ))}
                     </Flex>
@@ -69,16 +129,23 @@ export const RecordingViewer = ({ recordingConfig }: RecordingViewerProps) => {
                 </Flex>
                 {state.is_recording ? (
                     <ButtonGroup alignSelf='end'>
-                        <Button isDisabled={saveEpisode.isPending} variant={'negative'} onPress={cancelEpisode}>
-                            Discard
+                        <Button
+                            isDisabled={saveEpisode.isPending}
+                            variant={'negative'}
+                            onPress={() => discardEpisode.mutate()}
+                        >
+                            <Text>Discard</Text>
+                            <Keyboard UNSAFE_className={classes.hotkey}>←</Keyboard>
                         </Button>
                         <Button isPending={saveEpisode.isPending} onPress={() => saveEpisode.mutate()}>
-                            Accept
+                            <Text>Accept</Text>
+                            <Keyboard UNSAFE_className={classes.hotkey}>→</Keyboard>
                         </Button>
                     </ButtonGroup>
                 ) : (
-                    <Button onPress={startEpisode} alignSelf={'center'}>
-                        Start episode
+                    <Button onPress={onStart} isDisabled={task === ''} alignSelf={'center'}>
+                        <Text>Start episode</Text>
+                        <Keyboard UNSAFE_className={classes.hotkey}>→</Keyboard>
                     </Button>
                 )}
             </Flex>

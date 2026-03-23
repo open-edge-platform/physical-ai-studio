@@ -553,6 +553,10 @@ class LiberoGym(Gym):
         # Build observation dict
         obs_dict: dict[str, Any] = {"images": images or None}
 
+        # Include task description so policies can build language prompts
+        if hasattr(self, "task_description") and self.task_description:
+            obs_dict["task"] = self.task_description
+
         # Add state if present (with batch dimension)
         if "agent_pos" in raw_obs:
             state = raw_obs["agent_pos"]

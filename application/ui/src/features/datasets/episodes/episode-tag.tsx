@@ -1,13 +1,13 @@
 import { Flex } from '@geti/ui';
 import { clsx } from 'clsx';
 
-import { SchemaEpisode } from '../../../api/openapi-spec';
+import { EpisodeSummary } from '../../../routes/datasets/dataset-provider';
 import { toMMSS } from '../../../utils';
 
 import classes from './episode-tag.module.scss';
 
 interface EpisodeTagProps {
-    episode: SchemaEpisode;
+    episode: EpisodeSummary;
     variant: 'small' | 'medium';
 }
 

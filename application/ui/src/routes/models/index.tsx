@@ -71,8 +71,8 @@ const JobList = ({ jobs }: { jobs: SchemaTrainJob[] }) => {
         if (job.id !== undefined) {
             interruptMutation.mutate({
                 params: {
-                    query: {
-                        uuid: job.id,
+                    path: {
+                        job_id: job.id,
                     },
                 },
             });
