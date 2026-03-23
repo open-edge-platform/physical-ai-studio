@@ -96,6 +96,59 @@ class TrainingTrackingCallback(Callback):
             trainer.should_stop = True
 
 
+class TrainingLogCallback(Callback):
+    """Mirror training progress/metrics to loguru as regular log lines."""
+
+    def __init__(self):
+        super().__init__()
+        self.every_n_steps = 1
+
+    def on_fit_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:  # noqa ARG002
+        """Resolve logging interval once trainer values are available."""
+        self.every_n_steps = self._auto_every_n_steps(trainer.max_steps)
+
+        logger.info(
+            f"Training log cadence configured: every_n_steps={self.every_n_steps}, max_steps={trainer.max_steps}"
+        )
+
+    @staticmethod
+    def _auto_every_n_steps(total_steps: int) -> int:
+        """Choose an interval that targets >=1000 logs and at least every 100 steps.
+
+        Rules:
+        - Never less frequent than every 100 steps.
+        - Aim for at least 1000 progress log entries when possible.
+        """
+        if total_steps <= 0:
+            return 1
+
+        # Log at least once every 100 steps, otherwise make sure to log 1000 times
+        return min(100, max(1, total_steps // 1000))
+
+    def on_train_batch_end(
+        self,
+        trainer: "pl.Trainer",
+        pl_module: "pl.LightningModule",  # noqa ARG002
+        outputs: STEP_OUTPUT,
+        batch: Any,  # noqa ARG002
+        batch_idx: int,  # noqa ARG002
+    ) -> None:
+        global_step = trainer.global_step
+        is_first_step = global_step <= 1
+        if not is_first_step and global_step % self.every_n_steps != 0:
+            return
+
+        loss_val: float | None = None
+        if isinstance(outputs, Mapping):
+            loss_tensor = outputs.get("loss")
+            if loss_tensor is not None:
+                loss_val = loss_tensor.detach().cpu().item()
+
+        max_steps = max(1, trainer.max_steps)
+        progress = min(100, round(global_step / max_steps * 100))
+        logger.info(f"Training progress: step={global_step}/{max_steps} ({progress}%), train/loss_step={loss_val}")
+
+
 class TrainingService:
     """
     Service for managing model training jobs.
