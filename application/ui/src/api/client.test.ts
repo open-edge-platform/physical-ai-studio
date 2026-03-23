@@ -124,12 +124,8 @@ describe('fetchClient.PATH', () => {
             expect(fetchClient.PATH('/api/jobs/ws')).toBe('/api/jobs/ws');
         });
 
-        it('resolves /api/record/teleoperate/ws without params', () => {
-            expect(fetchClient.PATH('/api/record/teleoperate/ws')).toBe('/api/record/teleoperate/ws');
-        });
-
-        it('resolves /api/record/inference/ws without params', () => {
-            expect(fetchClient.PATH('/api/record/inference/ws')).toBe('/api/record/inference/ws');
+        it('resolves /api/record/robot_control/ws without params', () => {
+            expect(fetchClient.PATH('/api/record/robot_control/ws')).toBe('/api/record/robot_control/ws');
         });
 
         it('resolves /api/projects/{project_id}/robots/{robot_id}/ws with params', () => {
