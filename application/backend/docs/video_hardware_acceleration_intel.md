@@ -56,9 +56,11 @@ This is separate from the dispatcher. Without the runtime/implementation, FFmpeg
 If the hardware accelerator is not available, you might want to fall back on SW encoders. 
 You can skip this step if you do not want to enable these encoders.
 
-For libx264:
+For libopenh264:
 ```bash
-sudo apt install libx264-dev
+git clone https://github.com/cisco/openh264.git
+make -j"$(nproc)"
+sudo make install
 ```
 
 For SVT-AV1:
@@ -86,12 +88,11 @@ cd ffmpeg
   --extra-cflags="-I$HOME/opt/vpl/include" \
   --extra-ldflags="-L$HOME/opt/vpl/lib -L$HOME/opt/vpl/lib64" \
   --extra-libs="-lpthread -lm" \
-  --enable-gpl \
   --enable-libvpl \
   --enable-vaapi \
   --enable-shared \
   --enable-libsvtav1 \
-  --enable-libx264
+  --enable-libopenh264
 
 make -j"$(nproc)"
 make install
@@ -100,7 +101,7 @@ make install
 You can remove these lines if you did skip step 4:
 ```bash
 --enable-libsvtav1 \
---enable-libx264
+--enable-libopenh264
 ```
 
 After install:
