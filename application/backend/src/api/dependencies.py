@@ -12,6 +12,7 @@ from services import (
     DatasetService,
     EpisodeThumbnailService,
     JobService,
+    LogService,
     ModelService,
     ProjectCameraService,
     ProjectService,
@@ -112,6 +113,14 @@ def get_model_service() -> ModelService:
 def get_job_service() -> JobService:
     """Provides a JobService instance for managing jobs."""
     return JobService()
+
+
+def get_log_service(request: HTTPConnection) -> LogService:
+    """Provides a LogService instance for managing logs."""
+    settings = getattr(request.app.state, "settings", None)
+    if settings is None:
+        settings = get_settings()
+    return LogService(settings=settings, job_service=JobService())
 
 
 def get_project_id(project_id: str) -> UUID:
