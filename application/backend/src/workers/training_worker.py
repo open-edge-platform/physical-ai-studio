@@ -111,6 +111,7 @@ class TrainingWorker(BaseProcessWorker):
                 repo_id="snapshot",  # doesnt matter for loading the data.
                 root=snapshot.path,
                 train_batch_size=payload.batch_size,
+                num_workers=payload.num_workers,
             )
 
             if base_model is not None:
@@ -140,6 +141,7 @@ class TrainingWorker(BaseProcessWorker):
                 accelerator=get_torch_device(),
                 strategy=get_lightning_strategy(),
                 max_steps=payload.max_steps,
+                auto_scale_batch_size=payload.auto_scale_batch_size,
             )
 
             dispatcher.start()

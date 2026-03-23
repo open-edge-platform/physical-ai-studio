@@ -37,7 +37,10 @@ if not libero_config_file.exists():
 
     # Try to find the libero package installation path for bundled files
     # The libero package bundles bddl_files, init_files, and assets
-    libero_spec = importlib.util.find_spec("libero.libero")
+    try:
+        libero_spec = importlib.util.find_spec("libero.libero")
+    except ModuleNotFoundError:
+        libero_spec = None
     if libero_spec and libero_spec.origin:
         libero_pkg_path = Path(libero_spec.origin).parent
         default_config = {
@@ -379,6 +382,7 @@ def pusht_gym():
     from physicalai.gyms import PushTGym
 
     return PushTGym()
+
 
 @pytest.fixture
 def dummy_policy():
