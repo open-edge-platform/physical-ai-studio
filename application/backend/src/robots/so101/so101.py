@@ -1,6 +1,4 @@
 import asyncio
-
-from schemas.calibration import Calibration
 from typing import Literal
 
 from lerobot.motors.feetech import FeetechMotorsBus, OperatingMode
@@ -8,6 +6,7 @@ from lerobot.motors.motors_bus import Motor, MotorCalibration, MotorNormMode
 from loguru import logger
 
 from robots.robot_client import RobotClient
+from schemas.calibration import Calibration
 from schemas.robot import RobotType
 
 
@@ -54,7 +53,7 @@ class So101(RobotClient):
                 "wrist_roll": Motor(5, "sts3215", norm_mode_body),
                 "gripper": Motor(6, "sts3215", MotorNormMode.RANGE_0_100),
             },
-            calibration=self._convert_calibration_to_dict(calibration)
+            calibration=self._convert_calibration_to_dict(calibration),
         )
         self.id = id
         self.port = port
@@ -63,13 +62,16 @@ class So101(RobotClient):
 
     @staticmethod
     def _convert_calibration_to_dict(calibration: Calibration) -> dict[str, MotorCalibration]:
-        return {key: MotorCalibration(
-            id=values.id,
-            drive_mode=values.drive_mode,
-            homing_offset=values.homing_offset,
-            range_min=values.range_min,
-            range_max=values.range_max,
-        ) for key, values in calibration.values.items()}
+        return {
+            key: MotorCalibration(
+                id=values.id,
+                drive_mode=values.drive_mode,
+                homing_offset=values.homing_offset,
+                range_min=values.range_min,
+                range_max=values.range_max,
+            )
+            for key, values in calibration.values.items()
+        }
 
     @property
     def robot_type(self) -> RobotType:
@@ -89,7 +91,7 @@ class So101(RobotClient):
         try:
             async with self._bus_lock, asyncio.timeout(HARDWARE_TIMEOUT_CONNECT):
                 await asyncio.to_thread(self._connect_impl)
-            self.configure()
+            await self.configure()
         except TimeoutError:
             logger.error("Timeout connecting to robot")
             raise
@@ -112,7 +114,6 @@ class So101(RobotClient):
         except Exception as e:
             logger.error(f"Error during robot disconnect: {e}")
 
-
     async def configure(self) -> None:
         async with self._bus_lock:
             async with asyncio.timeout(HARDWARE_TIMEOUT_COMMAND):
@@ -122,7 +123,6 @@ class So101(RobotClient):
                     await asyncio.to_thread(self._enable_torque_impl)
                 else:
                     await asyncio.to_thread(self._disable_torque_impl)
-
 
     def _configure_impl(self) -> None:
         if not self.bus.is_calibrated:
@@ -146,7 +146,6 @@ class So101(RobotClient):
                     self.bus.write("Max_Torque_Limit", motor, 500)  # 50% of the max torque limit to avoid burnout
                     self.bus.write("Protection_Current", motor, 250)  # 50% of max current to avoid burnout
                     self.bus.write("Overload_Torque", motor, 25)  # 25% torque when overloaded
-
 
     async def _move_to_target(self, joints: dict, goal_time: float) -> None:
         max_rotational_distance = self.max_speed * goal_time

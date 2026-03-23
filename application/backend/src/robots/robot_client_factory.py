@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from exceptions import ResourceNotFoundError, ResourceType
 from robots.robot_client import RobotClient
 from robots.so101.so101 import So101
