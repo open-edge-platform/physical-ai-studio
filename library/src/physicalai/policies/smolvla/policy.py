@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 
 from physicalai.data.observation import ACTION
-from physicalai.export.mixin_export import Export
+from physicalai.export.mixin_export_policy import ExportPolicy
 from physicalai.policies.base import Policy
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from .preprocessor import SmolVLAPostprocessor, SmolVLAPreprocessor
 
 
-class SmolVLA(Export, Policy):
+class SmolVLA(ExportPolicy, Policy):
     """SmolVLA Policy - Hugging Face's flow matching VLA model.
 
     Lightning wrapper for training and inference with SmolVLA model.

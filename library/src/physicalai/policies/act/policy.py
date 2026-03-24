@@ -6,9 +6,9 @@
 from typing import Any, cast
 
 import torch
+from physicalai.export.mixin_export import ExportBackend, ExportPolicy
 
 from physicalai.data import Dataset, Feature, FeatureType, NormalizationParameters, Observation
-from physicalai.export.mixin_export import Export, ExportBackend
 from physicalai.gyms import Gym
 from physicalai.policies.act.config import ACTConfig
 from physicalai.policies.act.model import ACT as ACTModel  # noqa: N811
@@ -17,7 +17,7 @@ from physicalai.policies.base import Policy
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 
-class ACT(Export, Policy):
+class ACT(ExportPolicy, Policy):
     """Action Chunking with Transformers (ACT) policy implementation.
 
     This class implements the ACT policy for imitation learning, which uses a transformer-based

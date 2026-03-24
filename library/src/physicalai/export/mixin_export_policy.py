@@ -1,7 +1,7 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Mixin classes for exporting PyTorch models."""
+"""Mixin classes for exporting Policies."""
 
 import inspect
 import tempfile
@@ -27,7 +27,7 @@ POLICY_NAME_KEY = "policy_name"
 DATASET_STATS_KEY = "dataset_stats"
 
 
-class Export:
+class ExportPolicy:
     """Mixin class for exporting torch model checkpoints."""
 
     model: Model
@@ -57,10 +57,6 @@ class Export:
             "backend": str(backend),
             **metadata_kwargs,
         }
-
-        # Add model config if available
-        if hasattr(self.model, "config") and hasattr(self.model.config, "to_jsonargparse"):
-            metadata["config"] = self.model.config.to_jsonargparse()
 
         metadata_extra = getattr(self, "metadata_extra", None)
         if metadata_extra is not None:
@@ -131,10 +127,7 @@ class Export:
         checkpoint = {}
         checkpoint["state_dict"] = self.state_dict() if hasattr(self, "state_dict") else {}
 
-        if hasattr(self, "model_config_type") and hasattr(self.model, "config"):
-            config_dict = self.model.config.to_dict()
-            checkpoint[CONFIG_KEY] = config_dict
-        elif hasattr(self, "hparams"):
+        if hasattr(self, "hparams"):
             checkpoint["epoch"] = 0
             checkpoint["global_step"] = 0
             checkpoint["pytorch-lightning_version"] = lightning.__version__
