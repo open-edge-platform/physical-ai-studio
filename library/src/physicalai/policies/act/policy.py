@@ -8,7 +8,7 @@ from typing import Any, cast
 import torch
 
 from physicalai.data import Dataset, Feature, FeatureType, NormalizationParameters, Observation
-from physicalai.export.mixin_export_policy import ExportPolicy, ExportBackend
+from physicalai.export.mixin_export_policy import ExportBackend, ExportPolicy
 from physicalai.gyms import Gym
 from physicalai.policies.act.config import ACTConfig
 from physicalai.policies.act.model import ACT as ACTModel  # noqa: N811

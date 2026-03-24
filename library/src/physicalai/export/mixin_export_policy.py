@@ -19,8 +19,9 @@ import yaml
 from onnxruntime_extensions import gen_processing_models
 
 from physicalai.export.backends import ExportBackend
-from physicalai.policies.base import Model
 from physicalai.train import __version__
+
+from .mixin_export_model import ExportModel
 
 CONFIG_KEY = "model_config"
 POLICY_NAME_KEY = "policy_name"
@@ -30,7 +31,7 @@ DATASET_STATS_KEY = "dataset_stats"
 class ExportPolicy:
     """Mixin class for exporting torch model checkpoints."""
 
-    model: Model
+    model: ExportModel
     _preprocessor: torch.nn.Module
 
     def _create_metadata(
@@ -442,12 +443,8 @@ class ExportPolicy:
                 torch.Tensor values extracted from the processed sample input. Returns None
                 if the model does not have a 'sample_input' attribute.
         """
-        if hasattr(self.model, "sample_input"):
-            input_sample = self.model.sample_input
-            processed_sample = self._preprocessor(input_sample)
-            return {k: v for k, v in processed_sample.items() if isinstance(v, torch.Tensor)}
-
-        return None
+        processed_sample = self._preprocessor(self.model.sample_input)
+        return {k: v for k, v in processed_sample.items() if isinstance(v, torch.Tensor)}
 
     def _get_export_extra_args(self, backend: ExportBackend | str) -> dict[str, Any]:
         """Retrieve extra export arguments for a specific format.
@@ -463,7 +460,7 @@ class ExportPolicy:
                 Returns an empty dictionary if no extra arguments are found.
         """
         extra_model_args: dict[str, Any] = {}
-        if hasattr(self.model, "extra_export_args") and backend in self.model.extra_export_args:
+        if backend in self.model.extra_export_args:
             extra_model_args = self.model.extra_export_args[backend]
         return extra_model_args
 

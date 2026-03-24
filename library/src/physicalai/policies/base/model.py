@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """Base torch nn.Module for Models."""
@@ -14,10 +14,6 @@ class Model(nn.Module, ABC):
     Model is an entity that is fully compatible with torch.nn.Module,
     and is used to define the architecture of the neural network inside Policy.
     """
-
-    def __init__(self) -> None:
-        """Initialize nn.Module."""
-        super().__init__()
 
     @property
     @abstractmethod

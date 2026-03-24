@@ -28,6 +28,7 @@ from torchvision.ops.misc import FrozenBatchNorm2d
 
 from physicalai.data import Feature, FeatureType
 from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, Observation
+from physicalai.export import ExportModel
 from physicalai.policies.base import Model
 from physicalai.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
 
@@ -40,7 +41,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-class ACT(Model):
+class ACT(ExportModel, Model):
     """Action Chunking Transformer (ACT) model.
 
     Supports training and inference modes.
