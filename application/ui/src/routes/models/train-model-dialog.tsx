@@ -111,18 +111,15 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
                         <DisclosurePanel UNSAFE_style={{ padding: 0 }}>
                             <Flex direction='column' gap='size-150' width='100%'>
                                 <Flex direction='row' gap='size-100' alignItems='center'>
-                                    <Checkbox
-                                        isSelected={autoScaleBatchSize}
-                                        onChange={setAutoScaleBatchSize}
-                                    >
+                                    <Checkbox isSelected={autoScaleBatchSize} onChange={setAutoScaleBatchSize}>
                                         Auto scale batch size
                                     </Checkbox>
                                     <ContextualHelp variant='info'>
                                         <Heading>Auto scale batch size</Heading>
                                         <Content>
                                             <Text>
-                                                Automatically finds the largest batch size that fits in GPU
-                                                memory before training starts.
+                                                Automatically finds the largest batch size that fits in GPU memory
+                                                before training starts.
                                             </Text>
                                         </Content>
                                     </ContextualHelp>
@@ -151,8 +148,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
                                                 <Heading>Max steps</Heading>
                                                 <Content>
                                                     <Text>
-                                                        Total number of gradient update steps. Training will stop
-                                                        after this many steps regardless of epochs.
+                                                        Total number of gradient update steps. Training will stop after
+                                                        this many steps regardless of epochs.
                                                     </Text>
                                                 </Content>
                                             </ContextualHelp>
@@ -168,9 +165,9 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
                                             <Heading>Data workers</Heading>
                                             <Content>
                                                 <Text>
-                                                    Number of parallel processes for loading training data. Auto
-                                                    selects a value based on available CPU cores. More workers
-                                                    can speed up training but use more memory.
+                                                    Number of parallel processes for loading training data. Auto selects
+                                                    a value based on available CPU cores. More workers can speed up
+                                                    training but use more memory.
                                                 </Text>
                                             </Content>
                                         </ContextualHelp>
