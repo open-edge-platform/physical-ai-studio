@@ -1,33 +1,20 @@
 import { useState } from 'react';
 
-import {
-    Button,
-    ButtonGroup,
-    ComboBox,
-    Flex,
-    Heading,
-    Item,
-    Link,
-    ProgressCircle,
-    StatusLight,
-    Text,
-    ToastQueue,
-} from '@geti/ui';
+import { Button, ButtonGroup, ComboBox, Flex, Heading, Item, Link, ProgressCircle, StatusLight, Text } from '@geti/ui';
 import { Back, Pause, Play } from '@geti/ui/icons';
 
 import { SchemaEnvironmentWithRelations, SchemaModel } from '../../../api/openapi-spec';
 import { ErrorMessage } from '../../../components/error-page/error-page';
 import { useProjectId } from '../../../features/projects/use-project';
 import { RobotViewer } from '../../../features/robots/controller/robot-viewer';
+import { Observation, useRobotControl } from '../../../features/robots/robot-control-provider';
 import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
-import { Observation, useRobotControl } from '../../../features/robots/use-robot-control';
 import { paths } from '../../../router';
 import { CameraView } from '../../datasets/camera-view';
 
 interface InferenceViewerProps {
     environment: SchemaEnvironmentWithRelations;
     model: SchemaModel;
-    backend: string;
     tasks: string[];
 }
 
@@ -42,17 +29,12 @@ const getVisualisationSourceFromObservation = (observation: Observation | undefi
     }
 };
 
-export const InferenceViewer = ({ environment, model, backend, tasks }: InferenceViewerProps) => {
+export const InferenceViewer = ({ environment, model, tasks }: InferenceViewerProps) => {
     const { project_id } = useProjectId();
 
     const [task, setTask] = useState<string>(tasks[0] ?? '');
 
-    const { observation, readyForInference, state, startTask, stopTask } = useRobotControl({
-        environment,
-        model,
-        backend,
-        onError: ToastQueue.negative,
-    });
+    const { observation, readyForInference, state, startTask, stopTask } = useRobotControl();
 
     const visualisation_source = getVisualisationSourceFromObservation(observation.current);
 

@@ -1,4 +1,7 @@
+import { ToastQueue } from '@adobe/react-spectrum';
+
 import { $api } from '../../../api/client';
+import { RobotControlProvider } from '../../../features/robots/robot-control-provider';
 import { InferenceViewer } from './inference-viewer';
 import { useInferenceParams } from './use-inference-params';
 
@@ -25,5 +28,14 @@ export const Index = () => {
         params: { query: { uuid: model_id } },
     });
 
-    return <InferenceViewer environment={initialEnvironment} model={model} backend={backend} tasks={tasks} />;
+    return (
+        <RobotControlProvider
+            environment={initialEnvironment}
+            model={model}
+            backend={backend}
+            onError={ToastQueue.negative}
+        >
+            <InferenceViewer environment={initialEnvironment} model={model} tasks={tasks} />
+        </RobotControlProvider>
+    );
 };

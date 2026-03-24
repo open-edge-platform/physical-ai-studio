@@ -3,7 +3,7 @@ import { RefObject, useState } from 'react';
 import { Flex, ProgressCircle, View, Well } from '@geti/ui';
 
 import { components } from '../../api/openapi-spec';
-import { Observation } from '../../features/robots/use-robot-control';
+import { Observation } from '../../features/robots/robot-control-provider';
 import { useInterval } from './use-interval';
 
 import classes from './episode-viewer.module.scss';

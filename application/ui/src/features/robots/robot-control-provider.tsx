@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react';
+import { createContext, ReactNode, RefObject, useContext, useRef, useState } from 'react';
 
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, UseMutationResult } from '@tanstack/react-query';
 
 import { fetchClient } from '../../api/client';
 import { SchemaDatasetOutput, SchemaEnvironmentWithRelations, SchemaModel } from '../../api/openapi-spec';
@@ -42,13 +42,47 @@ export interface Observation {
 }
 
 interface useRobotControlProps {
+    children: ReactNode;
     environment: SchemaEnvironmentWithRelations;
     model?: SchemaModel;
     dataset?: SchemaDatasetOutput;
     backend?: string;
     onError: (error: string) => void;
 }
-export const useRobotControl = ({ environment, model, dataset, backend, onError }: useRobotControlProps) => {
+
+type MutationResult<TVariables = void> = UseMutationResult<
+    RobotControlApiJsonResponse<RobotControlState>,
+    Error,
+    TVariables
+>;
+
+type RobotControlContextValue = null | {
+    observation: RefObject<Observation | undefined>;
+    state: RobotControlState;
+    loadEnvironment: MutationResult<SchemaEnvironmentWithRelations>;
+    loadModel: MutationResult<{ model: SchemaModel; backend: string }>;
+    loadDataset: MutationResult<SchemaDatasetOutput>;
+    startTask: MutationResult<string>;
+    stopTask: MutationResult;
+    readyForInference: boolean;
+    readyForRecording: boolean;
+    setFollowerSource: MutationResult<FollowerSource>;
+    startEpisode: MutationResult<string>;
+    saveEpisode: MutationResult;
+    discardEpisode: MutationResult;
+    isConnected: boolean;
+};
+
+const RobotControlContext = createContext<RobotControlContextValue>(null);
+
+export const RobotControlProvider = ({
+    environment,
+    model,
+    dataset,
+    backend,
+    onError,
+    children,
+}: useRobotControlProps) => {
     const [state, setState] = useState<RobotControlState>(createRobotControlState());
     const observation = useRef<Observation | undefined>(undefined);
 
@@ -177,20 +211,32 @@ export const useRobotControl = ({ environment, model, dataset, backend, onError 
     const readyForRecording = state.environment_loaded && state.dataset_loaded;
     const isConnected = readyState === 1;
 
-    return {
-        observation,
-        state,
-        loadEnvironment,
-        loadModel,
-        loadDataset,
-        startTask,
-        stopTask,
-        readyForInference,
-        readyForRecording,
-        setFollowerSource,
-        startEpisode,
-        saveEpisode,
-        discardEpisode,
-        isConnected,
-    };
+    return (
+        <RobotControlContext.Provider
+            value={{
+                observation,
+                state,
+                loadEnvironment,
+                loadModel,
+                loadDataset,
+                startTask,
+                stopTask,
+                readyForInference,
+                readyForRecording,
+                setFollowerSource,
+                startEpisode,
+                saveEpisode,
+                discardEpisode,
+                isConnected,
+            }}
+        >
+            {children}
+        </RobotControlContext.Provider>
+    );
+};
+
+export const useRobotControl = () => {
+    const ctx = useContext(RobotControlContext);
+    if (!ctx) throw new Error('useRobotControl must be used within RobotControlProvider');
+    return ctx;
 };

@@ -12,13 +12,12 @@ import {
     ProgressCircle,
     StatusLight,
     Text,
-    ToastQueue,
 } from '@geti/ui';
 
 import { SchemaDatasetOutput, SchemaEnvironmentWithRelations } from '../../../api/openapi-spec';
 import { RobotViewer } from '../../../features/robots/controller/robot-viewer';
+import { Observation, useRobotControl } from '../../../features/robots/robot-control-provider';
 import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
-import { Observation, useRobotControl } from '../../../features/robots/use-robot-control';
 import { paths } from '../../../router';
 import { CameraView } from './../camera-view';
 
@@ -40,11 +39,7 @@ const getActionObservationSource = (observation?: Observation): { [joint: string
 };
 
 export const RecordingViewer = ({ environment, dataset }: RecordingViewerProps) => {
-    const { observation, state, startEpisode, discardEpisode, saveEpisode, readyForRecording } = useRobotControl({
-        environment,
-        dataset,
-        onError: ToastQueue.negative,
-    });
+    const { observation, state, startEpisode, discardEpisode, saveEpisode, readyForRecording } = useRobotControl();
 
     const [task, setTask] = useState<string>(dataset.default_task);
 
@@ -69,11 +64,6 @@ export const RecordingViewer = ({ environment, dataset }: RecordingViewerProps) 
 
     const robots = (environment.robots ?? []).map(({ robot }) => robot);
 
-    const backPath = paths.project.datasets.show({
-        dataset_id: dataset.id!,
-        project_id: dataset.project_id,
-    });
-
     const onStart = (e: FormEvent) => {
         e.preventDefault();
         if (task !== '') {
@@ -92,7 +82,13 @@ export const RecordingViewer = ({ environment, dataset }: RecordingViewerProps) 
                     <StatusLight variant={state.dataset_loaded ? 'positive' : 'yellow'}>Dataset</StatusLight>
                     <StatusLight variant={state.environment_loaded ? 'positive' : 'yellow'}>Environment</StatusLight>
                 </Flex>
-                <Button variant={'secondary'} href={backPath}>
+                <Button
+                    variant={'secondary'}
+                    href={paths.project.datasets.show({
+                        dataset_id: dataset.id!,
+                        project_id: dataset.project_id,
+                    })}
+                >
                     Cancel
                 </Button>
             </Flex>

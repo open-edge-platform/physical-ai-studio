@@ -1,10 +1,11 @@
 import { Suspense } from 'react';
 
-import { Flex, Grid, Icon, Link, Loading, Text, View } from '@geti/ui';
+import { Flex, Grid, Icon, Link, Loading, Text, ToastQueue, View } from '@geti/ui';
 import { ChevronLeft } from '@geti/ui/icons';
 
 import { $api } from '../../../api/client';
 import { useDatasetId } from '../../../features/datasets/use-dataset';
+import { RobotControlProvider } from '../../../features/robots/robot-control-provider';
 import { paths } from '../../../router';
 import { RecordingViewer } from './recording-viewer';
 
@@ -67,7 +68,9 @@ const RecordingPage = () => {
 
             <View gridArea={'content'} maxHeight={'100vh'} minHeight={0} height='100%'>
                 <View padding='size-200' height='100%'>
-                    <RecordingViewer environment={environment} dataset={dataset} />
+                    <RobotControlProvider environment={environment} dataset={dataset} onError={ToastQueue.negative}>
+                        <RecordingViewer environment={environment} dataset={dataset} />
+                    </RobotControlProvider>
                 </View>
             </View>
         </Grid>
