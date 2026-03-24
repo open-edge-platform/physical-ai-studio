@@ -15,6 +15,12 @@ import torch
 import yaml
 
 from physicalai.export.backends import ExportBackend
+from physicalai.inference.manifest import (
+    RUNNER_CLASS_PATHS,
+    ComponentSpec,
+    Manifest,
+    PolicySpec,
+)
 from physicalai.train import __version__
 
 CONFIG_KEY = "model_config"
@@ -35,6 +41,9 @@ class Export:
     ) -> None:
         """Create metadata files for exported model.
 
+        Writes both ``manifest.json`` (new structured format) and
+        ``metadata.yaml`` (legacy format) for backward compatibility.
+
         Args:
             export_dir: Directory containing exported model
             backend: Export backend used
@@ -44,15 +53,15 @@ class Export:
             TypeError: If ``metadata_extra`` is present but not a mapping.
             ValueError: If ``metadata_extra`` contains keys that collide with existing metadata.
         """
-        # Build metadata
+        policy_class = f"{self.__class__.__module__}.{self.__class__.__name__}"
+
         metadata = {
             "physicalai_train_version": __version__,
-            "policy_class": f"{self.__class__.__module__}.{self.__class__.__name__}",
+            "policy_class": policy_class,
             "backend": str(backend),
             **metadata_kwargs,
         }
 
-        # Add model config if available
         if hasattr(self.model, "config") and hasattr(self.model.config, "to_jsonargparse"):
             metadata["config"] = self.model.config.to_jsonargparse()
 
@@ -69,10 +78,63 @@ class Export:
 
             metadata.update(metadata_extra)
 
-        # Save as YAML (preferred)
         yaml_path = export_dir / "metadata.yaml"
-        with yaml_path.open("w") as f:
+        with yaml_path.open("w", encoding="utf-8") as f:
             yaml.dump(metadata, f, default_flow_style=False)
+
+        manifest = self._build_manifest(metadata, backend)
+        manifest.save(export_dir / "manifest.json")
+
+    def _build_manifest(self, metadata: dict[str, Any], backend: ExportBackend) -> Manifest:
+        """Build a ``Manifest`` from the collected metadata.
+
+        Args:
+            metadata: Flat metadata dict (already includes metadata_extra).
+            backend: Export backend used.
+
+        Returns:
+            Structured manifest ready for serialisation.
+        """
+        policy_class = metadata.get("policy_class", "")
+        policy_name = self.__class__.__name__.lower()
+
+        use_action_queue = metadata.get("use_action_queue", False)
+        chunk_size = metadata.get("chunk_size", 1)
+        kind = "action_chunking" if use_action_queue else "single_pass"
+
+        runner_class_path = RUNNER_CLASS_PATHS.get(kind, RUNNER_CLASS_PATHS["single_pass"])
+        if kind == "action_chunking":
+            runner = ComponentSpec(
+                class_path=runner_class_path,
+                init_args={
+                    "runner": {
+                        "class_path": RUNNER_CLASS_PATHS["single_pass"],
+                        "init_args": {},
+                    },
+                    "chunk_size": chunk_size,
+                },
+            )
+        else:
+            runner = ComponentSpec(class_path=runner_class_path, init_args={})
+
+        extension_map: dict[ExportBackend, str] = {
+            ExportBackend.OPENVINO: ".xml",
+            ExportBackend.ONNX: ".onnx",
+            ExportBackend.TORCH_EXPORT_IR: ".pt2",
+            ExportBackend.TORCH: ".pt",
+        }
+        ext = extension_map.get(backend, "")
+        artifact_filename = f"{policy_name}{ext}" if ext else ""
+
+        return Manifest(
+            policy=PolicySpec(
+                name=policy_name,
+                kind=kind,
+                class_path=policy_class,
+            ),
+            artifacts={str(backend): artifact_filename},
+            runner=runner,
+        )
 
     def _prepare_export_path(self, output_path: PathLike | str, extension: str) -> Path:
         """Prepare export path, handling both directory and file paths.
