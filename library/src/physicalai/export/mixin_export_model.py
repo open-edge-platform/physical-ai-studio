@@ -11,9 +11,3 @@ class ExportModel:
     to various formats (e.g., ONNX, OpenVINO). It is designed to be used in conjunction with the
     base Model class to enable seamless integration of export functionality.
     """
-
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-
-
-

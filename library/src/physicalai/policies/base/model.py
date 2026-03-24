@@ -4,7 +4,6 @@
 """Base torch nn.Module for Models."""
 
 from abc import ABC, abstractmethod
-from typing import Any
 
 from torch import nn
 
@@ -16,12 +15,13 @@ class Model(nn.Module, ABC):
     and is used to define the architecture of the neural network inside Policy.
     """
 
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self) -> None:
+        """Initialize nn.Module."""
+        super().__init__()
 
     @property
     @abstractmethod
-    def reward_delta_indices(self) -> Any:
+    def reward_delta_indices(self) -> list | None:
         """Return reward indices.
 
         Currently returns `None` as rewards are not implemented.
@@ -32,7 +32,7 @@ class Model(nn.Module, ABC):
 
     @property
     @abstractmethod
-    def action_delta_indices(self) -> Any:
+    def action_delta_indices(self) -> list | None:
         """Get indices of actions relative to the current timestep.
 
         Returns:
@@ -41,7 +41,7 @@ class Model(nn.Module, ABC):
 
     @property
     @abstractmethod
-    def observation_delta_indices(self) -> Any:
+    def observation_delta_indices(self) -> list | None:
         """Get indices of observations relative to the current timestep.
 
         Returns:
