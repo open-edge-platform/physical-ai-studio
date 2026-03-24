@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from pytest import approx
 
-from workers.inference.queue_mixer import QueueMixer
+from control.queue_mixer import QueueMixer
 
 
 class TestQueueMixer:
