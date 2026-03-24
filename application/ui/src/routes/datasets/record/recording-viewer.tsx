@@ -14,27 +14,15 @@ import {
     Text,
 } from '@geti/ui';
 
-import { RobotViewer } from '../../../features/robots/controller/robot-viewer';
-import { Observation, useRobotControl } from '../../../features/robots/robot-control-provider';
+import { useRobotControl } from '../../../features/robots/robot-control-provider';
+import { RobotControlView } from '../../../features/robots/robot-control/robot-control-view';
 import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
 import { paths } from '../../../router';
-import { CameraView } from './../camera-view';
 
 import classes from './recording-viewer.module.scss';
 
-const getActionObservationSource = (observation?: Observation): { [joint: string]: number } | undefined => {
-    if (observation === undefined) {
-        return undefined;
-    }
-    if (observation.actions !== null) {
-        return observation.actions;
-    }
-    return observation.state;
-};
-
 export const RecordingViewer = () => {
-    const { dataset, environment, observation, state, startEpisode, discardEpisode, saveEpisode, readyForRecording } =
-        useRobotControl();
+    const { dataset, state, startEpisode, discardEpisode, saveEpisode, readyForRecording } = useRobotControl();
 
     if (dataset === undefined) {
         throw 'Cannot load recording viewer without dataset.';
@@ -59,8 +47,6 @@ export const RecordingViewer = () => {
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [state.is_recording, saveEpisode, startEpisode, discardEpisode, task]);
-
-    const robots = (environment.robots ?? []).map(({ robot }) => robot);
 
     const onStart = (e: FormEvent) => {
         e.preventDefault();
@@ -92,9 +78,6 @@ export const RecordingViewer = () => {
             </Flex>
         );
     }
-    const observation_source = getActionObservationSource(observation.current);
-    const action_values = observation_source === undefined ? undefined : Object.values(observation_source);
-    const action_keys = observation_source === undefined ? undefined : Object.keys(observation_source);
 
     return (
         <RobotModelsProvider>
@@ -136,17 +119,7 @@ export const RecordingViewer = () => {
                         )}
                     </Flex>
                 </Form>
-
-                <Flex direction={'row'} flex gap={'size-100'}>
-                    <Flex direction={'column'} alignContent={'start'} flex gap={'size-30'}>
-                        {environment.cameras!.map((camera) => (
-                            <CameraView key={camera.id} camera={camera} observation={observation} />
-                        ))}
-                    </Flex>
-                    <Flex flex={3} minWidth={0}>
-                        <RobotViewer featureValues={action_values} featureNames={action_keys} robot={robots[0]} />
-                    </Flex>
-                </Flex>
+                <RobotControlView />
             </Flex>
         </RobotModelsProvider>
     );

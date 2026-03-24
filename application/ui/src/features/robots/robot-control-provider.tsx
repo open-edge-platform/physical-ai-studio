@@ -88,11 +88,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
     const [dataset, setDataset] = useState<SchemaDatasetOutput | undefined>(props.dataset);
     const [environment, setEnvironment] = useState<SchemaEnvironmentWithRelations>(props.environment);
 
-    console.log(props);
-    console.log(dataset);
-
     const onOpen = () => {
-        console.log("triggering onOpen");
         loadEnvironment.mutate(props.environment);
         if (model && backend) {
             loadModel.mutate({ model, backend });
