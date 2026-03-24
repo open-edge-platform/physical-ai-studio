@@ -16,6 +16,8 @@ import yaml
 from physicalai.export.mixin_policy import ExportBackend
 from physicalai.inference.adapters import RuntimeAdapter
 from physicalai.inference.model import InferenceModel
+from physicalai.inference.postprocessors.base import Postprocessor
+from physicalai.inference.preprocessors.base import Preprocessor
 from physicalai.inference.runners import (
     ActionChunking,
     InferenceRunner,
@@ -23,9 +25,6 @@ from physicalai.inference.runners import (
     get_runner,
 )
 from physicalai.inference.runners.single_pass import _get_action_output_key
-
-from physicalai.inference.preprocessors.base import Preprocessor
-from physicalai.inference.postprocessors.base import Postprocessor
 
 
 class TestAdapter(RuntimeAdapter):
