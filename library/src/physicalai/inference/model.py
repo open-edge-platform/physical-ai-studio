@@ -229,24 +229,6 @@ class InferenceModel:
             return filtered
         return observation
 
-    @staticmethod
-    def _get_action_output_key(outputs: dict[str, np.ndarray]) -> str:
-        """Determine which output contains actions.
-
-        Args:
-            outputs: Model outputs
-
-        Returns:
-            Key for action tensor
-        """
-        action_keys = ["actions", "action", "output", "pred_actions"]
-
-        for key in action_keys:
-            if key in outputs:
-                return key
-
-        return next(iter(outputs))
-
     def _load_metadata(self) -> dict[str, Any]:
         """Load export metadata from yaml or json file.
 

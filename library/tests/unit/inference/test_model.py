@@ -19,6 +19,7 @@ from physicalai.inference.runners import (
     SinglePass,
     get_runner,
 )
+from physicalai.inference.runners.single_pass import _get_action_output_key
 
 
 class TestAdapter(RuntimeAdapter):
@@ -587,7 +588,7 @@ class TestActionOutputKey:
         ],
     )
     def test_get_action_output_key(self, outputs: dict[str, np.ndarray], expected_key: str) -> None:
-        key = InferenceModel._get_action_output_key(outputs)
+        key = _get_action_output_key(outputs)
         assert key == expected_key
 
 
