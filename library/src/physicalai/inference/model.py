@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -93,7 +94,7 @@ class InferenceModel:
         self.policy_name = policy_name
 
         if backend == "auto":
-            backend = self.metadata.get("backend") or self._detect_backend()
+            backend = self._detect_backend_from_metadata() or self._detect_backend()
         self.backend = ExportBackend(backend) if isinstance(backend, str) else backend
 
         if device == "auto":
@@ -109,11 +110,19 @@ class InferenceModel:
     @property
     def use_action_queue(self) -> bool:
         """Whether action queuing is enabled (backward compat)."""
+        policy = self.metadata.get("policy", {})
+        if isinstance(policy, dict) and policy.get("kind") == "action_chunking":
+            return True
         return self.metadata.get("use_action_queue", False)
 
     @property
     def chunk_size(self) -> int:
         """Action chunk size from metadata (backward compat)."""
+        runner_spec = self.metadata.get("runner", {})
+        if isinstance(runner_spec, dict):
+            chunk = runner_spec.get("init_args", {}).get("chunk_size")
+            if chunk is not None:
+                return int(chunk)
         return self.metadata.get("chunk_size", 1)
 
     @classmethod
@@ -230,19 +239,39 @@ class InferenceModel:
         return observation
 
     def _load_metadata(self) -> dict[str, Any]:
-        """Load export metadata from yaml or json file.
+        """Load export metadata from manifest.json, metadata.yaml, or metadata.json.
+
+        Tries ``manifest.json`` first (new format), then falls back to
+        ``metadata.yaml`` and ``metadata.json`` for backward compatibility.
+
+        .. deprecated::
+            Loading from ``metadata.yaml`` or ``metadata.json`` is
+            deprecated.  Re-export models to generate ``manifest.json``.
 
         Returns:
             Metadata dict, or empty dict if no metadata file is found.
         """
-        yaml_path = self.export_dir / "metadata.yaml"
-        if yaml_path.exists():
-            with yaml_path.open() as f:
-                return yaml.safe_load(f) or {}
+        manifest_path = self.export_dir / "manifest.json"
+        if manifest_path.exists():
+            with manifest_path.open(encoding="utf-8") as f:
+                return json.load(f)
 
+        yaml_path = self.export_dir / "metadata.yaml"
         json_path = self.export_dir / "metadata.json"
-        if json_path.exists():
-            with json_path.open() as f:
+        legacy_path = yaml_path if yaml_path.exists() else json_path if json_path.exists() else None
+
+        if legacy_path is not None:
+            warnings.warn(
+                f"Loading from '{legacy_path.name}' is deprecated. "
+                "Re-export your model to generate 'manifest.json'. "
+                "Legacy metadata support will be removed in a future release.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            if legacy_path.suffix == ".yaml":
+                with legacy_path.open(encoding="utf-8") as f:
+                    return yaml.safe_load(f) or {}
+            with legacy_path.open(encoding="utf-8") as f:
                 return json.load(f)
 
         return {}
@@ -250,14 +279,26 @@ class InferenceModel:
     def _detect_policy_name(self) -> str:
         """Auto-detect policy name from files or metadata.
 
+        Checks manifest ``policy.name`` first, then falls back to
+        legacy ``policy_class`` extraction, then file-name heuristics.
+
         Returns:
             Policy name (e.g., 'act', 'diffusion')
 
         Raises:
             ValueError: If policy name cannot be determined
         """
-        if "policy_class" in self.metadata:
+        policy = self.metadata.get("policy", {})
+        if isinstance(policy, dict) and policy.get("name"):
+            return policy["name"]
+
+        class_path = ""
+        if isinstance(policy, dict) and policy.get("class_path"):
+            class_path = policy["class_path"]
+        elif "policy_class" in self.metadata:
             class_path = self.metadata["policy_class"]
+
+        if class_path:
             parts = class_path.lower().split(".")
             min_parts_for_module_extraction = 3
             if len(parts) >= min_parts_for_module_extraction:
@@ -272,6 +313,22 @@ class InferenceModel:
 
         msg = f"Cannot determine policy name from {self.export_dir}"
         raise ValueError(msg)
+
+    def _detect_backend_from_metadata(self) -> str | None:
+        """Extract backend from manifest artifacts or legacy metadata.
+
+        Returns:
+            Backend string, or ``None`` if not found.
+        """
+        artifacts = self.metadata.get("artifacts", {})
+        if isinstance(artifacts, dict) and artifacts:
+            return next(iter(artifacts))
+
+        backend = self.metadata.get("backend")
+        if backend:
+            return str(backend)
+
+        return None
 
     def _detect_backend(self) -> str:
         """Auto-detect backend from model files.
