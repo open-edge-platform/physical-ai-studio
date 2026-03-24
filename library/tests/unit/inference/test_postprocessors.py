@@ -62,7 +62,7 @@ class TestPostprocessorABC:
         assert isinstance(post, Postprocessor)
 
     def test_chaining_preserves_order(self) -> None:
-        chain = [
+        chain: list[Postprocessor] = [
             _ScaleActionPostprocessor(factor=0.5),
             _ClampPostprocessor(low=-0.2, high=0.2),
         ]

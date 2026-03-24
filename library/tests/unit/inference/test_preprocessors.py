@@ -46,7 +46,7 @@ class TestPreprocessorABC:
 
     def test_subclass_preserves_non_array_values(self) -> None:
         pre = _ScalePreprocessor()
-        inputs = {"state": np.array([1.0]), "metadata": "keep_me"}
+        inputs: dict[str, np.ndarray] = {"state": np.array([1.0]), "metadata": "keep_me"}  # type: ignore[dict-item]
         result = pre(inputs)
         assert result["metadata"] == "keep_me"
 
@@ -70,7 +70,7 @@ class TestPreprocessorABC:
         assert isinstance(pre, Preprocessor)
 
     def test_chaining_preserves_order(self) -> None:
-        chain = [_ScalePreprocessor(factor=2.0), _AddKeyPreprocessor()]
+        chain: list[Preprocessor] = [_ScalePreprocessor(factor=2.0), _AddKeyPreprocessor()]
         data: dict[str, np.ndarray] = {"state": np.array([1.0])}
         for pre in chain:
             data = pre(data)
