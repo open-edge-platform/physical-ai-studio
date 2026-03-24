@@ -14,7 +14,7 @@ Source types:
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from sse_starlette import EventSourceResponse
 
 from api.dependencies import get_log_service
@@ -48,10 +48,7 @@ async def stream_logs(
     path = log_service.resolve_source_path(source_id)
 
     if path is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Unknown log source: {source_id}",
-        )
+        return EventSourceResponse(log_service.empty_log_stream())
 
     if not await log_service.source_exists(path):
         # Missing/empty file is treated as an empty stream so the UI can render
