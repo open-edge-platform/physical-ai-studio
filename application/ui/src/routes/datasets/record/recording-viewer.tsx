@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 
 import {
     Button,
     ButtonGroup,
     ComboBox,
     Flex,
+    Form,
     Heading,
     Item,
     Keyboard,
@@ -52,7 +53,7 @@ export const RecordingViewer = ({ environment, dataset }: RecordingViewerProps) 
             if (e.key === 'ArrowRight') {
                 if (state.is_recording && !saveEpisode.isPending) {
                     saveEpisode.mutate();
-                } else if (!state.is_recording) {
+                } else if (!state.is_recording && task !== '') {
                     startEpisode.mutate(task);
                 }
             } else if (e.key === 'ArrowLeft') {
@@ -73,7 +74,8 @@ export const RecordingViewer = ({ environment, dataset }: RecordingViewerProps) 
         project_id: dataset.project_id,
     });
 
-    const onStart = () => {
+    const onStart = (e: FormEvent) => {
+        e.preventDefault();
         if (task !== '') {
             startEpisode.mutate(task);
         }
@@ -103,19 +105,43 @@ export const RecordingViewer = ({ environment, dataset }: RecordingViewerProps) 
     return (
         <RobotModelsProvider>
             <Flex direction={'column'} height={'100%'} position={'relative'}>
-                <Flex alignItems={'center'} gap='size-100' height='size-400' margin='size-200'>
-                    <ComboBox
-                        isReadOnly={state.is_recording}
-                        name='Task'
-                        flex
-                        isRequired
-                        allowsCustomValue
-                        inputValue={task}
-                        onInputChange={setTask}
-                    >
-                        <Item key={dataset.default_task}>{dataset.default_task}</Item>
-                    </ComboBox>
-                </Flex>
+                <Form validationBehavior='native' onSubmit={onStart}>
+                    <Flex justifyContent={'start'} gap='size-100' height='size-800'>
+                        <ComboBox
+                            isReadOnly={state.is_recording}
+                            errorMessage={'A task is required in order to record.'}
+                            name='Task'
+                            flex
+                            isRequired
+                            allowsCustomValue
+                            inputValue={task}
+                            onInputChange={setTask}
+                        >
+                            <Item key={dataset.default_task}>{dataset.default_task}</Item>
+                        </ComboBox>
+                        {state.is_recording ? (
+                            <ButtonGroup>
+                                <Button
+                                    isDisabled={saveEpisode.isPending}
+                                    variant={'negative'}
+                                    onPress={() => discardEpisode.mutate()}
+                                >
+                                    <Text>Discard</Text>
+                                    <Keyboard UNSAFE_className={classes.hotkey}>←</Keyboard>
+                                </Button>
+                                <Button isPending={saveEpisode.isPending} onPress={() => saveEpisode.mutate()}>
+                                    <Text>Accept</Text>
+                                    <Keyboard UNSAFE_className={classes.hotkey}>→</Keyboard>
+                                </Button>
+                            </ButtonGroup>
+                        ) : (
+                            <Button type={'submit'}>
+                                <Text>Start episode</Text>
+                                <Keyboard UNSAFE_className={classes.hotkey}>→</Keyboard>
+                            </Button>
+                        )}
+                    </Flex>
+                </Form>
 
                 <Flex direction={'row'} flex gap={'size-100'}>
                     <Flex direction={'column'} alignContent={'start'} flex gap={'size-30'}>
@@ -127,27 +153,6 @@ export const RecordingViewer = ({ environment, dataset }: RecordingViewerProps) 
                         <RobotViewer featureValues={action_values} featureNames={action_keys} robot={robots[0]} />
                     </Flex>
                 </Flex>
-                {state.is_recording ? (
-                    <ButtonGroup alignSelf='end'>
-                        <Button
-                            isDisabled={saveEpisode.isPending}
-                            variant={'negative'}
-                            onPress={() => discardEpisode.mutate()}
-                        >
-                            <Text>Discard</Text>
-                            <Keyboard UNSAFE_className={classes.hotkey}>←</Keyboard>
-                        </Button>
-                        <Button isPending={saveEpisode.isPending} onPress={() => saveEpisode.mutate()}>
-                            <Text>Accept</Text>
-                            <Keyboard UNSAFE_className={classes.hotkey}>→</Keyboard>
-                        </Button>
-                    </ButtonGroup>
-                ) : (
-                    <Button onPress={onStart} isDisabled={task === ''} alignSelf={'center'}>
-                        <Text>Start episode</Text>
-                        <Keyboard UNSAFE_className={classes.hotkey}>→</Keyboard>
-                    </Button>
-                )}
             </Flex>
         </RobotModelsProvider>
     );
