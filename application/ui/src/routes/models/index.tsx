@@ -65,7 +65,7 @@ const ModelList = ({
     );
 };
 
-const JobList = ({ jobs }: { jobs: SchemaTrainJob[] }) => {
+const JobList = ({ jobs, onViewLogs }: { jobs: SchemaTrainJob[]; onViewLogs: (job: SchemaTrainJob) => void }) => {
     const sortedJobs = jobs
         .filter((m) => m.status !== 'completed')
         .toSorted((a, b) => new Date(b.created_at!).getTime() - new Date(a.created_at!).getTime());
@@ -95,7 +95,12 @@ const JobList = ({ jobs }: { jobs: SchemaTrainJob[] }) => {
 
             <TrainingHeader />
             {sortedJobs.map((job) => (
-                <TrainingRow key={job.id} trainJob={job} onInterrupt={() => onInterrupt(job)} />
+                <TrainingRow
+                    key={job.id}
+                    trainJob={job}
+                    onInterrupt={() => onInterrupt(job)}
+                    onViewLogs={() => onViewLogs(job)}
+                />
             ))}
         </View>
     );
@@ -197,7 +202,12 @@ export const Index = () => {
                                 )}
                             </DialogTrigger>
                         </Flex>
-                        <JobList jobs={jobs.filter((m) => m.type === 'training') as SchemaTrainJob[]} />
+                        <JobList
+                            jobs={jobs.filter((m) => m.type === 'training') as SchemaTrainJob[]}
+                            onViewLogs={(job) => {
+                                setLogsSourceId(job.id);
+                            }}
+                        />
                         {hasModels && (
                             <ModelList
                                 models={models}
