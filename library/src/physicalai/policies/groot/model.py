@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """Groot Model - Pure PyTorch nn.Module wrapping NVIDIA's GR00T-N1.5 foundation model.
@@ -26,6 +26,8 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 from torch import nn
+
+from physicalai.policies.base import Model
 
 from .components import EagleBackbone, FlowMatchingActionHead
 
@@ -58,7 +60,7 @@ DEFAULT_BASE_MODEL_PATH = "nvidia/GR00T-N1.5-3B"
 DEFAULT_TOKENIZER_ASSETS_REPO = "nvidia/Eagle2-2B"
 
 
-class GrootModel(nn.Module):
+class GrootModel(Model):
     """GR00T-N1.5 Vision-Language-Action Model.
 
     Pure PyTorch nn.Module wrapping NVIDIA's GR00T-N1.5-3B foundation model.
@@ -146,6 +148,7 @@ class GrootModel(nn.Module):
 
         # Store args
         self.n_action_steps = n_action_steps
+        self._chunk_size = chunk_size
         self.use_bf16 = use_bf16
 
         # Initialize backbone
@@ -390,3 +393,32 @@ class GrootModel(nn.Module):
                 "output_names": ["action"],
             },
         }
+
+    @property
+    def reward_delta_indices(self) -> None:
+        """Return reward indices.
+
+        Currently returns `None` as rewards are not implemented.
+
+        Returns:
+            None
+        """
+        return None
+
+    @property
+    def action_delta_indices(self) -> list[int]:
+        """Get indices of actions relative to the current timestep.
+
+        Returns:
+            list[int]: A list of relative action indices.
+        """
+        return list(range(min(self._chunk_size, 16)))
+
+    @property
+    def observation_delta_indices(self) -> None:
+        """Get indices of observations relative to the current timestep.
+
+        Returns:
+            None
+        """
+        return None
