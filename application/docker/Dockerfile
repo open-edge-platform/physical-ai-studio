@@ -94,20 +94,15 @@ WORKDIR /app
 # --- Dependency manifests only (no source code, no docs) ---
 #
 # Only files that influence `uv sync --frozen` dependency resolution are
-# copied here.  README.md and LICENSE are referenced by hatchling metadata
-# in library/pyproject.toml (readme / license fields) but their *content*
-# does not affect resolution — empty stubs satisfy hatchling.  Similarly,
-# hatchling's `packages = ["src/physicalai"]` requires the package dir to
-# exist.  Creating stubs instead of copying the real files means that
-# changes to documentation, license text, or library source code will NOT
-# invalidate the expensive uv-sync layers below.
+# copied here.  The library (physicalai-train) is a local path dependency
+# that is NOT published to PyPI, but --no-install-local (used below)
+# tells uv to skip building/installing all local packages — so we don't
+# need library source, README, or LICENSE here.  However, uv still needs
+# to *discover* the path dependency during project loading, so the
+# library pyproject.toml must exist at the expected relative path.
+# The real library source is overlaid via app-source in the final image.
 COPY --link pyproject.toml uv.lock ./
 COPY --link --from=libs ./pyproject.toml /app/library/pyproject.toml
-
-# Stubs: hatchling needs these paths but not their content for dep resolution.
-RUN mkdir -p /app/library/src/physicalai \
-    && touch /app/library/README.md /app/library/LICENSE \
-    && touch /app/library/src/physicalai/__init__.py
 
 # Backend manifests only (not src/ or run.sh) — sufficient for dep resolution.
 COPY --link application/backend/pyproject.toml application/backend/uv.lock \
@@ -117,9 +112,12 @@ WORKDIR /app/application/backend
 
 # Install hardware-independent dependencies (FastAPI, SQLAlchemy, etc.)
 # first so this layer is shared across all device-specific builders.
-# --no-install-project: skip building the backend wheel (source not present).
+# --no-install-local: skip building all local packages (the backend
+# project AND the physicalai-train path dependency).  This avoids
+# invoking hatchling, which would require library source files.
+# The local packages are installed at runtime via app-source + uv run.
 RUN --mount=type=cache,id=uv-base,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --no-install-project
+    uv sync --frozen --no-dev --no-editable --no-install-local
 
 # ===========================================================================
 # Stage 4a: CPU builder
@@ -127,7 +125,7 @@ RUN --mount=type=cache,id=uv-base,target=/root/.cache/uv \
 FROM builder-base AS builder-cpu
 
 RUN --mount=type=cache,id=uv-cpu,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --no-install-project --extra cpu
+    uv sync --frozen --no-dev --no-editable --no-install-local --extra cpu
 
 # ===========================================================================
 # Stage 4b: XPU builder
@@ -135,7 +133,7 @@ RUN --mount=type=cache,id=uv-cpu,target=/root/.cache/uv \
 FROM builder-base AS builder-xpu
 
 RUN --mount=type=cache,id=uv-xpu,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --no-install-project --extra xpu
+    uv sync --frozen --no-dev --no-editable --no-install-local --extra xpu
 
 # ===========================================================================
 # Stage 4c: CUDA builder
@@ -143,7 +141,7 @@ RUN --mount=type=cache,id=uv-xpu,target=/root/.cache/uv \
 FROM builder-base AS builder-cuda
 
 RUN --mount=type=cache,id=uv-cuda,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --no-install-project --extra cuda
+    uv sync --frozen --no-dev --no-editable --no-install-local --extra cuda
 
 # ===========================================================================
 # Stage 5: Runtime base — shared across all hardware targets
