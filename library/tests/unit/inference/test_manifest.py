@@ -208,7 +208,7 @@ class TestManifestFromDict:
         assert manifest.model_extra == {"custom_domain_key": "value", "another_key": 42}
 
     def test_preprocessors_parsed(self) -> None:
-        manifest = Manifest.from_dict({
+        manifest = Manifest.model_validate({
             "preprocessors": [
                 {"class_path": "myapp.transforms.Normalize", "init_args": {"mean": 0.5}},
                 {"class_path": "myapp.transforms.Resize", "init_args": {}},
@@ -220,7 +220,7 @@ class TestManifestFromDict:
         assert manifest.preprocessors[1].class_path == "myapp.transforms.Resize"
 
     def test_postprocessors_parsed(self) -> None:
-        manifest = Manifest.from_dict({
+        manifest = Manifest.model_validate({
             "postprocessors": [
                 {"class_path": "myapp.transforms.Clamp", "init_args": {"low": -1.0, "high": 1.0}},
             ],
@@ -230,14 +230,14 @@ class TestManifestFromDict:
         assert manifest.postprocessors[0].init_args == {"low": -1.0, "high": 1.0}
 
     def test_preprocessors_postprocessors_not_in_extra(self) -> None:
-        manifest = Manifest.from_dict({
+        manifest = Manifest.model_validate({
             "preprocessors": [{"class_path": "a.B", "init_args": {}}],
             "postprocessors": [{"class_path": "c.D", "init_args": {}}],
             "custom_key": "val",
         })
-        assert "preprocessors" not in manifest.extra
-        assert "postprocessors" not in manifest.extra
-        assert manifest.extra == {"custom_key": "val"}
+        assert "preprocessors" not in manifest.model_extra
+        assert "postprocessors" not in manifest.model_extra
+        assert manifest.model_extra == {"custom_key": "val"}
 
     def test_runner_instantiation_from_manifest(self, full_manifest_data: dict[str, Any]) -> None:
         manifest = Manifest.model_validate(full_manifest_data)
@@ -401,7 +401,7 @@ class TestManifestSerialization:
             preprocessors=[ComponentSpec(class_path="a.B", init_args={"x": 1})],
             postprocessors=[ComponentSpec(class_path="c.D", init_args={})],
         )
-        data = manifest.to_dict()
+        data = manifest.model_dump(exclude_defaults=True)
 
         assert "preprocessors" in data
         assert len(data["preprocessors"]) == 1
