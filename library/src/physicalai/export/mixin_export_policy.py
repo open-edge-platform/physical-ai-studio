@@ -121,7 +121,16 @@ class ExportPolicy:
             - The configuration is stored as YAML format under the
               GETIACTION_CONFIG_KEY in the state dictionary.
             - The saved checkpoint can be used to re-instantiate the model later.
+
+        Raises:
+            NotImplementedError: If Torch export is not supported by the policy.
         """
+        if ExportBackend.TORCH not in self.supported_export_backends:
+            msg = (
+                f"Torch export is not implemented for this policy. Supported backends: {self.supported_export_backends}"
+            )
+            raise NotImplementedError(msg)
+
         model_path = self._prepare_export_path(checkpoint_path, ".pt")
         export_dir = model_path.parent
 
@@ -167,7 +176,14 @@ class ExportPolicy:
             RuntimeError: If input sample is not provided and the model does not
                 implement `sample_input` property. Also if export is failed due to other issues
                 like wrong export options.
+            NotImplementedError: If ONNX export is not supported by the model.
         """
+        if ExportBackend.ONNX not in self.supported_export_backends:
+            msg = (
+                f"ONNX export is not implemented for this policy. Supported backends: {self.supported_export_backends}"
+            )
+            raise NotImplementedError(msg)
+
         if input_sample is None:
             input_sample = self._get_default_export_input_sample()
 
@@ -239,7 +255,20 @@ class ExportPolicy:
         Notes:
             - The model is set to evaluation mode before conversion.
             - Output names can be specified in export_kwargs using the "output" key.
+
+        Raises:
+            RuntimeError: If input sample is not provided and the model does not
+                implement `sample_input` property. Also if export is failed due to other issues
+                like wrong export options.
+            NotImplementedError: If OpenVINO export is not supported by the policy.
         """
+        if ExportBackend.OPENVINO not in self.supported_export_backends:
+            msg = (
+                f"OpenVINO export is not implemented for this policy.\n"
+                f"Supported backends: {self.supported_export_backends}"
+            )
+            raise NotImplementedError(msg)
+
         if input_sample is None:
             input_sample = self._get_default_export_input_sample()
 
@@ -337,7 +366,20 @@ class ExportPolicy:
             - The export uses strict mode by default.
             - Additional export arguments can be specified through the model's export configuration
               and will be merged with the provided export_kwargs.
+
+        Raises:
+            RuntimeError: If input sample is not provided and the model does not
+                implement `sample_input` property. Also if export is failed due to other issues
+                like wrong export options.
+            NotImplementedError: If Torch Export IR is not supported by the policy.
         """
+        if ExportBackend.TORCH_EXPORT_IR not in self.supported_export_backends:
+            msg = (
+                f"Torch Export IR is not implemented for this policy. "
+                f"Supported backends: {self.supported_export_backends}"
+            )
+            raise NotImplementedError(msg)
+
         if input_sample is None:
             input_sample = self._get_default_export_input_sample()
 

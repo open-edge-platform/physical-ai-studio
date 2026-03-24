@@ -18,7 +18,7 @@ from safetensors.torch import load_file
 
 from physicalai.data.dataset import Dataset
 from physicalai.data.observation import ACTION
-from physicalai.export import ExportPolicy
+from physicalai.export import ExportBackend, ExportPolicy
 from physicalai.policies.base import Policy
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
@@ -487,3 +487,14 @@ class Pi05(ExportPolicy, Policy):
                 gradient_clip_val=clip_val,
                 gradient_clip_algorithm=gradient_clip_algorithm or "norm",
             )
+
+    @property
+    def supported_export_backends(self) -> list[str | ExportBackend]:
+        """Get a list of export backends supported by policy.
+
+        This method returns a list of supported export backends as strings.
+
+        Returns:
+            list[str | ExportBackend]: A list of supported export backends.
+        """
+        return [ExportBackend.TORCH, ExportBackend.OPENVINO, ExportBackend.ONNX]
