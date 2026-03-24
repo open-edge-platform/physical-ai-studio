@@ -26,7 +26,6 @@ from torch import Tensor, nn
 from torchvision.models._utils import IntermediateLayerGetter  # noqa: PLC2701
 from torchvision.ops.misc import FrozenBatchNorm2d
 
-from physicalai.config import FromConfig
 from physicalai.data import Feature, FeatureType
 from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, Observation
 from physicalai.policies.base import Model
@@ -41,7 +40,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-class ACT(Model, FromConfig):
+class ACT(Model):
     """Action Chunking Transformer (ACT) model.
 
     Supports training and inference modes.
