@@ -246,6 +246,8 @@ class TestManifestFromDict:
         assert manifest.runner is None
         assert manifest.robots == []
         assert manifest.cameras == []
+        assert manifest.preprocessors == []
+        assert manifest.postprocessors == []
 
     def test_unknown_keys_go_to_extra(self) -> None:
         manifest = Manifest.model_validate({
@@ -253,6 +255,38 @@ class TestManifestFromDict:
             "another_key": 42,
         })
         assert manifest.model_extra == {"custom_domain_key": "value", "another_key": 42}
+
+    def test_preprocessors_parsed(self) -> None:
+        manifest = Manifest.from_dict({
+            "preprocessors": [
+                {"class_path": "myapp.transforms.Normalize", "init_args": {"mean": 0.5}},
+                {"class_path": "myapp.transforms.Resize", "init_args": {}},
+            ],
+        })
+        assert len(manifest.preprocessors) == 2
+        assert manifest.preprocessors[0].class_path == "myapp.transforms.Normalize"
+        assert manifest.preprocessors[0].init_args == {"mean": 0.5}
+        assert manifest.preprocessors[1].class_path == "myapp.transforms.Resize"
+
+    def test_postprocessors_parsed(self) -> None:
+        manifest = Manifest.from_dict({
+            "postprocessors": [
+                {"class_path": "myapp.transforms.Clamp", "init_args": {"low": -1.0, "high": 1.0}},
+            ],
+        })
+        assert len(manifest.postprocessors) == 1
+        assert manifest.postprocessors[0].class_path == "myapp.transforms.Clamp"
+        assert manifest.postprocessors[0].init_args == {"low": -1.0, "high": 1.0}
+
+    def test_preprocessors_postprocessors_not_in_extra(self) -> None:
+        manifest = Manifest.from_dict({
+            "preprocessors": [{"class_path": "a.B", "init_args": {}}],
+            "postprocessors": [{"class_path": "c.D", "init_args": {}}],
+            "custom_key": "val",
+        })
+        assert "preprocessors" not in manifest.extra
+        assert "postprocessors" not in manifest.extra
+        assert manifest.extra == {"custom_key": "val"}
 
     def test_runner_instantiation_from_manifest(self, full_manifest_data: dict[str, Any]) -> None:
         manifest = Manifest.model_validate(full_manifest_data)
@@ -382,7 +416,50 @@ class TestManifestSerialization:
         assert "cameras" not in data
         assert "runner" not in data
         assert "adapter" not in data
+        assert "preprocessors" not in data
+        assert "postprocessors" not in data
         assert data["policy"]["name"] == "test"
+
+    def test_roundtrip_with_preprocessors_postprocessors(self, tmp_path: Path) -> None:
+        original = Manifest(
+            policy=PolicySpec(name="act", kind="single_pass"),
+            artifacts={"onnx": "act.onnx"},
+            preprocessors=[
+                ComponentSpec(class_path="myapp.transforms.Normalize", init_args={"mean": 0.5}),
+            ],
+            postprocessors=[
+                ComponentSpec(class_path="myapp.transforms.Clamp", init_args={"low": -1.0, "high": 1.0}),
+                ComponentSpec(class_path="myapp.transforms.Scale", init_args={"factor": 2.0}),
+            ],
+        )
+
+        path = tmp_path / "manifest.json"
+        original.save(path)
+
+        loaded = Manifest.load(path)
+        assert len(loaded.preprocessors) == 1
+        assert loaded.preprocessors[0].class_path == "myapp.transforms.Normalize"
+        assert loaded.preprocessors[0].init_args == {"mean": 0.5}
+        assert len(loaded.postprocessors) == 2
+        assert loaded.postprocessors[0].class_path == "myapp.transforms.Clamp"
+        assert loaded.postprocessors[1].class_path == "myapp.transforms.Scale"
+        assert loaded.postprocessors[1].init_args == {"factor": 2.0}
+
+    def test_to_dict_includes_nonempty_processors(self) -> None:
+        manifest = Manifest(
+            preprocessors=[ComponentSpec(class_path="a.B", init_args={"x": 1})],
+            postprocessors=[ComponentSpec(class_path="c.D", init_args={})],
+        )
+        data = manifest.to_dict()
+
+        assert "preprocessors" in data
+        assert len(data["preprocessors"]) == 1
+        assert data["preprocessors"][0]["class_path"] == "a.B"
+        assert data["preprocessors"][0]["init_args"] == {"x": 1}
+
+        assert "postprocessors" in data
+        assert len(data["postprocessors"]) == 1
+        assert data["postprocessors"][0]["class_path"] == "c.D"
 
 
 class TestComponentSpecFromClass:

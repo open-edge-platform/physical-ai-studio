@@ -220,6 +220,11 @@ class Manifest(BaseModel):
         adapter: Optional dynamic adapter specification.
         robots: Hardware descriptors for robot state/action.
         cameras: Hardware descriptors for camera inputs.
+        preprocessors: Pipeline stages applied to observations
+            *before* the runner.  Each entry is a ``ComponentSpec``
+            that will be instantiated via ``importlib``.
+        postprocessors: Pipeline stages applied to runner output
+            *after* inference.  Each entry is a ``ComponentSpec``.
 
     Unknown top-level keys are preserved in ``model_extra`` so that
     domain layers can store additional data without schema changes.
@@ -234,6 +239,8 @@ class Manifest(BaseModel):
     adapter: ComponentSpec | None = None
     robots: list[RobotSpec] = Field(default_factory=list)
     cameras: list[CameraSpec] = Field(default_factory=list)
+    preprocessors: list[ComponentSpec] = Field(default_factory=list)
+    postprocessors: list[ComponentSpec] = Field(default_factory=list)
 
     @classmethod
     def load(cls, path: str | Path) -> Manifest:
