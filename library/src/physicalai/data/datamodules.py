@@ -33,9 +33,6 @@ _AUTO_NUM_WORKERS_CAP = 8
 def resolve_auto_num_workers() -> int:
     """Resolve the number of DataLoader workers for ``"auto"`` mode.
 
-    The heuristic returns ``min(cpu_count, _AUTO_NUM_WORKERS_CAP)``.
-    Falls back to ``0`` (main-process loading) when the CPU count cannot be determined.
-
     Returns:
         int: Number of workers to use.
     """

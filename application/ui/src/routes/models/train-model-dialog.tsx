@@ -49,7 +49,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
     const [maxSteps, setMaxSteps] = useState<number>(defaultMaxSteps);
     const [batchSize, setBatchSize] = useState<number>(8);
     const [numWorkers, setNumWorkers] = useState<Key | null>('auto');
-    const [autoScaleBatchSize, setAutoScaleBatchSize] = useState<boolean>(false);
+    const [autoScaleBatchSize, setAutoScaleBatchSize] = useState<boolean>(true);
 
     const trainMutation = $api.useMutation('post', '/api/jobs:train');
 
