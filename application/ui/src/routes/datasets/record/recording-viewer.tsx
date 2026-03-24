@@ -14,7 +14,6 @@ import {
     Text,
 } from '@geti/ui';
 
-import { SchemaDatasetOutput, SchemaEnvironmentWithRelations } from '../../../api/openapi-spec';
 import { RobotViewer } from '../../../features/robots/controller/robot-viewer';
 import { Observation, useRobotControl } from '../../../features/robots/robot-control-provider';
 import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
@@ -22,11 +21,6 @@ import { paths } from '../../../router';
 import { CameraView } from './../camera-view';
 
 import classes from './recording-viewer.module.scss';
-
-interface RecordingViewerProps {
-    environment: SchemaEnvironmentWithRelations;
-    dataset: SchemaDatasetOutput;
-}
 
 const getActionObservationSource = (observation?: Observation): { [joint: string]: number } | undefined => {
     if (observation === undefined) {
@@ -38,9 +32,13 @@ const getActionObservationSource = (observation?: Observation): { [joint: string
     return observation.state;
 };
 
-export const RecordingViewer = ({ environment, dataset }: RecordingViewerProps) => {
-    const { observation, state, startEpisode, discardEpisode, saveEpisode, readyForRecording } = useRobotControl();
+export const RecordingViewer = () => {
+    const { dataset, environment, observation, state, startEpisode, discardEpisode, saveEpisode, readyForRecording } =
+        useRobotControl();
 
+    if (dataset === undefined) {
+        throw 'Cannot load recording viewer without dataset.';
+    }
     const [task, setTask] = useState<string>(dataset.default_task);
 
     useEffect(() => {

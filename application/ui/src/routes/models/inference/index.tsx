@@ -35,7 +35,7 @@ export const Index = () => {
             backend={backend}
             onError={ToastQueue.negative}
         >
-            <InferenceViewer environment={initialEnvironment} model={model} tasks={tasks} />
+            <InferenceViewer tasks={tasks} />
         </RobotControlProvider>
     );
 };

@@ -3,7 +3,6 @@ import { useState } from 'react';
 import { Button, ButtonGroup, ComboBox, Flex, Heading, Item, Link, ProgressCircle, StatusLight, Text } from '@geti/ui';
 import { Back, Pause, Play } from '@geti/ui/icons';
 
-import { SchemaEnvironmentWithRelations, SchemaModel } from '../../../api/openapi-spec';
 import { ErrorMessage } from '../../../components/error-page/error-page';
 import { useProjectId } from '../../../features/projects/use-project';
 import { RobotViewer } from '../../../features/robots/controller/robot-viewer';
@@ -13,8 +12,6 @@ import { paths } from '../../../router';
 import { CameraView } from '../../datasets/camera-view';
 
 interface InferenceViewerProps {
-    environment: SchemaEnvironmentWithRelations;
-    model: SchemaModel;
     tasks: string[];
 }
 
@@ -29,12 +26,12 @@ const getVisualisationSourceFromObservation = (observation: Observation | undefi
     }
 };
 
-export const InferenceViewer = ({ environment, model, tasks }: InferenceViewerProps) => {
+export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
     const { project_id } = useProjectId();
 
     const [task, setTask] = useState<string>(tasks[0] ?? '');
 
-    const { observation, readyForInference, state, startTask, stopTask } = useRobotControl();
+    const { environment, model, observation, readyForInference, state, startTask, stopTask } = useRobotControl();
 
     const visualisation_source = getVisualisationSourceFromObservation(observation.current);
 
@@ -69,7 +66,7 @@ export const InferenceViewer = ({ environment, model, tasks }: InferenceViewerPr
                     <Link aria-label='Rewind' href={paths.project.models.index({ project_id })}>
                         <Back fill='white' />
                     </Link>
-                    <Heading>Model Run {model.name}</Heading>
+                    <Heading>Model Run {model?.name}</Heading>
                     <ComboBox flex isRequired allowsCustomValue={false} inputValue={task} onInputChange={setTask}>
                         {tasks.map((taskText, index) => (
                             <Item key={index}>{taskText}</Item>

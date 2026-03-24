@@ -69,7 +69,7 @@ const RecordingPage = () => {
             <View gridArea={'content'} maxHeight={'100vh'} minHeight={0} height='100%'>
                 <View padding='size-200' height='100%'>
                     <RobotControlProvider environment={environment} dataset={dataset} onError={ToastQueue.negative}>
-                        <RecordingViewer environment={environment} dataset={dataset} />
+                        <RecordingViewer />
                     </RobotControlProvider>
                 </View>
             </View>

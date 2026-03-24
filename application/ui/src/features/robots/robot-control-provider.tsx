@@ -58,6 +58,10 @@ type MutationResult<TVariables = void> = UseMutationResult<
 
 type RobotControlContextValue = null | {
     observation: RefObject<Observation | undefined>;
+    environment: SchemaEnvironmentWithRelations;
+    model: SchemaModel | undefined;
+    backend: string | undefined;
+    dataset: SchemaDatasetOutput | undefined;
     state: RobotControlState;
     loadEnvironment: MutationResult<SchemaEnvironmentWithRelations>;
     loadModel: MutationResult<{ model: SchemaModel; backend: string }>;
@@ -75,19 +79,21 @@ type RobotControlContextValue = null | {
 
 const RobotControlContext = createContext<RobotControlContextValue>(null);
 
-export const RobotControlProvider = ({
-    environment,
-    model,
-    dataset,
-    backend,
-    onError,
-    children,
-}: useRobotControlProps) => {
+export const RobotControlProvider = (props: useRobotControlProps) => {
     const [state, setState] = useState<RobotControlState>(createRobotControlState());
     const observation = useRef<Observation | undefined>(undefined);
 
+    const [model, setModel] = useState<SchemaModel | undefined>(props.model);
+    const [backend, setBackend] = useState<string | undefined>(props.backend);
+    const [dataset, setDataset] = useState<SchemaDatasetOutput | undefined>(props.dataset);
+    const [environment, setEnvironment] = useState<SchemaEnvironmentWithRelations>(props.environment);
+
+    console.log(props);
+    console.log(dataset);
+
     const onOpen = () => {
-        loadEnvironment.mutate(environment);
+        console.log("triggering onOpen");
+        loadEnvironment.mutate(props.environment);
         if (model && backend) {
             loadModel.mutate({ model, backend });
         }
@@ -118,35 +124,45 @@ export const RobotControlProvider = ({
         }
 
         if (message['event'] === 'error') {
-            onError(message['data'] as string);
+            props.onError(message['data'] as string);
         }
     };
 
     const loadDataset = useMutation({
         meta: { skipInvalidation: true },
-        mutationFn: async (datasetConfig: SchemaDatasetOutput) =>
-            await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
+        mutationFn: async (datasetConfig: SchemaDatasetOutput) => {
+            const result = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'load_dataset', data: { dataset: datasetConfig } },
                 (data) => data['data']['dataset_loaded']
-            ),
+            );
+            setDataset(datasetConfig);
+            return result;
+        },
     });
 
     const loadEnvironment = useMutation({
         meta: { skipInvalidation: true },
-        mutationFn: async (env: SchemaEnvironmentWithRelations) =>
-            await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
+        mutationFn: async (env: SchemaEnvironmentWithRelations) => {
+            const result = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'load_environment', data: { environment: env } },
                 (data) => data['data']['environment_loaded']
-            ),
+            );
+            setEnvironment(env);
+            return result;
+        },
     });
 
     const loadModel = useMutation({
         meta: { skipInvalidation: true },
-        mutationFn: async (properties: { model: SchemaModel; backend: string }) =>
-            await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
+        mutationFn: async (properties: { model: SchemaModel; backend: string }) => {
+            const result = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'load_model', data: properties },
                 ({ data }) => data['model_loaded']
-            ),
+            );
+            setModel(properties.model);
+            setBackend(properties.backend);
+            return result;
+        },
     });
 
     const startTask = useMutation({
@@ -215,6 +231,10 @@ export const RobotControlProvider = ({
         <RobotControlContext.Provider
             value={{
                 observation,
+                environment,
+                dataset,
+                model,
+                backend,
                 state,
                 loadEnvironment,
                 loadModel,
@@ -230,7 +250,7 @@ export const RobotControlProvider = ({
                 isConnected,
             }}
         >
-            {children}
+            {props.children}
         </RobotControlContext.Provider>
     );
 };
