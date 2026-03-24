@@ -5,11 +5,17 @@
 
 # ruff: noqa: ANN401
 
+from __future__ import annotations
+
+import logging
 from typing import Any
 
 import lightning
+from lightning.pytorch.callbacks import BatchSizeFinder
 
 from physicalai.train.callbacks import PolicyDatasetInteraction
+
+logger = logging.getLogger(__name__)
 
 
 class Trainer(lightning.Trainer):
@@ -58,8 +64,9 @@ class Trainer(lightning.Trainer):
     def __init__(  # noqa: PLR0913
         self,
         *,
-        # physicalai-specific parameter
+        # physicalai-specific parameters
         experiment_name: str | None = None,
+        auto_scale_batch_size: bool = False,
         # Hardware
         accelerator: str | Any = "auto",
         strategy: str | Any = "auto",
@@ -121,6 +128,9 @@ class Trainer(lightning.Trainer):
         Key Parameters:
             experiment_name: Name for this experiment (creates subdirectory in default_root_dir).
                            If provided, overrides Lightning's default "lightning_logs" name.
+            auto_scale_batch_size: Add a ``BatchSizeFinder`` callback to find the
+                largest batch size that fits in memory before training.
+                ``False`` (default) disables it.  ``True`` enables exponential (power) scaling.
             default_root_dir: Root directory for experiments (default: "experiments" instead of current dir)
             accelerator: Hardware accelerator ('auto', 'cpu', 'gpu', 'tpu', 'ipu', 'mps')
             max_epochs: Maximum number of epochs to train
@@ -145,8 +155,10 @@ class Trainer(lightning.Trainer):
                 default_hp_metric=False,
             )
 
-        # Add PolicyDatasetInteraction callback automatically
         callbacks = [PolicyDatasetInteraction()] if callbacks is None else [*callbacks, PolicyDatasetInteraction()]
+
+        if auto_scale_batch_size:
+            callbacks.append(BatchSizeFinder(mode="power"))
 
         # Call parent Lightning Trainer __init__ with all parameters
         super().__init__(

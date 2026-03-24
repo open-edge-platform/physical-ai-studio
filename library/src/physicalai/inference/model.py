@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """Production-ready inference model with unified API."""
@@ -6,18 +6,20 @@
 from __future__ import annotations
 
 import json
-from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
 import yaml
 
 from physicalai.export.backends import ExportBackend
 from physicalai.inference.adapters import get_adapter
+from physicalai.inference.runners import get_runner
 
 if TYPE_CHECKING:
+    import numpy as np
+
     from physicalai.inference.adapters.base import RuntimeAdapter
+    from physicalai.inference.runners.base import InferenceRunner
 
 
 class InferenceModel:
@@ -27,8 +29,9 @@ class InferenceModel:
     all export formats (OpenVINO, ONNX, Torch Export IR).
 
     The interface matches PyTorch policy API:
-    - `select_action(obs)` - Get action from observation
-    - `reset()` - Reset policy state for new episode
+    - ``select_action(obs)`` — Get action from observation
+    - ``reset()`` — Reset policy state for new episode
+    - ``__call__(inputs)`` — Primary inference API (delegates to runner)
 
     Examples:
         >>> # Auto-detect everything
@@ -43,6 +46,17 @@ class InferenceModel:
         ...     backend="openvino",
         ...     device="CPU"
         ... )
+
+        >>> # Override the runner to disable action chunking (e.g. for benchmarking):
+        >>> from physicalai.inference.runners import SinglePass
+        >>> policy = InferenceModel.load("./exports/act_policy", runner=SinglePass())
+
+        >>> # Force action chunking with a custom chunk size:
+        >>> from physicalai.inference.runners import ActionChunking, SinglePass
+        >>> policy = InferenceModel.load(
+        ...     "./exports/act_policy",
+        ...     runner=ActionChunking(SinglePass(), chunk_size=20),
+        ... )
     """
 
     def __init__(
@@ -51,6 +65,7 @@ class InferenceModel:
         policy_name: str | None = None,
         backend: str | ExportBackend = "auto",
         device: str = "auto",
+        runner: InferenceRunner | None = None,
         **adapter_kwargs: Any,  # noqa: ANN401
     ) -> None:
         """Initialize InferenceModel with optional auto-detection.
@@ -60,6 +75,7 @@ class InferenceModel:
             policy_name: Policy name (auto-detected if None)
             backend: Backend to use, or 'auto' to detect from metadata/files
             device: Device for inference ('auto', 'cpu', 'cuda', 'CPU', 'GPU', etc.)
+            runner: Execution runner override. If None, auto-selected from metadata.
             **adapter_kwargs: Backend-specific configuration options
 
         Raises:
@@ -70,33 +86,35 @@ class InferenceModel:
             msg = f"Export directory not found: {export_dir}"
             raise FileNotFoundError(msg)
 
-        # Load metadata
         self.metadata = self._load_metadata()
 
-        # Auto-detect policy name if not specified
         if policy_name is None:
             policy_name = self._detect_policy_name()
         self.policy_name = policy_name
 
-        # Auto-detect backend if not specified
         if backend == "auto":
             backend = self.metadata.get("backend") or self._detect_backend()
         self.backend = ExportBackend(backend) if isinstance(backend, str) else backend
 
-        # Auto-detect device if not specified
         if device == "auto":
             device = self._detect_device()
         self.device = device
 
-        # Create and load adapter
         self.adapter: RuntimeAdapter = get_adapter(self.backend, device=device, **adapter_kwargs)
         model_path = self._get_model_path()
         self.adapter.load(model_path)
 
-        # State management for stateful policies
-        self._action_queue: deque[np.ndarray] = deque()
-        self.use_action_queue = self.metadata.get("use_action_queue", False)
-        self.chunk_size = self.metadata.get("chunk_size", 1)
+        self.runner: InferenceRunner = runner if runner is not None else get_runner(self.metadata)
+
+    @property
+    def use_action_queue(self) -> bool:
+        """Whether action queuing is enabled (backward compat)."""
+        return self.metadata.get("use_action_queue", False)
+
+    @property
+    def chunk_size(self) -> int:
+        """Action chunk size from metadata (backward compat)."""
+        return self.metadata.get("chunk_size", 1)
 
     @classmethod
     def load(
@@ -105,9 +123,6 @@ class InferenceModel:
         **kwargs: Any,  # noqa: ANN401
     ) -> InferenceModel:
         """Load inference model with auto-detection.
-
-        Convenience constructor that automatically detects all parameters
-        from the export directory.
 
         Args:
             export_dir: Directory containing exported policy files
@@ -122,61 +137,41 @@ class InferenceModel:
         """
         return cls(export_dir=export_dir, **kwargs)
 
-    def select_action(self, observation: dict[str, np.ndarray]) -> np.ndarray:
-        """Select action for given observation.
-
-        Matches PyTorch policy API for seamless transition from
-        training to production.
-
-        For chunked policies (chunk_size > 1), manages action queue
-        automatically and returns one action at a time.
+    def __call__(self, observation: dict[str, np.ndarray]) -> np.ndarray:
+        """Primary inference API — prepare inputs and delegate to runner.
 
         Args:
             observation: Robot observation as a dict mapping input names to numpy arrays.
 
         Returns:
-            Action array to execute. Shape: (batch_size, action_dim)
-                or (action_dim,) for single observation
+            Action array to execute.
+        """
+        inputs = self._prepare_inputs(observation)
+        return self.runner.run(self.adapter, inputs)
+
+    def select_action(self, observation: dict[str, np.ndarray]) -> np.ndarray:
+        """Select action for given observation.
+
+        Matches PyTorch policy API for seamless transition from
+        training to production. Delegates to ``__call__``.
+
+        Args:
+            observation: Robot observation as a dict mapping input names to numpy arrays.
+
+        Returns:
+            Action array to execute.
 
         Examples:
             >>> obs = env.reset()
             >>> action = policy.select_action(obs)
             >>> next_obs, reward, done = env.step(action)
         """
-        # For chunked policies, use action queue
-        if self.use_action_queue and len(self._action_queue) > 0:
-            return self._action_queue.popleft()
-
-        # Convert observation to model inputs
-        inputs = self._prepare_inputs(observation)
-
-        # Run inference
-        outputs = self.adapter.predict(inputs)
-
-        # Extract actions from outputs
-        action_key = self._get_action_output_key(outputs)
-        actions: np.ndarray = outputs[action_key]
-
-        # Manage action queue for chunked policies
-        if self.use_action_queue and self.chunk_size > 1:
-            # actions shape: (batch, chunk_size, action_dim)
-            # Queue shape: (chunk_size, batch, action_dim)
-            batch_actions = np.transpose(actions, (1, 0, 2))
-            self._action_queue.extend(batch_actions)
-            return self._action_queue.popleft()
-
-        # For non-chunked policies, return directly
-        # Remove temporal dimension if present: (batch, 1, action_dim) -> (batch, action_dim)
-        temporal_dim = 3
-        if actions.ndim == temporal_dim and actions.shape[1] == 1:
-            actions = np.squeeze(actions, axis=1)
-
-        return actions
+        return self(observation)
 
     def reset(self) -> None:
         """Reset policy state for new episode.
 
-        Clears action queue and any other internal state.
+        Clears runner internal state (e.g. action queues).
         Call this at the start of each episode.
 
         Examples:
@@ -188,7 +183,7 @@ class InferenceModel:
             ...         action = policy.select_action(obs)
             ...         obs, reward, done = env.step(action)
         """
-        self._action_queue.clear()
+        self.runner.reset()
 
     def _prepare_inputs(self, observation: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         """Flatten and filter observation dict for the adapter.
@@ -203,7 +198,7 @@ class InferenceModel:
 
         Returns:
             Flat dict containing only the adapter's expected inputs. If the
-            adapter has no declared input names, returns `observation` unchanged.
+            adapter has no declared input names, returns ``observation`` unchanged.
 
         Raises:
             KeyError: If an expected adapter input is not found in the
@@ -215,10 +210,8 @@ class InferenceModel:
             flat_observation: dict[str, np.ndarray] = {}
             for key, value in observation.items():
                 if isinstance(value, dict):
-                    key_entries = []
                     for sub_key, sub_value in value.items():
                         flat_observation[f"{key}.{sub_key}"] = sub_value
-                        key_entries.append(f"{key}.{sub_key}")
                 else:
                     flat_observation[key] = value
 
@@ -236,45 +229,22 @@ class InferenceModel:
             return filtered
         return observation
 
-    @staticmethod
-    def _get_action_output_key(outputs: dict[str, np.ndarray]) -> str:
-        """Determine which output contains actions.
-
-        Args:
-            outputs: Model outputs
-
-        Returns:
-            Key for action tensor
-        """
-        # Try common action key names
-        action_keys = ["actions", "action", "output", "pred_actions"]
-
-        for key in action_keys:
-            if key in outputs:
-                return key
-
-        # Fallback to first output
-        return next(iter(outputs))
-
     def _load_metadata(self) -> dict[str, Any]:
         """Load export metadata from yaml or json file.
 
         Returns:
-            Metadata dictionary
+            Metadata dict, or empty dict if no metadata file is found.
         """
-        # Try YAML first (preferred)
         yaml_path = self.export_dir / "metadata.yaml"
         if yaml_path.exists():
             with yaml_path.open() as f:
                 return yaml.safe_load(f) or {}
 
-        # Try JSON
         json_path = self.export_dir / "metadata.json"
         if json_path.exists():
             with json_path.open() as f:
                 return json.load(f)
 
-        # No metadata file found, return empty dict
         return {}
 
     def _detect_policy_name(self) -> str:
@@ -286,23 +256,16 @@ class InferenceModel:
         Raises:
             ValueError: If policy name cannot be determined
         """
-        # Try metadata first
         if "policy_class" in self.metadata:
-            # Extract policy name from class path
-            # e.g., "physicalai.policies.act.ACT" -> "act"
             class_path = self.metadata["policy_class"]
             parts = class_path.lower().split(".")
             min_parts_for_module_extraction = 3
             if len(parts) >= min_parts_for_module_extraction:
-                return parts[-2]  # Get policy module name
+                return parts[-2]
 
-        # Try to infer from model files
         model_files = list(self.export_dir.glob("*.*"))
         if model_files:
-            # Extract name from first model file
-            # e.g., "act.onnx" -> "act", "act_policy.xml" -> "act_policy"
             name = model_files[0].stem
-            # Remove common suffixes
             for suffix in ["_policy", "_model"]:
                 name = name.removesuffix(suffix)
             return name
@@ -319,14 +282,13 @@ class InferenceModel:
         Raises:
             ValueError: If backend cannot be determined
         """
-        # Map file extensions to backends
         extension_map = {
-            ".xml": "openvino",  # OpenVINO IR
-            ".onnx": "onnx",  # ONNX
-            ".pt2": "torch_export_ir",  # Torch Export IR (PyTorch 2.x)
-            ".ptir": "torch_export_ir",  # Torch Export IR (alternative extension)
-            ".ckpt": "torch",  # Torch
-            ".pt": "torch",  # Torch (alternative extension)
+            ".xml": "openvino",
+            ".onnx": "onnx",
+            ".pt2": "torch_export_ir",
+            ".ptir": "torch_export_ir",
+            ".ckpt": "torch",
+            ".pt": "torch",
         }
 
         for ext, backend in extension_map.items():
@@ -340,7 +302,7 @@ class InferenceModel:
         """Auto-detect best available device using adapter-native detection.
 
         Returns:
-            Device name
+            Device string for the best available device.
         """
         # Create a lightweight adapter instance to query its preferred device
         adapter = get_adapter(self.backend, device="cpu")
@@ -385,5 +347,9 @@ class InferenceModel:
     def __repr__(self) -> str:
         """Return string representation of the model."""
         return (
-            f"{self.__class__.__name__}(policy={self.policy_name}, backend={self.backend.value}, device={self.device})"
+            f"{self.__class__.__name__}("
+            f"policy={self.policy_name}, "
+            f"backend={self.backend.value}, "
+            f"device={self.device}, "
+            f"runner={self.runner!r})"
         )
