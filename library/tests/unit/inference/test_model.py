@@ -4,6 +4,7 @@
 """Unit tests for InferenceModel and inference runners."""
 
 from pathlib import Path
+from typing import override
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -20,6 +21,9 @@ from physicalai.inference.runners import (
     get_runner,
 )
 from physicalai.inference.runners.single_pass import _get_action_output_key
+
+from physicalai.inference.preprocessors.base import Preprocessor
+from physicalai.inference.postprocessors.base import Postprocessor
 
 
 class TestAdapter(RuntimeAdapter):
@@ -997,3 +1001,201 @@ class TestActionChunking:
 
         assert len(runner._action_queue) == 0
         inner.reset.assert_called_once()
+
+
+class _ScalePreprocessor(Preprocessor):
+    def __init__(self, factor: float = 2.0) -> None:
+        self.factor = factor
+
+    @override
+    def __call__(self, observation: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        return {k: v * self.factor if isinstance(v, np.ndarray) else v for k, v in observation.items()}
+
+
+class _AddKeyPreprocessor(Preprocessor):
+    @override
+    def __call__(self, observation: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        return {**observation, "preprocessed": np.array([1.0])}
+
+
+class _ScalePostprocessor(Postprocessor):
+    def __init__(self, factor: float = 0.5) -> None:
+        self.factor = factor
+
+    @override
+    def __call__(self, outputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        outputs["action"] = outputs["action"] * self.factor
+        return outputs
+
+
+class _ClampPostprocessor(Postprocessor):
+    @override
+    def __call__(self, outputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        outputs["action"] = np.clip(outputs["action"], -1.0, 1.0)
+        return outputs
+
+
+class TestPipelineWiring:
+    def test_empty_processors_is_noop(
+        self,
+        mock_export_dir_no_queue: Path,
+        mock_adapter: MagicMock,
+        sample_observation: dict[str, np.ndarray],
+    ) -> None:
+        mock_adapter.predict.return_value = {"actions": np.random.randn(1, 1, 2)}
+        with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
+            model = InferenceModel(mock_export_dir_no_queue)
+            assert model.preprocessors == []
+            assert model.postprocessors == []
+
+            action = model(sample_observation)
+            assert isinstance(action, np.ndarray)
+
+    def test_preprocessors_run_before_prepare_inputs(
+        self,
+        mock_export_dir_no_queue: Path,
+        mock_adapter: MagicMock,
+    ) -> None:
+        mock_adapter.input_names = ["state", "preprocessed"]
+        mock_adapter.predict.return_value = {"actions": np.array([[1.0, 2.0]])}
+
+        with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
+            model = InferenceModel(
+                mock_export_dir_no_queue,
+                preprocessors=[_AddKeyPreprocessor()],
+            )
+
+            obs = {"state": np.array([1.0]), "images": np.array([2.0])}
+            model(obs)
+
+            call_args = mock_adapter.predict.call_args[0][0]
+            assert "preprocessed" in call_args
+            assert "images" not in call_args
+
+    def test_preprocessors_execute_in_order(
+        self,
+        mock_export_dir_no_queue: Path,
+        mock_adapter: MagicMock,
+    ) -> None:
+        mock_adapter.input_names = []
+        mock_adapter.predict.return_value = {"actions": np.array([[1.0]])}
+
+        with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
+            model = InferenceModel(
+                mock_export_dir_no_queue,
+                preprocessors=[
+                    _ScalePreprocessor(factor=3.0),
+                    _ScalePreprocessor(factor=2.0),
+                ],
+            )
+
+            obs = {"state": np.array([1.0])}
+            model(obs)
+
+            call_args = mock_adapter.predict.call_args[0][0]
+            np.testing.assert_array_almost_equal(call_args["state"], np.array([6.0]))
+
+    def test_postprocessors_with_type_bridging(
+        self,
+        mock_export_dir_no_queue: Path,
+        mock_adapter: MagicMock,
+    ) -> None:
+        mock_adapter.input_names = []
+        mock_adapter.predict.return_value = {"actions": np.array([[10.0, -10.0]])}
+
+        with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
+            model = InferenceModel(
+                mock_export_dir_no_queue,
+                postprocessors=[_ClampPostprocessor()],
+            )
+
+            obs = {"state": np.array([1.0])}
+            action = model(obs)
+
+            np.testing.assert_array_equal(action, np.array([[1.0, -1.0]]))
+
+    def test_postprocessors_execute_in_order(
+        self,
+        mock_export_dir_no_queue: Path,
+        mock_adapter: MagicMock,
+    ) -> None:
+        mock_adapter.input_names = []
+        mock_adapter.predict.return_value = {"actions": np.array([[10.0]])}
+
+        with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
+            model = InferenceModel(
+                mock_export_dir_no_queue,
+                postprocessors=[
+                    _ScalePostprocessor(factor=0.5),
+                    _ClampPostprocessor(),
+                ],
+            )
+
+            obs = {"state": np.array([1.0])}
+            action = model(obs)
+
+            # 10.0 * 0.5 = 5.0, then clamp to [-1, 1] → 1.0
+            np.testing.assert_array_equal(action, np.array([[1.0]]))
+
+    def test_full_pipeline_pre_and_post(
+        self,
+        mock_export_dir_no_queue: Path,
+        mock_adapter: MagicMock,
+    ) -> None:
+        mock_adapter.input_names = []
+        mock_adapter.predict.return_value = {"actions": np.array([[4.0]])}
+
+        with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
+            model = InferenceModel(
+                mock_export_dir_no_queue,
+                preprocessors=[_ScalePreprocessor(factor=2.0)],
+                postprocessors=[_ScalePostprocessor(factor=0.25)],
+            )
+
+            obs = {"state": np.array([5.0])}
+            action = model(obs)
+
+            call_args = mock_adapter.predict.call_args[0][0]
+            np.testing.assert_array_almost_equal(call_args["state"], np.array([10.0]))
+            np.testing.assert_array_almost_equal(action, np.array([[1.0]]))
+
+    def test_explicit_processors_override_manifest(
+        self,
+        tmp_path: Path,
+        mock_adapter: MagicMock,
+    ) -> None:
+        import json
+
+        export_dir = tmp_path / "exports_proc"
+        export_dir.mkdir()
+
+        manifest = {
+            "format": "policy_package",
+            "version": "1.0",
+            "policy": {"name": "act", "kind": "single_pass"},
+            "artifacts": {"onnx": "act.onnx"},
+            "runner": {
+                "class_path": "physicalai.inference.runners.SinglePass",
+                "init_args": {},
+            },
+            "preprocessors": [
+                {"class_path": "should.not.Be.Loaded", "init_args": {}},
+            ],
+        }
+        with (export_dir / "manifest.json").open("w") as f:
+            json.dump(manifest, f)
+        (export_dir / "act.onnx").touch()
+
+        mock_adapter.predict.return_value = {"actions": np.array([[1.0]])}
+
+        explicit_pre = _ScalePreprocessor(factor=3.0)
+        with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
+            model = InferenceModel(
+                export_dir,
+                preprocessors=[explicit_pre],
+                postprocessors=[],
+            )
+
+            assert len(model.preprocessors) == 1
+            assert model.preprocessors[0] is explicit_pre
+            assert model.postprocessors == []

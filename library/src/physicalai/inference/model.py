@@ -14,12 +14,15 @@ import yaml
 
 from physicalai.export.backends import ExportBackend
 from physicalai.inference.adapters import get_adapter
+from physicalai.inference.manifest import ComponentSpec
 from physicalai.inference.runners import get_runner
 
 if TYPE_CHECKING:
     import numpy as np
 
     from physicalai.inference.adapters.base import RuntimeAdapter
+    from physicalai.inference.postprocessors.base import Postprocessor
+    from physicalai.inference.preprocessors.base import Preprocessor
     from physicalai.inference.runners.base import InferenceRunner
 
 
@@ -67,6 +70,8 @@ class InferenceModel:
         backend: str | ExportBackend = "auto",
         device: str = "auto",
         runner: InferenceRunner | None = None,
+        preprocessors: list[Preprocessor] | None = None,
+        postprocessors: list[Postprocessor] | None = None,
         **adapter_kwargs: Any,  # noqa: ANN401
     ) -> None:
         """Initialize InferenceModel with optional auto-detection.
@@ -77,6 +82,11 @@ class InferenceModel:
             backend: Backend to use, or 'auto' to detect from metadata/files
             device: Device for inference ('auto', 'cpu', 'cuda', 'CPU', 'GPU', etc.)
             runner: Execution runner override. If None, auto-selected from metadata.
+            preprocessors: Pipeline stages applied to observations before the
+                runner.  If ``None``, loaded from manifest (empty if not
+                declared).
+            postprocessors: Pipeline stages applied to runner output.  If
+                ``None``, loaded from manifest (empty if not declared).
             **adapter_kwargs: Backend-specific configuration options
 
         Raises:
@@ -106,6 +116,13 @@ class InferenceModel:
         self.adapter.load(model_path)
 
         self.runner: InferenceRunner = runner if runner is not None else get_runner(self.metadata)
+
+        self.preprocessors: list[Preprocessor] = (
+            preprocessors if preprocessors is not None else self._load_processors("preprocessors")
+        )
+        self.postprocessors: list[Postprocessor] = (
+            postprocessors if postprocessors is not None else self._load_processors("postprocessors")
+        )
 
     @property
     def use_action_queue(self) -> bool:
@@ -149,14 +166,28 @@ class InferenceModel:
     def __call__(self, observation: dict[str, np.ndarray]) -> np.ndarray:
         """Primary inference API — prepare inputs and delegate to runner.
 
+        Pipeline: preprocessors → _prepare_inputs → runner → postprocessors.
+
         Args:
             observation: Robot observation as a dict mapping input names to numpy arrays.
 
         Returns:
             Action array to execute.
         """
-        inputs = self._prepare_inputs(observation)
-        return self.runner.run(self.adapter, inputs)
+        data = observation
+        for pre in self.preprocessors:
+            data = pre(data)
+
+        inputs = self._prepare_inputs(data)
+        result = self.runner.run(self.adapter, inputs)
+
+        if self.postprocessors:
+            wrapped: dict[str, np.ndarray] = {"action": result}
+            for post in self.postprocessors:
+                wrapped = post(wrapped)
+            result = wrapped["action"]
+
+        return result
 
     def select_action(self, observation: dict[str, np.ndarray]) -> np.ndarray:
         """Select action for given observation.
@@ -275,6 +306,21 @@ class InferenceModel:
                 return json.load(f)
 
         return {}
+
+    def _load_processors(self, key: str) -> list[Any]:
+        """Instantiate preprocessors or postprocessors from manifest metadata.
+
+        Args:
+            key: ``"preprocessors"`` or ``"postprocessors"``.
+
+        Returns:
+            List of instantiated processor objects, or empty list if the
+            manifest does not declare any for *key*.
+        """
+        specs = self.metadata.get(key, [])
+        if not specs:
+            return []
+        return [ComponentSpec.from_dict(s).instantiate() for s in specs]
 
     def _detect_policy_name(self) -> str:
         """Auto-detect policy name from files or metadata.
