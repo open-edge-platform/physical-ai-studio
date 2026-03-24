@@ -137,6 +137,13 @@ class ExportWrapper(ExportPolicy):
     def __init__(self, model: torch.nn.Module):
         self.model = model
         self._preprocessor = IdentityPreprocessor()
+        if not hasattr(model, "extra_export_args"):
+            model.extra_export_args = {}
+
+    def _get_default_export_input_sample(self) -> dict[str, torch.Tensor] | None:
+        if not hasattr(self.model, "sample_input"):
+            return None
+        return super()._get_default_export_input_sample()
 
     @property
     def metadata_extra(self) -> dict[str, Any]:
