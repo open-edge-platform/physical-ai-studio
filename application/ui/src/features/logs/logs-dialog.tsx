@@ -8,8 +8,8 @@ import { queryOptions, experimental_streamedQuery as streamedQuery, useQuery } f
 
 import { fetchClient } from '../../api/client';
 import { fetchSSE } from '../../api/fetch-sse';
+import { LogContent } from './log-content';
 import type { LogEntry } from './log-types';
-import { LogViewer } from './log-viewer';
 import { SourcesPicker } from './sources-picker';
 
 const LogStreamContent = ({ sourceId }: { sourceId: string }) => {
@@ -46,14 +46,14 @@ const LogStreamContent = ({ sourceId }: { sourceId: string }) => {
         });
     }, [query.data]);
 
-    return <LogViewer logs={validLogs} isLoading={query.isLoading} />;
+    return <LogContent logs={validLogs} isLoading={query.isLoading} />;
 };
 
 export const LogsDialog = ({ close, initialSourceId }: { close: () => void; initialSourceId?: string }) => {
     const [selectedSourceId, setSelectedSourceId] = useState<string>(initialSourceId ?? 'application');
 
     return (
-        <Dialog>
+        <Dialog onDismiss={close}>
             <Heading>
                 <Flex alignItems='center' gap='size-300'>
                     <Text>Logs</Text>
