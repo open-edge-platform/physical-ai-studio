@@ -91,15 +91,23 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# Copy only dependency manifests — no backend source or UI assets.
-COPY --link pyproject.toml uv.lock LICENSE README.md ./
-
-# Library source is needed for hatchling to resolve the dynamic version
-# of the physicalai-train path dependency during uv sync.
-COPY --link --from=libs ./src /app/library/src
-COPY --link --from=libs ./LICENSE /app/library/LICENSE
-COPY --link --from=libs ./README.md /app/library/README.md
+# --- Dependency manifests only (no source code, no docs) ---
+#
+# Only files that influence `uv sync --frozen` dependency resolution are
+# copied here.  README.md and LICENSE are referenced by hatchling metadata
+# in library/pyproject.toml (readme / license fields) but their *content*
+# does not affect resolution — empty stubs satisfy hatchling.  Similarly,
+# hatchling's `packages = ["src/physicalai"]` requires the package dir to
+# exist.  Creating stubs instead of copying the real files means that
+# changes to documentation, license text, or library source code will NOT
+# invalidate the expensive uv-sync layers below.
+COPY --link pyproject.toml uv.lock ./
 COPY --link --from=libs ./pyproject.toml /app/library/pyproject.toml
+
+# Stubs: hatchling needs these paths but not their content for dep resolution.
+RUN mkdir -p /app/library/src/physicalai \
+    && touch /app/library/README.md /app/library/LICENSE \
+    && touch /app/library/src/physicalai/__init__.py
 
 # Backend manifests only (not src/ or run.sh) — sufficient for dep resolution.
 COPY --link application/backend/pyproject.toml application/backend/uv.lock \
