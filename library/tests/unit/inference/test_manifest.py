@@ -23,7 +23,6 @@ from physicalai.inference.manifest import (
     PolicySpec,
     RobotSpec,
     TensorSpec,
-    _build_runner_spec,
     _policy_name_from_class_path,
 )
 from physicalai.inference.runners import ActionChunking, SinglePass
@@ -386,23 +385,25 @@ class TestManifestSerialization:
         assert data["policy"]["name"] == "test"
 
 
-class TestBuildRunnerSpec:
+class TestComponentSpecFromClass:
     def test_single_pass(self) -> None:
-        spec = _build_runner_spec("single_pass")
+        spec = ComponentSpec.from_class(SinglePass)
         assert "SinglePass" in spec.class_path
         assert spec.init_args == {}
 
-    def test_action_chunking(self) -> None:
-        spec = _build_runner_spec("action_chunking", chunk_size=5)
+    def test_action_chunking_with_overrides(self) -> None:
+        spec = ComponentSpec.from_class(ActionChunking, runner=SinglePass, chunk_size=5)
         assert "ActionChunking" in spec.class_path
         assert spec.init_args["chunk_size"] == 5
         inner = spec.init_args["runner"]
         assert isinstance(inner, dict)
         assert "SinglePass" in inner["class_path"]
 
-    def test_unknown_kind_falls_back_to_single_pass(self) -> None:
-        spec = _build_runner_spec("unknown_kind")
-        assert "SinglePass" in spec.class_path
+    def test_action_chunking_default_chunk_size(self) -> None:
+        spec = ComponentSpec.from_class(ActionChunking, runner=SinglePass)
+        assert "ActionChunking" in spec.class_path
+        assert spec.init_args["chunk_size"] == 1
+        assert isinstance(spec.init_args["runner"], dict)
 
 
 class TestPolicyNameFromClassPath:

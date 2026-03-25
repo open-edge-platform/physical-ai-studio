@@ -15,6 +15,7 @@ needing to know about them.
 
 from __future__ import annotations
 
+import inspect
 import json
 from pathlib import Path
 from typing import Any
@@ -153,6 +154,42 @@ class ComponentSpec(BaseModel):
             raise ValueError(msg)
         return v
 
+    @classmethod
+    def from_class(cls, target: type, **overrides: Any) -> ComponentSpec:  # noqa: ANN401
+        """Build a spec by introspecting a class constructor.
+
+        Parameters not present in *overrides* use their default values.
+        Parameters without defaults that are not overridden are skipped.
+        When a value is itself a class, it is recursively converted to a
+        nested ``ComponentSpec`` dict.
+
+        Args:
+            target: The class to build a spec for.
+            **overrides: Values that override or supply constructor args.
+
+        Returns:
+            A ``ComponentSpec`` ready for serialisation or instantiation.
+        """
+        sig = inspect.signature(target)
+        init_args: dict[str, Any] = {}
+        for name, param in sig.parameters.items():
+            if name == "self":
+                continue
+            if name in overrides:
+                value = overrides[name]
+            elif param.default is not param.empty:
+                value = param.default
+            else:
+                continue
+            if isinstance(value, type):
+                value = cls.from_class(value).model_dump()
+            init_args[name] = value
+
+        return cls(
+            class_path=f"{target.__module__}.{target.__qualname__}",
+            init_args=init_args,
+        )
+
 
 class Manifest(BaseModel):
     """Parsed manifest for an exported model package.
@@ -228,7 +265,9 @@ class Manifest(BaseModel):
         use_action_queue = metadata.get("use_action_queue", False)
         chunk_size = metadata.get("chunk_size", 1)
         kind = "action_chunking" if use_action_queue else "single_pass"
-        runner = _build_runner_spec(kind, chunk_size)
+
+        runner_cls = component_registry.get_class(kind)
+        runner = ComponentSpec.from_class(runner_cls, chunk_size=chunk_size)
 
         backend = metadata.get("backend", "")
         artifacts: dict[str, str] = {backend: ""} if backend else {}
@@ -260,34 +299,6 @@ class Manifest(BaseModel):
 
 
 from physicalai.inference.component_factory import component_registry  # noqa: E402
-
-
-def _build_runner_spec(kind: str, chunk_size: int = 1) -> ComponentSpec:
-    """Build a ``ComponentSpec`` for a built-in runner kind.
-
-    Args:
-        kind: One of ``"single_pass"`` or ``"action_chunking"``.
-        chunk_size: Chunk size for action-chunking runners.
-
-    Returns:
-        A ``ComponentSpec`` that can be instantiated later.
-    """
-    class_path = component_registry.resolve(kind)
-    if class_path == kind:
-        class_path = component_registry.resolve("single_pass")
-
-    if kind == "action_chunking":
-        return ComponentSpec(
-            class_path=class_path,
-            init_args={
-                "runner": {
-                    "class_path": component_registry.resolve("single_pass"),
-                    "init_args": {},
-                },
-                "chunk_size": chunk_size,
-            },
-        )
-    return ComponentSpec(class_path=class_path, init_args={})
 
 
 def _policy_name_from_class_path(class_path: str) -> str:

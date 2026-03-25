@@ -62,6 +62,20 @@ class ComponentRegistry:
         """
         return self._entries.get(name_or_path, name_or_path)
 
+    def get_class(self, name_or_path: str) -> type:
+        """Resolve a name to a class path, import the module, and return the class.
+
+        Args:
+            name_or_path: Either a registered short name or a full class path.
+
+        Returns:
+            The resolved class object.
+        """
+        class_path = self.resolve(name_or_path)
+        module_path, class_name = class_path.rsplit(".", maxsplit=1)
+        module = importlib.import_module(module_path)
+        return getattr(module, class_name)
+
     def entries(self) -> dict[str, str]:
         """Return a copy of all registered entries.
 

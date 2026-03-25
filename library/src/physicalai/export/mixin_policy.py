@@ -106,20 +106,8 @@ class ExportablePolicyMixin:
         chunk_size = metadata.get("chunk_size", 1)
         kind = "action_chunking" if use_action_queue else "single_pass"
 
-        runner_class_path = component_registry.resolve(kind)
-        if kind == "action_chunking":
-            runner = ComponentSpec(
-                class_path=runner_class_path,
-                init_args={
-                    "runner": {
-                        "class_path": component_registry.resolve("single_pass"),
-                        "init_args": {},
-                    },
-                    "chunk_size": chunk_size,
-                },
-            )
-        else:
-            runner = ComponentSpec(class_path=runner_class_path, init_args={})
+        runner_cls = component_registry.get_class(kind)
+        runner = ComponentSpec.from_class(runner_cls, chunk_size=chunk_size)
 
         artifact_filename = f"{policy_name}{backend.extension}"
 
