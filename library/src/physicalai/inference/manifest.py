@@ -11,11 +11,6 @@ The on-disk format is ``manifest.json``.  The schema follows the
 ``class_path`` + ``init_args`` convention (jsonargparse-style) so that
 domain layers can specify their own components without inferencekit
 needing to know about them.
-
-Backward compatibility
-    If only a legacy ``metadata.yaml`` / ``metadata.json`` is present
-    the loader transparently upgrades it to the manifest dataclass via
-    :func:`Manifest.from_legacy_metadata`.
 """
 
 from __future__ import annotations
@@ -26,16 +21,10 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-# ---------------------------------------------------------------------------- #
-# Schema version
-# ---------------------------------------------------------------------------- #
 MANIFEST_VERSION = "1.0"
 MANIFEST_FORMAT = "policy_package"
 
 
-# ---------------------------------------------------------------------------- #
-# Leaf dataclasses — one per manifest section
-# ---------------------------------------------------------------------------- #
 class TensorSpec(BaseModel):
     """Shape and dtype descriptor for one tensor.
 
@@ -150,9 +139,6 @@ class ComponentSpec(BaseModel):
         return v
 
 
-# ---------------------------------------------------------------------------- #
-# Top-level Manifest
-# ---------------------------------------------------------------------------- #
 class Manifest(BaseModel):
     """Parsed manifest for an exported model package.
 
@@ -180,10 +166,6 @@ class Manifest(BaseModel):
     adapter: ComponentSpec | None = None
     robots: list[RobotSpec] = Field(default_factory=list)
     cameras: list[CameraSpec] = Field(default_factory=list)
-
-    # ------------------------------------------------------------------
-    # Construction helpers
-    # ------------------------------------------------------------------
 
     @classmethod
     def load(cls, path: str | Path) -> Manifest:
@@ -230,18 +212,12 @@ class Manifest(BaseModel):
 
         use_action_queue = metadata.get("use_action_queue", False)
         chunk_size = metadata.get("chunk_size", 1)
-
         kind = "action_chunking" if use_action_queue else "single_pass"
-
         runner = _build_runner_spec(kind, chunk_size)
 
         backend = metadata.get("backend", "")
-        artifacts: dict[str, str] = {}
-        if backend:
-            artifacts[backend] = ""  # filename unknown from legacy metadata
+        artifacts: dict[str, str] = {backend: ""} if backend else {}
 
-        # Build a dict and validate — extra keys from metadata are
-        # preserved automatically via ``extra="allow"``.
         data: dict[str, Any] = {
             "policy": {"name": policy_name, "kind": kind, "class_path": policy_class},
             "artifacts": artifacts,
@@ -252,10 +228,6 @@ class Manifest(BaseModel):
         }
         return cls.model_validate(data)
 
-    # ------------------------------------------------------------------
-    # Serialisation
-    # ------------------------------------------------------------------
-
     def save(self, path: str | Path) -> None:
         """Write the manifest as ``manifest.json``.
 
@@ -263,7 +235,6 @@ class Manifest(BaseModel):
             path: File path (typically ``export_dir / "manifest.json"``).
         """
         data = self.model_dump(exclude_defaults=True)
-        # Ensure required top-level keys are always present
         data.setdefault("format", self.format)
         data.setdefault("version", self.version)
         if "policy" not in data:
@@ -272,10 +243,6 @@ class Manifest(BaseModel):
             json.dump(data, fh, indent=2)
             fh.write("\n")
 
-
-# ---------------------------------------------------------------------------
-# Private helpers
-# ---------------------------------------------------------------------------
 
 from physicalai.inference.component_factory import default_registry  # noqa: E402
 
