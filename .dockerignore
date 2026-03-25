@@ -28,8 +28,13 @@
 !application/backend/run.sh
 !application/backend/src/
 
-# ---- Application: Docker (Dockerfile, compose, .env) ----
-!application/docker/
+# ---- Application: Docker ----
+# The Dockerfile is referenced via the `file:` parameter in the build
+# action, NOT via COPY, so the docker/ directory does not need to be in
+# the build context.  Excluding it avoids leaking .env files and
+# prevents unrelated changes (logs, compose, docs) from affecting the
+# build-context hash.
+# !application/docker/
 
 # Re-exclude artifacts that may appear inside allowed directories
 **/__pycache__/

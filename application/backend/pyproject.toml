@@ -33,15 +33,15 @@ dependencies = [
 [project.optional-dependencies]
 cpu = [
     "torch<2.11",
-    "torchvision",
+    "torchvision<0.26.0",
 ]
 cuda = [
     "torch<2.11",
-    "torchvision",
+    "torchvision<0.26.0",
 ]
 xpu = [
     "torch<2.11",
-    "torchvision",
+    "torchvision<0.26.0",
     "pytorch-triton-xpu ; sys_platform == 'linux' or sys_platform == 'win32'",
 ]
 
