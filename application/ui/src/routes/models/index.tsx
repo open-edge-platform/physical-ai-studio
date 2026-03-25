@@ -18,6 +18,7 @@ import useWebSocket from 'react-use-websocket';
 
 import { $api, fetchClient } from '../../api/client';
 import { SchemaJob, SchemaModel } from '../../api/openapi-spec';
+import { LogsDialog } from '../../features/logs/logs-dialog';
 import { useProjectId } from '../../features/projects/use-project';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
 import { TrainingHeader, TrainingRow } from './job-table.component';
@@ -28,10 +29,12 @@ const ModelList = ({
     models,
     jobs,
     onRetrain,
+    onViewLogs,
 }: {
     models: SchemaModel[];
     jobs: SchemaJob[];
     onRetrain: (model: SchemaModel) => void;
+    onViewLogs: (model: SchemaModel) => void;
 }) => {
     const sortedModels = models.toSorted(
         (a, b) => new Date(b.created_at!).getTime() - new Date(a.created_at!).getTime()
@@ -55,13 +58,14 @@ const ModelList = ({
                     trainingJob={model.train_job_id ? jobsById.get(model.train_job_id) : undefined}
                     onDelete={() => deleteModel(model)}
                     onRetrain={() => onRetrain(model)}
+                    onViewLogs={() => onViewLogs(model)}
                 />
             ))}
         </View>
     );
 };
 
-const JobList = ({ jobs }: { jobs: SchemaTrainJob[] }) => {
+const JobList = ({ jobs, onViewLogs }: { jobs: SchemaTrainJob[]; onViewLogs: (job: SchemaTrainJob) => void }) => {
     const sortedJobs = jobs
         .filter((m) => m.status !== 'completed')
         .toSorted((a, b) => new Date(b.created_at!).getTime() - new Date(a.created_at!).getTime());
@@ -91,7 +95,12 @@ const JobList = ({ jobs }: { jobs: SchemaTrainJob[] }) => {
 
             <TrainingHeader />
             {sortedJobs.map((job) => (
-                <TrainingRow key={job.id} trainJob={job} onInterrupt={() => onInterrupt(job)} />
+                <TrainingRow
+                    key={job.id}
+                    trainJob={job}
+                    onInterrupt={() => onInterrupt(job)}
+                    onViewLogs={() => onViewLogs(job)}
+                />
             ))}
         </View>
     );
@@ -111,6 +120,15 @@ export const Index = () => {
 
     const jobs = useProjectJobs(project_id);
     const [retrainModel, setRetrainModel] = useState<SchemaModel | null>(null);
+    const [logsSourceId, setLogsSourceId] = useState<string | undefined>();
+
+    const handleViewLogs = (model: SchemaModel) => {
+        if (!model.train_job_id) {
+            return;
+        }
+
+        setLogsSourceId(model.train_job_id);
+    };
 
     const {} = useWebSocket(fetchClient.PATH('/api/jobs/ws'), {
         shouldReconnect: () => true,
@@ -184,8 +202,20 @@ export const Index = () => {
                                 )}
                             </DialogTrigger>
                         </Flex>
-                        <JobList jobs={jobs.filter((m) => m.type === 'training') as SchemaTrainJob[]} />
-                        {hasModels && <ModelList models={models} jobs={jobs} onRetrain={setRetrainModel} />}
+                        <JobList
+                            jobs={jobs.filter((m) => m.type === 'training') as SchemaTrainJob[]}
+                            onViewLogs={(job) => {
+                                setLogsSourceId(job.id);
+                            }}
+                        />
+                        {hasModels && (
+                            <ModelList
+                                models={models}
+                                jobs={jobs}
+                                onRetrain={setRetrainModel}
+                                onViewLogs={handleViewLogs}
+                            />
+                        )}
                     </View>
                 )}
             </Flex>
@@ -198,6 +228,11 @@ export const Index = () => {
                             setRetrainModel(null);
                         }}
                     />
+                )}
+            </DialogContainer>
+            <DialogContainer type='fullscreen' onDismiss={() => setLogsSourceId(undefined)}>
+                {logsSourceId != null && (
+                    <LogsDialog close={() => setLogsSourceId(undefined)} initialSourceId={`job-${logsSourceId}`} />
                 )}
             </DialogContainer>
         </Flex>

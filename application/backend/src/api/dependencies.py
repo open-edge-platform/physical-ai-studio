@@ -11,7 +11,6 @@ from services import (
     DatasetDownloadService,
     DatasetService,
     EpisodeThumbnailService,
-    JobService,
     ModelService,
     ProjectCameraService,
     ProjectService,
@@ -19,6 +18,8 @@ from services import (
 )
 from services.environment_service import EnvironmentService
 from services.event_processor import EventProcessor
+from services.job_service import JobService
+from services.log_service import LogService
 from services.robot_calibration_service import RobotCalibrationService
 from settings import get_settings
 from utils.serial_robot_tools import RobotConnectionManager
@@ -112,6 +113,14 @@ def get_model_service() -> ModelService:
 def get_job_service() -> JobService:
     """Provides a JobService instance for managing jobs."""
     return JobService()
+
+
+def get_log_service(request: HTTPConnection) -> LogService:
+    """Provides a LogService instance for managing logs."""
+    settings = getattr(request.app.state, "settings", None)
+    if settings is None:
+        settings = get_settings()
+    return LogService(settings=settings, job_service=JobService())
 
 
 def get_project_id(project_id: str) -> UUID:
