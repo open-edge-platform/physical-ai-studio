@@ -98,9 +98,6 @@ class ExportablePolicyMixin:
 
         Returns:
             Structured manifest ready for serialisation.
-
-        Raises:
-            ValueError: If the backend is unknown.
         """
         policy_class = metadata.get("policy_class", "")
         policy_name = self.__class__.__name__.lower()
@@ -124,16 +121,7 @@ class ExportablePolicyMixin:
         else:
             runner = ComponentSpec(class_path=runner_class_path, init_args={})
 
-        extension_map: dict[ExportBackend, str] = {
-            ExportBackend.OPENVINO: ".xml",
-            ExportBackend.ONNX: ".onnx",
-            ExportBackend.TORCH_EXPORT_IR: ".pt2",
-            ExportBackend.TORCH: ".pt",
-        }
-        if backend not in extension_map:
-            msg = f"Unknown export backend {backend!r}; expected one of {sorted(extension_map)}"
-            raise ValueError(msg)
-        artifact_filename = f"{policy_name}{extension_map[backend]}"
+        artifact_filename = f"{policy_name}{backend.extension}"
 
         return Manifest(
             policy=PolicySpec(
