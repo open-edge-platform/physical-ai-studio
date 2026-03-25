@@ -106,12 +106,13 @@ def instantiate_component(
     *,
     registry: ComponentRegistry | None = None,
 ) -> object:
-    """Import the class and instantiate with init_args.
+    """Import the class described by *spec* and return a live instance.
 
     If ``spec.class_path`` is a registered short name in the *registry*,
     it is resolved to the full class path before import.
 
-    Handles recursive resolution of nested ComponentSpec dicts in init_args.
+    Nested ``ComponentSpec`` dicts in ``init_args`` are instantiated
+    recursively.
 
     Args:
         spec: Component descriptor with class_path and init_args.

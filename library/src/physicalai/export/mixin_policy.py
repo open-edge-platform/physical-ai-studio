@@ -19,12 +19,13 @@ import yaml
 from onnxruntime_extensions import gen_processing_models
 
 from physicalai.export.backends import ExportBackend
-from physicalai.inference.component_factory import component_registry
 from physicalai.inference.manifest import (
     ComponentSpec,
     Manifest,
     PolicySpec,
 )
+from physicalai.inference.runners.action_chunking import ActionChunking
+from physicalai.inference.runners.single_pass import SinglePass
 from physicalai.train import __version__
 
 from .mixin_model import ExportableModelMixin
@@ -106,8 +107,14 @@ class ExportablePolicyMixin:
         chunk_size = metadata.get("chunk_size", 1)
         kind = "action_chunking" if use_action_queue else "single_pass"
 
-        runner_cls = component_registry.get_class(kind)
-        runner = ComponentSpec.from_class(runner_cls, chunk_size=chunk_size)
+        if use_action_queue:
+            runner = ComponentSpec.from_class(
+                ActionChunking,
+                runner=ComponentSpec.from_class(SinglePass),
+                chunk_size=chunk_size,
+            )
+        else:
+            runner = ComponentSpec.from_class(SinglePass)
 
         artifact_filename = f"{policy_name}{backend.extension}"
 

@@ -159,9 +159,11 @@ class ComponentSpec(BaseModel):
         """Build a spec by introspecting a class constructor.
 
         Parameters not present in *overrides* use their default values.
-        Parameters without defaults that are not overridden are skipped.
-        When a value is itself a class, it is recursively converted to a
-        nested ``ComponentSpec`` dict.
+        Required parameters without defaults must be provided in *overrides*
+        or a TypeError is raised.
+
+        For nested components, pass a ``ComponentSpec`` instance (e.g. from
+        another ``from_class`` call) — it will be serialized automatically.
 
         Args:
             target: The class to build a spec for.
@@ -169,9 +171,14 @@ class ComponentSpec(BaseModel):
 
         Returns:
             A ``ComponentSpec`` ready for serialisation or instantiation.
+
+        Raises:
+            TypeError: If required parameters are missing from overrides.
         """
         sig = inspect.signature(target)
         init_args: dict[str, Any] = {}
+        missing: list[str] = []
+
         for name, param in sig.parameters.items():
             if name == "self":
                 continue
@@ -180,10 +187,19 @@ class ComponentSpec(BaseModel):
             elif param.default is not param.empty:
                 value = param.default
             else:
+                missing.append(name)
                 continue
-            if isinstance(value, type):
-                value = cls.from_class(value).model_dump()
+
+            if isinstance(value, ComponentSpec):
+                value = value.model_dump()
             init_args[name] = value
+
+        if missing:
+            msg = (
+                f"Missing required parameters for {target.__qualname__}: "
+                f"{', '.join(missing)}. Pass them as keyword arguments."
+            )
+            raise TypeError(msg)
 
         return cls(
             class_path=f"{target.__module__}.{target.__qualname__}",
@@ -266,8 +282,17 @@ class Manifest(BaseModel):
         chunk_size = metadata.get("chunk_size", 1)
         kind = "action_chunking" if use_action_queue else "single_pass"
 
-        runner_cls = component_registry.get_class(kind)
-        runner = ComponentSpec.from_class(runner_cls, chunk_size=chunk_size)
+        from physicalai.inference.runners.action_chunking import ActionChunking  # noqa: PLC0415
+        from physicalai.inference.runners.single_pass import SinglePass  # noqa: PLC0415
+
+        if use_action_queue:
+            runner = ComponentSpec.from_class(
+                ActionChunking,
+                runner=ComponentSpec.from_class(SinglePass),
+                chunk_size=chunk_size,
+            )
+        else:
+            runner = ComponentSpec.from_class(SinglePass)
 
         backend = metadata.get("backend", "")
         artifacts: dict[str, str] = {backend: ""} if backend else {}
@@ -296,9 +321,6 @@ class Manifest(BaseModel):
         with Path(path).open("w", encoding="utf-8") as fh:
             json.dump(data, fh, indent=2)
             fh.write("\n")
-
-
-from physicalai.inference.component_factory import component_registry  # noqa: E402
 
 
 def _policy_name_from_class_path(class_path: str) -> str:

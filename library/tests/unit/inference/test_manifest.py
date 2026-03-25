@@ -392,7 +392,11 @@ class TestComponentSpecFromClass:
         assert spec.init_args == {}
 
     def test_action_chunking_with_overrides(self) -> None:
-        spec = ComponentSpec.from_class(ActionChunking, runner=SinglePass, chunk_size=5)
+        spec = ComponentSpec.from_class(
+            ActionChunking,
+            runner=ComponentSpec.from_class(SinglePass),
+            chunk_size=5,
+        )
         assert "ActionChunking" in spec.class_path
         assert spec.init_args["chunk_size"] == 5
         inner = spec.init_args["runner"]
@@ -400,10 +404,17 @@ class TestComponentSpecFromClass:
         assert "SinglePass" in inner["class_path"]
 
     def test_action_chunking_default_chunk_size(self) -> None:
-        spec = ComponentSpec.from_class(ActionChunking, runner=SinglePass)
+        spec = ComponentSpec.from_class(
+            ActionChunking,
+            runner=ComponentSpec.from_class(SinglePass),
+        )
         assert "ActionChunking" in spec.class_path
         assert spec.init_args["chunk_size"] == 1
         assert isinstance(spec.init_args["runner"], dict)
+
+    def test_missing_required_param_raises_type_error(self) -> None:
+        with pytest.raises(TypeError, match="Missing required parameters"):
+            ComponentSpec.from_class(ActionChunking)
 
 
 class TestPolicyNameFromClassPath:
