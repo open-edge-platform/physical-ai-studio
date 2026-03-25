@@ -3,7 +3,7 @@
 
 from pathlib import Path
 
-from physicalai.export import ExportPolicy
+from physicalai.export import ExportablePolicy
 from physicalai.inference import InferenceModel
 from physicalai.policies import ACT, Pi0, SmolVLA
 from physicalai.policies.base import Policy
@@ -12,7 +12,7 @@ from schemas import Model
 from utils.device import get_torch_device
 
 
-def load_policy(model: Model) -> ExportPolicy | Policy:
+def load_policy(model: Model) -> ExportablePolicy | Policy:
     """Load existing model."""
     model_path = str(Path(model.path) / "model.ckpt")
     if model.policy == "act":

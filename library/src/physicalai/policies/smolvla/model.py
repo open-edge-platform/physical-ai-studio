@@ -19,7 +19,7 @@ from torch import nn
 
 from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, TASK, FeatureType
-from physicalai.export import ExportModel
+from physicalai.export import ExportableModel
 from physicalai.policies.base import Model
 
 if TYPE_CHECKING:
@@ -54,7 +54,7 @@ def _lazy_import_transformers() -> tuple:
 logger = logging.getLogger(__name__)
 
 
-class SmolVLAModel(ExportModel, Model):
+class SmolVLAModel(ExportableModel, Model):
     """SmolVLA flow matching vision-language-action model."""
 
     def __init__(  # noqa: PLR0913
