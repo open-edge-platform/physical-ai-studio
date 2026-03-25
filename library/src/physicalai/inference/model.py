@@ -123,8 +123,12 @@ class InferenceModel:
 
         self.runner: InferenceRunner = runner if runner is not None else get_runner(self.metadata)
 
-        self.preprocessors: list[Preprocessor] = self._load_processors("preprocessors")
-        self.postprocessors: list[Postprocessor] = self._load_processors("postprocessors")
+        self.preprocessors: list[Preprocessor] = (
+            preprocessors if preprocessors is not None else self._load_processors("preprocessors")
+        )
+        self.postprocessors: list[Postprocessor] = (
+            postprocessors if postprocessors is not None else self._load_processors("postprocessors")
+        )
 
         self.callbacks: list[Callback] = callbacks if callbacks is not None else []
 
