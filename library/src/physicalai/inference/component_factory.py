@@ -20,9 +20,6 @@ if TYPE_CHECKING:
     from physicalai.inference.manifest import ComponentSpec
 
 
-# ---------------------------------------------------------------------------- #
-# Component registry
-# ---------------------------------------------------------------------------- #
 class ComponentRegistry:
     """Name → class_path registry for dynamically instantiated components.
 
@@ -97,9 +94,6 @@ class ComponentRegistry:
         return f"ComponentRegistry({self._entries!r})"
 
 
-# ---------------------------------------------------------------------------- #
-# Default registry instance with built-in components
-# ---------------------------------------------------------------------------- #
 component_registry = ComponentRegistry()
 
 # Runners
@@ -107,9 +101,6 @@ component_registry.register("single_pass", "physicalai.inference.runners.SingleP
 component_registry.register("action_chunking", "physicalai.inference.runners.ActionChunking")
 
 
-# ---------------------------------------------------------------------------- #
-# Factory function
-# ---------------------------------------------------------------------------- #
 def instantiate_component(
     spec: ComponentSpec,
     *,
