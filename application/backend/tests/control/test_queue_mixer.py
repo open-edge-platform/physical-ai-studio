@@ -35,15 +35,7 @@ class TestQueueMixer:
         queue_mixer = QueueMixer()
         queue_mixer.add(np.array([]))
         queue_mixer.add(np.array([1, 2, 3, 4]))
-        assert not queue_mixer.second_queue
-
-    def test_popping_after_first_queue_empties_moves_second_queue(self):
-        """If the first queue is empty it should add new queue to first queue."""
-        queue_mixer = QueueMixer()
-        queue_mixer.add(np.array([1]))
-        queue_mixer.add(np.array([1, 2, 3, 4]))
-        assert queue_mixer.pop() == 1
-        assert not queue_mixer.second_queue
+        assert queue_mixer.queue.tolist() == [1, 2, 3, 4]
 
     def test_empty_queue(self):
         queue_mixer = QueueMixer()
@@ -72,6 +64,21 @@ class TestQueueMixer:
         assert queue_mixer.pop() == approx(4.6)
         assert queue_mixer.pop() == approx(5.4)
         assert queue_mixer.pop() == approx(6.2)
+        assert queue_mixer.pop() == approx(7.0)
+        assert queue_mixer.pop() == approx(7.0)
+        # Initial queue is empty.
+
+    def test_short_remaining_queue_larger_than_lerp(self):
+        """When remaining queue is shorter than lerp duration then only lerp over remaining queue"""
+        queue_mixer = QueueMixer(lerp_duration=5)
+        queue_mixer.add(np.array([3, 3, 3, 3]), 0)
+        assert queue_mixer.pop() == 3
+        assert queue_mixer.pop() == 3
+        # queue is at [3, 4, ...]
+        queue_mixer.add(np.array([7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7]), 2)
+        # queue is at [3, 4, ...] and [7, 8, ...]
+        assert queue_mixer.pop() == approx(3)
+        assert queue_mixer.pop() == approx(5.0)
         assert queue_mixer.pop() == approx(7.0)
         assert queue_mixer.pop() == approx(7.0)
         # Initial queue is empty.
