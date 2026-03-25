@@ -1,19 +1,25 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """Base Lightning Module for Policies."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from collections import deque
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import lightning as L  # noqa: N812
-import torch
-from torch import nn
 
 from physicalai.data import Observation
 from physicalai.eval import Rollout
-from physicalai.gyms import Gym
+
+if TYPE_CHECKING:
+    import torch
+
+    from physicalai.gyms import Gym
+
+    from .model import Model
 
 
 @runtime_checkable
@@ -64,7 +70,7 @@ class Policy(L.LightningModule, ABC):
         # Only set model attribute if the subclass hasn't defined it as a property
         # (e.g., LeRobot wrappers define model as a property that returns _lerobot_policy)
         if not isinstance(getattr(type(self), "model", None), property):
-            self.model: nn.Module | None = None
+            self.model: Model | None = None
 
         # Action queue for action chunking (unified across all policies)
         self._action_queue: deque[torch.Tensor] = deque(maxlen=n_action_steps)

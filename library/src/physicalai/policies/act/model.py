@@ -26,9 +26,10 @@ from torch import Tensor, nn
 from torchvision.models._utils import IntermediateLayerGetter  # noqa: PLC2701
 from torchvision.ops.misc import FrozenBatchNorm2d
 
-from physicalai.config import FromConfig
 from physicalai.data import Feature, FeatureType
 from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, Observation
+from physicalai.export import ExportableModelMixin
+from physicalai.policies.base import Model
 from physicalai.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
 
 from .config import ACTConfig
@@ -40,7 +41,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-class ACT(nn.Module, FromConfig):
+class ACT(ExportableModelMixin, Model):
     """Action Chunking Transformer (ACT) model.
 
     Supports training and inference modes.
@@ -249,11 +250,17 @@ class ACT(nn.Module, FromConfig):
         """
         extra_args: dict[str, Any] = {}
         extra_args["onnx"] = {
-            "output_names": ["action"],
+            "exporter_kwargs": {
+                "output_names": ["action"],
+            },
+            "preprocessing_type": "image_resize",
         }
         extra_args["openvino"] = {
             "output": ["action"],
+            "export_tokenizer": False,
             "compress_to_fp16": False,
+            "exporter_kwargs": {},
+            "preprocessing_type": "image_resize",
         }
         extra_args["torch_export_ir"] = {}
         extra_args["torch"] = {

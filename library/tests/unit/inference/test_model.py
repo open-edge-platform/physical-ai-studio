@@ -12,7 +12,7 @@ import pytest
 import torch
 import yaml
 
-from physicalai.export.mixin_export import ExportBackend
+from physicalai.export.mixin_policy import ExportBackend
 from physicalai.inference.adapters import RuntimeAdapter
 from physicalai.inference.model import InferenceModel
 from physicalai.inference.runners import (

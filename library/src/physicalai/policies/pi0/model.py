@@ -17,6 +17,7 @@ import torch.nn.functional as F  # noqa: N812
 from torch import nn
 
 from physicalai.data.observation import ACTION, IMAGES, STATE, Observation
+from physicalai.policies.base import Model
 
 from .components.attention import make_attention_mask_2d, prepare_4d_attention_mask
 from .components.gemma import GemmaVariant, PaliGemmaWithExpert
@@ -90,7 +91,7 @@ def sample_beta(alpha: float, beta: float, size: int, device: torch.device) -> t
     return dist.sample((size,))
 
 
-class Pi0Model(nn.Module):
+class Pi0Model(Model):
     """Pi0/Pi0.5 Flow Matching Vision-Language-Action Model."""
 
     def __init__(  # noqa: PLR0913
