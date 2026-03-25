@@ -123,8 +123,10 @@ class Export:
             ExportBackend.TORCH_EXPORT_IR: ".pt2",
             ExportBackend.TORCH: ".pt",
         }
-        ext = extension_map.get(backend, "")
-        artifact_filename = f"{policy_name}{ext}" if ext else ""
+        if backend not in extension_map:
+            msg = f"Unknown export backend {backend!r}; expected one of {sorted(extension_map)}"
+            raise ValueError(msg)
+        artifact_filename = f"{policy_name}{extension_map[backend]}"
 
         return Manifest(
             policy=PolicySpec(
