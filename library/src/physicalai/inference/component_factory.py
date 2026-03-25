@@ -86,11 +86,11 @@ class ComponentRegistry:
 # ---------------------------------------------------------------------------- #
 # Default registry instance with built-in components
 # ---------------------------------------------------------------------------- #
-default_registry = ComponentRegistry()
+component_registry = ComponentRegistry()
 
 # Runners
-default_registry.register("single_pass", "physicalai.inference.runners.SinglePass")
-default_registry.register("action_chunking", "physicalai.inference.runners.ActionChunking")
+component_registry.register("single_pass", "physicalai.inference.runners.SinglePass")
+component_registry.register("action_chunking", "physicalai.inference.runners.ActionChunking")
 
 
 # ---------------------------------------------------------------------------- #
@@ -111,12 +111,12 @@ def instantiate_component(
     Args:
         spec: Component descriptor with class_path and init_args.
         registry: Optional registry for short-name resolution.
-            Defaults to :data:`default_registry`.
+            Defaults to :data:`component_registry`.
 
     Returns:
         An instance of the class specified by spec.class_path.
     """
-    reg = registry or default_registry
+    reg = registry or component_registry
     class_path = reg.resolve(spec.class_path)
 
     module_path, class_name = class_path.rsplit(".", maxsplit=1)

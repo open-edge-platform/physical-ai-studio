@@ -15,8 +15,8 @@ import torch
 import yaml
 
 from physicalai.export.backends import ExportBackend
+from physicalai.inference.component_factory import component_registry
 from physicalai.inference.manifest import (
-    RUNNER_CLASS_PATHS,
     ComponentSpec,
     Manifest,
     PolicySpec,
@@ -102,13 +102,13 @@ class Export:
         chunk_size = metadata.get("chunk_size", 1)
         kind = "action_chunking" if use_action_queue else "single_pass"
 
-        runner_class_path = RUNNER_CLASS_PATHS.get(kind, RUNNER_CLASS_PATHS["single_pass"])
+        runner_class_path = component_registry.resolve(kind)
         if kind == "action_chunking":
             runner = ComponentSpec(
                 class_path=runner_class_path,
                 init_args={
                     "runner": {
-                        "class_path": RUNNER_CLASS_PATHS["single_pass"],
+                        "class_path": component_registry.resolve("single_pass"),
                         "init_args": {},
                     },
                     "chunk_size": chunk_size,

@@ -244,11 +244,7 @@ class Manifest(BaseModel):
             fh.write("\n")
 
 
-from physicalai.inference.component_factory import default_registry  # noqa: E402
-
-RUNNER_CLASS_PATHS: dict[str, str] = {
-    k: default_registry.resolve(k) for k in ("single_pass", "action_chunking") if k in default_registry
-}
+from physicalai.inference.component_factory import component_registry  # noqa: E402
 
 
 def _build_runner_spec(kind: str, chunk_size: int = 1) -> ComponentSpec:
@@ -261,16 +257,16 @@ def _build_runner_spec(kind: str, chunk_size: int = 1) -> ComponentSpec:
     Returns:
         A ``ComponentSpec`` that can be instantiated later.
     """
-    class_path = default_registry.resolve(kind)
+    class_path = component_registry.resolve(kind)
     if class_path == kind:
-        class_path = default_registry.resolve("single_pass")
+        class_path = component_registry.resolve("single_pass")
 
     if kind == "action_chunking":
         return ComponentSpec(
             class_path=class_path,
             init_args={
                 "runner": {
-                    "class_path": default_registry.resolve("single_pass"),
+                    "class_path": component_registry.resolve("single_pass"),
                     "init_args": {},
                 },
                 "chunk_size": chunk_size,

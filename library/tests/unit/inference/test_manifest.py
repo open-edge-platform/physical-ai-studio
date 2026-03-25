@@ -12,11 +12,10 @@ from pydantic import ValidationError
 
 from physicalai.inference.component_factory import (
     ComponentRegistry,
-    default_registry,
+    component_registry,
     instantiate_component,
 )
 from physicalai.inference.manifest import (
-    RUNNER_CLASS_PATHS,
     CameraSpec,
     ComponentSpec,
     Manifest,
@@ -369,14 +368,6 @@ class TestPolicyNameFromClassPath:
         assert _policy_name_from_class_path(class_path) == expected
 
 
-class TestRunnerClassPaths:
-    def test_single_pass_path(self) -> None:
-        assert RUNNER_CLASS_PATHS["single_pass"] == "physicalai.inference.runners.SinglePass"
-
-    def test_action_chunking_path(self) -> None:
-        assert RUNNER_CLASS_PATHS["action_chunking"] == "physicalai.inference.runners.ActionChunking"
-
-
 class TestPydanticValidation:
     def test_tensor_spec_negative_shape(self) -> None:
         with pytest.raises(ValidationError):
@@ -426,12 +417,8 @@ class TestComponentRegistry:
         entries["b"] = "z.W"
         assert "b" not in reg
 
-    def test_default_registry_has_runners(self) -> None:
-        assert "single_pass" in default_registry
-        assert "action_chunking" in default_registry
-        assert default_registry.resolve("single_pass") == "physicalai.inference.runners.SinglePass"
-        assert default_registry.resolve("action_chunking") == "physicalai.inference.runners.ActionChunking"
-
-    def test_runner_class_paths_matches_registry(self) -> None:
-        assert RUNNER_CLASS_PATHS["single_pass"] == default_registry.resolve("single_pass")
-        assert RUNNER_CLASS_PATHS["action_chunking"] == default_registry.resolve("action_chunking")
+    def test_component_registry_has_runners(self) -> None:
+        assert "single_pass" in component_registry
+        assert "action_chunking" in component_registry
+        assert component_registry.resolve("single_pass") == "physicalai.inference.runners.SinglePass"
+        assert component_registry.resolve("action_chunking") == "physicalai.inference.runners.ActionChunking"
