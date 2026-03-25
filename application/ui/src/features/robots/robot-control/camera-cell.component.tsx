@@ -8,15 +8,16 @@ import { useRobotControl } from '../robot-control-provider';
 export const CameraCell = ({ camera_id, camera_name }: { camera_id: string; camera_name: string }) => {
     const [img, setImg] = useState<string>();
     const { observation } = useRobotControl();
-
+    // TODO: Change hardcoding of fps and aspect ratio.
+    // Not all camera types contain that info. Until a solution is found this is hardcoded.
     useInterval(() => {
         const id = camera_id;
         if (id !== undefined && observation.current?.cameras[id]) {
             setImg(observation.current.cameras[id]);
         }
-    }, 1000 / 30); //TODO: Change hardcoding
+    }, 1000 / 30);
 
-    const aspectRatio = 640 / 480; //Change hardcoding
+    const aspectRatio = 640 / 480;
 
     return (
         <Flex UNSAFE_style={{ aspectRatio }}>
