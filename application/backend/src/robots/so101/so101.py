@@ -32,7 +32,6 @@ class So101(RobotClient):
     name = "So101"
 
     previous_target: dict[str, float] | None = None
-    fps = 30
     max_speed = 270  # From feetech 12V servo spec: 60 deg / 0.222s
 
     id: str
@@ -42,7 +41,7 @@ class So101(RobotClient):
 
     def __init__(self, port: str, id: str, mode: RobotMode, calibration: Calibration):
         norm_mode_body = MotorNormMode.RANGE_M100_100
-        self.calibration = calibration
+        self.calibration = self._convert_calibration_to_dict(calibration)
         self.bus = FeetechMotorsBus(
             port=port,
             motors={
@@ -53,7 +52,7 @@ class So101(RobotClient):
                 "wrist_roll": Motor(5, "sts3215", norm_mode_body),
                 "gripper": Motor(6, "sts3215", MotorNormMode.RANGE_0_100),
             },
-            calibration=self._convert_calibration_to_dict(calibration),
+            calibration=calibration,
         )
         self.id = id
         self.port = port
@@ -81,7 +80,7 @@ class So101(RobotClient):
         return RobotType.SO101_LEADER
 
     @property
-    async def is_connected(self) -> bool:
+    def is_connected(self) -> bool:
         """Check if robot is connected."""
         return self.bus.is_connected
 
