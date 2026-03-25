@@ -21,17 +21,17 @@ from onnxruntime_extensions import gen_processing_models
 from physicalai.export.backends import ExportBackend
 from physicalai.train import __version__
 
-from .mixin_model import ExportableModel
+from .mixin_model import ExportableModelMixin
 
 CONFIG_KEY = "model_config"
 POLICY_NAME_KEY = "policy_name"
 DATASET_STATS_KEY = "dataset_stats"
 
 
-class ExportablePolicy:
+class ExportablePolicyMixin:
     """Mixin class for exporting torch model checkpoints."""
 
-    model: ExportableModel
+    model: ExportableModelMixin
     _preprocessor: torch.nn.Module
 
     def _create_metadata(

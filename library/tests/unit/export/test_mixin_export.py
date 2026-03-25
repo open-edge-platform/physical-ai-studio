@@ -10,7 +10,7 @@ import onnx
 import pytest
 import torch
 
-from physicalai.export.mixin_policy import ExportablePolicy, ExportBackend
+from physicalai.export.mixin_policy import ExportablePolicyMixin, ExportBackend
 
 
 # Test configurations
@@ -131,7 +131,7 @@ class IdentityPreprocessor(torch.nn.Module):
         return x
 
 
-class ExportWrapper(ExportablePolicy):
+class ExportWrapper(ExportablePolicyMixin):
     """Wrapper class for testing Export mixin."""
 
     def __init__(self, model: torch.nn.Module):

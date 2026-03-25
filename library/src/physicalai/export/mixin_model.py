@@ -9,7 +9,7 @@ from typing import Any
 import torch
 
 
-class ExportableModel(torch.nn.Module, ABC):
+class ExportableModelMixin(torch.nn.Module, ABC):
     """Mixin class for exportable PyTorch models.
 
     This mixin provides a common interface and utilities for PyTorch models that can be exported
