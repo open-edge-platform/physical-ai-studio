@@ -94,6 +94,9 @@ class Export:
 
         Returns:
             Structured manifest ready for serialisation.
+
+        Raises:
+            ValueError: If the backend is unknown.
         """
         policy_class = metadata.get("policy_class", "")
         policy_name = self.__class__.__name__.lower()
