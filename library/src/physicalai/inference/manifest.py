@@ -54,21 +54,36 @@ class TensorSpec(BaseModel):
         return v
 
 
+class OrderedTensorSpec(TensorSpec):
+    """Tensor spec with named dimension ordering.
+
+    Extends :class:`TensorSpec` with an ``order`` list that records
+    the semantic name of each element along the primary axis — e.g.
+    joint names for a robot state vector.
+
+    Attributes:
+        order: Ordered list of element names (e.g. joint names).
+            Defaults to an empty list when ordering is unspecified.
+    """
+
+    order: list[str] = Field(default_factory=list)
+
+
 class RobotSpec(BaseModel):
     """Robot hardware descriptor — state and action spaces.
 
     Attributes:
         name: Logical name, e.g. ``"main"``.
         type: Robot model string (informational), e.g. ``"Koch v1.1"``.
-        state: Expected state tensor spec.
-        action: Expected action tensor spec.
+        state: Expected state tensor spec (with optional joint ordering).
+        action: Expected action tensor spec (with optional joint ordering).
     """
 
     model_config = ConfigDict(frozen=True)
     name: str
     type: str = ""
-    state: TensorSpec | None = None
-    action: TensorSpec | None = None
+    state: OrderedTensorSpec | None = None
+    action: OrderedTensorSpec | None = None
 
 
 class CameraSpec(BaseModel):

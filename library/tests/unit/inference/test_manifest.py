@@ -19,6 +19,7 @@ from physicalai.inference.manifest import (
     CameraSpec,
     ComponentSpec,
     Manifest,
+    OrderedTensorSpec,
     PolicySpec,
     RobotSpec,
     TensorSpec,
@@ -40,6 +41,42 @@ class TestTensorSpec:
         assert spec.dtype == "uint8"
 
 
+class TestOrderedTensorSpec:
+    def test_defaults_to_empty_order(self) -> None:
+        spec = OrderedTensorSpec(shape=[14])
+        assert spec.order == []
+        assert spec.dtype == "float32"
+
+    def test_with_explicit_order(self) -> None:
+        joints = ["shoulder_pan", "shoulder_lift", "elbow", "wrist_1", "wrist_2", "wrist_3"]
+        spec = OrderedTensorSpec(shape=[6], order=joints)
+        assert spec.order == joints
+        assert spec.shape == [6]
+
+    def test_inherits_shape_validator(self) -> None:
+        with pytest.raises(ValidationError):
+            OrderedTensorSpec(shape=[-1, 3])
+
+    def test_inherits_dtype_validator(self) -> None:
+        with pytest.raises(ValidationError):
+            OrderedTensorSpec(shape=[3], dtype="")
+
+    def test_is_subclass_of_tensor_spec(self) -> None:
+        spec = OrderedTensorSpec(shape=[6], order=["a", "b", "c", "d", "e", "f"])
+        assert isinstance(spec, TensorSpec)
+
+    def test_exclude_defaults_omits_empty_order(self) -> None:
+        spec = OrderedTensorSpec(shape=[14])
+        data = spec.model_dump(exclude_defaults=True)
+        assert "order" not in data
+        assert data["shape"] == [14]
+
+    def test_exclude_defaults_keeps_nonempty_order(self) -> None:
+        spec = OrderedTensorSpec(shape=[2], order=["j1", "j2"])
+        data = spec.model_dump(exclude_defaults=True)
+        assert data["order"] == ["j1", "j2"]
+
+
 class TestRobotSpec:
     def test_from_dict_minimal(self) -> None:
         spec = RobotSpec.model_validate({"name": "main"})
@@ -58,9 +95,23 @@ class TestRobotSpec:
         assert spec.name == "main"
         assert spec.type == "Koch v1.1"
         assert spec.state is not None
+        assert isinstance(spec.state, OrderedTensorSpec)
         assert spec.state.shape == [14]
+        assert spec.state.order == []
         assert spec.action is not None
-        assert spec.action.shape == [14]
+        assert isinstance(spec.action, OrderedTensorSpec)
+
+    def test_from_dict_with_order(self) -> None:
+        joints = ["j1", "j2", "j3"]
+        spec = RobotSpec.model_validate({
+            "name": "main",
+            "state": {"shape": [3], "order": joints},
+            "action": {"shape": [3], "order": ["a1", "a2", "a3"]},
+        })
+        assert spec.state is not None
+        assert spec.state.order == joints
+        assert spec.action is not None
+        assert spec.action.order == ["a1", "a2", "a3"]
 
 
 class TestCameraSpec:
@@ -307,7 +358,7 @@ class TestManifestSerialization:
                 class_path="physicalai.inference.runners.SinglePass",
                 init_args={},
             ),
-            robots=[RobotSpec(name="main", type="Koch", state=TensorSpec(shape=[14]))],
+            robots=[RobotSpec(name="main", type="Koch", state=OrderedTensorSpec(shape=[14]))],
             cameras=[CameraSpec(name="top", shape=[3, 480, 640])],
         )
 
