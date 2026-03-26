@@ -59,8 +59,6 @@ class LatencyMonitor(Callback):
         self.total_calls: int = 0
         self._start_time: float = 0.0
 
-    # -- Lifecycle hooks ------------------------------------------------
-
     @override
     def on_reset(self) -> None:
         """Clear all recorded samples and reset counters."""
@@ -81,8 +79,6 @@ class LatencyMonitor(Callback):
         self.latest_ms = (time.perf_counter() - self._start_time) * ms_per_second
         self._window.append(self.latest_ms)
         self.total_calls += 1
-
-    # -- Summary statistics ---------------------------------------------
 
     @property
     def avg_ms(self) -> float:
@@ -127,8 +123,6 @@ class LatencyMonitor(Callback):
         # Nearest-rank: index = ceil(p * n) - 1
         rank_index = math.ceil(0.95 * len(sorted_window)) - 1
         return sorted_window[rank_index]
-
-    # -- Display --------------------------------------------------------
 
     @override
     def __repr__(self) -> str:
