@@ -9,11 +9,11 @@ without modifying model or runner code.
 """
 
 from physicalai.inference.callbacks.base import Callback
+from physicalai.inference.callbacks.latency import LatencyMonitor
 from physicalai.inference.callbacks.throughput import ThroughputMonitor
-from physicalai.inference.callbacks.timing import Timer
 
 __all__ = [
     "Callback",
+    "LatencyMonitor",
     "ThroughputMonitor",
-    "Timer",
 ]
