@@ -85,7 +85,7 @@ export const ModelRow = ({
                 </DialogTrigger>
             </View>
             <View justifySelf={'end'}>
-                <MenuTrigger>
+                <MenuTrigger direction='left'>
                     <ActionButton isQuiet UNSAFE_style={{ fill: 'var(--spectrum-gray-900)' }} aria-label='options'>
                         <MoreMenu />
                     </ActionButton>
