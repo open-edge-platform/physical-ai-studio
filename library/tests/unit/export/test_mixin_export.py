@@ -303,6 +303,19 @@ class TestToOpenVINO:
         assert output_path.exists()
         assert (tmp_path / "model.bin").exists()
 
+    def test_to_openvino_default_export_args(self, tmp_path):
+        """Test that provided kwargs override model's extra_export_args."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+
+        model.extra_export_args = {
+        }
+        wrapper = ExportWrapper(model)
+        output_path = tmp_path / "model.xml"
+        wrapper.to_openvino(output_path)
+
+        assert output_path.exists()
+        assert ExportBackend.OPENVINO in wrapper.supported_export_backends
+
     def test_to_openvino_with_provided_input_sample(self, tmp_path):
         """Test OpenVINO export with explicitly provided input sample."""
         model = SimpleModel(SimpleConfig(input_dim=8, output_dim=4))

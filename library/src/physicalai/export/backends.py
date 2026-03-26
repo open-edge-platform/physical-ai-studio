@@ -26,6 +26,17 @@ class ExportBackend(StrEnum):
         }
         return extensions[self.value]
 
+    @property
+    def parameter_class(self) -> type["ExportParameters"]:
+        """The class of export parameters for this backend."""
+        parameter_classes = {
+            "onnx": ONNXExportParameters,
+            "openvino": OpenVINOExportParameters,
+            "torch": ExportParameters,
+            "torch_export_ir": ExportParameters,
+        }
+        return parameter_classes[self.value]
+
 
 @dataclass
 class ExportParameters:

@@ -553,7 +553,7 @@ class ExportablePolicyMixin:
         """
         if backend in self.model.extra_export_args:
             return self.model.extra_export_args[backend]
-        return ExportParameters()
+        return ExportBackend(backend).parameter_class()
 
     def _get_forward_arg_name(self) -> str:
         """Get the name of the first positional argument of the model's forward method.
