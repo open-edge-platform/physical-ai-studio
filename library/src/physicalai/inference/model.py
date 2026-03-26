@@ -153,39 +153,37 @@ class InferenceModel:
         """
         return cls(export_dir=export_dir, **kwargs)
 
-    def __call__(self, observation: dict[str, np.ndarray]) -> np.ndarray:
-        """Primary inference API — prepare inputs and delegate to runner.
+    def __call__(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        """Primary inference API — prepare inputs and return model outputs.
 
         Pipeline: preprocessors → _prepare_inputs → runner → postprocessors.
 
         Args:
-            observation: Robot observation as a dict mapping input names to numpy arrays.
+            inputs: Input payload as a dict mapping names to numpy arrays.
 
         Returns:
-            Action array to execute.
+            Model outputs after runner execution and postprocessing.
         """
         for preprocessor in self.preprocessors:
-            observation = preprocessor(observation)
+            inputs = preprocessor(inputs)
 
-        inputs = self._prepare_inputs(observation)
-        result = self.runner.run(self.adapter, inputs)
+        prepared_inputs = self._prepare_inputs(inputs)
+        outputs = self.runner.run(self.adapter, prepared_inputs)
 
-        if self.postprocessors:
-            wrapped: dict[str, np.ndarray] = {"action": result}
-            for postprocessor in self.postprocessors:
-                wrapped = postprocessor(wrapped)
-            result = wrapped["action"]
+        for postprocessor in self.postprocessors:
+            outputs = postprocessor(outputs)
 
-        return result
+        return outputs
 
     def select_action(self, observation: dict[str, np.ndarray]) -> np.ndarray:
         """Select action for given observation.
 
         Matches PyTorch policy API for seamless transition from
-        training to production. Delegates to ``__call__``.
+        training to production. Delegates to ``__call__`` and extracts
+        the action-like output.
 
         Args:
-            observation: Robot observation as a dict mapping input names to numpy arrays.
+            observation: Observation dict mapping names to numpy arrays.
 
         Returns:
             Action array to execute.
@@ -195,7 +193,8 @@ class InferenceModel:
             >>> action = policy.select_action(obs)
             >>> next_obs, reward, done = env.step(action)
         """
-        return self(observation)
+        outputs = self(observation)
+        return outputs["action"]
 
     def reset(self) -> None:
         """Reset policy state for new episode.
