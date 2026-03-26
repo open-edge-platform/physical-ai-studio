@@ -149,6 +149,108 @@ RUN --mount=type=cache,id=uv-cuda,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable --extra cuda
 
 # ===========================================================================
+# Stage 4c: pyav + ffmpeg with hardware acceleration for Intel devices
+# ===========================================================================
+FROM python:${PYTHON_VERSION}-slim@sha256:7026274c107626d7e940e0e5d6730481a4600ae95d5ca7eb532dd4180313fea9 AS ffmpeg-xpu-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Pin refs/versions if you want reproducible builds.
+ARG LIBVPL_REF=778a66d6c6537f08eabb91955dbbf1bce3812894
+ARG FFMPEG_REF=00d1f41b2eb070803a927c6132c240e14142d0b9
+ARG PYAV_VERSION=17.0.0
+ARG OPENH264_REF=cf568c83f71a18778f9a16e344effaf40c11b752
+ARG SVTAV1_REF=e7fcc226994c87b76b66389545eb73a844f13002
+
+# Install build and runtime dependencies.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    curl \
+    git \
+    build-essential \
+    cmake \
+    meson \
+    ninja-build \
+    pkg-config \
+    patchelf \
+    yasm \
+    nasm \
+    libdrm-dev \
+    libva-dev \
+    libnuma-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python packaging tools for building wheels.
+RUN python -m pip install --upgrade pip setuptools wheel Cython auditwheel
+
+# Build/install oneVPL dispatcher + headers.
+ENV VPL_INSTALL_DIR=/opt/vpl
+WORKDIR /tmp
+
+RUN git clone --depth 1 https://github.com/intel/libvpl.git && \
+    cd libvpl && \
+    git checkout ${LIBVPL_REF} && \
+    cmake -B build \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_INSTALL_PREFIX="${VPL_INSTALL_DIR}" && \
+    cmake --build build -j"$(nproc)" && \
+    cmake --install build
+
+# Make custom libvpl and FFmpeg visible to later build steps.
+ENV FFMPEG_INSTALL_DIR=/opt/ffmpeg-vpl
+ENV PKG_CONFIG_PATH="/opt/vpl/lib/pkgconfig:/opt/vpl/lib64/pkgconfig:/opt/ffmpeg-vpl/lib/pkgconfig:/usr/local/lib/pkgconfig"
+ENV LD_LIBRARY_PATH="/opt/vpl/lib:/opt/vpl/lib64:/opt/ffmpeg-vpl/lib:/usr/local/lib"
+ENV PATH="/opt/ffmpeg-vpl/bin:${PATH}"
+
+# Optional software fallback encoders.
+# Remove these two blocks if you do not want libopenh264 / libsvtav1.
+WORKDIR /tmp
+
+RUN git clone --depth 1 https://github.com/cisco/openh264.git && \
+    cd openh264 && \
+    git checkout ${OPENH264_REF} && \
+    make -j"$(nproc)" && \
+    make install && \
+    ldconfig
+
+RUN git clone --depth 1 https://gitlab.com/AOMediaCodec/SVT-AV1.git && \
+    cd SVT-AV1 && \
+    git checkout ${SVTAV1_REF} && \
+    cmake -B build -S . -DCMAKE_BUILD_TYPE=Release && \
+    cmake --build build -j"$(nproc)" && \
+    cmake --install build && \
+    ldconfig
+
+# Build FFmpeg with libvpl enabled.
+WORKDIR /tmp
+
+RUN git clone --depth 1  https://github.com/FFmpeg/FFmpeg.git ffmpeg && \
+    cd ffmpeg && \
+    git checkout ${FFMPEG_REF} && \
+    ./configure \
+      --prefix="${FFMPEG_INSTALL_DIR}" \
+      --extra-cflags="-I${VPL_INSTALL_DIR}/include" \
+      --extra-ldflags="-L${VPL_INSTALL_DIR}/lib -L${VPL_INSTALL_DIR}/lib64" \
+      --extra-libs="-lpthread -lm" \
+      --enable-libvpl \
+      --enable-vaapi \
+      --enable-shared \
+      --enable-libsvtav1 \
+      --enable-libopenh264 && \
+    make -j"$(nproc)" && \
+    make install && \
+    ldconfig
+
+# Verify FFmpeg exposes QSV encoders.
+RUN ffmpeg -version && \
+    ffmpeg -hide_banner -encoders | grep qsv && \
+    ffmpeg -hide_banner -h encoder=h264_qsv > /dev/null
+
+# Build PyAV wheel from source against the FFmpeg we just built.
+WORKDIR /build
+RUN python -m pip wheel --no-binary av "av==${PYAV_VERSION}" -w /dist
+# ===========================================================================
 # Stage 5: Runtime base — shared across all hardware targets
 #
 # Provides the non-root user, common runtime libraries, environment
@@ -167,14 +269,30 @@ ARG APP_GID=1000
 
 RUN groupadd --gid "${APP_GID}" appuser \
     && useradd --uid "${APP_UID}" --gid "${APP_GID}" --create-home appuser
+RUN groupadd -g 992 render_host || true && usermod -aG video,992 appuser
 
 # Common runtime system dependencies (OpenCV, USB access, video decoding)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ffmpeg \
         libgl1 \
         libglib2.0-0 \
         libusb-1.0-0 \
+        vainfo \
+        intel-media-va-driver \
+        libva2 \
+        libva-drm2 \
+        libmfx-gen1.2 \
     && rm -rf /var/lib/apt/lists/*
+
+# Copy pyav wheel and runtime dependencies
+COPY --link --from=ffmpeg-xpu-builder /dist /dist
+COPY --link --from=ffmpeg-xpu-builder /opt/vpl /opt/vpl
+COPY --link --from=ffmpeg-xpu-builder /opt/ffmpeg-vpl /opt/ffmpeg-vpl
+COPY --link --from=ffmpeg-xpu-builder /usr/local/lib/libSvtAv1* /usr/local/lib/
+COPY --link --from=ffmpeg-xpu-builder /usr/local/lib/libopenh264* /usr/local/lib/
+
+# Let runtime use these paths
+ENV LD_LIBRARY_PATH="/opt/vpl/lib:/opt/vpl/lib64:/opt/ffmpeg-vpl/lib:/usr/local/lib"
+ENV PATH="/opt/ffmpeg-vpl/bin:${PATH}"
 
 WORKDIR /app
 
@@ -215,6 +333,15 @@ ARG APP_GID=1000
 COPY --link --from=builder-cpu --chown=${APP_UID}:${APP_GID} \
     /app/application/backend/.venv /app/application/backend/.venv
 COPY --link --from=app-source --chown=${APP_UID}:${APP_GID} /app /app
+
+# Replace pyav
+RUN uv pip uninstall av && uv pip install /dist/av-*.whl && \
+    python - <<'PY'
+import av
+print("PyAV version:", av.__version__)
+print("Library versions:", av.library_versions)
+PY
+RUN sed -i 's/VALID_VIDEO_CODECS = {"h264", "hevc", "libsvtav1", "auto"} | set(HW_ENCODERS)/VALID_VIDEO_CODECS = {"h264", "hevc", "libsvtav1", "auto"} | set(HW_ENCODERS) | {"av1_qsv"}/' /app/application/backend/.venv/lib/python3.12/site-packages/lerobot/datasets/video_utils.py
 
 WORKDIR /app/application/backend
 USER appuser
@@ -268,8 +395,20 @@ COPY --link --from=builder-xpu --chown=${APP_UID}:${APP_GID} \
     /app/application/backend/.venv /app/application/backend/.venv
 COPY --link --from=app-source --chown=${APP_UID}:${APP_GID} /app /app
 
+# Replace pyav
+RUN uv pip uninstall av && uv pip install /dist/av-*.whl && \
+    python - <<'PY'
+import av
+print("PyAV version:", av.__version__)
+print("Library versions:", av.library_versions)
+PY
+RUN sed -i 's/VALID_VIDEO_CODECS = {"h264", "hevc", "libsvtav1", "auto"} | set(HW_ENCODERS)/VALID_VIDEO_CODECS = {"h264", "hevc", "libsvtav1", "auto"} | set(HW_ENCODERS) | {"av1_qsv"}/' /app/application/backend/.venv/lib/python3.12/site-packages/lerobot/datasets/video_utils.py
+
 WORKDIR /app/application/backend
+COPY application/docker/pyav-bench.py /app/application/backend
+
 USER appuser
+#CMD ["sleep","1000000"]
 CMD ["./run.sh"]
 
 # ===========================================================================
@@ -336,6 +475,15 @@ ARG APP_GID=1000
 COPY --link --from=builder-cuda --chown=${APP_UID}:${APP_GID} \
     /app/application/backend/.venv /app/application/backend/.venv
 COPY --link --from=app-source --chown=${APP_UID}:${APP_GID} /app /app
+
+# Replace pyav
+RUN uv pip uninstall av && uv pip install /dist/av-*.whl && \
+    python - <<'PY'
+import av
+print("PyAV version:", av.__version__)
+print("Library versions:", av.library_versions)
+PY
+RUN sed -i 's/VALID_VIDEO_CODECS = {"h264", "hevc", "libsvtav1", "auto"} | set(HW_ENCODERS)/VALID_VIDEO_CODECS = {"h264", "hevc", "libsvtav1", "auto"} | set(HW_ENCODERS) | {"av1_qsv"}/' /app/application/backend/.venv/lib/python3.12/site-packages/lerobot/datasets/video_utils.py
 
 WORKDIR /app/application/backend
 USER appuser
