@@ -1,13 +1,15 @@
 import { ActionButton, Button, Flex, Grid, Item, Key, Menu, MenuTrigger, ProgressBar, Text, View } from '@geti-ui/ui';
 import { MoreMenu } from '@geti-ui/ui/icons';
 
-import { $api } from '../../api/client';
+import { $api, fetchClient } from '../../api/client';
 import { GRID_COLUMNS } from './constants';
 import { SingleBadge, SplitBadge } from './split-badge.component';
 import { SchemaTrainJob } from './train-model-dialog';
 import { durationBetween, elapsedSince } from './utils';
 
 import classes from './model-table.module.scss';
+import { experimental_streamedQuery as streamedQuery, queryOptions, useQuery } from '@tanstack/react-query';
+import { JobMetricsContent } from './metrics';
 
 export const TrainingHeader = () => {
     return (
@@ -128,6 +130,10 @@ export const TrainingRow = ({
             {trainJob.status === 'running' && (
                 <ProgressBar size='S' UNSAFE_className={classes.progressBar} width={'100%'} value={trainJob.progress} />
             )}
+
+            <Flex height="size-6000">
+                <JobMetricsContent jobId={trainJob.id!}/>
+            </Flex>
         </View>
     );
 };

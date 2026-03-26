@@ -7,6 +7,7 @@ import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
+import shutil
 
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import CSVLogger
@@ -115,6 +116,7 @@ class TrainingWorker(BaseProcessWorker):
         )
         try:
             path = Path(model.path)
+            cache_path = settings.cache_dir / str(job.id)
 
             # Resolve training device -- explicit from payload or auto-detected
             device_type = payload.device.type if payload.device else None
@@ -134,13 +136,13 @@ class TrainingWorker(BaseProcessWorker):
                 policy = setup_policy(model)
 
             checkpoint_callback = ModelCheckpoint(
-                dirpath=path,
+                dirpath=cache_path,
                 filename="model",  # filename without suffix
                 save_top_k=1,
                 monitor="val/loss",
                 mode="min",
             )
-            csv_logger = CSVLogger(path.parent, name=path.stem)
+            csv_logger = CSVLogger(cache_path.parent, name=cache_path.stem)
 
             trainer = Trainer(
                 logger=csv_logger,
@@ -168,6 +170,8 @@ class TrainingWorker(BaseProcessWorker):
                 export_dir = path / "exports" / backend
                 if isinstance(policy, ExportablePolicyMixin):
                     policy.export(export_dir, backend=backend)
+
+            shutil.move(cache_path, path)
 
             job = await JobService.update_job_status(
                 job_id=job.id, status=JobStatus.COMPLETED, message="Training finished"

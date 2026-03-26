@@ -50,7 +50,7 @@ const ModelList = ({
     });
 
     const deleteModel = (model: SchemaModel) => {
-        deleteModelMutation.mutate({ params: { path: { model_id: model.id! } } });
+        deleteModelMutation.mutate({ params: { query: { model_id: model.id! } } });
     };
 
     return (

@@ -10,6 +10,8 @@ import { StartInferenceDialog } from './start-model-modal.component';
 import { durationBetween } from './utils';
 
 import classes from './model-table.module.scss';
+import { MetricsContent } from './metrics';
+import { CollapsableRow } from './collapsable-row.component';
 
 export const ModelHeader = () => {
     return (
@@ -66,42 +68,48 @@ export const ModelRow = ({
     const version = model.version ?? 1;
 
     return (
-        <Grid columns={GRID_COLUMNS} alignItems={'center'} width={'100%'} UNSAFE_className={classes.modelRow}>
-            <Flex alignItems='center' gap='size-100'>
-                <Text>{model.name}</Text>
-                {version > 1 && (
-                    <Text UNSAFE_style={{ color: 'var(--spectrum-gray-600)', fontSize: '0.85em' }}>v{version}</Text>
-                )}
-            </Flex>
-            <Text>{new Date(model.created_at!).toLocaleString()}</Text>
-            <Text UNSAFE_className={duration ? undefined : classes.modelInfo}>{duration ?? '—'}</Text>
-            <Text>{model.policy.toUpperCase()}</Text>
-            <View>
-                <DialogTrigger>
-                    <Button variant='secondary'>Run model</Button>
-                    {(close) => (
-                        <StartInferenceDialog close={close} project_id={model.project_id} model_id={model.id!} />
-                    )}
-                </DialogTrigger>
-            </View>
-            <View justifySelf={'end'}>
-                <MenuTrigger direction='left'>
-                    <ActionButton isQuiet UNSAFE_style={{ fill: 'var(--spectrum-gray-900)' }} aria-label='options'>
-                        <MoreMenu />
-                    </ActionButton>
-                    <Menu onAction={onAction} disabledKeys={disabledKeys}>
-                        <Item key='logs'>Logs</Item>
-                        <Item key='download'>Download</Item>
-                        <Item key='retrain'>Retrain</Item>
-                        <Item key='delete'>Delete</Item>
-                    </Menu>
-                </MenuTrigger>
-                <ModelDownloadDialog
-                    modelId={model.id!}
-                    isOpen={isDownloadDialogOpen}
-                    onClose={() => setDownloadDialogOpen(false)}
-                />
-            </View>
-        </Grid>
+        <View>
+            <CollapsableRow header={
+                <Grid columns={GRID_COLUMNS} alignItems={'center'} width={'100%'} UNSAFE_className={classes.modelRow}>
+                    <Flex alignItems='center' gap='size-100'>
+                        <Text>{model.name}</Text>
+                        {version > 1 && (
+                            <Text UNSAFE_style={{ color: 'var(--spectrum-gray-600)', fontSize: '0.85em' }}>v{version}</Text>
+                        )}
+                    </Flex>
+                    <Text>{new Date(model.created_at!).toLocaleString()}</Text>
+                    <Text UNSAFE_className={duration ? undefined : classes.modelInfo}>{duration ?? '—'}</Text>
+                    <Text>{model.policy.toUpperCase()}</Text>
+                    <View>
+                        <DialogTrigger>
+                            <Button variant='secondary'>Run model</Button>
+                            {(close) => (
+                                <StartInferenceDialog close={close} project_id={model.project_id} model_id={model.id!} />
+                            )}
+                        </DialogTrigger>
+                    </View>
+                    <View justifySelf={'end'}>
+                        <MenuTrigger direction='left'>
+                            <ActionButton isQuiet UNSAFE_style={{ fill: 'var(--spectrum-gray-900)' }} aria-label='options'>
+                                <MoreMenu />
+                            </ActionButton>
+                            <Menu onAction={onAction} disabledKeys={disabledKeys}>
+                                <Item key='logs'>Logs</Item>
+                                <Item key='download'>Download</Item>
+                                <Item key='retrain'>Retrain</Item>
+                                <Item key='delete'>Delete</Item>
+                            </Menu>
+                        </MenuTrigger>
+                        <ModelDownloadDialog
+                            modelId={model.id!}
+                            isOpen={isDownloadDialogOpen}
+                            onClose={() => setDownloadDialogOpen(false)}
+                        />
+                    </View>
+                </Grid>
+            }>
+                <MetricsContent modelId={model.id!} />
+            </CollapsableRow>
+        </View>
     );
 };
