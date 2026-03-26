@@ -54,7 +54,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from physicalai.export.mixin_export import Export
+from physicalai.export.mixin_policy import ExportablePolicyMixin
 from physicalai.policies.base import Policy
 
 from .config import GrootConfig
@@ -70,7 +70,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class Groot(Export, Policy):
+class Groot(ExportablePolicyMixin, Policy):
     """Groot (GR00T-N1.5) Policy - NVIDIA's foundation model for humanoid robots.
 
     First-party Lightning wrapper with explicit hyperparameters in __init__.

@@ -20,9 +20,9 @@ import { ErrorMessage } from '../../../components/error-page/error-page';
 import { useProjectId } from '../../../features/projects/use-project';
 import { RobotViewer } from '../../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
+import { Observation, useRobotControl } from '../../../features/robots/use-robot-control';
 import { paths } from '../../../router';
 import { CameraView } from '../../datasets/camera-view';
-import { Observation, useInference } from './use-inference';
 
 interface InferenceViewerProps {
     environment: SchemaEnvironmentWithRelations;
@@ -47,12 +47,12 @@ export const InferenceViewer = ({ environment, model, backend, tasks }: Inferenc
 
     const [task, setTask] = useState<string>(tasks[0] ?? '');
 
-    const { observation, readyForInference, state, startTask, stopTask } = useInference(
+    const { observation, readyForInference, state, startTask, stopTask } = useRobotControl({
         environment,
         model,
         backend,
-        ToastQueue.negative
-    );
+        onError: ToastQueue.negative,
+    });
 
     const visualisation_source = getVisualisationSourceFromObservation(observation.current);
 
@@ -94,7 +94,7 @@ export const InferenceViewer = ({ environment, model, backend, tasks }: Inferenc
                         ))}
                     </ComboBox>
                     <ButtonGroup>
-                        {state.is_running ? (
+                        {state.follower_source === 'model' ? (
                             <Button variant='primary' isPending={stopTask.isPending} onPress={() => stopTask.mutate()}>
                                 <Pause fill='white' />
                                 Stop

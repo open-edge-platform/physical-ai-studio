@@ -71,7 +71,7 @@ COPY --link --from=web-ui /home/app/web_ui/dist /app/application/ui/
 # This separation ensures that source-only changes do not invalidate
 # the expensive uv sync layers in the device-specific builders below.
 # ===========================================================================
-FROM python:${PYTHON_VERSION}-slim@sha256:7026274c107626d7e940e0e5d6730481a4600ae95d5ca7eb532dd4180313fea9 AS builder-base
+FROM python:${PYTHON_VERSION}-slim@sha256:3d5ed973e45820f5ba5e46bd065bd88b3a504ff0724d85980dcd05eab361fcf4 AS builder-base
 
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0
@@ -91,14 +91,17 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# Copy only dependency manifests — no backend source or UI assets.
-COPY --link pyproject.toml uv.lock LICENSE README.md ./
-
-# Library source is needed for hatchling to resolve the dynamic version
-# of the physicalai-train path dependency during uv sync.
-COPY --link --from=libs ./src /app/library/src
-COPY --link --from=libs ./LICENSE /app/library/LICENSE
-COPY --link --from=libs ./README.md /app/library/README.md
+# --- Dependency manifests only (no source code, no docs) ---
+#
+# Only files that influence `uv sync --frozen` dependency resolution are
+# copied here.  The library (physicalai-train) is a local path dependency
+# that is NOT published to PyPI, but --no-install-local (used below)
+# tells uv to skip building/installing all local packages — so we don't
+# need library source, README, or LICENSE here.  However, uv still needs
+# to *discover* the path dependency during project loading, so the
+# library pyproject.toml must exist at the expected relative path.
+# The real library source is overlaid via app-source in the final image.
+COPY --link pyproject.toml uv.lock ./
 COPY --link --from=libs ./pyproject.toml /app/library/pyproject.toml
 
 # Backend manifests only (not src/ or run.sh) — sufficient for dep resolution.
@@ -109,9 +112,12 @@ WORKDIR /app/application/backend
 
 # Install hardware-independent dependencies (FastAPI, SQLAlchemy, etc.)
 # first so this layer is shared across all device-specific builders.
-# --no-install-project: skip building the backend wheel (source not present).
+# --no-install-local: skip building all local packages (the backend
+# project AND the physicalai-train path dependency).  This avoids
+# invoking hatchling, which would require library source files.
+# The local packages are installed at runtime via app-source + uv run.
 RUN --mount=type=cache,id=uv-base,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --no-install-project
+    uv sync --frozen --no-dev --no-editable --no-install-local
 
 # ===========================================================================
 # Stage 4a: CPU builder
@@ -119,7 +125,7 @@ RUN --mount=type=cache,id=uv-base,target=/root/.cache/uv \
 FROM builder-base AS builder-cpu
 
 RUN --mount=type=cache,id=uv-cpu,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --no-install-project --extra cpu
+    uv sync --frozen --no-dev --no-editable --no-install-local --extra cpu
 
 # ===========================================================================
 # Stage 4b: XPU builder
@@ -127,7 +133,7 @@ RUN --mount=type=cache,id=uv-cpu,target=/root/.cache/uv \
 FROM builder-base AS builder-xpu
 
 RUN --mount=type=cache,id=uv-xpu,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --no-install-project --extra xpu
+    uv sync --frozen --no-dev --no-editable --no-install-local --extra xpu
 
 # ===========================================================================
 # Stage 4c: CUDA builder
@@ -135,7 +141,7 @@ RUN --mount=type=cache,id=uv-xpu,target=/root/.cache/uv \
 FROM builder-base AS builder-cuda
 
 RUN --mount=type=cache,id=uv-cuda,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --no-install-project --extra cuda
+    uv sync --frozen --no-dev --no-editable --no-install-local --extra cuda
 
 # ===========================================================================
 # Stage 5: Runtime base — shared across all hardware targets
@@ -144,13 +150,7 @@ RUN --mount=type=cache,id=uv-cuda,target=/root/.cache/uv \
 # variables, and directory structure. Healthcheck is defined in
 # docker-compose.yaml (not here) so it can reference runtime PORT.
 # ===========================================================================
-FROM python:${PYTHON_VERSION}-slim@sha256:7026274c107626d7e940e0e5d6730481a4600ae95d5ca7eb532dd4180313fea9 AS runtime-base
-
-# OCI image metadata
-ARG GIT_SHA=unknown
-LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
-      org.opencontainers.image.description="Physical AI Studio is an end-to-end framework for teaching robots to perform tasks through imitation learning from human demonstrations" \
-      org.opencontainers.image.revision="${GIT_SHA}"
+FROM python:${PYTHON_VERSION}-slim@sha256:3d5ed973e45820f5ba5e46bd065bd88b3a504ff0724d85980dcd05eab361fcf4 AS runtime-base
 
 # uv is needed at runtime for `uv run` in run.sh
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
@@ -198,6 +198,11 @@ EXPOSE 8000
 # ===========================================================================
 FROM runtime-base AS physical-ai-studio-cpu
 
+ARG GIT_SHA=unknown
+LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
+      org.opencontainers.image.description="Physical AI Studio is an end-to-end framework for teaching robots to perform tasks through imitation learning from human demonstrations" \
+      org.opencontainers.image.revision="${GIT_SHA}"
+
 ARG APP_UID=1000
 ARG APP_GID=1000
 
@@ -244,6 +249,11 @@ RUN echo "deb [arch=amd64 trusted=yes] https://ppa.launchpadcontent.net/kobuk-te
 SHELL ["/bin/sh", "-c"]
 
 FROM runtime-xpu AS physical-ai-studio-xpu
+
+ARG GIT_SHA=unknown
+LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
+      org.opencontainers.image.description="Physical AI Studio is an end-to-end framework for teaching robots to perform tasks through imitation learning from human demonstrations" \
+      org.opencontainers.image.revision="${GIT_SHA}"
 
 ARG APP_UID=1000
 ARG APP_GID=1000
@@ -308,6 +318,11 @@ RUN set -eux; \
     apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
 FROM runtime-cuda AS physical-ai-studio-cuda
+
+ARG GIT_SHA=unknown
+LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
+      org.opencontainers.image.description="Physical AI Studio is an end-to-end framework for teaching robots to perform tasks through imitation learning from human demonstrations" \
+      org.opencontainers.image.revision="${GIT_SHA}"
 
 ARG APP_UID=1000
 ARG APP_GID=1000

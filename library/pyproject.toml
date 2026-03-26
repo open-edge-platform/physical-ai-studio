@@ -38,7 +38,9 @@ dependencies = [
     "onnx",
     "onnxruntime",
     "onnxscript",
+    "onnxruntime_extensions",
     "openvino>=2025.0",
+    "openvino_tokenizers>=2025.0",
     "jsonargparse[signatures]>=4.27.0", # This could be extra
     "pydantic",                         # This could be extra
 ]
@@ -67,6 +69,7 @@ pi0 = [
     "peft>=0.13.0,<1.0.0",
     "safetensors>=0.4.3,<1.0.0",
     "Pillow>=10.0.0,<13.0.0",
+    "sentencepiece<=0.2.1",
 ]
 
 # NVIDIA GR00T-N1 foundation model

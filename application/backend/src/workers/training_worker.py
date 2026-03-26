@@ -26,9 +26,15 @@ from physicalai.train import Trainer
 
 from schemas import Job, Model, Snapshot
 from schemas.job import JobStatus, TrainJobPayload
-from services import DatasetService, JobService, ModelService
+from services import DatasetService, ModelService
 from services.event_processor import EventType
-from services.training_service import TrainingService, TrainingTrackingCallback, TrainingTrackingDispatcher
+from services.job_service import JobService
+from services.training_service import (
+    TrainingLogCallback,
+    TrainingService,
+    TrainingTrackingCallback,
+    TrainingTrackingDispatcher,
+)
 from utils.device import get_lightning_strategy, get_torch_device
 from workers.base import BaseProcessWorker
 
@@ -111,6 +117,7 @@ class TrainingWorker(BaseProcessWorker):
                 repo_id="snapshot",  # doesnt matter for loading the data.
                 root=snapshot.path,
                 train_batch_size=payload.batch_size,
+                num_workers=payload.num_workers,
             )
 
             if base_model is not None:
@@ -136,10 +143,12 @@ class TrainingWorker(BaseProcessWorker):
                         interrupt_event=self.interrupt_event,
                         dispatcher=dispatcher,
                     ),
+                    TrainingLogCallback(),
                 ],
                 accelerator=get_torch_device(),
                 strategy=get_lightning_strategy(),
                 max_steps=payload.max_steps,
+                auto_scale_batch_size=payload.auto_scale_batch_size,
             )
 
             dispatcher.start()

@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """Production inference module for exported policies.
@@ -11,6 +11,7 @@ Key Features:
     - Auto-detection of backend and device
     - Support for chunked/stateful policies
     - Handles action queues automatically
+    - Lifecycle callbacks for instrumentation
 
 Examples:
     >>> from physicalai.inference import InferenceModel
@@ -22,6 +23,7 @@ Examples:
     >>> action = policy.select_action(observation)
 """
 
+from physicalai.inference.callbacks.base import Callback
 from physicalai.inference.model import InferenceModel
 
-__all__ = ["InferenceModel"]
+__all__ = ["Callback", "InferenceModel"]

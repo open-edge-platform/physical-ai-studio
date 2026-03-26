@@ -15,5 +15,17 @@ class ExportBackend(StrEnum):
     TORCH_EXPORT_IR = "torch_export_ir"
     EXECUTORCH = "executorch"
 
+    @property
+    def extension(self) -> str:
+        """Canonical file extension for this backend (including leading dot)."""
+        extensions = {
+            "onnx": ".onnx",
+            "openvino": ".xml",
+            "torch": ".pt",
+            "torch_export_ir": ".pt2",
+            "executorch": ".pte",
+        }
+        return extensions[self.value]
+
 
 __all__ = ["ExportBackend"]

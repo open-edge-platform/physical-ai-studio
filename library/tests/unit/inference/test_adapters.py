@@ -11,7 +11,7 @@ import pytest
 import torch
 
 from physicalai.data.observation import Observation
-from physicalai.export.mixin_export import ExportBackend
+from physicalai.export.mixin_policy import ExportBackend
 from physicalai.inference.adapters import (
     ExecuTorchAdapter,
     ONNXAdapter,

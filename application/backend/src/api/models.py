@@ -1,20 +1,26 @@
+from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
+from fastapi.exceptions import HTTPException
+from fastapi.responses import FileResponse
+from starlette import status
+from starlette.background import BackgroundTask
 
-from api.dependencies import get_dataset_service, get_model_service, validate_uuid
+from api.dependencies import get_dataset_service, get_model_download_service, get_model_id, get_model_service
+from api.utils import safe_archive_name
 from exceptions import ResourceNotFoundError, ResourceType
 from internal_datasets.utils import get_internal_dataset
 from schemas import Model
-from services import DatasetService, ModelService
+from services import DatasetService, ModelDownloadService, ModelService
 
 router = APIRouter(prefix="/api/models", tags=["Models"])
 
 
 @router.get("/{model_id}")
 async def get_model_by_id(
-    model_id: Annotated[UUID, Depends(validate_uuid)],
+    model_id: Annotated[UUID, Depends(get_model_id)],
     model_service: Annotated[ModelService, Depends(get_model_service)],
 ) -> Model:
     """Get model by id."""
@@ -23,7 +29,7 @@ async def get_model_by_id(
 
 @router.get("/{model_id}/tasks")
 async def get_tasks_of_model(
-    model_id: Annotated[UUID, Depends(validate_uuid)],
+    model_id: Annotated[UUID, Depends(get_model_id)],
     model_service: Annotated[ModelService, Depends(get_model_service)],
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
 ) -> list[str]:
@@ -33,9 +39,37 @@ async def get_tasks_of_model(
     return get_internal_dataset(dataset).get_tasks()
 
 
-@router.delete("")
+@router.get("/{model_id}/download")
+async def model_download_endpoint(
+    model_id: Annotated[UUID, Depends(get_model_id)],
+    model_service: Annotated[ModelService, Depends(get_model_service)],
+    model_download_service: Annotated[ModelDownloadService, Depends(get_model_download_service)],
+    include_snapshot: bool = False,
+) -> FileResponse:
+    """Download model folder as a zip archive.
+
+    By default the dataset snapshot that was used for training is excluded
+    from the archive.  Pass ``include_snapshot=true`` to include it.
+    """
+    model = await model_service.get_model_by_id(model_id)
+    model_path = Path(model.path).resolve()
+
+    if not model_path.exists() or not model_path.is_dir():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model path not found.")
+
+    archive_path = model_download_service.create_model_archive(model_path, include_snapshot=include_snapshot)
+    filename = f"{safe_archive_name(model.name, fallback='model')}.zip"
+    return FileResponse(
+        archive_path,
+        media_type="application/zip",
+        filename=filename,
+        background=BackgroundTask(archive_path.unlink, missing_ok=True),
+    )
+
+
+@router.delete("/{model_id}")
 async def remove_model(
-    model_id: Annotated[UUID, Depends(validate_uuid)],
+    model_id: Annotated[UUID, Depends(get_model_id)],
     model_service: Annotated[ModelService, Depends(get_model_service)],
 ) -> None:
     """Fetch all projects."""

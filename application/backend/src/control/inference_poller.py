@@ -1,0 +1,44 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from control.inference_result import InferenceResult
+
+if TYPE_CHECKING:
+    from multiprocessing import Queue
+
+    from physicalai.data import Observation
+
+
+class InferencePoller:
+    """An inference poller class that keeps makes sure that only one inference call is added to queue at once."""
+
+    busy: bool = False
+    observation_queue: Queue
+    output_queue: Queue
+
+    def __init__(self, observation_queue: Queue, output_queue: Queue):
+        self.observation_queue = observation_queue
+        self.output_queue = output_queue
+
+    def run_inference(self, observation: Observation) -> bool:
+        if self.busy:
+            return False
+        self.observation_queue.put(observation)
+        self.busy = True
+        return True
+
+    def has_result(self) -> bool:
+        """Check output queue for results..."""
+        return not self.output_queue.empty()
+
+    def get_result(self) -> InferenceResult:
+        self.busy = False
+        return self.output_queue.get_nowait()
+
+    def reset(self) -> None:
+        """Clear the queue, but dont touch busy to prevent desyncs from active inference."""
+        if self.has_result():
+            self.output_queue.get_nowait()
+
+        self.busy = False

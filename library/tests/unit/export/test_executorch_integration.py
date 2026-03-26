@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 import torch
 import yaml
 
-from physicalai.export.mixin_export import Export, ExportBackend
+from physicalai.export.mixin_policy import ExportablePolicyMixin, ExportBackend
 from physicalai.inference.adapters.executorch import ExecuTorchAdapter
 from physicalai.inference.model import InferenceModel
 
@@ -43,8 +43,8 @@ class _ModelWithSampleInput(torch.nn.Module):
         return {"obs": torch.randn(1, 4), "goal": torch.randn(1, 4)}
 
 
-class _ExportWrapper(Export):
-    """Thin wrapper around :class:`Export` for testing."""
+class _ExportWrapper(ExportablePolicyMixin):
+    """Thin wrapper around :class:`ExportablePolicyMixin` for testing."""
 
     def __init__(self, model: torch.nn.Module) -> None:
         self.model = model

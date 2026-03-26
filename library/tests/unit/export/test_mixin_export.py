@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """Unit tests for mixin_export module."""
@@ -11,7 +11,7 @@ import onnx
 import pytest
 import torch
 
-from physicalai.export.mixin_export import Export, ExportBackend
+from physicalai.export.mixin_policy import ExportablePolicyMixin, ExportBackend
 
 
 # Test configurations
@@ -125,16 +125,32 @@ class ModelWithDictInput(torch.nn.Module):
         return {"data": torch.randn(1, 10)}
 
 
-class ExportWrapper(Export):
+class IdentityPreprocessor(torch.nn.Module):
+    """Identity preprocessor that returns input as-is."""
+
+    def forward(self, x: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        return x
+
+
+class ExportWrapper(ExportablePolicyMixin):
     """Wrapper class for testing Export mixin."""
 
     def __init__(self, model: torch.nn.Module):
         self.model = model
+        self._preprocessor = IdentityPreprocessor()
+        if not hasattr(model, "extra_export_args"):
+            model.extra_export_args = {}
+
+    def _get_default_export_input_sample(self) -> dict[str, torch.Tensor] | None:
+        if not hasattr(self.model, "sample_input"):
+            return None
+        return super()._get_default_export_input_sample()
 
     @property
     def metadata_extra(self) -> dict[str, Any]:
         return {"chunk_size": 10, "use_action_queue": True}
 
+    @property
     def supported_export_backends(self) -> list[str | ExportBackend]:
         return [ExportBackend.ONNX, ExportBackend.OPENVINO, ExportBackend.TORCH_EXPORT_IR]
 
@@ -151,7 +167,7 @@ class TestToOnnx:
         wrapper.to_onnx(output_path)
 
         assert output_path.exists()
-        assert ExportBackend.ONNX in wrapper.supported_export_backends()
+        assert ExportBackend.ONNX in wrapper.supported_export_backends
 
         # Verify the ONNX model can be loaded
         onnx_model = onnx.load(str(output_path))
@@ -179,7 +195,7 @@ class TestToOnnx:
         wrapper.to_onnx(output_path, input_sample=input_sample)
 
         assert output_path.exists()
-        assert ExportBackend.ONNX in wrapper.supported_export_backends()
+        assert ExportBackend.ONNX in wrapper.supported_export_backends
 
         # Verify the ONNX model
         onnx_model = onnx.load(str(output_path))
@@ -195,7 +211,7 @@ class TestToOnnx:
         wrapper.to_onnx(output_path, output_names=["custom_output"])
 
         assert output_path.exists()
-        assert ExportBackend.ONNX in wrapper.supported_export_backends()
+        assert ExportBackend.ONNX in wrapper.supported_export_backends
 
         # Verify the ONNX model
         onnx_model = onnx.load(str(output_path))
@@ -214,7 +230,7 @@ class TestToOnnx:
         wrapper.to_onnx(output_path)
 
         assert output_path.exists()
-        assert ExportBackend.ONNX in wrapper.supported_export_backends()
+        assert ExportBackend.ONNX in wrapper.supported_export_backends
 
         # Verify the ONNX model
         onnx_model = onnx.load(str(output_path))
@@ -234,7 +250,7 @@ class TestToOnnx:
         wrapper.to_onnx(output_path)
 
         assert output_path.exists()
-        assert ExportBackend.ONNX in wrapper.supported_export_backends()
+        assert ExportBackend.ONNX in wrapper.supported_export_backends
 
         # Verify the ONNX model
         onnx_model = onnx.load(str(output_path))
@@ -247,7 +263,7 @@ class TestToOnnx:
         wrapper = ExportWrapper(model)
 
         output_path = tmp_path / "model.onnx"
-        assert ExportBackend.ONNX in wrapper.supported_export_backends()
+        assert ExportBackend.ONNX in wrapper.supported_export_backends
 
         with pytest.raises(RuntimeError, match="input sample must be provided"):
             wrapper.to_onnx(output_path)
@@ -261,7 +277,7 @@ class TestToOnnx:
         wrapper.export(backend="onnx", output_path=output_path)
 
         assert output_path.exists()
-        assert ExportBackend.ONNX in wrapper.supported_export_backends()
+        assert ExportBackend.ONNX in wrapper.supported_export_backends
 
         # Verify the ONNX model can be loaded
         onnx_model = onnx.load(str(output_path))
@@ -279,7 +295,7 @@ class TestToOpenVINO:
         output_path = tmp_path / "model.xml"
         wrapper.to_openvino(output_path)
 
-        assert ExportBackend.OPENVINO in wrapper.supported_export_backends()
+        assert ExportBackend.OPENVINO in wrapper.supported_export_backends
         assert output_path.exists()
         assert (tmp_path / "model.bin").exists()
 
@@ -304,7 +320,7 @@ class TestToOpenVINO:
 
         wrapper.to_openvino(output_path, input_sample=input_sample)
 
-        assert ExportBackend.OPENVINO in wrapper.supported_export_backends()
+        assert ExportBackend.OPENVINO in wrapper.supported_export_backends
         assert output_path.exists()
         assert (tmp_path / "model.bin").exists()
 
@@ -316,7 +332,7 @@ class TestToOpenVINO:
         output_path = tmp_path / "model.xml"
         wrapper.to_openvino(output_path)
 
-        assert ExportBackend.OPENVINO in wrapper.supported_export_backends()
+        assert ExportBackend.OPENVINO in wrapper.supported_export_backends
         assert output_path.exists()
         assert (tmp_path / "model.bin").exists()
 
@@ -328,7 +344,7 @@ class TestToOpenVINO:
         output_path = tmp_path / "model.xml"
         wrapper.to_openvino(output_path)
 
-        assert ExportBackend.OPENVINO in wrapper.supported_export_backends()
+        assert ExportBackend.OPENVINO in wrapper.supported_export_backends
         assert output_path.exists()
         assert (tmp_path / "model.bin").exists()
 
@@ -360,6 +376,22 @@ class TestToOpenVINO:
         assert output_path.exists()
         assert (tmp_path / "model.bin").exists()
 
+    def test_to_openvino_via_onnx(self, tmp_path):
+        """Test OpenVINO export via ONNX intermediate model."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        model.extra_export_args = {
+            ExportBackend.OPENVINO: {
+                "via_onnx": True,
+            }
+        }
+        wrapper = ExportWrapper(model)
+
+        output_path = tmp_path / "model.xml"
+        wrapper.to_openvino(output_path)
+
+        assert output_path.exists()
+        assert (tmp_path / "model.bin").exists()
+
 
 class TestToTorchExportIR:
     """Tests for to_torch_export_ir method."""
@@ -372,7 +404,7 @@ class TestToTorchExportIR:
         output_path = tmp_path / "model.pt2"
         wrapper.to_torch_export_ir(output_path)
 
-        assert ExportBackend.TORCH_EXPORT_IR in wrapper.supported_export_backends()
+        assert ExportBackend.TORCH_EXPORT_IR in wrapper.supported_export_backends
         assert output_path.exists()
 
         # Verify the exported program can be loaded
@@ -390,7 +422,7 @@ class TestToTorchExportIR:
         wrapper.to_torch_export_ir(output_path, input_sample=input_sample)
 
         assert output_path.exists()
-        assert ExportBackend.TORCH_EXPORT_IR in wrapper.supported_export_backends()
+        assert ExportBackend.TORCH_EXPORT_IR in wrapper.supported_export_backends
         # Verify the exported program can be loaded
         loaded_program = torch.export.load(output_path)  # nosec
         assert loaded_program is not None
@@ -413,7 +445,7 @@ class TestToTorchExportIR:
         wrapper.to_torch_export_ir(output_path, strict=False)
 
         assert output_path.exists()
-        assert ExportBackend.TORCH_EXPORT_IR in wrapper.supported_export_backends()
+        assert ExportBackend.TORCH_EXPORT_IR in wrapper.supported_export_backends
 
         # Verify the exported program can be loaded
         loaded_program = torch.export.load(output_path)  # nosec
@@ -427,7 +459,7 @@ class TestToTorchExportIR:
         output_path = tmp_path / "model.pt2"
         wrapper.to_torch_export_ir(output_path)
 
-        assert ExportBackend.TORCH_EXPORT_IR in wrapper.supported_export_backends()
+        assert ExportBackend.TORCH_EXPORT_IR in wrapper.supported_export_backends
         assert output_path.exists()
 
         # Verify the exported program can be loaded
@@ -442,7 +474,7 @@ class TestToTorchExportIR:
         output_path = tmp_path / "model.pt2"
         wrapper.to_torch_export_ir(output_path)
 
-        assert ExportBackend.TORCH_EXPORT_IR in wrapper.supported_export_backends()
+        assert ExportBackend.TORCH_EXPORT_IR in wrapper.supported_export_backends
         assert output_path.exists()
 
         # Verify the exported program can be loaded
@@ -468,7 +500,7 @@ class TestToTorchExportIR:
         # Set model to training mode
         model.train()
         assert model.training is True
-        assert ExportBackend.TORCH_EXPORT_IR in wrapper.supported_export_backends()
+        assert ExportBackend.TORCH_EXPORT_IR in wrapper.supported_export_backends
 
         output_path = tmp_path / "model.pt2"
         wrapper.to_torch_export_ir(output_path)
@@ -484,7 +516,7 @@ class TestToTorchExportIR:
         output_path = tmp_path / "model.pt2"
         wrapper.export(backend=ExportBackend.TORCH_EXPORT_IR, output_path=output_path)
 
-        assert ExportBackend.TORCH_EXPORT_IR in wrapper.supported_export_backends()
+        assert ExportBackend.TORCH_EXPORT_IR in wrapper.supported_export_backends
         assert output_path.exists()
 
         # Verify the exported program can be loaded

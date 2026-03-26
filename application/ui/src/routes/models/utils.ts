@@ -14,5 +14,9 @@ export const durationBetween = (start: string, end: string): string => {
 };
 
 export const elapsedSince = (dateString: string): string => {
-    return formatDuration(new Date().getTime() - new Date(dateString).getTime());
+    const normalized = /Z|[+-]\d\d:\d\d$/.test(dateString) ? dateString : `${dateString}Z`;
+
+    const startDate = new Date(normalized).getTime();
+
+    return formatDuration(new Date().getTime() - startDate);
 };

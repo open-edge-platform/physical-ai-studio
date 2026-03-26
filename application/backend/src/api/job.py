@@ -9,8 +9,8 @@ from api.dependencies import get_event_processor_ws, get_job_id, get_job_service
 from core.scheduler import Scheduler
 from schemas import Job
 from schemas.job import JobStatus, TrainJobPayload
-from services import JobService
 from services.event_processor import EventProcessor, EventType
+from services.job_service import JobService
 
 router = APIRouter(prefix="/api/jobs", tags=["Jobs"])
 

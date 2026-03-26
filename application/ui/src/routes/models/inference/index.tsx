@@ -6,7 +6,7 @@ export const Index = () => {
     const { project_id, model_id, backend } = useInferenceParams();
 
     const { data: model } = $api.useSuspenseQuery('get', '/api/models/{model_id}', {
-        params: { query: { uuid: model_id } },
+        params: { path: { model_id } },
     });
 
     const { data: dataset } = $api.useSuspenseQuery('get', '/api/dataset/{dataset_id}', {
@@ -22,7 +22,7 @@ export const Index = () => {
     );
 
     const { data: tasks } = $api.useSuspenseQuery('get', '/api/models/{model_id}/tasks', {
-        params: { query: { uuid: model_id } },
+        params: { path: { model_id } },
     });
 
     return <InferenceViewer environment={initialEnvironment} model={model} backend={backend} tasks={tasks} />;

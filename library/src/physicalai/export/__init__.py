@@ -4,7 +4,8 @@
 """Export mixins module."""
 
 from .backends import ExportBackend
-from .mixin_export import Export
+from .mixin_model import ExportableModelMixin
+from .mixin_policy import ExportablePolicyMixin
 
 
 def get_available_backends() -> list[str]:
@@ -22,4 +23,4 @@ def get_available_backends() -> list[str]:
     return [backend.value for backend in ExportBackend]
 
 
-__all__ = ["Export", "ExportBackend", "get_available_backends"]
+__all__ = ["ExportBackend", "ExportableModelMixin", "ExportablePolicyMixin", "get_available_backends"]
