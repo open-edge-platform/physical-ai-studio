@@ -5,10 +5,27 @@ import useWebSocket from 'react-use-websocket';
 
 import { fetchClient } from '../../api/client';
 import { SchemaProjectCamera } from '../../api/types';
+import { useContainerSize } from '../../components/zoom/use-container-size';
 
 const CAMERA_WS_URL = fetchClient.PATH('/api/cameras/ws');
 
-export const WebsocketCamera = ({ camera }: { camera: SchemaProjectCamera }) => {
+const calculateCanvasDimensions = (containerSize: { width: number; height: number }, aspectRatio: number) => {
+    const containerAspectRatio = containerSize.width / containerSize.height;
+
+    if (containerAspectRatio > aspectRatio) {
+        return {
+            width: containerSize.height * aspectRatio,
+            height: containerSize.height,
+        };
+    } else {
+        return {
+            width: containerSize.width,
+            height: containerSize.width / aspectRatio,
+        };
+    }
+};
+
+const CameraCanvas = ({ camera, width, height }: { camera: SchemaProjectCamera; width: number; height: number }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [isLoading, setIsLoading] = useState(true);
     const processingRef = useRef(false);
@@ -89,16 +106,25 @@ export const WebsocketCamera = ({ camera }: { camera: SchemaProjectCamera }) => 
             )}
             <canvas
                 ref={canvasRef}
-                width={Number(camera.payload?.width)}
-                height={Number(camera.payload?.height)}
-                style={{
-                    display: isLoading ? 'none' : 'block',
-                    objectFit: 'contain',
-                    height: '100%',
-                    width: '100%',
-                }}
+                width={width}
+                height={height}
+                style={{ display: isLoading ? 'none' : 'block' }}
                 aria-label={`Camera: ${camera.name}`}
             />
         </>
+    );
+};
+
+export const WebsocketCamera = ({ camera }: { camera: SchemaProjectCamera }) => {
+    const ref = useRef<HTMLDivElement>(null);
+    const containerSize = useContainerSize(ref);
+
+    const cameraAspectRatio = Number(camera.payload?.width) / Number(camera.payload?.height);
+    const { width, height } = calculateCanvasDimensions(containerSize, cameraAspectRatio);
+
+    return (
+        <div ref={ref} style={{ height: '100%', width: '100%' }}>
+            <CameraCanvas camera={camera} width={width} height={height} />
+        </div>
     );
 };
