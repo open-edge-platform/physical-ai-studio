@@ -24,8 +24,6 @@ from physicalai.inference.runners import (
     SinglePass,
     get_runner,
 )
-from physicalai.inference.runners.single_pass import _get_action_output_key
-
 
 class TestAdapter(RuntimeAdapter):
     def __init__(self, device: torch.device | str = "cpu") -> None:
@@ -467,10 +465,10 @@ class TestSelectAction:
         model = InferenceModel(_make_legacy_export_dir(tmp_path, use_action_queue=False, chunk_size=1))
         mock_adapter.predict.return_value = {"actions": np.random.randn(1, 1, 2)}
 
-        action = model(sample_observation)
+        outputs = model(sample_observation)
 
-        assert isinstance(action, np.ndarray)
-        assert action.shape == (1, 2)
+        assert isinstance(outputs, dict)
+        assert outputs["action"].shape == (1, 2)
 
     def test_call_and_select_action_return_same(
         self,
@@ -482,12 +480,12 @@ class TestSelectAction:
         fixed_output = np.random.randn(1, 1, 2)
 
         mock_adapter.predict.return_value = {"actions": fixed_output.copy()}
-        action_call = model(sample_observation)
+        outputs_call = model(sample_observation)
 
         mock_adapter.predict.return_value = {"actions": fixed_output.copy()}
         action_select = model.select_action(sample_observation)
 
-        np.testing.assert_array_equal(action_call, action_select)
+        np.testing.assert_array_equal(outputs_call["action"], action_select)
 
 
 @pytest.mark.usefixtures("_patch_adapter")
@@ -525,22 +523,6 @@ class TestInputPreparation:
         }
         result = model._prepare_inputs(inputs)
         assert set(result.keys()) == {"state", "images.top"}
-
-
-class TestActionOutputKey:
-    @pytest.mark.parametrize(
-        ("outputs", "expected_key"),
-        [
-            ({"actions": np.array([1, 2])}, "actions"),
-            ({"action": np.array([1, 2])}, "action"),
-            ({"output": np.array([1, 2])}, "output"),
-            ({"pred_actions": np.array([1, 2])}, "pred_actions"),
-            ({"custom_key": np.array([1, 2])}, "custom_key"),
-        ],
-    )
-    def test_get_action_output_key(self, outputs: dict[str, np.ndarray], expected_key: str) -> None:
-        assert _get_action_output_key(outputs) == expected_key
-
 
 @pytest.mark.usefixtures("_patch_adapter")
 class TestModelPathResolution:
@@ -634,13 +616,30 @@ class TestGetRunnerFactory:
 class TestSinglePass:
     def test_run_squeezes_temporal_dim(self) -> None:
         adapter = MagicMock()
+        adapter.output_names = ["actions"]
         adapter.predict.return_value = {"actions": np.random.randn(1, 1, 4)}
-        assert SinglePass().run(adapter, {"input": np.zeros(1)}).shape == (1, 4)
+        outputs = SinglePass().run(adapter, {"input": np.zeros(1)})
+        assert isinstance(outputs, dict)
+        assert outputs["action"].shape == (1, 4)
 
     def test_run_no_squeeze_when_no_temporal_dim(self) -> None:
         adapter = MagicMock()
+        adapter.output_names = ["actions"]
         adapter.predict.return_value = {"actions": np.random.randn(1, 4)}
-        assert SinglePass().run(adapter, {"input": np.zeros(1)}).shape == (1, 4)
+        outputs = SinglePass().run(adapter, {"input": np.zeros(1)})
+        assert isinstance(outputs, dict)
+        assert outputs["action"].shape == (1, 4)
+
+    def test_run_returns_full_adapter_output(self) -> None:
+        adapter = MagicMock()
+        adapter.output_names = ["actions"]
+        adapter.predict.return_value = {
+            "actions": np.random.randn(1, 4),
+            "extra_key": np.array([42.0]),
+        }
+        outputs = SinglePass().run(adapter, {"input": np.zeros(1)})
+        assert "action" in outputs
+        assert "extra_key" in outputs
 
     def test_reset_is_noop(self) -> None:
         SinglePass().reset()
@@ -649,16 +648,19 @@ class TestSinglePass:
 class TestActionChunking:
     def test_run_enqueues_and_returns_first(self) -> None:
         adapter = MagicMock()
+        adapter.output_names = ["actions"]
         adapter.predict.return_value = {"actions": np.random.randn(1, 5, 2)}
 
         runner = ActionChunking(runner=SinglePass(), chunk_size=5)
-        action = runner.run(adapter, {"input": np.zeros(1)})
+        outputs = runner.run(adapter, {"input": np.zeros(1)})
 
-        assert action.shape == (1, 2)
+        assert isinstance(outputs, dict)
+        assert outputs["action"].shape == (1, 2)
         assert len(runner._action_queue) == 4
 
     def test_run_returns_from_queue_without_inference(self) -> None:
         adapter = MagicMock()
+        adapter.output_names = ["actions"]
         adapter.predict.return_value = {"actions": np.random.randn(1, 3, 2)}
 
         runner = ActionChunking(runner=SinglePass(), chunk_size=3)
@@ -668,6 +670,7 @@ class TestActionChunking:
 
     def test_run_refills_when_empty(self) -> None:
         adapter = MagicMock()
+        adapter.output_names = ["actions"]
         adapter.predict.return_value = {"actions": np.random.randn(1, 2, 2)}
 
         runner = ActionChunking(runner=SinglePass(), chunk_size=2)
@@ -680,6 +683,7 @@ class TestActionChunking:
 
     def test_reset_clears_queue(self) -> None:
         adapter = MagicMock()
+        adapter.output_names = ["actions"]
         adapter.predict.return_value = {"actions": np.random.randn(1, 5, 2)}
 
         runner = ActionChunking(runner=SinglePass(), chunk_size=5)
@@ -750,8 +754,9 @@ class TestPipelineWiring:
             assert model.preprocessors == []
             assert model.postprocessors == []
 
-            action = model(sample_observation)
-            assert isinstance(action, np.ndarray)
+            outputs = model(sample_observation)
+            assert isinstance(outputs, dict)
+            assert isinstance(outputs["action"], np.ndarray)
 
     def test_preprocessors_run_before_prepare_inputs(
         self,
@@ -793,7 +798,7 @@ class TestPipelineWiring:
             call_args = mock_adapter.predict.call_args[0][0]
             np.testing.assert_array_almost_equal(call_args["state"], np.array([6.0]))
 
-    def test_postprocessors_with_type_bridging(
+    def test_postprocessors_transform_runner_output(
         self,
         mock_export_dir_no_queue: Path,
         mock_adapter: MagicMock,
@@ -806,9 +811,9 @@ class TestPipelineWiring:
             model.postprocessors = [_ClampPostprocessor()]
 
             obs = {"state": np.array([1.0])}
-            action = model(obs)
+            outputs = model(obs)
 
-            np.testing.assert_array_equal(action, np.array([[1.0, -1.0]]))
+            np.testing.assert_array_equal(outputs["action"], np.array([[1.0, -1.0]]))
 
     def test_postprocessors_execute_in_order(
         self,
@@ -826,10 +831,10 @@ class TestPipelineWiring:
             ]
 
             obs = {"state": np.array([1.0])}
-            action = model(obs)
+            outputs = model(obs)
 
             # 10.0 * 0.5 = 5.0, then clamp to [-1, 1] → 1.0
-            np.testing.assert_array_equal(action, np.array([[1.0]]))
+            np.testing.assert_array_equal(outputs["action"], np.array([[1.0]]))
 
     def test_full_pipeline_pre_and_post(
         self,
@@ -845,8 +850,8 @@ class TestPipelineWiring:
             model.postprocessors = [_ScalePostprocessor(factor=0.25)]
 
             obs = {"state": np.array([5.0])}
-            action = model(obs)
+            outputs = model(obs)
 
             call_args = mock_adapter.predict.call_args[0][0]
             np.testing.assert_array_almost_equal(call_args["state"], np.array([10.0]))
-            np.testing.assert_array_almost_equal(action, np.array([[1.0]]))
+            np.testing.assert_array_almost_equal(outputs["action"], np.array([[1.0]]))
