@@ -4,8 +4,8 @@
 """Base postprocessor interface.
 
 Postprocessors transform inference outputs *after* the runner returns.
-They receive a dict wrapping the runner's output and must return a dict
-of the same shape.
+They receive a dict of model outputs and must return a dict of the same
+shape.
 
 Postprocessors are domain-provided — ``physicalai.inference`` ships only
 the ABC.  Concrete implementations (``ActionUnnormalizer``,
@@ -25,15 +25,15 @@ class Postprocessor(ABC):
     """Abstract base class for inference postprocessors.
 
     A postprocessor transforms inference outputs after the runner
-    returns.  Postprocessors run in declared order and receive a
-    dict wrapping the runner's action output.
+    returns.  Postprocessors run in declared order and receive the
+    runner output dict.
 
     Subclasses must implement ``__call__``.
 
     Examples:
-        >>> class ClampAction(Postprocessor):
+        >>> class ClampDetections(Postprocessor):
         ...     def __call__(self, outputs):
-        ...         outputs["action"] = np.clip(outputs["action"], -1.0, 1.0)
+        ...         outputs["scores"] = np.clip(outputs["scores"], 0.0, 1.0)
         ...         return outputs
     """
 
@@ -42,12 +42,10 @@ class Postprocessor(ABC):
         """Transform inference outputs after the runner.
 
         Args:
-            outputs: Dict wrapping runner output.  The action array
-                is stored under the ``"action"`` key.
+            outputs: Runner output dictionary.
 
         Returns:
-            Transformed output dict.  Must preserve the ``"action"``
-            key for downstream consumption.
+            Transformed output dict.
         """
 
     def __repr__(self) -> str:
