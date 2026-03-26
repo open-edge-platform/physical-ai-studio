@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import warnings
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 
 import yaml
 
@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     import numpy as np
 
     from physicalai.inference.adapters.base import RuntimeAdapter
+    from physicalai.inference.callbacks.base import Callback
     from physicalai.inference.postprocessors.base import Postprocessor
     from physicalai.inference.preprocessors.base import Preprocessor
     from physicalai.inference.runners.base import InferenceRunner
@@ -72,6 +73,9 @@ class InferenceModel:
         backend: str | ExportBackend = "auto",
         device: str = "auto",
         runner: InferenceRunner | None = None,
+        preprocessors: list[Preprocessor] | None = None,
+        postprocessors: list[Postprocessor] | None = None,
+        callbacks: list[Callback] | None = None,
         **adapter_kwargs: Any,  # noqa: ANN401
     ) -> None:
         """Initialize InferenceModel with optional auto-detection.
@@ -82,6 +86,13 @@ class InferenceModel:
             backend: Backend to use, or 'auto' to detect from metadata/files
             device: Device for inference ('auto', 'cpu', 'cuda', 'CPU', 'GPU', etc.)
             runner: Execution runner override. If None, auto-selected from metadata.
+            preprocessors: Pipeline stages applied to observations before the
+                runner.  If ``None``, loaded from manifest (empty if not
+                declared).
+            postprocessors: Pipeline stages applied to runner output.  If
+                ``None``, loaded from manifest (empty if not declared).
+            callbacks: Lifecycle callbacks for instrumentation (timing,
+                logging, safety checks, etc.).  Defaults to no callbacks.
             **adapter_kwargs: Backend-specific configuration options
 
         Raises:
@@ -112,8 +123,17 @@ class InferenceModel:
 
         self.runner: InferenceRunner = runner if runner is not None else get_runner(self.metadata)
 
-        self.preprocessors: list[Preprocessor] = self._load_processors("preprocessors")
-        self.postprocessors: list[Postprocessor] = self._load_processors("postprocessors")
+        self.preprocessors: list[Preprocessor] = (
+            preprocessors if preprocessors is not None else self._load_processors("preprocessors")
+        )
+        self.postprocessors: list[Postprocessor] = (
+            postprocessors if postprocessors is not None else self._load_processors("postprocessors")
+        )
+
+        self.callbacks: list[Callback] = callbacks if callbacks is not None else []
+
+        for callback in self.callbacks:
+            callback.on_load(self)
 
     @property
     def use_action_queue(self) -> bool:
@@ -157,7 +177,8 @@ class InferenceModel:
     def __call__(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         """Run the full inference pipeline and return model outputs.
 
-        Pipeline: preprocessors → _prepare_inputs → runner → postprocessors.
+        Pipeline: callbacks(start) → preprocessors → _prepare_inputs →
+        runner → postprocessors → callbacks(end).
 
         This is the generic inference API — it returns the full output
         dict without assuming any domain-specific keys.
@@ -168,6 +189,11 @@ class InferenceModel:
         Returns:
             Model outputs after runner execution and postprocessing.
         """
+        for callback in self.callbacks:
+            modified = callback.on_predict_start(inputs)
+            if modified is not None:
+                inputs = modified
+
         for preprocessor in self.preprocessors:
             inputs = preprocessor(inputs)
 
@@ -176,6 +202,11 @@ class InferenceModel:
 
         for postprocessor in self.postprocessors:
             outputs = postprocessor(outputs)
+
+        for callback in self.callbacks:
+            modified = callback.on_predict_end(outputs)
+            if modified is not None:
+                outputs = modified
 
         return outputs
 
@@ -202,7 +233,8 @@ class InferenceModel:
     def reset(self) -> None:
         """Reset policy state for new episode.
 
-        Clears runner internal state (e.g. action queues).
+        Clears runner internal state (e.g. action queues) and
+        notifies all callbacks.
         Call this at the start of each episode.
 
         Examples:
@@ -215,6 +247,19 @@ class InferenceModel:
             ...         obs, reward, done = env.step(action)
         """
         self.runner.reset()
+        for callback in self.callbacks:
+            callback.on_reset()
+
+    def __enter__(self) -> Self:
+        """Enter the context manager.
+
+        Returns:
+            The model instance.
+        """
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        """Exit the context manager."""
 
     def _prepare_inputs(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         """Flatten and filter input dict for the adapter.
