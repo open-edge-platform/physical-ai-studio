@@ -366,16 +366,22 @@ class GymnasiumGym(Gym):
             extra=extra or None,
         ).to_torch()
 
-    @staticmethod
+    @classmethod
     def vectorize(
+        cls,
         gym_id: str,
         num_envs: int,
         *,
         async_mode: bool = False,
         render_mode: str | None = "rgb_array",
+        device: str | torch.device = "cpu",
         **gym_kwargs: Any,  # noqa: ANN401
     ) -> "GymnasiumGym":
         """Creates a vectorized `GymnasiumWrapper` for parallel environments.
+
+        When called on a subclass (e.g. ``PushTGym.vectorize(...)``), returns an
+        instance of that subclass so that overridden methods like
+        ``convert_raw_to_observation`` are preserved.
 
         Args:
             gym_id (str): Gymnasium environment ID.
@@ -384,6 +390,8 @@ class GymnasiumGym(Gym):
                 Defaults to False.
             render_mode (str | None, optional): Render mode for the environment.
                 Defaults to `"rgb_array"`.
+            device (str | torch.device, optional): Torch device for returned tensors.
+                Defaults to ``"cpu"``.
             **gym_kwargs (Any): Additional arguments passed to `gym.make`.
 
         Returns:
@@ -403,7 +411,7 @@ class GymnasiumGym(Gym):
                 render_mode=render_mode,
                 **gym_kwargs,
             )
-        return GymnasiumGym(vector_env=vec)
+        return cls(vector_env=vec, device=device)
 
 
 def make_sync_vector_env(

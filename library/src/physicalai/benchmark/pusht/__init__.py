@@ -11,9 +11,8 @@ Example:
     >>> print(results.overall_success_rate)
 """
 
-from physicalai.benchmark.pusht.pusht import AsyncPushTGym, PushTBenchmark
+from physicalai.benchmark.pusht.pusht import PushTBenchmark
 
 __all__ = [
-    "AsyncPushTGym",
     "PushTBenchmark",
 ]

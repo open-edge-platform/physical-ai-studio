@@ -30,7 +30,6 @@ from typing import TYPE_CHECKING, Any
 import gym_pusht  # noqa: F401
 
 from physicalai.benchmark.benchmark import Benchmark
-from physicalai.gyms.gymnasium_gym import GymnasiumGym, make_async_vector_env
 from physicalai.gyms.pusht import PushTGym
 
 if TYPE_CHECKING:
@@ -43,41 +42,6 @@ if TYPE_CHECKING:
 BASE_SEED = 100_000
 NUM_EPISODES = 50
 MAX_STEPS = 300
-
-
-class AsyncPushTGym(GymnasiumGym):
-    """Async vectorized PushT gym.
-
-    Wraps ``gymnasium.vector.AsyncVectorEnv`` for PushT while preserving
-    the ``PushTGym`` observation conversion (pixels → BCHW float32, agent_pos).
-
-    Args:
-        num_envs: Number of parallel worker processes.
-        obs_type: Observation type passed to ``gym_pusht/PushT-v0``.
-        device: Torch device for returned tensors.
-    """
-
-    # Reuse PushTGym's static converter so pixels are handled identically
-    convert_raw_to_observation = staticmethod(PushTGym.convert_raw_to_observation)
-
-    def __init__(
-        self,
-        num_envs: int,
-        obs_type: str = "pixels_agent_pos",
-        device: str | torch.device = "cpu",
-    ) -> None:
-        """Initialize the async vectorized PushT environment."""
-        vec = make_async_vector_env(
-            "gym_pusht/PushT-v0",
-            num_envs,
-            render_mode="rgb_array",
-            obs_type=obs_type,
-        )
-        super().__init__(vector_env=vec, device=device)
-
-    def __repr__(self) -> str:
-        """Return string representation."""
-        return f"AsyncPushTGym(num_envs={self.num_envs}, device={self.device})"
 
 
 class PushTBenchmark(Benchmark):
@@ -127,7 +91,13 @@ class PushTBenchmark(Benchmark):
     ) -> None:
         """Initialize PushT benchmark with paper-protocol defaults."""
         if num_envs > 1:
-            gym = AsyncPushTGym(num_envs=num_envs, obs_type=obs_type, device=device)
+            gym = PushTGym.vectorize(
+                "gym_pusht/PushT-v0",
+                num_envs,
+                async_mode=True,
+                obs_type=obs_type,
+                device=device,
+            )
         else:
             gym = PushTGym(obs_type=obs_type, device=device)
 
@@ -143,13 +113,14 @@ class PushTBenchmark(Benchmark):
 
         self.num_envs = num_envs
         self.obs_type = obs_type
+        self.frame_key = "top"
 
     def _build_metadata(self, policy: Any) -> dict[str, Any]:  # noqa: ANN401
         meta = super()._build_metadata(policy)
         meta.update(
             {
-                "paper_seed": BASE_SEED,
-                "paper_num_episodes": NUM_EPISODES,
+                "seed": BASE_SEED,
+                "num_episodes": NUM_EPISODES,
                 "num_envs": self.num_envs,
                 "obs_type": self.obs_type,
             },
