@@ -22,7 +22,6 @@ from physicalai.export.mixin_policy import ExportablePolicyMixin, ExportBackend
 from physicalai.inference.adapters.executorch import ExecuTorchAdapter
 from physicalai.inference.model import InferenceModel
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -48,6 +47,8 @@ class _ExportWrapper(ExportablePolicyMixin):
 
     def __init__(self, model: torch.nn.Module) -> None:
         self.model = model
+        if not hasattr(model, "extra_export_args"):
+            model.extra_export_args = {}
 
     @property
     def metadata_extra(self) -> dict[str, Any]:
