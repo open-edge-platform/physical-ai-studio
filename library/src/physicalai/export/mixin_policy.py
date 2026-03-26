@@ -8,7 +8,7 @@ import tempfile
 from collections.abc import Mapping
 from os import PathLike
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import lightning
 import onnx
@@ -18,7 +18,7 @@ import torch
 import yaml
 from onnxruntime_extensions import gen_processing_models
 
-from physicalai.export.backends import ExportBackend
+from physicalai.export.backends import ExportBackend, ExportParameters, ONNXExportParameters, OpenVINOExportParameters
 from physicalai.inference.manifest import (
     ComponentSpec,
     Manifest,
@@ -246,10 +246,8 @@ class ExportablePolicyMixin:
         model_path = self._prepare_export_path(output_path, ".onnx")
         export_dir = model_path.parent
 
-        extra_model_args = self._get_export_extra_args(ExportBackend.ONNX)
-        export_tokenizer = extra_model_args.get("export_tokenizer", False)
-        extra_export_kwargs = extra_model_args.get("exporter_kwargs", {})
-        preprocessing_type = extra_model_args.get("preprocessing_type", "")
+        extra_model_args = cast("ONNXExportParameters", self._get_export_extra_args(ExportBackend.ONNX))
+        extra_export_kwargs = extra_model_args.exporter_kwargs
         extra_export_kwargs.update(export_kwargs)
 
         arg_name = self._get_forward_arg_name()
@@ -262,7 +260,7 @@ class ExportablePolicyMixin:
             **extra_export_kwargs,
         )
 
-        if export_tokenizer:
+        if extra_model_args.export_tokenizer:
             onnx_tokenizer = gen_processing_models(
                 self._preprocessor.exportable_tokenizer,
                 pre_kwargs={
@@ -280,7 +278,7 @@ class ExportablePolicyMixin:
                 raise RuntimeError(msg)
 
         # Create metadata files
-        self._create_metadata(export_dir, ExportBackend.ONNX, preprocessing_type=preprocessing_type)
+        self._create_metadata(export_dir, ExportBackend.ONNX, preprocessing_type=extra_model_args.preprocessing_type)
 
     @torch.no_grad()
     def to_openvino(
@@ -334,23 +332,21 @@ class ExportablePolicyMixin:
         arg_name = self._get_forward_arg_name()
         input_shapes = [openvino.Shape(tuple(tensor.shape)) for tensor in input_sample.values()]
 
-        extra_model_args = self._get_export_extra_args(ExportBackend.OPENVINO)
-        output_names = extra_model_args.get("output", None)
-        compress_to_fp16 = extra_model_args.get("compress_to_fp16", False)
-        export_tokenizer = extra_model_args.get("export_tokenizer", False)
-        extra_export_kwargs = extra_model_args.get("exporter_kwargs", {})
-        preprocessing_type = extra_model_args.get("preprocessing_type", "")
+        extra_model_args: OpenVINOExportParameters = cast(
+            "OpenVINOExportParameters",
+            self._get_export_extra_args(ExportBackend.OPENVINO),
+        )
+        extra_export_kwargs = extra_model_args.exporter_kwargs
 
-        via_onnx = extra_model_args.get("via_onnx", False)
-        if via_onnx:
-            extra_model_args = self._get_export_extra_args(ExportBackend.ONNX)
-            extra_export_kwargs = extra_model_args.get("exporter_kwargs", {})
+        if extra_model_args.via_onnx:
+            onnx_model_args = cast("ONNXExportParameters", self._get_export_extra_args(ExportBackend.ONNX))
+            extra_export_kwargs = onnx_model_args.exporter_kwargs
 
         extra_export_kwargs.update(export_kwargs)
 
         self.model.eval()
 
-        if via_onnx:
+        if extra_model_args.via_onnx:
             with tempfile.NamedTemporaryFile(suffix=".onnx") as tmp:
                 self._onnx_core_export_step(
                     model_path=Path(tmp.name),
@@ -366,11 +362,11 @@ class ExportablePolicyMixin:
                 input=input_shapes,
                 **extra_export_kwargs,
             )
-        _postprocess_openvino_model(ov_model, output_names)
+        _postprocess_openvino_model(ov_model, extra_model_args.outputs)
 
-        openvino.save_model(ov_model, str(model_path), compress_to_fp16=compress_to_fp16)
+        openvino.save_model(ov_model, str(model_path), compress_to_fp16=extra_model_args.compress_to_fp16)
 
-        if export_tokenizer:
+        if extra_model_args.export_tokenizer:
             ov_tokenizer = openvino_tokenizers.convert_tokenizer(
                 self._preprocessor.exportable_tokenizer,
                 with_detokenizer=False,
@@ -386,8 +382,11 @@ class ExportablePolicyMixin:
                 )
                 raise RuntimeError(msg)
 
-        # Create metadata files
-        self._create_metadata(export_dir, ExportBackend.OPENVINO, preprocessing_type=preprocessing_type)
+        self._create_metadata(
+            export_dir,
+            ExportBackend.OPENVINO,
+            preprocessing_type=extra_model_args.preprocessing_type,
+        )
 
     @torch.no_grad()
     def to_torch_export_ir(
@@ -444,7 +443,7 @@ class ExportablePolicyMixin:
         model_path = self._prepare_export_path(output_path, ".pt2")
         export_dir = model_path.parent
 
-        extra_model_args = self._get_export_extra_args(ExportBackend.TORCH_EXPORT_IR)
+        extra_model_args = self._get_export_extra_args(ExportBackend.TORCH_EXPORT_IR).exporter_kwargs
         extra_model_args.update(export_kwargs)
 
         self.model.eval()
@@ -539,7 +538,7 @@ class ExportablePolicyMixin:
         processed_sample = self._preprocessor(self.model.sample_input)
         return {k: v for k, v in processed_sample.items() if isinstance(v, torch.Tensor)}
 
-    def _get_export_extra_args(self, backend: ExportBackend | str) -> dict[str, Any]:
+    def _get_export_extra_args(self, backend: ExportBackend | str) -> ExportParameters:
         """Retrieve extra export arguments for a specific format.
 
         This method checks if the model has an `extra_export_args` property and
@@ -549,13 +548,12 @@ class ExportablePolicyMixin:
             backend (str): The export backend (e.g., "onnx", "openvino").
 
         Returns:
-            dict[str, Any]: A dictionary of extra export arguments for the specified backend.
-                Returns an empty dictionary if no extra arguments are found.
+            ExportParameters: Extra export arguments for the specified backend.
+                Returns an empty ExportParameters instance if no extra arguments are found.
         """
-        extra_model_args: dict[str, Any] = {}
         if backend in self.model.extra_export_args:
-            extra_model_args = self.model.extra_export_args[backend]
-        return extra_model_args
+            return self.model.extra_export_args[backend]
+        return ExportParameters()
 
     def _get_forward_arg_name(self) -> str:
         """Get the name of the first positional argument of the model's forward method.
