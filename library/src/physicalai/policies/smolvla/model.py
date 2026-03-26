@@ -24,6 +24,7 @@ from physicalai.export.backends import (
     ExportParameters,
     ONNXExportParameters,
     OpenVINOExportParameters,
+    TorchExportParameters,
 )
 from physicalai.policies.base import Model
 
@@ -311,7 +312,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
             preprocessing_type="smolvla",
         )
         extra_args["torch_export_ir"] = ExportParameters()
-        extra_args["torch"] = ExportParameters()
+        extra_args["torch"] = TorchExportParameters()
 
         return extra_args
 

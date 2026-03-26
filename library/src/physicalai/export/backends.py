@@ -32,7 +32,7 @@ class ExportBackend(StrEnum):
         parameter_classes = {
             "onnx": ONNXExportParameters,
             "openvino": OpenVINOExportParameters,
-            "torch": ExportParameters,
+            "torch": TorchExportParameters,
             "torch_export_ir": ExportParameters,
         }
         return parameter_classes[self.value]
@@ -63,9 +63,18 @@ class OpenVINOExportParameters(ExportParameters):
     via_onnx: bool = False
 
 
+@dataclass
+class TorchExportParameters(ExportParameters):
+    """Parameters specific to torch export."""
+
+    input_names: list[str] = field(default_factory=lambda: ["observation"])
+    output_names: list[str] = field(default_factory=lambda: ["action"])
+
+
 __all__ = [
     "ExportBackend",
     "ExportParameters",
     "ONNXExportParameters",
     "OpenVINOExportParameters",
+    "TorchExportParameters",
 ]

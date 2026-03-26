@@ -33,6 +33,7 @@ from physicalai.export.backends import (
     ExportParameters,
     ONNXExportParameters,
     OpenVINOExportParameters,
+    TorchExportParameters,
 )
 from physicalai.policies.base import Model
 from physicalai.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
@@ -270,7 +271,7 @@ class ACT(ExportableModelMixin, Model):
             preprocessing_type="image_resize",
         )
         extra_args["torch_export_ir"] = ExportParameters()
-        extra_args["torch"] = ExportParameters()
+        extra_args["torch"] = TorchExportParameters()
 
         return extra_args
 
