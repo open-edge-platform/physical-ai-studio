@@ -16,7 +16,6 @@ from typing import Any, override
 
 from physicalai.inference.callbacks.base import Callback
 
-_DEFAULT_WINDOW_SECONDS = 10.0
 _MIN_SAMPLES_FOR_THROUGHPUT = 2
 
 
@@ -44,7 +43,7 @@ class ThroughputMonitor(Callback):
         >>> print(f"{monitor.throughput:.1f} predictions/sec")
     """
 
-    def __init__(self, window_seconds: float = _DEFAULT_WINDOW_SECONDS) -> None:
+    def __init__(self, window_seconds: float = 10.0) -> None:
         """Initialise the throughput monitor.
 
         Args:
