@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends
 
-from api.dependencies import (get_dataset_service, get_model_id, get_model_service)
+from api.dependencies import get_dataset_service, get_model_id, get_model_service
 from exceptions import ResourceNotFoundError, ResourceType
 from internal_datasets.utils import get_internal_dataset
 from schemas import Model
