@@ -179,6 +179,7 @@ show_error_codes = true
 python-version = "3.12"
 search-path = ["src"]
 project-includes = ["src"]
+baseline = "pyrefly-baseline.json"
 project-excludes = [
     ".venv/**",
     "notebooks/**",
