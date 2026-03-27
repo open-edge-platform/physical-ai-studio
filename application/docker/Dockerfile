@@ -110,58 +110,38 @@ COPY --link application/backend/pyproject.toml application/backend/uv.lock \
 
 WORKDIR /app/application/backend
 
-# Step 1: Install hardware-independent dependencies (FastAPI, SQLAlchemy, etc.)
+# Install hardware-independent dependencies (FastAPI, SQLAlchemy, etc.)
 # first so this layer is shared across all device-specific builders.
-# --no-install-project: skip building/installing the backend project.
-# --no-install-workspace: skip building/installing workspace path deps (physicalai).
-# This avoids invoking hatchling, which would require library source files.
-# Changes to library/ source code do NOT invalidate this (slow) layer.
+# --no-install-local: skip building all local packages (the backend
+# project AND the physicalai-train path dependency).  This avoids
+# invoking hatchling, which would require library source files.
+# The local packages are installed at runtime via app-source + uv run.
 RUN --mount=type=cache,id=uv-base,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --no-install-project --no-install-workspace
+    uv sync --frozen --no-dev --no-editable --no-install-local
 
 # ===========================================================================
 # Stage 4a: CPU builder
 # ===========================================================================
 FROM builder-base AS builder-cpu
 
-# Step 1: Install CPU-specific third-party deps (e.g., torch CPU variant)
 RUN --mount=type=cache,id=uv-cpu,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --no-install-project --no-install-workspace --extra cpu
-
-# Step 2: Build and install the local physicalai library + backend project.
-# This layer is invalidated by library source changes, but is fast since all
-# third-party deps are already installed from step 1.
-RUN --mount=type=cache,id=uv-cpu,target=/root/.cache/uv \
-    --mount=type=bind,source=library,target=/app/library,rw \
-    uv sync --frozen --no-dev --no-editable --extra cpu
+    uv sync --frozen --no-dev --no-editable --no-install-local --extra cpu
 
 # ===========================================================================
 # Stage 4b: XPU builder
 # ===========================================================================
 FROM builder-base AS builder-xpu
 
-# Step 1: Install XPU-specific third-party deps (e.g., intel-extension-for-pytorch)
 RUN --mount=type=cache,id=uv-xpu,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --no-install-project --no-install-workspace --extra xpu
-
-# Step 2: Build and install the local physicalai library + backend project.
-RUN --mount=type=cache,id=uv-xpu,target=/root/.cache/uv \
-    --mount=type=bind,source=library,target=/app/library,rw \
-    uv sync --frozen --no-dev --no-editable --extra xpu
+    uv sync --frozen --no-dev --no-editable --no-install-local --extra xpu
 
 # ===========================================================================
 # Stage 4c: CUDA builder
 # ===========================================================================
 FROM builder-base AS builder-cuda
 
-# Step 1: Install CUDA-specific third-party deps (e.g., torch CUDA variant)
 RUN --mount=type=cache,id=uv-cuda,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --no-install-project --no-install-workspace --extra cuda
-
-# Step 2: Build and install the local physicalai library + backend project.
-RUN --mount=type=cache,id=uv-cuda,target=/root/.cache/uv \
-    --mount=type=bind,source=library,target=/app/library,rw \
-    uv sync --frozen --no-dev --no-editable --extra cuda
+    uv sync --frozen --no-dev --no-editable --no-install-local --extra cuda
 
 # ===========================================================================
 # Stage 5: Runtime base — shared across all hardware targets
@@ -171,6 +151,9 @@ RUN --mount=type=cache,id=uv-cuda,target=/root/.cache/uv \
 # docker-compose.yaml (not here) so it can reference runtime PORT.
 # ===========================================================================
 FROM python:${PYTHON_VERSION}-slim@sha256:3d5ed973e45820f5ba5e46bd065bd88b3a504ff0724d85980dcd05eab361fcf4 AS runtime-base
+
+# uv is needed at runtime for `uv run` in run.sh
+COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
 
 # Non-root user — override at build time to match host UID/GID for
 # bind-mounted volumes (e.g. calibration data, HuggingFace cache).
@@ -190,10 +173,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Create directories for mounted volumes and cache.
+# Create directories for mounted volumes and uv cache.
 # /home/appuser/.cache must be pre-created so that bind mounts for
-# subdirectories (e.g. huggingface) don't cause Docker to create
-# .cache as root, which blocks writes to the cache.
+# subdirectories (e.g. huggingface calibration) don't cause Docker
+# to create .cache as root, which blocks uv from writing its cache.
 RUN mkdir -p /app/data /app/storage /app/tmp /home/appuser/.cache/huggingface \
     && chown -R "${APP_UID}:${APP_GID}" /app /home/appuser/.cache
 
@@ -202,6 +185,7 @@ ENV PATH="/app/application/backend/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONFAULTHANDLER=1 \
+    UV_NO_SYNC=1 \
     STATIC_FILES_DIR="/app/application/ui/" \
     DATA_DIR="/app/data" \
     STORAGE_DIR="/app/storage" \

@@ -16,14 +16,16 @@ set -euo pipefail
 # Environment variables:
 #   SEED_DB       If set to "true", runs database seeding before starting.
 #   APP_MODULE    Python module to run (default: src/main.py)
+#   UV_CMD        Command to launch Uvicorn (default: "uv run")
 #
 # Requirements:
-# - Python virtual environment activated (PATH includes .venv/bin)
-# - Dependencies installed at build time
+# - 'uv' CLI tool (Uvicorn) installed and available in PATH
+# - Python modules and dependencies installed correctly
 # -----------------------------------------------------------------------------
 
 SEED_DB=${SEED_DB:-false}
 APP_MODULE=${APP_MODULE:-src/main.py}
+UV_CMD=${UV_CMD:-uv run --no-sync}
 
 export PYTHONUNBUFFERED=1
 export PYTHONPATH=.
@@ -32,15 +34,15 @@ export PYTHONPATH=.
 # already-applied migrations. This ensures the persistent volume
 # has an up-to-date schema regardless of how it was created.
 echo "Running database migrations..."
-python src/cli.py migrate
+$UV_CMD src/cli.py migrate
 
 if [[ "$SEED_DB" == "true" ]]; then
     echo "Seeding the database..."
-    python application/cli.py init-db
-    python application/cli.py seed --with-model=True
+    $UV_CMD application/cli.py init-db
+    $UV_CMD application/cli.py seed --with-model=True
 fi
 
 echo "Starting FastAPI server..."
 
-echo python "$APP_MODULE"
-exec python "$APP_MODULE"
+echo $UV_CMD "$APP_MODULE"
+exec $UV_CMD "$APP_MODULE"
