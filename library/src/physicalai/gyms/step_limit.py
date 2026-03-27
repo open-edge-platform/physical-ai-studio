@@ -77,7 +77,7 @@ class StepLimit(Gym):
         SingleOrBatch[float],
         SingleOrBatch[bool],
         SingleOrBatch[bool],
-        SingleOrBatch[dict[str, Any]],
+        dict[str, Any] | list[dict[str, Any]],
     ]:
         """Step the environment and apply the step limit.
 

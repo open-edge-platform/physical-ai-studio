@@ -49,7 +49,7 @@ class GymnasiumGym(Gym):
     def __init__(
         self,
         gym_id: str | None = None,
-        vector_env: gym.Env | AsyncVectorEnv | SyncVectorEnv | None = None,
+        vector_env: gym.Env | None = None,
         device: str | torch.device = "cpu",
         render_mode: str | None = "rgb_array",
         **gym_kwargs: Any,  # noqa: ANN401
@@ -68,9 +68,6 @@ class GymnasiumGym(Gym):
         else:
             if render_mode is not None:
                 gym_kwargs["render_mode"] = render_mode
-            if gym_id is None:
-                msg = "gym_id must be provided when vector_env is not supplied"
-                raise ValueError(msg)
             self._env = gym.make(gym_id, **gym_kwargs)
 
         self._device = torch.device(device)
@@ -226,7 +223,7 @@ class GymnasiumGym(Gym):
         SingleOrBatch[float],
         SingleOrBatch[bool],
         SingleOrBatch[bool],
-        SingleOrBatch[dict[str, Any]],
+        dict[str, Any] | list[dict[str, Any]],
     ]:
         """Step the environment.
 
@@ -242,7 +239,7 @@ class GymnasiumGym(Gym):
         raw_obs = self._normalize_raw_obs(raw_obs)
         obs = self.to_observation(raw_obs)
 
-        return obs, reward, terminated, truncated, info  # type: ignore[return-value]
+        return obs, reward, terminated, truncated, info
 
     def render(self, *render_args: Any, **render_kwargs: Any) -> Any:  # noqa: ANN401
         """Renders the environment.

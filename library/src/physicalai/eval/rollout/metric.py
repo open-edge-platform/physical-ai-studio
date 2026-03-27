@@ -21,7 +21,7 @@ from .functional import rollout
 if TYPE_CHECKING:
     from physicalai.eval.video import VideoRecorder
     from physicalai.gyms import Gym
-    from physicalai.policies.base import PolicyLike
+    from physicalai.policies.base import Policy
 
 
 class Rollout(Metric):
@@ -109,7 +109,7 @@ class Rollout(Metric):
         # Episode counter for naming videos
         self._episode_counter = 0
 
-    def update(self, env: Gym, policy: PolicyLike, seed: int | None = None) -> None:  # type: ignore[override]
+    def update(self, env: Gym, policy: Policy, seed: int | None = None) -> dict[str, Tensor]:
         """Run a rollout and update metric state.
 
         This method executes one complete episode in the gym environment using
@@ -123,6 +123,13 @@ class Rollout(Metric):
             env: Gym environment instance to evaluate in.
             policy: Policy to use for action selection.
             seed: Optional seed for reproducible rollouts.
+
+        Returns:
+            Dictionary with this episode's metrics:
+                - sum_reward: Total reward accumulated in the episode
+                - max_reward: Maximum single-step reward in the episode
+                - episode_length: Number of steps taken
+                - success: Whether the episode succeeded (if available)
         """
         # Start video recording if enabled
         if self.video_recorder is not None:
@@ -173,6 +180,16 @@ class Rollout(Metric):
         self.all_max_rewards.extend(max_reward)  # type: ignore[union-attr]
         self.all_episode_lengths.extend([episode_length] * batch_size)  # type: ignore[union-attr]
 
+        episode_result = {
+            "sum_reward": sum_reward.mean(),  # averaged just for convenience
+            "max_reward": max_reward.mean(),
+            "episode_length": episode_length,
+        }
+        if success_tensor is not None:
+            episode_result["success"] = success_tensor.float().mean()
+
+        return episode_result
+
     # averages across all episodes
     def compute(self) -> dict[str, Tensor]:
         """Compute aggregated metrics across all episodes.
@@ -204,23 +221,17 @@ class Rollout(Metric):
                 "n_episodes": torch.tensor(0, device=self.device),
             }
 
-        sum_rewards: Tensor = self.sum_rewards.clone()  # type: ignore[union-attr]
-        max_rewards: Tensor = self.max_rewards.clone()  # type: ignore[union-attr]
-        episode_lengths: Tensor = self.episode_lengths.clone()  # type: ignore[union-attr]
-        num_episodes: Tensor = self.num_episodes.clone()  # type: ignore[union-attr]
-        num_successes: Tensor = self.num_successes.clone()  # type: ignore[union-attr]
-
-        avg_sum_reward = sum_rewards / num_episodes
-        avg_max_reward = max_rewards / num_episodes
-        avg_episode_length = episode_lengths / num_episodes
-        pc_success = (num_successes.float() / num_episodes.float()) * 100.0
+        avg_sum_reward = self.sum_rewards / self.num_episodes  # type: ignore[operator]
+        avg_max_reward = self.max_rewards / self.num_episodes  # type: ignore[operator]
+        avg_episode_length = self.episode_lengths / self.num_episodes  # type: ignore[operator]
+        pc_success = (self.num_successes.float() / self.num_episodes.float()) * 100.0  # type: ignore[union-attr]
 
         return {
             "avg_sum_reward": avg_sum_reward,
             "avg_max_reward": avg_max_reward,
             "pc_success": pc_success,
             "avg_episode_length": avg_episode_length,
-            "n_episodes": num_episodes,
+            "n_episodes": self.num_episodes,  # type: ignore[dict-item]
         }
 
     def get_per_episode_data(self) -> list[dict[str, float]]:

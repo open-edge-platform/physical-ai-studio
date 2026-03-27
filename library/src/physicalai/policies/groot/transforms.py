@@ -158,8 +158,6 @@ class GrootPreprocessor(nn.Module):
 
         self.register_buffer("state_min", state_min)
         self.register_buffer("state_max", state_max)
-        self.state_min: torch.Tensor
-        self.state_max: torch.Tensor
 
         # Action stats
         if stats is not None and ACTION in stats:
@@ -172,8 +170,6 @@ class GrootPreprocessor(nn.Module):
 
         self.register_buffer("action_min", action_min)
         self.register_buffer("action_max", action_max)
-        self.action_min: torch.Tensor
-        self.action_max: torch.Tensor
 
     @staticmethod
     def _to_tensor(value: list[float] | torch.Tensor | None, target_dim: int) -> torch.Tensor:
@@ -517,8 +513,6 @@ class GrootPostprocessor(nn.Module):
 
         self.register_buffer("action_min", action_min)
         self.register_buffer("action_max", action_max)
-        self.action_min: torch.Tensor
-        self.action_max: torch.Tensor
 
     @staticmethod
     def _to_tensor(value: list[float] | torch.Tensor | None, target_dim: int) -> torch.Tensor:

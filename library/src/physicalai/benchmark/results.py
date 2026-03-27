@@ -15,7 +15,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ class TaskResult:
         Returns:
             Dictionary with task results.
         """
-        result: dict[str, Any] = {
+        result = {
             "task_id": self.task_id,
             "task_name": self.task_name,
             "n_episodes": self.n_episodes,
@@ -114,10 +114,8 @@ class BenchmarkResults:
             return 0.0
         return sum(tr.success_rate for tr in self.task_results) / len(self.task_results)
 
-    @property
-    def overall_success_rate(self) -> float:
-        """Alias for aggregate_success_rate for compatibility."""
-        return self.aggregate_success_rate
+    # Alias for consistency with design document
+    overall_success_rate: ClassVar = aggregate_success_rate
 
     @property
     def aggregate_reward(self) -> float:
@@ -126,10 +124,8 @@ class BenchmarkResults:
             return 0.0
         return sum(tr.avg_reward for tr in self.task_results) / len(self.task_results)
 
-    @property
-    def mean_reward(self) -> float:
-        """Alias for aggregate_reward for compatibility."""
-        return self.aggregate_reward
+    # Alias for consistency
+    mean_reward: ClassVar = aggregate_reward
 
     @property
     def aggregate_episode_length(self) -> float:

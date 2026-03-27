@@ -255,7 +255,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
         """
         device = next(self._model.parameters()).device
 
-        sample_input: dict[str, torch.Tensor | str] = {}
+        sample_input = {}
 
         num_image_features = sum(1 for key in self._dataset_stats if "image" in key)
 

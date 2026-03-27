@@ -39,8 +39,7 @@ class TorchAdapter(RuntimeAdapter):
         Args:
             device: Device for inference ('cpu', 'cuda', 'xpu', etc.)
         """
-        self._torch_device = torch.device(device)
-        self.device = device if isinstance(device, str) else device.type
+        self.device = torch.device(device)
         self._policy: torch.nn.Module | None = None
         self._input_names: list[str] = []
         self._output_names: list[str] = []
@@ -78,9 +77,7 @@ class TorchAdapter(RuntimeAdapter):
             _, class_name = policy_class_path.rsplit(".", 1)
             policy_class = get_policy_class(class_name)
 
-            self._policy = (
-                policy_class.load_from_checkpoint(model_path, map_location="cpu").to(self._torch_device).eval()
-            )
+            self._policy = policy_class.load_from_checkpoint(model_path, map_location="cpu").to(self.device).eval()
 
             policy_model: Any = self._policy.model
             if hasattr(policy_model, "extra_export_args") and "torch" in policy_model.extra_export_args:
@@ -117,7 +114,7 @@ class TorchAdapter(RuntimeAdapter):
 
         try:
             # Build Observation from numpy dict and convert to torch tensors on device
-            observation = Observation.from_dict(inputs).to_torch(self._torch_device)
+            observation = Observation.from_dict(inputs).to_torch(self.device)
 
             # Run policy forward pass
             torch_outputs = self._policy(observation)

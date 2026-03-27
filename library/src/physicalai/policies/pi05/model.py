@@ -697,7 +697,7 @@ class Pi05Model(ExportableModelMixin, Model):
         """
         device = next(self.paligemma_with_expert.parameters()).device
 
-        sample_input: dict[str, torch.Tensor | str] = {}
+        sample_input = {}
 
         num_image_features = sum(1 for key in self._dataset_stats if "image" in key)
 

@@ -209,8 +209,6 @@ class FlowMatchingActionHead(nn.Module, FromConfig):
         nn.init.normal_(self.future_tokens.weight, mean=0.0, std=0.02)
 
         # VL processing
-        self.vlln: nn.Module
-        self.vl_self_attention: nn.Module
         if use_vlln:
             self.vlln = nn.LayerNorm(backbone_embedding_dim)
             self_attn_cls = get_self_attention_transformer_class()
@@ -221,7 +219,6 @@ class FlowMatchingActionHead(nn.Module, FromConfig):
             self.vl_self_attention = nn.Identity()
 
         # Position embedding
-        self.position_embedding: nn.Embedding | None
         if add_pos_embed:
             self.position_embedding = nn.Embedding(max_seq_len, input_embedding_dim)
             nn.init.normal_(self.position_embedding.weight, mean=0.0, std=0.02)

@@ -117,7 +117,7 @@ class _LeRobotDatasetAdapter(Dataset):
         """
         return len(self._lerobot_dataset)
 
-    def __getitem__(self, index: int) -> Observation:
+    def __getitem__(self, idx: int) -> Observation:
         """Get an item from the dataset.
 
         Args:
@@ -126,7 +126,7 @@ class _LeRobotDatasetAdapter(Dataset):
         Returns:
             Observation: The item from the dataset.
         """
-        return FormatConverter.to_observation(self._lerobot_dataset[index])
+        return FormatConverter.to_observation(self._lerobot_dataset[idx])
 
     @staticmethod
     def from_lerobot(lerobot_dataset: LeRobotDataset) -> _LeRobotDatasetAdapter:
@@ -157,8 +157,6 @@ class _LeRobotDatasetAdapter(Dataset):
         dataset_features = self._lerobot_dataset.features
         raw_obs_features = {key: ft for key, ft in dataset_features.items() if key.startswith("observation")}
         dataset_meta = self._lerobot_dataset.meta
-        if dataset_meta.stats is None:
-            return {}
 
         observation_features = {}
         for k in raw_obs_features:
@@ -197,8 +195,6 @@ class _LeRobotDatasetAdapter(Dataset):
         dataset_features = self._lerobot_dataset.features
         raw_act_features = {key: ft for key, ft in dataset_features.items() if key.startswith("action")}
         dataset_meta = self._lerobot_dataset.meta
-        if dataset_meta.stats is None:
-            return {}
 
         action_features = {}
         for k in raw_act_features:

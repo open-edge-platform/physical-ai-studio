@@ -69,11 +69,6 @@ class TorchExportAdapter(RuntimeAdapter):
             # We need to navigate to the actual input dict
 
             # Check if args are used (args_spec has children) or kwargs (second element)
-            if in_spec is None:
-                self._input_names = []
-                self._output_names = [str(name) for name in program.graph_signature.user_outputs]
-                return
-
             args_spec = in_spec.child(0)  # First element is args tuple
             kwargs_spec = in_spec.child(1) if len(in_spec.children()) > 1 else None
 
@@ -107,7 +102,7 @@ class TorchExportAdapter(RuntimeAdapter):
             RuntimeError: If model is not loaded or inference fails
             ValueError: If input names don't match model expectations
         """
-        if self._module is None or self._program is None:
+        if self._module is None:
             msg = "Model not loaded. Call load() first."
             raise RuntimeError(msg)
 
@@ -126,7 +121,7 @@ class TorchExportAdapter(RuntimeAdapter):
             with torch.no_grad():
                 # Try to determine if model expects kwargs from the in_spec structure
                 in_spec = self._program.call_spec.in_spec
-                kwargs_spec = in_spec.child(1) if in_spec is not None and len(in_spec.children()) > 1 else None
+                kwargs_spec = in_spec.child(1) if len(in_spec.children()) > 1 else None
 
                 if kwargs_spec and kwargs_spec.context:
                     # Model expects kwargs, wrap inputs with the expected key name

@@ -72,15 +72,13 @@ def repair_corrupt_video(video_path: Path | str) -> None:
     )
     output_folder.mkdir(parents=True, exist_ok=True)
 
-    frame = decoder[0:1][0]
+    frame = decoder[0]
     for frame_index in range(len(decoder)):
         output_frame = output_folder / f"frame_{frame_index:06d}.png"
         with contextlib.suppress(Exception):
-            frame = decoder[frame_index : frame_index + 1][0]
+            frame = decoder[frame_index]
         write_image(frame.cpu().numpy(), output_frame)
     average_fps = decoder.metadata.average_fps
-    if average_fps is None:
-        average_fps = 30.0
 
     encode_video_frames(output_folder, video_path, int(average_fps), overwrite=True)
     rmtree(output_folder)
