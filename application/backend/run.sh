@@ -25,7 +25,7 @@ set -euo pipefail
 
 SEED_DB=${SEED_DB:-false}
 APP_MODULE=${APP_MODULE:-src/main.py}
-UV_CMD=${UV_CMD:-uv run --no-sync}
+UV_CMD=${UV_CMD:-uv run}
 
 export PYTHONUNBUFFERED=1
 export PYTHONPATH=.
