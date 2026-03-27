@@ -10,6 +10,7 @@ import onnx
 import pytest
 import torch
 
+from physicalai.export.backends import ExportParameters, ONNXExportParameters, OpenVINOExportParameters
 from physicalai.export.mixin_policy import ExportablePolicyMixin, ExportBackend
 
 
@@ -73,12 +74,12 @@ class ModelWithExtraExportArgs(torch.nn.Module):
         return {"x": torch.randn(1, self.input_dim)}
 
     @property
-    def extra_export_args(self) -> dict:
+    def extra_export_args(self) -> dict[str, ExportParameters]:
         """Extra ONNX export arguments."""
         return {
-            "onnx": {
-                "output_names": ["output"],
-            }
+            "onnx": ONNXExportParameters(
+                exporter_kwargs={"output_names": ["output"]},
+            ),
         }
 
 
@@ -138,7 +139,11 @@ class ExportWrapper(ExportablePolicyMixin):
         self.model = model
         self._preprocessor = IdentityPreprocessor()
         if not hasattr(model, "extra_export_args"):
-            model.extra_export_args = {}
+            model.extra_export_args = {
+                ExportBackend.ONNX: ONNXExportParameters(),
+                ExportBackend.OPENVINO: OpenVINOExportParameters(),
+                ExportBackend.TORCH_EXPORT_IR: ExportParameters(),
+            }
 
     def _get_default_export_input_sample(self) -> dict[str, torch.Tensor] | None:
         if not hasattr(self.model, "sample_input"):
@@ -298,6 +303,19 @@ class TestToOpenVINO:
         assert output_path.exists()
         assert (tmp_path / "model.bin").exists()
 
+    def test_to_openvino_default_export_args(self, tmp_path):
+        """Test that provided kwargs override model's extra_export_args."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+
+        model.extra_export_args = {
+        }
+        wrapper = ExportWrapper(model)
+        output_path = tmp_path / "model.xml"
+        wrapper.to_openvino(output_path)
+
+        assert output_path.exists()
+        assert ExportBackend.OPENVINO in wrapper.supported_export_backends
+
     def test_to_openvino_with_provided_input_sample(self, tmp_path):
         """Test OpenVINO export with explicitly provided input sample."""
         model = SimpleModel(SimpleConfig(input_dim=8, output_dim=4))
@@ -363,9 +381,9 @@ class TestToOpenVINO:
         """Test OpenVINO export using the generic export method."""
         model = ModelWithSampleInput(input_dim=10, output_dim=5)
         model.extra_export_args = {
-            "openvino": {
-                "compress_to_fp16": fp16,
-            }
+            "openvino": OpenVINOExportParameters(
+                compress_to_fp16=fp16,
+            ),
         }
         wrapper = ExportWrapper(model)
 
@@ -379,9 +397,9 @@ class TestToOpenVINO:
         """Test OpenVINO export via ONNX intermediate model."""
         model = ModelWithSampleInput(input_dim=10, output_dim=5)
         model.extra_export_args = {
-            ExportBackend.OPENVINO: {
-                "via_onnx": True,
-            }
+            ExportBackend.OPENVINO: OpenVINOExportParameters(
+                via_onnx=True,
+            ),
         }
         wrapper = ExportWrapper(model)
 
@@ -430,11 +448,11 @@ class TestToTorchExportIR:
         """Test that provided kwargs override model's extra_export_args."""
         model = ModelWithSampleInput(input_dim=10, output_dim=5)
 
-        # Add extra_export_args for torch_ir
+        # Add extra_export_args for torch_export_ir
         model.extra_export_args = {
-            "torch_ir": {
-                "strict": True,
-            }
+            "torch_export_ir": ExportParameters(
+                exporter_kwargs={"strict": True},
+            ),
         }
 
         wrapper = ExportWrapper(model)
