@@ -42,11 +42,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        with:
+          images: ghcr.io/open-edge-platform/physical-ai-studio-${{ matrix.device }}
+          tags: |
+            type=sha
+            type=ref,event=pr
+
       - name: Build Docker image
         id: docker_build
         uses: ./.github/actions/docker-build
         with:
           device: ${{ matrix.device }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           # Fork PRs cannot write packages to the upstream org, so disable
           # cache export to avoid 403 errors from GHCR.
           cache-write: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
