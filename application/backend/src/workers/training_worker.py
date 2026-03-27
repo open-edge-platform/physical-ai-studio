@@ -19,12 +19,11 @@ from settings import get_settings
 if TYPE_CHECKING:
     import multiprocessing as mp
     from multiprocessing.synchronize import Event as EventClass
-    from lightning import LightningModule
+
 
 from loguru import logger
 from physicalai.data import LeRobotDataModule
 from physicalai.export import ExportablePolicyMixin
-from physicalai.policies.base.policy import Policy
 from physicalai.train import Trainer
 
 from schemas import Job, Model, Snapshot

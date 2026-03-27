@@ -22,7 +22,6 @@ from internal_datasets.mutations.recording_mutation import RecordingMutation
 from schemas import Episode, EpisodeInfo, EpisodeVideo
 from settings import get_settings
 
-
 EpisodeMetadata = dict[str, Any]
 
 
