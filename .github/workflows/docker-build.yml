@@ -62,6 +62,52 @@ jobs:
           # cache export to avoid 403 errors from GHCR.
           cache-write: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
 
+      - name: Smoke-test docker image
+        env:
+          IMAGE: ${{ steps.docker_build.outputs.image-name }}
+          DEVICE: ${{ matrix.device }}
+        run: |
+          CONTAINER_NAME="physical-ai-studio-healthcheck-${DEVICE}"
+
+          echo "Starting container from ${IMAGE} ..."
+          docker run -d --name "${CONTAINER_NAME}" -p 7860:7860 "${IMAGE}"
+
+          # Wait up to 60 seconds for the /health endpoint to respond
+          echo "Waiting for /health endpoint ..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:7860/health; then
+              echo ""
+              echo "Backend health check passed!"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "Backend health check failed after 60 seconds."
+              docker logs "${CONTAINER_NAME}"
+              docker rm -f "${CONTAINER_NAME}" > /dev/null 2>&1
+              exit 1
+            fi
+            sleep 2
+          done
+
+          # Verify the UI is being served
+          TEST_URL="http://localhost:7860"
+          EXPECTED_TITLE="Physical AI Studio"
+          echo "Checking HTML title..."
+
+          HTML_CONTENT=$(curl -sf $TEST_URL)
+          if echo "$HTML_CONTENT" | grep -q "<title>.*$EXPECTED_TITLE.*</title>"; then
+            echo "✅ HTML title check passed - found: $EXPECTED_TITLE"
+          else
+            echo "❌ HTML title check failed - expected title '$EXPECTED_TITLE' not found"
+            echo "Actual HTML content:"
+            echo "$HTML_CONTENT"
+            docker logs "${CONTAINER_NAME}"
+            docker rm -f "${CONTAINER_NAME}" > /dev/null 2>&1
+            exit 1
+          fi
+
+          docker rm -f "${CONTAINER_NAME}" > /dev/null 2>&1
+
       - name: Get Docker image size
         id: image_size
         env:
