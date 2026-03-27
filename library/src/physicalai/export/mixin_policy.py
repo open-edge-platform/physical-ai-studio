@@ -573,11 +573,11 @@ class ExportablePolicyMixin:
         with model_path.open("wb") as f:
             exec_program.write_to_file(f)
 
-        # Create metadata files
         self._create_metadata(
             export_dir,
             ExportBackend.EXECUTORCH,
             input_names=list(input_sample.keys()),  # type: ignore[arg-type, union-attr]
+            output_names=extra_model_args.output_names,
         )
 
         return model_path
