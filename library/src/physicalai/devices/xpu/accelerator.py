@@ -18,7 +18,7 @@ class XPUAccelerator(Accelerator):
     accelerator_name = "xpu"
 
     @property
-    def name(self) -> str:
+    def name(self) -> str:  # type: ignore[override]
         """Return the name of the accelerator."""
         return self.accelerator_name
 
@@ -94,7 +94,7 @@ class XPUAccelerator(Accelerator):
         """
         return torch.xpu.is_available()
 
-    def get_device_stats(self, device: str | torch.device) -> dict[str, Any]:  # noqa: PLR6301
+    def get_device_stats(self, device: str | int | torch.device) -> dict[str, Any]:  # noqa: PLR6301
         """Returns XPU devices stats."""
         return {"name": device}
 

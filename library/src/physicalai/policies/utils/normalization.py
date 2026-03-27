@@ -158,7 +158,7 @@ class FeatureNormalizeTransform(nn.Module):
     def _create_stats_buffers(
         features: dict[str, Feature],
         norm_map: dict[FeatureType, NormalizationType],
-    ) -> dict[str, dict[str, nn.ParameterDict]]:
+    ) -> dict[str, nn.ParameterDict]:
         """Create buffers per modality (e.g. "observation.image", "action") containing their normalization statistics.
 
         Args:
@@ -214,20 +214,22 @@ class FeatureNormalizeTransform(nn.Module):
             # we assert they are not infinity anymore.
 
             def get_torch_tensor(
-                arr: np.ndarray | torch.Tensor | Integral | list,
+                arr: np.ndarray | torch.Tensor | Integral | float | list | None,
                 shape: tuple[int, ...],
             ) -> torch.Tensor:
+                if arr is None:
+                    return torch.ones(shape, dtype=torch.float32) * torch.inf
                 if isinstance(arr, np.ndarray):
                     return torch.from_numpy(arr).to(dtype=torch.float32).view(shape)
                 if isinstance(arr, torch.Tensor):
                     return arr.clone().to(dtype=torch.float32).view(shape)
-                if isinstance(arr, Integral):
+                if isinstance(arr, (Integral, float)):
                     return torch.tensor(arr, dtype=torch.float32).view(shape)
                 if isinstance(arr, list):
                     return torch.tensor(arr, dtype=torch.float32).view(shape)
 
                 type_ = type(arr)
-                msg = f"list, int, np.ndarray, or torch.Tensor expected, but type is '{type_}' instead."
+                msg = f"list, int, float, np.ndarray, or torch.Tensor expected, but type is '{type_}' instead."
                 raise TypeError(msg)
 
             buffer = {}

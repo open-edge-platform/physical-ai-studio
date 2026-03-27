@@ -151,7 +151,7 @@ class Policy(L.LightningModule, ABC):
             Action chunk tensor of shape (B, T, D) or (T, D) where T is chunk size.
         """
 
-    def select_action(self, batch: Observation) -> torch.Tensor:
+    def select_action(self, observation: Observation) -> torch.Tensor:
         """Select a single action using action chunking with queue.
 
         This method implements the standard action chunking pattern:
@@ -163,7 +163,7 @@ class Policy(L.LightningModule, ABC):
         this simply calls predict_action_chunk() and returns the action.
 
         Args:
-            batch: Input batch of observations.
+            observation: Input batch of observations.
 
         Returns:
             Single action tensor of shape (B, D) or (D,).
@@ -174,7 +174,7 @@ class Policy(L.LightningModule, ABC):
             return queued
 
         # Predict new action chunk and queue
-        actions = self.predict_action_chunk(batch)
+        actions = self.predict_action_chunk(observation)
         return self._queue_actions(actions)
 
     def reset(self) -> None:

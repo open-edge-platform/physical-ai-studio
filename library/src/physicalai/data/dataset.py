@@ -18,7 +18,7 @@ class Dataset(TorchDataset, ABC):
     """An abstract base class for datasets that return observations."""
 
     @abstractmethod
-    def __getitem__(self, idx: int) -> Observation:
+    def __getitem__(self, index: int) -> Observation:
         """Loads and returns an Observation at the given index."""
 
     @abstractmethod

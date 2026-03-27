@@ -52,7 +52,7 @@ class ExportablePolicyMixin:
         self,
         export_dir: Path,
         backend: ExportBackend,
-        **metadata_kwargs: dict,
+        **metadata_kwargs: str | int | float | bool | None,
     ) -> None:
         """Create metadata files for exported model.
 
@@ -192,7 +192,7 @@ class ExportablePolicyMixin:
         model_path = self._prepare_export_path(checkpoint_path, ".pt")
         export_dir = model_path.parent
 
-        checkpoint = {}
+        checkpoint: dict[str, object] = {}
         checkpoint["state_dict"] = self.state_dict() if hasattr(self, "state_dict") else {}
 
         if hasattr(self, "hparams"):
@@ -214,7 +214,7 @@ class ExportablePolicyMixin:
         self,
         output_path: PathLike | str,
         input_sample: dict[str, torch.Tensor] | None = None,
-        **export_kwargs: dict,
+        **export_kwargs: Any,
     ) -> None:
         """Export the model to ONNX format.
 
@@ -292,7 +292,7 @@ class ExportablePolicyMixin:
         self,
         output_path: PathLike | str,
         input_sample: dict[str, torch.Tensor] | None = None,
-        **export_kwargs: dict,
+        **export_kwargs: Any,
     ) -> None:
         """Export the model to OpenVINO format.
 
@@ -400,7 +400,7 @@ class ExportablePolicyMixin:
         self,
         output_path: PathLike | str,
         input_sample: dict[str, torch.Tensor] | None = None,
-        **export_kwargs: dict,
+        **export_kwargs: Any,
     ) -> None:
         """Export the model to Torch Export IR format.
 
@@ -596,7 +596,7 @@ class ExportablePolicyMixin:
         output_path: PathLike | str,
         backend: ExportBackend | str,
         input_sample: dict[str, torch.Tensor] | None = None,
-        **export_kwargs: dict,
+        **export_kwargs: Any,
     ) -> None:
         """Export the model to the specified backend format.
 
@@ -639,7 +639,7 @@ class ExportablePolicyMixin:
         model_path: Path,
         input_sample: dict[str, torch.Tensor],
         arg_name: str,
-        **export_kwargs: dict,
+        **export_kwargs: Any,
     ) -> None:
         """Run torch.onnx.export and save the model to a file.
 

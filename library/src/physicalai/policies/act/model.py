@@ -709,7 +709,7 @@ class _ACT(nn.Module):
                 vae_encoder_input = [cls_embed, robot_state_embed, action_embed]  # (B, S+2, D)
             else:
                 vae_encoder_input = [cls_embed, action_embed]
-            vae_encoder_input = torch.cat(vae_encoder_input, axis=1)
+            vae_encoder_input = torch.cat(vae_encoder_input, dim=1)
 
             # Prepare fixed positional embedding.
             # Note: detach() shouldn't be necessary but leaving it the same as the original code just in case.
@@ -725,7 +725,7 @@ class _ACT(nn.Module):
             )
             key_padding_mask = torch.cat(
                 [cls_joint_is_pad, batch[EXTRA + ".action_is_pad"]],
-                axis=1,
+                dim=1,
             )  # (bs, seq+1 or 2)
 
             # Forward pass through VAE encoder to get the latent PDF parameters.
@@ -786,8 +786,8 @@ class _ACT(nn.Module):
                 encoder_in_pos_embed.extend(cam_pos_embed_list)
 
         # Stack all tokens along the sequence dimension.
-        encoder_in_tokens = torch.stack(encoder_in_tokens, axis=0)
-        encoder_in_pos_embed = torch.stack(encoder_in_pos_embed, axis=0)
+        encoder_in_tokens = torch.stack(encoder_in_tokens, dim=0)
+        encoder_in_pos_embed = torch.stack(encoder_in_pos_embed, dim=0)
 
         # Forward pass through the transformer modules.
         encoder_out = self.encoder(encoder_in_tokens, pos_embed=encoder_in_pos_embed)

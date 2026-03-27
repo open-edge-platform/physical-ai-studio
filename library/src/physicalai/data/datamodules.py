@@ -14,14 +14,13 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 import torch
 from lightning.pytorch import LightningDataModule
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset as TorchDataset, TensorDataset
 
 from physicalai.data.gym import GymDataset
 from physicalai.data.observation import Observation
 from physicalai.gyms.step_limit import with_step_limit
 
 if TYPE_CHECKING:
-    from physicalai.data import Dataset
     from physicalai.gyms import Gym
 
 logger = logging.getLogger(__name__)
@@ -91,7 +90,7 @@ def _collate_observations(batch: list[Observation]) -> Observation:
 
         # Handle nested dictionaries, such as the `images` field
         elif isinstance(first_non_none, dict):
-            collated_inner_dict = {}
+            collated_inner_dict: dict[str, Any] = {}
             for inner_key in first_non_none:
                 inner_values = [d.get(inner_key) for d in values if d is not None]
                 if inner_values:
@@ -127,7 +126,7 @@ class DataModule(LightningDataModule):
 
     def __init__(
         self,
-        train_dataset: Dataset,
+        train_dataset: TorchDataset[Any],
         train_batch_size: int = 16,
         num_workers: int | Literal["auto"] = "auto",
         val_gym: Gym | None = None,
@@ -152,17 +151,17 @@ class DataModule(LightningDataModule):
         super().__init__()
 
         # dataset
-        self.train_dataset: Dataset = train_dataset
+        self.train_dataset: TorchDataset[Any] = train_dataset
         self.train_batch_size: int = train_batch_size
         self.num_workers: int = resolve_auto_num_workers() if num_workers == "auto" else num_workers
         logger.info("DataLoader workers: %d%s", self.num_workers, " (auto)" if num_workers == "auto" else "")
 
         # gym environments
         self.val_gym: Gym | None = val_gym
-        self.val_dataset: Dataset | None = None
+        self.val_dataset: TorchDataset[Any] | None = None
         self.num_rollouts_val: int = num_rollouts_val
         self.test_gym: Gym | None = test_gym
-        self.test_dataset: Dataset | None = None
+        self.test_dataset: TorchDataset[Any] | None = None
         self.num_rollouts_test: int = num_rollouts_test
         self.max_episode_steps = max_episode_steps
 
@@ -229,7 +228,7 @@ class DataModule(LightningDataModule):
         if self.val_dataset is None:
             # Return empty dataloader when no validation dataset
             # This allows training to proceed without validation
-            return DataLoader([], batch_size=1)
+            return DataLoader(TensorDataset(torch.empty(0)), batch_size=1)
 
         return DataLoader(
             self.val_dataset,
@@ -251,7 +250,7 @@ class DataModule(LightningDataModule):
         if self.test_dataset is None:
             # Return empty dataloader when no test dataset
             # This allows training to proceed without testing
-            return DataLoader([], batch_size=1)
+            return DataLoader(TensorDataset(torch.empty(0)), batch_size=1)
 
         return DataLoader(
             self.test_dataset,
