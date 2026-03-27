@@ -128,5 +128,6 @@ export const useLoadModelMutation = () => {
         onSuccess: async (model) => {
             setModel(pathRef.current, model);
         },
+        meta: { skipInvalidation: true },
     });
 };

@@ -10,8 +10,12 @@ if TYPE_CHECKING:
 
 class DatasetClient(ABC):
     type: str
-    exists_on_disk: bool = False
     has_episodes: bool = False
+
+    @property
+    @abstractmethod
+    def exists_on_disk(self) -> bool:
+        """Whether the dataset exists on disk."""
 
     @abstractmethod
     def prepare_for_writing(self) -> None:
@@ -64,7 +68,7 @@ class DatasetClient(ABC):
         """Add frame to recording buffer."""
 
     @abstractmethod
-    def save_episode(self, task: str) -> Episode:
+    def save_episode(self) -> None:
         """Save current recording buffer as episode."""
 
     @abstractmethod

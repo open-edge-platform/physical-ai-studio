@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, status
 
 from api.dependencies import get_model_service, get_project_id, get_project_service
 from internal_datasets.utils import get_internal_dataset
-from schemas import InferenceConfig, Model, Project, TeleoperationConfig
+from schemas import Model, Project
 from services import ModelService, ProjectService
 
 router = APIRouter(prefix="/api/projects", tags=["Projects"])
@@ -53,18 +53,6 @@ async def get_project_models(
 ) -> list[Model]:
     """Get all models of a project."""
     return await model_service.get_project_models(project_id)
-
-
-@router.get("/example_teleoperation_config")
-async def get_example_teleoperation_config() -> TeleoperationConfig:
-    """Stub call to get definition in ui."""
-    return TeleoperationConfig()
-
-
-@router.get("/example_inference_config")
-async def get_example_inference_config() -> InferenceConfig:
-    """Stub call to get definition in ui."""
-    return InferenceConfig()
 
 
 @router.get("/{project_id}/tasks")

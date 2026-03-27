@@ -1,7 +1,6 @@
 from loguru import logger
 
 from internal_datasets.dataset_client import DatasetClient
-from schemas import Episode
 
 
 class RecordingMutation:
@@ -28,10 +27,10 @@ class RecordingMutation:
     def add_frame(self, obs: dict, act: dict, task: str) -> None:
         self.cache_dataset.add_frame(obs, act, task)
 
-    def save_episode(self, task: str) -> Episode:
+    def save_episode(self) -> None:
         """Save current recording buffer as episode."""
         self.has_mutation = True
-        return self.cache_dataset.save_episode(task)
+        self.cache_dataset.save_episode()
 
     def discard_buffer(self) -> None:
         """Discard current recording buffer."""

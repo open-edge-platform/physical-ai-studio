@@ -17,16 +17,18 @@ import {
 import { v4 as uuidv4 } from 'uuid';
 
 import { $api } from '../../api/client';
+import { SchemaDatasetOutput } from '../../api/openapi-spec';
 import { useSettings } from '../../components/settings/use-settings';
 import { makeNameSafeForPath } from './record/utils';
 
 interface NewDatasetFormProps {
     project_id: string;
-    onDone: () => void;
+    onDone: (dataset: SchemaDatasetOutput | undefined) => void;
 }
 const NewDatasetForm = ({ project_id, onDone }: NewDatasetFormProps) => {
     const saveMutation = $api.useMutation('post', '/api/dataset');
     const [name, setName] = useState<string>('');
+    const [defaultTask, setDefaultTask] = useState<string>('');
     const { geti_action_dataset_path } = useSettings();
 
     const { data: environments } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/environments', {
@@ -44,16 +46,17 @@ const NewDatasetForm = ({ project_id, onDone }: NewDatasetFormProps) => {
 
         if (environmentId !== undefined) {
             const id = uuidv4();
-            await saveMutation.mutateAsync({
+            const result = await saveMutation.mutateAsync({
                 body: {
                     id,
                     name,
                     project_id,
                     environment_id: environmentId,
+                    default_task: defaultTask,
                     path: `${geti_action_dataset_path}/${makeNameSafeForPath(name)}`,
                 },
             });
-            onDone();
+            onDone(result);
         }
     };
 
@@ -82,9 +85,18 @@ const NewDatasetForm = ({ project_id, onDone }: NewDatasetFormProps) => {
                         value={name}
                         onChange={setName}
                     />
+
+                    <TextField
+                        // eslint-disable-next-line jsx-a11y/no-autofocus
+                        autoFocus
+                        width='100%'
+                        label='Task'
+                        value={defaultTask}
+                        onChange={setDefaultTask}
+                    />
                 </Content>
                 <ButtonGroup>
-                    <Button variant='secondary' onPress={onDone}>
+                    <Button variant='secondary' onPress={() => onDone(undefined)}>
                         Cancel
                     </Button>
                     <Button variant='accent' type='submit' isDisabled={name === ''} isPending={saveMutation.isPending}>
@@ -107,11 +119,11 @@ export const NewDatasetLink = ({ project_id }: { project_id: string }) => {
 interface NewDatasetDialogContainerProps {
     project_id: string;
     show: boolean;
-    onDismiss: () => void;
+    onDismiss: (dataset: SchemaDatasetOutput | undefined) => void;
 }
 export const NewDatasetDialogContainer = ({ project_id, show, onDismiss }: NewDatasetDialogContainerProps) => {
     return (
-        <DialogContainer onDismiss={onDismiss}>
+        <DialogContainer onDismiss={() => onDismiss(undefined)}>
             {show && <NewDatasetForm project_id={project_id} onDone={onDismiss} />}
         </DialogContainer>
     );

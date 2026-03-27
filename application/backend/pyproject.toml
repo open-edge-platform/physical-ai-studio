@@ -27,21 +27,22 @@ dependencies = [
   "tenacity>=9.1.2",
   "aiofiles>=25.1.0",
   "types-aiofiles>=25.1.0.20251011",
-  "trossen-arm==1.9.0"
+  "trossen-arm==1.9.0",
+  "sse-starlette>=2.0.0"
 ]
 
 [project.optional-dependencies]
 cpu = [
     "torch<2.11",
-    "torchvision",
+    "torchvision<0.26.0",
 ]
 cuda = [
     "torch<2.11",
-    "torchvision",
+    "torchvision<0.26.0",
 ]
 xpu = [
     "torch<2.11",
-    "torchvision",
+    "torchvision<0.26.0",
     "pytorch-triton-xpu ; sys_platform == 'linux' or sys_platform == 'win32'",
 ]
 

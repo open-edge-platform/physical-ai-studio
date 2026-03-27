@@ -3,6 +3,7 @@
 
 import inspect
 import logging
+from typing import Literal
 
 from loguru import logger
 
@@ -34,11 +35,16 @@ class InterceptHandler(logging.Handler):
 class LoggerStdoutWriter:
     """Wrapper for redirecting stdout to logger."""
 
-    @staticmethod
-    def write(msg: str) -> None:
+    def __init__(self, level: Literal["INFO", "WARNING"] = "INFO") -> None:
+        self.level = level
+
+    def write(self, msg: str) -> None:
         msg = msg.rstrip("\n")
         if msg:
-            logger.info(msg)
+            if self.level == "INFO":
+                logger.info(msg)
+            elif self.level == "WARNING":
+                logger.warning(msg)
 
     @staticmethod
     def flush() -> None:

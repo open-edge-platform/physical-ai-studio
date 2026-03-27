@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 
 from physicalai.data.observation import ACTION
-from physicalai.export.mixin_export import Export
+from physicalai.export import ExportablePolicyMixin, ExportBackend
 from physicalai.policies.base import Policy
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from .preprocessor import SmolVLAPostprocessor, SmolVLAPreprocessor
 
 
-class SmolVLA(Export, Policy):
+class SmolVLA(ExportablePolicyMixin, Policy):
     """SmolVLA Policy - Hugging Face's flow matching VLA model.
 
     Lightning wrapper for training and inference with SmolVLA model.
@@ -417,3 +417,14 @@ class SmolVLA(Export, Policy):
                 gradient_clip_val=clip_val,
                 gradient_clip_algorithm=gradient_clip_algorithm or "norm",
             )
+
+    @property
+    def supported_export_backends(self) -> list[str | ExportBackend]:
+        """Get a list of export backends supported by policy.
+
+        This method returns a list of supported export backends as strings.
+
+        Returns:
+            list[str | ExportBackend]: A list of supported export backends.
+        """
+        return [ExportBackend.TORCH, ExportBackend.OPENVINO, ExportBackend.ONNX]
