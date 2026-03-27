@@ -5,6 +5,10 @@
 
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Literal
+
+#: Supported ExecuTorch delegate backends.
+ExecuTorchDelegate = Literal["portable", "xnnpack", "openvino"]
 
 
 class ExportBackend(StrEnum):
@@ -84,11 +88,12 @@ class ExecuTorchExportParameters(ExportParameters):
         output_names: Names for model outputs stored in metadata for inference.
     """
 
-    delegate: str = "portable"
+    delegate: ExecuTorchDelegate = "portable"
     output_names: list[str] = field(default_factory=lambda: ["action"])
 
 
 __all__ = [
+    "ExecuTorchDelegate",
     "ExecuTorchExportParameters",
     "ExportBackend",
     "ExportParameters",
