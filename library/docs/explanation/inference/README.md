@@ -26,12 +26,12 @@ class RuntimeAdapter(ABC):
 
 ## Adapters
 
-| Adapter                | Hardware        |
-| ---------------------- | --------------- |
-| **OpenVINOAdapter**    | Intel CPU/GPU   |
-| **ONNXAdapter**        | Cross-platform  |
-| **ExecuTorchAdapter**  | Edge/mobile     |
-| **TorchAdapter**       | CPU/GPU         |
+| Adapter               | Hardware       |
+| --------------------- | -------------- |
+| **OpenVINOAdapter**   | Intel CPU/GPU  |
+| **ONNXAdapter**       | Cross-platform |
+| **ExecuTorchAdapter** | Edge/mobile    |
+| **TorchAdapter**      | CPU/GPU        |
 
 ## InferenceModel
 
@@ -174,12 +174,12 @@ Backend detected from file extensions:
 
 ### Device Priority
 
-| Backend         | Device Priority       |
-| --------------- | --------------------- |
-| OpenVINO        | GPU → NPU → CPU       |
-| ONNX            | CUDA → TensorRT → CPU |
-| ExecuTorch      | CPU (edge devices)    |
-| Torch           | cuda → CPU            |
+| Backend    | Device Priority       |
+| ---------- | --------------------- |
+| OpenVINO   | GPU → NPU → CPU       |
+| ONNX       | CUDA → TensorRT → CPU |
+| ExecuTorch | CPU (edge devices)    |
+| Torch      | cuda → CPU            |
 
 ## Performance
 
