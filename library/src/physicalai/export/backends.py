@@ -17,7 +17,6 @@ class ExportBackend(StrEnum):
     ONNX = "onnx"
     OPENVINO = "openvino"
     TORCH = "torch"
-    TORCH_EXPORT_IR = "torch_export_ir"
     EXECUTORCH = "executorch"
 
     @property
@@ -27,7 +26,6 @@ class ExportBackend(StrEnum):
             "onnx": ".onnx",
             "openvino": ".xml",
             "torch": ".pt",
-            "torch_export_ir": ".pt2",
             "executorch": ".pte",
         }
         return extensions[self.value]
@@ -39,7 +37,6 @@ class ExportBackend(StrEnum):
             "onnx": ONNXExportParameters,
             "openvino": OpenVINOExportParameters,
             "torch": TorchExportParameters,
-            "torch_export_ir": ExportParameters,
             "executorch": ExecuTorchExportParameters,
         }
         return parameter_classes[self.value]

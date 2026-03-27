@@ -441,6 +441,5 @@ class ACT(ExportablePolicyMixin, Policy):
             ExportBackend.TORCH,
             ExportBackend.OPENVINO,
             ExportBackend.ONNX,
-            ExportBackend.TORCH_EXPORT_IR,
             ExportBackend.EXECUTORCH,
         ]

@@ -647,7 +647,7 @@ class Pi05Model(ExportableModelMixin, Model):
 
         Returns:
             dict[str, ExportParameters]: A dictionary mapping format names to their export parameters.
-            Supported formats: 'onnx', 'openvino', 'torch_export_ir', 'torch'.
+            Supported formats: 'onnx', 'openvino', 'torch'.
 
         Example:
             >>> model = Pi05(input_features, output_features)
@@ -672,7 +672,6 @@ class Pi05Model(ExportableModelMixin, Model):
             exporter_kwargs={},
             preprocessing_type="pi05",
         )
-        extra_args["torch_export_ir"] = ExportParameters()
         extra_args["torch"] = TorchExportParameters()
 
         return extra_args

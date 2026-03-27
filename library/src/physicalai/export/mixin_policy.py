@@ -396,76 +396,6 @@ class ExportablePolicyMixin:
         )
 
     @torch.no_grad()
-    def to_torch_export_ir(
-        self,
-        output_path: PathLike | str,
-        input_sample: dict[str, torch.Tensor] | None = None,
-        **export_kwargs: dict,
-    ) -> None:
-        """Export the model to Torch Export IR format.
-
-        This method exports the model to Torch Export IR (Intermediate Representation) format,
-        which can be used for deployment and for further optimization and inference via executorch or similar tools.
-
-        Args:
-            output_path (PathLike | str): Directory or file path where the exported Torch IR model will be saved.
-                If directory, creates {policy_name}.pt2. If file, uses as-is.
-            input_sample (dict[str, torch.Tensor] | None, optional): A sample input tensor dictionary
-                to trace the model. If None, the method will attempt to use the model's
-                `sample_input` property. Defaults to None.
-            **export_kwargs (dict): Additional keyword arguments to pass to the torch.export.export function.
-
-        Raises:
-            RuntimeError: If no input sample is provided and the model does not have a `sample_input` property.
-
-        Note:
-            - The model is set to evaluation mode before export.
-            - The export uses strict mode by default.
-            - Additional export arguments can be specified through the model's export configuration
-              and will be merged with the provided export_kwargs.
-
-        Raises:
-            RuntimeError: If input sample is not provided and the model does not
-                implement `sample_input` property. Also if export is failed due to other issues
-                like wrong export options.
-            NotImplementedError: If Torch Export IR is not supported by the policy.
-        """
-        if ExportBackend.TORCH_EXPORT_IR not in self.supported_export_backends:
-            msg = (
-                f"Torch Export IR is not implemented for this policy. "
-                f"Supported backends: {self.supported_export_backends}"
-            )
-            raise NotImplementedError(msg)
-
-        if input_sample is None:
-            input_sample = self._get_default_export_input_sample()
-
-        if input_sample is None:
-            msg = (
-                "An input sample must be provided for Torch Export IR export, "
-                "or the model must implement `sample_input` property."
-            )
-            raise RuntimeError(msg)
-
-        model_path = self._prepare_export_path(output_path, ".pt2")
-        export_dir = model_path.parent
-
-        extra_model_args = self._get_export_extra_args(ExportBackend.TORCH_EXPORT_IR).exporter_kwargs
-        extra_model_args.update(export_kwargs)
-
-        self.model.eval()
-        torch_program = torch.export.export(
-            self.model,
-            args=(input_sample,),
-            **extra_model_args,
-        )
-
-        torch.export.save(torch_program, str(model_path))  # nosec
-
-        # Create metadata files
-        self._create_metadata(export_dir, ExportBackend.TORCH_EXPORT_IR)
-
-    @torch.no_grad()
     def to_executorch(
         self,
         output_path: PathLike | str,
@@ -607,7 +537,7 @@ class ExportablePolicyMixin:
             output_path (PathLike | str): The file path where the exported model will be saved.
             backend (ExportBackend | str): The export backend to use.
                 Can be an ExportBackend enum value or a string
-                ("onnx", "openvino", "torch_export_ir").
+                ("onnx", "openvino", "executorch", "torch").
             input_sample (dict[str, torch.Tensor] | None, optional): A sample
                 input tensor dictionary for model tracing.
                 If None, attempts to use the model's `sample_input` property.
@@ -624,8 +554,6 @@ class ExportablePolicyMixin:
             self.to_onnx(output_path, input_sample, **export_kwargs)
         elif backend == ExportBackend.OPENVINO:
             self.to_openvino(output_path, input_sample, **export_kwargs)
-        elif backend == ExportBackend.TORCH_EXPORT_IR:
-            self.to_torch_export_ir(output_path, input_sample, **export_kwargs)
         elif backend == ExportBackend.EXECUTORCH:
             self.to_executorch(output_path, input_sample, **export_kwargs)
         elif backend == ExportBackend.TORCH:

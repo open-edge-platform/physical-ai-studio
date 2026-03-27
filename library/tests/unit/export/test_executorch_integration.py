@@ -52,7 +52,7 @@ class _ExportWrapper(ExportablePolicyMixin):
 
     @property
     def supported_export_backends(self) -> list[str | ExportBackend]:
-        return [ExportBackend.ONNX, ExportBackend.OPENVINO, ExportBackend.TORCH_EXPORT_IR, ExportBackend.EXECUTORCH]
+        return [ExportBackend.ONNX, ExportBackend.OPENVINO, ExportBackend.EXECUTORCH]
 
 
 class TestExecuTorchIntegration:

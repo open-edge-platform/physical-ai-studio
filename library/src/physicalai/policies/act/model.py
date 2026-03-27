@@ -248,7 +248,7 @@ class ACT(ExportableModelMixin, Model):
 
         Returns:
             dict[str, ExportParameters]: A dictionary mapping format names to their export parameters.
-            Supported formats: 'onnx', 'openvino', 'torch_export_ir', 'torch'.
+            Supported formats: 'onnx', 'openvino', 'executorch', 'torch'.
 
         Example:
             >>> model = ACT(input_features, output_features)
@@ -271,7 +271,6 @@ class ACT(ExportableModelMixin, Model):
             exporter_kwargs={},
             preprocessing_type="image_resize",
         )
-        extra_args["torch_export_ir"] = ExportParameters()
         extra_args["executorch"] = ExecuTorchExportParameters()
         extra_args["torch"] = TorchExportParameters()
 

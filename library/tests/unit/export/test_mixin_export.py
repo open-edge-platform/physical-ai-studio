@@ -143,7 +143,6 @@ class ExportWrapper(ExportablePolicyMixin):
             model.extra_export_args = {
                 ExportBackend.ONNX: ONNXExportParameters(),
                 ExportBackend.OPENVINO: OpenVINOExportParameters(),
-                ExportBackend.TORCH_EXPORT_IR: ExportParameters(),
             }
 
     def _get_default_export_input_sample(self) -> dict[str, torch.Tensor] | None:
@@ -157,7 +156,7 @@ class ExportWrapper(ExportablePolicyMixin):
 
     @property
     def supported_export_backends(self) -> list[str | ExportBackend]:
-        return [ExportBackend.ONNX, ExportBackend.OPENVINO, ExportBackend.TORCH_EXPORT_IR, ExportBackend.EXECUTORCH]
+        return [ExportBackend.ONNX, ExportBackend.OPENVINO, ExportBackend.EXECUTORCH]
 
 
 class TestToOnnx:
@@ -408,137 +407,6 @@ class TestToOpenVINO:
 
         assert output_path.exists()
         assert (tmp_path / "model.bin").exists()
-
-
-class TestToTorchExportIR:
-    """Tests for to_torch_export_ir method."""
-
-    def test_to_torch_export_ir_with_sample_input_from_model(self, tmp_path):
-        """Test TorchIR export using model's sample_input property."""
-        model = ModelWithSampleInput(input_dim=10, output_dim=5)
-        wrapper = ExportWrapper(model)
-
-        output_path = tmp_path / "model.pt2"
-        wrapper.to_torch_export_ir(output_path)
-
-        assert ExportBackend.TORCH_EXPORT_IR in wrapper.supported_export_backends
-        assert output_path.exists()
-
-        # Verify the exported program can be loaded
-        loaded_program = torch.export.load(output_path)  # nosec
-        assert loaded_program is not None
-
-    def test_to_torch_export_ir_with_provided_input_sample(self, tmp_path):
-        """Test TorchIR export with explicitly provided input sample."""
-        model = ModelWithDictInput()
-        wrapper = ExportWrapper(model)
-
-        input_sample = {"data": torch.randn(1, 10)}
-        output_path = tmp_path / "model.pt2"
-
-        wrapper.to_torch_export_ir(output_path, input_sample=input_sample)
-
-        assert output_path.exists()
-        assert ExportBackend.TORCH_EXPORT_IR in wrapper.supported_export_backends
-        # Verify the exported program can be loaded
-        loaded_program = torch.export.load(output_path)  # nosec
-        assert loaded_program is not None
-
-    def test_to_torch_export_ir_kwargs_override_model_args(self, tmp_path):
-        """Test that provided kwargs override model's extra_export_args."""
-        model = ModelWithSampleInput(input_dim=10, output_dim=5)
-
-        # Add extra_export_args for torch_export_ir
-        model.extra_export_args = {
-            "torch_export_ir": ExportParameters(
-                exporter_kwargs={"strict": True},
-            ),
-        }
-
-        wrapper = ExportWrapper(model)
-
-        output_path = tmp_path / "model.pt2"
-        # Override the strict mode from the model
-        wrapper.to_torch_export_ir(output_path, strict=False)
-
-        assert output_path.exists()
-        assert ExportBackend.TORCH_EXPORT_IR in wrapper.supported_export_backends
-
-        # Verify the exported program can be loaded
-        loaded_program = torch.export.load(output_path)  # nosec
-        assert loaded_program is not None
-
-    def test_to_torch_export_ir_with_multiple_inputs(self, tmp_path):
-        """Test TorchIR export with model having multiple inputs."""
-        model = ModelWithMultipleInputs()
-        wrapper = ExportWrapper(model)
-
-        output_path = tmp_path / "model.pt2"
-        wrapper.to_torch_export_ir(output_path)
-
-        assert ExportBackend.TORCH_EXPORT_IR in wrapper.supported_export_backends
-        assert output_path.exists()
-
-        # Verify the exported program can be loaded
-        loaded_program = torch.export.load(output_path)  # nosec
-        assert loaded_program is not None
-
-    def test_to_torch_export_ir_with_dict_input(self, tmp_path):
-        """Test TorchIR export with model accepting dict as single parameter."""
-        model = ModelWithDictInput()
-        wrapper = ExportWrapper(model)
-
-        output_path = tmp_path / "model.pt2"
-        wrapper.to_torch_export_ir(output_path)
-
-        assert ExportBackend.TORCH_EXPORT_IR in wrapper.supported_export_backends
-        assert output_path.exists()
-
-        # Verify the exported program can be loaded
-        loaded_program = torch.export.load(output_path)  # nosec
-        assert loaded_program is not None
-
-    def test_to_torch_export_ir_without_sample_input_raises_error(self, tmp_path):
-        """Test that RuntimeError is raised when no input sample is provided."""
-        # Model without sample_input property
-        model = SimpleModel(SimpleConfig())
-        wrapper = ExportWrapper(model)
-
-        output_path = tmp_path / "model.pt2"
-
-        with pytest.raises(RuntimeError, match="input sample must be provided"):
-            wrapper.to_torch_export_ir(output_path)
-
-    def test_to_torch_export_ir_model_in_eval_mode(self, tmp_path):
-        """Test that model is set to eval mode during TorchIR export."""
-        model = ModelWithSampleInput(input_dim=10, output_dim=5)
-        wrapper = ExportWrapper(model)
-
-        # Set model to training mode
-        model.train()
-        assert model.training is True
-        assert ExportBackend.TORCH_EXPORT_IR in wrapper.supported_export_backends
-
-        output_path = tmp_path / "model.pt2"
-        wrapper.to_torch_export_ir(output_path)
-
-        # Model should be in eval mode after export
-        assert model.training is False
-
-    def test_to_torch_export_ir_via_export_method(self, tmp_path):
-        """Test TorchIR export using the generic export method."""
-        model = ModelWithSampleInput(input_dim=10, output_dim=5)
-        wrapper = ExportWrapper(model)
-
-        output_path = tmp_path / "model.pt2"
-        wrapper.export(backend=ExportBackend.TORCH_EXPORT_IR, output_path=output_path)
-
-        assert ExportBackend.TORCH_EXPORT_IR in wrapper.supported_export_backends
-        assert output_path.exists()
-
-        # Verify the exported program can be loaded
-        loaded_program = torch.export.load(output_path)  # nosec
-        assert loaded_program is not None
 
 
 class TestToExecutorch:

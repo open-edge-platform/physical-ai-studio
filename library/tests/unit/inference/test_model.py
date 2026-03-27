@@ -162,7 +162,6 @@ class TestInferenceModelInit:
         [
             ("openvino", ExportBackend.OPENVINO, ".xml"),
             ("onnx", ExportBackend.ONNX, ".onnx"),
-            ("torch_export_ir", ExportBackend.TORCH_EXPORT_IR, ".pt2"),
         ],
     )
     def test_init_with_explicit_backend(
@@ -343,7 +342,7 @@ class TestAutoDetection:
 
     @pytest.mark.parametrize(
         ("file_ext", "expected_backend"),
-        [(".xml", ExportBackend.OPENVINO), (".onnx", ExportBackend.ONNX), (".pt2", ExportBackend.TORCH_EXPORT_IR)],
+        [(".xml", ExportBackend.OPENVINO), (".onnx", ExportBackend.ONNX)],
     )
     def test_backend_detection(
         self,
@@ -365,7 +364,6 @@ class TestAutoDetection:
         [
             ("model.xml", "openvino"),
             ("model.onnx", "onnx"),
-            ("model.pt2", "torch_export_ir"),
         ],
     )
     def test_device_detection(
@@ -558,7 +556,6 @@ class TestModelPathResolution:
         [
             (ExportBackend.OPENVINO, ".xml"),
             (ExportBackend.ONNX, ".onnx"),
-            (ExportBackend.TORCH_EXPORT_IR, ".pt2"),
         ],
     )
     def test_get_model_path_with_policy_name(self, tmp_path: Path, backend: ExportBackend, file_ext: str) -> None:

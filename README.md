@@ -136,7 +136,7 @@ from physicalai.export import get_available_backends
 from physicalai.policies import ACT
 
 # See available backends
-print(get_available_backends())  # ['onnx', 'openvino', 'torch', 'torch_export_ir']
+print(get_available_backends())  # ['onnx', 'openvino', 'torch', 'executorch']
 
 # Export to OpenVINO
 policy = ACT.load_from_checkpoint("experiments/lightning_logs/version_0/checkpoints/last.ckpt")

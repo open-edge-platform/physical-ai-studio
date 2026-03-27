@@ -19,7 +19,6 @@ from physicalai.inference.adapters import (
     OpenVINOAdapter,
     RuntimeAdapter,
     TorchAdapter,
-    TorchExportAdapter,
     get_adapter,
 )
 
@@ -33,7 +32,6 @@ class TestGetAdapter:
         [
             ("openvino", OpenVINOAdapter),
             ("onnx", ONNXAdapter),
-            ("torch_export_ir", TorchExportAdapter),
             ("torch", TorchAdapter),
         ],
     )
@@ -293,92 +291,6 @@ class TestTorchAdapter:
 
         assert adapter.input_names == []
         assert adapter.output_names == []
-
-
-class TestTorchExportAdapter:
-    """Test Torch Export IR adapter."""
-
-    def test_lifecycle(self, tmp_path: Path) -> None:
-        """Test complete adapter lifecycle."""
-        import torch
-
-        model_path = tmp_path / "model.pt2"
-        model_path.touch()
-
-        mock_program = MagicMock()
-        mock_module = MagicMock()
-        mock_module.return_value = {"output": torch.tensor([[1.0, 2.0]])}
-        mock_program.module.return_value = mock_module
-
-        # Mock call_spec for input names.
-        # Adapter traversal: in_spec.child(0) -> args_spec,
-        #   args_spec.children() truthy -> dict_spec = args_spec.child(0),
-        #   dict_spec.context = ["input"]
-        mock_dict_spec = Mock()
-        mock_dict_spec.context = ["input"]
-
-        mock_args_spec = Mock()
-        mock_args_spec.children.return_value = [mock_dict_spec]  # truthy -> positional-args path
-        mock_args_spec.child.return_value = mock_dict_spec  # args_spec.child(0) -> dict_spec
-
-        mock_in_spec = Mock()
-        mock_in_spec.children.return_value = [mock_args_spec]  # len == 1, no kwargs branch
-        mock_in_spec.child.return_value = mock_args_spec  # in_spec.child(0) -> args_spec
-        mock_program.call_spec.in_spec = mock_in_spec
-
-        # Mock graph_signature for output names
-        mock_program.graph_signature.user_outputs = ["output"]
-
-        with patch("torch.export.load", return_value=mock_program):
-            adapter = TorchExportAdapter()
-            adapter.load(model_path)
-
-            assert adapter.input_names == ["input"] and adapter.output_names == ["output"]
-
-            outputs = adapter.predict({"input": np.array([[1.0]])})
-            assert "output" in outputs and isinstance(outputs["output"], np.ndarray)
-
-    def test_error_cases(self, tmp_path: Path) -> None:
-        """Test error handling."""
-        adapter = TorchExportAdapter()
-
-        with pytest.raises(FileNotFoundError):
-            adapter.load(Path("/nonexistent/model.pt2"))
-
-        with pytest.raises(RuntimeError, match="Model not loaded"):
-            adapter.predict({"input": np.array([1.0])})
-
-        model_path = tmp_path / "model.pt2"
-        model_path.touch()
-
-        with patch("torch.export.load", side_effect=RuntimeError("Load error")):
-            with pytest.raises(RuntimeError, match="Failed to load"):
-                adapter.load(model_path)
-
-        # Test missing inputs
-        mock_program = MagicMock()
-        mock_program.module.return_value = MagicMock()
-
-        # Mock call_spec for input names (same traversal as test_lifecycle)
-        mock_dict_spec = Mock()
-        mock_dict_spec.context = ["input1", "input2"]
-
-        mock_args_spec = Mock()
-        mock_args_spec.children.return_value = [mock_dict_spec]
-        mock_args_spec.child.return_value = mock_dict_spec
-
-        mock_in_spec = Mock()
-        mock_in_spec.children.return_value = [mock_args_spec]
-        mock_in_spec.child.return_value = mock_args_spec
-        mock_program.call_spec.in_spec = mock_in_spec
-
-        # Mock graph_signature for output names
-        mock_program.graph_signature.user_outputs = ["output"]
-
-        with patch("torch.export.load", return_value=mock_program):
-            adapter.load(model_path)
-            with pytest.raises(ValueError, match="Missing required inputs"):
-                adapter.predict({"input1": np.array([1.0])})
 
 
 class TestRuntimeAdapter:

@@ -421,8 +421,6 @@ class InferenceModel:
         extension_map = {
             ".xml": "openvino",
             ".onnx": "onnx",
-            ".pt2": "torch_export_ir",
-            ".ptir": "torch_export_ir",
             ".ckpt": "torch",
             ".pt": "torch",
             ".pte": "executorch",
@@ -458,7 +456,6 @@ class InferenceModel:
         extension_map = {
             ExportBackend.OPENVINO: [".xml"],
             ExportBackend.ONNX: [".onnx"],
-            ExportBackend.TORCH_EXPORT_IR: [".pt2", ".ptir"],
             ExportBackend.TORCH: [".ckpt", ".pt"],
             ExportBackend.EXECUTORCH: [".pte"],
         }
