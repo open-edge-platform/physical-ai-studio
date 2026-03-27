@@ -189,7 +189,7 @@ ENV PATH="/app/application/backend/.venv/bin:$PATH" \
     STATIC_FILES_DIR="/app/application/ui/" \
     DATA_DIR="/app/data" \
     STORAGE_DIR="/app/storage" \
-    PYTHONPATH="/app/application/backend"
+    PYTHONPATH="/app/application/backend:/app/library/src"
 
 EXPOSE 8000
 
