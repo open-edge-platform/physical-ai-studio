@@ -22,10 +22,6 @@ from physicalai.export.mixin_policy import ExportablePolicyMixin, ExportBackend
 from physicalai.inference.adapters.executorch import ExecuTorchAdapter
 from physicalai.inference.model import InferenceModel
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 class _ModelWithSampleInput(torch.nn.Module):
     """Minimal model that exposes ``sample_input`` for export."""
@@ -56,11 +52,6 @@ class _ExportWrapper(ExportablePolicyMixin):
 
     def supported_export_backends(self) -> list[str | ExportBackend]:
         return [ExportBackend.ONNX, ExportBackend.OPENVINO, ExportBackend.TORCH_EXPORT_IR, ExportBackend.EXECUTORCH]
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 
 class TestExecuTorchIntegration:
