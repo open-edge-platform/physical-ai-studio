@@ -14,20 +14,19 @@ uv sync --extra libero
 
 ## Task Suites
 
-| Suite            | Tasks | Max Steps | Focus                   |
-| ---------------- | ----- | --------- | ----------------------- |
-| `libero_spatial` | 10    | 280       | Spatial reasoning       |
-| `libero_object`  | 10    | 280       | Object generalization   |
-| `libero_goal`    | 10    | 300       | Goal-conditioned tasks  |
-| `libero_10`      | 10    | 520       | Mixed long-horizon      |
-| `libero_90`      | 90    | 400       | Large-scale evaluation  |
-
+| Suite            | Tasks | Max Steps | Focus                  |
+| ---------------- | ----- | --------- | ---------------------- |
+| `libero_spatial` | 10    | 280       | Spatial reasoning      |
+| `libero_object`  | 10    | 280       | Object generalization  |
+| `libero_goal`    | 10    | 300       | Goal-conditioned tasks |
+| `libero_10`      | 10    | 520       | Mixed long-horizon     |
+| `libero_90`      | 90    | 400       | Large-scale evaluation |
 
 ## End-to-End Example with Pi0.5
 
 The following example loads a pretrained Pi0.5 checkpoint and runs the full LIBERO-10 benchmark.
 
-We use the LIBERO imitation learning training set provided by the LeRobot found [here](https://huggingface.co/datasets/HuggingFaceVLA/libero). Please see the LeRobot implementation [here](https://huggingface.co/docs/lerobot/libero).
+We use the LIBERO imitation learning training set provided by the LeRobot found [in hugging face datasets](https://huggingface.co/datasets/HuggingFaceVLA/libero). Please see the LeRobot implementation [on there LIBERO section in the LeRobot docs](https://huggingface.co/docs/lerobot/libero).
 
 ```bash
 uv sync --extra libero --extra pi0
