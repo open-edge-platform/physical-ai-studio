@@ -19,6 +19,7 @@ import yaml
 from onnxruntime_extensions import gen_processing_models
 
 from physicalai.export.backends import (
+    ExecuTorchDelegate,
     ExecuTorchExportParameters,
     ExportBackend,
     ExportParameters,
@@ -470,7 +471,7 @@ class ExportablePolicyMixin:
         output_path: PathLike | str,
         input_sample: dict[str, torch.Tensor] | None = None,
         *,
-        delegate: str | None = None,
+        delegate: ExecuTorchDelegate | None = None,
         delegate_config: dict[str, Any] | None = None,
         **export_kwargs: dict,
     ) -> Path:
@@ -482,9 +483,9 @@ class ExportablePolicyMixin:
             input_sample: A sample input tensor dictionary used to trace/export the model.
                 If ``None``, attempts to use the model's ``sample_input`` property.
             delegate: ExecuTorch delegate backend to use. Defaults to ``None``
-                (portable mode, no delegation). Supported values:
+                (uses value from ``ExecuTorchExportParameters``). Supported values:
 
-                - ``None``: Portable mode — no delegation, uses ExecuTorch portable ops.
+                - ``"portable"``: Portable mode — no delegation, uses ExecuTorch portable ops.
                 - ``"xnnpack"``: XNNPACK delegation — optimized CPU kernels for ARM/x86.
                   Works out-of-the-box with ``pip install executorch``.
                 - ``"openvino"``: OpenVINO delegation — requires ``nncf`` for export and a
@@ -497,12 +498,20 @@ class ExportablePolicyMixin:
             Path: Path to the exported ``.pte`` model file.
 
         Raises:
+            NotImplementedError: If ExecuTorch export is not supported by the policy.
             RuntimeError: If input sample is not provided and the model does not
                 implement ``sample_input`` property.
             ImportError: If the required ``executorch`` package (or selected delegate
                 dependencies) is not installed.
             ValueError: If an unsupported delegate is specified.
         """
+        if ExportBackend.EXECUTORCH not in self.supported_export_backends:
+            msg = (
+                f"ExecuTorch export is not implemented for this policy.\n"
+                f"Supported backends: {self.supported_export_backends}"
+            )
+            raise NotImplementedError(msg)
+
         if input_sample is None and hasattr(self.model, "sample_input"):
             input_sample = self.model.sample_input
         elif input_sample is None:
