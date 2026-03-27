@@ -52,7 +52,7 @@ class So101(RobotClient):
                 "wrist_roll": Motor(5, "sts3215", norm_mode_body),
                 "gripper": Motor(6, "sts3215", MotorNormMode.RANGE_0_100),
             },
-            calibration=calibration,
+            calibration=self.calibration,
         )
         self.id = id
         self.port = port
