@@ -264,7 +264,9 @@ class RobotControlWorker(BaseThreadWorker):
             self.recording_mutation = self.dataset.start_recording_mutation(
                 fps=self.fps,
                 features=features,
-                robot_type=self.environment_integration.follower.name,
+                robot_type=self.environment_integration.follower.name
+                if self.environment_integration.follower is not None
+                else "unknown",
             )
             self.state.dataset_loaded = True
             self._report_state()
