@@ -57,16 +57,21 @@ const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
     }
 };
 
-const JobMenu = ({ trainJob }: { trainJob: SchemaTrainJob }) => {
+const JobMenu = ({ trainJob, onViewLogs }: { trainJob: SchemaTrainJob; onViewLogs: () => void }) => {
     const deleteJobMutation = $api.useMutation('delete', '/api/jobs/{job_id}');
     const onAction = (key: Key) => {
         const action = key.toString();
+        if (action === 'logs') {
+            onViewLogs();
+        }
         if (action === 'delete') {
             deleteJobMutation.mutate({
                 params: { path: { job_id: trainJob.id! } },
             });
         }
     };
+
+    const disabledKeys = trainJob.status === 'failed' ? [] : ['delete'];
 
     return (
         <MenuTrigger>
@@ -78,14 +83,23 @@ const JobMenu = ({ trainJob }: { trainJob: SchemaTrainJob }) => {
             >
                 <MoreMenu />
             </ActionButton>
-            <Menu onAction={onAction}>
+            <Menu onAction={onAction} disabledKeys={disabledKeys}>
+                <Item key='logs'>Logs</Item>
                 <Item key='delete'>Delete</Item>
             </Menu>
         </MenuTrigger>
     );
 };
 
-export const TrainingRow = ({ trainJob, onInterrupt }: { trainJob: SchemaTrainJob; onInterrupt: () => void }) => {
+export const TrainingRow = ({
+    trainJob,
+    onInterrupt,
+    onViewLogs,
+}: {
+    trainJob: SchemaTrainJob;
+    onInterrupt: () => void;
+    onViewLogs: () => void;
+}) => {
     const loss = trainJob.extra_info && (trainJob.extra_info['train/loss_step'] as number | undefined);
 
     return (
@@ -102,11 +116,9 @@ export const TrainingRow = ({ trainJob, onInterrupt }: { trainJob: SchemaTrainJo
                         </Button>
                     )}
                 </View>
-                {trainJob.status === 'failed' && (
-                    <View>
-                        <JobMenu trainJob={trainJob} />
-                    </View>
-                )}
+                <View justifySelf={'end'}>
+                    <JobMenu trainJob={trainJob} onViewLogs={onViewLogs} />
+                </View>
             </Grid>
 
             {trainJob.status === 'running' && (

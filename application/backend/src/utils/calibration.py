@@ -18,7 +18,7 @@ def get_calibrations() -> list[CalibrationConfig]:
     ]
 
 
-def get_calibration_of_folder(folder: str, robot_type: Literal["leader", "follower"]) -> list[CalibrationConfig]:
+def get_calibration_of_folder(folder: Path, robot_type: Literal["leader", "follower"]) -> list[CalibrationConfig]:
     """Get all calibration configs available for either teleoperator or robot"""
     calibrations = []
     for root, dirs, files in os.walk(folder):

@@ -26,6 +26,7 @@ import torch
 import torch.nn.functional as F  # noqa: N812
 
 from physicalai.data import Feature, FeatureType, NormalizationParameters
+from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, TASK, Observation
 from physicalai.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
 
@@ -119,12 +120,12 @@ class SmolVLAPreprocessor(torch.nn.Module):
         """
         batch = self._newline_processor(batch)
         tokens, masks = self._tokenize(batch[TASK])
-        batch["tokenized_prompt"] = tokens.to(batch[STATE].device)
-        batch["tokenized_prompt_mask"] = masks.to(batch[STATE].device)
+        batch[TOKENIZED_PROMPT] = tokens.to(batch[STATE].device)
+        batch[TOKENIZED_PROMPT_MASK] = masks.to(batch[STATE].device)
 
         images, img_masks = self._preprocess_images(batch)
         batch[IMAGES] = images
-        batch["image_masks"] = img_masks
+        batch[IMAGE_MASKS] = img_masks
 
         return self._state_action_normalizer(batch)
 
@@ -249,11 +250,40 @@ class SmolVLAPreprocessor(torch.nn.Module):
                 self._tokenizer = AutoTokenizer.from_pretrained(
                     self.tokenizer_name,
                     revision="7b375e1b73b11138ff12fe22c8f2822d8fe03467",
+                    use_fast=True,
                 )
             except ImportError as e:
                 msg = "Tokenizer requires transformers. Install with: pip install transformers"
                 raise ImportError(msg) from e
         return self._tokenizer
+
+    @property
+    def exportable_tokenizer(self) -> Any:  # noqa: ANN401
+        """Get tokenizer for export.
+
+        This method is used during model export to retrieve the tokenizer for
+        conversion to ONNX or OpenVINO format. It simply returns the same
+        tokenizer instance used during preprocessing.
+
+        Returns:
+            The tokenizer instance used by this preprocessor.
+
+        Raises:
+            ImportError: If transformers library is not installed.
+        """
+        try:
+            from transformers import AutoTokenizer  # noqa: PLC0415
+
+            # Revision pinned for reproducibility and security
+            tokenizer = AutoTokenizer.from_pretrained(
+                self.tokenizer_name,
+                revision="7b375e1b73b11138ff12fe22c8f2822d8fe03467",
+                use_fast=False,
+            )
+        except ImportError as e:
+            msg = "Tokenizer requires transformers. Install with: pip install transformers"
+            raise ImportError(msg) from e
+        return tokenizer
 
     @staticmethod
     def _resize_with_pad(img: torch.Tensor, width: int, height: int, pad_value: int = -1) -> torch.Tensor:

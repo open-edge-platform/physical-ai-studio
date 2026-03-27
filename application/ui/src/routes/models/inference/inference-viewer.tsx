@@ -1,62 +1,25 @@
 import { useState } from 'react';
 
-import {
-    Button,
-    ButtonGroup,
-    ComboBox,
-    Flex,
-    Heading,
-    Item,
-    Link,
-    ProgressCircle,
-    StatusLight,
-    Text,
-    ToastQueue,
-} from '@geti/ui';
+import { Button, ButtonGroup, ComboBox, Flex, Heading, Item, Link, ProgressCircle, StatusLight, Text } from '@geti/ui';
 import { Back, Pause, Play } from '@geti/ui/icons';
 
-import { SchemaEnvironmentWithRelations, SchemaModel } from '../../../api/openapi-spec';
 import { ErrorMessage } from '../../../components/error-page/error-page';
 import { useProjectId } from '../../../features/projects/use-project';
-import { RobotViewer } from '../../../features/robots/controller/robot-viewer';
+import { useRobotControl } from '../../../features/robots/robot-control-provider';
+import { RobotControlView } from '../../../features/robots/robot-control/robot-control-view';
 import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
-import { Observation, useRobotControl } from '../../../features/robots/use-robot-control';
 import { paths } from '../../../router';
-import { CameraView } from '../../datasets/camera-view';
 
 interface InferenceViewerProps {
-    environment: SchemaEnvironmentWithRelations;
-    model: SchemaModel;
-    backend: string;
     tasks: string[];
 }
 
-const getVisualisationSourceFromObservation = (observation: Observation | undefined): { [joint: string]: number } => {
-    if (observation === undefined) {
-        return {};
-    }
-    if (observation['actions'] !== null) {
-        return observation['actions'];
-    } else {
-        return observation['state'];
-    }
-};
-
-export const InferenceViewer = ({ environment, model, backend, tasks }: InferenceViewerProps) => {
+export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
     const { project_id } = useProjectId();
 
     const [task, setTask] = useState<string>(tasks[0] ?? '');
 
-    const { observation, readyForInference, state, startTask, stopTask } = useRobotControl({
-        environment,
-        model,
-        backend,
-        onError: ToastQueue.negative,
-    });
-
-    const visualisation_source = getVisualisationSourceFromObservation(observation.current);
-
-    const robot = environment.robots?.at(0)?.robot;
+    const { model, readyForInference, state, startTask, stopTask } = useRobotControl();
 
     if (state.error) {
         return <ErrorMessage message={'An error occurred during inference setup'} />;
@@ -87,7 +50,7 @@ export const InferenceViewer = ({ environment, model, backend, tasks }: Inferenc
                     <Link aria-label='Rewind' href={paths.project.models.index({ project_id })}>
                         <Back fill='white' />
                     </Link>
-                    <Heading>Model Run {model.name}</Heading>
+                    <Heading>Model Run {model?.name}</Heading>
                     <ComboBox flex isRequired allowsCustomValue={false} inputValue={task} onInputChange={setTask}>
                         {tasks.map((taskText, index) => (
                             <Item key={index}>{taskText}</Item>
@@ -111,22 +74,7 @@ export const InferenceViewer = ({ environment, model, backend, tasks }: Inferenc
                         )}
                     </ButtonGroup>
                 </Flex>
-                <Flex direction={'row'} flex gap={'size-100'} margin='size-200'>
-                    <Flex direction={'column'} alignContent={'start'} flex gap={'size-30'}>
-                        {(environment?.cameras ?? []).map((camera) => (
-                            <CameraView key={camera.id} camera={camera} observation={observation} />
-                        ))}
-                    </Flex>
-                    <Flex flex={3} minWidth={0}>
-                        {robot && (
-                            <RobotViewer
-                                featureValues={Object.values(visualisation_source)}
-                                featureNames={Object.keys(visualisation_source)}
-                                robot={robot}
-                            />
-                        )}
-                    </Flex>
-                </Flex>
+                <RobotControlView />
             </Flex>
         </RobotModelsProvider>
     );

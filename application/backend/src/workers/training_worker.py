@@ -26,8 +26,9 @@ from physicalai.train import Trainer
 
 from schemas import Job, Model, Snapshot
 from schemas.job import JobStatus, TrainJobPayload
-from services import DatasetService, JobService, ModelService
+from services import DatasetService, ModelService
 from services.event_processor import EventType
+from services.job_service import JobService
 from services.training_service import (
     TrainingLogCallback,
     TrainingService,

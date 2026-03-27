@@ -27,7 +27,8 @@ dependencies = [
   "tenacity>=9.1.2",
   "aiofiles>=25.1.0",
   "types-aiofiles>=25.1.0.20251011",
-  "trossen-arm==1.9.0"
+  "trossen-arm==1.9.0",
+  "sse-starlette>=2.0.0"
 ]
 
 [project.optional-dependencies]

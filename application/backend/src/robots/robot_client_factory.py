@@ -1,12 +1,6 @@
-from pathlib import Path
-
-from lerobot.robots.so_follower import SOFollowerRobotConfig
-from lerobot.teleoperators.so_leader import SOLeaderTeleopConfig
-
 from exceptions import ResourceNotFoundError, ResourceType
 from robots.robot_client import RobotClient
-from robots.so101.so101_follower import SO101Follower
-from robots.so101.so101_leader import SO101Leader
+from robots.so101.so101 import So101
 from robots.widowxai.trossen_widowx_ai_follower import TrossenWidowXAIFollower
 from robots.widowxai.trossen_widowx_ai_leader import TrossenWidowXAILeader
 from schemas.calibration import Calibration
@@ -44,33 +38,20 @@ class RobotClientFactory:
                 )
                 return TrossenWidowXAILeader(config=config)
             case RobotType.SO101_FOLLOWER:
-                config = await self._get_robot_follower_config(robot)
-                return SO101Follower(config)
+                return await self._build_so101(robot)
             case RobotType.SO101_LEADER:
-                config = await self.get_robot_leader_config(robot)
-                return SO101Leader(config)
+                return await self._build_so101(robot)
 
-    async def _get_robot_follower_config(self, robot: Robot) -> SOFollowerRobotConfig:
+    async def _build_so101(self, robot: Robot) -> So101:
         port = await self._find_robot_port(robot)
         calibration = await self._get_robot_calibration(robot)
 
         if calibration is None:
-            return SOFollowerRobotConfig(port=port)
-
-        return SOFollowerRobotConfig(
-            port=port, id=str(calibration.id), calibration_dir=Path(calibration.file_path).parent
-        )
-
-    async def get_robot_leader_config(self, robot: Robot) -> SOLeaderTeleopConfig:
-        port = await self._find_robot_port(robot)
-        calibration = await self._get_robot_calibration(robot)
-
-        if calibration is None:
-            return SOLeaderTeleopConfig(port=port)
-
-        return SOLeaderTeleopConfig(
-            port=port, id=str(calibration.id), calibration_dir=Path(calibration.file_path).parent
-        )
+            raise ResourceNotFoundError(ResourceType.ROBOT_CALIBRATION, robot.serial_number)
+        if port is None:
+            raise ResourceNotFoundError(ResourceType.ROBOT, robot.serial_number)
+        mode = "follower" if robot.type == RobotType.SO101_FOLLOWER else "teleoperator"
+        return So101(port=port, id=robot.name.lower(), mode=mode, calibration=calibration)
 
     async def _find_robot_port(self, robot: Robot) -> str:
         port = await find_robot_port(self.robot_manager, robot)
