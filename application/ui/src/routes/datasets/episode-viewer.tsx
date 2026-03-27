@@ -13,6 +13,7 @@ import { TimelineControls } from './timeline-controls';
 import { usePlayer } from './use-player';
 
 import classes from './episode-viewer.module.scss';
+import { EpisodeDockView } from '../../features/datasets/episodes/episode-dock-view';
 
 interface VideoView {
     dataset_id: string;
@@ -88,25 +89,8 @@ export const EpisodeViewer = ({ episode, dataset }: EpisodeViewerProps) => {
                     <Text>{episode.tasks.join(', ')}</Text>
                 </Flex>
                 <Flex direction={'row'} flex gap={'size-100'}>
-                    <Flex direction={'column'} alignContent={'start'} flex gap={'size-30'}>
-                        {cameras.map((camera) => (
-                            <VideoView
-                                key={camera}
-                                dataset_id={dataset.id!}
-                                aspectRatio={640 / 480}
-                                cameraName={camera}
-                                time={player.time}
-                                episodeVideo={episode.videos[`observation.images.${camera}`]}
-                            />
-                        ))}
-                    </Flex>
-                    <Flex flex={3} minWidth={0}>
-                        <RobotViewer
-                            featureValues={episode.actions[frameIndex]}
-                            featureNames={episode.action_keys}
-                            robot={robots[0]}
-                        />
-                    </Flex>
+                    <EpisodeDockView episode={episode} dataset={dataset}/>
+
                 </Flex>
                 <div className={classes.timeline}>
                     <Disclosure isQuiet>
