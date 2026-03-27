@@ -50,6 +50,7 @@ class _ExportWrapper(ExportablePolicyMixin):
     def metadata_extra(self) -> dict[str, Any]:
         return {"chunk_size": 10, "use_action_queue": True}
 
+    @property
     def supported_export_backends(self) -> list[str | ExportBackend]:
         return [ExportBackend.ONNX, ExportBackend.OPENVINO, ExportBackend.TORCH_EXPORT_IR, ExportBackend.EXECUTORCH]
 
