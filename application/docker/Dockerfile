@@ -119,7 +119,7 @@ RUN --mount=type=cache,id=uv-base,target=/root/.cache/uv \
 FROM builder-base AS builder-cpu
 
 RUN --mount=type=cache,id=uv-cpu,target=/root/.cache/uv \
-    --mount=type=bind,source=library,target=/app/library,rw \
+    --mount=type=bind,from=libs,target=/app/library \
     uv sync --frozen --no-dev --no-editable --extra cpu
 
 # ===========================================================================
@@ -128,7 +128,7 @@ RUN --mount=type=cache,id=uv-cpu,target=/root/.cache/uv \
 FROM builder-base AS builder-xpu
 
 RUN --mount=type=cache,id=uv-xpu,target=/root/.cache/uv \
-    --mount=type=bind,source=library,target=/app/library,rw \
+    --mount=type=bind,from=libs,target=/app/library \
     uv sync --frozen --no-dev --no-editable --extra xpu
 
 # ===========================================================================
@@ -137,7 +137,7 @@ RUN --mount=type=cache,id=uv-xpu,target=/root/.cache/uv \
 FROM builder-base AS builder-cuda
 
 RUN --mount=type=cache,id=uv-cuda,target=/root/.cache/uv \
-    --mount=type=bind,source=library,target=/app/library,rw \
+    --mount=type=bind,from=libs,target=/app/library \
     uv sync --frozen --no-dev --no-editable --extra cuda
 
 # ===========================================================================
