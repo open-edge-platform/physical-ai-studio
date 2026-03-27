@@ -157,7 +157,7 @@ class ExportWrapper(ExportablePolicyMixin):
 
     @property
     def supported_export_backends(self) -> list[str | ExportBackend]:
-        return [ExportBackend.ONNX, ExportBackend.OPENVINO, ExportBackend.TORCH_EXPORT_IR]
+        return [ExportBackend.ONNX, ExportBackend.OPENVINO, ExportBackend.TORCH_EXPORT_IR, ExportBackend.EXECUTORCH]
 
 
 class TestToOnnx:
@@ -308,8 +308,7 @@ class TestToOpenVINO:
         """Test that provided kwargs override model's extra_export_args."""
         model = ModelWithSampleInput(input_dim=10, output_dim=5)
 
-        model.extra_export_args = {
-        }
+        model.extra_export_args = {}
         wrapper = ExportWrapper(model)
         output_path = tmp_path / "model.xml"
         wrapper.to_openvino(output_path)
