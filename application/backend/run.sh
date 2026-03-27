@@ -28,7 +28,7 @@ APP_MODULE=${APP_MODULE:-src/main.py}
 UV_CMD=${UV_CMD:-uv run --no-sync}
 
 export PYTHONUNBUFFERED=1
-export PYTHONPATH=.
+export PYTHONPATH=".:${PYTHONPATH}"
 
 # Always run migrations — Alembic is idempotent and will skip
 # already-applied migrations. This ensures the persistent volume
