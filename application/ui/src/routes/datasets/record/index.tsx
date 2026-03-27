@@ -1,15 +1,66 @@
 import { Suspense } from 'react';
 
-import { Flex, Grid, Icon, Link, Loading, Text, ToastQueue, View } from '@geti/ui';
+import {
+    Content,
+    ContextualHelp,
+    Flex,
+    Footer,
+    Grid,
+    Heading,
+    Icon,
+    Link,
+    Loading,
+    Text,
+    ToastQueue,
+    View,
+} from '@geti/ui';
 import { ChevronLeft } from '@geti/ui/icons';
 
 import { $api } from '../../../api/client';
 import { useDatasetId } from '../../../features/datasets/use-dataset';
-import { RobotControlProvider } from '../../../features/robots/robot-control-provider';
+import { RobotControlProvider, useRobotControl } from '../../../features/robots/robot-control-provider';
 import { paths } from '../../../router';
 import { RecordingViewer } from './recording-viewer';
 
 import classes from './index.module.scss';
+
+const TotalRecordedEpisodes = () => {
+    const { dataset_id } = useDatasetId();
+    const { state } = useRobotControl();
+
+    const episodeQuery = $api.useSuspenseQuery('get', '/api/dataset/{dataset_id}/episodes', {
+        params: {
+            path: {
+                dataset_id,
+            },
+        },
+    });
+    const totalEpisodes = Number(episodeQuery.data?.length) + state.episodes_recorded;
+
+    if (totalEpisodes === 0 || isNaN(totalEpisodes)) {
+        return null;
+    }
+
+    return (
+        <Flex direction='column' justifyContent={'space-between'} gap='size-50'>
+            <Flex alignItems={'center'} gap='size-50'>
+                <Text UNSAFE_className={classes.episodesText}>Total episodes recorded</Text>
+                <ContextualHelp variant='info'>
+                    <Heading>Recommended amount of episodes</Heading>
+                    <Content>
+                        <Text>We recommend recording at least 50 episodes before training your first model.</Text>
+                    </Content>
+                    <Footer>
+                        <Link href='https://github.com/open-edge-platform/physical-ai-studio/issues/358'>
+                            Learn more about segments
+                        </Link>
+                    </Footer>
+                </ContextualHelp>
+            </Flex>
+            <span className={classes.episodesCount}>{totalEpisodes}</span>
+        </Flex>
+    );
+};
 
 const RecordingPage = () => {
     const { project_id, dataset_id } = useDatasetId();
@@ -34,7 +85,6 @@ const RecordingPage = () => {
             },
         }
     );
-
     return (
         <RobotControlProvider environment={environment} dataset={dataset} onError={ToastQueue.negative}>
             <Grid
@@ -46,7 +96,13 @@ const RecordingPage = () => {
                 height={'100%'}
             >
                 <View backgroundColor={'gray-300'} gridArea={'header'}>
-                    <Flex height='100%' alignItems={'center'} marginX='1rem' gap='size-200'>
+                    <Flex
+                        height='100%'
+                        alignItems={'center'}
+                        marginX='1rem'
+                        gap='size-200'
+                        justifyContent={'space-between'}
+                    >
                         <Link
                             href={paths.project.datasets.show({ project_id, dataset_id })}
                             isQuiet
@@ -64,6 +120,7 @@ const RecordingPage = () => {
                                 </Flex>
                             </Flex>
                         </Link>
+                        <TotalRecordedEpisodes />
                     </Flex>
                 </View>
 
