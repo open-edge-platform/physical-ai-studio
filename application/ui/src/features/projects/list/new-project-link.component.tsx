@@ -11,8 +11,8 @@ import {
     Form,
     Heading,
     TextField,
-} from '@geti/ui';
-import { AddCircle } from '@geti/ui/icons';
+} from '@geti-ui/ui';
+import { AddCircle } from '@geti-ui/ui/icons';
 import { useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 

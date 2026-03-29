@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
-import { ActionButton, Button, DialogTrigger, Flex, Grid, Item, Key, Menu, MenuTrigger, Text, View } from '@geti/ui';
-import { MoreMenu } from '@geti/ui/icons';
+import { ActionButton, Button, DialogTrigger, Flex, Grid, Item, Key, Menu, MenuTrigger, Text, View } from '@geti-ui/ui';
+import { MoreMenu } from '@geti-ui/ui/icons';
 
 import { SchemaJob, SchemaModel } from '../../api/openapi-spec';
 import { GRID_COLUMNS } from './constants';

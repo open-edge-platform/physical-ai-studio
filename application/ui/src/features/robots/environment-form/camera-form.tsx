@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
-import { ActionButton, Button, Flex, Heading, Icon, Item, Picker, Text, View, Well } from '@geti/ui';
-import { Add, Close } from '@geti/ui/icons';
+import { ActionButton, Button, Flex, Heading, Icon, Item, Picker, Text, View, Well } from '@geti-ui/ui';
+import { Add, Close } from '@geti-ui/ui/icons';
 
 import { $api } from '../../../api/client';
 import { SchemaProjectCamera } from '../../../api/types';

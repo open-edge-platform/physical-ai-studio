@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { Flex, ProgressCircle, View } from '@geti/ui';
+import { Flex, ProgressCircle, View } from '@geti-ui/ui';
 
 import { useInterval } from '../../../routes/datasets/use-interval';
 import { useRobotControl } from '../robot-control-provider';

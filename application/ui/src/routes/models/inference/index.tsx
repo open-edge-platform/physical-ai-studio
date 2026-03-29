@@ -1,4 +1,4 @@
-import { ToastQueue } from '@adobe/react-spectrum';
+import { ToastQueue } from '@geti-ui/ui';
 
 import { $api } from '../../../api/client';
 import { RobotControlProvider } from '../../../features/robots/robot-control-provider';

@@ -1,4 +1,4 @@
-import { View } from '@geti/ui';
+import { View } from '@geti-ui/ui';
 
 import { RobotViewer } from '../controller/robot-viewer';
 import { Observation, useRobotControl } from '../robot-control-provider';

@@ -1,4 +1,4 @@
-import { Text } from '@geti/ui';
+import { Text } from '@geti-ui/ui';
 
 import classes from './setup-wizard.module.scss';
 

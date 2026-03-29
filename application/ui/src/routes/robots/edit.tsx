@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 
-import { Flex, Grid, Loading, minmax, View } from '@geti/ui';
+import { Flex, Grid, Loading, minmax, View } from '@geti-ui/ui';
 
 import { RobotForm } from '../../features/robots/robot-form/form';
 import { Preview } from '../../features/robots/robot-form/preview';

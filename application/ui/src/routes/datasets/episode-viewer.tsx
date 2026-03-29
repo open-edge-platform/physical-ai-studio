@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-import { Disclosure, DisclosurePanel, DisclosureTitle, Divider, Flex, Text, View, Well } from '@geti/ui';
+import { Disclosure, DisclosurePanel, DisclosureTitle, Divider, Flex, Text, View, Well } from '@geti-ui/ui';
 
 import { $api, fetchClient } from '../../api/client';
 import { SchemaDatasetOutput, SchemaEpisode, SchemaEpisodeVideo } from '../../api/openapi-spec';

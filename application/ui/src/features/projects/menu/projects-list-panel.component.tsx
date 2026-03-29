@@ -19,8 +19,8 @@ import {
     PhotoPlaceholder,
     Text,
     View,
-} from '@geti/ui';
-import { ChevronRightSmallLight, LogsIcon } from '@geti/ui/icons';
+} from '@geti-ui/ui';
+import { ChevronRightSmallLight, LogsIcon } from '@geti-ui/ui/icons';
 
 import { $api } from '../../../api/client';
 import { paths } from '../../../router';

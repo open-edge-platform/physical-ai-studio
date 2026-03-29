@@ -1,5 +1,5 @@
-import { ActionButton, Button, Flex, Heading, Icon, Loading, Text } from '@geti/ui';
-import { Refresh } from '@geti/ui/icons';
+import { ActionButton, Button, Flex, Heading, Icon, Loading, Text } from '@geti-ui/ui';
+import { Refresh } from '@geti-ui/ui/icons';
 import { useNavigate } from 'react-router';
 
 import { DiagnosticSection } from '../shared/diagnostic-section';

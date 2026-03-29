@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 
-import { Button, Flex, Grid, Loading, minmax, View } from '@geti/ui';
+import { Button, Flex, Grid, Loading, minmax, View } from '@geti-ui/ui';
 import { useNavigate } from 'react-router';
 
 import { useProjectId } from '../../features/projects/use-project';

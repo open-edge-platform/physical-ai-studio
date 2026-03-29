@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
 
-import { Flex, Grid, Icon, Link, Loading, Text, ToastQueue, View } from '@geti/ui';
-import { ChevronLeft } from '@geti/ui/icons';
+import { Flex, Grid, Icon, Link, Loading, Text, ToastQueue, View } from '@geti-ui/ui';
+import { ChevronLeft } from '@geti-ui/ui/icons';
 
 import { $api } from '../../../api/client';
 import { useDatasetId } from '../../../features/datasets/use-dataset';
