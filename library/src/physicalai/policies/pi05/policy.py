@@ -463,6 +463,8 @@ class Pi05(ExportablePolicyMixin, Policy):
         )
         self._dataset_stats = dataset_stats
         self.hparams["dataset_stats"] = dataset_stats
+        if self.model is not None:
+            self.model._dataset_stats = dataset_stats
 
     def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
         """Forward pass through the model.
