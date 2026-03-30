@@ -137,6 +137,7 @@ class TestRobotControlWorker:
         assert report["data"] == {
             "task": None,
             "model_loaded": False,
+            "episodes_recorded": 0,
             "environment_loaded": False,
             "is_recording": False,
             "dataset_loaded": False,
@@ -274,6 +275,7 @@ class TestRobotControlWorker:
         worker.save_episode()
         report = wait_until_message_from_queue(worker.queue, "state")
         assert not report["data"]["is_recording"]
+        assert report["data"]["episodes_recorded"] == 1
         recording_mutation.save_episode.assert_called()
         worker.disconnect()
         worker.join()
