@@ -1290,3 +1290,155 @@ class TestTrainingNumericalEquivalence:
 
         assert torch.isfinite(loss)
         assert loss.item() >= 0
+
+
+class TestMultiStepTrainingTrajectory:
+    """Verify multi-step training through the wrapper matches native LeRobot exactly.
+
+    Runs N training steps with identical weights, optimizer, and batch through both
+    the physicalai wrapper and bare LeRobot policy, then asserts:
+    - Per-step loss values are identical (atol=0)
+    - Loss decreases from first to last step
+    - Final model weights are identical
+    """
+
+    NUM_STEPS = 5
+
+    @pytest.fixture(params=_TRAINING_POLICY_NAMES)
+    def dual_setup(self, request, lerobot_imports, pusht_dataset):
+        """Create wrapper + native LeRobot policy with identical weights and optimizers."""
+        import copy
+
+        policy_name = request.param
+        LeRobotPolicy = lerobot_imports["LeRobotPolicy"]
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # --- Wrapper path ---
+        wrapper = LeRobotPolicy.from_dataset(policy_name, pusht_dataset)
+        wrapper = wrapper.to(device)
+        wrapper.train()
+
+        # --- Native path: deep-copy the inner LeRobot policy so weights are identical ---
+        native = copy.deepcopy(wrapper.lerobot_policy)
+        native = native.to(device)
+        native.train()
+
+        # Build identical optimizers using LeRobot's own preset
+        wrapper_optimizer = wrapper.configure_optimizers()
+        native_optimizer = wrapper._config.get_optimizer_preset().build(native.get_optim_params())
+
+        # Build a fixed training batch
+        batch = _make_training_batch(wrapper._config, device)
+
+        return {
+            "wrapper": wrapper,
+            "native": native,
+            "wrapper_optimizer": wrapper_optimizer,
+            "native_optimizer": native_optimizer,
+            "batch": batch,
+            "policy_name": policy_name,
+        }
+
+    def test_loss_trajectories_match(self, dual_setup):
+        """Per-step loss values from wrapper and native must be bit-identical."""
+        wrapper = dual_setup["wrapper"]
+        native = dual_setup["native"]
+        w_opt = dual_setup["wrapper_optimizer"]
+        n_opt = dual_setup["native_optimizer"]
+        batch = dual_setup["batch"]
+
+        wrapper_losses: list[float] = []
+        native_losses: list[float] = []
+
+        for step in range(self.NUM_STEPS):
+            # --- Wrapper step ---
+            w_opt.zero_grad()
+            torch.manual_seed(step)
+            w_loss, _ = wrapper(batch)
+            w_loss.backward()
+            w_opt.step()
+            wrapper_losses.append(w_loss.item())
+
+            # --- Native step (mirror the wrapper's forward path) ---
+            n_opt.zero_grad()
+            preprocessed = wrapper._preprocessor(batch)
+            torch.manual_seed(step)
+            n_loss, _ = native(preprocessed)
+            n_loss.backward()
+            n_opt.step()
+            native_losses.append(n_loss.item())
+
+        # Assert bit-identical loss at every step
+        for step, (wl, nl) in enumerate(zip(wrapper_losses, native_losses)):
+            assert wl == nl, f"Step {step}: wrapper loss {wl} != native loss {nl} (diff={abs(wl - nl):.2e})"
+
+    def test_loss_decreases_over_training(self, dual_setup):
+        """Average loss in later steps should be lower than early steps.
+
+        Diffusion policies have inherently noisy loss (random noise + timesteps
+        each forward), so we compare the mean of the first half vs the second
+        half over more steps rather than demanding strict monotonic decrease.
+        """
+        wrapper = dual_setup["wrapper"]
+        w_opt = dual_setup["wrapper_optimizer"]
+        batch = dual_setup["batch"]
+
+        num_steps = 20
+        losses: list[float] = []
+        for step in range(num_steps):
+            w_opt.zero_grad()
+            torch.manual_seed(step)
+            loss, _ = wrapper(batch)
+            loss.backward()
+            w_opt.step()
+            losses.append(loss.item())
+
+        mid = num_steps // 2
+        first_half_mean = sum(losses[:mid]) / mid
+        second_half_mean = sum(losses[mid:]) / (num_steps - mid)
+
+        assert first_half_mean > second_half_mean, (
+            f"Loss did not decrease: first_half_mean={first_half_mean:.6f}, "
+            f"second_half_mean={second_half_mean:.6f}, "
+            f"trajectory={[f'{l:.4f}' for l in losses]}"
+        )
+
+    def test_final_weights_match(self, dual_setup):
+        """After N identical steps, wrapper and native should have identical parameters."""
+        wrapper = dual_setup["wrapper"]
+        native = dual_setup["native"]
+        w_opt = dual_setup["wrapper_optimizer"]
+        n_opt = dual_setup["native_optimizer"]
+        batch = dual_setup["batch"]
+
+        for step in range(self.NUM_STEPS):
+            w_opt.zero_grad()
+            torch.manual_seed(step)
+            w_loss, _ = wrapper(batch)
+            w_loss.backward()
+            w_opt.step()
+
+            n_opt.zero_grad()
+            preprocessed = wrapper._preprocessor(batch)
+            torch.manual_seed(step)
+            n_loss, _ = native(preprocessed)
+            n_loss.backward()
+            n_opt.step()
+
+        # Compare all parameters
+        wrapper_params = dict(wrapper.lerobot_policy.named_parameters())
+        native_params = dict(native.named_parameters())
+
+        assert set(wrapper_params.keys()) == set(native_params.keys()), (
+            "Parameter names differ between wrapper and native"
+        )
+
+        for name in wrapper_params:
+            torch.testing.assert_close(
+                wrapper_params[name],
+                native_params[name],
+                rtol=0,
+                atol=0,
+                msg=f"Parameter '{name}' diverged after {self.NUM_STEPS} training steps",
+            )
