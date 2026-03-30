@@ -555,6 +555,7 @@ def evaluate_policy(
     start_seed: int | None = None,
     max_steps: int | None = None,
     return_episode_data: bool = False,
+    frame_key: str = "image",
     video_recorder: VideoRecorder | None = None,
 ) -> dict[str, Any]:
     """Evaluates a policy over multiple episodes.
@@ -573,6 +574,8 @@ def evaluate_policy(
         max_steps (int | None, optional): Maximum steps per episode. Defaults to None.
         return_episode_data (bool, optional): Whether to include per-episode rollout
             data in the result. Defaults to False.
+        frame_key (str, optional): Key for extracting frames from observation.images
+            for video recording. Defaults to "image".
         video_recorder (VideoRecorder | None, optional): Video recorder for capturing
             frames during evaluation. Defaults to None.
 
@@ -601,6 +604,7 @@ def evaluate_policy(
             seed=seed,
             max_steps=max_steps,
             return_observations=return_episode_data,
+            frame_key=frame_key,
             video_recorder=video_recorder,
         )
 
