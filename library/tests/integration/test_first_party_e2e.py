@@ -23,7 +23,7 @@ from physicalai.policies.base.policy import Policy
 from physicalai.train import Trainer
 
 # Export backend constants
-EXPORT_BACKENDS = ["openvino", "onnx", "torch_export_ir"]
+EXPORT_BACKENDS = ["openvino", "onnx", "torch_export_ir", "executorch"]
 
 # Policy names for parametrization
 FIRST_PARTY_VLA_POLICIES = ["groot", "pi0", "smolvla", "pi05"]
@@ -96,6 +96,8 @@ class ExportE2ETests:
             assert any(export_dir.glob("*.pt"))
         elif backend == "torch_export_ir":
             assert any(export_dir.glob("*.pt2"))
+        elif backend == "executorch":
+            assert any(export_dir.glob("*.pte"))
 
     @pytest.mark.parametrize("backend", EXPORT_BACKENDS)
     def test_inference_with_exported_model(

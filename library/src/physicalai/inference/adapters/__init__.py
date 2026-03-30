@@ -15,6 +15,7 @@ from physicalai.inference.adapters.onnx import ONNXAdapter
 from physicalai.inference.adapters.openvino import OpenVINOAdapter
 
 __all__ = [
+    "ExecuTorchAdapter",  # noqa: F822
     "ONNXAdapter",
     "OpenVINOAdapter",
     "RuntimeAdapter",
@@ -44,6 +45,10 @@ def __getattr__(name: str) -> Any:  # noqa: ANN401
         from physicalai.inference.adapters.torch_export import TorchExportAdapter  # noqa: PLC0415
 
         return TorchExportAdapter
+    if name == "ExecuTorchAdapter":
+        from physicalai.inference.adapters.executorch import ExecuTorchAdapter  # noqa: PLC0415
+
+        return ExecuTorchAdapter
     msg = f"module {__name__!r} has no attribute {name!r}"
     raise AttributeError(msg)
 
@@ -86,6 +91,12 @@ def get_adapter(backend: ExportBackend | str, **kwargs: Any) -> RuntimeAdapter: 
 
         adapter_map[ExportBackend.TORCH] = TorchAdapter
         adapter_map[ExportBackend.TORCH_EXPORT_IR] = TorchExportAdapter
+
+    # Lazy-import executorch adapter only when needed
+    if backend == ExportBackend.EXECUTORCH:
+        from physicalai.inference.adapters.executorch import ExecuTorchAdapter  # noqa: PLC0415
+
+        adapter_map[ExportBackend.EXECUTORCH] = ExecuTorchAdapter
 
     if backend not in adapter_map:
         msg = f"No adapter available for backend: {backend}"

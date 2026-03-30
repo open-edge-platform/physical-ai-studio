@@ -540,12 +540,13 @@ class Pi05(ExportablePolicyMixin, Policy):
         drop_steps = self.config.scheduler_decay_steps
         decay_value = self.config.scheduler_decay_lr
 
+        decay_ratio = decay_value / self.config.optimizer_lr
+
         def lr_lambda(step: int) -> float:
-            num_drops = step // drop_steps
-            decay_factor = decay_value**num_drops
             if step < warmup_steps:
                 return step / max(1, warmup_steps)
-            return decay_factor
+            num_drops = (step - warmup_steps) // drop_steps
+            return decay_ratio**num_drops
 
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
