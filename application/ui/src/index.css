@@ -1,3 +1,6 @@
+@import '@geti-ui/blocks/styles.css';
+@import '@geti-ui/ui/styles.css';
+
 @import './../node_modules/dockview-react/dist/styles/dockview.css';
 
 :root {
