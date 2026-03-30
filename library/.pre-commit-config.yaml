@@ -46,7 +46,7 @@ repos:
     hooks:
       - id: pyrefly-check
         name: Pyrefly (type checking)
-        entry: uv run pyrefly check -c pyproject.toml
+        entry: uv run pyrefly check
         language: system
         pass_filenames: false
 
