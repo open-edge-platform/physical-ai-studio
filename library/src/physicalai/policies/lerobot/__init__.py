@@ -100,6 +100,7 @@ Examples:
 from lightning_utilities.core.imports import module_available
 
 from physicalai.policies.lerobot.act import ACT
+from physicalai.policies.lerobot.converter import lerobot_to_lightning, lightning_to_lerobot
 from physicalai.policies.lerobot.diffusion import Diffusion
 from physicalai.policies.lerobot.groot import Groot
 from physicalai.policies.lerobot.smolvla import SmolVLA
@@ -188,6 +189,8 @@ __all__ = [
     "SmolVLA",
     "VQBeT",
     "get_lerobot_policy",
+    "lerobot_to_lightning",
+    "lightning_to_lerobot",
 ]
 
 
