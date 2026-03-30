@@ -34,7 +34,8 @@ from physicalai.train import Trainer
 # Core policies - fast, have explicit wrappers
 CORE_POLICIES = ["act", "diffusion"]
 
-# VLA policies - large models requiring flash_attn + 24GB+ VRAM
+# VLA policies - large models requiring 24GB+ VRAM
+# groot additionally requires flash_attn (hardcoded in eagle2_hg_model)
 VLA_POLICIES = ["groot"]
 
 

@@ -44,7 +44,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 # All target policies — run in CI for fast-dev-run and multi-step tests.
-# VLA policies (pi0, pi05, pi0fast, groot) require flash_attn and are
+# VLA policies (pi0, pi05, pi0_fast, groot) require flash_attn and are
 # auto-skipped when dependencies are missing.
 ALL_POLICIES = [
     "act",
@@ -54,21 +54,22 @@ ALL_POLICIES = [
     "sac",
     "pi0",
     "pi05",
-    "pi0fast",
+    "pi0_fast",
     "groot",
 ]
 
 DATASET_REPO_ID = "lerobot/aloha_sim_insertion_human"
 
-# Policies that need flash_attn / lerobot[groot] extras
-_VLA_POLICIES = {"pi0", "pi05", "pi0fast", "groot"}
+# VLA policies that need smaller batch/episode counts for GPU memory
+_VLA_POLICIES = {"pi0", "pi05", "pi0_fast", "groot"}
 
-# Policies excluded from wrapper-vs-native equivalence tests due to
-# non-standard requirements that make manual native replay impractical:
+# Policies excluded from wrapper-vs-native equivalence tests:
+#   groot: hardcodes flash_attention_2 in eagle2_hg_model (upstream lerobot limitation)
 #   tdmpc: encoder expects [B,T,C,H,W] images + requires square images
 #   sac: MultiAdamConfig returns dict[str, Optimizer], not a single Optimizer
-# These are still tested via trainer.fit in test_lerobot_e2e.py.
-_EQUIVALENCE_SKIP_POLICIES = {"tdmpc", "sac"}
+#   pi05: QUANTILES normalization requires q01/q99 stats not present in aloha dataset
+#         (upstream lerobot dataset limitation, not a wrapper issue)
+_EQUIVALENCE_SKIP_POLICIES = {"groot", "tdmpc", "sac", "pi05"}
 
 
 class LossBatchCaptureCallback(Callback):
@@ -111,14 +112,8 @@ def aloha_dataset():
 
 
 def _skip_if_unsupported(policy_name: str) -> None:
-    """Skip policies excluded from equivalence tests or missing VLA deps."""
     if policy_name in _EQUIVALENCE_SKIP_POLICIES:
-        pytest.skip(f"{policy_name} excluded from equivalence tests (non-standard optimizer/data requirements)")
-    if policy_name in _VLA_POLICIES:
-        from lerobot.utils.import_utils import is_package_available
-
-        if not is_package_available("flash_attn"):
-            pytest.skip(f"{policy_name} requires flash_attn: uv pip install 'lerobot[groot]'")
+        pytest.skip(f"{policy_name} excluded from equivalence tests")
 
 
 def _to_loss_value(outputs: Any) -> float:
@@ -177,22 +172,28 @@ def _extract_grad_clip_norm(wrapper: LeRobotPolicy) -> float | None:
     return None
 
 
-def _make_wrapper_and_native(
-    policy_name: str,
-    dataset: Any,
-) -> tuple[LeRobotPolicy, torch.nn.Module, Any, float | None, torch.device]:
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    policy_kwargs: dict[str, Any] = {}
+def _get_policy_kwargs(policy_name: str) -> dict[str, Any]:
     if policy_name == "diffusion":
-        policy_kwargs = {"num_train_timesteps": 10, "num_inference_steps": 5}
-    elif policy_name == "groot":
-        policy_kwargs = {
+        return {"num_train_timesteps": 10, "num_inference_steps": 5}
+    if policy_name == "groot":
+        return {
             "tune_llm": False,
             "tune_visual": False,
             "tune_projector": True,
             "tune_diffusion_model": False,
         }
+    # VLA models require bfloat16 to fit in 48GB GPU memory during training
+    if policy_name in _VLA_POLICIES:
+        return {"dtype": "bfloat16"}
+    return {}
+
+
+def _make_wrapper_and_native(
+    policy_name: str,
+    dataset: Any,
+) -> tuple[LeRobotPolicy, torch.nn.Module, Any, float | None, torch.device]:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    policy_kwargs = _get_policy_kwargs(policy_name)
 
     wrapper = LeRobotPolicy.from_dataset(policy_name, dataset, **policy_kwargs)
     native = copy.deepcopy(wrapper.lerobot_policy)
@@ -205,17 +206,36 @@ def _make_wrapper_and_native(
     return wrapper, native, native_optimizer, grad_clip_norm, device
 
 
-def _run_trainer_capture_and_native_replay(
+def _make_native_from_state_dict(
     policy_name: str,
     dataset: Any,
+    initial_state_dict: dict[str, torch.Tensor],
+    device: torch.device,
+) -> torch.nn.Module:
+    """Create a fresh native LeRobot policy loaded with *initial_state_dict*.
+
+    This avoids ``copy.deepcopy`` on large VLA policies (4B+ params) which
+    either OOMs (two full-size copies on GPU) or fails outright for some
+    policy classes (e.g. PI05's lazy-init modules).
+    """
+    policy_kwargs = _get_policy_kwargs(policy_name)
+    tmp_wrapper = LeRobotPolicy.from_dataset(policy_name, dataset, **policy_kwargs)
+    native = tmp_wrapper.lerobot_policy
+    native.load_state_dict(initial_state_dict)
+    del tmp_wrapper
+    native = native.to(device)
+    native.train()
+    return native
+
+
+def _build_trainer(
     *,
     base_seed: int,
+    grad_clip_norm: float | None,
     fast_dev_run: int | bool = False,
     max_steps: int | None = None,
-) -> tuple[list[float], list[float], LeRobotPolicy, torch.nn.Module]:
-    wrapper, native, native_optimizer, grad_clip_norm, _device = _make_wrapper_and_native(policy_name, dataset)
-    datamodule = _make_datamodule(policy_name)
-
+    precision: str = "32-true",
+) -> tuple[Trainer, LossBatchCaptureCallback]:
     capture_callback = LossBatchCaptureCallback()
     seed_callback = SeedPerStepCallback(base_seed=base_seed)
 
@@ -225,6 +245,7 @@ def _run_trainer_capture_and_native_replay(
         "enable_progress_bar": False,
         "devices": 1,
         "deterministic": True,
+        "precision": precision,
         "callbacks": [seed_callback, capture_callback],
     }
     if grad_clip_norm is not None:
@@ -236,27 +257,150 @@ def _run_trainer_capture_and_native_replay(
     else:
         trainer = Trainer(max_steps=max_steps, **trainer_kwargs)
 
-    torch.manual_seed(base_seed)
-    trainer.fit(wrapper, datamodule=datamodule)
+    return trainer, capture_callback
 
-    wrapper_losses = [loss for _, loss in capture_callback.step_data]
+
+def _replay_batches_on_native(
+    native: torch.nn.Module,
+    native_optimizer: Any,
+    captured_steps: list[tuple[dict[str, Any], float]],
+    preprocessor: Any,
+    *,
+    base_seed: int,
+    grad_clip_norm: float | None,
+    use_autocast: bool = False,
+) -> list[float]:
     native_losses: list[float] = []
-
-    for step_idx, (captured_batch, _) in enumerate(capture_callback.step_data):
+    device_type = "cuda" if next(native.parameters()).is_cuda else "cpu"
+    for step_idx, (captured_batch, _) in enumerate(captured_steps):
         native_optimizer.zero_grad()
-
         torch.manual_seed(base_seed + step_idx)
-        preprocessed = wrapper._preprocessor(_clone_batch(captured_batch))
-        native_output = native(preprocessed)
+        preprocessed = preprocessor(_clone_batch(captured_batch))
+        if use_autocast:
+            with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
+                native_output = native(preprocessed)
+        else:
+            native_output = native(preprocessed)
         native_loss = native_output[0] if isinstance(native_output, tuple) else native_output
         native_loss.backward()
         if grad_clip_norm is not None:
             torch.nn.utils.clip_grad_norm_(native.parameters(), grad_clip_norm)
-
         native_optimizer.step()
         native_losses.append(float(native_loss.item()))
+    return native_losses
 
+
+def _run_vla_equivalence(
+    policy_name: str,
+    dataset: Any,
+    *,
+    base_seed: int,
+    fast_dev_run: int | bool = False,
+    max_steps: int | None = None,
+) -> tuple[list[float], list[float], LeRobotPolicy, torch.nn.Module]:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # 1. Create wrapper and snapshot initial weights on CPU.
+    policy_kwargs = _get_policy_kwargs(policy_name)
+    wrapper = LeRobotPolicy.from_dataset(policy_name, dataset, **policy_kwargs)
+    initial_state_dict = {k: v.cpu().clone() for k, v in wrapper.lerobot_policy.state_dict().items()}
+    grad_clip_norm = _extract_grad_clip_norm(wrapper)
+    config = wrapper._config
+
+    # 2. Train wrapper via Lightning Trainer and capture batches.
+    trainer, capture_callback = _build_trainer(
+        base_seed=base_seed,
+        grad_clip_norm=grad_clip_norm,
+        fast_dev_run=fast_dev_run,
+        max_steps=max_steps,
+        precision="bf16-mixed",
+    )
+    torch.manual_seed(base_seed)
+    trainer.fit(wrapper, datamodule=_make_datamodule(policy_name))
+    wrapper_losses = [loss for _, loss in capture_callback.step_data]
+    captured_steps = list(capture_callback.step_data)
+    preprocessor = wrapper._preprocessor
+
+    # Free GPU before loading native model.
+    wrapper.cpu()
+    del trainer
+    torch.cuda.empty_cache()
+
+    # 3. Build native model from saved initial weights (on GPU).
+    native = _make_native_from_state_dict(policy_name, dataset, initial_state_dict, device)
+    del initial_state_dict
+    torch.cuda.empty_cache()
+
+    optim_params = native.get_optim_params()
+    native_optimizer = config.get_optimizer_preset().build(optim_params)
+
+    # 4. Replay captured batches on native model.
+    native_losses = _replay_batches_on_native(
+        native,
+        native_optimizer,
+        captured_steps,
+        preprocessor,
+        base_seed=base_seed,
+        grad_clip_norm=grad_clip_norm,
+        use_autocast=True,
+    )
     return wrapper_losses, native_losses, wrapper, native
+
+
+def _run_standard_equivalence(
+    policy_name: str,
+    dataset: Any,
+    *,
+    base_seed: int,
+    fast_dev_run: int | bool = False,
+    max_steps: int | None = None,
+) -> tuple[list[float], list[float], LeRobotPolicy, torch.nn.Module]:
+    wrapper, native, native_optimizer, grad_clip_norm, _device = _make_wrapper_and_native(policy_name, dataset)
+
+    trainer, capture_callback = _build_trainer(
+        base_seed=base_seed,
+        grad_clip_norm=grad_clip_norm,
+        fast_dev_run=fast_dev_run,
+        max_steps=max_steps,
+    )
+    torch.manual_seed(base_seed)
+    trainer.fit(wrapper, datamodule=_make_datamodule(policy_name))
+
+    wrapper_losses = [loss for _, loss in capture_callback.step_data]
+    native_losses = _replay_batches_on_native(
+        native,
+        native_optimizer,
+        list(capture_callback.step_data),
+        wrapper._preprocessor,
+        base_seed=base_seed,
+        grad_clip_norm=grad_clip_norm,
+    )
+    return wrapper_losses, native_losses, wrapper, native
+
+
+def _run_trainer_capture_and_native_replay(
+    policy_name: str,
+    dataset: Any,
+    *,
+    base_seed: int,
+    fast_dev_run: int | bool = False,
+    max_steps: int | None = None,
+) -> tuple[list[float], list[float], LeRobotPolicy, torch.nn.Module]:
+    if policy_name in _VLA_POLICIES:
+        return _run_vla_equivalence(
+            policy_name,
+            dataset,
+            base_seed=base_seed,
+            fast_dev_run=fast_dev_run,
+            max_steps=max_steps,
+        )
+    return _run_standard_equivalence(
+        policy_name,
+        dataset,
+        base_seed=base_seed,
+        fast_dev_run=fast_dev_run,
+        max_steps=max_steps,
+    )
 
 
 def _assert_trajectories_match(
