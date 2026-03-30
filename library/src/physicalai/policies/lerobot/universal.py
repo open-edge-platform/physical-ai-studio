@@ -12,6 +12,9 @@ support, see the specific policy modules (e.g., ACT).
 
 from __future__ import annotations
 
+import logging
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import IO, TYPE_CHECKING, Any
 
 import torch
@@ -25,9 +28,10 @@ from physicalai.export.mixin_policy import CONFIG_KEY, DATASET_STATS_KEY, POLICY
 from physicalai.policies.base import Policy
 from physicalai.policies.lerobot.mixin import LeRobotFromConfig
 
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
     from lerobot.configs.types import FeatureType, PolicyFeature
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -203,6 +207,115 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             checkpoint[POLICY_NAME_KEY] = self.policy_name
             if self._dataset_stats is not None:
                 checkpoint[DATASET_STATS_KEY] = dataclass_to_dict(self._dataset_stats)
+
+    def save_pretrained(
+        self,
+        save_directory: str | Path,
+        *,
+        push_to_hub: bool = False,
+        repo_id: str | None = None,
+        private: bool | None = None,
+        token: str | bool | None = None,
+    ) -> str | None:
+        """Save policy in LeRobot-compatible format (config.json + model.safetensors).
+
+        The output directory is directly loadable by both LeRobot's
+        ``PreTrainedPolicy.from_pretrained()`` and physicalai's
+        ``LeRobotPolicy.from_pretrained()``, enabling full round-trip
+        compatibility between the two frameworks.
+
+        Args:
+            save_directory: Path to directory where the policy will be saved.
+            push_to_hub: Whether to push the saved model to the HuggingFace Hub.
+            repo_id: Repository ID on HuggingFace Hub (e.g., ``"username/my-policy"``).
+                Required if ``push_to_hub=True``. Defaults to the directory name.
+            private: Whether the Hub repository should be private.
+            token: HuggingFace authentication token.
+
+        Returns:
+            URL of the Hub commit if ``push_to_hub=True``, else ``None``.
+
+        Examples:
+            Save to local directory:
+
+                >>> policy = LeRobotPolicy.from_dataset("act", "lerobot/pusht")
+                >>> policy.save_pretrained("./my_act_model")
+
+            Save and push to Hub:
+
+                >>> policy.save_pretrained(
+                ...     "./my_act_model",
+                ...     push_to_hub=True,
+                ...     repo_id="username/act-pusht",
+                ... )
+        """
+        save_dir = Path(save_directory)
+        save_dir.mkdir(parents=True, exist_ok=True)
+        self.lerobot_policy._save_pretrained(save_dir)  # noqa: SLF001
+
+        if push_to_hub:
+            return self.push_to_hub(
+                repo_id=repo_id or Path(save_directory).name,
+                private=private,
+                token=token,
+            )
+        return None
+
+    def push_to_hub(
+        self,
+        repo_id: str,
+        *,
+        commit_message: str | None = None,
+        private: bool | None = None,
+        token: str | bool | None = None,
+        revision: str | None = None,
+    ) -> str:
+        """Push policy to the HuggingFace Hub in LeRobot-compatible format.
+
+        Saves the policy to a temporary directory using :meth:`save_pretrained`
+        and uploads the result via ``HfApi.upload_folder``.  The uploaded
+        artefacts are loadable by both LeRobot and physicalai.
+
+        Args:
+            repo_id: Repository ID on HuggingFace Hub (e.g., ``"username/my-policy"``).
+            commit_message: Custom commit message. Defaults to ``"Upload policy"``.
+            private: Whether the repository should be private.
+            token: HuggingFace authentication token.
+            revision: Branch to push to. Defaults to ``"main"``.
+
+        Returns:
+            URL of the commit on the HuggingFace Hub.
+
+        Examples:
+            Push a trained policy to the Hub:
+
+                >>> policy = LeRobotPolicy.from_dataset("act", "lerobot/pusht")
+                >>> url = policy.push_to_hub("username/act-pusht")
+                >>> print(url)
+        """
+        from huggingface_hub import HfApi  # noqa: PLC0415
+
+        api = HfApi(token=token)
+        repo_id = api.create_repo(repo_id=repo_id, private=private, exist_ok=True).repo_id
+
+        if commit_message is None:
+            commit_message = "Upload policy"
+
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            saved_path = Path(tmp) / repo_id
+            self.save_pretrained(saved_path)
+            result = api.upload_folder(
+                repo_id=repo_id,
+                repo_type="model",
+                folder_path=saved_path,
+                commit_message=commit_message,
+                revision=revision,
+                allow_patterns=["*.safetensors", "*.json", "*.yaml", "*.md"],
+                ignore_patterns=["*.tmp", "*.log"],
+            )
+
+        logger.info("Model pushed to %s", result)
+        return result
 
     @classmethod
     def load_from_checkpoint(
