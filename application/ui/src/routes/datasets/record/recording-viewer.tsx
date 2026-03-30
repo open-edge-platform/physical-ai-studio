@@ -12,7 +12,7 @@ import {
     ProgressCircle,
     StatusLight,
     Text,
-} from '@geti/ui';
+} from '@geti-ui/ui';
 
 import { useRobotControl } from '../../../features/robots/robot-control-provider';
 import { RobotControlView } from '../../../features/robots/robot-control/robot-control-view';

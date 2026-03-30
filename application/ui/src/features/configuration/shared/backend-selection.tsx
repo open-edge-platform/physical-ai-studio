@@ -1,4 +1,4 @@
-import { Item, Picker } from '@geti/ui';
+import { Item, Picker } from '@geti-ui/ui';
 
 interface BackendSelectionProps {
     backend: string;

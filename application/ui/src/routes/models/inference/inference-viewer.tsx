@@ -1,7 +1,18 @@
 import { useState } from 'react';
 
-import { Button, ButtonGroup, ComboBox, Flex, Heading, Item, Link, ProgressCircle, StatusLight, Text } from '@geti/ui';
-import { Back, Pause, Play } from '@geti/ui/icons';
+import {
+    Button,
+    ButtonGroup,
+    ComboBox,
+    Flex,
+    Heading,
+    Item,
+    Link,
+    ProgressCircle,
+    StatusLight,
+    Text,
+} from '@geti-ui/ui';
+import { Back, Pause, Play } from '@geti-ui/ui/icons';
 
 import { ErrorMessage } from '../../../components/error-page/error-page';
 import { useProjectId } from '../../../features/projects/use-project';

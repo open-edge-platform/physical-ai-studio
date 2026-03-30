@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useRef } from 'react';
 
-import { Content, Flex, Heading, IllustratedMessage, Loading, Text, View } from '@geti/ui';
+import { Content, Flex, Heading, IllustratedMessage, Loading, Text, View } from '@geti-ui/ui';
 import { DockviewApi, IDockviewPanelProps } from 'dockview';
 import { DockviewReact, DockviewReadyEvent, IDockviewReactProps } from 'dockview-react';
 

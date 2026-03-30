@@ -1,4 +1,4 @@
-import { Content, Flex, Heading, IllustratedMessage, Text, View } from '@geti/ui';
+import { Content, Flex, Heading, IllustratedMessage, Text, View } from '@geti-ui/ui';
 
 import { RobotViewer } from '../controller/robot-viewer';
 import { ReactComponent as RobotIllustration } from './../../../assets/illustrations/INTEL_08_NO-TESTS.svg';

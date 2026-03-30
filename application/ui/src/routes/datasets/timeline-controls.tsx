@@ -1,5 +1,5 @@
-import { ActionButton, Flex, Text } from '@geti/ui';
-import { Play, StepBackward, Close as Stop } from '@geti/ui/icons';
+import { ActionButton, Flex, Text } from '@geti-ui/ui';
+import { Play, StepBackward, Close as Stop } from '@geti-ui/ui/icons';
 
 import { toMMSS } from '../../utils';
 import { Player } from './use-player';

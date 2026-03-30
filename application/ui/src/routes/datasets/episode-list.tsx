@@ -1,4 +1,4 @@
-import { Checkbox, Flex, View, VirtualizedListLayout } from '@geti/ui';
+import { Checkbox, Flex, View, VirtualizedListLayout } from '@geti-ui/ui';
 import { clsx } from 'clsx';
 
 import { fetchClient } from '../../api/client';
