@@ -16,9 +16,12 @@ trajectories, however, remain within tight tolerances (rtol/atol=1e-5) and
 are the correct integration-level signal for wrapper correctness.
 
 Tests are structured in three tiers:
-    1. Fast-dev-run: Single step, verifies loss matches native.
-    2. Multi-step (10 steps): Per-step loss trajectories match.
-    3. Regression (50 steps): Loss decreases consistently, trajectories match.
+    1. Fast-dev-run: Single step, verifies loss matches native (all policies, CI).
+    2. Multi-step (10 steps): Per-step loss trajectories match (all policies, CI).
+    3. Regression (50 steps): Loss decreases consistently, trajectories match
+       (all policies, nightly/@slow).
+
+All target policies run in CI for tiers 1-2. Only tier 3 is @slow (nightly).
 """
 
 from __future__ import annotations
@@ -40,11 +43,32 @@ pytestmark = pytest.mark.skipif(
     reason="Requires lerobot",
 )
 
-CORE_POLICIES = ["act", "diffusion"]
-
-SLOW_POLICIES = ["vqbet", "tdmpc", "sac", "pi0", "pi05", "pi0fast", "groot"]
+# All target policies — run in CI for fast-dev-run and multi-step tests.
+# VLA policies (pi0, pi05, pi0fast, groot) require flash_attn and are
+# auto-skipped when dependencies are missing.
+ALL_POLICIES = [
+    "act",
+    "diffusion",
+    "vqbet",
+    "tdmpc",
+    "sac",
+    "pi0",
+    "pi05",
+    "pi0fast",
+    "groot",
+]
 
 DATASET_REPO_ID = "lerobot/aloha_sim_insertion_human"
+
+# Policies that need flash_attn / lerobot[groot] extras
+_VLA_POLICIES = {"pi0", "pi05", "pi0fast", "groot"}
+
+# Policies excluded from wrapper-vs-native equivalence tests due to
+# non-standard requirements that make manual native replay impractical:
+#   tdmpc: encoder expects [B,T,C,H,W] images + requires square images
+#   sac: MultiAdamConfig returns dict[str, Optimizer], not a single Optimizer
+# These are still tested via trainer.fit in test_lerobot_e2e.py.
+_EQUIVALENCE_SKIP_POLICIES = {"tdmpc", "sac"}
 
 
 class LossBatchCaptureCallback(Callback):
@@ -86,6 +110,17 @@ def aloha_dataset():
     return LeRobotDataset(DATASET_REPO_ID)
 
 
+def _skip_if_unsupported(policy_name: str) -> None:
+    """Skip policies excluded from equivalence tests or missing VLA deps."""
+    if policy_name in _EQUIVALENCE_SKIP_POLICIES:
+        pytest.skip(f"{policy_name} excluded from equivalence tests (non-standard optimizer/data requirements)")
+    if policy_name in _VLA_POLICIES:
+        from lerobot.utils.import_utils import is_package_available
+
+        if not is_package_available("flash_attn"):
+            pytest.skip(f"{policy_name} requires flash_attn: uv pip install 'lerobot[groot]'")
+
+
 def _to_loss_value(outputs: Any) -> float:
     if isinstance(outputs, dict):
         loss = outputs["loss"]
@@ -113,10 +148,12 @@ def _clone_batch(batch: dict[str, Any]) -> dict[str, Any]:
 
 def _make_datamodule(policy_name: str) -> LeRobotDataModule:
     delta_timestamps = get_delta_timestamps_from_policy(policy_name)
+    batch_size = 1 if policy_name in _VLA_POLICIES else 8
+    episodes = list(range(2)) if policy_name in _VLA_POLICIES else list(range(5))
     return LeRobotDataModule(
         repo_id=DATASET_REPO_ID,
-        train_batch_size=8,
-        episodes=list(range(5)),
+        train_batch_size=batch_size,
+        episodes=episodes,
         data_format="lerobot",
         delta_timestamps=delta_timestamps or None,
     )
@@ -143,20 +180,27 @@ def _extract_grad_clip_norm(wrapper: LeRobotPolicy) -> float | None:
 def _make_wrapper_and_native(
     policy_name: str,
     dataset: Any,
-) -> tuple[LeRobotPolicy, torch.nn.Module, torch.optim.Optimizer, float | None, torch.device]:
+) -> tuple[LeRobotPolicy, torch.nn.Module, Any, float | None, torch.device]:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     policy_kwargs: dict[str, Any] = {}
     if policy_name == "diffusion":
         policy_kwargs = {"num_train_timesteps": 10, "num_inference_steps": 5}
+    elif policy_name == "groot":
+        policy_kwargs = {
+            "tune_llm": False,
+            "tune_visual": False,
+            "tune_projector": True,
+            "tune_diffusion_model": False,
+        }
 
     wrapper = LeRobotPolicy.from_dataset(policy_name, dataset, **policy_kwargs)
-    # Deep-copy BEFORE any device moves to ensure identical starting weights
     native = copy.deepcopy(wrapper.lerobot_policy)
     native = native.to(device)
     native.train()
 
-    native_optimizer = wrapper._config.get_optimizer_preset().build(native.get_optim_params())
+    optim_params = native.get_optim_params()
+    native_optimizer = wrapper._config.get_optimizer_preset().build(optim_params)
     grad_clip_norm = _extract_grad_clip_norm(wrapper)
     return wrapper, native, native_optimizer, grad_clip_norm, device
 
@@ -200,6 +244,7 @@ def _run_trainer_capture_and_native_replay(
 
     for step_idx, (captured_batch, _) in enumerate(capture_callback.step_data):
         native_optimizer.zero_grad()
+
         torch.manual_seed(base_seed + step_idx)
         preprocessed = wrapper._preprocessor(_clone_batch(captured_batch))
         native_output = native(preprocessed)
@@ -207,6 +252,7 @@ def _run_trainer_capture_and_native_replay(
         native_loss.backward()
         if grad_clip_norm is not None:
             torch.nn.utils.clip_grad_norm_(native.parameters(), grad_clip_norm)
+
         native_optimizer.step()
         native_losses.append(float(native_loss.item()))
 
@@ -242,10 +288,17 @@ def _assert_loss_decreases(losses: list[float], policy_name: str, label: str) ->
     )
 
 
+# ---------------------------------------------------------------------------
+# Tier 1: Fast-dev-run — single step, all policies, CI
+# ---------------------------------------------------------------------------
+
+
 class TestFastDevRunEquivalence:
-    @pytest.fixture(params=CORE_POLICIES)
+    @pytest.fixture(params=ALL_POLICIES)
     def policy_name(self, request: pytest.FixtureRequest) -> str:
-        return str(request.param)
+        name = str(request.param)
+        _skip_if_unsupported(name)
+        return name
 
     def test_single_step_loss_matches(self, policy_name: str, aloha_dataset: Any) -> None:
         wrapper_losses, native_losses, _, _ = _run_trainer_capture_and_native_replay(
@@ -260,12 +313,19 @@ class TestFastDevRunEquivalence:
         _assert_trajectories_match(wrapper_losses, native_losses)
 
 
+# ---------------------------------------------------------------------------
+# Tier 2: Multi-step (10 steps) — all policies, CI
+# ---------------------------------------------------------------------------
+
+
 class TestMultiStepTrainerEquivalence:
     NUM_STEPS = 10
 
-    @pytest.fixture(params=CORE_POLICIES)
+    @pytest.fixture(params=ALL_POLICIES)
     def policy_name(self, request: pytest.FixtureRequest) -> str:
-        return str(request.param)
+        name = str(request.param)
+        _skip_if_unsupported(name)
+        return name
 
     def test_loss_trajectories_match(self, policy_name: str, aloha_dataset: Any) -> None:
         wrapper_losses, native_losses, _, _ = _run_trainer_capture_and_native_replay(
@@ -280,12 +340,20 @@ class TestMultiStepTrainerEquivalence:
         _assert_trajectories_match(wrapper_losses, native_losses)
 
 
+# ---------------------------------------------------------------------------
+# Tier 3: Regression (50 steps) — all policies, nightly/@slow
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.slow
 class TestRegressionTraining:
     NUM_STEPS = 50
 
-    @pytest.fixture(params=CORE_POLICIES)
+    @pytest.fixture(params=ALL_POLICIES)
     def policy_name(self, request: pytest.FixtureRequest) -> str:
-        return str(request.param)
+        name = str(request.param)
+        _skip_if_unsupported(name)
+        return name
 
     def test_loss_decreases(self, policy_name: str, aloha_dataset: Any) -> None:
         wrapper_losses, native_losses, _, _ = _run_trainer_capture_and_native_replay(
@@ -309,24 +377,3 @@ class TestRegressionTraining:
 
         assert len(wrapper_losses) == self.NUM_STEPS
         _assert_trajectories_match(wrapper_losses, native_losses, rtol=1e-3, atol=1e-3)
-
-
-@pytest.mark.slow
-class TestFastDevRunEquivalenceSlow(TestFastDevRunEquivalence):
-    @pytest.fixture(params=SLOW_POLICIES)
-    def policy_name(self, request: pytest.FixtureRequest) -> str:
-        return str(request.param)
-
-
-@pytest.mark.slow
-class TestMultiStepTrainerEquivalenceSlow(TestMultiStepTrainerEquivalence):
-    @pytest.fixture(params=SLOW_POLICIES)
-    def policy_name(self, request: pytest.FixtureRequest) -> str:
-        return str(request.param)
-
-
-@pytest.mark.slow
-class TestRegressionTrainingSlow(TestRegressionTraining):
-    @pytest.fixture(params=SLOW_POLICIES)
-    def policy_name(self, request: pytest.FixtureRequest) -> str:
-        return str(request.param)
