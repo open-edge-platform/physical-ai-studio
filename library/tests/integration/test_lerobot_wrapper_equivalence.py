@@ -67,9 +67,7 @@ _VLA_POLICIES = {"pi0", "pi05", "pi0_fast", "groot"}
 #   groot: hardcodes flash_attention_2 in eagle2_hg_model (upstream lerobot limitation)
 #   tdmpc: encoder expects [B,T,C,H,W] images + requires square images
 #   sac: MultiAdamConfig returns dict[str, Optimizer], not a single Optimizer
-#   pi05: QUANTILES normalization requires q01/q99 stats not present in aloha dataset
-#         (upstream lerobot dataset limitation, not a wrapper issue)
-_EQUIVALENCE_SKIP_POLICIES = {"groot", "tdmpc", "sac", "pi05"}
+_EQUIVALENCE_SKIP_POLICIES = {"groot", "tdmpc", "sac"}
 
 
 class LossBatchCaptureCallback(Callback):
@@ -104,11 +102,33 @@ class SeedPerStepCallback(Callback):
         self._step += 1
 
 
+def _ensure_quantile_stats(dataset: Any) -> None:
+    """Add approximate q01/q99 stats derived from min/max when missing.
+
+    PI05 uses QUANTILES normalization which requires q01 and q99 statistics.
+    Older datasets (e.g. aloha_sim_insertion_human) predate this feature.
+    For equivalence testing the exact quantile values don't matter — only
+    that wrapper and native receive identical normalization — so min/max
+    are a safe stand-in.
+    """
+    for feature_stats in dataset.meta.stats.values():
+        if "q01" in feature_stats:
+            return
+    for feature_stats in dataset.meta.stats.values():
+        if "min" in feature_stats and "q01" not in feature_stats:
+            min_val = feature_stats["min"]
+            max_val = feature_stats["max"]
+            feature_stats["q01"] = min_val.copy() if hasattr(min_val, "copy") else min_val
+            feature_stats["q99"] = max_val.copy() if hasattr(max_val, "copy") else max_val
+
+
 @pytest.fixture(scope="module")
 def aloha_dataset():
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-    return LeRobotDataset(DATASET_REPO_ID)
+    ds = LeRobotDataset(DATASET_REPO_ID)
+    _ensure_quantile_stats(ds)
+    return ds
 
 
 def _skip_if_unsupported(policy_name: str) -> None:
