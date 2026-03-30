@@ -11,7 +11,6 @@ FROM node:24-alpine3.22@sha256:4f33c7804fa7775b87875f512e25e515692210bfdeafd715e
 WORKDIR /home/app/web_ui/
 RUN apk add --no-cache git
 COPY --link ./application/ui/package.json ./
-RUN npm run clone-geti-ui-packages
 
 # Clone URDF files
 RUN npm run clone-so101
@@ -26,10 +25,10 @@ WORKDIR /home/app/web_ui/
 
 COPY --link application/ui/package.json ./
 COPY --link application/ui/package-lock.json ./
-COPY --from=ui-packages /home/app/web_ui/packages/ /home/app/web_ui/packages/
 COPY --from=ui-packages /home/app/web_ui/public/ /home/app/web_ui/public/
 RUN npm ci --audit=false --ignore-scripts
 
+COPY --link application/ui/tsconfig.base.json ./
 COPY --link application/ui/tsconfig.json ./
 COPY --link application/ui/rsbuild.config.ts ./
 COPY --link application/ui/src/ src/
