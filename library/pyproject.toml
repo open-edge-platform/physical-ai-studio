@@ -119,6 +119,7 @@ Repository = "https://github.com/open-edge-platform/physical-ai-studio.git"
 [dependency-groups]
 dev = [
     "mypy>=1.19.1",
+    "pyrefly>=0.18.0",
     "ruff>=0.14.14",
 ]
 
@@ -173,6 +174,16 @@ pytorch-triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
 [tool.mypy]
 ignore_missing_imports = true
 show_error_codes = true
+
+[tool.pyrefly]
+python-version = "3.12"
+search-path = ["src"]
+project-includes = ["src"]
+baseline = "pyrefly-baseline.json"
+project-excludes = [
+    ".venv/**",
+    "notebooks/**",
+]
 
 
 # ============================================================================ #

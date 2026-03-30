@@ -27,6 +27,12 @@ jobs:
         with:
           python-version-file: "./library/.python-version"
 
+      - &set-up-uv
+        name: Install uv
+        uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
+        with:
+          version: "0.10.4"
+
       - name: Run prek
         uses: j178/prek-action@0bb87d7f00b0c99306c8bcb8b8beba1eb581c037 # v1
         with:
@@ -47,10 +53,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
-        with:
-          version: "0.10.4"
+      - *set-up-uv
 
       - name: Verify lock file
         working-directory: library

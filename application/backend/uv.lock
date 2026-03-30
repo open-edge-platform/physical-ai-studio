@@ -3008,6 +3008,7 @@ provides-extras = ["cpu", "cu128", "xpu", "tests", "libero", "pi0", "groot", "sm
 [package.metadata.requires-dev]
 dev = [
     { name = "mypy", specifier = ">=1.19.1" },
+    { name = "pyrefly", specifier = ">=0.18.0" },
     { name = "ruff", specifier = ">=0.14.14" },
 ]
 
