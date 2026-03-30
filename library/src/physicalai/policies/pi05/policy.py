@@ -265,7 +265,7 @@ class Pi05(ExportablePolicyMixin, Policy):
 
         self._dataset_stats = dataset_stats
 
-    def _from_hf(  # noqa: PLR6301
+    def _from_hf(  # noqa: PLR6301, PLR0913
         self,
         pretrained_name_or_path: str | Path,
         *,
@@ -464,7 +464,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         self._dataset_stats = dataset_stats
         self.hparams["dataset_stats"] = dataset_stats
         if self.model is not None:
-            self.model._dataset_stats = dataset_stats
+            self.model.set_dataset_stats(dataset_stats)
 
     def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
         """Forward pass through the model.

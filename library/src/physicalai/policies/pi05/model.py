@@ -636,6 +636,10 @@ class Pi05Model(ExportableModelMixin, Model):
             self.sample_actions = torch.compile(self.sample_actions, mode=compile_mode)  # type: ignore[method-assign]
             self.forward = torch.compile(self.forward, mode=compile_mode)  # type: ignore[method-assign]
 
+    def set_dataset_stats(self, dataset_stats: dict) -> None:
+        """Update dataset statistics used for normalization."""
+        self._dataset_stats = dataset_stats
+
     @property
     def extra_export_args(self) -> dict:
         """Additional export arguments for model conversion.
@@ -1141,32 +1145,3 @@ class Pi05Model(ExportableModelMixin, Model):
         suffix_out = suffix_out[:, -self._chunk_size :]  # type: ignore[index]
         suffix_out = suffix_out.to(dtype=torch.float32)
         return self.action_out_proj(suffix_out)
-
-    @property
-    def reward_delta_indices(self) -> None:
-        """Return reward indices.
-
-        Currently returns `None` as rewards are not implemented.
-
-        Returns:
-            None
-        """
-        return None
-
-    @property
-    def action_delta_indices(self) -> list[int]:
-        """Get indices of actions relative to the current timestep.
-
-        Returns:
-            list[int]: A list of relative action indices.
-        """
-        return list(range(self._chunk_size))
-
-    @property
-    def observation_delta_indices(self) -> None:
-        """Get indices of observations relative to the current timestep.
-
-        Returns:
-            None
-        """
-        return None
