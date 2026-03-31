@@ -298,8 +298,9 @@ class SmolVLAModel(ExportableModelMixin, Model):
             {'output_names': ['action']}
         """
         extra_args: dict[str, ExportParameters] = {}
-        preproc_specs = [ComponentSpec(class_path="physicalai.inference.preprocessors.smolvla.ResizeSmolVLA",
-                                       init_args={"image_resolution": self._resize_imgs_with_padding}),]
+        preproc_specs = [
+            ComponentSpec(class_path="smolvla_resize", init_args={"image_resolution": self._resize_imgs_with_padding}),
+        ]
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
                 "output_names": ["action"],

@@ -104,7 +104,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         add_image_special_tokens: bool = False,  # Whether to use special image tokens around image features.
         attention_mode: str = "cross_attn",
         prefix_length: int = -1,
-        pad_language_to: str = "longest",  # "max_length"
+        pad_language_to: str = "max_length",  # "longest"
         num_expert_layers: int = -1,  # Less or equal to 0 is the default where the action expert has the same
         # number of layers of VLM. Otherwise, the expert have less layers.
         num_vlm_layers: int = 16,  # Number of layers used in the VLM (first num_vlm_layers layers)
