@@ -7,9 +7,12 @@ from __future__ import annotations
 
 import logging
 import math
+from typing import TYPE_CHECKING
 
-from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR
+
+if TYPE_CHECKING:
+    from torch.optim import Optimizer
 
 logger = logging.getLogger(__name__)
 

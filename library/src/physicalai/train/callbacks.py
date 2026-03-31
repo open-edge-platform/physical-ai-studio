@@ -23,21 +23,21 @@ class IterationTimer(Callback):
 
     def on_train_batch_start(
         self,
-        trainer: L.Trainer,
-        pl_module: L.LightningModule,
-        batch: object,
-        batch_idx: int,
+        _trainer: L.Trainer,
+        _pl_module: L.LightningModule,
+        _batch: object,
+        _batch_idx: int,
     ) -> None:
         """Record the batch start time."""
         self._start = time.perf_counter()
 
     def on_train_batch_end(
         self,
-        trainer: L.Trainer,
+        _trainer: L.Trainer,
         pl_module: L.LightningModule,
-        outputs: object,
-        batch: object,
-        batch_idx: int,
+        _outputs: object,
+        _batch: object,
+        _batch_idx: int,
     ) -> None:
         """Log elapsed time since batch start."""
         elapsed_s = time.perf_counter() - self._start
