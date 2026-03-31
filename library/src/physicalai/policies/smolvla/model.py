@@ -26,6 +26,7 @@ from physicalai.export.backends import (
     OpenVINOExportParameters,
     TorchExportParameters,
 )
+from physicalai.inference.manifest import ComponentSpec
 from physicalai.policies.base import Model
 
 if TYPE_CHECKING:
@@ -297,11 +298,13 @@ class SmolVLAModel(ExportableModelMixin, Model):
             {'output_names': ['action']}
         """
         extra_args: dict[str, ExportParameters] = {}
+        preproc_specs = [ComponentSpec(class_path="physicalai.inference.preprocessors.smolvla.ResizeSmolVLA",
+                                       init_args={"image_resolution": self._resize_imgs_with_padding}),]
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
                 "output_names": ["action"],
             },
-            preprocessing_type="smolvla",
+            preprocessors_specs=preproc_specs,
             export_tokenizer=True,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
@@ -309,7 +312,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
             compress_to_fp16=False,
             export_tokenizer=True,
             exporter_kwargs={},
-            preprocessing_type="smolvla",
+            preprocessors_specs=preproc_specs,
         )
         extra_args["torch"] = TorchExportParameters()
 
