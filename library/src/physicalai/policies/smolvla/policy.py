@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-import math
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -16,6 +15,7 @@ import torch
 from physicalai.data.observation import ACTION
 from physicalai.export import ExportablePolicyMixin, ExportBackend
 from physicalai.policies.base import Policy
+from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 from .config import SmolVLAConfig
@@ -372,28 +372,14 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             betas=self.config.optimizer_betas,
         )
 
-        warmup_steps = self.config.scheduler_warmup_steps
-        drop_steps = self.config.scheduler_decay_steps
-        decay_ratio = self.config.scheduler_decay_lr / self.config.optimizer_lr
-
-        def lr_lambda(step: int) -> float:
-            def linear_warmup_schedule(current_step: int) -> float:
-                if current_step <= 0:
-                    return 1 / (warmup_steps + 1)
-                frac = 1 - current_step / warmup_steps
-                return (1 / (warmup_steps + 1) - 1) * frac + 1
-
-            def cosine_decay_schedule(current_step: int) -> float:
-                step = min(current_step, drop_steps)
-                cosine_decay = 0.5 * (1 + math.cos(math.pi * step / drop_steps))
-                return (1 - decay_ratio) * cosine_decay + decay_ratio
-
-            if step < warmup_steps:
-                return linear_warmup_schedule(step)
-
-            return cosine_decay_schedule(step)
-
-        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+        num_decay_steps = self.config.scheduler_decay_steps
+        scheduler = cosine_decay_with_warmup_scheduler(
+            optimizer,
+            peak_lr=self.config.optimizer_lr,
+            decay_lr=self.config.scheduler_decay_lr,
+            num_warmup_steps=self.config.scheduler_warmup_steps,
+            num_decay_steps=num_decay_steps,
+        )
 
         return {
             "optimizer": optimizer,
