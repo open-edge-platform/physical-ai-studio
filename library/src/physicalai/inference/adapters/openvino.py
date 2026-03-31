@@ -8,13 +8,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+
 from physicalai.inference.adapters.base import RuntimeAdapter
-from physicalai.inference.constants import TASK, TOKENIZED_PROMPT_MASK, TOKENIZED_PROMPT
+from physicalai.inference.constants import TASK, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    import numpy as np
     import openvino
 
 
@@ -69,22 +70,26 @@ class OpenVINOAdapter(RuntimeAdapter):
         self.compiled_model = core.compile_model(model=model, device_name=self.device, config=self.config)
 
         # Cache input/output names
-        self._input_names = [input_node.any_name for input_node in self.compiled_model.inputs]
+        all_node_names = [input_node.get_names() for input_node in self.compiled_model.inputs]
+        # OV-specific workaround: input nodes may have multiple names (e.g. "input" and "12345"),
+        # and we want to clean auto-generated ones
+        self._input_names = [name for names in all_node_names for name in names if name and not name.isdigit()]
         self._output_names = [output_node.any_name for output_node in self.compiled_model.outputs]
 
     def load_tokenizer(self, tokenizer_path: Path) -> None:
-        """
-        Load and compile an OpenVINO tokenizer model from the specified file path.
+        """Load and compile an OpenVINO tokenizer model from the specified file path.
+
         This method reads a tokenizer model file and compiles it for inference on the
         configured device. The compiled tokenizer is stored as an instance attribute
         for later use.
+
         Args:
             tokenizer_path (Path): The file path to the tokenizer model.
+
         Raises:
             ImportError: If OpenVINO is not installed.
             FileNotFoundError: If the tokenizer file does not exist at the specified path.
         """
-
         try:
             import openvino as ov  # noqa: PLC0415
         except ImportError as e:

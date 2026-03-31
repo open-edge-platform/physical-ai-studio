@@ -122,11 +122,6 @@ class InferenceModel:
         model_path = self._get_model_path()
         self.adapter.load(model_path)
 
-        tokenizer_path = self._get_tokenizer_path()
-        if tokenizer_path is not None:
-            self.adapter.load_tokenizer(tokenizer_path)
-            self.preprocessors.append(LambdaPreprocessor(lambda inputs: self.adapter.tokenize(inputs)))
-
         self.runner: InferenceRunner = runner if runner is not None else get_runner(self.metadata)
 
         self.preprocessors: list[Preprocessor] = (
@@ -135,6 +130,11 @@ class InferenceModel:
         self.postprocessors: list[Postprocessor] = (
             postprocessors if postprocessors is not None else self._load_processors("postprocessors")
         )
+
+        tokenizer_path = self._get_tokenizer_path()
+        if tokenizer_path is not None:
+            self.adapter.load_tokenizer(tokenizer_path)
+            self.preprocessors.append(LambdaPreprocessor(lambda inputs: self.adapter.tokenize(inputs)))
 
         self.callbacks: list[Callback] = callbacks if callbacks is not None else []
 
@@ -501,10 +501,11 @@ class InferenceModel:
         }
 
         # Try backend-specific extensions first
-        for ext in extension_map[self.backend]:
-            files = list(self.export_dir.glob(f"tokenizer*{ext}"))
-            if files:
-                return files[0]
+        if self.backend in extension_map:
+            for ext in extension_map[self.backend]:
+                files = list(self.export_dir.glob(f"tokenizer*{ext}"))
+                if files:
+                    return files[0]
 
         # Fall back to any known extension
         for extensions in extension_map.values():
