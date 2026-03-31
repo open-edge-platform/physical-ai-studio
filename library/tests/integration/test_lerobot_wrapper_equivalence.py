@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """Integration tests for LeRobot wrapper numerical equivalence.
@@ -448,11 +448,9 @@ def _assert_loss_decreases(losses: list[float], policy_name: str, label: str) ->
     )
 
 
-# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------- #
 # Tier 1: Fast-dev-run — single step, all policies, CI
-# ---------------------------------------------------------------------------
-
-
+# ---------------------------------------------------------------------------- #
 class TestFastDevRunEquivalence:
     @pytest.fixture(params=ALL_POLICIES)
     def policy_name(self, request: pytest.FixtureRequest) -> str:
@@ -473,11 +471,9 @@ class TestFastDevRunEquivalence:
         _assert_trajectories_match(wrapper_losses, native_losses)
 
 
-# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------- #
 # Tier 2: Multi-step (10 steps) — all policies, CI
-# ---------------------------------------------------------------------------
-
-
+# ---------------------------------------------------------------------------- #
 class TestMultiStepTrainerEquivalence:
     NUM_STEPS = 10
 
@@ -500,11 +496,9 @@ class TestMultiStepTrainerEquivalence:
         _assert_trajectories_match(wrapper_losses, native_losses)
 
 
-# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------- #
 # Tier 3: Regression (50 steps) — all policies, nightly/@slow
-# ---------------------------------------------------------------------------
-
-
+# ---------------------------------------------------------------------------- #
 @pytest.mark.slow
 class TestRegressionTraining:
     NUM_STEPS = 50
