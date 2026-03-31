@@ -19,8 +19,8 @@ class TestIterationTimer:
         trainer = MagicMock(spec=L.Trainer)
         pl_module = MagicMock(spec=L.LightningModule)
 
-        callback.on_train_batch_start(trainer, pl_module, batch=None, batch_idx=0)
-        callback.on_train_batch_end(trainer, pl_module, outputs=None, batch=None, batch_idx=0)
+        callback.on_train_batch_start(trainer, pl_module, None, 0)
+        callback.on_train_batch_end(trainer, pl_module, None, None, 0)
 
         pl_module.log.assert_called_once()
         args, kwargs = pl_module.log.call_args
@@ -37,9 +37,9 @@ class TestIterationTimer:
         trainer = MagicMock(spec=L.Trainer)
         pl_module = MagicMock(spec=L.LightningModule)
 
-        callback.on_train_batch_start(trainer, pl_module, batch=None, batch_idx=0)
+        callback.on_train_batch_start(trainer, pl_module, None, 0)
         time.sleep(0.05)
-        callback.on_train_batch_end(trainer, pl_module, outputs=None, batch=None, batch_idx=0)
+        callback.on_train_batch_end(trainer, pl_module, None, None, 0)
 
         logged_time = pl_module.log.call_args[0][1]
         assert logged_time >= 0.04  # allow small timing tolerance
