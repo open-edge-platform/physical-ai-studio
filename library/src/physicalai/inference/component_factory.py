@@ -103,6 +103,7 @@ component_registry.register("action_chunking", "physicalai.inference.runners.Act
 # Postprocessors
 component_registry.register("smolvla_resize", "physicalai.inference.preprocessors.smolvla.ResizeSmolVLA")
 
+
 def instantiate_component(
     spec: ComponentSpec,
     *,

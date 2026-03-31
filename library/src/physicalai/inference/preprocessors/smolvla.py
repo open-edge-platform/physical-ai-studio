@@ -1,15 +1,14 @@
-
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """Preprocessor that resizes images for SmolVLA."""
 
-
 from __future__ import annotations
 
-from .base import Preprocessor
 import numpy as np
 from PIL import Image
+
+from .base import Preprocessor
 
 
 class ResizeSmolVLA(Preprocessor):
@@ -27,11 +26,11 @@ class ResizeSmolVLA(Preprocessor):
         resized_images = []
 
         for img in images:
-            img = self._resize_with_pad(img, *self.image_resolution, pad_value=0)
-            img = img * 2.0 - 1.0
-            bsize = img.shape[0]
+            resized_img = self._resize_with_pad(img, *self.image_resolution, pad_value=0)
+            resized_img = resized_img * 2.0 - 1.0
+            bsize = resized_img.shape[0]
             mask = np.ones(bsize, dtype=np.bool_)
-            resized_images.append(img)
+            resized_images.append(resized_img)
             img_masks.append(mask)
 
         inputs["images"] = np.stack(resized_images, axis=0)
