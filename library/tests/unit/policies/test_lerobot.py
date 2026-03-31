@@ -11,7 +11,6 @@ from typing import Any
 import pytest
 import torch
 
-
 # Skip all tests if lerobot not installed
 pytest.importorskip("lerobot", reason="LeRobot not installed")
 
@@ -532,8 +531,8 @@ class TestLeRobotPolicySavePretrained:
         call_kwargs = mock_api_instance.upload_folder.call_args[1]
         assert call_kwargs["commit_message"] == "My custom message"
 
-    def test_save_pretrained_with_push_calls_push_to_hub(self, pusht_act_policy, tmp_path):
-        """Test save_pretrained with push_to_hub=True delegates to push_to_hub."""
+    def test_save_pretrained_with_repo_id_pushes_to_hub(self, pusht_act_policy, tmp_path):
+        """Test save_pretrained with repo_id delegates to push_to_hub."""
         from unittest.mock import MagicMock, patch
 
         mock_api_instance = MagicMock()
@@ -544,7 +543,6 @@ class TestLeRobotPolicySavePretrained:
         with patch("huggingface_hub.HfApi", return_value=mock_api_instance):
             result = pusht_act_policy.save_pretrained(
                 save_dir,
-                push_to_hub=True,
                 repo_id="user/my-policy",
                 token="fake-token",
             )
@@ -594,7 +592,7 @@ class TestCheckpointConverter:
     @pytest.fixture()
     def sample_lightning_state(self, sample_lerobot_state):
         """Synthetic Lightning-format state dict (_lerobot_policy.model.* keys)."""
-        from physicalai.policies.lerobot.converter import _LEROBOT_PREFIX
+        from physicalai.policies.lerobot.utils.checkpoint_converter import _LEROBOT_PREFIX
 
         return {_LEROBOT_PREFIX + k: v for k, v in sample_lerobot_state.items()}
 
@@ -632,7 +630,7 @@ class TestCheckpointConverter:
 
     def test_lightning_to_lerobot_creates_files(self, lightning_checkpoint, tmp_path):
         """Converted output directory contains config.json and model.safetensors."""
-        from physicalai.policies.lerobot.converter import lightning_to_lerobot
+        from physicalai.policies.lerobot.utils.checkpoint_converter import lightning_to_lerobot
 
         out_dir = tmp_path / "converted"
         result = lightning_to_lerobot(lightning_checkpoint, out_dir)
@@ -645,7 +643,7 @@ class TestCheckpointConverter:
         """Extracted config.json matches the original config dict."""
         import json
 
-        from physicalai.policies.lerobot.converter import lightning_to_lerobot
+        from physicalai.policies.lerobot.utils.checkpoint_converter import lightning_to_lerobot
 
         out_dir = tmp_path / "converted"
         lightning_to_lerobot(lightning_checkpoint, out_dir)
@@ -659,7 +657,7 @@ class TestCheckpointConverter:
         """Weights have _lerobot_policy. prefix stripped to match LeRobot format."""
         from safetensors.torch import load_file
 
-        from physicalai.policies.lerobot.converter import lightning_to_lerobot
+        from physicalai.policies.lerobot.utils.checkpoint_converter import lightning_to_lerobot
 
         out_dir = tmp_path / "converted"
         lightning_to_lerobot(lightning_checkpoint, out_dir)
@@ -672,7 +670,7 @@ class TestCheckpointConverter:
 
     def test_lightning_to_lerobot_missing_config_raises(self, tmp_path):
         """KeyError when checkpoint lacks CONFIG_KEY."""
-        from physicalai.policies.lerobot.converter import lightning_to_lerobot
+        from physicalai.policies.lerobot.utils.checkpoint_converter import lightning_to_lerobot
 
         ckpt_path = tmp_path / "bad.ckpt"
         torch.save({"state_dict": {}}, str(ckpt_path))
@@ -682,7 +680,7 @@ class TestCheckpointConverter:
 
     def test_lightning_to_lerobot_creates_output_dir(self, lightning_checkpoint, tmp_path):
         """Output directory is created if it does not exist."""
-        from physicalai.policies.lerobot.converter import lightning_to_lerobot
+        from physicalai.policies.lerobot.utils.checkpoint_converter import lightning_to_lerobot
 
         out_dir = tmp_path / "a" / "b" / "c"
         lightning_to_lerobot(lightning_checkpoint, out_dir)
@@ -696,7 +694,7 @@ class TestCheckpointConverter:
 
     def test_lerobot_to_lightning_creates_ckpt(self, lerobot_dir, tmp_path):
         """Converted checkpoint file exists and is loadable."""
-        from physicalai.policies.lerobot.converter import lerobot_to_lightning
+        from physicalai.policies.lerobot.utils.checkpoint_converter import lerobot_to_lightning
 
         ckpt_path = tmp_path / "converted.ckpt"
         result = lerobot_to_lightning(lerobot_dir, ckpt_path)
@@ -709,7 +707,7 @@ class TestCheckpointConverter:
 
     def test_lerobot_to_lightning_adds_prefix(self, lerobot_dir, sample_lerobot_state, tmp_path):
         """State dict keys have _lerobot_policy. prefix added."""
-        from physicalai.policies.lerobot.converter import _LEROBOT_PREFIX, lerobot_to_lightning
+        from physicalai.policies.lerobot.utils.checkpoint_converter import _LEROBOT_PREFIX, lerobot_to_lightning
 
         ckpt_path = tmp_path / "converted.ckpt"
         lerobot_to_lightning(lerobot_dir, ckpt_path)
@@ -726,7 +724,7 @@ class TestCheckpointConverter:
     def test_lerobot_to_lightning_stores_config_and_policy_name(self, lerobot_dir, sample_config, tmp_path):
         """Checkpoint contains CONFIG_KEY and POLICY_NAME_KEY."""
         from physicalai.export.mixin_export import CONFIG_KEY, POLICY_NAME_KEY
-        from physicalai.policies.lerobot.converter import lerobot_to_lightning
+        from physicalai.policies.lerobot.utils.checkpoint_converter import lerobot_to_lightning
 
         ckpt_path = tmp_path / "converted.ckpt"
         lerobot_to_lightning(lerobot_dir, ckpt_path)
@@ -739,7 +737,7 @@ class TestCheckpointConverter:
     def test_lerobot_to_lightning_explicit_policy_name(self, lerobot_dir, tmp_path):
         """Explicit policy_name overrides config['type']."""
         from physicalai.export.mixin_export import POLICY_NAME_KEY
-        from physicalai.policies.lerobot.converter import lerobot_to_lightning
+        from physicalai.policies.lerobot.utils.checkpoint_converter import lerobot_to_lightning
 
         ckpt_path = tmp_path / "converted.ckpt"
         lerobot_to_lightning(lerobot_dir, ckpt_path, policy_name="diffusion")
@@ -749,7 +747,7 @@ class TestCheckpointConverter:
 
     def test_lerobot_to_lightning_missing_config_raises(self, tmp_path):
         """FileNotFoundError when config.json is missing."""
-        from physicalai.policies.lerobot.converter import lerobot_to_lightning
+        from physicalai.policies.lerobot.utils.checkpoint_converter import lerobot_to_lightning
 
         empty_dir = tmp_path / "empty"
         empty_dir.mkdir()
@@ -761,7 +759,7 @@ class TestCheckpointConverter:
         """FileNotFoundError when model.safetensors is missing."""
         import json
 
-        from physicalai.policies.lerobot.converter import lerobot_to_lightning
+        from physicalai.policies.lerobot.utils.checkpoint_converter import lerobot_to_lightning
 
         dir_no_weights = tmp_path / "no_weights"
         dir_no_weights.mkdir()
@@ -777,7 +775,7 @@ class TestCheckpointConverter:
 
         from safetensors.torch import save_file
 
-        from physicalai.policies.lerobot.converter import lerobot_to_lightning
+        from physicalai.policies.lerobot.utils.checkpoint_converter import lerobot_to_lightning
 
         no_type_dir = tmp_path / "no_type"
         no_type_dir.mkdir()
@@ -790,7 +788,7 @@ class TestCheckpointConverter:
 
     def test_lerobot_to_lightning_creates_parent_dirs(self, lerobot_dir, tmp_path):
         """Output parent directories are created if they do not exist."""
-        from physicalai.policies.lerobot.converter import lerobot_to_lightning
+        from physicalai.policies.lerobot.utils.checkpoint_converter import lerobot_to_lightning
 
         ckpt_path = tmp_path / "a" / "b" / "model.ckpt"
         lerobot_to_lightning(lerobot_dir, ckpt_path)
@@ -803,7 +801,7 @@ class TestCheckpointConverter:
 
     def test_roundtrip_lightning_lerobot_lightning(self, lightning_checkpoint, sample_lightning_state, tmp_path):
         """Lightning -> LeRobot -> Lightning preserves all weights exactly."""
-        from physicalai.policies.lerobot.converter import lightning_to_lerobot, lerobot_to_lightning
+        from physicalai.policies.lerobot.utils.checkpoint_converter import lerobot_to_lightning, lightning_to_lerobot
 
         lr_dir = tmp_path / "lerobot_intermediate"
         lightning_to_lerobot(lightning_checkpoint, lr_dir)
@@ -825,7 +823,7 @@ class TestCheckpointConverter:
         """LeRobot -> Lightning -> LeRobot preserves all weights exactly."""
         from safetensors.torch import load_file
 
-        from physicalai.policies.lerobot.converter import lightning_to_lerobot, lerobot_to_lightning
+        from physicalai.policies.lerobot.utils.checkpoint_converter import lerobot_to_lightning, lightning_to_lerobot
 
         ckpt_path = tmp_path / "intermediate.ckpt"
         lerobot_to_lightning(lerobot_dir, ckpt_path)
@@ -845,7 +843,7 @@ class TestCheckpointConverter:
 
     def test_roundtrip_real_act_policy(self, pusht_act_policy, tmp_path):
         """Round-trip a real ACT wrapper through save_pretrained -> lerobot_to_lightning -> load."""
-        from physicalai.policies.lerobot.converter import _LEROBOT_PREFIX, lerobot_to_lightning
+        from physicalai.policies.lerobot.utils.checkpoint_converter import _LEROBOT_PREFIX, lerobot_to_lightning
 
         # Step 1: save_pretrained produces LeRobot dir
         lr_dir = tmp_path / "act_lerobot"
@@ -878,7 +876,7 @@ class TestCheckpointConverter:
 
     def test_strip_prefix_filters_correctly(self):
         """_strip_prefix only keeps keys with the given prefix and strips it."""
-        from physicalai.policies.lerobot.converter import _strip_prefix
+        from physicalai.policies.lerobot.utils.checkpoint_converter import _strip_prefix
 
         state = {
             "_lerobot_policy.a": torch.tensor(1.0),
@@ -894,7 +892,7 @@ class TestCheckpointConverter:
 
     def test_add_prefix_adds_to_all_keys(self):
         """_add_prefix prepends the prefix to every key."""
-        from physicalai.policies.lerobot.converter import _add_prefix
+        from physicalai.policies.lerobot.utils.checkpoint_converter import _add_prefix
 
         state = {
             "a": torch.tensor(1.0),
@@ -906,14 +904,14 @@ class TestCheckpointConverter:
 
     def test_strip_prefix_empty_input(self):
         """_strip_prefix returns empty dict for empty input."""
-        from physicalai.policies.lerobot.converter import _strip_prefix
+        from physicalai.policies.lerobot.utils.checkpoint_converter import _strip_prefix
 
         result = _strip_prefix({}, "_lerobot_policy.")
         assert result == {}
 
     def test_add_prefix_empty_input(self):
         """_add_prefix returns empty dict for empty input."""
-        from physicalai.policies.lerobot.converter import _add_prefix
+        from physicalai.policies.lerobot.utils.checkpoint_converter import _add_prefix
 
         result = _add_prefix({}, "_lerobot_policy.")
         assert result == {}

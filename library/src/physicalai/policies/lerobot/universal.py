@@ -212,7 +212,6 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         self,
         save_directory: str | Path,
         *,
-        push_to_hub: bool = False,
         repo_id: str | None = None,
         private: bool | None = None,
         token: str | bool | None = None,
@@ -224,16 +223,18 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         ``LeRobotPolicy.from_pretrained()``, enabling full round-trip
         compatibility between the two frameworks.
 
+        If ``repo_id`` is provided the model is automatically pushed to the
+        HuggingFace Hub after saving locally.
+
         Args:
             save_directory: Path to directory where the policy will be saved.
-            push_to_hub: Whether to push the saved model to the HuggingFace Hub.
             repo_id: Repository ID on HuggingFace Hub (e.g., ``"username/my-policy"``).
-                Required if ``push_to_hub=True``. Defaults to the directory name.
+                When provided, the model is pushed to the Hub after saving.
             private: Whether the Hub repository should be private.
             token: HuggingFace authentication token.
 
         Returns:
-            URL of the Hub commit if ``push_to_hub=True``, else ``None``.
+            URL of the Hub commit if pushed, else ``None``.
 
         Examples:
             Save to local directory:
@@ -245,7 +246,6 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
 
                 >>> policy.save_pretrained(
                 ...     "./my_act_model",
-                ...     push_to_hub=True,
                 ...     repo_id="username/act-pusht",
                 ... )
         """
@@ -253,9 +253,9 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         save_dir.mkdir(parents=True, exist_ok=True)
         self.lerobot_policy._save_pretrained(save_dir)  # noqa: SLF001
 
-        if push_to_hub:
+        if repo_id is not None:
             return self.push_to_hub(
-                repo_id=repo_id or Path(save_directory).name,
+                repo_id=repo_id,
                 private=private,
                 token=token,
             )

@@ -100,13 +100,26 @@ Examples:
 from lightning_utilities.core.imports import module_available
 
 from physicalai.policies.lerobot.act import ACT
-from physicalai.policies.lerobot.converter import lerobot_to_lightning, lightning_to_lerobot
 from physicalai.policies.lerobot.diffusion import Diffusion
 from physicalai.policies.lerobot.groot import Groot
 from physicalai.policies.lerobot.smolvla import SmolVLA
 from physicalai.policies.lerobot.universal import LeRobotPolicy
+from physicalai.policies.lerobot.utils.checkpoint_converter import lerobot_to_lightning, lightning_to_lerobot
 
 LEROBOT_AVAILABLE = module_available("lerobot")
+
+SUPPORTED_POLICIES: tuple[str, ...] = (
+    "act",
+    "diffusion",
+    "groot",
+    "pi0",
+    "pi05",
+    "pi0_fast",
+    "sac",
+    "smolvla",
+    "tdmpc",
+    "vqbet",
+)
 
 
 # Convenience wrapper classes for universal policies
@@ -181,6 +194,7 @@ __all__ = [
     "PI0",
     "PI05",
     "SAC",
+    "SUPPORTED_POLICIES",
     "TDMPC",
     "Diffusion",
     "Groot",
@@ -298,18 +312,5 @@ def list_available_policies() -> list[str]:
         >>> print(f"Available policies: {policies}")
     """
     if LEROBOT_AVAILABLE:
-        return [
-            # Explicit wrappers
-            "ACT",
-            "Diffusion",
-            "smolvla",
-            # Universal wrapper (all LeRobot policies)
-            "groot",
-            "pi0",
-            "pi05",
-            "pi0_fast",
-            "sac",
-            "tdmpc",
-            "vqbet",
-        ]
+        return list(SUPPORTED_POLICIES)
     return []

@@ -35,7 +35,7 @@ from lightning.pytorch.callbacks import Callback
 
 from physicalai.data import LeRobotDataModule
 from physicalai.data.lerobot import get_delta_timestamps_from_policy
-from physicalai.policies.lerobot import LeRobotPolicy
+from physicalai.policies.lerobot import SUPPORTED_POLICIES, LeRobotPolicy
 from physicalai.train import Trainer
 
 pytest.importorskip("lerobot", reason="LeRobot not installed")
@@ -43,17 +43,7 @@ pytest.importorskip("lerobot", reason="LeRobot not installed")
 # All target policies — run in CI for fast-dev-run and multi-step tests.
 # VLA policies (pi0, pi05, pi0_fast, groot) require flash_attn and are
 # auto-skipped when dependencies are missing.
-ALL_POLICIES = [
-    "act",
-    "diffusion",
-    "vqbet",
-    "tdmpc",
-    "sac",
-    "pi0",
-    "pi05",
-    "pi0_fast",
-    "groot",
-]
+ALL_POLICIES = list(SUPPORTED_POLICIES)
 
 DATASET_REPO_ID = "lerobot/aloha_sim_insertion_human"
 
