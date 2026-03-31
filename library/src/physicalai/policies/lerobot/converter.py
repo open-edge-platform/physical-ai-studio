@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """Checkpoint converter between Lightning and LeRobot safetensors formats."""
@@ -17,7 +17,6 @@ from physicalai.export.mixin_export import CONFIG_KEY, POLICY_NAME_KEY
 logger = logging.getLogger(__name__)
 
 _LEROBOT_PREFIX = "_lerobot_policy."
-_MODEL_PREFIX = "model."
 
 
 def lightning_to_lerobot(
@@ -140,9 +139,14 @@ def lerobot_to_lightning(
 
 def _strip_prefix(state_dict: dict[str, torch.Tensor], prefix: str) -> dict[str, torch.Tensor]:
     result: dict[str, torch.Tensor] = OrderedDict()
+    dropped: list[str] = []
     for key, value in state_dict.items():
         if key.startswith(prefix):
             result[key[len(prefix) :]] = value
+        else:
+            dropped.append(key)
+    if dropped:
+        logger.warning("Dropped %d key(s) without prefix %r: %s", len(dropped), prefix, dropped[:5])
     return result
 
 

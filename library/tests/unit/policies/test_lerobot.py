@@ -13,10 +13,7 @@ import torch
 
 
 # Skip all tests if lerobot not installed
-pytestmark = pytest.mark.skipif(
-    not pytest.importorskip("lerobot", reason="LeRobot not installed"),
-    reason="Requires lerobot",
-)
+pytest.importorskip("lerobot", reason="LeRobot not installed")
 
 
 # Module-level fixtures for expensive operations (shared across all tests)
@@ -1230,9 +1227,10 @@ class TestTrainingNumericalEquivalence:
     def test_wrapper_and_direct_gradient_match(self, training_policy_and_batch):
         policy, batch, _ = training_policy_and_batch
 
-        # Clone batch before each preprocessor call to avoid in-place mutation
+        # Clone batch before each call to avoid in-place mutation
         preprocessed_a = policy._preprocessor(_clone_batch(batch))
 
+        # --- Direct path: call inner LeRobot policy on preprocessed data ---
         policy.zero_grad()
         torch.manual_seed(99)
         direct_loss, _ = policy.lerobot_policy(preprocessed_a)
@@ -1243,11 +1241,10 @@ class TestTrainingNumericalEquivalence:
             if p.requires_grad and p.grad is not None
         }
 
-        preprocessed_b = policy._preprocessor(_clone_batch(batch))
-
+        # --- Wrapper path: call policy(batch) which preprocesses internally ---
         policy.zero_grad()
         torch.manual_seed(99)
-        wrapper_loss, _ = policy.lerobot_policy(preprocessed_b)
+        wrapper_loss, _ = policy(_clone_batch(batch))
         wrapper_loss.backward()
         wrapper_grads = {
             n: p.grad.clone()

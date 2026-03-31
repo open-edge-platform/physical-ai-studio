@@ -38,10 +38,7 @@ from physicalai.data.lerobot import get_delta_timestamps_from_policy
 from physicalai.policies.lerobot import LeRobotPolicy
 from physicalai.train import Trainer
 
-pytestmark = pytest.mark.skipif(
-    not pytest.importorskip("lerobot", reason="LeRobot not installed"),
-    reason="Requires lerobot",
-)
+pytest.importorskip("lerobot", reason="LeRobot not installed")
 
 # All target policies — run in CI for fast-dev-run and multi-step tests.
 # VLA policies (pi0, pi05, pi0_fast, groot) require flash_attn and are
@@ -111,9 +108,8 @@ def _ensure_quantile_stats(dataset: Any) -> None:
     that wrapper and native receive identical normalization — so min/max
     are a safe stand-in.
     """
-    for feature_stats in dataset.meta.stats.values():
-        if "q01" in feature_stats:
-            return
+    if all("q01" in s for s in dataset.meta.stats.values()):
+        return
     for feature_stats in dataset.meta.stats.values():
         if "min" in feature_stats and "q01" not in feature_stats:
             min_val = feature_stats["min"]
