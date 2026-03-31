@@ -12,7 +12,7 @@ import {
     Text,
     View,
     Well,
-} from '@geti/ui';
+} from '@geti-ui/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import useWebSocket from 'react-use-websocket';
 

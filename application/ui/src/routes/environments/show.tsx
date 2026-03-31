@@ -1,4 +1,4 @@
-import { Button, Flex, View } from '@geti/ui';
+import { Button, Flex, View } from '@geti-ui/ui';
 
 import { useProjectId } from '../../features/projects/use-project';
 import { Preview } from '../../features/robots/environment-form/preview';

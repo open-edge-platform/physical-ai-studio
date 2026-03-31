@@ -13,8 +13,8 @@ import {
     Loading,
     Text,
     View,
-} from '@geti/ui';
-import { Add, Delete } from '@geti/ui/icons';
+} from '@geti-ui/ui';
+import { Add, Delete } from '@geti-ui/ui/icons';
 import { useQuery } from '@tanstack/react-query';
 
 import { SchemaEpisode } from '../../api/openapi-spec';

@@ -1,5 +1,5 @@
-import { Button, Divider, Flex, Form, Heading, Icon, Text, TextField, View } from '@geti/ui';
-import { ChevronLeft } from '@geti/ui/icons';
+import { Button, Divider, Flex, Form, Heading, Icon, Text, TextField, View } from '@geti-ui/ui';
+import { ChevronLeft } from '@geti-ui/ui/icons';
 
 import { useProjectId } from '../../../features/projects/use-project';
 import { paths } from '../../../router';

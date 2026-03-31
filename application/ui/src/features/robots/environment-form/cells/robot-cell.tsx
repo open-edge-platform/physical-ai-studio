@@ -1,4 +1,4 @@
-import { View } from '@geti/ui';
+import { View } from '@geti-ui/ui';
 
 import { $api } from '../../../../api/client';
 import { useProjectId } from '../../../projects/use-project';

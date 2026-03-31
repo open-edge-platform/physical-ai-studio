@@ -1,5 +1,5 @@
 import { Badge } from '@adobe/react-spectrum';
-import { Flex } from '@geti/ui';
+import { Flex } from '@geti-ui/ui';
 
 import classes from './split-badge.module.scss';
 

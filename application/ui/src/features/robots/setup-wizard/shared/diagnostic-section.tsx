@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-import { Disclosure, DisclosurePanel, DisclosureTitle, Flex, Text } from '@geti/ui';
+import { Disclosure, DisclosurePanel, DisclosureTitle, Flex, Text } from '@geti-ui/ui';
 
 import { StatusBadge, type StatusBadgeVariant } from './status-badge';
 

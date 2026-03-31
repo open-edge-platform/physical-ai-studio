@@ -1,4 +1,4 @@
-import { View } from '@geti/ui';
+import { View } from '@geti-ui/ui';
 
 import { SetupWizardContent } from '../../features/robots/setup-wizard/so101/setup-wizard';
 import { SetupWizardProvider } from '../../features/robots/setup-wizard/so101/wizard-provider';

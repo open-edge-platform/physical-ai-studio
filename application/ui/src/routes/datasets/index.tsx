@@ -13,8 +13,8 @@ import {
     Tabs,
     Text,
     View,
-} from '@geti/ui';
-import { Add } from '@geti/ui/icons';
+} from '@geti-ui/ui';
+import { Add } from '@geti-ui/ui/icons';
 import { useNavigate, useParams } from 'react-router';
 
 import { SchemaDatasetOutput } from '../../api/openapi-spec';

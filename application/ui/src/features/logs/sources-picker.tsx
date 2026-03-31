@@ -3,7 +3,7 @@
 
 import { Dispatch, SetStateAction, useMemo } from 'react';
 
-import { Item, Picker, Section } from '@geti/ui';
+import { Item, Picker, Section } from '@geti-ui/ui';
 import { orderBy } from 'lodash-es';
 
 import { $api } from '../../api/client';

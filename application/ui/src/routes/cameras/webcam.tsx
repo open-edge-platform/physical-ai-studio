@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { Button, Flex, Grid, Icon, Loading, minmax, repeat, Text, toast, View } from '@geti/ui';
-import { Play, Close as Stop } from '@geti/ui/icons';
+import { Button, Flex, Grid, Icon, Loading, minmax, repeat, Text, toast, View } from '@geti-ui/ui';
+import { Play, Close as Stop } from '@geti-ui/ui/icons';
 import { useSuspenseQuery } from '@tanstack/react-query';
 
 import classes from './camera.module.scss';
@@ -34,7 +34,7 @@ const WebCamView = ({ device }: { device: MediaDeviceInfo }) => {
             videoEl.playsInline = true;
             setStatus('connected');
         } catch (error) {
-            toast({ message: `Failed to connect to camera: ${error}`, type: 'error' });
+            toast.negative(`Failed to connect to camera: ${error}`);
             setStatus('idle');
         }
     };

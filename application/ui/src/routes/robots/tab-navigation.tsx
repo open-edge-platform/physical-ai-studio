@@ -1,4 +1,4 @@
-import { Flex, Item, TabList, Tabs, View } from '@geti/ui';
+import { Flex, Item, TabList, Tabs, View } from '@geti-ui/ui';
 import { useLocation } from 'react-router-dom';
 
 import { useProjectId } from '../../features/projects/use-project';
