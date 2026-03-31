@@ -5,9 +5,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from physicalai.inference.adapters.base import RuntimeAdapter
+from physicalai.inference.constants import TASK, TOKENIZED_PROMPT_MASK, TOKENIZED_PROMPT
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -37,6 +39,7 @@ class OpenVINOAdapter(RuntimeAdapter):
         """
         super().__init__(device, **kwargs)
         self.compiled_model: openvino.CompiledModel | None = None
+        self.compiled_tokenizer: openvino.CompiledModel | None = None
         self._input_names: list[str] = []
         self._output_names: list[str] = []
 
@@ -69,6 +72,33 @@ class OpenVINOAdapter(RuntimeAdapter):
         self._input_names = [input_node.any_name for input_node in self.compiled_model.inputs]
         self._output_names = [output_node.any_name for output_node in self.compiled_model.outputs]
 
+    def load_tokenizer(self, tokenizer_path: Path) -> None:
+        """
+        Load and compile an OpenVINO tokenizer model from the specified file path.
+        This method reads a tokenizer model file and compiles it for inference on the
+        configured device. The compiled tokenizer is stored as an instance attribute
+        for later use.
+        Args:
+            tokenizer_path (Path): The file path to the tokenizer model.
+        Raises:
+            ImportError: If OpenVINO is not installed.
+            FileNotFoundError: If the tokenizer file does not exist at the specified path.
+        """
+
+        try:
+            import openvino as ov  # noqa: PLC0415
+        except ImportError as e:
+            msg = "OpenVINO is not installed. Install with: uv pip install openvino"
+            raise ImportError(msg) from e
+
+        if not tokenizer_path.exists():
+            msg = f"Tokenizer file not found: {tokenizer_path}"
+            raise FileNotFoundError(msg)
+
+        core = ov.Core()
+        tokenizer_model = core.read_model(model=str(tokenizer_path))
+        self.compiled_tokenizer = core.compile_model(tokenizer_model, device_name=self.device, config=self.config)
+
     def predict(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         """Run inference with OpenVINO.
 
@@ -92,6 +122,30 @@ class OpenVINOAdapter(RuntimeAdapter):
 
         # Convert to dictionary with output names
         return {name: np.array(results[i]) for i, name in enumerate(self._output_names)}
+
+    def tokenize(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """Preprocess inputs with the tokenizer (optional).
+
+        If tokenizer
+
+        Args:
+            inputs: Dictionary of input arrays to preprocess
+
+        Returns:
+            Dictionary of preprocessed input arrays
+        """
+        if self.compiled_tokenizer is None:
+            msg = "Tokenizer not loaded. Call load_tokenizer() first."
+            raise RuntimeError(msg)
+
+        tokenizer_output = self.compiled_tokenizer(inputs[TASK])
+
+        outputs = dict(inputs)
+        outputs.pop(TASK)
+        outputs[TOKENIZED_PROMPT] = tokenizer_output["attention_mask"].astype(np.bool)
+        outputs[TOKENIZED_PROMPT_MASK] = tokenizer_output["input_ids"]
+
+        return outputs
 
     def default_device(self) -> str:  # noqa: PLR6301
         """Get default OpenVINO device.
