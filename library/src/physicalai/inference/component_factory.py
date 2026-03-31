@@ -100,6 +100,8 @@ component_registry = ComponentRegistry()
 component_registry.register("single_pass", "physicalai.inference.runners.SinglePass")
 component_registry.register("action_chunking", "physicalai.inference.runners.ActionChunking")
 
+# Postprocessors
+component_registry.register("smolvla_resize", "physicalai.inference.preprocessors.smolvla.ResizeSmolVLA")
 
 def instantiate_component(
     spec: ComponentSpec,

@@ -17,6 +17,7 @@ from physicalai.inference.adapters import get_adapter
 from physicalai.inference.component_factory import instantiate_component
 from physicalai.inference.constants import ACTION
 from physicalai.inference.manifest import ComponentSpec
+from physicalai.inference.preprocessors import LambdaPreprocessor
 from physicalai.inference.runners import get_runner
 
 if TYPE_CHECKING:
@@ -120,6 +121,11 @@ class InferenceModel:
         self.adapter: RuntimeAdapter = get_adapter(self.backend, device=device, **adapter_kwargs)
         model_path = self._get_model_path()
         self.adapter.load(model_path)
+
+        tokenizer_path = self._get_tokenizer_path()
+        if tokenizer_path is not None:
+            self.adapter.load_tokenizer(tokenizer_path)
+            self.preprocessors.append(LambdaPreprocessor(lambda inputs: self.adapter.tokenize(inputs)))
 
         self.runner: InferenceRunner = runner if runner is not None else get_runner(self.metadata)
 
@@ -478,6 +484,36 @@ class InferenceModel:
         ext_str = " or ".join(extensions)
         msg = f"No {ext_str} model file found in {self.export_dir}"
         raise FileNotFoundError(msg)
+
+    def _get_tokenizer_path(self) -> Path | None:
+        """Get path to tokenizer file if one exists.
+
+        Looks for files whose name starts with ``tokenizer`` in the export
+        directory, trying the current backend's extensions first, then any
+        supported model extension.
+
+        Returns:
+            Path to the tokenizer file, or ``None`` if not found.
+        """
+        extension_map = {
+            ExportBackend.OPENVINO: [".xml"],
+            ExportBackend.ONNX: [".onnx"],
+        }
+
+        # Try backend-specific extensions first
+        for ext in extension_map[self.backend]:
+            files = list(self.export_dir.glob(f"tokenizer*{ext}"))
+            if files:
+                return files[0]
+
+        # Fall back to any known extension
+        for extensions in extension_map.values():
+            for ext in extensions:
+                files = list(self.export_dir.glob(f"tokenizer*{ext}"))
+                if files:
+                    return files[0]
+
+        return None
 
     def __repr__(self) -> str:
         """Return string representation of the model."""

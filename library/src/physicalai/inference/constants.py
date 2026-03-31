@@ -8,5 +8,9 @@ autocomplete and safe refactoring across the inference module.
 """
 
 ACTION = "action"
+TASK = "task"
 
-__all__ = ["ACTION"]
+TOKENIZED_PROMPT = "tokenized_prompt"
+TOKENIZED_PROMPT_MASK = "tokenized_prompt_mask"
+
+__all__ = ["ACTION", "TASK", "TOKENIZED_PROMPT", "TOKENIZED_PROMPT_MASK"]
