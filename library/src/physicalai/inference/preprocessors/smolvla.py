@@ -12,11 +12,44 @@ from .base import Preprocessor
 
 
 class ResizeSmolVLA(Preprocessor):
+    """Preprocessor for resizing images for SmolVLA model using numpy operations.
+
+    This preprocessor resizes input images to a specified resolution while maintaining
+    aspect ratio through padding. It normalizes the pixel values to the range [-1, 1]
+    and generates corresponding image masks.
+
+    Attributes:
+        image_resolution (tuple[int, int]): The target resolution for input images
+            as (height, width). Defaults to (512, 512).
+    """
+
     def __init__(self, image_resolution: tuple[int, int] = (512, 512)) -> None:
+        """Initialize the SmolVLA numpy-based preprocessor.
+
+        Args:
+            image_resolution (tuple[int, int]): The target resolution for input images
+                as (height, width). Defaults to (512, 512).
+        """
         super().__init__()
         self.image_resolution = image_resolution
 
     def __call__(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        """Process and prepare images for model inference.
+
+        Resizes images with padding, normalizes pixel values to [-1, 1] range,
+        and generates corresponding attention masks.
+
+        Args:
+            inputs: Dictionary containing "images" key with numpy array(s) of shape
+                    (height, width, channels) or list of such arrays.
+
+        Returns:
+            Dictionary with processed:
+            - "images": Stacked resized images of shape (batch_size, height, width, channels)
+                        with pixel values normalized to [-1, 1].
+            - "image_masks": Boolean masks of shape (batch_size, height, width) indicating
+                             valid image regions (all ones for padded images).
+        """
         images = inputs["images"]
 
         if isinstance(images, np.ndarray):

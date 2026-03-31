@@ -5,12 +5,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from physicalai.inference.preprocessors.base import Preprocessor
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import numpy as np
 
 
@@ -26,6 +27,12 @@ class LambdaPreprocessor(Preprocessor):
     """
 
     def __init__(self, fn: Callable[[dict[str, np.ndarray]], dict[str, np.ndarray]]) -> None:
+        """Initialize the LambdaPreprocessor.
+
+        Args:
+            fn: A callable that takes a dict of numpy arrays as input and returns a dict of numpy arrays as output.
+        """
+        super().__init__()
         self._fn = fn
 
     def __call__(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:

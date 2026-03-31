@@ -134,7 +134,7 @@ class InferenceModel:
         tokenizer_path = self._get_tokenizer_path()
         if tokenizer_path is not None:
             self.adapter.load_tokenizer(tokenizer_path)
-            self.preprocessors.append(LambdaPreprocessor(lambda inputs: self.adapter.tokenize(inputs)))
+            self.preprocessors.append(LambdaPreprocessor(self.adapter.tokenize))
 
         self.callbacks: list[Callback] = callbacks if callbacks is not None else []
 

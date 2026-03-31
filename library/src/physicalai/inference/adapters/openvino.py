@@ -138,6 +138,9 @@ class OpenVINOAdapter(RuntimeAdapter):
 
         Returns:
             Dictionary of preprocessed input arrays
+
+        Raises:
+            RuntimeError: If tokenizer is not loaded
         """
         if self.compiled_tokenizer is None:
             msg = "Tokenizer not loaded. Call load_tokenizer() first."

@@ -82,7 +82,7 @@ class RuntimeAdapter(ABC):
         """
         return "cpu"
 
-    def load_tokenizer(self, tokenizer_path: Path) -> None:
+    def load_tokenizer(self, tokenizer_path: Path) -> None:  # noqa: PLR6301, ARG002
         """Load tokenizer from disk (optional).
 
         Adapters that support tokenizers can override this method.
@@ -90,8 +90,9 @@ class RuntimeAdapter(ABC):
         Args:
             tokenizer_path: Path to the tokenizer file
         """
+        return
 
-    def tokenize(self, inputs: dict[str, Any]) -> dict[str, Any]:
+    def tokenize(self, inputs: dict[str, Any]) -> dict[str, Any]:  # noqa: PLR6301
         """Preprocess inputs with the tokenizer (optional).
 
         Adapters that support tokenizers can override this method.
