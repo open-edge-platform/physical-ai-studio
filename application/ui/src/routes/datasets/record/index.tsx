@@ -13,8 +13,8 @@ import {
     Text,
     ToastQueue,
     View,
-} from '@geti/ui';
-import { ChevronLeft } from '@geti/ui/icons';
+} from '@geti-ui/ui';
+import { ChevronLeft } from '@geti-ui/ui/icons';
 
 import { $api } from '../../../api/client';
 import { useDatasetId } from '../../../features/datasets/use-dataset';

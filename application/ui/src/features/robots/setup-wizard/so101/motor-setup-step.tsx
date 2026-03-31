@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 
-import { Button, Flex, Heading, Text } from '@geti/ui';
+import { Button, Flex, Heading, Text } from '@geti-ui/ui';
 
 import { InlineAlert } from '../shared/inline-alert';
 import { StatusBadge, type StatusBadgeVariant } from '../shared/status-badge';

@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useRef } from 'react';
 
-import { Flex, Loading, View } from '@geti/ui';
+import { Flex, Loading, View } from '@geti-ui/ui';
 import {
     DockviewApi,
     DockviewReact,

@@ -18,8 +18,12 @@ from physicalai.inference.component_factory import (
 from physicalai.inference.manifest import (
     CameraSpec,
     ComponentSpec,
+    HardwareSpec,
     Manifest,
+    MetadataSpec,
+    ModelSpec,
     OrderedTensorSpec,
+    PolicySource,
     PolicySpec,
     RobotSpec,
     TensorSpec,
@@ -126,43 +130,90 @@ class TestCameraSpec:
         assert spec.shape == [3, 480, 640]
 
 
+class TestPolicySource:
+    def test_defaults(self) -> None:
+        source = PolicySource()
+        assert source.repo_id == ""
+        assert source.class_path == ""
+
+    def test_from_dict(self) -> None:
+        source = PolicySource.model_validate({
+            "repo_id": "lerobot/act_aloha",
+            "class_path": "physicalai.policies.act.ACT",
+        })
+        assert source.repo_id == "lerobot/act_aloha"
+        assert source.class_path == "physicalai.policies.act.ACT"
+
+
 class TestPolicySpec:
     def test_from_dict_defaults(self) -> None:
         spec = PolicySpec.model_validate({})
         assert spec.name == ""
-        assert spec.kind == "single_pass"
-        assert spec.class_path == ""
+        assert spec.source.repo_id == ""
+        assert spec.source.class_path == ""
 
     def test_from_dict_full(self) -> None:
         spec = PolicySpec.model_validate({
             "name": "act",
-            "kind": "action_chunking",
-            "class_path": "physicalai.policies.act.ACT",
+            "source": {
+                "repo_id": "lerobot/act_aloha",
+                "class_path": "physicalai.policies.act.ACT",
+            },
         })
         assert spec.name == "act"
-        assert spec.kind == "action_chunking"
-        assert spec.class_path == "physicalai.policies.act.ACT"
+        assert spec.source.repo_id == "lerobot/act_aloha"
+        assert spec.source.class_path == "physicalai.policies.act.ACT"
 
 
 class TestComponentSpec:
-    def test_from_dict(self) -> None:
+    def test_class_path_mode(self) -> None:
         spec = ComponentSpec.model_validate({
             "class_path": "physicalai.inference.runners.SinglePass",
             "init_args": {},
         })
         assert spec.class_path == "physicalai.inference.runners.SinglePass"
         assert spec.init_args == {}
+        assert spec.type == ""
 
-    def test_from_dict_with_init_args(self) -> None:
+    def test_class_path_with_init_args(self) -> None:
         spec = ComponentSpec.model_validate({
             "class_path": "physicalai.inference.runners.ActionChunking",
             "init_args": {"chunk_size": 10},
         })
         assert spec.init_args == {"chunk_size": 10}
 
+    def test_type_mode(self) -> None:
+        spec = ComponentSpec.model_validate({
+            "type": "action_chunking",
+            "chunk_size": 100,
+            "n_action_steps": 100,
+        })
+        assert spec.type == "action_chunking"
+        assert spec.class_path == ""
+        assert spec.flat_params == {"chunk_size": 100, "n_action_steps": 100}
+
+    def test_type_mode_no_extra_params(self) -> None:
+        spec = ComponentSpec.model_validate({"type": "single_pass"})
+        assert spec.type == "single_pass"
+        assert spec.flat_params == {}
+
+    def test_requires_type_or_class_path(self) -> None:
+        with pytest.raises(ValidationError, match="requires either"):
+            ComponentSpec.model_validate({})
+
+    def test_class_path_takes_precedence(self) -> None:
+        spec = ComponentSpec.model_validate({
+            "type": "single_pass",
+            "class_path": "physicalai.inference.runners.SinglePass",
+            "init_args": {"foo": "bar"},
+        })
+        assert spec.class_path == "physicalai.inference.runners.SinglePass"
+        assert spec.type == "single_pass"
+        assert spec.init_args == {"foo": "bar"}
+
 
 class TestInstantiateComponent:
-    def test_instantiate_single_pass(self) -> None:
+    def test_instantiate_single_pass_class_path(self) -> None:
         spec = ComponentSpec(
             class_path="physicalai.inference.runners.SinglePass",
             init_args={},
@@ -170,7 +221,7 @@ class TestInstantiateComponent:
         runner = instantiate_component(spec)
         assert isinstance(runner, SinglePass)
 
-    def test_instantiate_nested(self) -> None:
+    def test_instantiate_nested_class_path(self) -> None:
         spec = ComponentSpec(
             class_path="physicalai.inference.runners.ActionChunking",
             init_args={
@@ -186,6 +237,83 @@ class TestInstantiateComponent:
         assert runner.chunk_size == 5
         assert isinstance(runner.runner, SinglePass)
 
+    def test_instantiate_type_mode(self) -> None:
+        spec = ComponentSpec.model_validate({"type": "single_pass"})
+        runner = instantiate_component(spec)
+        assert isinstance(runner, SinglePass)
+
+    def test_instantiate_type_mode_with_params(self) -> None:
+        spec = ComponentSpec.model_validate({
+            "type": "action_chunking",
+            "runner": {"type": "single_pass"},
+            "chunk_size": 7,
+        })
+        runner = instantiate_component(spec)
+        assert isinstance(runner, ActionChunking)
+        assert runner.chunk_size == 7
+        assert isinstance(runner.runner, SinglePass)
+
+
+class TestModelSpec:
+    def test_defaults(self) -> None:
+        spec = ModelSpec()
+        assert spec.n_obs_steps == 1
+        assert spec.runner is None
+        assert spec.artifacts == {}
+        assert spec.preprocessors == []
+        assert spec.postprocessors == []
+
+    def test_from_dict_full(self) -> None:
+        spec = ModelSpec.model_validate({
+            "n_obs_steps": 2,
+            "runner": {"type": "action_chunking", "chunk_size": 100},
+            "artifacts": {"model": "model.onnx"},
+            "preprocessors": [
+                {"class_path": "myapp.transforms.Normalize", "init_args": {"mean": 0.5}},
+            ],
+            "postprocessors": [
+                {"class_path": "myapp.transforms.Clamp", "init_args": {"low": -1.0, "high": 1.0}},
+            ],
+        })
+        assert spec.n_obs_steps == 2
+        assert spec.runner is not None
+        assert spec.runner.type == "action_chunking"
+        assert spec.artifacts == {"model": "model.onnx"}
+        assert len(spec.preprocessors) == 1
+        assert len(spec.postprocessors) == 1
+
+
+class TestHardwareSpec:
+    def test_defaults(self) -> None:
+        spec = HardwareSpec()
+        assert spec.robots == []
+        assert spec.cameras == []
+
+    def test_from_dict(self) -> None:
+        spec = HardwareSpec.model_validate({
+            "robots": [{"name": "main", "type": "Koch v1.1"}],
+            "cameras": [{"name": "top", "shape": [3, 480, 640]}],
+        })
+        assert len(spec.robots) == 1
+        assert spec.robots[0].name == "main"
+        assert len(spec.cameras) == 1
+        assert spec.cameras[0].name == "top"
+
+
+class TestMetadataSpec:
+    def test_defaults(self) -> None:
+        spec = MetadataSpec()
+        assert spec.created_at == ""
+        assert spec.created_by == ""
+
+    def test_from_dict(self) -> None:
+        spec = MetadataSpec.model_validate({
+            "created_at": "2026-01-01T00:00:00Z",
+            "created_by": "physicalai",
+        })
+        assert spec.created_at == "2026-01-01T00:00:00Z"
+        assert spec.created_by == "physicalai"
+
 
 class TestManifestFromDict:
     @pytest.fixture
@@ -195,31 +323,38 @@ class TestManifestFromDict:
             "version": "1.0",
             "policy": {
                 "name": "act",
-                "kind": "action_chunking",
-                "class_path": "physicalai.policies.act.ACT",
+                "source": {
+                    "repo_id": "lerobot/act_aloha",
+                    "class_path": "physicalai.policies.act.ACT",
+                },
             },
-            "artifacts": {"openvino": "act.xml"},
-            "runner": {
-                "class_path": "physicalai.inference.runners.ActionChunking",
-                "init_args": {
-                    "runner": {
-                        "class_path": "physicalai.inference.runners.SinglePass",
-                        "init_args": {},
+            "model": {
+                "n_obs_steps": 1,
+                "runner": {
+                    "class_path": "physicalai.inference.runners.ActionChunking",
+                    "init_args": {
+                        "runner": {
+                            "class_path": "physicalai.inference.runners.SinglePass",
+                            "init_args": {},
+                        },
+                        "chunk_size": 10,
                     },
-                    "chunk_size": 10,
                 },
+                "artifacts": {"openvino": "act.xml"},
             },
-            "robots": [
-                {
-                    "name": "main",
-                    "type": "Koch v1.1",
-                    "state": {"shape": [14], "dtype": "float32"},
-                    "action": {"shape": [14], "dtype": "float32"},
-                },
-            ],
-            "cameras": [
-                {"name": "top", "shape": [3, 480, 640], "dtype": "uint8"},
-            ],
+            "hardware": {
+                "robots": [
+                    {
+                        "name": "main",
+                        "type": "Koch v1.1",
+                        "state": {"shape": [14], "dtype": "float32"},
+                        "action": {"shape": [14], "dtype": "float32"},
+                    },
+                ],
+                "cameras": [
+                    {"name": "top", "shape": [3, 480, 640], "dtype": "uint8"},
+                ],
+            },
         }
 
     def test_full_manifest(self, full_manifest_data: dict[str, Any]) -> None:
@@ -228,14 +363,14 @@ class TestManifestFromDict:
         assert manifest.format == "policy_package"
         assert manifest.version == "1.0"
         assert manifest.policy.name == "act"
-        assert manifest.policy.kind == "action_chunking"
-        assert manifest.artifacts == {"openvino": "act.xml"}
-        assert manifest.runner is not None
-        assert manifest.runner.class_path == "physicalai.inference.runners.ActionChunking"
-        assert len(manifest.robots) == 1
-        assert manifest.robots[0].name == "main"
-        assert len(manifest.cameras) == 1
-        assert manifest.cameras[0].name == "top"
+        assert manifest.policy.source.class_path == "physicalai.policies.act.ACT"
+        assert manifest.model.artifacts == {"openvino": "act.xml"}
+        assert manifest.model.runner is not None
+        assert manifest.model.runner.class_path == "physicalai.inference.runners.ActionChunking"
+        assert len(manifest.hardware.robots) == 1
+        assert manifest.hardware.robots[0].name == "main"
+        assert len(manifest.hardware.cameras) == 1
+        assert manifest.hardware.cameras[0].name == "top"
 
     def test_minimal_manifest(self) -> None:
         manifest = Manifest.model_validate({})
@@ -243,11 +378,12 @@ class TestManifestFromDict:
         assert manifest.format == "policy_package"
         assert manifest.version == "1.0"
         assert manifest.policy.name == ""
-        assert manifest.runner is None
-        assert manifest.robots == []
-        assert manifest.cameras == []
-        assert manifest.preprocessors == []
-        assert manifest.postprocessors == []
+        assert manifest.model.runner is None
+        assert manifest.model.artifacts == {}
+        assert manifest.model.preprocessors == []
+        assert manifest.model.postprocessors == []
+        assert manifest.hardware.robots == []
+        assert manifest.hardware.cameras == []
 
     def test_unknown_keys_go_to_extra(self) -> None:
         manifest = Manifest.model_validate({
@@ -258,43 +394,47 @@ class TestManifestFromDict:
 
     def test_preprocessors_parsed(self) -> None:
         manifest = Manifest.model_validate({
-            "preprocessors": [
-                {"class_path": "myapp.transforms.Normalize", "init_args": {"mean": 0.5}},
-                {"class_path": "myapp.transforms.Resize", "init_args": {}},
-            ],
+            "model": {
+                "preprocessors": [
+                    {"class_path": "myapp.transforms.Normalize", "init_args": {"mean": 0.5}},
+                    {"class_path": "myapp.transforms.Resize", "init_args": {}},
+                ],
+            },
         })
-        assert len(manifest.preprocessors) == 2
-        assert manifest.preprocessors[0].class_path == "myapp.transforms.Normalize"
-        assert manifest.preprocessors[0].init_args == {"mean": 0.5}
-        assert manifest.preprocessors[1].class_path == "myapp.transforms.Resize"
+        assert len(manifest.model.preprocessors) == 2
+        assert manifest.model.preprocessors[0].class_path == "myapp.transforms.Normalize"
+        assert manifest.model.preprocessors[0].init_args == {"mean": 0.5}
+        assert manifest.model.preprocessors[1].class_path == "myapp.transforms.Resize"
 
     def test_postprocessors_parsed(self) -> None:
         manifest = Manifest.model_validate({
-            "postprocessors": [
-                {"class_path": "myapp.transforms.Clamp", "init_args": {"low": -1.0, "high": 1.0}},
-            ],
+            "model": {
+                "postprocessors": [
+                    {"class_path": "myapp.transforms.Clamp", "init_args": {"low": -1.0, "high": 1.0}},
+                ],
+            },
         })
-        assert len(manifest.postprocessors) == 1
-        assert manifest.postprocessors[0].class_path == "myapp.transforms.Clamp"
-        assert manifest.postprocessors[0].init_args == {"low": -1.0, "high": 1.0}
-
-    def test_preprocessors_postprocessors_not_in_extra(self) -> None:
-        manifest = Manifest.model_validate({
-            "preprocessors": [{"class_path": "a.B", "init_args": {}}],
-            "postprocessors": [{"class_path": "c.D", "init_args": {}}],
-            "custom_key": "val",
-        })
-        assert "preprocessors" not in manifest.model_extra
-        assert "postprocessors" not in manifest.model_extra
-        assert manifest.model_extra == {"custom_key": "val"}
+        assert len(manifest.model.postprocessors) == 1
+        assert manifest.model.postprocessors[0].class_path == "myapp.transforms.Clamp"
+        assert manifest.model.postprocessors[0].init_args == {"low": -1.0, "high": 1.0}
 
     def test_runner_instantiation_from_manifest(self, full_manifest_data: dict[str, Any]) -> None:
         manifest = Manifest.model_validate(full_manifest_data)
-        assert manifest.runner is not None
-        runner = instantiate_component(manifest.runner)
+        assert manifest.model.runner is not None
+        runner = instantiate_component(manifest.model.runner)
         assert isinstance(runner, ActionChunking)
         assert runner.chunk_size == 10
         assert isinstance(runner.runner, SinglePass)
+
+    def test_type_based_runner_in_manifest(self) -> None:
+        manifest = Manifest.model_validate({
+            "model": {
+                "runner": {"type": "action_chunking", "chunk_size": 50},
+            },
+        })
+        assert manifest.model.runner is not None
+        assert manifest.model.runner.type == "action_chunking"
+        assert manifest.model.runner.flat_params == {"chunk_size": 50}
 
 
 class TestManifestFromFile:
@@ -302,8 +442,8 @@ class TestManifestFromFile:
         manifest_data = {
             "format": "policy_package",
             "version": "1.0",
-            "policy": {"name": "act", "kind": "single_pass"},
-            "artifacts": {"onnx": "act.onnx"},
+            "policy": {"name": "act"},
+            "model": {"artifacts": {"onnx": "act.onnx"}},
         }
         manifest_path = tmp_path / "manifest.json"
         with manifest_path.open("w", encoding="utf-8") as f:
@@ -311,14 +451,14 @@ class TestManifestFromFile:
 
         manifest = Manifest.load(manifest_path)
         assert manifest.policy.name == "act"
-        assert manifest.artifacts == {"onnx": "act.onnx"}
+        assert manifest.model.artifacts == {"onnx": "act.onnx"}
 
     def test_load_from_directory(self, tmp_path: Path) -> None:
         manifest_data = {
             "format": "policy_package",
             "version": "1.0",
-            "policy": {"name": "diffusion", "kind": "action_chunking"},
-            "artifacts": {"onnx": "diffusion.onnx"},
+            "policy": {"name": "diffusion"},
+            "model": {"artifacts": {"onnx": "diffusion.onnx"}},
         }
         manifest_path = tmp_path / "manifest.json"
         with manifest_path.open("w", encoding="utf-8") as f:
@@ -347,10 +487,9 @@ class TestManifestFromLegacyMetadata:
         manifest = Manifest.from_legacy_metadata(metadata)
 
         assert manifest.policy.name == "policy"
-        assert manifest.policy.kind == "single_pass"
-        assert manifest.policy.class_path == "physicalai.policies.act.policy.ACT"
-        assert manifest.runner is not None
-        assert "SinglePass" in manifest.runner.class_path
+        assert manifest.policy.source.class_path == "physicalai.policies.act.policy.ACT"
+        assert manifest.model.runner is not None
+        assert "SinglePass" in manifest.model.runner.class_path
 
     def test_action_chunking_policy(self) -> None:
         metadata = {
@@ -361,10 +500,9 @@ class TestManifestFromLegacyMetadata:
         }
         manifest = Manifest.from_legacy_metadata(metadata)
 
-        assert manifest.policy.kind == "action_chunking"
-        assert manifest.runner is not None
-        assert "ActionChunking" in manifest.runner.class_path
-        assert manifest.runner.init_args["chunk_size"] == 10
+        assert manifest.model.runner is not None
+        assert "ActionChunking" in manifest.model.runner.class_path
+        assert manifest.model.runner.init_args["chunk_size"] == 10
 
     def test_legacy_extra_preserved(self) -> None:
         metadata = {
@@ -378,21 +516,27 @@ class TestManifestFromLegacyMetadata:
 
     def test_empty_metadata(self) -> None:
         manifest = Manifest.from_legacy_metadata({})
-        assert manifest.policy.kind == "single_pass"
-        assert manifest.runner is not None
+        assert manifest.model.runner is not None
 
 
 class TestManifestSerialization:
     def test_roundtrip(self, tmp_path: Path) -> None:
         original = Manifest(
-            policy=PolicySpec(name="act", kind="single_pass", class_path="test.ACT"),
-            artifacts={"openvino": "act.xml"},
-            runner=ComponentSpec(
-                class_path="physicalai.inference.runners.SinglePass",
-                init_args={},
+            policy=PolicySpec(
+                name="act",
+                source=PolicySource(class_path="test.ACT"),
             ),
-            robots=[RobotSpec(name="main", type="Koch", state=OrderedTensorSpec(shape=[14]))],
-            cameras=[CameraSpec(name="top", shape=[3, 480, 640])],
+            model=ModelSpec(
+                runner=ComponentSpec(
+                    class_path="physicalai.inference.runners.SinglePass",
+                    init_args={},
+                ),
+                artifacts={"openvino": "act.xml"},
+            ),
+            hardware=HardwareSpec(
+                robots=[RobotSpec(name="main", type="Koch", state=OrderedTensorSpec(shape=[14]))],
+                cameras=[CameraSpec(name="top", shape=[3, 480, 640])],
+            ),
         )
 
         path = tmp_path / "manifest.json"
@@ -400,66 +544,65 @@ class TestManifestSerialization:
 
         loaded = Manifest.load(path)
         assert loaded.policy.name == "act"
-        assert loaded.artifacts == {"openvino": "act.xml"}
-        assert loaded.runner is not None
-        assert loaded.runner.class_path == "physicalai.inference.runners.SinglePass"
-        assert len(loaded.robots) == 1
-        assert loaded.robots[0].name == "main"
-        assert len(loaded.cameras) == 1
-        assert loaded.cameras[0].name == "top"
+        assert loaded.model.artifacts == {"openvino": "act.xml"}
+        assert loaded.model.runner is not None
+        assert loaded.model.runner.class_path == "physicalai.inference.runners.SinglePass"
+        assert len(loaded.hardware.robots) == 1
+        assert loaded.hardware.robots[0].name == "main"
+        assert len(loaded.hardware.cameras) == 1
+        assert loaded.hardware.cameras[0].name == "top"
 
     def test_to_dict_omits_empty_optional_sections(self) -> None:
         manifest = Manifest(policy=PolicySpec(name="test"))
         data = manifest.model_dump(exclude_defaults=True)
 
-        assert "robots" not in data
-        assert "cameras" not in data
-        assert "runner" not in data
-        assert "adapter" not in data
-        assert "preprocessors" not in data
-        assert "postprocessors" not in data
         assert data["policy"]["name"] == "test"
 
     def test_roundtrip_with_preprocessors_postprocessors(self, tmp_path: Path) -> None:
         original = Manifest(
-            policy=PolicySpec(name="act", kind="single_pass"),
-            artifacts={"onnx": "act.onnx"},
-            preprocessors=[
-                ComponentSpec(class_path="myapp.transforms.Normalize", init_args={"mean": 0.5}),
-            ],
-            postprocessors=[
-                ComponentSpec(class_path="myapp.transforms.Clamp", init_args={"low": -1.0, "high": 1.0}),
-                ComponentSpec(class_path="myapp.transforms.Scale", init_args={"factor": 2.0}),
-            ],
+            policy=PolicySpec(name="act"),
+            model=ModelSpec(
+                artifacts={"onnx": "act.onnx"},
+                preprocessors=[
+                    ComponentSpec(class_path="myapp.transforms.Normalize", init_args={"mean": 0.5}),
+                ],
+                postprocessors=[
+                    ComponentSpec(class_path="myapp.transforms.Clamp", init_args={"low": -1.0, "high": 1.0}),
+                    ComponentSpec(class_path="myapp.transforms.Scale", init_args={"factor": 2.0}),
+                ],
+            ),
         )
 
         path = tmp_path / "manifest.json"
         original.save(path)
 
         loaded = Manifest.load(path)
-        assert len(loaded.preprocessors) == 1
-        assert loaded.preprocessors[0].class_path == "myapp.transforms.Normalize"
-        assert loaded.preprocessors[0].init_args == {"mean": 0.5}
-        assert len(loaded.postprocessors) == 2
-        assert loaded.postprocessors[0].class_path == "myapp.transforms.Clamp"
-        assert loaded.postprocessors[1].class_path == "myapp.transforms.Scale"
-        assert loaded.postprocessors[1].init_args == {"factor": 2.0}
+        assert len(loaded.model.preprocessors) == 1
+        assert loaded.model.preprocessors[0].class_path == "myapp.transforms.Normalize"
+        assert loaded.model.preprocessors[0].init_args == {"mean": 0.5}
+        assert len(loaded.model.postprocessors) == 2
+        assert loaded.model.postprocessors[0].class_path == "myapp.transforms.Clamp"
+        assert loaded.model.postprocessors[1].class_path == "myapp.transforms.Scale"
+        assert loaded.model.postprocessors[1].init_args == {"factor": 2.0}
 
     def test_to_dict_includes_nonempty_processors(self) -> None:
         manifest = Manifest(
-            preprocessors=[ComponentSpec(class_path="a.B", init_args={"x": 1})],
-            postprocessors=[ComponentSpec(class_path="c.D", init_args={})],
+            model=ModelSpec(
+                preprocessors=[ComponentSpec(class_path="a.B", init_args={"x": 1})],
+                postprocessors=[ComponentSpec(class_path="c.D", init_args={})],
+            ),
         )
         data = manifest.model_dump(exclude_defaults=True)
 
-        assert "preprocessors" in data
-        assert len(data["preprocessors"]) == 1
-        assert data["preprocessors"][0]["class_path"] == "a.B"
-        assert data["preprocessors"][0]["init_args"] == {"x": 1}
+        model_data = data["model"]
+        assert "preprocessors" in model_data
+        assert len(model_data["preprocessors"]) == 1
+        assert model_data["preprocessors"][0]["class_path"] == "a.B"
+        assert model_data["preprocessors"][0]["init_args"] == {"x": 1}
 
-        assert "postprocessors" in data
-        assert len(data["postprocessors"]) == 1
-        assert data["postprocessors"][0]["class_path"] == "c.D"
+        assert "postprocessors" in model_data
+        assert len(model_data["postprocessors"]) == 1
+        assert model_data["postprocessors"][0]["class_path"] == "c.D"
 
 
 class TestComponentSpecFromClass:
@@ -517,11 +660,15 @@ class TestPydanticValidation:
         with pytest.raises(ValidationError):
             TensorSpec(shape=[3], dtype="")
 
-    def test_component_spec_empty_class_path(self) -> None:
-        with pytest.raises(ValidationError):
-            ComponentSpec(class_path="")
+    def test_component_spec_empty_both_raises(self) -> None:
+        with pytest.raises(ValidationError, match="requires either"):
+            ComponentSpec.model_validate({})
 
-    def test_component_spec_no_dot_class_path_is_valid(self) -> None:
+    def test_component_spec_type_only_is_valid(self) -> None:
+        spec = ComponentSpec.model_validate({"type": "single_pass"})
+        assert spec.type == "single_pass"
+
+    def test_component_spec_class_path_only_is_valid(self) -> None:
         spec = ComponentSpec(class_path="single_pass")
         assert spec.class_path == "single_pass"
 

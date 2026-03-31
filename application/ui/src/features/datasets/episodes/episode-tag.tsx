@@ -1,4 +1,4 @@
-import { Flex } from '@geti/ui';
+import { Flex } from '@geti-ui/ui';
 import { clsx } from 'clsx';
 
 import { EpisodeSummary } from '../../../routes/datasets/dataset-provider';

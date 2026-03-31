@@ -56,7 +56,7 @@ Run the full application (backend + UI) in a single container:
 git clone https://github.com/open-edge-platform/physical-ai-studio.git
 cd physical-ai-studio
 
-# Setup and run docker services 
+# Setup and run docker services
 cd application/docker
 cp .env.example .env
 docker compose --profile xpu up # or use --profile cuda, --profile cpu
@@ -79,7 +79,7 @@ cd application/backend && uv sync --extra xpu # or --extra cpu, --extra cuda
 ./run.sh
 
 # In a new terminal: install and run UI
-cd application/ui 
+cd application/ui
 nvm use
 npm install
 # Fetch the api from the backend and build the types and start the frontend.
@@ -87,7 +87,6 @@ npm run build:api:download && npm run build:api && npm run start
 ```
 
 Open http://localhost:3000 in your browser.
-
 
 ### Library (Python/CLI)
 

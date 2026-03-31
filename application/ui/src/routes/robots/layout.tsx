@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 
-import { Flex, Grid, Loading, minmax, View } from '@geti/ui';
+import { Flex, Grid, Loading, minmax, View } from '@geti-ui/ui';
 import { Outlet } from 'react-router-dom';
 
 import { RobotsList } from '../../features/robots/robots-list';

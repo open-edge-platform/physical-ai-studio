@@ -1,7 +1,6 @@
 import { ReactNode } from 'react';
 
-import { ToastContainer } from '@geti/ui';
-import { ThemeProvider } from '@geti/ui/theme';
+import { ThemeProvider, ToastContainer } from '@geti-ui/ui';
 import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouterProps, RouterProvider } from 'react-router';
 import { MemoryRouter as Router } from 'react-router-dom';

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 
-import { Button, ButtonGroup, Checkbox, Content, Dialog, DialogContainer, Divider, Flex, Heading } from '@geti/ui';
+import { Button, ButtonGroup, Checkbox, Content, Dialog, DialogContainer, Divider, Flex, Heading } from '@geti-ui/ui';
 import { useMutation } from '@tanstack/react-query';
 
 import { fetchClient } from '../../api/client';

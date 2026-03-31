@@ -20,7 +20,7 @@ import {
     Picker,
     Text,
     TextField,
-} from '@geti/ui';
+} from '@geti-ui/ui';
 
 import { $api } from '../../api/client';
 import { SchemaJob, SchemaModel, SchemaTrainJobPayload } from '../../api/openapi-spec';

@@ -1,4 +1,4 @@
-import { Flex } from '@geti/ui';
+import { Flex } from '@geti-ui/ui';
 
 import { SchemaGenicamCameraInput } from '../../../../api/openapi-spec';
 import { CameraPicker } from '../components/camera-picker';

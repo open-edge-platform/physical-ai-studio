@@ -1,7 +1,7 @@
 import { Dispatch, SetStateAction, useState } from 'react';
 
-import { ActionButton, Flex, Grid, Heading, minmax, repeat, Slider, Switch, View } from '@geti/ui';
-import { ChevronDownSmallLight } from '@geti/ui/icons';
+import { ActionButton, Flex, Grid, Heading, minmax, repeat, Slider, Switch, View } from '@geti-ui/ui';
+import { ChevronDownSmallLight } from '@geti-ui/ui/icons';
 import { radToDeg } from 'three/src/math/MathUtils.js';
 
 import { urdfPathForType, useRobotModels } from '../robot-models-context';

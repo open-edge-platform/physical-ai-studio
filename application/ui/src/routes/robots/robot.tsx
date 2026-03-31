@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { Button, ButtonGroup, Flex, Grid, View } from '@geti/ui';
+import { Button, ButtonGroup, Flex, Grid, View } from '@geti-ui/ui';
 
 import { $api } from '../../api/client';
 import { JointControls } from '../../features/robots/controller/joint-controls';

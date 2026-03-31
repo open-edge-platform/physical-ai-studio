@@ -14,8 +14,8 @@ import {
     MenuTrigger,
     minmax,
     View,
-} from '@geti/ui';
-import { Add, MoreMenu } from '@geti/ui/icons';
+} from '@geti-ui/ui';
+import { Add, MoreMenu } from '@geti-ui/ui/icons';
 import { clsx } from 'clsx';
 import { NavLink, Outlet, useParams } from 'react-router-dom';
 

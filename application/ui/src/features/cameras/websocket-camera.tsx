@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 
-import { Flex, ProgressCircle } from '@geti/ui';
+import { Flex, ProgressCircle } from '@geti-ui/ui';
 import useWebSocket from 'react-use-websocket';
 
 import { fetchClient } from '../../api/client';

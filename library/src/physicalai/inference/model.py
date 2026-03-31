@@ -16,7 +16,7 @@ from physicalai.export.backends import ExportBackend
 from physicalai.inference.adapters import get_adapter
 from physicalai.inference.component_factory import instantiate_component
 from physicalai.inference.constants import ACTION
-from physicalai.inference.manifest import ComponentSpec
+from physicalai.inference.manifest import ComponentSpec, Manifest
 from physicalai.inference.runners import get_runner
 
 if TYPE_CHECKING:
@@ -85,7 +85,7 @@ class InferenceModel:
             policy_name: Policy name (auto-detected if None)
             backend: Backend to use, or 'auto' to detect from metadata/files
             device: Device for inference ('auto', 'cpu', 'cuda', 'CPU', 'GPU', etc.)
-            runner: Execution runner override. If None, auto-selected from metadata.
+            runner: Execution runner override. If None, auto-selected from manifest.
             preprocessors: Pipeline stages applied to observations before the
                 runner.  If ``None``, loaded from manifest (empty if not
                 declared).
@@ -103,14 +103,14 @@ class InferenceModel:
             msg = f"Export directory not found: {export_dir}"
             raise FileNotFoundError(msg)
 
-        self.metadata = self._load_metadata()
+        self.manifest = self._load_manifest()
 
         if policy_name is None:
             policy_name = self._detect_policy_name()
         self.policy_name = policy_name
 
         if backend == "auto":
-            backend = self._detect_backend_from_metadata() or self._detect_backend()
+            backend = self._detect_backend_from_manifest() or self._detect_backend()
         self.backend = ExportBackend(backend) if isinstance(backend, str) else backend
 
         if device == "auto":
@@ -121,13 +121,13 @@ class InferenceModel:
         model_path = self._get_model_path()
         self.adapter.load(model_path)
 
-        self.runner: InferenceRunner = runner if runner is not None else get_runner(self.metadata)
+        self.runner: InferenceRunner = runner if runner is not None else get_runner(self.manifest)
 
         self.preprocessors: list[Preprocessor] = (
-            preprocessors if preprocessors is not None else self._load_processors("preprocessors")
+            preprocessors if preprocessors is not None else self._load_processors(self.manifest.model.preprocessors)
         )
         self.postprocessors: list[Postprocessor] = (
-            postprocessors if postprocessors is not None else self._load_processors("postprocessors")
+            postprocessors if postprocessors is not None else self._load_processors(self.manifest.model.postprocessors)
         )
 
         self.callbacks: list[Callback] = callbacks if callbacks is not None else []
@@ -138,20 +138,26 @@ class InferenceModel:
     @property
     def use_action_queue(self) -> bool:
         """Whether action queuing is enabled (backward compat)."""
-        policy = self.metadata.get("policy", {})
-        if isinstance(policy, dict) and policy.get("kind") == "action_chunking":
-            return True
-        return self.metadata.get("use_action_queue", False)
+        runner_spec = self.manifest.model.runner
+        if runner_spec is not None:
+            if runner_spec.type == "action_chunking":
+                return True
+            if "ActionChunking" in runner_spec.class_path:
+                return True
+        return False
 
     @property
     def chunk_size(self) -> int:
-        """Action chunk size from metadata (backward compat)."""
-        runner_spec = self.metadata.get("runner", {})
-        if isinstance(runner_spec, dict):
-            chunk = runner_spec.get("init_args", {}).get("chunk_size")
+        """Action chunk size from manifest (backward compat)."""
+        runner_spec = self.manifest.model.runner
+        if runner_spec is not None:
+            chunk = runner_spec.init_args.get("chunk_size")
             if chunk is not None:
                 return int(chunk)
-        return self.metadata.get("chunk_size", 1)
+            flat_chunk = runner_spec.flat_params.get("chunk_size")
+            if flat_chunk is not None:
+                return int(flat_chunk)
+        return 1
 
     @classmethod
     def load(
@@ -302,23 +308,18 @@ class InferenceModel:
             return filtered
         return inputs
 
-    def _load_metadata(self) -> dict[str, Any]:
-        """Load export metadata from manifest.json, metadata.yaml, or metadata.json.
+    def _load_manifest(self) -> Manifest:
+        """Load export manifest from manifest.json, metadata.yaml, or metadata.json.
 
         Tries ``manifest.json`` first (new format), then falls back to
         ``metadata.yaml`` and ``metadata.json`` for backward compatibility.
 
-        .. deprecated::
-            Loading from ``metadata.yaml`` or ``metadata.json`` is
-            deprecated.  Re-export models to generate ``manifest.json``.
-
         Returns:
-            Metadata dict, or empty dict if no metadata file is found.
+            Parsed Manifest instance.
         """
         manifest_path = self.export_dir / "manifest.json"
         if manifest_path.exists():
-            with manifest_path.open(encoding="utf-8") as f:
-                return json.load(f)
+            return Manifest.load(manifest_path)
 
         yaml_path = self.export_dir / "metadata.yaml"
         json_path = self.export_dir / "metadata.json"
@@ -334,32 +335,31 @@ class InferenceModel:
             )
             if legacy_path.suffix == ".yaml":
                 with legacy_path.open(encoding="utf-8") as f:
-                    return yaml.safe_load(f) or {}
-            with legacy_path.open(encoding="utf-8") as f:
-                return json.load(f)
+                    raw = yaml.safe_load(f) or {}
+            else:
+                with legacy_path.open(encoding="utf-8") as f:
+                    raw = json.load(f)
+            return Manifest.from_legacy_metadata(raw)
 
-        return {}
+        return Manifest()
 
-    def _load_processors(self, key: str) -> list[Any]:
-        """Instantiate preprocessors or postprocessors from manifest metadata.
+    @staticmethod
+    def _load_processors(specs: list[ComponentSpec]) -> list[Any]:
+        """Instantiate preprocessors or postprocessors from component specs.
 
         Args:
-            key: ``"preprocessors"`` or ``"postprocessors"``.
+            specs: List of component specifications to instantiate.
 
         Returns:
-            List of instantiated processor objects, or empty list if the
-            manifest does not declare any for *key*.
+            List of instantiated processor objects.
         """
-        specs = self.metadata.get(key, [])
-        if not specs:
-            return []
-        return [instantiate_component(ComponentSpec.model_validate(s)) for s in specs]
+        return [instantiate_component(spec) for spec in specs]
 
     def _detect_policy_name(self) -> str:
-        """Auto-detect policy name from files or metadata.
+        """Auto-detect policy name from manifest or file heuristics.
 
         Checks manifest ``policy.name`` first, then falls back to
-        legacy ``policy_class`` extraction, then file-name heuristics.
+        ``policy.source.class_path`` extraction, then file-name heuristics.
 
         Returns:
             Policy name (e.g., 'act', 'diffusion')
@@ -367,16 +367,10 @@ class InferenceModel:
         Raises:
             ValueError: If policy name cannot be determined
         """
-        policy = self.metadata.get("policy", {})
-        if isinstance(policy, dict) and policy.get("name"):
-            return policy["name"]
+        if self.manifest.policy.name:
+            return self.manifest.policy.name
 
-        class_path = ""
-        if isinstance(policy, dict) and policy.get("class_path"):
-            class_path = policy["class_path"]
-        elif "policy_class" in self.metadata:
-            class_path = self.metadata["policy_class"]
-
+        class_path = self.manifest.policy.source.class_path
         if class_path:
             parts = class_path.lower().split(".")
             min_parts_for_module_extraction = 3
@@ -393,19 +387,19 @@ class InferenceModel:
         msg = f"Cannot determine policy name from {self.export_dir}"
         raise ValueError(msg)
 
-    def _detect_backend_from_metadata(self) -> str | None:
-        """Extract backend from manifest artifacts or legacy metadata.
+    def _detect_backend_from_manifest(self) -> str | None:
+        """Extract backend from manifest artifacts or legacy extra data.
 
         Returns:
             Backend string, or ``None`` if not found.
         """
-        artifacts = self.metadata.get("artifacts", {})
-        if isinstance(artifacts, dict) and artifacts:
+        artifacts = self.manifest.model.artifacts
+        if artifacts:
             return next(iter(artifacts))
 
-        backend = self.metadata.get("backend")
-        if backend:
-            return str(backend)
+        legacy_backend = (self.manifest.model_extra or {}).get("backend")
+        if legacy_backend:
+            return str(legacy_backend)
 
         return None
 
@@ -439,7 +433,6 @@ class InferenceModel:
         Returns:
             Device string for the best available device.
         """
-        # Create a lightweight adapter instance to query its preferred device
         adapter = get_adapter(self.backend, device="cpu")
         return adapter.default_device()
 
@@ -452,7 +445,6 @@ class InferenceModel:
         Raises:
             FileNotFoundError: If model file doesn't exist
         """
-        # Map backend to file extension(s)
         extension_map = {
             ExportBackend.OPENVINO: [".xml"],
             ExportBackend.ONNX: [".onnx"],
@@ -462,14 +454,12 @@ class InferenceModel:
 
         extensions = extension_map[self.backend]
 
-        # Try with policy name first
         if self.policy_name:
             for ext in extensions:
                 model_path = self.export_dir / f"{self.policy_name}{ext}"
                 if model_path.exists():
                     return model_path
 
-        # Try finding any file with any of the extensions
         for ext in extensions:
             files = list(self.export_dir.glob(f"*{ext}"))
             if files:
