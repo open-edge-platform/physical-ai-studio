@@ -50,7 +50,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         pretrained_name_or_path: HuggingFace repo ID or local path for pretrained weights and config.
         paligemma_variant: Gemma variant for VLM backbone. Default: "gemma_2b".
         action_expert_variant: Gemma variant for action expert. Default: "gemma_300m".
-        dtype: Model precision. Default: "float32".
+        dtype: Model precision. Default: "bfloat16".
         n_obs_steps: Number of observation steps. Default: 1.
         chunk_size: Size of action chunks. Default: 50.
         n_action_steps: Number of action steps to execute. Default: 50.
@@ -85,7 +85,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         # Model architecture
         paligemma_variant: Literal["gemma_300m", "gemma_2b"] = "gemma_2b",
         action_expert_variant: Literal["gemma_300m", "gemma_2b"] = "gemma_300m",
-        dtype: Literal["bfloat16", "float32"] = "float32",
+        dtype: Literal["bfloat16", "float32"] = "bfloat16",
         # Input / output structure
         n_obs_steps: int = 1,
         chunk_size: int = 50,
