@@ -113,6 +113,7 @@ class ExportablePolicyMixin:
         use_action_queue = metadata.get("use_action_queue", False)
         chunk_size = metadata.get("chunk_size", 1)
         kind = "action_chunking" if use_action_queue else "single_pass"
+        preprocessors_specs: list[ComponentSpec] = metadata.get("preprocessors", [])
 
         if use_action_queue:
             runner = ComponentSpec.from_class(
@@ -133,6 +134,7 @@ class ExportablePolicyMixin:
             ),
             artifacts={str(backend): artifact_filename},
             runner=runner,
+            preprocessors=preprocessors_specs,
         )
 
     def _prepare_export_path(self, output_path: PathLike | str, extension: str) -> Path:
@@ -285,7 +287,7 @@ class ExportablePolicyMixin:
                 raise RuntimeError(msg)
 
         # Create metadata files
-        self._create_metadata(export_dir, ExportBackend.ONNX, preprocessing_type=extra_model_args.preprocessing_type)
+        self._create_metadata(export_dir, ExportBackend.ONNX, preprocessors=extra_model_args.preprocessors_specs)
 
     @torch.no_grad()
     def to_openvino(
@@ -372,7 +374,6 @@ class ExportablePolicyMixin:
         _postprocess_openvino_model(ov_model, extra_model_args.outputs)
 
         openvino.save_model(ov_model, str(model_path), compress_to_fp16=extra_model_args.compress_to_fp16)
-
         if extra_model_args.export_tokenizer:
             ov_tokenizer = openvino_tokenizers.convert_tokenizer(
                 self._preprocessor.exportable_tokenizer,
@@ -392,7 +393,7 @@ class ExportablePolicyMixin:
         self._create_metadata(
             export_dir,
             ExportBackend.OPENVINO,
-            preprocessing_type=extra_model_args.preprocessing_type,
+            preprocessors=extra_model_args.preprocessors_specs,
         )
 
     @torch.no_grad()
