@@ -4,7 +4,7 @@
 from pathlib import Path
 
 from physicalai.inference import InferenceModel
-from physicalai.policies import ACT, Pi0, SmolVLA
+from physicalai.policies import ACT, Pi0, Pi05, SmolVLA
 from physicalai.policies.base import Policy
 
 from schemas import Model
@@ -18,6 +18,8 @@ def load_policy(model: Model) -> Policy:
         return ACT.load_from_checkpoint(model_path)
     if model.policy == "pi0":
         return Pi0.load_from_checkpoint(model_path, weights_only=True)
+    if model.policy == "pi05":
+        return Pi05.load_from_checkpoint(model_path)
     if model.policy == "smolvla":
         return SmolVLA.load_from_checkpoint(model_path)
     raise ValueError(f"Policy {model.policy} not implemented.")
@@ -39,6 +41,8 @@ def setup_policy(model: Model) -> Policy:
         return ACT()
     if model.policy == "pi0":
         return Pi0()
+    if model.policy == "pi05":
+        return Pi05(pretrained_name_or_path="lerobot/pi05_base")
     if model.policy == "smolvla":
         return SmolVLA()
 

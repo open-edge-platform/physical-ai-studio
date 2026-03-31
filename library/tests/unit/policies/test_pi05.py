@@ -65,7 +65,7 @@ class TestPi05Config:
         assert config.optimizer_weight_decay == 0.01
         assert config.optimizer_grad_clip_norm == 1.0
         assert config.scheduler_warmup_steps == 1_000
-        assert config.scheduler_decay_steps == 30_000
+        assert config.scheduler_decay_steps is None
         assert config.scheduler_decay_lr == 2.5e-6
 
     def test_flow_matching_config_values(self) -> None:

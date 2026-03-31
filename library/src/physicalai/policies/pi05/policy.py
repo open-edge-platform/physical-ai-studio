@@ -20,6 +20,7 @@ from physicalai.data.dataset import Dataset
 from physicalai.data.observation import ACTION
 from physicalai.export import ExportablePolicyMixin, ExportBackend
 from physicalai.policies.base import Policy
+from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 from .config import Pi05Config
@@ -49,7 +50,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         pretrained_name_or_path: HuggingFace repo ID or local path for pretrained weights and config.
         paligemma_variant: Gemma variant for VLM backbone. Default: "gemma_2b".
         action_expert_variant: Gemma variant for action expert. Default: "gemma_300m".
-        dtype: Model precision. Default: "float32".
+        dtype: Model precision. Default: "bfloat16".
         n_obs_steps: Number of observation steps. Default: 1.
         chunk_size: Size of action chunks. Default: 50.
         n_action_steps: Number of action steps to execute. Default: 50.
@@ -84,7 +85,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         # Model architecture
         paligemma_variant: Literal["gemma_300m", "gemma_2b"] = "gemma_2b",
         action_expert_variant: Literal["gemma_300m", "gemma_2b"] = "gemma_300m",
-        dtype: Literal["bfloat16", "float32"] = "float32",
+        dtype: Literal["bfloat16", "float32"] = "bfloat16",
         # Input / output structure
         n_obs_steps: int = 1,
         chunk_size: int = 50,
@@ -120,7 +121,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         optimizer_grad_clip_norm: float = 1.0,
         # Scheduler
         scheduler_warmup_steps: int = 1_000,
-        scheduler_decay_steps: int = 30_000,
+        scheduler_decay_steps: int | None = None,
         scheduler_decay_lr: float = 2.5e-6,
         # Eager initialization
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
@@ -284,7 +285,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         optimizer_weight_decay: float = 0.01,
         optimizer_grad_clip_norm: float = 1.0,
         scheduler_warmup_steps: int = 1_000,
-        scheduler_decay_steps: int = 30_000,
+        scheduler_decay_steps: int | None = None,
         scheduler_decay_lr: float = 2.5e-6,
         **kwargs: Any,  # noqa: ANN401
     ) -> tuple[Pi05Config, dict[str, dict[str, list[float] | str | tuple]], Path]:
@@ -317,7 +318,7 @@ class Pi05(ExportablePolicyMixin, Policy):
             optimizer_weight_decay: Override weight decay.
             optimizer_grad_clip_norm: Override gradient clip norm.
             scheduler_warmup_steps: Override warmup steps.
-            scheduler_decay_steps: Override decay steps.
+            scheduler_decay_steps: Override decay steps. ``None`` means auto.
             scheduler_decay_lr: Override final decay learning rate.
             **kwargs: Extra arguments forwarded to ``huggingface_hub.hf_hub_download``.
 
@@ -523,6 +524,11 @@ class Pi05(ExportablePolicyMixin, Policy):
     def configure_optimizers(self) -> dict[str, Any]:
         """Configure optimizer and scheduler.
 
+        When ``scheduler_decay_steps`` is ``None``, the cosine decay horizon
+        is automatically set to the total training steps
+        (``self.trainer.estimated_stepping_batches``), so the LR reaches
+        ``scheduler_decay_lr`` exactly at the end of training.
+
         Returns:
             Dict with optimizer and lr_scheduler config.
         """
@@ -536,19 +542,19 @@ class Pi05(ExportablePolicyMixin, Policy):
             eps=self.config.optimizer_eps,
         )
 
-        warmup_steps = self.config.scheduler_warmup_steps
-        drop_steps = self.config.scheduler_decay_steps
-        decay_value = self.config.scheduler_decay_lr
+        num_decay_steps = self.config.scheduler_decay_steps
+        if num_decay_steps is None:
+            num_decay_steps = self.trainer.estimated_stepping_batches
+            msg = f"scheduler_decay_steps=None, using total training steps: {num_decay_steps}"
+            logger.info(msg)
 
-        decay_ratio = decay_value / self.config.optimizer_lr
-
-        def lr_lambda(step: int) -> float:
-            if step < warmup_steps:
-                return step / max(1, warmup_steps)
-            num_drops = (step - warmup_steps) // drop_steps
-            return decay_ratio**num_drops
-
-        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+        scheduler = cosine_decay_with_warmup_scheduler(
+            optimizer,
+            peak_lr=self.config.optimizer_lr,
+            decay_lr=self.config.scheduler_decay_lr,
+            num_warmup_steps=self.config.scheduler_warmup_steps,
+            num_decay_steps=num_decay_steps,
+        )
 
         return {
             "optimizer": optimizer,
