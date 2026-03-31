@@ -262,14 +262,14 @@ class ACT(ExportableModelMixin, Model):
             exporter_kwargs={
                 "output_names": ["action"],
             },
-            preprocessing_type="image_resize",
+            preprocessors_specs="image_resize",
         )
         extra_args["openvino"] = OpenVINOExportParameters(
             outputs=["action"],
             export_tokenizer=False,
             compress_to_fp16=False,
             exporter_kwargs={},
-            preprocessing_type="image_resize",
+            preprocessors_specs="image_resize",
         )
         extra_args["executorch"] = ExecuTorchExportParameters()
         extra_args["torch"] = TorchExportParameters()
