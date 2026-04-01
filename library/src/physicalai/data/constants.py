@@ -7,14 +7,10 @@ Module-level constants providing string literals for Observation field names,
 enabling IDE autocomplete and safe refactoring for dict-based access patterns.
 """
 
-from physicalai.inference.constants import ACTION, TASK, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
+from physicalai.inference.constants import ACTION, IMAGE_MASKS, IMAGES, TASK, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 
 # Core observation fields
 STATE = "state"
-IMAGES = "images"
-
-# Preprocessing-related fields
-IMAGE_MASKS = "image_masks"
 
 # Optional RL & metadata fields
 NEXT_REWARD = "next_reward"
@@ -33,6 +29,7 @@ __all__ = [
     "EXTRA",
     "FRAME_INDEX",
     "IMAGES",
+    "IMAGE_MASKS",
     "INDEX",
     "INFO",
     "NEXT_REWARD",
