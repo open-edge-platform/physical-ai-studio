@@ -599,7 +599,7 @@ class TestCheckpointConverter:
     @pytest.fixture()
     def lightning_checkpoint(self, sample_config, sample_lightning_state, tmp_path):
         """Create a synthetic Lightning .ckpt file on disk."""
-        from physicalai.export.mixin_export import CONFIG_KEY, POLICY_NAME_KEY
+        from physicalai.export.mixin_policy import CONFIG_KEY, POLICY_NAME_KEY
 
         ckpt = {
             "state_dict": sample_lightning_state,
@@ -727,7 +727,7 @@ class TestCheckpointConverter:
 
     def test_lerobot_to_lightning_stores_config_and_policy_name(self, lerobot_dir, sample_config, tmp_path):
         """Checkpoint contains CONFIG_KEY and POLICY_NAME_KEY."""
-        from physicalai.export.mixin_export import CONFIG_KEY, POLICY_NAME_KEY
+        from physicalai.export.mixin_policy import CONFIG_KEY, POLICY_NAME_KEY
         from physicalai.policies.lerobot.utils.checkpoint_converter import lerobot_to_lightning
 
         ckpt_path = tmp_path / "converted.ckpt"
@@ -741,7 +741,7 @@ class TestCheckpointConverter:
 
     def test_lerobot_to_lightning_explicit_policy_name(self, lerobot_dir, tmp_path):
         """Explicit policy_name overrides config['type']."""
-        from physicalai.export.mixin_export import POLICY_NAME_KEY
+        from physicalai.export.mixin_policy import POLICY_NAME_KEY
         from physicalai.policies.lerobot.utils.checkpoint_converter import lerobot_to_lightning
 
         ckpt_path = tmp_path / "converted.ckpt"

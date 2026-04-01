@@ -253,6 +253,13 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         save_dir.mkdir(parents=True, exist_ok=True)
         self.lerobot_policy._save_pretrained(save_dir)  # noqa: SLF001
 
+        # Save processor pipelines so the model can be re-loaded with from_pretrained.
+        # Without these, lerobot raises ProcessorMigrationError on load.
+        if hasattr(self, "_preprocessor") and self._preprocessor is not None:
+            self._preprocessor._save_pretrained(save_dir)  # noqa: SLF001
+        if hasattr(self, "_postprocessor") and self._postprocessor is not None:
+            self._postprocessor._save_pretrained(save_dir)  # noqa: SLF001
+
         if repo_id is not None:
             return self.push_to_hub(
                 repo_id=repo_id,
