@@ -57,6 +57,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         expert_width_multiplier: Action expert hidden size ratio to VLM. Default: 0.75.
         min_period: Minimum period for sine-cosine positional encoding. Default: 4e-3.
         max_period: Maximum period for sine-cosine positional encoding. Default: 4.0.
+        use_random_input_noise: Whether to use random noise as the initial input for the denoising
+            process during inference. If False, zeros are used instead. Default: True.
         num_steps: Number of decoding steps. Default: 10.
         use_cache: Whether to use attention cache. Default: True.
         freeze_vision_encoder: Whether to freeze vision encoder during training. Default: True.
@@ -113,6 +115,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         expert_width_multiplier: float = 0.75,  # The action expert hidden size (wrt to the VLM)
         min_period: float = 4e-3,  # sensitivity range for the timestep used in sine-cosine positional encoding
         max_period: float = 4.0,
+        use_random_input_noise: bool = False,
         # Decoding
         num_steps: int = 10,
         # Attention utils
@@ -160,6 +163,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             expert_width_multiplier=expert_width_multiplier,
             min_period=min_period,
             max_period=max_period,
+            use_random_input_noise=use_random_input_noise,
             num_steps=num_steps,
             use_cache=use_cache,
             freeze_vision_encoder=freeze_vision_encoder,
@@ -230,6 +234,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             expert_width_multiplier=self.config.expert_width_multiplier,
             min_period=self.config.min_period,
             max_period=self.config.max_period,
+            use_random_input_noise=self.config.use_random_input_noise,
         )
 
         self._preprocessor, self._postprocessor = make_smolvla_preprocessors(

@@ -89,6 +89,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
         expert_width_multiplier: float = 0.75,
         min_period: float = 4e-3,
         max_period: float = 4.0,
+        use_random_input_noise: bool = True,
     ) -> None:
         """Initialize the SmolVLA model.
 
@@ -118,6 +119,8 @@ class SmolVLAModel(ExportableModelMixin, Model):
             expert_width_multiplier: Multiplier for action expert hidden size relative to VLM.
             min_period: Minimum period for sine-cosine positional encoding of timesteps.
             max_period: Maximum period for sine-cosine positional encoding of timesteps.
+            use_random_input_noise: Whether to use random noise as the initial input for the
+                denoising process during inference. If False, zeros are used instead.
         """
         super().__init__()
         self._chunk_size = chunk_size
@@ -145,6 +148,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
             expert_width_multiplier=expert_width_multiplier,
             min_period=min_period,
             max_period=max_period,
+            use_random_input_noise=use_random_input_noise,
         )
         self._dataset_stats = dataset_stats
 
@@ -706,6 +710,7 @@ class VLAFlowMatching(nn.Module):
         expert_width_multiplier: float = 0.75,
         min_period: float = 4e-3,
         max_period: float = 4.0,
+        use_random_input_noise: bool = True,
     ) -> None:
         """Initialize the SmolVLA model.
 
@@ -729,6 +734,8 @@ class VLAFlowMatching(nn.Module):
             expert_width_multiplier: Multiplier for action expert hidden size relative to VLM.
             min_period: Minimum period for sine-cosine positional encoding of timesteps.
             max_period: Maximum period for sine-cosine positional encoding of timesteps.
+            use_random_input_noise: Whether to use random noise as the initial input for the
+                denoising process during inference. If False, zeros are used instead.
         """
         super().__init__()
         self._chunk_size = chunk_size
@@ -738,6 +745,7 @@ class VLAFlowMatching(nn.Module):
         self._train_state_proj = train_state_proj
         self._min_period = min_period
         self._max_period = max_period
+        self._use_random_input_noise = use_random_input_noise
 
         self.vlm_with_expert = _SmolVLMWithExpertModel(
             model_id=vlm_model_name,
@@ -787,9 +795,8 @@ class VLAFlowMatching(nn.Module):
         for params in self.state_proj.parameters():
             params.requires_grad = self._train_state_proj
 
-    @staticmethod
-    def _sample_noise(shape: tuple[int, ...], device: torch.device) -> torch.Tensor:
-        if torch.jit.is_tracing() or torch.onnx.is_in_onnx_export():
+    def _sample_noise(self, shape: tuple[int, ...], device: torch.device) -> torch.Tensor:
+        if not self._use_random_input_noise or torch.jit.is_tracing() or torch.onnx.is_in_onnx_export():
             return torch.zeros(shape, dtype=torch.float32, device=device)
 
         return torch.normal(
