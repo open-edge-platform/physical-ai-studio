@@ -16,8 +16,8 @@ from physicalai.export.backends import ExportBackend
 from physicalai.inference.adapters import get_adapter
 from physicalai.inference.component_factory import instantiate_component
 from physicalai.inference.constants import ACTION
-from physicalai.inference.preprocessors import LambdaPreprocessor
 from physicalai.inference.manifest import ComponentSpec, Manifest
+from physicalai.inference.preprocessors import LambdaPreprocessor
 from physicalai.inference.runners import get_runner
 
 if TYPE_CHECKING:

@@ -8,6 +8,8 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image
 
+from physicalai.inference.constants import IMAGE_MASKS, IMAGES
+
 from .base import Preprocessor
 
 
@@ -40,17 +42,17 @@ class ResizeSmolVLA(Preprocessor):
         and generates corresponding attention masks.
 
         Args:
-            inputs: Dictionary containing "images" key with numpy array(s) of shape
+            inputs: Dictionary containing IMAGES key with numpy array(s) of shape
                     (height, width, channels) or list of such arrays.
 
         Returns:
             Dictionary with processed:
-            - "images": Stacked resized images of shape (batch_size, height, width, channels)
+            - IMAGES: Stacked resized images of shape (batch_size, height, width, channels)
                         with pixel values normalized to [-1, 1].
-            - "image_masks": Boolean masks of shape (batch_size, height, width) indicating
+            - IMAGE_MASKS: Boolean masks of shape (batch_size, height, width) indicating
                              valid image regions (all ones for padded images).
         """
-        images = inputs["images"]
+        images = inputs[IMAGES]
 
         if isinstance(images, np.ndarray):
             images = [images]
@@ -66,8 +68,8 @@ class ResizeSmolVLA(Preprocessor):
             resized_images.append(resized_img)
             img_masks.append(mask)
 
-        inputs["images"] = np.stack(resized_images, axis=0)
-        inputs["image_masks"] = np.stack(img_masks, axis=0)
+        inputs[IMAGES] = np.stack(resized_images, axis=0)
+        inputs[IMAGE_MASKS] = np.stack(img_masks, axis=0)
 
         return inputs
 

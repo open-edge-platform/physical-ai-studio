@@ -301,6 +301,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
         extra_args: dict[str, ExportParameters] = {}
         preproc_specs = [
             ComponentSpec(class_path="smolvla_resize", init_args={"image_resolution": self._resize_imgs_with_padding}),
+            ComponentSpec(class_path="new_line", init_args={}),
         ]
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={

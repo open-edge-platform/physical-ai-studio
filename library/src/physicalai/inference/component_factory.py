@@ -102,6 +102,7 @@ component_registry.register("action_chunking", "physicalai.inference.runners.Act
 
 # Postprocessors
 component_registry.register("smolvla_resize", "physicalai.inference.preprocessors.smolvla.ResizeSmolVLA")
+component_registry.register("new_line", "physicalai.inference.preprocessors.new_line.NewLinePreprocessor")
 
 
 def _import_class(class_path: str) -> type:

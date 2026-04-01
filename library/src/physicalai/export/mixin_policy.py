@@ -116,7 +116,6 @@ class ExportablePolicyMixin:
         chunk_size = metadata.get("chunk_size", 1)
         preprocessors_specs: list[ComponentSpec] = metadata.get("preprocessors", [])
 
-
         if use_action_queue:
             runner = ComponentSpec.from_class(
                 ActionChunking,
