@@ -119,17 +119,16 @@ class SmolVLAPreprocessor(torch.nn.Module):
             and 'tokenized_prompt_mask' tensors, after applying state-action normalization.
         """
         batch = self._newline_processor(batch)
+
         tokens, masks = self._tokenize(batch[TASK])
         batch[TOKENIZED_PROMPT] = tokens.to(batch[STATE].device)
         batch[TOKENIZED_PROMPT_MASK] = masks.to(batch[STATE].device)
 
-        images, img_masks = self._preprocess_images(batch)
-        batch[IMAGES] = images
-        batch[IMAGE_MASKS] = img_masks
+        batch = self._preprocess_images(batch)
 
         return self._state_action_normalizer(batch)
 
-    def _preprocess_images(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
+    def _preprocess_images(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         """Apply SmolVLA preprocessing to the images.
 
         This method processes image tensors from a batch by:
@@ -143,11 +142,8 @@ class SmolVLAPreprocessor(torch.nn.Module):
                 Optional padding masks are stored with keys prefixed by EXTRA.
 
         Returns:
-            A tuple containing:
-                - images: Stacked preprocessed image tensors, each with shape (B, C, H, W)
-                    and pixel values in range [-1.0, 1.0]
-                - img_masks: List of boolean mask tensors indicating valid (non-padded)
-                    images in each batch position
+            A dictionary containing the processed batch with added 'images'
+            and 'image_masks' tensors, after applying image preprocessing.
         """
         images = []
         img_masks = []
@@ -158,6 +154,7 @@ class SmolVLAPreprocessor(torch.nn.Module):
         max_image_dim = 5
         for key in batch_img_keys:
             img = batch[key][:, -1, :, :, :] if batch[key].ndim == max_image_dim else batch[key]
+            batch.pop(key)  # remove original image key from batch to avoid confusion
             if self.image_resolution is not None:
                 img = self._resize_with_pad(img, *self.image_resolution, pad_value=0)
 
@@ -167,6 +164,7 @@ class SmolVLAPreprocessor(torch.nn.Module):
             device = img.device
             if EXTRA + f".{key}_padding_mask" in batch:
                 mask = batch[EXTRA + f".{key}_padding_mask"].bool()
+                batch.pop(EXTRA + f".{key}_padding_mask")
             else:
                 mask = torch.ones(bsize, dtype=torch.bool, device=device)
             images.append(img)
@@ -179,7 +177,10 @@ class SmolVLAPreprocessor(torch.nn.Module):
             images = torch.empty(0, device=batch[STATE].device)
             img_masks = torch.empty(0, device=batch[STATE].device)
 
-        return images, img_masks
+        batch[IMAGES] = images
+        batch[IMAGE_MASKS] = img_masks
+
+        return batch
 
     @staticmethod
     def _newline_processor(batch: dict[str, Any]) -> dict[str, torch.Tensor]:
