@@ -21,7 +21,7 @@ class LambdaPreprocessor(Preprocessor):
     Args:
         fn: A callable that accepts and returns an observation dict.
 
-    Examples:
+    Example:
         >>> prep = LambdaPreprocessor(lambda inputs: {k: v / 255 for k, v in inputs.items()})
         >>> outputs = prep({"image": np.ones((3, 224, 224))})
     """
