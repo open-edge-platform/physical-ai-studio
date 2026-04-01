@@ -53,10 +53,7 @@ class ResizeSmolVLA(Preprocessor):
                              valid image regions (all ones for padded images).
         """
         img_keys = [key for key in inputs if key.startswith(IMAGES)]
-        if len(img_keys) == 1:
-            images = [inputs[img_keys[0]]]
-        else:
-            images = [inputs[key] for key in img_keys]
+        images = [inputs[img_keys[0]]] if len(img_keys) == 1 else [inputs[key] for key in img_keys]
 
         img_masks = []
         resized_images = []
@@ -94,8 +91,6 @@ class ResizeSmolVLA(Preprocessor):
             # cv2.resize expects (H, W, C) so transpose from (C, H, W)
             hwc = np.transpose(img[i], (1, 2, 0))
             resized_hwc = cv2.resize(hwc, (resized_width, resized_height), interpolation=cv2.INTER_LINEAR)
-            if resized_hwc.ndim == 2:
-                resized_hwc = resized_hwc[:, :, np.newaxis]
             batch.append(np.transpose(resized_hwc, (2, 0, 1)))
         resized_img = np.stack(batch, axis=0)
 

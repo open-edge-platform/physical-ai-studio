@@ -268,9 +268,6 @@ class SmolVLAPreprocessor(torch.nn.Module):
 
         Returns:
             The tokenizer instance used by this preprocessor.
-
-        Raises:
-            ImportError: If transformers library is not installed.
         """
         return self.tokenizer
 
