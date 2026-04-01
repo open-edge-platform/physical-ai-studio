@@ -304,12 +304,12 @@ class SmolVLAModel(ExportableModelMixin, Model):
         """
         extra_args: dict[str, ExportParameters] = {}
         preproc_specs = [
-            ComponentSpec(class_path="smolvla_resize", init_args={"image_resolution": self._resize_imgs_with_padding}),
-            ComponentSpec(class_path="new_line", init_args={}),
+            ComponentSpec(type="smolvla_resize", init_args={"image_resolution": self._resize_imgs_with_padding}),
+            ComponentSpec(type="new_line", init_args={}),
         ]
         postproc_specs = [
             ComponentSpec(
-                class_path="denormalize",
+                type="denormalize",
                 init_args={"stats": {ACTION: self._dataset_stats[ACTION]}, "mode": "mean_std"},
             ),
         ]
