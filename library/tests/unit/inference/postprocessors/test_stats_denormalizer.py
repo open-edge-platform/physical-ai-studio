@@ -44,7 +44,7 @@ class TestStatsDenormalizerInit:
         assert isinstance(denormalizer, Postprocessor)
 
     def test_neither_stats_path_nor_artifact_raises(self) -> None:
-        with pytest.raises(ValueError, match="Either stats_path or artifact must be provided"):
+        with pytest.raises(ValueError, match="Either stats_path, artifact, or stats must be provided"):
             StatsDenormalizer()
 
     def test_artifact_param_accepted(self, stats_dir: Path) -> None:
