@@ -4,6 +4,7 @@
 """Preprocessor that adds a new line character to text inputs."""
 
 from __future__ import annotations
+
 from typing import Any
 
 from physicalai.inference.constants import TASK
@@ -15,9 +16,6 @@ class NewLinePreprocessor(Preprocessor):
     """Preprocessor for adding a new line character to text inputs.
 
     This preprocessor appends a new line character to the task description.
-
-    Attributes:
-        new_line_char (str): The new line character to append. Defaults to "\n".
     """
 
     def __call__(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -28,17 +26,21 @@ class NewLinePreprocessor(Preprocessor):
 
         Returns:
             Dictionary with updated TASK value.
+
+        Raises:
+            TypeError: If TASK is not a list of strings, or if any element in TASK is not a string.
         """
         batch_tasks = inputs[TASK]
         if not isinstance(batch_tasks, list):
-            raise ValueError(f"Expected TASK to be a list of strings, got {type(batch_tasks)}")
+            msg = f"Expected TASK to be a list of strings, got {type(batch_tasks)}"
+            raise TypeError(msg)
 
         for i, task in enumerate(batch_tasks):
             if not isinstance(task, str):
-                raise ValueError(f"Expected TASK to be a string, got {type(task)}")
+                msg = f"Expected TASK to be a string, got {type(task)}"
+                raise TypeError(msg)
             if not task.endswith("\n"):
                 batch_tasks[i] = task + "\n"
 
         inputs[TASK] = batch_tasks
         return inputs
-
