@@ -357,7 +357,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
 
         all_keys = [key for key in self._dataset_stats if self._dataset_stats[key]["type"] == FeatureType.VISUAL.value]
 
-        if len(all_keys) != len(batch[IMAGES]):
+        if len(all_keys) != batch[IMAGES].shape[0]:
             msg = f"Some of the image features are missing from the batch. \
                     (batch: {batch.keys()}) (image_features:{all_keys})"
             raise ValueError(msg)
