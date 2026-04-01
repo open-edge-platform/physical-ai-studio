@@ -46,12 +46,6 @@ export const DiagnosticsStep = () => {
     const voltageReadable = voltageResult.avg_voltage !== null;
     const alreadyCalibrated = probeResult.calibration?.all_calibrated ?? false;
 
-    // When voltage is readable but mismatched, motor/calibration details are noise —
-    // the user needs to fix the power supply first. When voltage is unreadable
-    // (e.g. after a full reset where all motors share ID 1), we still show the
-    // motor section so the user can proceed to motor setup.
-    const showMotorSection = true; //!voltageReadable || voltageOk;
-
     return (
         <Flex direction='column' gap='size-200'>
             {/* Header with refresh */}
@@ -105,50 +99,48 @@ export const DiagnosticsStep = () => {
             </DiagnosticSection>
 
             {/* Motor probe section — only shown when voltage is OK */}
-            {showMotorSection && (
-                <DiagnosticSection
-                    title={`Motors (${probeResult.found_count}/${probeResult.total_count})`}
-                    badge={
-                        allMotorsOk
-                            ? { variant: 'ok', label: 'All found' }
-                            : {
-                                  variant: 'error',
-                                  label: `${probeResult.total_count - probeResult.found_count} missing`,
-                              }
-                    }
-                    defaultExpanded={!allMotorsOk}
-                >
-                    <Flex direction='column' gap='size-150' marginTop='size-100'>
-                        <div className={classes.diagnosticsGrid}>
-                            {probeResult.motors.map((motor) => (
-                                <div key={motor.name} className={classes.motorRow}>
-                                    <span className={classes.motorName}>{motor.name}</span>
-                                    <span className={classes.motorId}>ID {motor.motor_id}</span>
-                                    {motor.found && motor.model_correct ? (
-                                        <StatusBadge variant='ok'>Found</StatusBadge>
-                                    ) : motor.found ? (
-                                        <StatusBadge variant='error'>Wrong model ({motor.model_number})</StatusBadge>
-                                    ) : (
-                                        <StatusBadge variant='error'>Not found</StatusBadge>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
+            <DiagnosticSection
+                title={`Motors (${probeResult.found_count}/${probeResult.total_count})`}
+                badge={
+                    allMotorsOk
+                        ? { variant: 'ok', label: 'All found' }
+                        : {
+                              variant: 'error',
+                              label: `${probeResult.total_count - probeResult.found_count} missing`,
+                          }
+                }
+                defaultExpanded={!allMotorsOk}
+            >
+                <Flex direction='column' gap='size-150' marginTop='size-100'>
+                    <div className={classes.diagnosticsGrid}>
+                        {probeResult.motors.map((motor) => (
+                            <div key={motor.name} className={classes.motorRow}>
+                                <span className={classes.motorName}>{motor.name}</span>
+                                <span className={classes.motorId}>ID {motor.motor_id}</span>
+                                {motor.found && motor.model_correct ? (
+                                    <StatusBadge variant='ok'>Found</StatusBadge>
+                                ) : motor.found ? (
+                                    <StatusBadge variant='error'>Wrong model ({motor.model_number})</StatusBadge>
+                                ) : (
+                                    <StatusBadge variant='error'>Not found</StatusBadge>
+                                )}
+                            </div>
+                        ))}
+                    </div>
 
-                        {allMotorsOk ? (
-                            <InlineAlert variant='success'>All motors detected and verified.</InlineAlert>
-                        ) : (
-                            <InlineAlert variant='error'>
-                                Some motors are missing or have incorrect firmware. You can run motor setup to assign
-                                motor IDs.
-                            </InlineAlert>
-                        )}
-                    </Flex>
-                </DiagnosticSection>
-            )}
+                    {allMotorsOk ? (
+                        <InlineAlert variant='success'>All motors detected and verified.</InlineAlert>
+                    ) : (
+                        <InlineAlert variant='error'>
+                            Some motors are missing or have incorrect firmware. You can run motor setup to assign motor
+                            IDs.
+                        </InlineAlert>
+                    )}
+                </Flex>
+            </DiagnosticSection>
 
             {/* Calibration status (if motors are OK) — always expanded by default */}
-            {showMotorSection && allMotorsOk && probeResult.calibration && (
+            {allMotorsOk && probeResult.calibration && (
                 <DiagnosticSection
                     title='Calibration Status'
                     badge={
@@ -193,7 +185,7 @@ export const DiagnosticsStep = () => {
                     Back
                 </Button>
                 <Flex gap='size-200'>
-                    {showMotorSection && !allMotorsOk && (
+                    {!allMotorsOk && (
                         <Button
                             variant='accent'
                             onPress={() => {
@@ -205,7 +197,7 @@ export const DiagnosticsStep = () => {
                             Setup Motors
                         </Button>
                     )}
-                    {showMotorSection && allMotorsOk && !alreadyCalibrated && (
+                    {allMotorsOk && !alreadyCalibrated && (
                         <Button
                             variant='accent'
                             onPress={() => {
@@ -216,7 +208,7 @@ export const DiagnosticsStep = () => {
                             Calibrate
                         </Button>
                     )}
-                    {showMotorSection && allMotorsOk && alreadyCalibrated && (
+                    {allMotorsOk && alreadyCalibrated && (
                         <>
                             <Button
                                 variant='secondary'
