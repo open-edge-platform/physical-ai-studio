@@ -607,6 +607,7 @@ class TestCheckpointConverter:
             POLICY_NAME_KEY: "act",
         }
         ckpt_path = tmp_path / "model.ckpt"
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         torch.save(ckpt, str(ckpt_path))
         return ckpt_path
 
@@ -673,6 +674,7 @@ class TestCheckpointConverter:
         from physicalai.policies.lerobot.utils.checkpoint_converter import lightning_to_lerobot
 
         ckpt_path = tmp_path / "bad.ckpt"
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         torch.save({"state_dict": {}}, str(ckpt_path))
 
         with pytest.raises(KeyError, match="model_config"):
@@ -702,6 +704,7 @@ class TestCheckpointConverter:
         assert result == ckpt_path
         assert ckpt_path.exists()
 
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         ckpt = torch.load(str(ckpt_path), map_location="cpu", weights_only=True)
         assert "state_dict" in ckpt
 
@@ -712,6 +715,7 @@ class TestCheckpointConverter:
         ckpt_path = tmp_path / "converted.ckpt"
         lerobot_to_lightning(lerobot_dir, ckpt_path)
 
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         ckpt = torch.load(str(ckpt_path), map_location="cpu", weights_only=True)
         state_dict = ckpt["state_dict"]
 
@@ -729,6 +733,7 @@ class TestCheckpointConverter:
         ckpt_path = tmp_path / "converted.ckpt"
         lerobot_to_lightning(lerobot_dir, ckpt_path)
 
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         ckpt = torch.load(str(ckpt_path), map_location="cpu", weights_only=True)
 
         assert ckpt[CONFIG_KEY] == sample_config
@@ -742,6 +747,7 @@ class TestCheckpointConverter:
         ckpt_path = tmp_path / "converted.ckpt"
         lerobot_to_lightning(lerobot_dir, ckpt_path, policy_name="diffusion")
 
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         ckpt = torch.load(str(ckpt_path), map_location="cpu", weights_only=True)
         assert ckpt[POLICY_NAME_KEY] == "diffusion"
 
@@ -809,7 +815,9 @@ class TestCheckpointConverter:
         ckpt_restored = tmp_path / "restored.ckpt"
         lerobot_to_lightning(lr_dir, ckpt_restored)
 
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         original = torch.load(str(lightning_checkpoint), map_location="cpu", weights_only=True)
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         restored = torch.load(str(ckpt_restored), map_location="cpu", weights_only=True)
 
         orig_sd = original["state_dict"]
@@ -854,6 +862,7 @@ class TestCheckpointConverter:
         lerobot_to_lightning(lr_dir, ckpt_path)
 
         # Step 3: verify checkpoint weights match original wrapper weights
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         ckpt = torch.load(str(ckpt_path), map_location="cpu", weights_only=True)
         ckpt_sd = ckpt["state_dict"]
 
