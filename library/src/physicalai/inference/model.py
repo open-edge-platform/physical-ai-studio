@@ -14,7 +14,7 @@ import yaml
 
 from physicalai.export.backends import ExportBackend
 from physicalai.inference.adapters import get_adapter
-from physicalai.inference.component_factory import instantiate_component
+from physicalai.inference.component_factory import instantiate_component, resolve_artifact
 from physicalai.inference.constants import ACTION
 from physicalai.inference.manifest import ComponentSpec, Manifest
 from physicalai.inference.runners import get_runner
@@ -355,38 +355,7 @@ class InferenceModel:
         Returns:
             List of instantiated processor objects.
         """
-        return [instantiate_component(self._resolve_artifact(spec)) for spec in specs]
-
-    def _resolve_artifact(self, spec: ComponentSpec) -> ComponentSpec:
-        """Resolve relative ``artifact`` paths to absolute paths.
-
-        For type-based specs, resolves a relative ``artifact`` flat
-        param to an absolute path.  For class_path-based specs,
-        resolves a relative ``artifact`` in ``init_args``.
-
-        Returns:
-            The spec with resolved artifact path, or the original spec
-            unchanged if no resolution is needed.
-        """
-        flat = spec.flat_params
-        if "artifact" in flat and not Path(flat["artifact"]).is_absolute():
-            resolved_path = str(self.export_dir / flat["artifact"])
-            new_params = {**flat, "artifact": resolved_path}
-            return ComponentSpec.model_validate({
-                "type": spec.type,
-                **new_params,
-            })
-
-        if spec.class_path and "artifact" in spec.init_args:
-            artifact = spec.init_args["artifact"]
-            if not Path(artifact).is_absolute():
-                new_init_args = {**spec.init_args, "artifact": str(self.export_dir / artifact)}
-                return ComponentSpec.model_validate({
-                    "class_path": spec.class_path,
-                    "init_args": new_init_args,
-                })
-
-        return spec
+        return [instantiate_component(resolve_artifact(spec, self.export_dir)) for spec in specs]
 
     def _detect_policy_name(self) -> str:
         """Auto-detect policy name from manifest or file heuristics.
