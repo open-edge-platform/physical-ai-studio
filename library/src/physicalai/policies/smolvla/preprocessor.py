@@ -154,7 +154,7 @@ class SmolVLAPreprocessor(torch.nn.Module):
         max_image_dim = 5
         for key in batch_img_keys:
             img = batch[key][:, -1, :, :, :] if batch[key].ndim == max_image_dim else batch[key]
-            batch.pop(key)  # remove original image key from batch to avoid confusion
+            batch.pop(key)
             if self.image_resolution is not None:
                 img = self._resize_with_pad(img, *self.image_resolution, pad_value=0)
 
