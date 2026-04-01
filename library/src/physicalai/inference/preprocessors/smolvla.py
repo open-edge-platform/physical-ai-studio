@@ -5,8 +5,8 @@
 
 from __future__ import annotations
 
+import cv2
 import numpy as np
-from PIL import Image
 
 from physicalai.inference.constants import IMAGE_MASKS, IMAGES
 
@@ -87,15 +87,15 @@ class ResizeSmolVLA(Preprocessor):
         resized_height = int(cur_height / ratio)
         resized_width = int(cur_width / ratio)
 
-        # Per-image PIL bilinear resize (matches F.interpolate align_corners=False)
+        # Per-image cv2 bilinear resize (matches F.interpolate align_corners=False)
         batch = []
         for i in range(img.shape[0]):
-            channels = []
-            for c in range(img.shape[1]):
-                pil_img = Image.fromarray(img[i, c].astype(np.float32), mode="F")
-                pil_img = pil_img.resize((resized_width, resized_height), Image.Resampling.BILINEAR)
-                channels.append(np.asarray(pil_img, dtype=img.dtype))
-            batch.append(np.stack(channels, axis=0))
+            # cv2.resize expects (H, W, C) so transpose from (C, H, W)
+            hwc = np.transpose(img[i], (1, 2, 0))
+            resized_hwc = cv2.resize(hwc, (resized_width, resized_height), interpolation=cv2.INTER_LINEAR)
+            if resized_hwc.ndim == 2:
+                resized_hwc = resized_hwc[:, :, np.newaxis]
+            batch.append(np.transpose(resized_hwc, (2, 0, 1)))
         resized_img = np.stack(batch, axis=0)
 
         pad_height = max(0, int(height - resized_height))
