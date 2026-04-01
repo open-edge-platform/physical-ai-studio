@@ -307,11 +307,18 @@ class SmolVLAModel(ExportableModelMixin, Model):
             ComponentSpec(class_path="smolvla_resize", init_args={"image_resolution": self._resize_imgs_with_padding}),
             ComponentSpec(class_path="new_line", init_args={}),
         ]
+        postproc_specs = [
+            ComponentSpec(
+                class_path="denormalize",
+                init_args={"stats": {ACTION: self._dataset_stats[ACTION]}, "mode": "mean_std"},
+            ),
+        ]
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
                 "output_names": ["action"],
             },
             preprocessors_specs=preproc_specs,
+            postprocessors_specs=postproc_specs,
             export_tokenizer=True,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
@@ -320,6 +327,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
             export_tokenizer=True,
             exporter_kwargs={},
             preprocessors_specs=preproc_specs,
+            postprocessors_specs=postproc_specs,
         )
         extra_args["torch"] = TorchExportParameters()
 
@@ -796,8 +804,8 @@ class VLAFlowMatching(nn.Module):
             params.requires_grad = self._train_state_proj
 
     def _sample_noise(self, shape: tuple[int, ...], device: torch.device) -> torch.Tensor:
-        if not self._use_random_input_noise or torch.jit.is_tracing() or torch.onnx.is_in_onnx_export():
-            return torch.zeros(shape, dtype=torch.float32, device=device)
+        # if not self._use_random_input_noise or torch.jit.is_tracing() or torch.onnx.is_in_onnx_export():
+        return torch.zeros(shape, dtype=torch.float32, device=device)
 
         return torch.normal(
             mean=0.0,
