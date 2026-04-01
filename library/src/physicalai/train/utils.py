@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from lerobot.datasets.feature_utils import check_delta_timestamps, get_delta_indices
+from lerobot.datasets.utils import check_delta_timestamps, get_delta_indices
 
 from physicalai.data.lerobot.dataset import _LeRobotDatasetAdapter  # noqa: PLC2701
 
