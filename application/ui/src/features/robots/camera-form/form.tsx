@@ -1,7 +1,7 @@
 import { ReactNode } from 'react';
 
-import { Button, Divider, Flex, Heading, Icon, View } from '@geti/ui';
-import { ChevronLeft } from '@geti/ui/icons';
+import { Button, Divider, Flex, Heading, Icon, View } from '@geti-ui/ui';
+import { ChevronLeft } from '@geti-ui/ui/icons';
 
 import { RadioDisclosure } from '../../../components/radio-disclosure-group/radio-disclosure-group';
 import { useProjectId } from '../../../features/projects/use-project';

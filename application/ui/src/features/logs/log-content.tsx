@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { AriaComponentsListBox, Flex, ListBoxItem, ListLayout, Text, View, Virtualizer } from '@geti/ui';
+import { AriaListBox, AriaListBoxItem, Flex, ListLayout, Text, View, Virtualizer } from '@geti-ui/ui';
 
 import { LogEntry } from './log-entry';
 import { LogFilters } from './log-filters';
@@ -119,18 +119,18 @@ export const LogContent = ({ logs, isLoading = false }: { logs: LogEntryType[]; 
                 ) : (
                     <View UNSAFE_className={styles.logsInner}>
                         <Virtualizer layout={ListLayout} layoutOptions={{ estimatedRowHeight: 36 }}>
-                            <AriaComponentsListBox
+                            <AriaListBox
                                 aria-label='Log entries'
                                 ref={logsListRef}
                                 items={filteredLogs}
                                 className={styles.virtualizedList}
                             >
                                 {(item) => (
-                                    <ListBoxItem id={item.id} textValue={item.entry.record.message}>
+                                    <AriaListBoxItem id={item.id} textValue={item.entry.record.message}>
                                         <LogEntry entry={item.entry} />
-                                    </ListBoxItem>
+                                    </AriaListBoxItem>
                                 )}
-                            </AriaComponentsListBox>
+                            </AriaListBox>
                         </Virtualizer>
                     </View>
                 )}

@@ -30,6 +30,7 @@ class RobotControlState(BaseModel):
     environment_loaded: bool = False
     is_recording: bool = False
     follower_source: Literal["model", "teleoperation"] | None = None
+    episodes_recorded: int = 0
 
 
 class WorkerEvents:
@@ -242,6 +243,7 @@ class RobotControlWorker(BaseThreadWorker):
             self.events.save_episode.clear()
             self.recording_mutation.save_episode()
             self.state.is_recording = False
+            self.state.episodes_recorded += 1
             self._report_state()
 
     async def _handle_discard_episode(self) -> None:
@@ -264,7 +266,9 @@ class RobotControlWorker(BaseThreadWorker):
             self.recording_mutation = self.dataset.start_recording_mutation(
                 fps=self.fps,
                 features=features,
-                robot_type=self.environment_integration.follower.name,
+                robot_type=self.environment_integration.follower.name
+                if self.environment_integration.follower is not None
+                else "unknown",
             )
             self.state.dataset_loaded = True
             self._report_state()

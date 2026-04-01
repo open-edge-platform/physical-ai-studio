@@ -210,7 +210,7 @@ class Pi0Preprocessor(torch.nn.Module):
         pad_w0, rem_w = divmod(width - new_w, 2)
         pad_w1 = pad_w0 + rem_w
 
-        padded = F.pad(resized, (pad_w0, pad_w1, pad_h0, pad_h1), mode="constant", value=-1.0)
+        padded = F.pad(resized, (pad_w0, pad_w1, pad_h0, pad_h1), mode="constant", value=0.0)
 
         if channels_last:
             padded = padded.permute(0, 2, 3, 1)

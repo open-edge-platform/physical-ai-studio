@@ -35,6 +35,8 @@ async def get_tasks_of_model(
 ) -> list[str]:
     """Get availabe tasks for model."""
     model = await model_service.get_model_by_id(model_id)
+    if model.dataset_id is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model has no dataset associated.")
     dataset = await dataset_service.get_dataset_by_id(model.dataset_id)
     return get_internal_dataset(dataset).get_tasks()
 

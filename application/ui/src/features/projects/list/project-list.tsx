@@ -1,4 +1,4 @@
-import { Grid, Heading, Text, View } from '@geti/ui';
+import { Grid, Heading, Text, View } from '@geti-ui/ui';
 import { isEmpty } from 'lodash-es';
 
 import { $api } from '../../../api/client';

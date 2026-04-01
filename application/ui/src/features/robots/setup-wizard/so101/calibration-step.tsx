@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 
-import { Button, Flex, Heading, Loading, Text } from '@geti/ui';
+import { Button, Flex, Heading, Loading, Text } from '@geti-ui/ui';
 
 import { InlineAlert } from '../shared/inline-alert';
 import { StatusBadge } from '../shared/status-badge';

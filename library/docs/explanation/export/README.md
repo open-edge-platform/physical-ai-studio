@@ -7,7 +7,7 @@ Export trained models to multiple formats.
 - **PyTorch** - Save checkpoint with config
 - **ONNX** - Cross-platform deployment
 - **OpenVINO** - Intel hardware optimization
-- **Torch Export IR** - Edge/mobile deployment
+- **ExecuTorch** - Edge/mobile deployment
 
 ## Export Mixin
 
@@ -24,7 +24,7 @@ policy = MyPolicy()
 policy.to_torch("model.pt")
 policy.to_onnx("model.onnx")
 policy.to_openvino("model.xml")
-policy.to_torch_export_ir("model.ptir")
+policy.to_executorch("model.pte")
 ```
 
 ## Architecture
@@ -35,6 +35,7 @@ graph TB
     B --> C[to_torch]
     B --> D[to_onnx]
     B --> P[to_openvino]
+    B --> Q[to_executorch]
 
     C --> E[Save State Dict]
     C --> F[Serialize Config]
@@ -52,10 +53,8 @@ graph TB
 
     M --> N[OpenVINO Model]
 
-    B --> Q[to_torch_export_ir]
-
-    Q --> Y[Torch Dynamo tracing]
-    Y --> Z[Torch Export IR]
+    Q --> Y[ExecuTorch pipeline]
+    Y --> Z[ExecuTorch .pte]
 ```
 
 ## Export Formats
@@ -107,24 +106,21 @@ policy.to_openvino("model.xml")
 - Hardware acceleration support on Intel hardware
 - Runtime optimizations
 
-### Torch IR Format
+### ExecuTorch Format
 
-That format aims to preserve input model graph in the original pythorch aten dialect.
-Model can be loaded and executed by pytorch without any extra deps:
+ExecuTorch enables deploying PyTorch models to edge and mobile devices:
 
 ```python test="skip" reason="requires physicalai install and model config"
 policy = ACT(...)
-policy.to_torch_export_ir("model.ptir")
-
-loaded_program = torch.export.load("model.ptir")
-output = loaded_program.module()(policy.model.sample_input)
+policy.to_executorch("model.pte")
 ```
 
-**Torch IR Benefits:**
+**ExecuTorch Benefits:**
 
-- Cross-platform inference
-- Hardware acceleration support via executorch
-- Runtime optimizations
+- Edge and mobile deployment
+- Hardware acceleration support via ExecuTorch delegates
+- Lightweight runtime
+- Optimized for resource-constrained environments
 
 ## Configuration Serialization for Torch models
 
@@ -205,7 +201,7 @@ class MyPolicy(Export, Policy):
     @property
     def supported_export_backends() -> list[str | ExportBackend]:
         return [ExportBackend.TORCH, ExportBackend.OPENVINO,
-                ExportBackend.ONNX, ExportBackend.TORCH_EXPORT_IR]
+                ExportBackend.ONNX, ExportBackend.EXECUTORCH]
 ```
 
 ## Usage Examples
@@ -230,8 +226,8 @@ policy.to_onnx("trained_model.onnx")
 # Export to OpenVINO
 policy.to_openvino("trained_model.xml")
 
-# Export to Torch IR
-policy.to_torch_export_ir("trained_model.ptir")
+# Export to ExecuTorch
+policy.to_executorch("trained_model.pte")
 ```
 
 ### Custom ONNX Export

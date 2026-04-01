@@ -3,7 +3,7 @@
 
 import { Suspense, useMemo, useState } from 'react';
 
-import { Button, ButtonGroup, Content, Dialog, Divider, Flex, Heading, Loading, Text } from '@geti/ui';
+import { Button, ButtonGroup, Content, Dialog, Divider, Flex, Heading, Loading, Text } from '@geti-ui/ui';
 import { queryOptions, experimental_streamedQuery as streamedQuery, useQuery } from '@tanstack/react-query';
 
 import { fetchClient } from '../../api/client';

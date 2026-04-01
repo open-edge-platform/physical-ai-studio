@@ -20,6 +20,12 @@ from transformers.cache_utils import DynamicCache
 from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.data.observation import ACTION, IMAGES, STATE, TASK
 from physicalai.export import ExportableModelMixin
+from physicalai.export.backends import (
+    ExportParameters,
+    ONNXExportParameters,
+    OpenVINOExportParameters,
+    TorchExportParameters,
+)
 from physicalai.policies.base import Model
 
 from .pi_gemma import (
@@ -558,6 +564,7 @@ class Pi05Model(ExportableModelMixin, Model):
         image_resolution: tuple[int, int] = (224, 224),
         freeze_vision_encoder: bool = False,
         train_expert_only: bool = True,
+        gradient_checkpointing: bool = False,
         compile_model: bool = False,
     ) -> None:
         """Initialize Pi05Model.
@@ -581,6 +588,7 @@ class Pi05Model(ExportableModelMixin, Model):
             image_resolution: Target image resolution (height, width). Must be square.
             freeze_vision_encoder: Whether to freeze the vision encoder during training.
             train_expert_only: Whether to train only the action expert.
+            gradient_checkpointing: Whether to enable gradient checkpointing for memory optimization.
             compile_model: Whether to use torch.compile.
 
         Raises:
@@ -623,6 +631,8 @@ class Pi05Model(ExportableModelMixin, Model):
         self.time_mlp_out = nn.Linear(action_expert_config.width, action_expert_config.width)
 
         self.gradient_checkpointing_enabled = False
+        if gradient_checkpointing:
+            self.gradient_checkpointing_enable()
 
         if compile_model:
             torch.set_float32_matmul_precision("high")
@@ -632,42 +642,45 @@ class Pi05Model(ExportableModelMixin, Model):
             self.sample_actions = torch.compile(self.sample_actions, mode=compile_mode)  # type: ignore[method-assign]
             self.forward = torch.compile(self.forward, mode=compile_mode)  # type: ignore[method-assign]
 
+    def set_dataset_stats(self, dataset_stats: dict) -> None:
+        """Update dataset statistics used for normalization."""
+        self._dataset_stats = dataset_stats
+
     @property
-    def extra_export_args(self) -> dict:
+    def extra_export_args(self) -> dict[str, ExportParameters]:
         """Additional export arguments for model conversion.
 
         This property provides extra configuration parameters needed when exporting
-        the model to different formats, particularly ONNX format.
+        the model to different formats (ONNX, OpenVINO, and PyTorch).
 
         Returns:
-            dict: A dictionary containing format-specific export arguments.
+            dict[str, ExportParameters]: A dictionary mapping format names to their export parameters.
+            Supported formats: 'onnx', 'openvino', 'torch'.
 
         Example:
-            >>> extra_args = model.extra_export_args()
-            >>> print(extra_args)
-            {'onnx': {'output_names': ['action']}}
+            >>> model = Pi05(input_features, output_features)
+            >>> export_args = model.extra_export_args
+            >>> onnx_args = export_args['onnx']
+            >>> print(onnx_args.exporter_kwargs)
+            {'output_names': ['action']}
         """
-        extra_args: dict[str, Any] = {}
-        extra_args["onnx"] = {
-            "export_tokenizer": False,
-            "exporter_kwargs": {
+        extra_args: dict[str, ExportParameters] = {}
+        extra_args["onnx"] = ONNXExportParameters(
+            exporter_kwargs={
                 "output_names": ["action"],
             },
-            "preprocessing_type": "pi05",
-        }
-        extra_args["openvino"] = {
-            "output": ["action"],
-            "compress_to_fp16": True,
-            "via_onnx": True,
-            "export_tokenizer": False,
-            "exporter_kwargs": {},
-            "preprocessing_type": "pi05",
-        }
-        extra_args["torch_export_ir"] = {}
-        extra_args["torch"] = {
-            "input_names": ["observation"],
-            "output_names": ["action"],
-        }
+            preprocessing_type="pi05",
+            export_tokenizer=False,
+        )
+        extra_args["openvino"] = OpenVINOExportParameters(
+            outputs=["action"],
+            compress_to_fp16=True,
+            via_onnx=True,
+            export_tokenizer=False,
+            exporter_kwargs={},
+            preprocessing_type="pi05",
+        )
+        extra_args["torch"] = TorchExportParameters()
 
         return extra_args
 
@@ -1002,6 +1015,11 @@ class Pi05Model(ExportableModelMixin, Model):
             v_t = self._apply_checkpoint(action_out_proj_func, suffix_out)
 
             losses = F.mse_loss(u_t, v_t, reduction="none")
+
+            # Truncate losses to actual action dimensions to avoid dilution from padding
+            original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
+            losses = losses[:, :, :original_action_dim]
+
             loss = losses.mean()
             return loss, {"loss": loss.item()}
         return self.predict_action_chunk(batch)

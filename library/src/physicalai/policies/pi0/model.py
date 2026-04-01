@@ -369,16 +369,6 @@ class Pi0Model(Model):
         return self.postprocessor({ACTION: actions})[ACTION]
 
     @property
-    def extra_export_args(self) -> dict:
-        """Return extra export arguments for different export formats."""
-        return {
-            "onnx": {"output_names": ["action"]},
-            "openvino": {"output": ["action"]},
-            "torch_export_ir": {},
-            "torch": {"input_names": ["observation"], "output_names": ["action"]},
-        }
-
-    @property
     def reward_delta_indices(self) -> None:
         """Return reward delta indices (not used in Pi0)."""
         return None

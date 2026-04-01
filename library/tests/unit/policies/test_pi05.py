@@ -65,7 +65,7 @@ class TestPi05Config:
         assert config.optimizer_weight_decay == 0.01
         assert config.optimizer_grad_clip_norm == 1.0
         assert config.scheduler_warmup_steps == 1_000
-        assert config.scheduler_decay_steps == 30_000
+        assert config.scheduler_decay_steps is None
         assert config.scheduler_decay_lr == 2.5e-6
 
     def test_flow_matching_config_values(self) -> None:
@@ -854,3 +854,134 @@ class TestPretrainedUtils:
         """Test _resolve_feature_shape falls back to (1,)."""
         shape = resolve_feature_shape("unknown", {}, {})
         assert shape == (1,)
+
+
+# ============================================================================ #
+# Fine-tuning & Pretrained Path Tests                                          #
+# ============================================================================ #
+
+
+class TestPi05FineTuning:
+    """Tests for Pi05 fine-tuning and pretrained configuration forwarding."""
+
+    def test_gradient_checkpointing_default_true(self) -> None:
+        """Test gradient_checkpointing defaults to True in Pi05 policy."""
+        policy = Pi05()
+        assert policy.config.gradient_checkpointing is True
+
+    def test_gradient_checkpointing_false(self) -> None:
+        """Test gradient_checkpointing can be set to False."""
+        policy = Pi05(gradient_checkpointing=False)
+        assert policy.config.gradient_checkpointing is False
+
+    def test_save_hyperparameters_ignores_pretrained(self) -> None:
+        """Test pretrained_name_or_path is excluded from saved hyperparameters."""
+        policy = Pi05()
+        assert "pretrained_name_or_path" not in policy.hparams
+
+    def test_update_preprocessor_stats(self) -> None:
+        """Test _update_preprocessor_stats rebuilds preprocessors with new stats."""
+        stats = {
+            "observation.state": {
+                "name": "observation.state",
+                "shape": (8,),
+                "mean": [0.0] * 8,
+                "std": [1.0] * 8,
+            },
+            "action": {
+                "name": "action",
+                "shape": (7,),
+                "mean": [0.0] * 7,
+                "std": [1.0] * 7,
+            },
+        }
+        # Use smallest variants to keep memory usage low
+        policy = Pi05(
+            dataset_stats=stats,
+            paligemma_variant="gemma_300m",
+            action_expert_variant="gemma_300m",
+        )
+        assert policy._preprocessor is not None
+
+        # Now update with different stats
+        new_stats = {
+            "observation.state": {
+                "name": "observation.state",
+                "shape": (4,),
+                "mean": [1.0] * 4,
+                "std": [2.0] * 4,
+            },
+            "action": {
+                "name": "action",
+                "shape": (3,),
+                "mean": [1.0] * 3,
+                "std": [2.0] * 3,
+            },
+        }
+        old_preprocessor = policy._preprocessor
+        policy._update_preprocessor_stats(new_stats)
+
+        assert policy._dataset_stats is new_stats
+        assert policy.hparams["dataset_stats"] is new_stats
+        # Preprocessor should be a new object
+        assert policy._preprocessor is not old_preprocessor
+
+    def test_update_preprocessor_stats_updates_model(self) -> None:
+        """Test _update_preprocessor_stats forwards stats to model."""
+        stats = {
+            "observation.state": {
+                "name": "observation.state",
+                "shape": (8,),
+                "mean": [0.0] * 8,
+                "std": [1.0] * 8,
+            },
+            "action": {
+                "name": "action",
+                "shape": (7,),
+                "mean": [0.0] * 7,
+                "std": [1.0] * 7,
+            },
+        }
+        policy = Pi05(
+            dataset_stats=stats,
+            paligemma_variant="gemma_300m",
+            action_expert_variant="gemma_300m",
+        )
+
+        new_stats = {
+            "observation.state": {
+                "name": "observation.state",
+                "shape": (4,),
+                "mean": [2.0] * 4,
+                "std": [3.0] * 4,
+            },
+            "action": {
+                "name": "action",
+                "shape": (3,),
+                "mean": [2.0] * 3,
+                "std": [3.0] * 3,
+            },
+        }
+        policy._update_preprocessor_stats(new_stats)
+        assert policy.model._dataset_stats is new_stats
+
+    def test_config_with_all_optimizer_params(self) -> None:
+        """Test all optimizer/scheduler params are stored in config."""
+        policy = Pi05(
+            optimizer_lr=1e-3,
+            optimizer_betas=(0.8, 0.99),
+            optimizer_eps=1e-7,
+            optimizer_weight_decay=0.1,
+            optimizer_grad_clip_norm=0.5,
+            scheduler_warmup_steps=500,
+            scheduler_decay_steps=10_000,
+            scheduler_decay_lr=1e-5,
+        )
+        assert policy.config.optimizer_lr == 1e-3
+        assert policy.config.optimizer_betas == (0.8, 0.99)
+        assert policy.config.optimizer_eps == 1e-7
+        assert policy.config.optimizer_weight_decay == 0.1
+        assert policy.config.optimizer_grad_clip_norm == 0.5
+        assert policy.config.scheduler_warmup_steps == 500
+        assert policy.config.scheduler_decay_steps == 10_000
+        assert policy.config.scheduler_decay_lr == 1e-5

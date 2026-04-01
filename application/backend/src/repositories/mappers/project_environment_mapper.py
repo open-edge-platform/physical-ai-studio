@@ -11,7 +11,7 @@ class ProjectEnvironmentMapper(IBaseMapper):
     """Mapper for Environment schema entity <-> DB entity conversions."""
 
     @staticmethod
-    def to_schema(environment: Environment) -> ProjectEnvironmentDB:
+    def to_schema(db_schema: Environment) -> ProjectEnvironmentDB:
         """Convert Environment schema to db model."""
         robots_json = json.dumps(
             [
@@ -23,27 +23,27 @@ class ProjectEnvironmentMapper(IBaseMapper):
                         else {"type": "none"}
                     ),
                 }
-                for robot in environment.robots
+                for robot in db_schema.robots
             ]
         )
 
-        camera_ids_json = json.dumps([str(camera_id) for camera_id in environment.camera_ids])
+        camera_ids_json = json.dumps([str(camera_id) for camera_id in db_schema.camera_ids])
 
         return ProjectEnvironmentDB(
-            id=str(environment.id),
+            id=str(db_schema.id),
             project_id="",  # Will be set by repository
-            name=environment.name,
+            name=db_schema.name,
             robots=robots_json,
             camera_ids=camera_ids_json,
-            created_at=environment.created_at,
-            updated_at=environment.updated_at,
+            created_at=db_schema.created_at,
+            updated_at=db_schema.updated_at,
         )
 
     @staticmethod
-    def from_schema(db_env: ProjectEnvironmentDB) -> Environment:
+    def from_schema(model: ProjectEnvironmentDB) -> Environment:
         """Convert Environment db entity to schema."""
         # Parse robots JSON
-        robots_data = ProjectEnvironmentMapper._parse_json(db_env.robots, [])
+        robots_data = ProjectEnvironmentMapper._parse_json(model.robots, [])
         robots = [
             RobotEnvironmentConfiguration(
                 robot_id=UUID(rc["robot_id"]),
@@ -57,16 +57,16 @@ class ProjectEnvironmentMapper(IBaseMapper):
         ]
 
         # Parse camera_ids JSON
-        camera_ids_data = ProjectEnvironmentMapper._parse_json(db_env.camera_ids, [])
+        camera_ids_data = ProjectEnvironmentMapper._parse_json(model.camera_ids, [])
         camera_ids = [UUID(cid) for cid in camera_ids_data]
 
         return Environment(
-            id=db_env.id,
-            name=db_env.name,
+            id=model.id,
+            name=model.name,
             robots=robots,
             camera_ids=camera_ids,
-            created_at=db_env.created_at,
-            updated_at=db_env.updated_at,
+            created_at=model.created_at,
+            updated_at=model.updated_at,
         )
 
     @staticmethod

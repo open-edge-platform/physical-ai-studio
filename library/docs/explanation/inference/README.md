@@ -5,7 +5,7 @@ Production inference with multiple backends.
 ## Features
 
 - Unified API matching training policies
-- Multiple backends (OpenVINO, ONNX, Torch Export)
+- Multiple backends (OpenVINO, ONNX, Torch, ExecuTorch)
 - Auto-detection of backend and device
 - Action queuing for chunked policies
 
@@ -26,12 +26,12 @@ class RuntimeAdapter(ABC):
 
 ## Adapters
 
-| Adapter                | Hardware       |
-| ---------------------- | -------------- |
-| **OpenVINOAdapter**    | Intel CPU/GPU  |
-| **ONNXAdapter**        | Cross-platform |
-| **TorchExportAdapter** | Edge/mobile    |
-| **TorchAdapter**       | CPU/GPU        |
+| Adapter               | Hardware       |
+| --------------------- | -------------- |
+| **OpenVINOAdapter**   | Intel CPU/GPU  |
+| **ONNXAdapter**       | Cross-platform |
+| **ExecuTorchAdapter** | Edge/mobile    |
+| **TorchAdapter**      | CPU/GPU        |
 
 ## InferenceModel
 
@@ -50,18 +50,18 @@ graph TD
     A[InferenceModel] --> B{Backend Type}
     B -->|OpenVINO| C[OpenVINOAdapter]
     B -->|ONNX| D[ONNXAdapter]
-    B -->|Torch Export IR| E[TorchExportAdapter]
+    B -->|ExecuTorch| E[ExecuTorchAdapter]
     B -->|Torch snapshot| X[TorchAdapter]
 
     C --> F[OpenVINO Runtime]
     D --> G[ONNX Runtime]
-    E --> H[PyTorch torch.export]
+    E --> H[ExecuTorch Runtime]
     X --> Y[PyTorch torch.save]
 
     F --> I[Hardware: CPU/GPU/NPU]
     G --> J[Hardware: CPU/CUDA/TensorRT]
-    H --> K[Hardware: CPU/CUDA]
-    Y --> K
+    H --> K[Hardware: CPU/Edge]
+    Y --> L[Hardware: CPU/CUDA]
 ```
 
 ### Factory Pattern
@@ -170,16 +170,16 @@ Backend detected from file extensions:
 
 - `.xml` → OpenVINO
 - `.onnx` → ONNX
-- `.pt2` / `.ptir` → Torch Export IR
+- `.pte` → ExecuTorch
 
 ### Device Priority
 
-| Backend         | Device Priority       |
-| --------------- | --------------------- |
-| OpenVINO        | GPU → NPU → CPU       |
-| ONNX            | CUDA → TensorRT → CPU |
-| Torch Export IR | cuda → CPU            |
-| Torch           | cuda → CPU            |
+| Backend    | Device Priority       |
+| ---------- | --------------------- |
+| OpenVINO   | GPU → NPU → CPU       |
+| ONNX       | CUDA → TensorRT → CPU |
+| ExecuTorch | CPU (edge devices)    |
+| Torch      | cuda → CPU            |
 
 ## Performance
 
@@ -203,8 +203,8 @@ Common errors: `ImportError` (backend not installed), `ValueError`
 
 **Testing Plan:**
 
-- OpenVINO, ONNX: Fully tested in PR #2 with ACT policy
-- Torch Export IR (ExecuTorch): Implementation complete, full testing in PR#2
+- OpenVINO, ONNX: Fully tested with ACT policy
+- ExecuTorch: Tested with mocked executorch runtime
 
 ## Extension Points
 

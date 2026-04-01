@@ -215,10 +215,17 @@ def _collect_frame(
     """
     if not hasattr(observation, "images") or observation.images is None:
         return None
-    if frame_key not in observation.images:  # type: ignore[operator]
+    images = observation.images
+    # images can be a Tensor (single camera) or dict (multiple cameras)
+    if isinstance(images, (Tensor, np.ndarray)):
+        img = torch.as_tensor(images)
+    elif isinstance(images, dict):
+        if frame_key not in images:
+            return None
+        img = torch.as_tensor(images[frame_key])
+    else:
         return None
-    img = observation.images[frame_key]  # type: ignore[index]
-    return img.squeeze(0).permute(1, 2, 0).cpu().numpy()  # type: ignore[union-attr]
+    return img.squeeze(0).permute(1, 2, 0).cpu().numpy()
 
 
 def setup_rollout(

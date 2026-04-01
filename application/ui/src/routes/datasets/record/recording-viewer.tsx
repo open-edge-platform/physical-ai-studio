@@ -1,50 +1,32 @@
-import { useEffect, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 
 import {
     Button,
     ButtonGroup,
     ComboBox,
     Flex,
+    Form,
     Heading,
     Item,
     Keyboard,
     ProgressCircle,
     StatusLight,
     Text,
-    ToastQueue,
-} from '@geti/ui';
+} from '@geti-ui/ui';
 
-import { SchemaDatasetOutput, SchemaEnvironmentWithRelations } from '../../../api/openapi-spec';
-import { RobotViewer } from '../../../features/robots/controller/robot-viewer';
+import { useRobotControl } from '../../../features/robots/robot-control-provider';
+import { RobotControlView } from '../../../features/robots/robot-control/robot-control-view';
 import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
-import { Observation, useRobotControl } from '../../../features/robots/use-robot-control';
 import { paths } from '../../../router';
-import { CameraView } from './../camera-view';
 
 import classes from './recording-viewer.module.scss';
 
-interface RecordingViewerProps {
-    environment: SchemaEnvironmentWithRelations;
-    dataset: SchemaDatasetOutput;
-}
+export const RecordingViewer = () => {
+    const { dataset, state, startEpisode, discardEpisode, saveEpisode, readyForRecording } = useRobotControl();
 
-const getActionObservationSource = (observation?: Observation): { [joint: string]: number } | undefined => {
-    if (observation === undefined) {
-        return undefined;
+    if (dataset === undefined) {
+        throw 'Cannot load recording viewer without dataset.';
     }
-    if (observation.actions !== null) {
-        return observation.actions;
-    }
-    return observation.state;
-};
-
-export const RecordingViewer = ({ environment, dataset }: RecordingViewerProps) => {
-    const { observation, state, startEpisode, discardEpisode, saveEpisode, readyForRecording } = useRobotControl({
-        environment,
-        dataset,
-        onError: ToastQueue.negative,
-    });
-
     const [task, setTask] = useState<string>(dataset.default_task);
 
     useEffect(() => {
@@ -52,7 +34,7 @@ export const RecordingViewer = ({ environment, dataset }: RecordingViewerProps) 
             if (e.key === 'ArrowRight') {
                 if (state.is_recording && !saveEpisode.isPending) {
                     saveEpisode.mutate();
-                } else if (!state.is_recording) {
+                } else if (!state.is_recording && task !== '') {
                     startEpisode.mutate(task);
                 }
             } else if (e.key === 'ArrowLeft') {
@@ -66,14 +48,8 @@ export const RecordingViewer = ({ environment, dataset }: RecordingViewerProps) 
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [state.is_recording, saveEpisode, startEpisode, discardEpisode, task]);
 
-    const robots = (environment.robots ?? []).map(({ robot }) => robot);
-
-    const backPath = paths.project.datasets.show({
-        dataset_id: dataset.id!,
-        project_id: dataset.project_id,
-    });
-
-    const onStart = () => {
+    const onStart = (e: FormEvent) => {
+        e.preventDefault();
         if (task !== '') {
             startEpisode.mutate(task);
         }
@@ -90,64 +66,60 @@ export const RecordingViewer = ({ environment, dataset }: RecordingViewerProps) 
                     <StatusLight variant={state.dataset_loaded ? 'positive' : 'yellow'}>Dataset</StatusLight>
                     <StatusLight variant={state.environment_loaded ? 'positive' : 'yellow'}>Environment</StatusLight>
                 </Flex>
-                <Button variant={'secondary'} href={backPath}>
+                <Button
+                    variant={'secondary'}
+                    href={paths.project.datasets.show({
+                        dataset_id: dataset.id!,
+                        project_id: dataset.project_id,
+                    })}
+                >
                     Cancel
                 </Button>
             </Flex>
         );
     }
-    const observation_source = getActionObservationSource(observation.current);
-    const action_values = observation_source === undefined ? undefined : Object.values(observation_source);
-    const action_keys = observation_source === undefined ? undefined : Object.keys(observation_source);
 
     return (
         <RobotModelsProvider>
             <Flex direction={'column'} height={'100%'} position={'relative'}>
-                <Flex alignItems={'center'} gap='size-100' height='size-400' margin='size-200'>
-                    <ComboBox
-                        isReadOnly={state.is_recording}
-                        name='Task'
-                        flex
-                        isRequired
-                        allowsCustomValue
-                        inputValue={task}
-                        onInputChange={setTask}
-                    >
-                        <Item key={dataset.default_task}>{dataset.default_task}</Item>
-                    </ComboBox>
-                </Flex>
-
-                <Flex direction={'row'} flex gap={'size-100'}>
-                    <Flex direction={'column'} alignContent={'start'} flex gap={'size-30'}>
-                        {environment.cameras!.map((camera) => (
-                            <CameraView key={camera.id} camera={camera} observation={observation} />
-                        ))}
-                    </Flex>
-                    <Flex flex={3} minWidth={0}>
-                        <RobotViewer featureValues={action_values} featureNames={action_keys} robot={robots[0]} />
-                    </Flex>
-                </Flex>
-                {state.is_recording ? (
-                    <ButtonGroup alignSelf='end'>
-                        <Button
-                            isDisabled={saveEpisode.isPending}
-                            variant={'negative'}
-                            onPress={() => discardEpisode.mutate()}
+                <Form validationBehavior='native' onSubmit={onStart}>
+                    <Flex justifyContent={'start'} gap='size-100' height='size-800'>
+                        <ComboBox
+                            isReadOnly={state.is_recording}
+                            errorMessage={'A task is required in order to record.'}
+                            name='Task'
+                            flex
+                            isRequired
+                            allowsCustomValue
+                            inputValue={task}
+                            onInputChange={setTask}
                         >
-                            <Text>Discard</Text>
-                            <Keyboard UNSAFE_className={classes.hotkey}>←</Keyboard>
-                        </Button>
-                        <Button isPending={saveEpisode.isPending} onPress={() => saveEpisode.mutate()}>
-                            <Text>Accept</Text>
-                            <Keyboard UNSAFE_className={classes.hotkey}>→</Keyboard>
-                        </Button>
-                    </ButtonGroup>
-                ) : (
-                    <Button onPress={onStart} isDisabled={task === ''} alignSelf={'center'}>
-                        <Text>Start episode</Text>
-                        <Keyboard UNSAFE_className={classes.hotkey}>→</Keyboard>
-                    </Button>
-                )}
+                            <Item key={dataset.default_task}>{dataset.default_task}</Item>
+                        </ComboBox>
+                        {state.is_recording ? (
+                            <ButtonGroup>
+                                <Button
+                                    isDisabled={saveEpisode.isPending}
+                                    variant={'negative'}
+                                    onPress={() => discardEpisode.mutate()}
+                                >
+                                    <Text>Discard</Text>
+                                    <Keyboard UNSAFE_className={classes.hotkey}>←</Keyboard>
+                                </Button>
+                                <Button isPending={saveEpisode.isPending} onPress={() => saveEpisode.mutate()}>
+                                    <Text>Accept</Text>
+                                    <Keyboard UNSAFE_className={classes.hotkey}>→</Keyboard>
+                                </Button>
+                            </ButtonGroup>
+                        ) : (
+                            <Button type={'submit'}>
+                                <Text>Start episode</Text>
+                                <Keyboard UNSAFE_className={classes.hotkey}>→</Keyboard>
+                            </Button>
+                        )}
+                    </Flex>
+                </Form>
+                <RobotControlView />
             </Flex>
         </RobotModelsProvider>
     );

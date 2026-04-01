@@ -1,4 +1,4 @@
-import { Item, Picker, Text } from '@geti/ui';
+import { Item, Picker, Text } from '@geti-ui/ui';
 
 import { CameraDriver } from '../provider';
 import { useAvailableCameras } from './use-camera-data';

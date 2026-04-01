@@ -4,9 +4,10 @@
 """Mixin classes for defining exportable PyTorch models."""
 
 from abc import ABC, abstractmethod
-from typing import Any
 
 import torch
+
+from .backends import ExportParameters
 
 
 class ExportableModelMixin(torch.nn.Module, ABC):
@@ -31,7 +32,7 @@ class ExportableModelMixin(torch.nn.Module, ABC):
 
     @property
     @abstractmethod
-    def extra_export_args(self) -> dict[str, Any]:
+    def extra_export_args(self) -> dict[str, ExportParameters]:
         """Return extra arguments for the export process.
 
         This method can be overridden to provide additional arguments that may be required by specific

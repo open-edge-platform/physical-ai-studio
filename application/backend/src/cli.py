@@ -4,7 +4,8 @@ import sys
 
 import click
 
-from db import MigrationManager, sync_engine
+from db import MigrationManager
+from db.engine import get_sync_db_session
 from db.schema import (
     CalibrationValuesDB,
     DatasetDB,
@@ -58,7 +59,7 @@ def init_db() -> None:
 @cli.command()
 def clean_db() -> None:
     """Remove all data from the database (clean but don't drop tables)."""
-    with sync_engine as db:
+    with get_sync_db_session() as db:
         db.query(ProjectDB).delete()
         db.query(ProjectRobotDB).delete()
         db.query(CalibrationValuesDB).delete()

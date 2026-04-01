@@ -20,6 +20,7 @@ from physicalai.data.dataset import Dataset
 from physicalai.data.observation import ACTION
 from physicalai.export import ExportablePolicyMixin, ExportBackend
 from physicalai.policies.base import Policy
+from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 from .config import Pi05Config
@@ -49,7 +50,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         pretrained_name_or_path: HuggingFace repo ID or local path for pretrained weights and config.
         paligemma_variant: Gemma variant for VLM backbone. Default: "gemma_2b".
         action_expert_variant: Gemma variant for action expert. Default: "gemma_300m".
-        dtype: Model precision. Default: "float32".
+        dtype: Model precision. Default: "bfloat16".
         n_obs_steps: Number of observation steps. Default: 1.
         chunk_size: Size of action chunks. Default: 50.
         n_action_steps: Number of action steps to execute. Default: 50.
@@ -84,7 +85,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         # Model architecture
         paligemma_variant: Literal["gemma_300m", "gemma_2b"] = "gemma_2b",
         action_expert_variant: Literal["gemma_300m", "gemma_2b"] = "gemma_300m",
-        dtype: Literal["bfloat16", "float32"] = "float32",
+        dtype: Literal["bfloat16", "float32"] = "bfloat16",
         # Input / output structure
         n_obs_steps: int = 1,
         chunk_size: int = 50,
@@ -106,7 +107,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         tokenizer_max_length: int = 200,
         # Optimization
         *,
-        gradient_checkpointing: bool = False,
+        gradient_checkpointing: bool = True,
         compile_model: bool = False,
         compile_mode: str = "max-autotune",
         # Finetuning
@@ -120,7 +121,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         optimizer_grad_clip_norm: float = 1.0,
         # Scheduler
         scheduler_warmup_steps: int = 1_000,
-        scheduler_decay_steps: int = 30_000,
+        scheduler_decay_steps: int | None = None,
         scheduler_decay_lr: float = 2.5e-6,
         # Eager initialization
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
@@ -132,10 +133,23 @@ class Pi05(ExportablePolicyMixin, Policy):
         if pretrained_name_or_path is not None:
             self.config, dataset_stats, weight_file = self._from_hf(
                 pretrained_name_or_path,
+                dtype=dtype,
                 n_action_steps=n_action_steps,
+                max_state_dim=max_state_dim,
                 num_inference_steps=num_inference_steps,
+                gradient_checkpointing=gradient_checkpointing,
                 compile_model=compile_model,
                 compile_mode=compile_mode,
+                freeze_vision_encoder=freeze_vision_encoder,
+                train_expert_only=train_expert_only,
+                optimizer_lr=optimizer_lr,
+                optimizer_betas=optimizer_betas,
+                optimizer_eps=optimizer_eps,
+                optimizer_weight_decay=optimizer_weight_decay,
+                optimizer_grad_clip_norm=optimizer_grad_clip_norm,
+                scheduler_warmup_steps=scheduler_warmup_steps,
+                scheduler_decay_steps=scheduler_decay_steps,
+                scheduler_decay_lr=scheduler_decay_lr,
             )
         else:
             self.config = Pi05Config(
@@ -172,7 +186,7 @@ class Pi05(ExportablePolicyMixin, Policy):
                 scheduler_decay_lr=scheduler_decay_lr,
             )
 
-        self.save_hyperparameters(ignore=["config"])
+        self.save_hyperparameters(ignore=["config", "pretrained_name_or_path"])
         self.hparams["config"] = self.config.to_dict()
 
         self.model: Pi05Model | None = None
@@ -212,6 +226,7 @@ class Pi05(ExportablePolicyMixin, Policy):
             image_resolution=self.config.image_resolution,
             freeze_vision_encoder=self.config.freeze_vision_encoder,
             train_expert_only=self.config.train_expert_only,
+            gradient_checkpointing=self.config.gradient_checkpointing,
             compile_model=self.config.compile_model,
         )
         if weights_file is not None:
@@ -240,9 +255,6 @@ class Pi05(ExportablePolicyMixin, Policy):
             self.model.paligemma_with_expert.to_bfloat16_for_selected_params(self.config.dtype)
             self.model.paligemma_with_expert._set_requires_grad()  # noqa: SLF001
 
-        if self.config.gradient_checkpointing:
-            self.model.gradient_checkpointing_enable()
-
         self._preprocessor, self._postprocessor = make_pi05_preprocessors(
             max_state_dim=self.config.max_state_dim,
             max_action_dim=self.config.max_action_dim,
@@ -254,14 +266,27 @@ class Pi05(ExportablePolicyMixin, Policy):
 
         self._dataset_stats = dataset_stats
 
-    def _from_hf(  # noqa: PLR6301
+    def _from_hf(  # noqa: PLR6301, PLR0913
         self,
         pretrained_name_or_path: str | Path,
         *,
+        dtype: Literal["bfloat16", "float32"] = "float32",
         n_action_steps: int | None = 10,
+        max_state_dim: int | None = None,
         num_inference_steps: int | None = None,
+        gradient_checkpointing: bool = False,
         compile_model: bool = False,
         compile_mode: str | None = "max-autotune",
+        freeze_vision_encoder: bool = False,
+        train_expert_only: bool = True,
+        optimizer_lr: float = 2.5e-5,
+        optimizer_betas: tuple[float, float] = (0.9, 0.95),
+        optimizer_eps: float = 1e-8,
+        optimizer_weight_decay: float = 0.01,
+        optimizer_grad_clip_norm: float = 1.0,
+        scheduler_warmup_steps: int = 1_000,
+        scheduler_decay_steps: int | None = None,
+        scheduler_decay_lr: float = 2.5e-6,
         **kwargs: Any,  # noqa: ANN401
     ) -> tuple[Pi05Config, dict[str, dict[str, list[float] | str | tuple]], Path]:
         """Load pretrained Pi05 from a HuggingFace model repo.
@@ -272,13 +297,29 @@ class Pi05(ExportablePolicyMixin, Policy):
         Handles the key remapping and normalization stat conversion
         from the lerobot QUANTILES format (q01/q99) to MEAN_STD (mean/std).
 
+        All caller-provided parameters override values from the pretrained
+        config.json so that training-time settings (dtype, finetuning flags,
+        optimizer/scheduler) are always controlled by the caller.
+
         Args:
             pretrained_name_or_path: HuggingFace repo ID or local path.
+            dtype: Override model precision.
             n_action_steps: Override number of action steps to execute.
+            max_state_dim: Override maximum state dimension.
             num_inference_steps: Override denoising steps for inference.
+            gradient_checkpointing: Override gradient checkpointing.
             compile_model: Override whether to use torch.compile.
             compile_mode: Override torch compile mode.
-            device: Device to place the model on after loading.
+            freeze_vision_encoder: Override whether to freeze the vision encoder.
+            train_expert_only: Override whether to train only the action expert.
+            optimizer_lr: Override learning rate.
+            optimizer_betas: Override Adam beta coefficients.
+            optimizer_eps: Override optimizer epsilon.
+            optimizer_weight_decay: Override weight decay.
+            optimizer_grad_clip_norm: Override gradient clip norm.
+            scheduler_warmup_steps: Override warmup steps.
+            scheduler_decay_steps: Override decay steps. ``None`` means auto.
+            scheduler_decay_lr: Override final decay learning rate.
             **kwargs: Extra arguments forwarded to ``huggingface_hub.hf_hub_download``.
 
         Returns:
@@ -334,19 +375,31 @@ class Pi05(ExportablePolicyMixin, Policy):
         with Path(config_file).open(encoding="utf-8") as f:
             hf_config = json.load(f)
 
-        # from_dict skips unknown keys and coerces lists→tuples via type hints
-        config_kwargs = Pi05Config.from_dict(hf_config).to_dict()
-
-        # Allow caller overrides
+        # Apply caller overrides before from_dict so they get coerced properly
+        hf_config["dtype"] = dtype
         if n_action_steps is not None:
-            config_kwargs["n_action_steps"] = n_action_steps
+            hf_config["n_action_steps"] = n_action_steps
+        if max_state_dim is not None:
+            hf_config["max_state_dim"] = max_state_dim
         if num_inference_steps is not None:
-            config_kwargs["num_inference_steps"] = num_inference_steps
-        if compile_model is not None:
-            config_kwargs["compile_model"] = compile_model
+            hf_config["num_inference_steps"] = num_inference_steps
+        hf_config["gradient_checkpointing"] = gradient_checkpointing
+        hf_config["compile_model"] = compile_model
         if compile_mode is not None:
-            config_kwargs["compile_mode"] = compile_mode
-        config = Pi05Config(**config_kwargs)
+            hf_config["compile_mode"] = compile_mode
+        hf_config["freeze_vision_encoder"] = freeze_vision_encoder
+        hf_config["train_expert_only"] = train_expert_only
+        hf_config["optimizer_lr"] = optimizer_lr
+        hf_config["optimizer_betas"] = optimizer_betas
+        hf_config["optimizer_eps"] = optimizer_eps
+        hf_config["optimizer_weight_decay"] = optimizer_weight_decay
+        hf_config["optimizer_grad_clip_norm"] = optimizer_grad_clip_norm
+        hf_config["scheduler_warmup_steps"] = scheduler_warmup_steps
+        hf_config["scheduler_decay_steps"] = scheduler_decay_steps
+        hf_config["scheduler_decay_lr"] = scheduler_decay_lr
+
+        # from_dict skips unknown keys and coerces lists→tuples via type hints
+        config = Pi05Config.from_dict(hf_config)
 
         # --- build dataset_stats from HF artefacts ---
         dataset_stats = _extract_dataset_stats(hf_config, preprocessor_file, preprocessor_dir)
@@ -354,17 +407,19 @@ class Pi05(ExportablePolicyMixin, Policy):
         return config, dataset_stats, weights_file
 
     def setup(self, stage: str) -> None:
-        """Set up model from datamodule (lazy initialization path).
+        """Set up model from datamodule (lazy or fine-tuning path).
 
         Called by Lightning before fit/validate/test/predict.
+
+        - **Lazy path**: model is None → build model + preprocessors from dataset stats.
+        - **Fine-tuning path**: model already loaded from pretrained → rebuild
+          preprocessors with the training dataset's stats so normalization
+          matches the new data distribution.
 
         Raises:
             TypeError: If the train dataset is not a physicalai Dataset.
         """
         del stage
-
-        if self.model is not None:
-            return
 
         datamodule = self.trainer.datamodule  # type: ignore[attr-defined]
         train_dataset = datamodule.train_dataset
@@ -375,11 +430,42 @@ class Pi05(ExportablePolicyMixin, Policy):
 
         stats_dict = train_dataset.stats
 
+        if self.model is not None:
+            # Fine-tuning path: model exists from pretrained, but the
+            # preprocessor stats must match the training data distribution.
+            self._update_preprocessor_stats(stats_dict)
+            reformat_dataset_to_match_policy(self, datamodule)
+            return
+
         self.hparams["dataset_stats"] = stats_dict
 
         self._initialize_model(stats_dict)
 
         reformat_dataset_to_match_policy(self, datamodule)
+
+    def _update_preprocessor_stats(
+        self,
+        dataset_stats: dict[str, dict[str, list[float] | str | tuple]],
+    ) -> None:
+        """Rebuild preprocessor/postprocessor with new dataset stats.
+
+        Used when fine-tuning a pretrained model on a new dataset: the model
+        weights come from the checkpoint, but normalization statistics must
+        reflect the training data.
+        """
+        logger.info("Updating preprocessor stats for fine-tuning dataset")
+        self._preprocessor, self._postprocessor = make_pi05_preprocessors(
+            max_state_dim=self.config.max_state_dim,
+            max_action_dim=self.config.max_action_dim,
+            stats=dataset_stats,
+            image_resolution=self.config.image_resolution,
+            max_token_len=self.config.tokenizer_max_length,
+            empty_cameras=self.config.empty_cameras,
+        )
+        self._dataset_stats = dataset_stats
+        self.hparams["dataset_stats"] = dataset_stats
+        if self.model is not None:
+            self.model.set_dataset_stats(dataset_stats)
 
     def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
         """Forward pass through the model.
@@ -438,6 +524,11 @@ class Pi05(ExportablePolicyMixin, Policy):
     def configure_optimizers(self) -> dict[str, Any]:
         """Configure optimizer and scheduler.
 
+        When ``scheduler_decay_steps`` is ``None``, the cosine decay horizon
+        is automatically set to the total training steps
+        (``self.trainer.estimated_stepping_batches``), so the LR reaches
+        ``scheduler_decay_lr`` exactly at the end of training.
+
         Returns:
             Dict with optimizer and lr_scheduler config.
         """
@@ -451,18 +542,19 @@ class Pi05(ExportablePolicyMixin, Policy):
             eps=self.config.optimizer_eps,
         )
 
-        warmup_steps = self.config.scheduler_warmup_steps
-        drop_steps = self.config.scheduler_decay_steps
-        decay_value = self.config.scheduler_decay_lr
+        num_decay_steps = self.config.scheduler_decay_steps
+        if num_decay_steps is None:
+            num_decay_steps = self.trainer.estimated_stepping_batches
+            msg = f"scheduler_decay_steps=None, using total training steps: {num_decay_steps}"
+            logger.info(msg)
 
-        def lr_lambda(step: int) -> float:
-            num_drops = step // drop_steps
-            decay_factor = decay_value**num_drops
-            if step < warmup_steps:
-                return step / max(1, warmup_steps)
-            return decay_factor
-
-        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+        scheduler = cosine_decay_with_warmup_scheduler(
+            optimizer,
+            peak_lr=self.config.optimizer_lr,
+            decay_lr=self.config.scheduler_decay_lr,
+            num_warmup_steps=self.config.scheduler_warmup_steps,
+            num_decay_steps=num_decay_steps,
+        )
 
         return {
             "optimizer": optimizer,

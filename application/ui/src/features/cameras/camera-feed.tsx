@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 
-import { Flex, Grid, Heading, minmax, repeat, View, Well } from '@geti/ui';
+import { Flex, Grid, Heading, minmax, repeat, View, Well } from '@geti-ui/ui';
 
 import { SchemaProjectCamera } from '../../api/types';
 import { WebsocketCamera } from './websocket-camera';

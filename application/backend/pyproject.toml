@@ -98,14 +98,17 @@ pytorch-triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
 [dependency-groups]
 dev = [
   "ruff~=0.11.2",
+  "pyrefly>=0.18.0",
 ]
 lint = [
   "ruff~=0.11.2",
   "mypy~=1.17",
+  "pyrefly>=0.18.0",
 ]
 all = [
   "ruff~=0.11.2",
   "mypy~=1.17",
+  "pyrefly>=0.18.0",
 ]
 
 [tool.uv]
@@ -177,6 +180,16 @@ max-args = 7
 python_version = "3.12"
 ignore_missing_imports = true
 show_error_codes = true
+
+[tool.pyrefly]
+python-version = "3.12"
+search-path = ["src"]
+project-includes = ["src"]
+project-excludes = [
+  "src/alembic/versions/**",
+  ".venv/**",
+  "dist/**",
+]
 
 [tool.pytest.ini_options]
 addopts = ["--strict-markers", "--strict-config", "--showlocals", "-ra"]

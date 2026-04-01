@@ -11,7 +11,7 @@ from __future__ import annotations
 import copy
 import logging
 import math
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 import torch
 import torch.nn.functional as F  # noqa: N812
@@ -20,6 +20,12 @@ from torch import nn
 from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, TASK, FeatureType
 from physicalai.export import ExportableModelMixin
+from physicalai.export.backends import (
+    ExportParameters,
+    ONNXExportParameters,
+    OpenVINOExportParameters,
+    TorchExportParameters,
+)
 from physicalai.policies.base import Model
 
 if TYPE_CHECKING:
@@ -182,8 +188,9 @@ class SmolVLAModel(ExportableModelMixin, Model):
                 losses *= in_episode_bound.unsqueeze(-1)
                 loss_dict["losses_after_in_ep_bound"] = losses.clone()
 
-            # Remove padding
-            losses = losses[:, :, : self._max_action_dim]
+            # Truncate losses to actual action dimensions to avoid dilution from padding
+            original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
+            losses = losses[:, :, :original_action_dim]
             loss_dict["losses_after_rm_padding"] = losses.clone()
 
             loss = losses.mean()
@@ -273,40 +280,39 @@ class SmolVLAModel(ExportableModelMixin, Model):
         return sample_input
 
     @property
-    def extra_export_args(self) -> dict:
+    def extra_export_args(self) -> dict[str, ExportParameters]:
         """Additional export arguments for model conversion.
 
         This property provides extra configuration parameters needed when exporting
-        the model to different formats, particularly ONNX format.
+        the model to different formats (ONNX, OpenVINO, and PyTorch).
 
         Returns:
-            dict: A dictionary containing format-specific export arguments.
+            dict[str, ExportParameters]: A dictionary mapping format names to their export parameters.
+            Supported formats: 'onnx', 'openvino', 'torch'.
 
         Example:
-            >>> extra_args = model.extra_export_args()
-            >>> print(extra_args)
-            {'onnx': {'output_names': ['action']}}
+            >>> model = SmolVLA(input_features, output_features)
+            >>> export_args = model.extra_export_args
+            >>> onnx_args = export_args['onnx']
+            >>> print(onnx_args.exporter_kwargs)
+            {'output_names': ['action']}
         """
-        extra_args: dict[str, Any] = {}
-        extra_args["onnx"] = {
-            "export_tokenizer": True,
-            "exporter_kwargs": {
+        extra_args: dict[str, ExportParameters] = {}
+        extra_args["onnx"] = ONNXExportParameters(
+            exporter_kwargs={
                 "output_names": ["action"],
             },
-            "preprocessing_type": "smolvla",
-        }
-        extra_args["openvino"] = {
-            "output": ["action"],
-            "compress_to_fp16": False,
-            "export_tokenizer": True,
-            "exporter_kwargs": {},
-            "preprocessing_type": "smolvla",
-        }
-        extra_args["torch_export_ir"] = {}
-        extra_args["torch"] = {
-            "input_names": ["observation"],
-            "output_names": ["action"],
-        }
+            preprocessing_type="smolvla",
+            export_tokenizer=True,
+        )
+        extra_args["openvino"] = OpenVINOExportParameters(
+            outputs=["action"],
+            compress_to_fp16=False,
+            export_tokenizer=True,
+            exporter_kwargs={},
+            preprocessing_type="smolvla",
+        )
+        extra_args["torch"] = TorchExportParameters()
 
         return extra_args
 

@@ -15,8 +15,8 @@ import {
     Tooltip,
     TooltipTrigger,
     View,
-} from '@geti/ui';
-import { Copy, Filter } from '@geti/ui/icons';
+} from '@geti-ui/ui';
+import { Copy, Filter } from '@geti-ui/ui/icons';
 
 import { LOG_LEVEL_COLORS, LOG_LEVELS, type LogFilters as LogFiltersType, type LogLevelName } from './log-types';
 

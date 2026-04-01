@@ -15,6 +15,7 @@ import torch
 from physicalai.data.observation import ACTION
 from physicalai.export import ExportablePolicyMixin, ExportBackend
 from physicalai.policies.base import Policy
+from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 from .config import SmolVLAConfig
@@ -371,18 +372,14 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             betas=self.config.optimizer_betas,
         )
 
-        warmup_steps = self.config.scheduler_warmup_steps
-        drop_steps = self.config.scheduler_decay_steps
-        decay_value = self.config.scheduler_decay_lr
-
-        def lr_lambda(step: int) -> float:
-            num_drops = step // drop_steps
-            decay_factor = decay_value**num_drops
-            if step < warmup_steps:
-                return step / max(1, warmup_steps)
-            return decay_factor
-
-        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+        num_decay_steps = self.config.scheduler_decay_steps
+        scheduler = cosine_decay_with_warmup_scheduler(
+            optimizer,
+            peak_lr=self.config.optimizer_lr,
+            decay_lr=self.config.scheduler_decay_lr,
+            num_warmup_steps=self.config.scheduler_warmup_steps,
+            num_decay_steps=num_decay_steps,
+        )
 
         return {
             "optimizer": optimizer,

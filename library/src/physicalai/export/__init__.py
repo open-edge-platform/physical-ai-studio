@@ -18,7 +18,7 @@ def get_available_backends() -> list[str]:
         >>> from physicalai.export import get_available_backends
         >>> backends = get_available_backends()
         >>> print(backends)
-        ['onnx', 'openvino', 'torch', 'torch_export_ir']
+        ['onnx', 'openvino', 'torch', 'executorch']
     """
     return [backend.value for backend in ExportBackend]
 

@@ -1,4 +1,4 @@
-import { TextField } from '@geti/ui';
+import { TextField } from '@geti-ui/ui';
 
 interface NameFieldProps {
     value: string | undefined;

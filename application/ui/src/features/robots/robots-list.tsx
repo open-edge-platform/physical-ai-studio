@@ -1,6 +1,6 @@
 import { Grid, StatusLight } from '@adobe/react-spectrum';
-import { ActionButton, Button, Flex, Heading, Icon, Item, Menu, MenuTrigger, View } from '@geti/ui';
-import { Add, MoreMenu } from '@geti/ui/icons';
+import { ActionButton, Button, Flex, Heading, Icon, Item, Menu, MenuTrigger, View } from '@geti-ui/ui';
+import { Add, MoreMenu } from '@geti-ui/ui/icons';
 import { clsx } from 'clsx';
 import { NavLink } from 'react-router-dom';
 

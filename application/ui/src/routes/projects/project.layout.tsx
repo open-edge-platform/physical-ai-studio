@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 
-import { Flex, Grid, Item, Link, Loading, TabList, Tabs, View } from '@geti/ui';
+import { Flex, Grid, Item, Link, Loading, TabList, Tabs, View } from '@geti-ui/ui';
 import { Outlet, useLocation } from 'react-router';
 
 import { ProjectsListPanel } from '../../features/projects/menu/projects-list-panel.component';

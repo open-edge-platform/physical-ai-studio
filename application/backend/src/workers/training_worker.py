@@ -20,8 +20,10 @@ if TYPE_CHECKING:
     import multiprocessing as mp
     from multiprocessing.synchronize import Event as EventClass
 
+
 from loguru import logger
 from physicalai.data import LeRobotDataModule
+from physicalai.export import ExportablePolicyMixin
 from physicalai.train import Trainer
 
 from schemas import Job, Model, Snapshot
@@ -156,7 +158,8 @@ class TrainingWorker(BaseProcessWorker):
 
             for backend in settings.supported_backends:
                 export_dir = path / "exports" / backend
-                policy.export(export_dir, backend=backend)
+                if isinstance(policy, ExportablePolicyMixin):
+                    policy.export(export_dir, backend=backend)
 
             job = await JobService.update_job_status(
                 job_id=job.id, status=JobStatus.COMPLETED, message="Training finished"
