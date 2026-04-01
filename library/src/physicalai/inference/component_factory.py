@@ -14,6 +14,7 @@ to an object instance, supporting both ``type`` + flat params and
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -100,9 +101,49 @@ component_registry = ComponentRegistry()
 component_registry.register("single_pass", "physicalai.inference.runners.SinglePass")
 component_registry.register("action_chunking", "physicalai.inference.runners.ActionChunking")
 
-# Postprocessors
+# Preprocessors
+component_registry.register("normalize", "physicalai.inference.preprocessors.StatsNormalizer")
 component_registry.register("smolvla_resize", "physicalai.inference.preprocessors.smolvla.ResizeSmolVLA")
 component_registry.register("new_line", "physicalai.inference.preprocessors.new_line.NewLinePreprocessor")
+
+# Postprocessors
+component_registry.register("denormalize", "physicalai.inference.postprocessors.StatsDenormalizer")
+
+
+def resolve_artifact(spec: ComponentSpec, export_dir: Path) -> ComponentSpec:
+    """Resolve relative ``artifact`` paths to absolute paths.
+
+    For type-based specs, resolves a relative ``artifact`` flat
+    param to an absolute path.  For class_path-based specs,
+    resolves a relative ``artifact`` in ``init_args``.
+
+    Args:
+        spec: Component descriptor that may contain a relative artifact path.
+        export_dir: Base directory for resolving relative paths.
+
+    Returns:
+        The spec with resolved artifact path, or the original spec
+        unchanged if no resolution is needed.
+    """
+    flat = spec.flat_params
+    if "artifact" in flat and not Path(flat["artifact"]).is_absolute():
+        resolved_path = str(export_dir / flat["artifact"])
+        new_params = {**flat, "artifact": resolved_path}
+        return type(spec).model_validate({
+            "type": spec.type,
+            **new_params,
+        })
+
+    if spec.class_path and "artifact" in spec.init_args:
+        artifact = spec.init_args["artifact"]
+        if not Path(artifact).is_absolute():
+            new_init_args = {**spec.init_args, "artifact": str(export_dir / artifact)}
+            return type(spec).model_validate({
+                "class_path": spec.class_path,
+                "init_args": new_init_args,
+            })
+
+    return spec
 
 
 def _import_class(class_path: str) -> type:

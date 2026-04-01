@@ -14,6 +14,7 @@ from physicalai.inference.component_factory import (
     ComponentRegistry,
     component_registry,
     instantiate_component,
+    resolve_artifact,
 )
 from physicalai.inference.manifest import (
     CameraSpec,
@@ -709,3 +710,48 @@ class TestComponentRegistry:
         assert "action_chunking" in component_registry
         assert component_registry.resolve("single_pass") == "physicalai.inference.runners.SinglePass"
         assert component_registry.resolve("action_chunking") == "physicalai.inference.runners.ActionChunking"
+
+
+class TestResolveArtifact:
+    def test_resolves_relative_type_based_artifact(self, tmp_path: Path) -> None:
+        spec = ComponentSpec.model_validate({"type": "normalize", "artifact": "stats.safetensors"})
+        resolved = resolve_artifact(spec, tmp_path)
+        assert resolved.flat_params["artifact"] == str(tmp_path / "stats.safetensors")
+
+    def test_preserves_absolute_type_based_artifact(self, tmp_path: Path) -> None:
+        absolute = str(tmp_path / "stats.safetensors")
+        spec = ComponentSpec.model_validate({"type": "normalize", "artifact": absolute})
+        resolved = resolve_artifact(spec, tmp_path)
+        assert resolved.flat_params["artifact"] == absolute
+
+    def test_resolves_relative_class_path_based_artifact(self, tmp_path: Path) -> None:
+        spec = ComponentSpec.model_validate({
+            "class_path": "physicalai.inference.preprocessors.StatsNormalizer",
+            "init_args": {"artifact": "stats.safetensors"},
+        })
+        resolved = resolve_artifact(spec, tmp_path)
+        assert resolved.init_args["artifact"] == str(tmp_path / "stats.safetensors")
+
+    def test_preserves_absolute_class_path_based_artifact(self, tmp_path: Path) -> None:
+        absolute = str(tmp_path / "stats.safetensors")
+        spec = ComponentSpec.model_validate({
+            "class_path": "physicalai.inference.preprocessors.StatsNormalizer",
+            "init_args": {"artifact": absolute},
+        })
+        resolved = resolve_artifact(spec, tmp_path)
+        assert resolved.init_args["artifact"] == absolute
+
+    def test_no_artifact_returns_spec_unchanged(self, tmp_path: Path) -> None:
+        spec = ComponentSpec.model_validate({"type": "single_pass"})
+        resolved = resolve_artifact(spec, tmp_path)
+        assert resolved is spec
+
+    def test_preserves_other_params(self, tmp_path: Path) -> None:
+        spec = ComponentSpec.model_validate({
+            "type": "normalize",
+            "artifact": "stats.safetensors",
+            "mode": "mean_std",
+        })
+        resolved = resolve_artifact(spec, tmp_path)
+        assert resolved.flat_params["mode"] == "mean_std"
+        assert resolved.flat_params["artifact"] == str(tmp_path / "stats.safetensors")
