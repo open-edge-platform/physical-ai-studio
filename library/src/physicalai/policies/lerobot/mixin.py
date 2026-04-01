@@ -211,7 +211,7 @@ class LeRobotFromConfig(FromConfig):
         """
         try:
             from lerobot.configs.policies import PreTrainedConfig  # noqa: PLC0415
-            from lerobot.policies.factory import get_policy_class  # noqa: PLC0415
+            from lerobot.policies.factory import get_policy_class, make_pre_post_processors  # noqa: PLC0415
         except ImportError as e:
             msg = (
                 "LeRobot is required for from_pretrained functionality.\n\n"
@@ -260,6 +260,7 @@ class LeRobotFromConfig(FromConfig):
         # Set required attributes
         wrapper._is_pretrained = True  # noqa: SLF001
         wrapper._framework = "lerobot"  # noqa: SLF001
+        wrapper._config = config  # noqa: SLF001
         # Use learning_rate from kwargs, or fall back to config's optimizer_lr
         # Config from pretrained models should have this; if not, user must provide it for training
         wrapper.learning_rate = kwargs.get("learning_rate", getattr(config, "optimizer_lr", None))
@@ -270,6 +271,16 @@ class LeRobotFromConfig(FromConfig):
 
         # Register the loaded policy
         wrapper.add_module("_lerobot_policy", lerobot_policy)
+
+        from physicalai.devices import get_available_device  # noqa: PLC0415
+
+        device = get_available_device()
+        wrapper._preprocessor, wrapper._postprocessor = make_pre_post_processors(  # noqa: SLF001
+            config,
+            pretrained_path=str(pretrained_name_or_path),
+            preprocessor_overrides={"device_processor": {"device": device}},
+            postprocessor_overrides={"device_processor": {"device": device}},
+        )
 
         # Expose model attribute if available
         if hasattr(lerobot_policy, "model"):
