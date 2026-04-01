@@ -76,7 +76,7 @@ class SmolVLAPreprocessor(torch.nn.Module):
         features: dict[str, Feature] | None = None,
         max_token_len: int = 48,
         tokenizer_name: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
-        padding: str = "longest",
+        padding: str = "max_length",
     ) -> None:
         """Initialize the SmolVLA preprocessor.
 
@@ -271,19 +271,7 @@ class SmolVLAPreprocessor(torch.nn.Module):
         Raises:
             ImportError: If transformers library is not installed.
         """
-        try:
-            from transformers import AutoTokenizer  # noqa: PLC0415
-
-            # Revision pinned for reproducibility and security
-            tokenizer = AutoTokenizer.from_pretrained(
-                self.tokenizer_name,
-                revision="7b375e1b73b11138ff12fe22c8f2822d8fe03467",
-                use_fast=False,
-            )
-        except ImportError as e:
-            msg = "Tokenizer requires transformers. Install with: pip install transformers"
-            raise ImportError(msg) from e
-        return tokenizer
+        return self.tokenizer
 
     @staticmethod
     def _resize_with_pad(img: torch.Tensor, width: int, height: int, pad_value: int = -1) -> torch.Tensor:
