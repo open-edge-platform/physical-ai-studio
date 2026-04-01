@@ -669,7 +669,6 @@ class Pi05Model(ExportableModelMixin, Model):
             exporter_kwargs={
                 "output_names": ["action"],
             },
-            preprocessors_specs="pi05",
             export_tokenizer=False,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
@@ -678,7 +677,6 @@ class Pi05Model(ExportableModelMixin, Model):
             via_onnx=True,
             export_tokenizer=False,
             exporter_kwargs={},
-            preprocessors_specs="pi05",
         )
         extra_args["torch"] = TorchExportParameters()
 
