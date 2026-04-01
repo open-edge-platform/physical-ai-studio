@@ -102,7 +102,7 @@ const Datasets = ({ datasets }: DatasetsProps) => {
                         </View>
                     )}
                 </Flex>
-                <TabPanels UNSAFE_style={{ border: 'none' }} marginTop={'size-200'}>
+                <TabPanels UNSAFE_style={{ border: 'none' }} marginTop={'size-200'} minHeight={0}>
                     <Item key={dataset_id}>
                         <Flex height='100%' flex>
                             {dataset_id === undefined ? (

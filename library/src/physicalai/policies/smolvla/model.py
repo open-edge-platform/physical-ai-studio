@@ -189,8 +189,9 @@ class SmolVLAModel(ExportableModelMixin, Model):
                 losses *= in_episode_bound.unsqueeze(-1)
                 loss_dict["losses_after_in_ep_bound"] = losses.clone()
 
-            # Remove padding
-            losses = losses[:, :, : self._max_action_dim]
+            # Truncate losses to actual action dimensions to avoid dilution from padding
+            original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
+            losses = losses[:, :, :original_action_dim]
             loss_dict["losses_after_rm_padding"] = losses.clone()
 
             loss = losses.mean()

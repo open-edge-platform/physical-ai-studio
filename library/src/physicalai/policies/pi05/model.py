@@ -1015,6 +1015,11 @@ class Pi05Model(ExportableModelMixin, Model):
             v_t = self._apply_checkpoint(action_out_proj_func, suffix_out)
 
             losses = F.mse_loss(u_t, v_t, reduction="none")
+
+            # Truncate losses to actual action dimensions to avoid dilution from padding
+            original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
+            losses = losses[:, :, :original_action_dim]
+
             loss = losses.mean()
             return loss, {"loss": loss.item()}
         return self.predict_action_chunk(batch)
