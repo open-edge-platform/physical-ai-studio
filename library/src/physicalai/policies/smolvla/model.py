@@ -276,7 +276,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
                         device=device,
                     )
 
-        sample_input[TASK] = "sample_task"
+        sample_input[TASK] = ["sample_task"]
 
         return sample_input
 
