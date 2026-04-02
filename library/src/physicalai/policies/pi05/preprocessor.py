@@ -125,7 +125,6 @@ class Pi05Preprocessor(torch.nn.Module):
     5. Pads actions to max dimensions
 
     Args:
-        max_state_dim: Maximum state dimension for padding.
         max_action_dim: Maximum action dimension for padding.
         image_resolution: Target image resolution (height, width).
         features: Dictionary mapping feature names to Feature objects for normalization.
@@ -136,7 +135,6 @@ class Pi05Preprocessor(torch.nn.Module):
 
     def __init__(
         self,
-        max_state_dim: int = 32,
         max_action_dim: int = 32,
         image_resolution: tuple[int, int] = (224, 224),
         features: dict[str, Feature] | None = None,
@@ -147,7 +145,6 @@ class Pi05Preprocessor(torch.nn.Module):
         """Initialize Pi05Preprocessor."""
         super().__init__()
 
-        self.max_state_dim = max_state_dim
         self.max_action_dim = max_action_dim
         self.image_resolution = image_resolution
         self.max_token_len = max_token_len
@@ -381,7 +378,6 @@ class Pi05Postprocessor(torch.nn.Module):
 
 
 def make_pi05_preprocessors(
-    max_state_dim: int = 32,
     max_action_dim: int = 32,
     stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
     *,
@@ -392,7 +388,6 @@ def make_pi05_preprocessors(
     """Create preprocessor and postprocessor pair for Pi05.
 
     Args:
-        max_state_dim: Maximum state dimension.
         max_action_dim: Maximum action dimension.
         stats: Dataset statistics as nested dicts.
         image_resolution: Target image resolution.
@@ -428,7 +423,6 @@ def make_pi05_preprocessors(
             )
 
     preprocessor = Pi05Preprocessor(
-        max_state_dim=max_state_dim,
         max_action_dim=max_action_dim,
         image_resolution=image_resolution,
         features=features,
