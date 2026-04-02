@@ -103,8 +103,9 @@ component_registry.register("action_chunking", "physicalai.inference.runners.Act
 
 # Preprocessors
 component_registry.register("normalize", "physicalai.inference.preprocessors.StatsNormalizer")
-component_registry.register("smolvla_resize", "physicalai.inference.preprocessors.smolvla.ResizeSmolVLA")
-component_registry.register("new_line", "physicalai.inference.preprocessors.new_line.NewLinePreprocessor")
+component_registry.register("smolvla_resize", "physicalai.inference.preprocessors.ResizeSmolVLA")
+component_registry.register("new_line", "physicalai.inference.preprocessors.NewLinePreprocessor")
+component_registry.register("hf_tokenizer", "physicalai.inference.preprocessors.HFTokenizer")
 
 # Postprocessors
 component_registry.register("denormalize", "physicalai.inference.postprocessors.StatsDenormalizer")
