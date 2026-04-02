@@ -26,8 +26,8 @@ from physicalai.train import Trainer
 DEPLOYMENT_EXPORT_BACKENDS = ["openvino", "onnx", "executorch"]
 
 # Policy names for parametrization
-FIRST_PARTY_VLA_POLICIES = ["groot", "pi0", "pi05"]
-FIRST_PARTY_POLICIES_WITH_EXPORT = ["act", "smolvla"]
+FIRST_PARTY_VLA_POLICIES = ["groot", "pi0"]
+FIRST_PARTY_POLICIES_WITH_EXPORT = ["act", "smolvla", "pi05"]
 
 
 @pytest.fixture(scope="class")
