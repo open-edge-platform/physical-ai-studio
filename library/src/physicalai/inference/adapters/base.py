@@ -81,3 +81,7 @@ class RuntimeAdapter(ABC):
             Default device name ('cpu', 'GPU', etc.)
         """
         return "cpu"
+
+    def __repr__(self) -> str:
+        """Return string representation of the adapter."""
+        return f"{self.__class__.__name__}(device={self.device})"
