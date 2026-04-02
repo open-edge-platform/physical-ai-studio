@@ -224,6 +224,7 @@ class Pi05(ExportablePolicyMixin, Policy):
             min_period=self.config.min_period,
             max_period=self.config.max_period,
             image_resolution=self.config.image_resolution,
+            tokenizer_max_length=self.config.tokenizer_max_length,
             freeze_vision_encoder=self.config.freeze_vision_encoder,
             train_expert_only=self.config.train_expert_only,
             gradient_checkpointing=self.config.gradient_checkpointing,
@@ -256,7 +257,6 @@ class Pi05(ExportablePolicyMixin, Policy):
             self.model.paligemma_with_expert._set_requires_grad()  # noqa: SLF001
 
         self._preprocessor, self._postprocessor = make_pi05_preprocessors(
-            max_state_dim=self.config.max_state_dim,
             max_action_dim=self.config.max_action_dim,
             stats=dataset_stats,
             image_resolution=self.config.image_resolution,
@@ -455,7 +455,6 @@ class Pi05(ExportablePolicyMixin, Policy):
         """
         logger.info("Updating preprocessor stats for fine-tuning dataset")
         self._preprocessor, self._postprocessor = make_pi05_preprocessors(
-            max_state_dim=self.config.max_state_dim,
             max_action_dim=self.config.max_action_dim,
             stats=dataset_stats,
             image_resolution=self.config.image_resolution,
@@ -589,4 +588,4 @@ class Pi05(ExportablePolicyMixin, Policy):
         Returns:
             list[str | ExportBackend]: A list of supported export backends.
         """
-        return [ExportBackend.TORCH]
+        return [ExportBackend.TORCH, ExportBackend.OPENVINO]

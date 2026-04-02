@@ -26,6 +26,7 @@ from physicalai.export.backends import (
     OpenVINOExportParameters,
     TorchExportParameters,
 )
+from physicalai.inference.manifest import ComponentSpec
 from physicalai.policies.base import Model
 
 from .pi_gemma import (
@@ -562,6 +563,7 @@ class Pi05Model(ExportableModelMixin, Model):
         min_period: float = 4e-3,
         max_period: float = 4.0,
         image_resolution: tuple[int, int] = (224, 224),
+        tokenizer_max_length: int = 200,
         freeze_vision_encoder: bool = False,
         train_expert_only: bool = True,
         gradient_checkpointing: bool = False,
@@ -586,6 +588,7 @@ class Pi05Model(ExportableModelMixin, Model):
             min_period: Minimum period for sine-cosine positional encoding.
             max_period: Maximum period for sine-cosine positional encoding.
             image_resolution: Target image resolution (height, width). Must be square.
+            tokenizer_max_length: Maximum token length for the tokenizer.
             freeze_vision_encoder: Whether to freeze the vision encoder during training.
             train_expert_only: Whether to train only the action expert.
             gradient_checkpointing: Whether to enable gradient checkpointing for memory optimization.
@@ -606,6 +609,8 @@ class Pi05Model(ExportableModelMixin, Model):
         self._time_sampling_offset = time_sampling_offset
         self._min_period = min_period
         self._max_period = max_period
+        self._image_resolution = image_resolution
+        self._tokenizer_max_length = tokenizer_max_length
 
         paligemma_config = get_gemma_config(paligemma_variant)
         action_expert_config = get_gemma_config(action_expert_variant)
@@ -664,12 +669,30 @@ class Pi05Model(ExportableModelMixin, Model):
             >>> print(onnx_args.exporter_kwargs)
             {'output_names': ['action']}
         """
+        preproc_specs = [
+            ComponentSpec(type="pi05", image_resolution=self._image_resolution),
+            ComponentSpec(
+                type="hf_tokenizer",
+                tokenizer_name="google/paligemma-3b-pt-224",
+                revision="35e4f46485b4d07967e7e9935bc3786aad50687c",
+                max_token_len=self._tokenizer_max_length,
+            ),
+        ]
+        postproc_specs = [
+            ComponentSpec(
+                type="denormalize",
+                stats={ACTION: self._dataset_stats[ACTION]},
+                mode="mean_std",
+            ),
+        ]
         extra_args: dict[str, ExportParameters] = {}
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
                 "output_names": ["action"],
             },
             export_tokenizer=False,
+            preprocessors_specs=preproc_specs,
+            postprocessors_specs=postproc_specs,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
             outputs=["action"],
@@ -677,6 +700,8 @@ class Pi05Model(ExportableModelMixin, Model):
             via_onnx=True,
             export_tokenizer=False,
             exporter_kwargs={},
+            preprocessors_specs=preproc_specs,
+            postprocessors_specs=postproc_specs,
         )
         extra_args["torch"] = TorchExportParameters()
 
