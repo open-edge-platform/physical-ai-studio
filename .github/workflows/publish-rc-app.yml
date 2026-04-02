@@ -105,13 +105,13 @@ jobs:
           if [[ "$PATCH_VERSION" != "0" ]]; then
             BASE_VERSION="${TAG_VERSION%.*}.0"
             BASE_TAG="app/v${BASE_VERSION}"
-            
+
             echo "::group::Patch release validation"
             echo "Patch version detected: $TAG_VERSION"
             echo "Base version: $BASE_VERSION"
             echo "Expected base tag: $BASE_TAG"
             echo "::endgroup::"
-            
+
             if ! git rev-parse --verify "refs/tags/${BASE_TAG}" >/dev/null 2>&1; then
               echo "::error::Patch release tag '${TAG}' requires base release tag '${BASE_TAG}' to exist"
               echo "::error::Cannot release patch version ${TAG_VERSION} without base version ${BASE_VERSION}"
@@ -124,13 +124,13 @@ jobs:
           if [[ "$RC_NUMBER" -gt 1 ]]; then
             PREV_RC_NUMBER=$((RC_NUMBER - 1))
             PREV_RC_TAG="app/v${TAG_VERSION}rc${PREV_RC_NUMBER}"
-            
+
             echo "::group::Sequential RC validation"
             echo "Current RC number: $RC_NUMBER"
             echo "Previous RC number: $PREV_RC_NUMBER"
             echo "Expected previous RC tag: $PREV_RC_TAG"
             echo "::endgroup::"
-            
+
             if ! git rev-parse --verify "refs/tags/${PREV_RC_TAG}" >/dev/null 2>&1; then
               echo "::error::RC tag '${TAG}' requires previous RC tag '${PREV_RC_TAG}' to exist"
               echo "::error::Cannot create RC${RC_NUMBER} without first creating RC${PREV_RC_NUMBER}"
@@ -187,7 +187,7 @@ jobs:
           use-cache: "false" # Disable cache for RC builds (security and reproducibility)
 
       - name: Sign Docker image
-        uses: open-edge-platform/geti-ci/actions/sign-image@cc6fbe840db6ebd16ebd18d409f475bff5a8c182
+        uses: open-edge-platform/geti-ci/actions/sign-image@e80098b3d180db37914f11ff6021f9fa34d0bb9f
         with:
           image-uri: ${{ steps.meta.outputs.tags }}
 

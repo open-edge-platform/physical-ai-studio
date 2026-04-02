@@ -29,6 +29,8 @@ from physicalai.export.backends import (
 from physicalai.inference.manifest import (
     ComponentSpec,
     Manifest,
+    ModelSpec,
+    PolicySource,
     PolicySpec,
 )
 from physicalai.inference.runners.action_chunking import ActionChunking
@@ -112,7 +114,6 @@ class ExportablePolicyMixin:
 
         use_action_queue = metadata.get("use_action_queue", False)
         chunk_size = metadata.get("chunk_size", 1)
-        kind = "action_chunking" if use_action_queue else "single_pass"
 
         if use_action_queue:
             runner = ComponentSpec.from_class(
@@ -128,11 +129,12 @@ class ExportablePolicyMixin:
         return Manifest(
             policy=PolicySpec(
                 name=policy_name,
-                kind=kind,
-                class_path=policy_class,
+                source=PolicySource(class_path=policy_class),
             ),
-            artifacts={str(backend): artifact_filename},
-            runner=runner,
+            model=ModelSpec(
+                runner=runner,
+                artifacts={str(backend): artifact_filename},
+            ),
         )
 
     def _prepare_export_path(self, output_path: PathLike | str, extension: str) -> Path:

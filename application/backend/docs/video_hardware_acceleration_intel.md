@@ -1,7 +1,7 @@
 # Enable hardware acceleration for video encoding on Intel devices
 
 Intel supports hardware acceleration for video encoding on Intel devices using **oneVPL**.
-pyAV is used as video backend. pyAV uses libav / ffmpeg. 
+pyAV is used as video backend. pyAV uses libav / ffmpeg.
 
 For **QSV / oneVPL**, the right path is:
 
@@ -9,10 +9,10 @@ For **QSV / oneVPL**, the right path is:
 2. build **FFmpeg** with `--enable-libvpl`
 3. build **PyAV from source** against that FFmpeg
 
-Intel’s FFmpeg guidance says to enable VPL is to simply compile with `--enable-libvpl`, and that this enables the `*_qsv` codecs such as `h264_qsv` and `hevc_qsv`. 
-It also notes that FFmpeg’s `*_qsv` codecs are implemented on top of VPL. 
+Intel’s FFmpeg guidance says to enable VPL is to simply compile with `--enable-libvpl`, and that this enables the `*_qsv` codecs such as `h264_qsv` and `hevc_qsv`.
+It also notes that FFmpeg’s `*_qsv` codecs are implemented on top of VPL.
 
-One important detail: Intel’s `libvpl` repo is only the **dispatcher + headers + samples**. You also need an **implementation** installed, such as `oneVPL-intel-gpu` for newer Intel Xe and newer hardware, or Media SDK for legacy graphics. 
+One important detail: Intel’s `libvpl` repo is only the **dispatcher + headers + samples**. You also need an **implementation** installed, such as `oneVPL-intel-gpu` for newer Intel Xe and newer hardware, or Media SDK for legacy graphics.
 
 ### 1) Install build dependencies
 
@@ -46,14 +46,14 @@ export PKG_CONFIG_PATH="$VPL_INSTALL_DIR/lib/pkgconfig:$VPL_INSTALL_DIR/lib64/pk
 export LD_LIBRARY_PATH="$VPL_INSTALL_DIR/lib:$VPL_INSTALL_DIR/lib64:$LD_LIBRARY_PATH"
 ```
 
-That environment setup is necessary when `libvpl` is not installed to a standard location. 
+That environment setup is necessary when `libvpl` is not installed to a standard location.
 
 ### 3) Make sure the Intel GPU runtime is installed
 
-This is separate from the dispatcher. Without the runtime/implementation, FFmpeg may build but QSV will fail at runtime. [Intel’s install docs](https://github.com/intel/libvpl/blob/main/INSTALL.md) say the base package alone is not enough and you need an implementation as well. 
+This is separate from the dispatcher. Without the runtime/implementation, FFmpeg may build but QSV will fail at runtime. [Intel’s install docs](https://github.com/intel/libvpl/blob/main/INSTALL.md) say the base package alone is not enough and you need an implementation as well.
 
 ### 4) Install dependencies for SW encoders
-If the hardware accelerator is not available, you might want to fall back on SW encoders. 
+If the hardware accelerator is not available, you might want to fall back on SW encoders.
 You can skip this step if you do not want to enable these encoders.
 
 For libopenh264:
