@@ -5,7 +5,7 @@ from typing import Any
 import cv2
 import numpy as np
 from lerobot.datasets.pipeline_features import aggregate_pipeline_dataset_features, create_initial_features
-from lerobot.datasets.utils import combine_feature_dicts
+from lerobot.datasets.feature_utils import combine_feature_dicts
 from lerobot.processor import make_default_processors
 from loguru import logger
 from physicalai.data import Observation
