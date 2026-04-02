@@ -56,8 +56,8 @@ class TestOpenVINOAdapter:
     """Test OpenVINO inference adapter."""
 
     def test_lifecycle(self, tmp_path: Path) -> None:
-        """Test complete adapter lifecycle: init, load, load_tokenizer, predict, tokenize."""
-        # Setup model
+        """Test complete adapter lifecycle: init, load, predict."""
+        # Setup
         model_path = tmp_path / "model.xml"
         model_path.touch()
         (tmp_path / "model.bin").touch()

@@ -118,7 +118,6 @@ class TestStatsDenormalizerMeanStd:
         np.testing.assert_allclose(recovered["action"], original["action"], atol=1e-6)
 
 
-
 class TestStatsDenormalizerMinMax:
     def test_denormalizes_all_features(self, stats_dir: Path) -> None:
         denormalizer = StatsDenormalizer(stats_path=str(stats_dir / "stats.safetensors"), mode="min_max")
