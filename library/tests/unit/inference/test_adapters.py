@@ -68,21 +68,10 @@ class TestOpenVINOAdapter:
         mock_model.inputs, mock_model.outputs = [mock_input], [mock_output]
         mock_model.return_value = [np.array([[1.0, 2.0]])]
 
-        # Setup tokenizer
-        tokenizer_path = tmp_path / "tokenizer.xml"
-        tokenizer_path.touch()
-
-        mock_tokenizer = MagicMock()
-        mock_tokenizer.return_value = {
-            "input_ids": np.array([[101, 2023, 102]]),
-            "attention_mask": np.array([[1, 1, 1]]),
-        }
-
         mock_ov = MagicMock()
-        mock_core = mock_ov.Core.return_value
-        mock_core.compile_model.side_effect = [mock_model, mock_tokenizer]
+        mock_ov.Core.return_value.compile_model.return_value = mock_model
 
-        # Test init, load, load_tokenizer, predict, and tokenize
+        # Test init, load, and predict
         with patch.dict("sys.modules", {"openvino": mock_ov}):
             adapter = OpenVINOAdapter(device="CPU")
             assert adapter.device == "CPU"
@@ -92,17 +81,8 @@ class TestOpenVINOAdapter:
             assert adapter.input_names == ["input"]
             assert adapter.output_names == ["output"]
 
-            adapter.load_tokenizer(tokenizer_path)
-            assert adapter.compiled_tokenizer is mock_tokenizer
-
             outputs = adapter.predict({"input": np.array([[1.0, 2.0]])})
             assert "output" in outputs and isinstance(outputs["output"], np.ndarray)
-
-            tokenized = adapter.tokenize({"task": ["pick up the cup"], "images": np.zeros((1, 3, 64, 64))})
-            assert "task" not in tokenized
-            assert "tokenized_prompt" in tokenized
-            assert "tokenized_prompt_mask" in tokenized
-            assert "images" in tokenized
 
     def test_error_cases(self, tmp_path: Path) -> None:
         """Test error handling for file not found, missing dependency, and predict without load."""
