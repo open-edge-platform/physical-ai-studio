@@ -11,6 +11,7 @@ from physicalai.inference.preprocessors.base import Preprocessor
 from physicalai.inference.preprocessors.hf_tokenizer import HFTokenizer
 from physicalai.inference.preprocessors.lambda_processor import LambdaPreprocessor
 from physicalai.inference.preprocessors.new_line import NewLinePreprocessor
+from physicalai.inference.preprocessors.pi05 import Pi05Preprocessor
 from physicalai.inference.preprocessors.smolvla import ResizeSmolVLA
 from physicalai.inference.preprocessors.stats_normalizer import StatsNormalizer
 
@@ -18,6 +19,7 @@ __all__ = [
     "HFTokenizer",
     "LambdaPreprocessor",
     "NewLinePreprocessor",
+    "Pi05Preprocessor",
     "Preprocessor",
     "ResizeSmolVLA",
     "StatsNormalizer",
