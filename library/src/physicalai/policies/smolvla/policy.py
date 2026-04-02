@@ -235,6 +235,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             min_period=self.config.min_period,
             max_period=self.config.max_period,
             use_random_input_noise=self.config.use_random_input_noise,
+            tokenizer_max_length=self.config.tokenizer_max_length,
         )
 
         self._preprocessor, self._postprocessor = make_smolvla_preprocessors(
@@ -244,6 +245,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             image_resolution=self.config.resize_imgs_with_padding,
             max_token_len=self.config.tokenizer_max_length,
             token_pad_type=self.config.pad_language_to,
+            tokenizer_name=self.config.vlm_model_name,
         )
 
     def setup(self, stage: str) -> None:

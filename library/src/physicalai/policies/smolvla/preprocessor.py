@@ -357,6 +357,7 @@ def make_smolvla_preprocessors(
     image_resolution: tuple[int, int] = (512, 512),
     max_token_len: int = 48,
     token_pad_type: str = "longest",  # noqa: S107
+    tokenizer_name: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
 ) -> tuple[SmolVLAPreprocessor, SmolVLAPostprocessor]:
     """Create preprocessor and postprocessor pair.
 
@@ -367,7 +368,8 @@ def make_smolvla_preprocessors(
         stats: Dataset statistics as nested dicts.
         image_resolution: Target image resolution.
         max_token_len: Maximum token length.
-        token_pad_type: Padding strategy for tokenization ("longest" or "max_length").
+        token_pad_type: Padding strategy for tokenization ("longest" or "max_length").\
+        tokenizer_name: HuggingFace tokenizer name.
 
     Returns:
         Tuple of (preprocessor, postprocessor).
@@ -398,6 +400,7 @@ def make_smolvla_preprocessors(
         features=features,
         max_token_len=max_token_len,
         padding=token_pad_type,
+        tokenizer_name=tokenizer_name,
     )
 
     postprocessor = SmolVLAPostprocessor(

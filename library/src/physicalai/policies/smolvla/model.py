@@ -90,6 +90,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
         min_period: float = 4e-3,
         max_period: float = 4.0,
         use_random_input_noise: bool = True,
+        tokenizer_max_length: int = 48,
     ) -> None:
         """Initialize the SmolVLA model.
 
@@ -121,6 +122,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
             max_period: Maximum period for sine-cosine positional encoding of timesteps.
             use_random_input_noise: Whether to use random noise as the initial input for the
                 denoising process during inference. If False, zeros are used instead.
+            tokenizer_max_length: Maximum token length for the tokenizer. Default: 48.
         """
         super().__init__()
         self._chunk_size = chunk_size
@@ -128,6 +130,8 @@ class SmolVLAModel(ExportableModelMixin, Model):
         self._max_action_dim = max_action_dim
         self._resize_imgs_with_padding = resize_imgs_with_padding
         self._adapt_to_pi_aloha = adapt_to_pi_aloha
+        self._tokenizer_max_length = tokenizer_max_length
+        self._vlm_model_name = vlm_model_name
         self._model = VLAFlowMatching(
             chunk_size=chunk_size,
             max_state_dim=max_state_dim,
@@ -304,13 +308,20 @@ class SmolVLAModel(ExportableModelMixin, Model):
         """
         extra_args: dict[str, ExportParameters] = {}
         preproc_specs = [
-            ComponentSpec(type="smolvla_resize", init_args={"image_resolution": self._resize_imgs_with_padding}),
-            ComponentSpec(type="new_line", init_args={}),
+            ComponentSpec(type="smolvla_resize", image_resolution=self._resize_imgs_with_padding),
+            ComponentSpec(type="new_line"),
+            ComponentSpec(
+                type="hf_tokenizer",
+                tokenizer_name=self._vlm_model_name,
+                revision="7b375e1b73b11138ff12fe22c8f2822d8fe03467",
+                max_token_len=self._tokenizer_max_length,
+            ),
         ]
         postproc_specs = [
             ComponentSpec(
                 type="denormalize",
-                init_args={"stats": {ACTION: self._dataset_stats[ACTION]}, "mode": "mean_std"},
+                stats={ACTION: self._dataset_stats[ACTION]},
+                mode="mean_std",
             ),
         ]
         extra_args["onnx"] = ONNXExportParameters(
@@ -319,12 +330,12 @@ class SmolVLAModel(ExportableModelMixin, Model):
             },
             preprocessors_specs=preproc_specs,
             postprocessors_specs=postproc_specs,
-            export_tokenizer=True,
+            export_tokenizer=False,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
             outputs=["action"],
             compress_to_fp16=False,
-            export_tokenizer=True,
+            export_tokenizer=False,
             exporter_kwargs={},
             preprocessors_specs=preproc_specs,
             postprocessors_specs=postproc_specs,
