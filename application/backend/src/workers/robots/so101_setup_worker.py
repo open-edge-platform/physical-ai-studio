@@ -264,7 +264,7 @@ class SO101SetupWorker(TransportWorker):
             readings.append({"name": name, "motor_id": motor.id, "raw": raw})
 
         # Compute average
-        raw_values = [r["raw"] for r in readings if r["raw"] is not None]
+        raw_values = [int(r["raw"]) for r in readings if isinstance(r.get("raw"), int)]
         avg_raw = sum(raw_values) / len(raw_values) if raw_values else None
         avg_voltage = avg_raw * VOLTAGE_UNIT if avg_raw is not None else None
 

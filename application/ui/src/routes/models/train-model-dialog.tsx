@@ -20,7 +20,7 @@ import {
     Picker,
     Text,
     TextField,
-} from '@geti/ui';
+} from '@geti-ui/ui';
 
 import { $api } from '../../api/client';
 import { SchemaJob, SchemaModel, SchemaTrainJobPayload } from '../../api/openapi-spec';
@@ -102,6 +102,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
                     >
                         <Item key='act'>Act</Item>
                         <Item key='pi0'>Pi0</Item>
+                        <Item key='pi05'>Pi05</Item>
                         <Item key='smolvla'>SmolVLA</Item>
                     </Picker>
                     <Disclosure isQuiet UNSAFE_style={{ padding: 0 }}>

@@ -6,12 +6,11 @@ ARG PYTHON_VERSION=3.12
 # ===========================================================================
 # Stage 1: Clone Geti UI packages and URDF robot models
 # ===========================================================================
-FROM node:24-alpine3.22@sha256:76db75ca7e7da9148ae42c92d9be12d12a8d7b03e171f18339355d8078d644a0 AS ui-packages
+FROM node:24-alpine3.22@sha256:4f33c7804fa7775b87875f512e25e515692210bfdeafd715eb8bc441c364e2f6 AS ui-packages
 
 WORKDIR /home/app/web_ui/
 RUN apk add --no-cache git
 COPY --link ./application/ui/package.json ./
-RUN npm run clone-geti-ui-packages
 
 # Clone URDF files
 RUN npm run clone-so101
@@ -20,16 +19,16 @@ RUN npm run clone-widowx
 # ===========================================================================
 # Stage 2: Build Web UI
 # ===========================================================================
-FROM node:24-alpine3.22@sha256:76db75ca7e7da9148ae42c92d9be12d12a8d7b03e171f18339355d8078d644a0 AS web-ui
+FROM node:24-alpine3.22@sha256:4f33c7804fa7775b87875f512e25e515692210bfdeafd715eb8bc441c364e2f6 AS web-ui
 
 WORKDIR /home/app/web_ui/
 
 COPY --link application/ui/package.json ./
 COPY --link application/ui/package-lock.json ./
-COPY --from=ui-packages /home/app/web_ui/packages/ /home/app/web_ui/packages/
 COPY --from=ui-packages /home/app/web_ui/public/ /home/app/web_ui/public/
 RUN npm ci --audit=false --ignore-scripts
 
+COPY --link application/ui/tsconfig.base.json ./
 COPY --link application/ui/tsconfig.json ./
 COPY --link application/ui/rsbuild.config.ts ./
 COPY --link application/ui/src/ src/
@@ -47,12 +46,6 @@ FROM scratch AS app-source
 
 # Root workspace manifests (needed by uv run for workspace resolution)
 COPY --link pyproject.toml uv.lock LICENSE README.md /app/
-
-# Library source + manifest (needed by uv run for hatchling version)
-COPY --link --from=libs ./src /app/library/src
-COPY --link --from=libs ./LICENSE /app/library/LICENSE
-COPY --link --from=libs ./README.md /app/library/README.md
-COPY --link --from=libs ./pyproject.toml /app/library/pyproject.toml
 
 # Backend source, entrypoint, and manifests
 COPY --link application/backend/src /app/application/backend/src
@@ -125,7 +118,8 @@ RUN --mount=type=cache,id=uv-base,target=/root/.cache/uv \
 FROM builder-base AS builder-cpu
 
 RUN --mount=type=cache,id=uv-cpu,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --no-install-local --extra cpu
+    --mount=type=bind,from=libs,target=/app/library \
+    uv sync --frozen --no-dev --no-editable --extra cpu
 
 # ===========================================================================
 # Stage 4b: XPU builder
@@ -133,7 +127,8 @@ RUN --mount=type=cache,id=uv-cpu,target=/root/.cache/uv \
 FROM builder-base AS builder-xpu
 
 RUN --mount=type=cache,id=uv-xpu,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --no-install-local --extra xpu
+    --mount=type=bind,from=libs,target=/app/library \
+    uv sync --frozen --no-dev --no-editable --extra xpu
 
 # ===========================================================================
 # Stage 4c: CUDA builder
@@ -141,7 +136,8 @@ RUN --mount=type=cache,id=uv-xpu,target=/root/.cache/uv \
 FROM builder-base AS builder-cuda
 
 RUN --mount=type=cache,id=uv-cuda,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --no-install-local --extra cuda
+    --mount=type=bind,from=libs,target=/app/library \
+    uv sync --frozen --no-dev --no-editable --extra cuda
 
 # ===========================================================================
 # Stage 5: Runtime base — shared across all hardware targets

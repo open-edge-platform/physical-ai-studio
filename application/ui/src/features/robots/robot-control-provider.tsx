@@ -16,6 +16,7 @@ interface RobotControlState {
     is_recording: boolean;
     dataset_loaded: boolean;
     follower_source: FollowerSource;
+    episodes_recorded: number;
 }
 
 const createRobotControlState = (): RobotControlState => {
@@ -27,6 +28,7 @@ const createRobotControlState = (): RobotControlState => {
         error: false,
         is_recording: false,
         follower_source: null,
+        episodes_recorded: 0,
     };
 };
 

@@ -127,6 +127,9 @@ uv run ruff check .
 
 # Type check
 uv run mypy src/
+
+# Type check (Pyrefly)
+uv run pyrefly check -c pyproject.toml
 ```
 
 ### Project Structure

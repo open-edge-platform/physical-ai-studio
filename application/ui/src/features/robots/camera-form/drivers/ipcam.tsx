@@ -1,4 +1,4 @@
-import { Flex, TextField } from '@geti/ui';
+import { Flex, TextField } from '@geti-ui/ui';
 
 import { SchemaIpCameraInput } from '../../../../api/openapi-spec';
 import { NameField } from '../components/name-field';

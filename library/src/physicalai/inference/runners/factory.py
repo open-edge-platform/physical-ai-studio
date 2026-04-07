@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Runner factory for selecting inference runners from metadata."""
+"""Runner factory for selecting inference runners from manifest or metadata."""
 
 from __future__ import annotations
 
@@ -11,35 +11,64 @@ from physicalai.inference.runners.action_chunking import ActionChunking
 from physicalai.inference.runners.single_pass import SinglePass
 
 if TYPE_CHECKING:
+    from physicalai.inference.manifest import Manifest
     from physicalai.inference.runners.base import InferenceRunner
 
 
-def get_runner(metadata: dict[str, Any]) -> InferenceRunner:
-    """Select and instantiate a runner from export metadata or manifest.
+def get_runner(source: Manifest | dict[str, Any]) -> InferenceRunner:
+    """Select and instantiate a runner from a manifest or legacy metadata.
 
-    Supports two formats:
+    Supports three formats:
 
-    1. **Manifest** (``manifest.json``): If ``metadata`` contains a
-       ``"runner"`` key with ``class_path`` + ``init_args``, the runner
-       is instantiated dynamically via :class:`ComponentSpec`.
-    2. **Legacy** (``metadata.yaml``): Falls back to reading flat keys
-       ``use_action_queue`` and ``chunk_size``.
+    1. **Manifest object** — reads ``source.model.runner`` and
+       instantiates via :func:`instantiate_component`.
+    2. **Dict with runner spec** — raw manifest dict containing a
+       ``"model"`` section with a runner component spec.
+    3. **Legacy dict** — falls back to flat ``use_action_queue``
+       and ``chunk_size`` keys.
 
     Args:
-        metadata: Export metadata dict (from ``metadata.yaml`` or
-            ``manifest.json``).
+        source: A :class:`Manifest` instance or a raw metadata dict.
 
     Returns:
         Configured runner instance.
     """
-    runner_spec = metadata.get("runner")
-    if isinstance(runner_spec, dict) and "class_path" in runner_spec:
+    from physicalai.inference.manifest import Manifest  # noqa: PLC0415
+
+    if isinstance(source, Manifest):
+        if source.model.runner is not None:
+            from physicalai.inference.component_factory import instantiate_component  # noqa: PLC0415
+
+            return instantiate_component(source.model.runner)
+        return SinglePass()
+
+    runner_spec = _extract_runner_spec(source)
+    if runner_spec is not None:
         from physicalai.inference.component_factory import instantiate_component  # noqa: PLC0415
         from physicalai.inference.manifest import ComponentSpec  # noqa: PLC0415
 
         return instantiate_component(ComponentSpec.model_validate(runner_spec))
 
-    if metadata.get("use_action_queue"):
-        chunk_size = metadata.get("chunk_size", 1)
+    if source.get("use_action_queue"):
+        chunk_size = source.get("chunk_size", 1)
         return ActionChunking(runner=SinglePass(), chunk_size=chunk_size)
     return SinglePass()
+
+
+def _extract_runner_spec(metadata: dict[str, Any]) -> dict[str, Any] | None:
+    """Extract a runner spec dict from nested or flat metadata.
+
+    Returns:
+        Runner spec dict if found, otherwise ``None``.
+    """
+    model_section = metadata.get("model", {})
+    if isinstance(model_section, dict):
+        runner = model_section.get("runner")
+        if isinstance(runner, dict) and ("class_path" in runner or "type" in runner):
+            return runner
+
+    runner = metadata.get("runner")
+    if isinstance(runner, dict) and ("class_path" in runner or "type" in runner):
+        return runner
+
+    return None

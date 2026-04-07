@@ -8,7 +8,9 @@ flattens and filters them for the runtime adapter.
 """
 
 from physicalai.inference.preprocessors.base import Preprocessor
+from physicalai.inference.preprocessors.stats_normalizer import StatsNormalizer
 
 __all__ = [
     "Preprocessor",
+    "StatsNormalizer",
 ]

@@ -1,4 +1,4 @@
-import { Flex, ProgressBar, ProgressCircle, Text } from '@geti/ui';
+import { Flex, ProgressBar, ProgressCircle, Text } from '@geti-ui/ui';
 
 type DownloadProgressContentProps = {
     isError: boolean;

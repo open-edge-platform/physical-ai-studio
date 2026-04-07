@@ -5,6 +5,10 @@
 
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Literal
+
+#: Supported ExecuTorch delegate backends.
+ExecuTorchDelegate = Literal["portable", "xnnpack", "openvino"]
 
 
 class ExportBackend(StrEnum):
@@ -13,7 +17,7 @@ class ExportBackend(StrEnum):
     ONNX = "onnx"
     OPENVINO = "openvino"
     TORCH = "torch"
-    TORCH_EXPORT_IR = "torch_export_ir"
+    EXECUTORCH = "executorch"
 
     @property
     def extension(self) -> str:
@@ -22,7 +26,7 @@ class ExportBackend(StrEnum):
             "onnx": ".onnx",
             "openvino": ".xml",
             "torch": ".pt",
-            "torch_export_ir": ".pt2",
+            "executorch": ".pte",
         }
         return extensions[self.value]
 
@@ -33,7 +37,7 @@ class ExportBackend(StrEnum):
             "onnx": ONNXExportParameters,
             "openvino": OpenVINOExportParameters,
             "torch": TorchExportParameters,
-            "torch_export_ir": ExportParameters,
+            "executorch": ExecuTorchExportParameters,
         }
         return parameter_classes[self.value]
 
@@ -71,7 +75,23 @@ class TorchExportParameters(ExportParameters):
     output_names: list[str] = field(default_factory=lambda: ["action"])
 
 
+@dataclass
+class ExecuTorchExportParameters(ExportParameters):
+    """Parameters specific to ExecuTorch export.
+
+    Attributes:
+        delegate: The delegate backend to use for ExecuTorch export.
+            Supported values: ``"portable"`` (default), ``"xnnpack"``, ``"openvino"``.
+        output_names: Names for model outputs stored in metadata for inference.
+    """
+
+    delegate: ExecuTorchDelegate = "portable"
+    output_names: list[str] = field(default_factory=lambda: ["action"])
+
+
 __all__ = [
+    "ExecuTorchDelegate",
+    "ExecuTorchExportParameters",
     "ExportBackend",
     "ExportParameters",
     "ONNXExportParameters",

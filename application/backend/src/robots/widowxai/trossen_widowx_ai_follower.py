@@ -8,6 +8,8 @@ from schemas.robot import RobotType
 
 
 class TrossenWidowXAIFollower(RobotClient):
+    _HOME_POSITION: list[float] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
     def __init__(self, config: NetworkIpRobotConfig):
         self.driver = trossen_arm.TrossenArmDriver()
         self.connection_string = config.connection_string
@@ -45,8 +47,8 @@ class TrossenWidowXAIFollower(RobotClient):
         positions = {key.removesuffix(".pos"): val for key, val in joints.items() if key.endswith(".pos")}
         velocities = {key.removesuffix(".vel"): val for key, val in joints.items() if key.endswith(".vel")}
 
-        ps = [0] * len(self.motor_names)
-        vs = [0] * len(self.motor_names)
+        ps = [0.0] * len(self.motor_names)
+        vs = [0.0] * len(self.motor_names)
 
         # Map motor name / value pair into the right position of list
         for p, v in positions.items():
@@ -61,10 +63,10 @@ class TrossenWidowXAIFollower(RobotClient):
                 vs[i] = v
 
         self.driver.set_all_positions(
-            ps,
+            ps,  # type: ignore
             goal_time,
             False,
-            vs,
+            vs,  # type: ignore
         )
 
         return joints
@@ -171,7 +173,7 @@ class TrossenWidowXAIFollower(RobotClient):
         self.driver.set_all_modes(trossen_arm.Mode.position)
 
         self.driver.set_all_modes(trossen_arm.Mode.position)
-        self.driver.set_all_positions(np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), 2.0, True)
+        self.driver.set_all_positions(self._HOME_POSITION, 2.0, True)  # type: ignore
 
     @property
     def is_calibrated(self) -> bool:
@@ -186,7 +188,7 @@ class TrossenWidowXAIFollower(RobotClient):
     async def disconnect(self) -> None:
         try:
             self.driver.set_all_modes(trossen_arm.Mode.position)
-            self.driver.set_all_positions(np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), 2.0, True)
+            self.driver.set_all_positions(self._HOME_POSITION, 2.0, True)  # type: ignore
         except Exception:
             logger.error("Failed to home trossen WidowX AI follower")
         finally:

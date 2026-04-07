@@ -13,8 +13,8 @@ import {
     Text,
     TextField,
     View,
-} from '@geti/ui';
-import { ChevronLeft, Refresh } from '@geti/ui/icons';
+} from '@geti-ui/ui';
+import { ChevronLeft, Refresh } from '@geti-ui/ui/icons';
 
 import { $api } from '../../../api/client';
 import { SchemaRobot } from '../../../api/openapi-spec';

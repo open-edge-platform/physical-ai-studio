@@ -1,5 +1,5 @@
-import { ActionButton, Item, Key, Menu, MenuTrigger } from '@geti/ui';
-import { MoreMenu } from '@geti/ui/icons';
+import { ActionButton, Item, Key, Menu, MenuTrigger } from '@geti-ui/ui';
+import { MoreMenu } from '@geti-ui/ui/icons';
 
 interface MenuActionsProps {
     onAction: (key: Key) => void;

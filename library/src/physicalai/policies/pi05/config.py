@@ -56,7 +56,9 @@ class Pi05Config(Config):
         optimizer_weight_decay: Weight decay coefficient. Defaults to 0.01.
         optimizer_grad_clip_norm: Maximum gradient norm for clipping. Defaults to 1.0.
         scheduler_warmup_steps: Number of warmup steps. Defaults to 1000.
-        scheduler_decay_steps: Number of decay steps. Defaults to 30000.
+        scheduler_decay_steps: Number of cosine decay steps. When ``None``,
+            automatically set to the total training steps via
+            ``trainer.estimated_stepping_batches``. Defaults to None.
         scheduler_decay_lr: Final learning rate after decay. Defaults to 2.5e-6.
     """
 
@@ -99,7 +101,7 @@ class Pi05Config(Config):
     optimizer_grad_clip_norm: float = 1.0
 
     scheduler_warmup_steps: int = 1_000
-    scheduler_decay_steps: int = 30_000
+    scheduler_decay_steps: int | None = None
     scheduler_decay_lr: float = 2.5e-6
 
     def __post_init__(self) -> None:

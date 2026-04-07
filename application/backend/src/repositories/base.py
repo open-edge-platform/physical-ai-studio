@@ -91,6 +91,10 @@ class BaseRepository(Generic[ModelType, SchemaType], metaclass=abc.ABCMeta):
         schema_item: SchemaType = self.to_schema(to_update)
         await self.db.merge(schema_item)
         await self.db.commit()
+
+        if not isinstance(item, BaseIDModel):
+            raise TypeError(f"{item.__class__} does not provide an `id` for update refresh")
+
         updated = await self.get_by_id(item.id)
         if updated is None:
             raise ValueError(f"{item.__class__} with ID `{item.id}` doesn't exist")
@@ -145,6 +149,10 @@ class ProjectBaseRepository(BaseRepository, metaclass=abc.ABCMeta):
 
         await self.db.merge(schema_item)
         await self.db.commit()
+
+        if not isinstance(item, BaseIDModel):
+            raise TypeError(f"{item.__class__} does not provide an `id` for update refresh")
+
         updated = await self.get_by_id(item.id)
         if updated is None:
             raise ValueError(f"{item.__class__} with ID `{item.id}` doesn't exist")

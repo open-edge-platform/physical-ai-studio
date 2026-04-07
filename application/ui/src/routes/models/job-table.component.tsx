@@ -1,5 +1,5 @@
-import { ActionButton, Button, Flex, Grid, Item, Key, Menu, MenuTrigger, ProgressBar, Text, View } from '@geti/ui';
-import { MoreMenu } from '@geti/ui/icons';
+import { ActionButton, Button, Flex, Grid, Item, Key, Menu, MenuTrigger, ProgressBar, Text, View } from '@geti-ui/ui';
+import { MoreMenu } from '@geti-ui/ui/icons';
 
 import { $api } from '../../api/client';
 import { GRID_COLUMNS } from './constants';

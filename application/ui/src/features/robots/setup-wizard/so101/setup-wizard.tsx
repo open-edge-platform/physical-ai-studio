@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 
-import { Divider, Grid, Heading, View } from '@geti/ui';
+import { Divider, Grid, Heading, View } from '@geti-ui/ui';
 
 import { SchemaRobotType } from '../../../../api/openapi-spec';
 import { useRobotForm } from '../../robot-form/provider';

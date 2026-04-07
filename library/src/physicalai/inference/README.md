@@ -6,7 +6,7 @@ Production-ready inference API for exported PhysicalAI policies.
 
 The inference module provides a unified, production-ready interface for
 running robot policies across different backends (OpenVINO, ONNX,
-Torch Export IR). It automatically handles backend detection, device selection,
+Torch, ExecuTorch). It automatically handles backend detection, device selection,
 and maintains API compatibility with PyTorch training policies.
 
 ## Key Features
@@ -14,7 +14,7 @@ and maintains API compatibility with PyTorch training policies.
 - **Unified API**: Same interface regardless of backend
 - **Auto-detection**: Automatically detects backend, device, and policy configuration
 - **Stateful Policies**: Handles action queues and episode resets
-- **Multi-backend**: Supports OpenVINO, ONNX, Torch Export IR
+- **Multi-backend**: Supports OpenVINO, ONNX, Torch, ExecuTorch
 - **Production-ready**: Optimized for deployment on edge devices and servers
 
 ## Quick Start
@@ -57,7 +57,8 @@ inference/
 │   ├── base.py          # Base adapter interface
 │   ├── openvino.py      # OpenVINO adapter
 │   ├── onnx.py          # ONNX Runtime adapter
-│   └── torch_export.py  # Torch Export IR adapter
+│   ├── torch.py         # Torch adapter
+│   └── executorch.py    # ExecuTorch adapter
 └── README.md            # This file
 ```
 
@@ -171,15 +172,27 @@ adapter.load(Path("model.onnx"))
 outputs = adapter.predict(inputs)
 ```
 
-#### TorchExportAdapter
+#### TorchAdapter
 
 **Device options:** `"cpu"`, `"cuda"`
 
 ```python
-from physicalai.inference.adapters import TorchExportAdapter
+from physicalai.inference.adapters import TorchAdapter
 
-adapter = TorchExportAdapter(device="cuda")
-adapter.load(Path("model.pt2"))
+adapter = TorchAdapter(device="cpu")
+adapter.load(Path("model.pt"))
+outputs = adapter.predict(inputs)
+```
+
+#### ExecuTorchAdapter
+
+**Device options:** `"cpu"`
+
+```python
+from physicalai.inference.adapters import ExecuTorchAdapter
+
+adapter = ExecuTorchAdapter()
+adapter.load(Path("model.pte"))
 outputs = adapter.predict(inputs)
 ```
 
@@ -213,8 +226,11 @@ policy = InferenceModel.load("./exports", backend="openvino", device="CPU")
 # ONNX (cross-platform)
 policy = InferenceModel.load("./exports", backend="onnx", device="cuda")
 
-# Torch Export IR (edge/mobile)
-policy = InferenceModel.load("./exports", backend="torch_export_ir", device="cuda")
+# Torch (PyTorch checkpoint)
+policy = InferenceModel.load("./exports", backend="torch", device="cuda")
+
+# ExecuTorch (edge/mobile)
+policy = InferenceModel.load("./exports", backend="executorch")
 ```
 
 ### Chunked Policies
@@ -244,7 +260,8 @@ From file extensions in export directory:
 
 - `.xml` → OpenVINO
 - `.onnx` → ONNX
-- `.pt2` / `.ptir` → Torch Export IR
+- `.pte` → ExecuTorch
+- `.pt` → Torch
 
 Or from `metadata.yaml`:
 
@@ -256,10 +273,14 @@ backend: openvino
 
 **OpenVINO:** Defaults to `"CPU"` (most compatible)
 
-**ONNX/Torch Export IR:**
+**ONNX/Torch:**
 
 - Uses `"cuda"` if available
 - Falls back to `"cpu"`
+
+**ExecuTorch:**
+
+- Defaults to `"cpu"` (edge deployment)
 
 ### 3. Policy Configuration
 
@@ -318,7 +339,13 @@ policy = InferenceModel.load(
 )
 ```
 
-### Torch Export IR
+### Torch
+
+- Standard PyTorch checkpoint loading
+- Full model fidelity
+- Best for GPU inference
+
+### ExecuTorch
 
 - Optimized for edge and mobile devices
 - Lightweight runtime
@@ -359,7 +386,8 @@ uv run pytest tests/unit/inference/
 
 - `openvino`: For OpenVINO backend
 - `onnxruntime` or `onnxruntime-gpu`: For ONNX backend
-- `torch`: For Torch Export IR backend
+- `torch`: For Torch backend
+- `executorch`: For ExecuTorch backend
 
 Install with:
 

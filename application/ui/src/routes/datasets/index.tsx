@@ -13,8 +13,8 @@ import {
     Tabs,
     Text,
     View,
-} from '@geti/ui';
-import { Add } from '@geti/ui/icons';
+} from '@geti-ui/ui';
+import { Add } from '@geti-ui/ui/icons';
 import { useNavigate, useParams } from 'react-router';
 
 import { SchemaDatasetOutput } from '../../api/openapi-spec';
@@ -102,7 +102,7 @@ const Datasets = ({ datasets }: DatasetsProps) => {
                         </View>
                     )}
                 </Flex>
-                <TabPanels UNSAFE_style={{ border: 'none' }} marginTop={'size-200'}>
+                <TabPanels UNSAFE_style={{ border: 'none' }} marginTop={'size-200'} minHeight={0}>
                     <Item key={dataset_id}>
                         <Flex height='100%' flex>
                             {dataset_id === undefined ? (

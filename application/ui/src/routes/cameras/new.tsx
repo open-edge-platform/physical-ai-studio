@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 
-import { Flex, Grid, Loading, minmax, View } from '@geti/ui';
+import { Flex, Grid, Loading, minmax, View } from '@geti-ui/ui';
 
 import { CameraForm } from '../../features/robots/camera-form/form';
 import { Preview } from '../../features/robots/camera-form/preview';

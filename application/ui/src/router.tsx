@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 
-import { Content, Grid, Heading, IllustratedMessage, Loading, View } from '@geti/ui';
+import { Content, Grid, Heading, IllustratedMessage, Loading, View } from '@geti-ui/ui';
 import { Outlet, redirect } from 'react-router';
 import { createBrowserRouter } from 'react-router-dom';
 import { path } from 'static-path';

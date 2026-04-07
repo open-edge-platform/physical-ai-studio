@@ -41,6 +41,8 @@ class RobotClientFactory:
                 return await self._build_so101(robot)
             case RobotType.SO101_LEADER:
                 return await self._build_so101(robot)
+            case _:
+                raise ValueError(f"Unsupported robot type: {robot.type}")
 
     async def _build_so101(self, robot: Robot) -> So101:
         port = await self._find_robot_port(robot)

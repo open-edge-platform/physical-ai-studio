@@ -188,8 +188,9 @@ class SmolVLAModel(ExportableModelMixin, Model):
                 losses *= in_episode_bound.unsqueeze(-1)
                 loss_dict["losses_after_in_ep_bound"] = losses.clone()
 
-            # Remove padding
-            losses = losses[:, :, : self._max_action_dim]
+            # Truncate losses to actual action dimensions to avoid dilution from padding
+            original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
+            losses = losses[:, :, :original_action_dim]
             loss_dict["losses_after_rm_padding"] = losses.clone()
 
             loss = losses.mean()
@@ -287,7 +288,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
 
         Returns:
             dict[str, ExportParameters]: A dictionary mapping format names to their export parameters.
-            Supported formats: 'onnx', 'openvino', 'torch_export_ir', 'torch'.
+            Supported formats: 'onnx', 'openvino', 'torch'.
 
         Example:
             >>> model = SmolVLA(input_features, output_features)
@@ -311,7 +312,6 @@ class SmolVLAModel(ExportableModelMixin, Model):
             exporter_kwargs={},
             preprocessing_type="smolvla",
         )
-        extra_args["torch_export_ir"] = ExportParameters()
         extra_args["torch"] = TorchExportParameters()
 
         return extra_args

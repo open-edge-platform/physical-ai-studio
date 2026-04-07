@@ -26,7 +26,7 @@ class RobotConnectionManager:
     available_ports: list[ListPortInfo]
 
     def __init__(self):
-        self.available_ports = list_ports.comports()
+        self.available_ports = list(list_ports.comports())
 
     @property
     def robots(self) -> list[SerialPortInfo]:
