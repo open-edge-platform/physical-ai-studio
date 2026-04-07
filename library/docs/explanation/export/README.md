@@ -191,15 +191,15 @@ class MyModel(nn.Module):
 `self.config` should be a dataclass containing integral python datatypes,
 or related physicalai entities. Only in that case, serialization is guaranteed.
 
-### 4. Define `supported_export_backends` property
+### 4. Define `get_supported_export_backends()` method
 
-Store a list of supported export backends in `supported_export_backends`
+Store a list of supported export backends in `get_supported_export_backends`
 
 ```python test="skip" reason="interface example, not executable"
 
 class MyPolicy(Export, Policy):
-    @property
-    def supported_export_backends() -> list[str | ExportBackend]:
+    @classmethod
+    def supported_export_backends(cls) -> list[str | ExportBackend]:
         return [ExportBackend.TORCH, ExportBackend.OPENVINO,
                 ExportBackend.ONNX, ExportBackend.EXECUTORCH]
 ```
