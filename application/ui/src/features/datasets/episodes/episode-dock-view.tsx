@@ -9,9 +9,9 @@ import {
     IDockviewReactProps,
 } from 'dockview-react';
 
-import { SchemaDatasetOutput, SchemaEpisode, SchemaEpisodeVideo } from '../../../api/openapi-spec';
+import { SchemaDatasetOutput, SchemaEnvironmentWithRelations, SchemaEpisode, SchemaEpisodeVideo } from '../../../api/openapi-spec';
 import { EpisodeVideoCell } from './episode-video-cell.component';
-import { TimelineCell } from './timeline-cell.component';
+import { RobotCell } from './robot-cell.component';
 
 const CenteredLoading = () => {
     return (
@@ -23,20 +23,17 @@ const CenteredLoading = () => {
 
 const components = {
     robot: (props: IDockviewPanelProps<{ title: string; robot_id: string }>) => {
-        return <div style={{ padding: '20px', color: 'white' }}>{props.params.title}</div>;
+        return <RobotCell robotId={props.params.robot_id}/>;
     },
     camera: (props: IDockviewPanelProps<{ title: string; video: SchemaEpisodeVideo, datasetId: string }>) => {
         return <EpisodeVideoCell episodeVideo={props.params.video} datasetId={props.params.datasetId}/>
-    },
-    timeline: (_props: IDockviewPanelProps<{ title: string; }>) => {
-        return <TimelineCell />
     },
     default: (props: IDockviewPanelProps<{ title: string }>) => {
         return <div style={{ padding: '20px', color: 'white' }}>{props.params.title}</div>;
     },
 } satisfies IDockviewReactProps['components'];
 
-const buildDockviewPanels = (api: DockviewReadyEvent['api'], episode: SchemaEpisode, dataset: SchemaDatasetOutput) => {
+const buildDockviewPanels = (api: DockviewReadyEvent['api'], episode: SchemaEpisode, dataset: SchemaDatasetOutput, environment: SchemaEnvironmentWithRelations) => {
     if (episode === null) {
         return api;
     }
@@ -62,25 +59,24 @@ const buildDockviewPanels = (api: DockviewReadyEvent['api'], episode: SchemaEpis
                 },
             });
         }
-
     });
 
-    panels.add("timeline");
-    if (!api.panels.some((panel) => panel.id === "timeline")) {
-        api.addPanel({
-            id: "timeline",
-            title: "timeline",
-            component: 'timeline',
-            params: {
-                title: "timeline",
-            },
-            position: {
-                direction: 'below',
-                referencePanel: '',
-            },
-        });
-    }
+    environment.robots?.forEach((robot) => {
+        panels.add(robot.robot.id);
+        if (!api.panels.some((panel) => panel.id === robot.robot.id)) {
+            api.addPanel({
+                id: robot.robot.id,
+                params: { title: 'Follower', robot_id: robot.robot.id },
+                title: 'Follower',
+                component: 'robot',
 
+                position: {
+                    direction: 'below',
+                    referencePanel: '',
+                },
+            });
+        }
+    });
     // Remove any panels that are no longer part of the environment
     api.panels
         .filter((panel) => panels.has(panel.id) === false)
@@ -94,13 +90,14 @@ const buildDockviewPanels = (api: DockviewReadyEvent['api'], episode: SchemaEpis
 interface EpisodeViewerProps {
     episode: SchemaEpisode;
     dataset: SchemaDatasetOutput;
+    environment: SchemaEnvironmentWithRelations;
 }
 
-export const EpisodeDockView = ({episode, dataset}: EpisodeViewerProps) => {
+export const EpisodeDockView = ({episode, dataset, environment}: EpisodeViewerProps) => {
     const api = useRef<DockviewApi>(null);
 
     const onReady = (event: DockviewReadyEvent): void => {
-      api.current = buildDockviewPanels(event.api, episode, dataset);
+        api.current = buildDockviewPanels(event.api, episode, dataset, environment);
     };
 
     useEffect(() => {
@@ -108,7 +105,7 @@ export const EpisodeDockView = ({episode, dataset}: EpisodeViewerProps) => {
             return;
         }
 
-        buildDockviewPanels(api.current, episode, dataset);
+        buildDockviewPanels(api.current, episode, dataset, environment);
     }, [episode, dataset]);
 
     return (
