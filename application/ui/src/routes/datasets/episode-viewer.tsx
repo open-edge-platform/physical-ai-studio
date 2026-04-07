@@ -1,19 +1,19 @@
-import { useEffect, useRef } from 'react';
+import { Disclosure, DisclosurePanel, DisclosureTitle, Divider, Flex, Text } from '@geti/ui';
 
-import { Disclosure, DisclosurePanel, DisclosureTitle, Divider, Flex, Text, View, Well } from '@geti/ui';
-
-import { $api, fetchClient } from '../../api/client';
-import { SchemaDatasetOutput, SchemaEpisode, SchemaEpisodeVideo } from '../../api/openapi-spec';
+import { $api } from '../../api/client';
+import { SchemaDatasetOutput, SchemaEpisode } from '../../api/openapi-spec';
 import EpisodeChart from '../../components/episode-chart/episode-chart';
+import { EpisodeDockView } from '../../features/datasets/episodes/episode-dock-view';
 import { EpisodeTag } from '../../features/datasets/episodes/episode-tag';
+import {
+    EpisodeViewerProvider,
+    useEpisodeViewer,
+} from '../../features/datasets/episodes/episode-viewer-provider.component';
 import { useProjectId } from '../../features/projects/use-project';
-import { RobotViewer } from '../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 import { TimelineControls } from './timeline-controls';
 
 import classes from './episode-viewer.module.scss';
-import { EpisodeDockView } from '../../features/datasets/episodes/episode-dock-view';
-import { EpisodeViewerProvider, useEpisodeViewer } from '../../features/datasets/episodes/episode-viewer-provider.component';
 
 interface EpisodeViewerProps {
     episode: SchemaEpisode;
@@ -43,7 +43,7 @@ const EpisodeTimelineComponent = () => {
             <TimelineControls player={player} />
         </div>
     );
-}
+};
 
 export const EpisodeViewer = ({ episode, dataset }: EpisodeViewerProps) => {
     const { project_id } = useProjectId();
@@ -71,6 +71,6 @@ export const EpisodeViewer = ({ episode, dataset }: EpisodeViewerProps) => {
                     <EpisodeTimelineComponent />
                 </Flex>
             </RobotModelsProvider>
-        </EpisodeViewerProvider >
+        </EpisodeViewerProvider>
     );
 };

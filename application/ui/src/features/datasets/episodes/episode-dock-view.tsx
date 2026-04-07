@@ -9,7 +9,12 @@ import {
     IDockviewReactProps,
 } from 'dockview-react';
 
-import { SchemaDatasetOutput, SchemaEnvironmentWithRelations, SchemaEpisode, SchemaEpisodeVideo } from '../../../api/openapi-spec';
+import {
+    SchemaDatasetOutput,
+    SchemaEnvironmentWithRelations,
+    SchemaEpisode,
+    SchemaEpisodeVideo,
+} from '../../../api/openapi-spec';
 import { EpisodeVideoCell } from './episode-video-cell.component';
 import { RobotCell } from './robot-cell.component';
 
@@ -23,17 +28,22 @@ const CenteredLoading = () => {
 
 const components = {
     robot: (props: IDockviewPanelProps<{ title: string; robot_id: string }>) => {
-        return <RobotCell robotId={props.params.robot_id}/>;
+        return <RobotCell robotId={props.params.robot_id} />;
     },
-    camera: (props: IDockviewPanelProps<{ title: string; video: SchemaEpisodeVideo, datasetId: string }>) => {
-        return <EpisodeVideoCell episodeVideo={props.params.video} datasetId={props.params.datasetId}/>
+    camera: (props: IDockviewPanelProps<{ title: string; video: SchemaEpisodeVideo; datasetId: string }>) => {
+        return <EpisodeVideoCell episodeVideo={props.params.video} datasetId={props.params.datasetId} />;
     },
     default: (props: IDockviewPanelProps<{ title: string }>) => {
         return <div style={{ padding: '20px', color: 'white' }}>{props.params.title}</div>;
     },
 } satisfies IDockviewReactProps['components'];
 
-const buildDockviewPanels = (api: DockviewReadyEvent['api'], episode: SchemaEpisode, dataset: SchemaDatasetOutput, environment: SchemaEnvironmentWithRelations) => {
+const buildDockviewPanels = (
+    api: DockviewReadyEvent['api'],
+    episode: SchemaEpisode,
+    dataset: SchemaDatasetOutput,
+    environment: SchemaEnvironmentWithRelations
+) => {
     if (episode === null) {
         return api;
     }
@@ -41,7 +51,7 @@ const buildDockviewPanels = (api: DockviewReadyEvent['api'], episode: SchemaEpis
     const panels = new Set<string>();
 
     Object.keys(episode.videos).forEach((videoId) => {
-        const cameraName = videoId.replace('observation.images.', '')
+        const cameraName = videoId.replace('observation.images.', '');
         panels.add(cameraName);
         if (!api.panels.some((panel) => panel.id === cameraName)) {
             api.addPanel({
@@ -51,7 +61,7 @@ const buildDockviewPanels = (api: DockviewReadyEvent['api'], episode: SchemaEpis
                 params: {
                     title: cameraName,
                     video: episode.videos[videoId],
-                    datasetId: dataset.id
+                    datasetId: dataset.id,
                 },
                 position: {
                     direction: 'left',
@@ -93,7 +103,7 @@ interface EpisodeViewerProps {
     environment: SchemaEnvironmentWithRelations;
 }
 
-export const EpisodeDockView = ({episode, dataset, environment}: EpisodeViewerProps) => {
+export const EpisodeDockView = ({ episode, dataset, environment }: EpisodeViewerProps) => {
     const api = useRef<DockviewApi>(null);
 
     const onReady = (event: DockviewReadyEvent): void => {
@@ -106,7 +116,7 @@ export const EpisodeDockView = ({episode, dataset, environment}: EpisodeViewerPr
         }
 
         buildDockviewPanels(api.current, episode, dataset, environment);
-    }, [episode, dataset]);
+    }, [episode, dataset, environment]);
 
     return (
         <View flex>

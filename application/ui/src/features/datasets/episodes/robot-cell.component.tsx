@@ -1,15 +1,15 @@
 import { View } from '@geti/ui';
 
-import { useEpisodeViewer } from './episode-viewer-provider.component';
 import { RobotViewer } from '../../robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../robots/robot-models-context';
+import { useEpisodeViewer } from './episode-viewer-provider.component';
 
 const InnerCell = ({ robotId }: { robotId: string }) => {
     const { environment, episode, player } = useEpisodeViewer();
 
     const frameIndex = Math.floor(player.time * episode.fps);
 
-    const robot = environment.robots?.find((r) => r.robot.id === robotId)?.robot
+    const robot = environment.robots?.find((r) => r.robot.id === robotId)?.robot;
     if (robot === undefined) {
         return <></>;
     }

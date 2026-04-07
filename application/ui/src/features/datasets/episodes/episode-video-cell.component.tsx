@@ -2,11 +2,17 @@ import { useEffect, useRef } from 'react';
 
 import { Flex } from '@geti/ui';
 
-import { SchemaEpisodeVideo } from '../../../api/openapi-spec';
 import { fetchClient } from '../../../api/client';
+import { SchemaEpisodeVideo } from '../../../api/openapi-spec';
 import { useEpisodeViewer } from './episode-viewer-provider.component';
 
-export const EpisodeVideoCell = ({ episodeVideo, datasetId }: { episodeVideo: SchemaEpisodeVideo, datasetId: string }) => {
+export const EpisodeVideoCell = ({
+    episodeVideo,
+    datasetId,
+}: {
+    episodeVideo: SchemaEpisodeVideo;
+    datasetId: string;
+}) => {
     const { player } = useEpisodeViewer();
     const url = fetchClient.PATH('/api/dataset/{dataset_id}/video/{video_path}', {
         params: {
@@ -16,7 +22,6 @@ export const EpisodeVideoCell = ({ episodeVideo, datasetId }: { episodeVideo: Sc
             },
         },
     });
-
 
     const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -34,6 +39,7 @@ export const EpisodeVideoCell = ({ episodeVideo, datasetId }: { episodeVideo: Sc
         video.currentTime = time + start;
     }, [time, episodeVideo?.start]);
 
+    /* eslint-disable jsx-a11y/media-has-caption */
     return (
         <Flex>
             <video ref={videoRef} src={url} />
