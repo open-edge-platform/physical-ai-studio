@@ -1,4 +1,4 @@
-import { Disclosure, DisclosurePanel, DisclosureTitle, Divider, Flex, Text } from '@geti/ui';
+import { Disclosure, DisclosurePanel, DisclosureTitle, Divider, Flex, Text } from '@geti-ui/ui';
 
 import { $api } from '../../api/client';
 import { SchemaDatasetOutput, SchemaEpisode } from '../../api/openapi-spec';

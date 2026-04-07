@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-import { Flex } from '@geti/ui';
+import { Flex } from '@geti-ui/ui';
 
 import { fetchClient } from '../../../api/client';
 import { SchemaEpisodeVideo } from '../../../api/openapi-spec';
