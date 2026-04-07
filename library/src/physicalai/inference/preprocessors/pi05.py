@@ -114,7 +114,7 @@ class Pi05Preprocessor(Preprocessor):
             - ``images``: list of ``(B, C, H, W)`` float32 arrays, one per camera.
             - ``masks``: list of ``(B,)`` bool arrays (all ``True`` for real cameras).
         """
-        img_keys = sorted(k for k in inputs if k.startswith(IMAGES) and "is_pad" not in k)
+        img_keys = [key for key in inputs if key.startswith(IMAGES)]
         images: list[np.ndarray] = []
         masks: list[np.ndarray] = []
 
