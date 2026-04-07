@@ -11,6 +11,7 @@ import {
 
 import { SchemaDatasetOutput, SchemaEpisode, SchemaEpisodeVideo } from '../../../api/openapi-spec';
 import { EpisodeVideoCell } from './episode-video-cell.component';
+import { TimelineCell } from './timeline-cell.component';
 
 const CenteredLoading = () => {
     return (
@@ -26,6 +27,9 @@ const components = {
     },
     camera: (props: IDockviewPanelProps<{ title: string; video: SchemaEpisodeVideo, datasetId: string }>) => {
         return <EpisodeVideoCell episodeVideo={props.params.video} datasetId={props.params.datasetId}/>
+    },
+    timeline: (_props: IDockviewPanelProps<{ title: string; }>) => {
+        return <TimelineCell />
     },
     default: (props: IDockviewPanelProps<{ title: string }>) => {
         return <div style={{ padding: '20px', color: 'white' }}>{props.params.title}</div>;
@@ -60,6 +64,22 @@ const buildDockviewPanels = (api: DockviewReadyEvent['api'], episode: SchemaEpis
         }
 
     });
+
+    panels.add("timeline");
+    if (!api.panels.some((panel) => panel.id === "timeline")) {
+        api.addPanel({
+            id: "timeline",
+            title: "timeline",
+            component: 'timeline',
+            params: {
+                title: "timeline",
+            },
+            position: {
+                direction: 'below',
+                referencePanel: '',
+            },
+        });
+    }
 
     // Remove any panels that are no longer part of the environment
     api.panels

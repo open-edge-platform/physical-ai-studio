@@ -4,8 +4,10 @@ import { Flex } from '@geti/ui';
 
 import { SchemaEpisodeVideo } from '../../../api/openapi-spec';
 import { fetchClient } from '../../../api/client';
+import { useEpisodeViewer } from './episode-viewer-provider.component';
 
 export const EpisodeVideoCell = ({ episodeVideo, datasetId }: { episodeVideo: SchemaEpisodeVideo, datasetId: string }) => {
+    const { player } = useEpisodeViewer();
     const url = fetchClient.PATH('/api/dataset/{dataset_id}/video/{video_path}', {
         params: {
             path: {
@@ -18,7 +20,7 @@ export const EpisodeVideoCell = ({ episodeVideo, datasetId }: { episodeVideo: Sc
 
     const videoRef = useRef<HTMLVideoElement>(null);
 
-    const time = 0;
+    const time = player.time;
 
     // Make sure webpage renders when video doesn't load correctly
     useEffect(() => {

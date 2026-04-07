@@ -10,10 +10,10 @@ import { useProjectId } from '../../features/projects/use-project';
 import { RobotViewer } from '../../features/robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 import { TimelineControls } from './timeline-controls';
-import { usePlayer } from './use-player';
 
 import classes from './episode-viewer.module.scss';
 import { EpisodeDockView } from '../../features/datasets/episodes/episode-dock-view';
+import { EpisodeViewerProvider, useEpisodeViewer } from '../../features/datasets/episodes/episode-viewer-provider.component';
 
 interface VideoView {
     dataset_id: string;
@@ -64,54 +64,29 @@ interface EpisodeViewerProps {
     dataset: SchemaDatasetOutput;
 }
 
+const EpisodeTimelineComponent = () => {
+    const { player } = useEpisodeViewer();
+    return <TimelineControls player={player} />
+}
+
 export const EpisodeViewer = ({ episode, dataset }: EpisodeViewerProps) => {
-    const player = usePlayer(episode);
-    const frameIndex = Math.floor(player.time * episode.fps);
-    const cameras = Object.keys(episode.videos).map((m) => m.replace('observation.images.', ''));
-
-    const { project_id } = useProjectId();
-
-    const { data: environment } = $api.useSuspenseQuery(
-        'get',
-        '/api/projects/{project_id}/environments/{environment_id}',
-        {
-            params: { path: { project_id, environment_id: dataset.environment_id } },
-        }
-    );
-    const robots = (environment.robots ?? []).map(({ robot }) => robot);
-
     return (
-        <RobotModelsProvider>
-            <Flex direction={'column'} height={'100%'} position={'relative'}>
-                <Flex gap='size-100' marginBottom='size-100'>
-                    <EpisodeTag episode={episode} variant='medium' />
-                    <Divider orientation='vertical' size='S' />
-                    <Text>{episode.tasks.join(', ')}</Text>
+        <EpisodeViewerProvider episode={episode}>
+            <RobotModelsProvider>
+                <Flex direction={'column'} height={'100%'} position={'relative'}>
+                    <Flex gap='size-100' marginBottom='size-100'>
+                        <EpisodeTag episode={episode} variant='medium' />
+                        <Divider orientation='vertical' size='S' />
+                        <Text>{episode.tasks.join(', ')}</Text>
+                    </Flex>
+                    <Flex direction={'row'} flex gap={'size-100'}>
+                        <EpisodeDockView episode={episode} dataset={dataset} />
+                    </Flex>
+                    <div className={classes.timeline}>
+                        <EpisodeTimelineComponent />
+                    </div>
                 </Flex>
-                <Flex direction={'row'} flex gap={'size-100'}>
-                    <EpisodeDockView episode={episode} dataset={dataset}/>
-
-                </Flex>
-                <div className={classes.timeline}>
-                    <Disclosure isQuiet>
-                        <DisclosureTitle>Timeline</DisclosureTitle>
-                        <DisclosurePanel>
-                            <EpisodeChart
-                                actions={episode.actions}
-                                joints={episode.action_keys}
-                                fps={episode.fps}
-                                time={player.time}
-                                seek={player.seek}
-                                isPlaying={player.isPlaying}
-                                play={player.play}
-                                pause={player.pause}
-                            />
-                        </DisclosurePanel>
-                    </Disclosure>
-
-                    <TimelineControls player={player} />
-                </div>
-            </Flex>
-        </RobotModelsProvider>
+            </RobotModelsProvider>
+        </EpisodeViewerProvider>
     );
 };
