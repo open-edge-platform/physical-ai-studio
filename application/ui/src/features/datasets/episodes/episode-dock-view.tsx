@@ -27,10 +27,10 @@ const CenteredLoading = () => {
 };
 
 const components = {
-    robot: (props: IDockviewPanelProps<{ title: string; robot_id: string }>) => {
+    robot: (props: IDockviewPanelProps<{ robot_id: string }>) => {
         return <RobotCell robotId={props.params.robot_id} />;
     },
-    camera: (props: IDockviewPanelProps<{ title: string; video: SchemaEpisodeVideo; datasetId: string }>) => {
+    camera: (props: IDockviewPanelProps<{ video: SchemaEpisodeVideo; datasetId: string }>) => {
         return <EpisodeVideoCell episodeVideo={props.params.video} datasetId={props.params.datasetId} />;
     },
     default: (props: IDockviewPanelProps<{ title: string }>) => {
@@ -59,7 +59,6 @@ const buildDockviewPanels = (
                 title: cameraName,
                 component: 'camera',
                 params: {
-                    title: cameraName,
                     video: episode.videos[videoId],
                     datasetId: dataset.id,
                 },
@@ -76,8 +75,8 @@ const buildDockviewPanels = (
         if (!api.panels.some((panel) => panel.id === robot.robot.id)) {
             api.addPanel({
                 id: robot.robot.id,
-                params: { title: 'Follower', robot_id: robot.robot.id },
-                title: 'Follower',
+                params: { robot_id: robot.robot.id },
+                title: robot.robot.name,
                 component: 'robot',
 
                 position: {
