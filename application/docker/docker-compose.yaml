@@ -64,6 +64,7 @@ x-common: &common
       - "${DIALOUT_GID:-dialout}" # serial ports (/dev/ttyACM*)
       - "${PLUGDEV_GID:-plugdev}" # pluggable USB devices
       - "${VIDEO_GID:-video}" # cameras & video (/dev/video*)
+      - "${RENDER_GID:-render}" # Intel GPU render nodes
 
     # Persisted data and storage volumes + shared robot calibration
     volumes:

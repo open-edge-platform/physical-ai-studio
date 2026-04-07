@@ -130,6 +130,11 @@
     color: var(--spectrum-semantic-negative-color-default, #e34850);
 }
 
+.statusWarning {
+    background-color: color-mix(in srgb, var(--spectrum-semantic-notice-color-default, #e68619), transparent 85%);
+    color: var(--brand-daisy-tint);
+}
+
 .statusPending {
     background-color: color-mix(in srgb, var(--spectrum-global-color-gray-500), transparent 85%);
     color: var(--spectrum-global-color-gray-600);

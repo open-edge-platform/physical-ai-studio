@@ -5,6 +5,7 @@ import classes from './setup-wizard.module.scss';
 const VARIANT_CLASS = {
     ok: classes.statusOk,
     error: classes.statusError,
+    warning: classes.statusWarning,
     pending: classes.statusPending,
     scanning: classes.statusScanning,
 } as const;
