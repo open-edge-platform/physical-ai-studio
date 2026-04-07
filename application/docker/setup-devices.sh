@@ -31,8 +31,8 @@ else
     RED='' GREEN='' YELLOW='' BOLD='' RESET=''
 fi
 
-info()  { printf "${GREEN}[ok]${RESET}    %s\n" "$*"; }
-warn()  { printf "${YELLOW}[warn]${RESET}  %s\n" "$*"; }
+info() { printf "${GREEN}[ok]${RESET}    %s\n" "$*"; }
+warn() { printf "${YELLOW}[warn]${RESET}  %s\n" "$*"; }
 error() { printf "${RED}[error]${RESET} %s\n" "$*"; }
 
 CHECK_ONLY=false
@@ -96,14 +96,17 @@ printf "${BOLD}Detecting host device-group GIDs...${RESET}\n\n"
 DIALOUT_GID=""
 VIDEO_GID=""
 PLUGDEV_GID=""
+RENDER_GID=""
 DIALOUT_GID_NAME=""
 VIDEO_GID_NAME=""
 PLUGDEV_GID_NAME=""
+RENDER_GID_NAME=""
 has_errors=false
 
-resolve_gid DIALOUT_GID dialout uucp   || has_errors=true
-resolve_gid VIDEO_GID   video          || has_errors=true
-resolve_gid PLUGDEV_GID plugdev        || has_errors=true
+resolve_gid DIALOUT_GID dialout uucp || has_errors=true
+resolve_gid VIDEO_GID video || has_errors=true
+resolve_gid PLUGDEV_GID plugdev || has_errors=true
+resolve_gid RENDER_GID render || has_errors=true
 
 echo ""
 
@@ -116,9 +119,10 @@ fi
 # Summarise what was detected
 # ---------------------------------------------------------------------------
 printf "${BOLD}Detected configuration:${RESET}\n"
-[[ -n "$VIDEO_GID" ]]   && echo "  VIDEO_GID=$VIDEO_GID        # $VIDEO_GID_NAME"
+[[ -n "$VIDEO_GID" ]] && echo "  VIDEO_GID=$VIDEO_GID        # $VIDEO_GID_NAME"
 [[ -n "$DIALOUT_GID" ]] && echo "  DIALOUT_GID=$DIALOUT_GID      # $DIALOUT_GID_NAME"
 [[ -n "$PLUGDEV_GID" ]] && echo "  PLUGDEV_GID=$PLUGDEV_GID       # $PLUGDEV_GID_NAME"
+[[ -n "$RENDER_GID" ]] && echo "  RENDER_GID=$RENDER_GID        # $RENDER_GID_NAME"
 echo ""
 
 # Also detect APP_UID/APP_GID for convenience
@@ -137,9 +141,9 @@ DEBIAN_DIALOUT=20
 DEBIAN_PLUGDEV=46
 
 needs_update=false
-if [[ -n "$VIDEO_GID"   && "$VIDEO_GID"   != "$DEBIAN_VIDEO" ]]   ||
-   [[ -n "$DIALOUT_GID" && "$DIALOUT_GID" != "$DEBIAN_DIALOUT" ]] ||
-   [[ -n "$PLUGDEV_GID" && "$PLUGDEV_GID" != "$DEBIAN_PLUGDEV" ]]; then
+if [[ -n "$VIDEO_GID" && "$VIDEO_GID" != "$DEBIAN_VIDEO" ]] ||
+    [[ -n "$DIALOUT_GID" && "$DIALOUT_GID" != "$DEBIAN_DIALOUT" ]] ||
+    [[ -n "$PLUGDEV_GID" && "$PLUGDEV_GID" != "$DEBIAN_PLUGDEV" ]]; then
     warn "Your host GIDs differ from the Debian defaults used by docker-compose.yaml."
     warn "You need to set these in your .env file for device access to work."
     needs_update=true
@@ -173,7 +177,7 @@ set_env_var() {
         sed -i "s|^# *${key}=.*|${key}=${value}|" "$ENV_FILE"
     else
         # Append
-        echo "${key}=${value}" >> "$ENV_FILE"
+        echo "${key}=${value}" >>"$ENV_FILE"
     fi
 }
 
@@ -188,6 +192,7 @@ set_env_var APP_GID "$APP_GID"
 set_env_var VIDEO_GID "$VIDEO_GID"
 set_env_var DIALOUT_GID "$DIALOUT_GID"
 set_env_var PLUGDEV_GID "$PLUGDEV_GID"
+set_env_var RENDER_GID "$RENDER_GID"
 
 info "Updated $ENV_FILE"
 echo ""
