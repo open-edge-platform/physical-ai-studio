@@ -589,4 +589,4 @@ class Pi05(ExportablePolicyMixin, Policy):
         Returns:
             list[str | ExportBackend]: A list of supported export backends.
         """
-        return [ExportBackend.TORCH, ExportBackend.OPENVINO, ExportBackend.ONNX]
+        return [ExportBackend.TORCH]
