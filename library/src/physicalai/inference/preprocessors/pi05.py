@@ -8,7 +8,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from physicalai.inference.constants import IMAGE_MASKS, IMAGES, TASK, STATE
+from physicalai.inference.constants import IMAGE_MASKS, IMAGES, STATE, TASK
 
 from .base import Preprocessor
 
@@ -17,7 +17,7 @@ _NUM_BINS = 256
 
 
 class Pi05Preprocessor(Preprocessor):
-    """Preprocessor for Pi0.5 model: image resize + text prompt construction.
+    r"""Preprocessor for Pi0.5 model: image resize + text prompt construction.
 
     Resizes input images to a target resolution with aspect-ratio-preserving padding,
     normalizes pixel values to [-1, 1], discretizes the state vector into 256 bins,
@@ -35,6 +35,7 @@ class Pi05Preprocessor(Preprocessor):
         image_resolution: tuple[int, int] = (224, 224),
         empty_cameras: int = 0,
     ) -> None:
+        """Initialize the Pi0.5 preprocessor."""
         super().__init__()
         self._image_resolution = image_resolution
         self._empty_cameras = empty_cameras
@@ -94,16 +95,32 @@ class Pi05Preprocessor(Preprocessor):
     # ------------------------------------------------------------------
 
     def _preprocess_images(
-        self, inputs: dict[str, np.ndarray | list[str]]
+        self,
+        inputs: dict[str, np.ndarray | list[str]],
     ) -> tuple[list[np.ndarray], list[np.ndarray]]:
-        """Resize, pad, and normalise all camera images."""
+        """Resize, pad, and normalize all camera images found in *inputs*.
+
+        Iterates over all keys that start with ``images`` (excluding ``is_pad``
+        variants), extracts the latest timestep when a temporal dimension is
+        present, converts to float32, resizes to ``self._image_resolution`` with
+        centre-padding, and normalises from ``[0, 1]`` to ``[-1, 1]``.
+
+        Args:
+            inputs: Preprocessor input dict. Image arrays are expected to have
+                shape ``(B, C, H, W)`` or ``(B, T, C, H, W)``.
+
+        Returns:
+            Tuple of:
+            - ``images``: list of ``(B, C, H, W)`` float32 arrays, one per camera.
+            - ``masks``: list of ``(B,)`` bool arrays (all ``True`` for real cameras).
+        """
         img_keys = sorted(k for k in inputs if k.startswith(IMAGES) and "is_pad" not in k)
         images: list[np.ndarray] = []
         masks: list[np.ndarray] = []
 
         max_image_dim = 5
         for key in img_keys:
-            img = inputs[key]
+            img: np.ndarray = inputs[key]
             if img.ndim == max_image_dim:
                 img = img[:, -1, :, :, :]
 
@@ -135,8 +152,11 @@ class Pi05Preprocessor(Preprocessor):
         return images, masks
 
     @staticmethod
-    def _resize_with_pad(
-        img: np.ndarray, width: int, height: int, pad_value: int = 0
+    def _resize_with_pad(  # noqa: PLR0914
+        img: np.ndarray,
+        width: int,
+        height: int,
+        pad_value: int = 0,
     ) -> np.ndarray:
         """Resize a ``(B, H, W, C)`` array with centre-padding.
 
@@ -166,7 +186,9 @@ class Pi05Preprocessor(Preprocessor):
         batch = []
         for i in range(img.shape[0]):
             resized = cv2.resize(
-                img[i], (resized_w, resized_h), interpolation=cv2.INTER_LINEAR
+                img[i],
+                (resized_w, resized_h),
+                interpolation=cv2.INTER_LINEAR,
             )
             if resized.ndim == 2:  # noqa: PLR2004
                 resized = resized[:, :, np.newaxis]
@@ -187,5 +209,3 @@ class Pi05Preprocessor(Preprocessor):
             padded[:, pad_h0 : pad_h0 + resized_h, pad_w0 : pad_w0 + resized_w, :] = resized_img
             return padded
         return resized_img
-
-
