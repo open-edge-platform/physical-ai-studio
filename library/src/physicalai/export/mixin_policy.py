@@ -641,8 +641,8 @@ class ExportablePolicyMixin:
 
         return next(iter(positional_args))
 
-    @classmethod
-    def get_supported_export_backends(cls) -> list[str | ExportBackend]:
+    @staticmethod
+    def get_supported_export_backends() -> list[str | ExportBackend]:
         """Get a list of export backends supported by policy.
 
         Returns:
