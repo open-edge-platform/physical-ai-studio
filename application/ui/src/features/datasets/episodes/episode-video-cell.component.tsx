@@ -1,9 +1,8 @@
 import { useEffect, useRef } from 'react';
 
-import { Flex } from '@geti-ui/ui';
-
 import { fetchClient } from '../../../api/client';
 import { SchemaEpisodeVideo } from '../../../api/openapi-spec';
+import { useFittedMediaSize } from '../../cameras/use-fitted-media-size';
 import { useEpisodeViewer } from './episode-viewer-provider.component';
 
 export const EpisodeVideoCell = ({
@@ -39,10 +38,15 @@ export const EpisodeVideoCell = ({
         video.currentTime = time + start;
     }, [time, episodeVideo?.start]);
 
+    const { containerRef, width, height } = useFittedMediaSize(
+        videoRef.current?.videoWidth,
+        videoRef.current?.videoHeight
+    );
+
     /* eslint-disable jsx-a11y/media-has-caption */
     return (
-        <Flex>
-            <video ref={videoRef} src={url} />
-        </Flex>
+        <div ref={containerRef} style={{ height: '100%', width: '100%' }}>
+            <video ref={videoRef} src={url} width={width} height={height} />
+        </div>
     );
 };
