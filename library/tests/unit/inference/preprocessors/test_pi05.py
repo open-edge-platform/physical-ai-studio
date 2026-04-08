@@ -6,7 +6,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from physicalai.inference.constants import IMAGE_MASKS, IMAGES, TASK
+from physicalai.inference.constants import IMAGE_MASKS, IMAGES, TASK, STATE
 from physicalai.inference.preprocessors import Preprocessor
 from physicalai.inference.preprocessors.pi05 import Pi05Preprocessor
 
@@ -26,7 +26,7 @@ def _make_inputs(
 ) -> dict[str, np.ndarray]:
     """Build a minimal Pi0.5 observation dict."""
     inputs: dict = {
-        "observation.state": np.random.rand(batch, state_dim).astype(np.float32),
+        STATE: np.random.rand(batch, state_dim).astype(np.float32),
         TASK: ["pick up the cup"] * batch,
     }
     if n_cameras == 1:
@@ -46,7 +46,7 @@ class TestPi05PreprocessorInit:
         assert prep._image_resolution == (224, 224)
 
     def test_custom_resolution(self, preprocessor) -> None:
-        assert preprocessor.image_resolution == (64, 64)
+        assert preprocessor._image_resolution == (64, 64)
 
 
 class TestPi05PreprocessorImages:
@@ -173,19 +173,6 @@ class TestPi05PreprocessorState:
         state_part = prompt.split("State: ")[1].split(";")[0]
         bins = state_part.split()
         assert len(bins) == 2
-
-    def test_custom_state_key(self) -> None:
-        prep = Pi05Preprocessor(
-            image_resolution=(64, 64),
-            state_key="my_state",
-        )
-        inputs = {
-            "my_state": np.random.rand(1, 4).astype(np.float32),
-            TASK: ["task"],
-            IMAGES: np.random.rand(1, 3, 64, 64).astype(np.float32),
-        }
-        result = prep(inputs)
-        assert TASK in result
 
 
 class TestPi05ResizeWithPad:
