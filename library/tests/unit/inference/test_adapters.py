@@ -63,13 +63,16 @@ class TestOpenVINOAdapter:
         (tmp_path / "model.bin").touch()
 
         mock_model = MagicMock()
+        mock_compiled_model = MagicMock()
         mock_input, mock_output = Mock(), Mock()
-        mock_input.get_names.return_value, mock_output.any_name = ["input"], "output"
-        mock_model.inputs, mock_model.outputs = [mock_input], [mock_output]
-        mock_model.return_value = [np.array([[1.0, 2.0]])]
+        mock_input.any_name, mock_output.any_name = "input", "output"
+        mock_model.inputs = [mock_input]
+        mock_compiled_model.outputs = [mock_output]
+        mock_compiled_model.return_value = [np.array([[1.0, 2.0]])]
 
         mock_ov = MagicMock()
-        mock_ov.Core.return_value.compile_model.return_value = mock_model
+        mock_ov.Core.return_value.read_model.return_value = mock_model
+        mock_ov.Core.return_value.compile_model.return_value = mock_compiled_model
 
         # Test init, load, and predict
         with patch.dict("sys.modules", {"openvino": mock_ov}):
