@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import copy
+
 import numpy as np
 import pytest
 
@@ -99,6 +101,20 @@ class TestPi05PreprocessorImages:
         assert result[IMAGES].shape[0] == 2
         # empty camera mask should be zeros
         assert not result[IMAGE_MASKS][1].any()
+
+    def test_vs_torch_reference(self, preprocessor) -> None:
+        inputs = _make_inputs()
+        result = preprocessor(copy.deepcopy(inputs))
+
+        from physicalai.policies.pi05.preprocessor import Pi05Preprocessor as Pi05PreprocessorTorch
+        import torch
+
+        torch_resize = Pi05PreprocessorTorch(image_resolution=(64, 64), empty_cameras=0)
+
+        input_batch_torch = {k: torch.from_numpy(v) if isinstance(v, np.ndarray) else v for k, v in inputs.items()}
+        torch_result = torch_resize(input_batch_torch)
+
+        assert np.linalg.norm(result["images"] - torch_result["images"].numpy()) < 1e-1
 
 
 class TestPi05PreprocessorText:
