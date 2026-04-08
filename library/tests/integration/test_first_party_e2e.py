@@ -88,7 +88,7 @@ class ExportE2ETests:
         """Test that trained policy can be exported to different backends."""
         export_dir = tmp_path / f"{initialized_policy.__class__.__name__.lower()}_{backend}"
 
-        if backend not in initialized_policy.supported_export_backends:
+        if backend not in initialized_policy.get_supported_export_backends():
             pytest.skip(f"{initialized_policy.__class__.__name__} does not support export to {backend}")
 
         initialized_policy.export(export_dir, backend)
@@ -115,7 +115,7 @@ class ExportE2ETests:
         tmp_path: Path,
     ) -> None:
         """Test that exported model can be loaded and used for inference."""
-        if backend not in initialized_policy.supported_export_backends:
+        if backend not in initialized_policy.get_supported_export_backends():
             pytest.skip(f"{initialized_policy.__class__.__name__} does not support export to {backend}")
 
         export_dir = tmp_path / f"{initialized_policy.__class__.__name__.lower()}_{backend}"
@@ -145,7 +145,7 @@ class ExportE2ETests:
     ) -> None:
         """Test numerical consistency between training and inference outputs."""
         policy_name = initialized_policy.__class__.__name__.lower()
-        if backend not in initialized_policy.supported_export_backends:
+        if backend not in initialized_policy.get_supported_export_backends():
             pytest.skip(f"{policy_name} does not support export to {backend}")
 
         export_dir = tmp_path / f"{policy_name}_{backend}"
