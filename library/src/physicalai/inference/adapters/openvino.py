@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from physicalai.inference import model
 from physicalai.inference.adapters.base import RuntimeAdapter
 
 if TYPE_CHECKING:
