@@ -198,8 +198,8 @@ Store a list of supported export backends in `get_supported_export_backends`
 ```python test="skip" reason="interface example, not executable"
 
 class MyPolicy(Export, Policy):
-    @classmethod
-    def supported_export_backends(cls) -> list[str | ExportBackend]:
+    @staticmethod
+    def get_supported_export_backends() -> list[str | ExportBackend]:
         return [ExportBackend.TORCH, ExportBackend.OPENVINO,
                 ExportBackend.ONNX, ExportBackend.EXECUTORCH]
 ```
