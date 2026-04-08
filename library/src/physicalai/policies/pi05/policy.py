@@ -78,7 +78,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         >>> action = policy.select_action(obs)
     """
 
-    def __init__(  # noqa: PLR0913, PLR0917
+    def __init__(  # noqa: PLR0913
         self,
         # Pretrained model id
         pretrained_name_or_path: str | Path | None = None,
@@ -92,6 +92,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         n_action_steps: int = 50,
         max_state_dim: int = 32,
         max_action_dim: int = 32,
+        *,
         # Flow matching
         num_inference_steps: int = 10,
         time_sampling_beta_alpha: float = 1.5,
@@ -100,13 +101,13 @@ class Pi05(ExportablePolicyMixin, Policy):
         time_sampling_offset: float = 0.001,
         min_period: float = 4e-3,
         max_period: float = 4.0,
+        use_random_input_noise: bool = False,
         # Image preprocessing
         image_resolution: tuple[int, int] = (224, 224),
         empty_cameras: int = 0,
         # Tokenizer
         tokenizer_max_length: int = 200,
         # Optimization
-        *,
         gradient_checkpointing: bool = True,
         compile_model: bool = False,
         compile_mode: str = "max-autotune",
@@ -171,6 +172,7 @@ class Pi05(ExportablePolicyMixin, Policy):
                 image_resolution=image_resolution,
                 empty_cameras=empty_cameras,
                 tokenizer_max_length=tokenizer_max_length,
+                use_random_input_noise=use_random_input_noise,
                 gradient_checkpointing=gradient_checkpointing,
                 compile_model=compile_model,
                 compile_mode=compile_mode,
@@ -229,6 +231,7 @@ class Pi05(ExportablePolicyMixin, Policy):
             train_expert_only=self.config.train_expert_only,
             gradient_checkpointing=self.config.gradient_checkpointing,
             compile_model=self.config.compile_model,
+            use_random_input_noise=self.config.use_random_input_noise,
         )
         if weights_file is not None:
             # load raw state dict

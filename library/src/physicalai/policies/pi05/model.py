@@ -568,6 +568,7 @@ class Pi05Model(ExportableModelMixin, Model):
         train_expert_only: bool = True,
         gradient_checkpointing: bool = False,
         compile_model: bool = False,
+        use_random_input_noise: bool = False,
     ) -> None:
         """Initialize Pi05Model.
 
@@ -593,6 +594,8 @@ class Pi05Model(ExportableModelMixin, Model):
             train_expert_only: Whether to train only the action expert.
             gradient_checkpointing: Whether to enable gradient checkpointing for memory optimization.
             compile_model: Whether to use torch.compile.
+            use_random_input_noise: Whether to use random noise as the initial input for the denoising
+                process during inference. If False, zeros are used instead.
 
         Raises:
             ValueError: If image resolution is not square.
@@ -611,6 +614,7 @@ class Pi05Model(ExportableModelMixin, Model):
         self._max_period = max_period
         self._image_resolution = image_resolution
         self._tokenizer_max_length = tokenizer_max_length
+        self._use_random_input_noise = use_random_input_noise
 
         paligemma_config = get_gemma_config(paligemma_variant)
         action_expert_config = get_gemma_config(action_expert_variant)
@@ -822,13 +826,13 @@ class Pi05Model(ExportableModelMixin, Model):
         att_2d_masks_4d = att_2d_masks[:, None, :, :]
         return torch.where(att_2d_masks_4d, 0.0, OPENPI_ATTENTION_MASK_VALUE)
 
-    def sample_noise(self, shape: tuple, device: torch.device) -> Tensor:  # noqa: PLR6301
+    def sample_noise(self, shape: tuple, device: torch.device) -> Tensor:
         """Sample noise for the model.
 
         Returns:
             Noise tensor.
         """
-        if torch.jit.is_tracing() or torch.onnx.is_in_onnx_export():
+        if not self._use_random_input_noise or torch.jit.is_tracing() or torch.onnx.is_in_onnx_export():
             return torch.zeros(shape, dtype=torch.float32, device=device)
         return torch.normal(
             mean=0.0,
