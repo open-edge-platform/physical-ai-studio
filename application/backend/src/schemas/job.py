@@ -54,7 +54,10 @@ class TrainJobPayload(BaseModel):
     )
     base_model_id: UUID | None = Field(default=None, description="Model ID to resume training from")
     val_split: float = Field(
-        default=0.1, ge=0.0, lt=1.0, description="Fraction of episodes to hold out for eval-loss validation (0 = disabled)"
+        default=0.1, 
+        ge=0.0, 
+        lt=1.0, 
+        description="Fraction of episodes to hold out for eval-loss validation (0 = disabled)",
     )
 
     @field_serializer("project_id")
