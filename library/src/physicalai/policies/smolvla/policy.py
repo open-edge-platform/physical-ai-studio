@@ -68,6 +68,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         expert_width_multiplier: Action expert hidden size ratio to VLM. Default: 0.75.
         min_period: Minimum period for sine-cosine positional encoding. Default: 4e-3.
         max_period: Maximum period for sine-cosine positional encoding. Default: 4.0.
+        use_random_input_noise: Whether to use random noise as the initial input for the denoising
+            process during inference. If False, zeros are used instead. Default: True.
         num_steps: Number of decoding steps. Default: 10.
         use_cache: Whether to use attention cache. Default: True.
         freeze_vision_encoder: Whether to freeze vision encoder during training. Default: True.
@@ -117,7 +119,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         add_image_special_tokens: bool = False,  # Whether to use special image tokens around image features.
         attention_mode: str = "cross_attn",
         prefix_length: int = -1,
-        pad_language_to: str = "max_length",  # "max_length"
+        pad_language_to: str = "max_length",  # "longest"
         num_expert_layers: int = -1,  # Less or equal to 0 is the default where the action expert has the same
         # number of layers of VLM. Otherwise, the expert have less layers.
         num_vlm_layers: int = 16,  # Number of layers used in the VLM (first num_vlm_layers layers)
@@ -125,6 +127,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         expert_width_multiplier: float = 0.75,  # The action expert hidden size (wrt to the VLM)
         min_period: float = 4e-3,  # sensitivity range for the timestep used in sine-cosine positional encoding
         max_period: float = 4.0,
+        use_random_input_noise: bool = False,
         # Decoding
         num_steps: int = 10,
         # Attention utils
@@ -188,6 +191,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
                 expert_width_multiplier=expert_width_multiplier,
                 min_period=min_period,
                 max_period=max_period,
+                use_random_input_noise=use_random_input_noise,
                 num_steps=num_steps,
                 use_cache=use_cache,
                 freeze_vision_encoder=freeze_vision_encoder,
@@ -257,6 +261,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             expert_width_multiplier=self.config.expert_width_multiplier,
             min_period=self.config.min_period,
             max_period=self.config.max_period,
+            use_random_input_noise=self.config.use_random_input_noise,
+            tokenizer_max_length=self.config.tokenizer_max_length,
         )
 
         if weights_file is not None:
@@ -282,6 +288,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             image_resolution=self.config.resize_imgs_with_padding,
             max_token_len=self.config.tokenizer_max_length,
             token_pad_type=self.config.pad_language_to,
+            tokenizer_name=self.config.vlm_model_name,
         )
 
         self._dataset_stats = dataset_stats
@@ -577,8 +584,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
                 gradient_clip_algorithm=gradient_clip_algorithm or "norm",
             )
 
-    @property
-    def supported_export_backends(self) -> list[str | ExportBackend]:
+    @staticmethod
+    def get_supported_export_backends() -> list[str | ExportBackend]:
         """Get a list of export backends supported by policy.
 
         This method returns a list of supported export backends as strings.
@@ -586,4 +593,4 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         Returns:
             list[str | ExportBackend]: A list of supported export backends.
         """
-        return [ExportBackend.TORCH, ExportBackend.OPENVINO, ExportBackend.ONNX]
+        return [ExportBackend.TORCH, ExportBackend.OPENVINO]

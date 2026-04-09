@@ -101,6 +101,8 @@ x-common-build: &common-build
     dockerfile: application/docker/Dockerfile
     additional_contexts:
       libs: ../../library
+      # TODO(#450): Remove once physicalai is published from its own repo.
+      pai: ../../physicalai
     args:
       - APP_UID=${APP_UID:-1000}
       - APP_GID=${APP_GID:-1000}

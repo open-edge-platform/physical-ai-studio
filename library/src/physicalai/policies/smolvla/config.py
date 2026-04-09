@@ -66,6 +66,8 @@ class SmolVLAConfig(Config):
         expert_width_multiplier: Multiplier for action expert hidden size relative to VLM. Defaults to 0.75.
         min_period: Minimum period for sine-cosine positional encoding of timesteps. Defaults to 4e-3.
         max_period: Maximum period for sine-cosine positional encoding of timesteps. Defaults to 4.0.
+        use_random_input_noise: Whether to use random noise as the initial input for the denoising process
+            during inference. If False, zeros are used instead. Defaults to True.
     """
 
     n_obs_steps: int = 1
@@ -119,6 +121,8 @@ class SmolVLAConfig(Config):
 
     min_period: float = 4e-3
     max_period: float = 4.0
+
+    use_random_input_noise: bool = True
 
     def __post_init__(self) -> None:
         """Validate configuration parameters after initialization.

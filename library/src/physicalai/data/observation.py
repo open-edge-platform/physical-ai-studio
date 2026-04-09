@@ -414,7 +414,9 @@ class Observation:
             >>> sub_batch.action.shape  # torch.Size([4, 2])
         """
 
-        def _index(value: dict | torch.Tensor | np.ndarray | None) -> dict | torch.Tensor | np.ndarray | None:
+        def _index(
+            value: dict | torch.Tensor | np.ndarray | list | None,
+        ) -> dict | torch.Tensor | np.ndarray | list | None:
             """Recursively index into value.
 
             Args:
@@ -427,7 +429,7 @@ class Observation:
                 return None
             if isinstance(value, dict):
                 return {k: _index(v) for k, v in value.items()}
-            if isinstance(value, (torch.Tensor, np.ndarray)):
+            if isinstance(value, (torch.Tensor, np.ndarray, list)):
                 return value[idx]
             # Non-indexable types (bool, scalars, etc.) pass through
             return value

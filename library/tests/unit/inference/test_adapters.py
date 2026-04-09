@@ -64,7 +64,7 @@ class TestOpenVINOAdapter:
 
         mock_model = MagicMock()
         mock_input, mock_output = Mock(), Mock()
-        mock_input.any_name, mock_output.any_name = "input", "output"
+        mock_input.get_names.return_value, mock_output.any_name = ["input"], "output"
         mock_model.inputs, mock_model.outputs = [mock_input], [mock_output]
         mock_model.return_value = [np.array([[1.0, 2.0]])]
 
