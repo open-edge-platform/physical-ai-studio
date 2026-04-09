@@ -120,6 +120,7 @@ class TrainingWorker(BaseProcessWorker):
                 root=snapshot.path,
                 train_batch_size=payload.batch_size,
                 num_workers=payload.num_workers,
+                val_split=payload.val_split,
             )
 
             if base_model is not None:
@@ -131,7 +132,7 @@ class TrainingWorker(BaseProcessWorker):
                 dirpath=path,
                 filename="model",  # filename without suffix
                 save_top_k=1,
-                monitor="train/loss",
+                monitor="val/loss",
                 mode="min",
             )
             csv_logger = CSVLogger(path.parent, name=path.stem)
@@ -151,6 +152,7 @@ class TrainingWorker(BaseProcessWorker):
                 strategy=get_lightning_strategy(),
                 max_steps=payload.max_steps,
                 auto_scale_batch_size=payload.auto_scale_batch_size,
+                check_val_every_n_epoch=1,
             )
 
             dispatcher.start()

@@ -5,8 +5,14 @@
 
 from __future__ import annotations
 
+import json
+import logging
+import random
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+from huggingface_hub import hf_hub_download
+from lerobot.utils.constants import HF_LEROBOT_HOME
 from lightning_utilities import module_available
 from torch.utils.data import DataLoader
 
@@ -17,7 +23,6 @@ from .dataset import _LeRobotDatasetAdapter
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
     from physicalai.gyms import Gym
 
@@ -25,6 +30,52 @@ if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 else:
     LeRobotDataset = None
+
+logger = logging.getLogger(__name__)
+
+
+def _read_total_episodes(repo_id: str, root: str | Path | None) -> int:
+    """Read total_episodes from a LeRobot dataset's meta/info.json.
+
+    Path resolution matches ``LeRobotDataset``:
+    - When *root* is provided: ``root / meta / info.json``
+    - When *root* is ``None``: uses ``HF_LEROBOT_HOME / repo_id``
+      (downloads from HuggingFace Hub if not cached locally).
+
+    Args:
+        repo_id: Dataset repository ID or folder name.
+        root: Dataset root directory (the folder that contains meta/).
+
+    Returns:
+        Total number of episodes in the dataset.
+
+    Raises:
+        FileNotFoundError: If the dataset metadata is not found at the expected path.
+    """
+    base = Path(root) if root is not None else HF_LEROBOT_HOME / repo_id
+    info_path = base / "meta" / "info.json"
+    if not info_path.exists():
+        if root is not None:
+            msg = (
+                f"Cannot read dataset metadata: {info_path} not found. "
+                f"Ensure the dataset exists at '{base}' or specify 'episodes' explicitly."
+            )
+            raise FileNotFoundError(msg)
+
+        # HuggingFace dataset not cached — download just the info.json
+        msg = f"Downloading dataset metadata from HuggingFace: {repo_id}"
+        logger.info(msg)
+        hf_hub_download(
+            repo_id=repo_id,
+            repo_type="dataset",
+            filename="meta/info.json",
+            local_dir=base,
+        )
+
+    with info_path.open(encoding="utf-8") as f:
+        info = json.load(f)
+
+    return int(info["total_episodes"])
 
 
 class LeRobotDataModule(DataModule):
@@ -69,7 +120,7 @@ class LeRobotDataModule(DataModule):
         ... )
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(  # noqa: PLR0912, PLR0913
         self,
         *,
         repo_id: str | None = None,
@@ -87,6 +138,8 @@ class LeRobotDataModule(DataModule):
         video_backend: str | None = None,
         batch_encoding_size: int = 1,
         data_format: Literal["physicalai", "lerobot"] | DataFormat = "physicalai",
+        # Eval-loss validation
+        val_split: float = 0.1,
         # Base DataModule parameters (val/test gyms)
         val_gym: Gym | None = None,
         num_rollouts_val: int = 10,
@@ -131,6 +184,10 @@ class LeRobotDataModule(DataModule):
                 Output format for the data. Use "physicalai" for the native `Observation` format,
                 or "lerobot" for LeRobot's original dict format.
                 Defaults to "physicalai".
+            val_split (float, optional): Fraction of episodes to hold out for eval-loss
+                validation (e.g. ``0.1`` for 10%). The last N episodes are used as the
+                validation set. Must be in ``[0, 1)``. ``0`` disables eval-loss validation.
+                Defaults to ``0.0``.
             val_gym (Gym | None, optional): Validation gym environment.
                 Defaults to `None`.
             num_rollouts_val (int, optional): Number of rollouts for validation.
@@ -147,14 +204,54 @@ class LeRobotDataModule(DataModule):
             TypeError: If `dataset` is not of type `LeRobotDataset`.
             ImportError: If `lerobot` is not installed.
         """
+        # Auto-derive repo_id from root directory name when not provided
+        if repo_id is None and root is not None:
+            repo_id = Path(root).name
+
         if dataset is not None and repo_id is not None:
             msg = "Cannot provide both 'repo_id' and 'dataset'. Please provide only one."
+            raise ValueError(msg)
+
+        if not 0.0 <= val_split < 1.0:
+            msg = f"'val_split' must be in [0, 1), got {val_split}."
+            raise ValueError(msg)
+
+        if val_split > 0 and dataset is not None:
+            msg = (
+                "Cannot use 'val_split' with a pre-initialized 'dataset'. "
+                "Use 'repo_id' instead (for local datasets, combine 'repo_id' with 'root')."
+            )
+            raise ValueError(msg)
+
+        if val_split > 0 and val_gym is not None:
+            msg = "Cannot use both 'val_split' and 'val_gym'. Choose eval-loss or gym-based validation."
             raise ValueError(msg)
 
         # Convert `data_format` to enum if it's a string
         self.data_format = DataFormat(data_format)
 
+        # Split episodes into train / val based on val_split
+        train_episodes = episodes
+        val_episodes: list[int] | None = None
+        if val_split > 0 and repo_id is not None:
+            total_episodes = _read_total_episodes(repo_id, root)
+            all_episodes = episodes if episodes is not None else list(range(total_episodes))
+            n_val = max(1, int(len(all_episodes) * val_split))
+            # Randomly select val episodes with a fixed seed for reproducibility
+            rng = random.Random(42)  # noqa: S311
+            val_episodes = sorted(rng.sample(all_episodes, n_val))
+            train_episodes = sorted(ep for ep in all_episodes if ep not in set(val_episodes))
+            logger.info(
+                "Val split (%.0f%%): %d val episodes %s, %d train episodes (of %d total)",
+                val_split * 100,
+                len(val_episodes),
+                val_episodes,
+                len(train_episodes),
+                len(all_episodes),
+            )
+
         # Create the appropriate dataset based on format
+        val_eval_dataset = None
         if dataset is not None:
             if LeRobotDataset is None:
                 msg = "LeRobotDataset is not available. Install lerobot with: uv pip install lerobot."
@@ -172,7 +269,7 @@ class LeRobotDataModule(DataModule):
                 train_dataset = _LeRobotDatasetAdapter(
                     repo_id=repo_id,
                     root=root,
-                    episodes=episodes,
+                    episodes=train_episodes,
                     image_transforms=image_transforms,
                     delta_timestamps=delta_timestamps,
                     tolerance_s=tolerance_s,
@@ -182,6 +279,19 @@ class LeRobotDataModule(DataModule):
                     video_backend=video_backend,
                     batch_encoding_size=batch_encoding_size,
                 )
+                if val_episodes is not None:
+                    val_eval_dataset = _LeRobotDatasetAdapter(
+                        repo_id=repo_id,
+                        root=root,
+                        episodes=val_episodes,
+                        delta_timestamps=delta_timestamps,
+                        tolerance_s=tolerance_s,
+                        revision=revision,
+                        force_cache_sync=force_cache_sync,
+                        download_videos=download_videos,
+                        video_backend=video_backend,
+                        batch_encoding_size=batch_encoding_size,
+                    )
             else:
                 if LeRobotDataset is None:
                     msg = "LeRobotDataset is not available. Install lerobot with: uv pip install lerobot."
@@ -190,7 +300,7 @@ class LeRobotDataModule(DataModule):
                 train_dataset = LeRobotDataset(
                     repo_id=repo_id,
                     root=root,
-                    episodes=episodes,
+                    episodes=train_episodes,
                     image_transforms=image_transforms,
                     delta_timestamps=delta_timestamps,
                     tolerance_s=tolerance_s,
@@ -211,6 +321,7 @@ class LeRobotDataModule(DataModule):
             num_workers=num_workers,
             val_gym=val_gym,
             num_rollouts_val=num_rollouts_val,
+            val_eval_dataset=val_eval_dataset,
             test_gym=test_gym,
             num_rollouts_test=num_rollouts_test,
             max_episode_steps=max_episode_steps,

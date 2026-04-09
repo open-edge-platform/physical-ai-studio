@@ -251,20 +251,39 @@ class Policy(L.LightningModule, ABC):
         # Return metrics with prefix (for backward compatibility and Lightning consumption)
         return {f"{stage}/gym/{k}": v for k, v in latest_metrics.items()}
 
-    def validation_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
+    def validation_step(self, batch: Gym | Observation, batch_idx: int) -> dict[str, float] | torch.Tensor:
         """Validation step for the policy.
 
-        Runs gym-based validation by executing rollouts in the environment.
-        The DataModule's val_dataloader returns Gym environment instances directly.
+        Dispatches based on batch type:
+        - ``Gym``: runs environment rollouts (gym-based evaluation).
+        - ``Observation``: computes forward-pass loss (eval-loss evaluation).
 
         Args:
-            batch: Gym environment to evaluate
-            batch_idx: Index of the batch (used as seed for reproducibility)
+            batch: Either a Gym environment or an Observation batch.
+            batch_idx: Index of the batch.
 
         Returns:
-            Dictionary of metrics from the gym rollout evaluation
+            Gym mode: dictionary of rollout metrics.
+            Eval-loss mode: loss tensor.
         """
+        if isinstance(batch, Observation):
+            return self._eval_loss_step(batch, batch_idx)
         return self.evaluate_gym(batch, batch_idx, stage="val")
+
+    def _eval_loss_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
+        """Compute validation loss on a dataset batch.
+
+        Args:
+            batch: Observation batch from the eval dataset.
+            batch_idx: Index of the batch.
+
+        Returns:
+            Loss tensor.
+        """
+        del batch_idx
+        loss, loss_dict = self(batch)
+        self.log("val/loss", loss_dict["loss"], prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
+        return loss
 
     def test_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
         """Test step for the policy.
@@ -285,9 +304,13 @@ class Policy(L.LightningModule, ABC):
         """Compute and log aggregated validation metrics at the end of the epoch.
 
         This hook is called by Lightning after all validation_step calls are complete.
-        It computes aggregated statistics across all rollouts and logs them with
-        proper distributed synchronization.
+        For gym-based validation it computes aggregated statistics across all rollouts.
+        For eval-loss validation the metrics are already logged per-step; nothing extra needed.
         """
+        # Only aggregate gym metrics if rollouts were actually recorded
+        if not self.val_rollout.all_sum_rewards:
+            return
+
         # Compute aggregated metrics (automatically synced across GPUs)
         metrics = self.val_rollout.compute()
 
