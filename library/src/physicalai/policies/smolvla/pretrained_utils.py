@@ -30,6 +30,9 @@ def extract_dataset_stats(
 
     Tries the preprocessor normalizer safetensors first, falls back to
     building identity stats from config.json feature shapes.
+
+    Returns:
+        Mapping of feature name to stat dict with mean/std arrays.
     """
     if preprocessor_file is not None and preprocessor_file.exists():
         try:
@@ -49,6 +52,9 @@ def fix_state_dict_keys(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.
 
     LeRobot's SmolVLAPolicy stores the VLAFlowMatching as ``self.model``,
     while physical-ai-studio's SmolVLAModel stores it as ``self._model``.
+
+    Returns:
+        State dict with remapped keys.
     """
     return {
         key.replace("model.", "_model.", 1) if key.startswith("model.") else key: value
@@ -61,7 +67,11 @@ def _parse_preprocessor_stats(
     hf_config: dict[str, Any],
     preprocessor_dir: Path | None,
 ) -> dict[str, dict[str, Any]]:
-    """Extract mean/std normalization stats from the normalizer safetensors."""
+    """Extract mean/std normalization stats from the normalizer safetensors.
+
+    Returns:
+        Mapping of feature name to stat dict with mean/std arrays.
+    """
     stats: dict[str, dict[str, Any]] = {}
 
     steps = preproc_config.get("steps", [])
@@ -106,7 +116,11 @@ def _parse_preprocessor_stats(
 
 
 def _parse_config_features(hf_config: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """Build identity stats from config.json feature shapes (fallback)."""
+    """Build identity stats from config.json feature shapes (fallback).
+
+    Returns:
+        Mapping of feature name to stat dict with zero-mean/unit-std arrays.
+    """
     stats: dict[str, dict[str, Any]] = {}
 
     for section in ("input_features", "output_features"):
@@ -138,7 +152,11 @@ def _resolve_feature_shape(
     hf_config: dict[str, Any],
     feat_stats: dict[str, Any],
 ) -> tuple[int, ...]:
-    """Resolve shape from config features, falling back to stat tensor length."""
+    """Resolve shape from config features, falling back to stat tensor length.
+
+    Returns:
+        Feature shape tuple.
+    """
     for section in ("input_features", "output_features"):
         features = hf_config.get(section, {})
         if isinstance(features, dict) and feat_name in features:

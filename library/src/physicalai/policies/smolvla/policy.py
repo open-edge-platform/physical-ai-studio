@@ -233,8 +233,9 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         Called by both lazy (setup) and eager (checkpoint) paths.
 
         Args:
-            env_action_dim: Environment action dimension.
             dataset_stats: Dataset normalization statistics.
+            weights_file: Path to pretrained safetensors weights file, or ``None``
+                to initialize from scratch.
         """
         from .preprocessor import make_smolvla_preprocessors  # noqa: PLC0415
 
@@ -293,7 +294,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
         self._dataset_stats = dataset_stats
 
-    def _from_hf(  # noqa: PLR0913, PLR6301
+    def _from_hf(  # noqa: PLR6301
         self,
         pretrained_name_or_path: str | Path,
         *,
@@ -324,6 +325,17 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
         Args:
             pretrained_name_or_path: HuggingFace repo ID or local path.
+            freeze_vision_encoder: Whether to freeze the vision encoder during finetuning.
+            train_expert_only: Whether to train only the action expert.
+            train_state_proj: Whether to train the state projection layer.
+            optimizer_lr: Learning rate for the optimizer.
+            optimizer_betas: Beta coefficients for Adam optimizer.
+            optimizer_eps: Epsilon for Adam optimizer.
+            optimizer_weight_decay: Weight decay for the optimizer.
+            optimizer_grad_clip_norm: Maximum gradient norm for clipping.
+            scheduler_warmup_steps: Number of warmup steps for the scheduler.
+            scheduler_decay_steps: Number of decay steps for the scheduler.
+            scheduler_decay_lr: Final learning rate after decay.
             **kwargs: Extra arguments forwarded to ``huggingface_hub.hf_hub_download``.
 
         Returns:
