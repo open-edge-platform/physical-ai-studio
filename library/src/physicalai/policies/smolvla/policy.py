@@ -309,7 +309,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         scheduler_warmup_steps: int = 1_000,
         scheduler_decay_steps: int = 30_000,
         scheduler_decay_lr: float = 2.5e-6,
-        **kwargs: Any,
+        **kwargs: Any,  # noqa: ANN401
     ) -> tuple[SmolVLAConfig, dict[str, dict[str, list[float] | str | tuple]], Path]:
         """Load pretrained SmolVLA from a HuggingFace model repo.
 
