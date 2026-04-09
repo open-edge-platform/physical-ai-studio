@@ -4,10 +4,16 @@
 """Utility functions for device management."""
 
 
-def get_torch_device() -> str:
-    """Get the appropriate torch device string based on availability.
-    Checks for XPU, CUDA, MPS, and falls back to CPU if none are available.
+def get_torch_device(device: str | None = None) -> str:
+    """Get the torch device string to use for training.
+
+    When *device* is provided it is returned as-is, allowing the caller to
+    override auto-detection.  When ``None``, the best available accelerator
+    is chosen automatically (XPU > CUDA > MPS > CPU).
     """
+    if device is not None:
+        return device
+
     import torch
 
     if torch.xpu.is_available():
@@ -20,10 +26,20 @@ def get_torch_device() -> str:
     return "cpu"
 
 
-def get_lightning_strategy() -> str:
-    """Get the appropriate lightning strategy string based on available hardware.
+def get_lightning_strategy(device: str | None = None) -> str:
+    """Get the Lightning strategy string for the given device.
 
-    XPU device requires a specific strategy, while others are covered by 'auto' strategy."""
+    XPU requires a specific strategy; all other devices are covered by
+    ``'auto'``.  When *device* is ``None`` the decision is based on
+    hardware auto-detection.
+    """
+    if device is not None:
+        if device == "xpu":
+            import physicalai.devices.xpu
+
+            return "xpu_single"
+        return "auto"
+
     import torch
 
     if torch.xpu.is_available():
