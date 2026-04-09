@@ -832,7 +832,7 @@ class Pi05Model(ExportableModelMixin, Model):
         Returns:
             Noise tensor.
         """
-        if not self._use_random_input_noise or torch.jit.is_tracing() or torch.onnx.is_in_onnx_export():
+        if not self._use_random_input_noise:
             return torch.zeros(shape, dtype=torch.float32, device=device)
         return torch.normal(
             mean=0.0,

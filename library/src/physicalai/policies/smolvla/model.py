@@ -815,7 +815,7 @@ class VLAFlowMatching(nn.Module):
             params.requires_grad = self._train_state_proj
 
     def _sample_noise(self, shape: tuple[int, ...], device: torch.device) -> torch.Tensor:
-        if not self._use_random_input_noise or torch.jit.is_tracing() or torch.onnx.is_in_onnx_export():
+        if not self._use_random_input_noise:
             return torch.zeros(shape, dtype=torch.float32, device=device)
 
         return torch.normal(
