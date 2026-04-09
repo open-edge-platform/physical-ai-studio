@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """OpenVINO adapter for inference."""
@@ -66,7 +66,10 @@ class OpenVINOAdapter(RuntimeAdapter):
         self.compiled_model = core.compile_model(model=model, device_name=self.device, config=self.config)
 
         # Cache input/output names
-        self._input_names = [input_node.any_name for input_node in self.compiled_model.inputs]
+        all_node_names = [input_node.get_names() for input_node in self.compiled_model.inputs]
+        # OV-specific workaround: input nodes may have multiple names (e.g. "input" and "12345"),
+        # and we want to clean auto-generated ones
+        self._input_names = [name for names in all_node_names for name in names if name and not name.isdigit()]
         self._output_names = [output_node.any_name for output_node in self.compiled_model.outputs]
 
     def predict(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:

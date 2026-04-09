@@ -109,7 +109,7 @@ class SmolVLAPreprocessor(torch.nn.Module):
         features: dict[str, Feature] | None = None,
         max_token_len: int = 48,
         tokenizer_name: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
-        padding: str = "longest",
+        padding: str = "max_length",
         rename_map: dict[str, str] | None = None,
         expected_camera_names: set[str] | None = SMOLVLA_EXPECTED_CAMERA_NAMES,
         empty_cameras: int = 0,
@@ -175,6 +175,7 @@ class SmolVLAPreprocessor(torch.nn.Module):
         self._validate_camera_names(batch)
 
         batch = self._newline_processor(batch)
+
         tokens, masks = self._tokenize(batch[TASK])
         batch[TOKENIZED_PROMPT] = tokens.to(batch[STATE].device)
         batch[TOKENIZED_PROMPT_MASK] = masks.to(batch[STATE].device)
@@ -227,6 +228,7 @@ class SmolVLAPreprocessor(torch.nn.Module):
         max_image_dim = 5
         for key in batch_img_keys:
             img = batch[key][:, -1, :, :, :] if batch[key].ndim == max_image_dim else batch[key]
+            batch.pop(key)
             if self.image_resolution is not None:
                 img = self._resize_with_pad(img, *self.image_resolution, pad_value=0)
 
@@ -236,6 +238,7 @@ class SmolVLAPreprocessor(torch.nn.Module):
             device = img.device
             if EXTRA + f".{key}_padding_mask" in batch:
                 mask = batch[EXTRA + f".{key}_padding_mask"].bool()
+                batch.pop(EXTRA + f".{key}_padding_mask")
             else:
                 mask = torch.ones(bsize, dtype=torch.bool, device=device)
             images.append(img)
@@ -421,23 +424,8 @@ class SmolVLAPreprocessor(torch.nn.Module):
 
         Returns:
             The tokenizer instance used by this preprocessor.
-
-        Raises:
-            ImportError: If transformers library is not installed.
         """
-        try:
-            from transformers import AutoTokenizer  # noqa: PLC0415
-
-            # Revision pinned for reproducibility and security
-            tokenizer = AutoTokenizer.from_pretrained(
-                self.tokenizer_name,
-                revision="7b375e1b73b11138ff12fe22c8f2822d8fe03467",
-                use_fast=False,
-            )
-        except ImportError as e:
-            msg = "Tokenizer requires transformers. Install with: pip install transformers"
-            raise ImportError(msg) from e
-        return tokenizer
+        return self.tokenizer
 
     @staticmethod
     def _resize_with_pad(img: torch.Tensor, width: int, height: int, pad_value: int = -1) -> torch.Tensor:
@@ -567,6 +555,7 @@ def make_smolvla_preprocessors(
     token_pad_type: str = "longest",  # noqa: S107
     rename_map: dict[str, str] | None = None,
     empty_cameras: int = 0,
+    tokenizer_name: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
 ) -> tuple[SmolVLAPreprocessor, SmolVLAPostprocessor]:
     """Create preprocessor and postprocessor pair.
 
@@ -580,6 +569,7 @@ def make_smolvla_preprocessors(
         token_pad_type: Padding strategy for tokenization ("longest" or "max_length").
         rename_map: Optional mapping of camera base names to target names.
         empty_cameras: Number of empty camera slots to add.
+        tokenizer_name: HuggingFace tokenizer name.
 
     Returns:
         Tuple of (preprocessor, postprocessor).
@@ -625,6 +615,7 @@ def make_smolvla_preprocessors(
         rename_map=rename_map,
         expected_camera_names=expected_camera_names,
         empty_cameras=empty_cameras,
+        tokenizer_name=tokenizer_name,
     )
 
     postprocessor = SmolVLAPostprocessor(

@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "library/**"
+      - "physicalai/**"
       - "application/**"
       - ".github/actions/docker-build/**"
       - ".github/workflows/docker-build.yml"

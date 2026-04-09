@@ -59,7 +59,9 @@ runs:
       with:
         context: .
         file: application/docker/Dockerfile
-        build-contexts: libs=library
+        build-contexts: |
+          libs=library
+          pai=physicalai
         target: physical-ai-studio-${{ inputs.device }}
         platforms: linux/amd64
         push: ${{ inputs.push }}

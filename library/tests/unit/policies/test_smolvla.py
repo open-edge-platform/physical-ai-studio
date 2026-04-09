@@ -184,7 +184,7 @@ class TestSmolVLAPreprocessor:
         assert preprocessor.image_resolution == (512, 512)
         assert preprocessor.max_token_len == 48
         assert preprocessor.tokenizer_name == "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"
-        assert preprocessor.padding == "longest"
+        assert preprocessor.padding == "max_length"
 
     def test_preprocessor_custom_values(self) -> None:
         """Test preprocessor with custom configuration values."""

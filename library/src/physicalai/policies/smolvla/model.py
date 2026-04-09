@@ -26,6 +26,7 @@ from physicalai.export.backends import (
     OpenVINOExportParameters,
     TorchExportParameters,
 )
+from physicalai.inference.manifest import ComponentSpec
 from physicalai.policies.base import Model
 
 if TYPE_CHECKING:
@@ -89,6 +90,8 @@ class SmolVLAModel(ExportableModelMixin, Model):
         expert_width_multiplier: float = 0.75,
         min_period: float = 4e-3,
         max_period: float = 4.0,
+        use_random_input_noise: bool = True,
+        tokenizer_max_length: int = 48,
     ) -> None:
         """Initialize the SmolVLA model.
 
@@ -118,6 +121,9 @@ class SmolVLAModel(ExportableModelMixin, Model):
             expert_width_multiplier: Multiplier for action expert hidden size relative to VLM.
             min_period: Minimum period for sine-cosine positional encoding of timesteps.
             max_period: Maximum period for sine-cosine positional encoding of timesteps.
+            use_random_input_noise: Whether to use random noise as the initial input for the
+                denoising process during inference. If False, zeros are used instead.
+            tokenizer_max_length: Maximum token length for the tokenizer. Default: 48.
         """
         super().__init__()
         self._chunk_size = chunk_size
@@ -126,6 +132,8 @@ class SmolVLAModel(ExportableModelMixin, Model):
         self._resize_imgs_with_padding = resize_imgs_with_padding
         self._adapt_to_pi_aloha = adapt_to_pi_aloha
         self._empty_cameras = empty_cameras
+        self._tokenizer_max_length = tokenizer_max_length
+        self._vlm_model_name = vlm_model_name
         self._model = VLAFlowMatching(
             chunk_size=chunk_size,
             max_state_dim=max_state_dim,
@@ -146,6 +154,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
             expert_width_multiplier=expert_width_multiplier,
             min_period=min_period,
             max_period=max_period,
+            use_random_input_noise=use_random_input_noise,
         )
         self._dataset_stats = dataset_stats
 
@@ -277,7 +286,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
                         device=device,
                     )
 
-        sample_input[TASK] = "sample_task"
+        sample_input[TASK] = ["sample_task"]
 
         return sample_input
 
@@ -300,19 +309,38 @@ class SmolVLAModel(ExportableModelMixin, Model):
             {'output_names': ['action']}
         """
         extra_args: dict[str, ExportParameters] = {}
+        preproc_specs = [
+            ComponentSpec(type="smolvla_resize", image_resolution=self._resize_imgs_with_padding),
+            ComponentSpec(type="new_line"),
+            ComponentSpec(
+                type="hf_tokenizer",
+                tokenizer_name=self._vlm_model_name,
+                revision="7b375e1b73b11138ff12fe22c8f2822d8fe03467",
+                max_token_len=self._tokenizer_max_length,
+            ),
+        ]
+        postproc_specs = [
+            ComponentSpec(
+                type="denormalize",
+                stats={ACTION: self._dataset_stats[ACTION]},
+                mode="mean_std",
+            ),
+        ]
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
                 "output_names": ["action"],
             },
-            preprocessing_type="smolvla",
-            export_tokenizer=True,
+            preprocessors_specs=preproc_specs,
+            postprocessors_specs=postproc_specs,
+            export_tokenizer=False,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
             outputs=["action"],
             compress_to_fp16=False,
-            export_tokenizer=True,
+            export_tokenizer=False,
             exporter_kwargs={},
-            preprocessing_type="smolvla",
+            preprocessors_specs=preproc_specs,
+            postprocessors_specs=postproc_specs,
         )
         extra_args["torch"] = TorchExportParameters()
 
@@ -356,11 +384,11 @@ class SmolVLAModel(ExportableModelMixin, Model):
         all_keys = [key for key in self._dataset_stats if self._dataset_stats[key]["type"] == FeatureType.VISUAL.value]
         expected_count = len(all_keys) + self._empty_cameras
 
-        if expected_count != len(batch[IMAGES]):
+        if expected_count != batch[IMAGES].shape[0]:
             msg = (
                 f"Image count mismatch: expected {expected_count} "
                 f"({len(all_keys)} from stats + {self._empty_cameras} empty), "
-                f"got {len(batch[IMAGES])}. (image_features:{all_keys})"
+                f"got {batch[IMAGES].shape[0]}. (image_features:{all_keys})"
             )
             raise ValueError(msg)
         return batch
@@ -707,6 +735,7 @@ class VLAFlowMatching(nn.Module):
         expert_width_multiplier: float = 0.75,
         min_period: float = 4e-3,
         max_period: float = 4.0,
+        use_random_input_noise: bool = True,
     ) -> None:
         """Initialize the SmolVLA model.
 
@@ -730,6 +759,8 @@ class VLAFlowMatching(nn.Module):
             expert_width_multiplier: Multiplier for action expert hidden size relative to VLM.
             min_period: Minimum period for sine-cosine positional encoding of timesteps.
             max_period: Maximum period for sine-cosine positional encoding of timesteps.
+            use_random_input_noise: Whether to use random noise as the initial input for the
+                denoising process during inference. If False, zeros are used instead.
         """
         super().__init__()
         self._chunk_size = chunk_size
@@ -739,6 +770,7 @@ class VLAFlowMatching(nn.Module):
         self._train_state_proj = train_state_proj
         self._min_period = min_period
         self._max_period = max_period
+        self._use_random_input_noise = use_random_input_noise
 
         self.vlm_with_expert = _SmolVLMWithExpertModel(
             model_id=vlm_model_name,
@@ -788,9 +820,8 @@ class VLAFlowMatching(nn.Module):
         for params in self.state_proj.parameters():
             params.requires_grad = self._train_state_proj
 
-    @staticmethod
-    def _sample_noise(shape: tuple[int, ...], device: torch.device) -> torch.Tensor:
-        if torch.jit.is_tracing() or torch.onnx.is_in_onnx_export():
+    def _sample_noise(self, shape: tuple[int, ...], device: torch.device) -> torch.Tensor:
+        if not self._use_random_input_noise or torch.jit.is_tracing() or torch.onnx.is_in_onnx_export():
             return torch.zeros(shape, dtype=torch.float32, device=device)
 
         return torch.normal(

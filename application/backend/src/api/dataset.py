@@ -4,6 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from starlette.background import BackgroundTask
 
 from api.dependencies import (
@@ -162,3 +163,27 @@ async def create_dataset(
 ) -> Dataset:
     """Create a new dataset."""
     return await dataset_service.create_dataset(dataset)
+
+
+class DatasetNameUpdate(BaseModel):
+    name: str
+
+
+@router.put("/{dataset_id}")
+async def update_dataset_name(
+    dataset_id: Annotated[UUID, Depends(get_dataset_id)],
+    payload: DatasetNameUpdate,
+    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
+) -> Dataset:
+    """Update dataset name by id."""
+    return await dataset_service.update_dataset_name(dataset_id=dataset_id, name=payload.name)
+
+
+@router.delete("/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_dataset(
+    dataset_id: Annotated[UUID, Depends(get_dataset_id)],
+    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
+    remove_files: bool = False,
+) -> None:
+    """Delete dataset by id and optionally remove dataset files."""
+    await dataset_service.delete_dataset(dataset_id=dataset_id, remove_files=remove_files)

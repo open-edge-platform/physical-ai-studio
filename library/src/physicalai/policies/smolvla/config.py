@@ -71,6 +71,8 @@ class SmolVLAConfig(Config):
             Example: (("top", "camera1"), ("wrist", "camera2")) renames images.top → images.camera1.
             Use this when your dataset camera names differ from the pretrained model's expected names.
             Defaults to None (no renaming).
+        use_random_input_noise: Whether to use random noise as the initial input for the denoising process
+            during inference. If False, zeros are used instead. Defaults to True.
     """
 
     n_obs_steps: int = 1
@@ -126,6 +128,8 @@ class SmolVLAConfig(Config):
     max_period: float = 4.0
 
     rename_map: tuple[tuple[str, str], ...] | None = None
+
+    use_random_input_noise: bool = True
 
     def __post_init__(self) -> None:
         """Validate configuration parameters after initialization.
