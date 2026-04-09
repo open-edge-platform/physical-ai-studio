@@ -8,10 +8,16 @@
 
 from __future__ import annotations
 
+import json
+import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import torch
+from huggingface_hub import hf_hub_download
+from safetensors.torch import load_file
 
+from physicalai.data.dataset import Dataset
 from physicalai.data.observation import ACTION
 from physicalai.export import ExportablePolicyMixin, ExportBackend
 from physicalai.policies.base import Policy
@@ -20,12 +26,17 @@ from physicalai.train.utils import reformat_dataset_to_match_policy
 
 from .config import SmolVLAConfig
 from .model import SmolVLAModel
+from .pretrained_utils import extract_dataset_stats as _extract_dataset_stats
+from .pretrained_utils import fix_state_dict_keys as _fix_state_dict_keys
 
 if TYPE_CHECKING:
     from physicalai.data import Observation
     from physicalai.gyms import Gym
 
     from .preprocessor import SmolVLAPostprocessor, SmolVLAPreprocessor
+
+
+logger = logging.getLogger(__name__)
 
 
 class SmolVLA(ExportablePolicyMixin, Policy):
@@ -50,7 +61,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         add_image_special_tokens: Whether to use special image tokens around image features. Default: False.
         attention_mode: Attention mode for the model. Default: "cross_attn".
         prefix_length: Prefix length for attention. Default: -1.
-        pad_language_to: Padding strategy for language tokens. Default: "longest".
+        pad_language_to: Padding strategy for language tokens. Default: "max_length".
         num_expert_layers: Number of expert layers (-1 matches VLM layers). Default: -1.
         num_vlm_layers: Number of layers used in the VLM. Default: 16.
         self_attn_every_n_layers: Interleave self-attention layers frequency. Default: 2.
@@ -87,6 +98,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
     def __init__(  # noqa: PLR0913
         self,
+        pretrained_name_or_path: str | Path | None = None,
         # Input / output structure.
         n_obs_steps: int = 1,
         chunk_size: int = 50,
@@ -105,7 +117,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         add_image_special_tokens: bool = False,  # Whether to use special image tokens around image features.
         attention_mode: str = "cross_attn",
         prefix_length: int = -1,
-        pad_language_to: str = "longest",  # "max_length"
+        pad_language_to: str = "max_length",  # "max_length"
         num_expert_layers: int = -1,  # Less or equal to 0 is the default where the action expert has the same
         # number of layers of VLM. Otherwise, the expert have less layers.
         num_vlm_layers: int = 16,  # Number of layers used in the VLM (first num_vlm_layers layers)
@@ -139,45 +151,62 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         """
         super().__init__(n_action_steps=n_action_steps)
 
-        # Create config from explicit args (policy-level config)
-        self.config = SmolVLAConfig(
-            n_obs_steps=n_obs_steps,
-            chunk_size=chunk_size,
-            n_action_steps=n_action_steps,
-            max_state_dim=max_state_dim,
-            max_action_dim=max_action_dim,
-            resize_imgs_with_padding=resize_imgs_with_padding,
-            tokenizer_max_length=tokenizer_max_length,
-            vlm_model_name=vlm_model_name,
-            load_vlm_weights=load_vlm_weights,
-            add_image_special_tokens=add_image_special_tokens,
-            attention_mode=attention_mode,
-            prefix_length=prefix_length,
-            pad_language_to=pad_language_to,
-            num_expert_layers=num_expert_layers,
-            num_vlm_layers=num_vlm_layers,
-            self_attn_every_n_layers=self_attn_every_n_layers,
-            expert_width_multiplier=expert_width_multiplier,
-            min_period=min_period,
-            max_period=max_period,
-            num_steps=num_steps,
-            use_cache=use_cache,
-            freeze_vision_encoder=freeze_vision_encoder,
-            train_expert_only=train_expert_only,
-            train_state_proj=train_state_proj,
-            optimizer_lr=optimizer_lr,
-            optimizer_betas=optimizer_betas,
-            optimizer_eps=optimizer_eps,
-            optimizer_weight_decay=optimizer_weight_decay,
-            optimizer_grad_clip_norm=optimizer_grad_clip_norm,
-            scheduler_warmup_steps=scheduler_warmup_steps,
-            scheduler_decay_steps=scheduler_decay_steps,
-            scheduler_decay_lr=scheduler_decay_lr,
-        )
+        weight_file = None
+        if pretrained_name_or_path is not None:
+            self.config, dataset_stats, weight_file = self._from_hf(
+                pretrained_name_or_path,
+                freeze_vision_encoder=freeze_vision_encoder,
+                train_expert_only=train_expert_only,
+                train_state_proj=train_state_proj,
+                optimizer_lr=optimizer_lr,
+                optimizer_betas=optimizer_betas,
+                optimizer_eps=optimizer_eps,
+                optimizer_weight_decay=optimizer_weight_decay,
+                optimizer_grad_clip_norm=optimizer_grad_clip_norm,
+                scheduler_warmup_steps=scheduler_warmup_steps,
+                scheduler_decay_steps=scheduler_decay_steps,
+                scheduler_decay_lr=scheduler_decay_lr,
+            )
+        else:
+            self.config = SmolVLAConfig(
+                n_obs_steps=n_obs_steps,
+                chunk_size=chunk_size,
+                n_action_steps=n_action_steps,
+                max_state_dim=max_state_dim,
+                max_action_dim=max_action_dim,
+                resize_imgs_with_padding=resize_imgs_with_padding,
+                tokenizer_max_length=tokenizer_max_length,
+                vlm_model_name=vlm_model_name,
+                load_vlm_weights=load_vlm_weights,
+                add_image_special_tokens=add_image_special_tokens,
+                attention_mode=attention_mode,
+                prefix_length=prefix_length,
+                pad_language_to=pad_language_to,
+                num_expert_layers=num_expert_layers,
+                num_vlm_layers=num_vlm_layers,
+                self_attn_every_n_layers=self_attn_every_n_layers,
+                expert_width_multiplier=expert_width_multiplier,
+                min_period=min_period,
+                max_period=max_period,
+                num_steps=num_steps,
+                use_cache=use_cache,
+                freeze_vision_encoder=freeze_vision_encoder,
+                train_expert_only=train_expert_only,
+                train_state_proj=train_state_proj,
+                optimizer_lr=optimizer_lr,
+                optimizer_betas=optimizer_betas,
+                optimizer_eps=optimizer_eps,
+                optimizer_weight_decay=optimizer_weight_decay,
+                optimizer_grad_clip_norm=optimizer_grad_clip_norm,
+                scheduler_warmup_steps=scheduler_warmup_steps,
+                scheduler_decay_steps=scheduler_decay_steps,
+                scheduler_decay_lr=scheduler_decay_lr,
+            )
+
+        self._dataset_stats = dataset_stats
 
         # Save config as hyperparameters for checkpoint restoration
-        self.save_hyperparameters(ignore=["config"])  # Save individual args, not config object
-        # Also save config dict for compatibility
+        self.save_hyperparameters(ignore=["config", "pretrained_name_or_path"])
         self.hparams["config"] = self.config.to_dict()
 
         # Model will be built in setup() or immediately if env_action_dim provided
@@ -187,15 +216,13 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         self._preprocessor: SmolVLAPreprocessor | None = None
         self._postprocessor: SmolVLAPostprocessor | None = None
 
-        # Eager initialization if dataset_stats is provided
         if dataset_stats is not None:
-            self._initialize_model(dataset_stats)
-
-        self._dataset_stats = dataset_stats
+            self._initialize_model(dataset_stats, weight_file)
 
     def _initialize_model(
         self,
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]],
+        weights_file: Path | None = None,
     ) -> None:
         """Initialize model and preprocessors.
 
@@ -232,6 +259,22 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             max_period=self.config.max_period,
         )
 
+        if weights_file is not None:
+            original_sd = load_file(str(weights_file))
+            fixed_sd = _fix_state_dict_keys(original_sd)
+            missing, unexpected = self.model.load_state_dict(fixed_sd, strict=False, assign=True)
+
+            if missing:
+                logger.warning("Missing keys when loading pretrained weights: %s keys", len(missing))
+                for key in missing[:10]:
+                    logger.warning("  - %s", key)
+            if unexpected:
+                logger.warning("Unexpected keys when loading pretrained weights: %s keys", len(unexpected))
+                for key in unexpected[:10]:
+                    logger.warning("  - %s", key)
+
+            self.model._model.vlm_with_expert.set_requires_grad()  # noqa: SLF001
+
         self._preprocessor, self._postprocessor = make_smolvla_preprocessors(
             max_state_dim=self.config.max_state_dim,
             max_action_dim=self.config.max_action_dim,
@@ -240,6 +283,107 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             max_token_len=self.config.tokenizer_max_length,
             token_pad_type=self.config.pad_language_to,
         )
+
+        self._dataset_stats = dataset_stats
+
+    def _from_hf(  # noqa: PLR0913, PLR6301
+        self,
+        pretrained_name_or_path: str | Path,
+        *,
+        freeze_vision_encoder: bool = True,
+        train_expert_only: bool = True,
+        train_state_proj: bool = True,
+        optimizer_lr: float = 1e-4,
+        optimizer_betas: tuple[float, float] = (0.9, 0.95),
+        optimizer_eps: float = 1e-8,
+        optimizer_weight_decay: float = 1e-10,
+        optimizer_grad_clip_norm: float = 10,
+        scheduler_warmup_steps: int = 1_000,
+        scheduler_decay_steps: int = 30_000,
+        scheduler_decay_lr: float = 2.5e-6,
+        **kwargs: Any,
+    ) -> tuple[SmolVLAConfig, dict[str, dict[str, list[float] | str | tuple]], Path]:
+        """Load pretrained SmolVLA from a HuggingFace model repo.
+
+        Loads weights from a HuggingFace model ID (e.g. ``lerobot/smolvla_base``)
+        or a local directory containing ``config.json`` and ``model.safetensors``.
+
+        Handles the key remapping and normalization stat conversion.
+
+        Training-time settings (finetuning flags, optimizer/scheduler) are
+        always controlled by the caller. Architecture parameters come from the
+        pretrained config.json. ``load_vlm_weights`` is forced to ``False``
+        since the full checkpoint already includes VLM weights.
+
+        Args:
+            pretrained_name_or_path: HuggingFace repo ID or local path.
+            **kwargs: Extra arguments forwarded to ``huggingface_hub.hf_hub_download``.
+
+        Returns:
+            Tuple of (config, dataset_stats, weights_file).
+        """
+        path = Path(pretrained_name_or_path)
+        is_local = path.is_dir()
+
+        if is_local:
+            config_file = path / "config.json"
+            weights_file = path / "model.safetensors"
+            preprocessor_file = path / "policy_preprocessor.json"
+            preprocessor_dir = path
+        else:
+            repo_id = str(pretrained_name_or_path)
+            hub_kwargs = {
+                k: v
+                for k, v in kwargs.items()
+                if k
+                in {
+                    "cache_dir",
+                    "force_download",
+                    "resume_download",
+                    "proxies",
+                    "token",
+                    "revision",
+                    "local_files_only",
+                }
+            }
+            config_file = Path(hf_hub_download(repo_id, "config.json", **hub_kwargs))  # nosec B615
+            weights_file = Path(hf_hub_download(repo_id, "model.safetensors", **hub_kwargs))  # nosec B615
+            try:
+                preprocessor_file = Path(
+                    hf_hub_download(repo_id, "policy_preprocessor.json", **hub_kwargs),  # nosec B615
+                )
+                preprocessor_dir = preprocessor_file.parent
+
+                with preprocessor_file.open(encoding="utf-8") as f:
+                    preproc_data = json.load(f)
+                for step in preproc_data.get("steps", []):
+                    state_file = step.get("state_file")
+                    if state_file:
+                        hf_hub_download(repo_id, state_file, **hub_kwargs)  # nosec B615
+            except Exception:  # noqa: BLE001
+                preprocessor_file = None
+                preprocessor_dir = None
+
+        with config_file.open(encoding="utf-8") as f:
+            hf_config = json.load(f)
+
+        hf_config["load_vlm_weights"] = False
+
+        hf_config["freeze_vision_encoder"] = freeze_vision_encoder
+        hf_config["train_expert_only"] = train_expert_only
+        hf_config["train_state_proj"] = train_state_proj
+        hf_config["optimizer_lr"] = optimizer_lr
+        hf_config["optimizer_betas"] = optimizer_betas
+        hf_config["optimizer_eps"] = optimizer_eps
+        hf_config["optimizer_weight_decay"] = optimizer_weight_decay
+        hf_config["optimizer_grad_clip_norm"] = optimizer_grad_clip_norm
+        hf_config["scheduler_warmup_steps"] = scheduler_warmup_steps
+        hf_config["scheduler_decay_steps"] = scheduler_decay_steps
+        hf_config["scheduler_decay_lr"] = scheduler_decay_lr
+
+        config = SmolVLAConfig.from_dict(hf_config)
+        dataset_stats = _extract_dataset_stats(hf_config, preprocessor_file, preprocessor_dir)
+        return config, dataset_stats, weights_file
 
     def setup(self, stage: str) -> None:
         """Set up model from datamodule (lazy initialization path).
@@ -254,11 +398,6 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         """
         del stage  # Unused argument
 
-        if self.model is not None:
-            return
-
-        from physicalai.data.dataset import Dataset  # noqa: PLC0415
-
         datamodule = self.trainer.datamodule  # type: ignore[attr-defined]
         train_dataset = datamodule.train_dataset
 
@@ -268,12 +407,35 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
         stats_dict = train_dataset.stats
 
-        # Save to hparams for checkpoint
+        if self.model is not None:
+            self._update_preprocessor_stats(stats_dict)
+            reformat_dataset_to_match_policy(self, datamodule)
+            return
+
         self.hparams["dataset_stats"] = stats_dict
 
         self._initialize_model(stats_dict)
 
         reformat_dataset_to_match_policy(self, datamodule)
+
+    def _update_preprocessor_stats(
+        self,
+        dataset_stats: dict[str, dict[str, list[float] | str | tuple]],
+    ) -> None:
+        from .preprocessor import make_smolvla_preprocessors  # noqa: PLC0415
+
+        self._preprocessor, self._postprocessor = make_smolvla_preprocessors(
+            max_state_dim=self.config.max_state_dim,
+            max_action_dim=self.config.max_action_dim,
+            stats=dataset_stats,
+            image_resolution=self.config.resize_imgs_with_padding,
+            max_token_len=self.config.tokenizer_max_length,
+            token_pad_type=self.config.pad_language_to,
+        )
+        self._dataset_stats = dataset_stats
+        self.hparams["dataset_stats"] = dataset_stats
+        if self.model is not None:
+            self.model._dataset_stats = dataset_stats  # noqa: SLF001
 
     def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
         """Forward pass through the model.
