@@ -230,7 +230,6 @@ class SmolVLAPreprocessor(torch.nn.Module):
             max_length=self.max_token_len,
             truncation=True,
             padding=self.padding,
-            padding_side="right",
             return_tensors="pt",
         )
 
@@ -252,24 +251,12 @@ class SmolVLAPreprocessor(torch.nn.Module):
                     self.tokenizer_name,
                     revision="7b375e1b73b11138ff12fe22c8f2822d8fe03467",
                     use_fast=True,
+                    padding_side="right",
                 )
             except ImportError as e:
                 msg = "Tokenizer requires transformers. Install with: pip install transformers"
                 raise ImportError(msg) from e
         return self._tokenizer
-
-    @property
-    def exportable_tokenizer(self) -> Any:  # noqa: ANN401
-        """Get tokenizer for export.
-
-        This method is used during model export to retrieve the tokenizer for
-        conversion to ONNX or OpenVINO format. It simply returns the same
-        tokenizer instance used during preprocessing.
-
-        Returns:
-            The tokenizer instance used by this preprocessor.
-        """
-        return self.tokenizer
 
     @staticmethod
     def _resize_with_pad(img: torch.Tensor, width: int, height: int, pad_value: int = -1) -> torch.Tensor:
