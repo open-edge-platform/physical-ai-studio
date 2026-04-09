@@ -105,6 +105,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
             resize_imgs_with_padding: Target size (height, width) for image preprocessing with padding.
             adapt_to_pi_aloha: Whether to convert joint and gripper values from standard Aloha space
                 to pi internal runtime space.
+            empty_cameras: Number of empty camera slots to append as placeholder images.
             num_steps: Number of decoding steps for flow matching.
             use_cache: Whether to use attention caching for efficiency.
             freeze_vision_encoder: Whether to freeze the vision encoder during fine-tuning.
