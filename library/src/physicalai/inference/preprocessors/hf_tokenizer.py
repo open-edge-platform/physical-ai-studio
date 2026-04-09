@@ -43,6 +43,7 @@ class HFTokenizer(Preprocessor):
                 tokenizer_name,
                 revision=revision,
                 use_fast=True,
+                padding_side="right",
             )
         except ImportError as e:
             msg = "Tokenizer requires transformers. Install with: pip install transformers"
@@ -88,7 +89,6 @@ class HFTokenizer(Preprocessor):
             max_length=self._max_token_len,
             truncation=True,
             padding="max_length",
-            padding_side="right",
             return_tensors="np",
         )
 
