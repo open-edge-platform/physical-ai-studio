@@ -148,6 +148,7 @@ class SO101SetupWorker(TransportWorker):
         self.phase = SetupPhase.CONNECTING
 
         self.bus: FeetechMotorsBus | None = None
+        self.port: str | None = None  # Resolved device path (e.g. /dev/ttyACM0)
         self.motors = _build_motors()
 
         # Serialize all bus I/O — the Feetech SDK has no internal locking,
@@ -226,7 +227,12 @@ class SO101SetupWorker(TransportWorker):
             self.error_message = str(e)
             logger.exception(f"Setup worker error: {e}")
 
-            await self._send_event("error", message=str(e), error_code=SO101SetupWorker._classify_error(e))
+            await self._send_event(
+                "error",
+                message=str(e),
+                error_code=SO101SetupWorker._classify_error(e),
+                port=self.port,
+            )
         finally:
             await self._cleanup()
             await self.shutdown()
@@ -244,6 +250,7 @@ class SO101SetupWorker(TransportWorker):
         if not port:
             raise ConnectionError(f"No USB device found with serial number '{self.serial_number}'")
 
+        self.port = port
         logger.info(f"Setup worker: connecting to {port} (serial={self.serial_number})")
 
         self.bus = FeetechMotorsBus(port=port, motors=self.motors)
