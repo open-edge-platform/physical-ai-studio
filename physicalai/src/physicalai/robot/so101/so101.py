@@ -31,6 +31,12 @@ from typing import Any, ClassVar, Literal
 
 import numpy as np
 from loguru import logger
+from scservo_sdk import (
+    GroupSyncRead,
+    GroupSyncWrite,
+    PacketHandler,
+    PortHandler,
+)
 
 from physicalai.capture.frame import Frame
 from physicalai.robot import Robot
@@ -260,24 +266,11 @@ class SO101(Robot):
         no-op.
 
         Raises:
-            ImportError: If ``feetech-servo-sdk`` is not installed.
             ConnectionError: If the serial port cannot be opened or a servo
                 does not respond to ping.
         """
-        if self._connection is not None:
+        if self.is_connected():
             return  # already connected
-
-        # Lazy import — only pull in the SDK when actually connecting.
-        try:
-            from scservo_sdk import (  # type: ignore[import-untyped]  # noqa: PLC0415
-                GroupSyncRead,
-                GroupSyncWrite,
-                PacketHandler,
-                PortHandler,
-            )
-        except ImportError:
-            msg = "feetech-servo-sdk is required for SO-101 support. Install it with:  pip install physicalai[so101]"
-            raise ImportError(msg) from None
 
         # Open port ---------------------------------------------------------
         port_handler = PortHandler(self.port)
