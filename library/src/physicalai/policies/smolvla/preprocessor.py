@@ -319,6 +319,22 @@ class SmolVLAPreprocessor(torch.nn.Module):
                 sorted(self._expected_camera_names),
             )
 
+        expected_count = len(self._expected_camera_names)
+        actual_count = len(batch_camera_bases) + self.empty_cameras
+        if actual_count < expected_count:
+            logger.warning(
+                "Camera count mismatch: dataset provides %d camera(s) + %d empty = %d total, "
+                "but pretrained model expects %d. "
+                "Consider setting empty_cameras=%d to pad missing slots. "
+                "Example: SmolVLA(empty_cameras=%d)",
+                len(batch_camera_bases),
+                self.empty_cameras,
+                actual_count,
+                expected_count,
+                expected_count - len(batch_camera_bases),
+                expected_count - len(batch_camera_bases),
+            )
+
     @staticmethod
     def _newline_processor(batch: dict[str, Any]) -> dict[str, torch.Tensor]:
         """Ensure task descriptions end with newline character.

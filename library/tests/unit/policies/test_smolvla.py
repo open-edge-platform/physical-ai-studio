@@ -644,8 +644,51 @@ class TestCameraNameValidation:
 
         assert "Camera name mismatch" not in caplog.text
 
+    def test_validate_warns_on_camera_count_mismatch(self, caplog: pytest.LogCaptureFixture) -> None:
+        from physicalai.data.observation import IMAGES
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
 
-class TestMakeSmolvlaPreprocessorsWithRename:
+        preprocessor = SmolVLAPreprocessor(
+            expected_camera_names={"camera1", "camera2", "camera3"},
+            empty_cameras=0,
+        )
+
+        batch = {
+            f"{IMAGES}.camera1": torch.randn(2, 3, 64, 64),
+            f"{IMAGES}.camera2": torch.randn(2, 3, 64, 64),
+            f"_{IMAGES}_keys": [f"{IMAGES}.camera1", f"{IMAGES}.camera2"],
+        }
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            preprocessor._validate_camera_names(batch)
+
+        assert "Camera count mismatch" in caplog.text
+        assert "empty_cameras=1" in caplog.text
+
+    def test_validate_no_count_warning_when_padded(self, caplog: pytest.LogCaptureFixture) -> None:
+        from physicalai.data.observation import IMAGES
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(
+            expected_camera_names={"camera1", "camera2", "camera3"},
+            empty_cameras=1,
+        )
+
+        batch = {
+            f"{IMAGES}.camera1": torch.randn(2, 3, 64, 64),
+            f"{IMAGES}.camera2": torch.randn(2, 3, 64, 64),
+            f"_{IMAGES}_keys": [f"{IMAGES}.camera1", f"{IMAGES}.camera2"],
+        }
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            preprocessor._validate_camera_names(batch)
+
+        assert "Camera count mismatch" not in caplog.text
+
     """Tests for make_smolvla_preprocessors with rename_map."""
 
     def test_factory_passes_rename_map(self) -> None:
