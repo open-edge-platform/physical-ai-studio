@@ -54,9 +54,15 @@ def reformat_dataset_to_match_policy(policy: Policy, datamodule: DataModule) -> 
     """Reformat dataset to have correct deltas and parametrs depending on policy."""
     # if lerobot dataset, set delta timesteps correctly
     # https://github.com/huggingface/lerobot/blob/33cad37054c2b594ceba57463e8f11ee374fa93c/src/lerobot/datasets/factory.py#L37
-    if isinstance(datamodule.train_dataset, _LeRobotDatasetAdapter):
+    datasets = [datamodule.train_dataset]
+    if getattr(datamodule, "val_eval_dataset", None) is not None:
+        datasets.append(datamodule.val_eval_dataset)
+
+    for lerobot_dataset in datasets:
+        if not isinstance(lerobot_dataset, _LeRobotDatasetAdapter):
+            continue
+
         delta_timestamps = {}
-        lerobot_dataset = datamodule.train_dataset
 
         # Get the LeRobot policy model for delta indices
         # For policies with lerobot_policy attribute, use that; otherwise use policy.model

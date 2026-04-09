@@ -139,7 +139,7 @@ class LeRobotDataModule(DataModule):
         batch_encoding_size: int = 1,
         data_format: Literal["physicalai", "lerobot"] | DataFormat = "physicalai",
         # Eval-loss validation
-        val_split: float = 0.1,
+        val_split: float = 0.0,
         # Base DataModule parameters (val/test gyms)
         val_gym: Gym | None = None,
         num_rollouts_val: int = 10,
