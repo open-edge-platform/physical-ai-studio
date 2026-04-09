@@ -7,6 +7,7 @@ from .model_download_service import ModelDownloadService
 from .model_service import ModelService
 from .project_camera_service import ProjectCameraService
 from .project_service import ProjectService
+from .system_service import SystemService
 
 __all__ = [
     "DatasetDownloadService",
@@ -17,4 +18,5 @@ __all__ = [
     "ProjectCameraService",
     "ProjectService",
     "RobotService",
+    "SystemService",
 ]

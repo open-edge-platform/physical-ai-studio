@@ -24,6 +24,7 @@ from api.robot_control import router as robot_control_router
 from api.robot_setup import router as robot_setup_router
 from api.robots import router as project_robots_router
 from api.settings import router as settings_router
+from api.system import system_router
 from api.webui import SPAStaticFiles
 from core import lifespan
 from exception_handlers import register_application_exception_handlers
@@ -54,6 +55,7 @@ app.include_router(settings_router)
 app.include_router(models_router)
 app.include_router(job_router)
 app.include_router(logs_router)
+app.include_router(system_router)
 
 register_application_exception_handlers(app)
 
