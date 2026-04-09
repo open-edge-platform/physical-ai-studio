@@ -10,6 +10,7 @@ dependencies = [
   'harvesters; sys_platform != "darwin"',
   "fastapi[standard]",
   "physicalai-train[pi0,smolvla]",
+  "physicalai[so101]",
   "lerobot[feetech]==0.4.4",
   "numpy",
   "websockets",
@@ -28,7 +29,7 @@ dependencies = [
   "aiofiles>=25.1.0",
   "types-aiofiles>=25.1.0.20251011",
   "trossen-arm==1.9.0",
-  "sse-starlette>=2.0.0"
+  "sse-starlette>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -83,6 +84,8 @@ explicit = false
 [tool.uv.sources]
 FrameSource = { git = "https://github.com/ArendJanKramer/FrameSource.git", rev = "c3023714ceaa2bf50cf04e1d2861d9fe7cd01422" }
 physicalai-train = { path = "../../library", editable = true }
+# TODO(#450): Replace with published package once physicalai is back in its own repo.
+physicalai = { path = "../../physicalai", editable = true }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cuda" },

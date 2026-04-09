@@ -2794,6 +2794,7 @@ dependencies = [
     { name = "loguru" },
     { name = "numpy" },
     { name = "opencv-python" },
+    { name = "physicalai", extra = ["so101"] },
     { name = "physicalai-train", extra = ["pi0", "smolvla"] },
     { name = "pydantic-settings" },
     { name = "pyrealsense2", marker = "sys_platform != 'darwin' or (extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-cuda') or (extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-xpu') or (extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu')" },
@@ -2858,6 +2859,7 @@ requires-dist = [
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "numpy" },
     { name = "opencv-python" },
+    { name = "physicalai", extras = ["so101"], editable = "../../physicalai" },
     { name = "physicalai-train", extras = ["pi0", "smolvla"], editable = "../../library" },
     { name = "pydantic-settings", specifier = ">=2.10.1" },
     { name = "pyrealsense2", marker = "sys_platform != 'darwin'" },
@@ -2893,6 +2895,53 @@ lint = [
     { name = "mypy", specifier = "~=1.17" },
     { name = "pyrefly", specifier = ">=0.18.0" },
     { name = "ruff", specifier = "~=0.11.2" },
+]
+
+[[package]]
+name = "physicalai"
+version = "0.1.0"
+source = { editable = "../../physicalai" }
+dependencies = [
+    { name = "loguru" },
+    { name = "numpy" },
+    { name = "omni-camera" },
+    { name = "pydantic" },
+    { name = "pyturbojpeg", marker = "sys_platform == 'linux' or (extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-cuda') or (extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-xpu') or (extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu')" },
+]
+
+[package.optional-dependencies]
+so101 = [
+    { name = "feetech-servo-sdk" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "feetech-servo-sdk", marker = "extra == 'so101'" },
+    { name = "loguru", specifier = ">=0.7" },
+    { name = "mypy", marker = "extra == 'tests'" },
+    { name = "numpy", specifier = ">=1.24" },
+    { name = "omni-camera", git = "https://github.com/ArendJanKramer/OmniCamera.git?rev=master" },
+    { name = "physicalai", extras = ["abb"], marker = "extra == 'robots'" },
+    { name = "physicalai", extras = ["basler"], marker = "extra == 'capture'" },
+    { name = "physicalai", extras = ["franka"], marker = "extra == 'robots'" },
+    { name = "physicalai", extras = ["genicam"], marker = "extra == 'capture'" },
+    { name = "physicalai", extras = ["realsense"], marker = "extra == 'capture'" },
+    { name = "physicalai", extras = ["so101"], marker = "extra == 'robots'" },
+    { name = "physicalai", extras = ["trossen"], marker = "extra == 'robots'" },
+    { name = "physicalai", extras = ["ur"], marker = "extra == 'robots'" },
+    { name = "pydantic", specifier = ">=2.5" },
+    { name = "pytest", marker = "extra == 'tests'" },
+    { name = "pyturbojpeg", marker = "sys_platform == 'linux'", specifier = "<2" },
+]
+provides-extras = ["tests", "realsense", "basler", "genicam", "capture", "ur", "abb", "franka", "trossen", "so101", "robots"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy" },
+    { name = "prek" },
+    { name = "pyrefly" },
+    { name = "pytest" },
+    { name = "ruff" },
 ]
 
 [[package]]
@@ -3808,6 +3857,15 @@ wheels = [
     { url = "https://download-r2.pytorch.org/whl/pytorch_triton_xpu-3.5.0-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:3db1f86fd6587c5b4c8ee9611dc0f8cae6c848a24ab7b54aac03f0afb853a538" },
     { url = "https://download-r2.pytorch.org/whl/pytorch_triton_xpu-3.5.0-cp314-cp314t-win_amd64.whl", hash = "sha256:78e28bb14d081a75f0a6d2d8332eaedf1fcd4a944d391eacec3f38ba2665d14c" },
 ]
+
+[[package]]
+name = "pyturbojpeg"
+version = "1.8.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", marker = "sys_platform == 'linux' or (extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-cuda') or (extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-xpu') or (extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f2/2b/5fc7a7f51af947708a5d75d7637e923d2d4e60f43f6a4cfe55ae1ea241a2/pyturbojpeg-1.8.3.tar.gz", hash = "sha256:c131591a3990cc57f45a8b2705d6261c25df913a19b1fe88de5e911dbe04a1d4", size = 12757, upload-time = "2026-02-17T02:32:53.192Z" }
 
 [[package]]
 name = "pyyaml"
