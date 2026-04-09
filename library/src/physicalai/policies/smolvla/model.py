@@ -72,6 +72,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
         max_action_dim: int = 32,
         resize_imgs_with_padding: tuple[int, int] | None = (512, 512),
         adapt_to_pi_aloha: bool = False,
+        empty_cameras: int = 0,
         num_steps: int = 10,
         use_cache: bool = True,
         freeze_vision_encoder: bool = True,
@@ -124,6 +125,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
         self._max_action_dim = max_action_dim
         self._resize_imgs_with_padding = resize_imgs_with_padding
         self._adapt_to_pi_aloha = adapt_to_pi_aloha
+        self._empty_cameras = empty_cameras
         self._model = VLAFlowMatching(
             chunk_size=chunk_size,
             max_state_dim=max_state_dim,
@@ -352,10 +354,14 @@ class SmolVLAModel(ExportableModelMixin, Model):
                 batch[ACTION] = self._pi_aloha_encode_actions_inv(batch[ACTION])
 
         all_keys = [key for key in self._dataset_stats if self._dataset_stats[key]["type"] == FeatureType.VISUAL.value]
+        expected_count = len(all_keys) + self._empty_cameras
 
-        if len(all_keys) != len(batch[IMAGES]):
-            msg = f"Some of the image features are missing from the batch. \
-                    (batch: {batch.keys()}) (image_features:{all_keys})"
+        if expected_count != len(batch[IMAGES]):
+            msg = (
+                f"Image count mismatch: expected {expected_count} "
+                f"({len(all_keys)} from stats + {self._empty_cameras} empty), "
+                f"got {len(batch[IMAGES])}. (image_features:{all_keys})"
+            )
             raise ValueError(msg)
         return batch
 
