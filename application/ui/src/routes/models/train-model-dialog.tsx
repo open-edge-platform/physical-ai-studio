@@ -24,13 +24,13 @@ import {
 } from '@geti-ui/ui';
 
 import { $api } from '../../api/client';
-import { SchemaJob, SchemaModel, SchemaTrainJobPayload } from '../../api/openapi-spec';
+import { SchemaTrainJob as SchemaJob, SchemaModel } from '../../api/openapi-spec';
 import { useProject } from '../../features/projects/use-project';
 
 import classes from './train-model-dialog.module.scss';
 
 export type SchemaTrainJob = Omit<SchemaJob, 'payload'> & {
-    payload: SchemaTrainJobPayload;
+    payload: SchemaJob['payload'];
 };
 
 const GB = 1024 ** 3;
@@ -261,7 +261,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
             return;
         }
 
-        const payload: SchemaTrainJobPayload = {
+        const payload: SchemaJob['payload'] = {
             dataset_id,
             project_id: projectId,
             model_name: name,
