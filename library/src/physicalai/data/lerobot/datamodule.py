@@ -65,7 +65,7 @@ def _read_total_episodes(repo_id: str, root: str | Path | None) -> int:
         # HuggingFace dataset not cached — download just the info.json
         msg = f"Downloading dataset metadata from HuggingFace: {repo_id}"
         logger.info(msg)
-        hf_hub_download( # nosec B615 - revision param available for pinning
+        hf_hub_download(  # nosec B615 - revision param available for pinning
             repo_id=repo_id,
             repo_type="dataset",
             filename="meta/info.json",
