@@ -95,40 +95,47 @@ const PolicySelection = ({ selectedPolicy, onSelectionChange, isDisabled }: Poli
         <Flex direction='column' gap='size-100'>
             <Text UNSAFE_style={{ fontSize: 12 }}>Policy</Text>
             <div className={classes.policyGrid}>
-                {MODELS.map((model) => (
-                    <Card
-                        key={model.id}
-                        aria-label={`Select ${model.name} policy`}
-                        isSelected={selectedPolicy === model.id}
-                        isDisabled={isDisabled}
-                        onPress={() => onSelectionChange(model.id)}
-                        UNSAFE_className={classes.modelPolicyCard}
-                    >
-                        <Flex direction='column' gap='size-100'>
-                            <Flex justifyContent={'space-between'}>
-                                <Text
-                                    UNSAFE_style={{
-                                        fontWeight: 700,
-                                        color: selectedPolicy === model.id ? 'var(--energy-blue)' : undefined,
-                                    }}
-                                >
-                                    {model.name}
-                                </Text>
-                                <Flex
-                                    UNSAFE_style={{ fontSize: 11, opacity: 0.7, textAlign: 'right' }}
-                                    direction='column'
-                                    gap='size-50'
-                                >
-                                    <Text>&ge; {formatBytes(model.minVRAM)} VRAM</Text>
+                {MODELS.map((model) => {
+                    const isSelected = selectedPolicy === model.id;
+                    if (isDisabled && !isSelected) {
+                        return null;
+                    }
+
+                    return (
+                        <Card
+                            key={model.id}
+                            aria-label={`Select ${model.name} policy`}
+                            isSelected={isSelected}
+                            isDisabled={isDisabled}
+                            onPress={() => onSelectionChange(model.id)}
+                            UNSAFE_className={classes.modelPolicyCard}
+                        >
+                            <Flex direction='column' gap='size-100'>
+                                <Flex justifyContent={'space-between'}>
+                                    <Text
+                                        UNSAFE_style={{
+                                            fontWeight: 700,
+                                            color: selectedPolicy === model.id ? 'var(--energy-blue)' : undefined,
+                                        }}
+                                    >
+                                        {model.name}
+                                    </Text>
+                                    <Flex
+                                        UNSAFE_style={{ fontSize: 11, opacity: 0.7, textAlign: 'right' }}
+                                        direction='column'
+                                        gap='size-50'
+                                    >
+                                        <Text>&ge; {formatBytes(model.minVRAM)} VRAM</Text>
+                                    </Flex>
                                 </Flex>
+                                <Divider size='S' />
+                                <Text UNSAFE_style={{ fontSize: 12 }} marginTop='size-50'>
+                                    {model.description}
+                                </Text>
                             </Flex>
-                            <Divider size='S' />
-                            <Text UNSAFE_style={{ fontSize: 12 }} marginTop='size-50'>
-                                {model.description}
-                            </Text>
-                        </Flex>
-                    </Card>
-                ))}
+                        </Card>
+                    );
+                })}
             </div>
         </Flex>
     );
