@@ -68,6 +68,16 @@ class SmolVLAConfig(Config):
         max_period: Maximum period for sine-cosine positional encoding of timesteps. Defaults to 4.0.
         use_random_input_noise: Whether to use random noise as the initial input for the denoising process
             during inference. If False, zeros are used instead. Defaults to True.
+        snapflow_enabled: Enable SnapFlow self-distillation training mode for 1-NFE inference.
+            When True, training mixes standard flow-matching with consistency objectives.
+            See: arxiv.org/abs/2604.05656. Defaults to False.
+        snapflow_alpha: Mixing ratio between FM and consistency objectives. ``alpha`` fraction of samples
+            use standard flow-matching loss, ``1-alpha`` use the two-step Euler shortcut consistency loss.
+            Must be in [0, 1]. Defaults to 0.5.
+        snapflow_lambda: Weight for the consistency (shortcut) loss component. Balances gradient magnitudes
+            between FM and consistency objectives. Defaults to 1.0.
+        snapflow_num_inference_steps: Number of denoising steps at inference when SnapFlow is enabled.
+            Set to 1 for single-step (1-NFE) generation. Defaults to 1.
     """
 
     n_obs_steps: int = 1
@@ -124,6 +134,12 @@ class SmolVLAConfig(Config):
 
     use_random_input_noise: bool = True
 
+    # SnapFlow self-distillation (arxiv.org/abs/2604.05656)
+    snapflow_enabled: bool = False
+    snapflow_alpha: float = 0.5
+    snapflow_lambda: float = 1.0
+    snapflow_num_inference_steps: int = 1
+
     def __post_init__(self) -> None:
         """Validate configuration parameters after initialization.
 
@@ -138,4 +154,8 @@ class SmolVLAConfig(Config):
                 f"The chunk size is the upper bound for the number of action steps per model invocation. Got "
                 f"{self.n_action_steps} for `n_action_steps` and {self.chunk_size} for `chunk_size`."
             )
+            raise ValueError(msg)
+
+        if not 0.0 <= self.snapflow_alpha <= 1.0:
+            msg = f"snapflow_alpha must be in [0, 1], got {self.snapflow_alpha}"
             raise ValueError(msg)

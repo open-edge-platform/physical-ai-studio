@@ -11,7 +11,7 @@ from __future__ import annotations
 import copy
 import logging
 import math
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import torch
 import torch.nn.functional as F  # noqa: N812
@@ -91,6 +91,10 @@ class SmolVLAModel(ExportableModelMixin, Model):
         max_period: float = 4.0,
         use_random_input_noise: bool = True,
         tokenizer_max_length: int = 48,
+        snapflow_enabled: bool = False,
+        snapflow_alpha: float = 0.5,
+        snapflow_lambda: float = 1.0,
+        snapflow_num_inference_steps: int = 1,
     ) -> None:
         """Initialize the SmolVLA model.
 
@@ -153,6 +157,10 @@ class SmolVLAModel(ExportableModelMixin, Model):
             min_period=min_period,
             max_period=max_period,
             use_random_input_noise=use_random_input_noise,
+            snapflow_enabled=snapflow_enabled,
+            snapflow_alpha=snapflow_alpha,
+            snapflow_lambda=snapflow_lambda,
+            snapflow_num_inference_steps=snapflow_num_inference_steps,
         )
         self._dataset_stats = dataset_stats
 
@@ -285,7 +293,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
         return actions
 
     @property
-    def sample_input(self) -> dict[str, torch.Tensor | str]:
+    def sample_input(self) -> dict[str, torch.Tensor]:
         """Generate a sample input dictionary for the model with random tensors.
 
         This method creates a dictionary containing sample input tensors that match the expected
@@ -325,7 +333,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
 
         sample_input[TASK] = ["sample_task"]
 
-        return sample_input
+        return cast("dict[str, torch.Tensor]", sample_input)
 
     @property
     def extra_export_args(self) -> dict[str, ExportParameters]:
@@ -371,7 +379,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
             postprocessors_specs=postproc_specs,
             export_tokenizer=False,
         )
-        extra_args["openvino"] = OpenVINOExportParameters(
+        openvino_args: ExportParameters = OpenVINOExportParameters(
             outputs=["action"],
             compress_to_fp16=False,
             export_tokenizer=False,
@@ -379,6 +387,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
             preprocessors_specs=preproc_specs,
             postprocessors_specs=postproc_specs,
         )
+        extra_args["openvino"] = openvino_args
         extra_args["torch"] = TorchExportParameters()
 
         return extra_args
@@ -769,6 +778,10 @@ class VLAFlowMatching(nn.Module):
         min_period: float = 4e-3,
         max_period: float = 4.0,
         use_random_input_noise: bool = True,
+        snapflow_enabled: bool = False,
+        snapflow_alpha: float = 0.5,
+        snapflow_lambda: float = 1.0,
+        snapflow_num_inference_steps: int = 1,
     ) -> None:
         """Initialize the SmolVLA model.
 
@@ -804,6 +817,10 @@ class VLAFlowMatching(nn.Module):
         self._min_period = min_period
         self._max_period = max_period
         self._use_random_input_noise = use_random_input_noise
+        self._snapflow_enabled = snapflow_enabled
+        self._snapflow_alpha = snapflow_alpha
+        self._snapflow_lambda = snapflow_lambda
+        self._snapflow_num_inference_steps = snapflow_num_inference_steps
 
         self.vlm_with_expert = _SmolVLMWithExpertModel(
             model_id=vlm_model_name,
@@ -831,6 +848,16 @@ class VLAFlowMatching(nn.Module):
             self.vlm_with_expert.expert_hidden_size,
             self.vlm_with_expert.expert_hidden_size,
         )
+        self.target_time_mlp_in = nn.Linear(
+            self.vlm_with_expert.expert_hidden_size,
+            self.vlm_with_expert.expert_hidden_size,
+        )
+        self.target_time_mlp_out = nn.Linear(
+            self.vlm_with_expert.expert_hidden_size,
+            self.vlm_with_expert.expert_hidden_size,
+        )
+        nn.init.zeros_(self.target_time_mlp_out.weight)
+        nn.init.zeros_(self.target_time_mlp_out.bias)
 
         self.set_requires_grad()
         self.fake_image_token = self.vlm_with_expert.processor.tokenizer.fake_image_token_id
@@ -855,6 +882,8 @@ class VLAFlowMatching(nn.Module):
 
     def _sample_noise(self, shape: tuple[int, ...], device: torch.device) -> torch.Tensor:
         if not self._use_random_input_noise:
+            return torch.zeros(shape, dtype=torch.float32, device=device)
+        if getattr(torch.jit, "is_tracing", lambda: False)() or torch.onnx.is_in_onnx_export():
             return torch.zeros(shape, dtype=torch.float32, device=device)
 
         return torch.normal(
@@ -911,7 +940,8 @@ class VLAFlowMatching(nn.Module):
         ) in enumerate(zip(images, img_masks, strict=False)):
             if self.add_image_special_tokens:
                 image_start_token = (
-                    self.vlm_with_expert.embed_language_tokens(
+                    self.vlm_with_expert
+                    .embed_language_tokens(
                         self.global_image_start_token.to(device=self.vlm_with_expert.vlm.device),
                     )
                     .unsqueeze(0)
@@ -941,7 +971,8 @@ class VLAFlowMatching(nn.Module):
             att_masks += [0] * (num_img_embs)
             if self.add_image_special_tokens:
                 image_end_token = (
-                    self.vlm_with_expert.embed_language_tokens(
+                    self.vlm_with_expert
+                    .embed_language_tokens(
                         self.image_end_token.to(device=self.vlm_with_expert.vlm.device),
                     )
                     .unsqueeze(0)
@@ -998,6 +1029,7 @@ class VLAFlowMatching(nn.Module):
         self,
         noisy_actions: torch.Tensor,
         timestep: torch.Tensor,
+        target_time: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Embed noisy actions and timestep to prepare for Expert Gemma processing.
 
@@ -1042,6 +1074,20 @@ class VLAFlowMatching(nn.Module):
         )
         time_emb = time_emb.type(dtype=dtype)
 
+        if target_time is not None:
+            target_time_emb = _create_sinusoidal_pos_embedding(
+                target_time,
+                self.vlm_with_expert.expert_hidden_size,
+                self._min_period,
+                self._max_period,
+                device=device,
+            )
+            target_time_emb = target_time_emb.type(dtype=dtype)
+            target_time_emb = self.target_time_mlp_in(target_time_emb)
+            target_time_emb = F.silu(target_time_emb)
+            target_time_emb = self.target_time_mlp_out(target_time_emb)
+            time_emb = time_emb + target_time_emb
+
         time_emb = time_emb[:, None, :].expand_as(action_emb)
         action_time_emb = torch.cat([action_emb, time_emb], dim=2)
 
@@ -1064,7 +1110,33 @@ class VLAFlowMatching(nn.Module):
         att_masks = att_masks[None, :].expand(bsize, att_masks.shape[0])
         return embs, pad_masks, att_masks
 
-    def forward(  # noqa: PLR0914
+    def _predict_velocity(
+        self,
+        x_t: torch.Tensor,
+        timestep: torch.Tensor,
+        target_time: torch.Tensor,
+        prefix_embs: torch.Tensor,
+        prefix_pad_masks: torch.Tensor,
+        prefix_att_masks: torch.Tensor,
+    ) -> torch.Tensor:
+        suffix_embs, suffix_pad_masks, suffix_att_masks = self.embed_suffix(x_t, timestep, target_time=target_time)
+        pad_masks = torch.cat([prefix_pad_masks, suffix_pad_masks], dim=1)
+        att_masks = torch.cat([prefix_att_masks, suffix_att_masks], dim=1)
+        att_2d_masks = _make_att_2d_masks(pad_masks, att_masks)
+        position_ids = torch.cumsum(pad_masks, dim=1) - 1
+        (_, suffix_out), _ = self.vlm_with_expert.forward(
+            attention_mask=att_2d_masks,
+            position_ids=position_ids,
+            past_key_values=None,
+            inputs_embeds=[prefix_embs, suffix_embs],
+            use_cache=False,
+            fill_kv_cache=False,
+        )
+        suffix_out = suffix_out[:, -self._chunk_size :]
+        suffix_out = suffix_out.to(dtype=torch.float32)
+        return self.action_out_proj(suffix_out)
+
+    def _forward_fm(  # noqa: PLR0914
         self,
         images: torch.Tensor,
         img_masks: torch.Tensor,
@@ -1074,6 +1146,9 @@ class VLAFlowMatching(nn.Module):
         actions: torch.Tensor,
         noise: torch.Tensor | None = None,
         time: torch.Tensor | None = None,
+        prefix_embs: torch.Tensor | None = None,
+        prefix_pad_masks: torch.Tensor | None = None,
+        prefix_att_masks: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Do a full training forward pass and compute the loss (batch_size x num_steps x num_motors).
 
@@ -1104,6 +1179,38 @@ class VLAFlowMatching(nn.Module):
         time_expanded = time[:, None, None]
         x_t = time_expanded * noise + (1 - time_expanded) * actions
         u_t = noise - actions
+        if prefix_embs is None or prefix_pad_masks is None or prefix_att_masks is None:
+            prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(
+                images,
+                img_masks,
+                lang_tokens,
+                lang_masks,
+                state=state,
+            )
+
+        v_t = self._predict_velocity(x_t, time, time, prefix_embs, prefix_pad_masks, prefix_att_masks)
+        return F.mse_loss(u_t, v_t, reduction="none")
+
+    def forward(  # noqa: PLR0914
+        self,
+        images: torch.Tensor,
+        img_masks: torch.Tensor,
+        lang_tokens: torch.Tensor,
+        lang_masks: torch.Tensor,
+        state: torch.Tensor,
+        actions: torch.Tensor,
+        noise: torch.Tensor | None = None,
+        time: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        if not self._snapflow_enabled:
+            return self._forward_fm(images, img_masks, lang_tokens, lang_masks, state, actions, noise, time)
+
+        if noise is None:
+            noise = self._sample_noise(actions.shape, actions.device)
+
+        if time is None:
+            time = self._sample_time(actions.shape[0], actions.device)
+
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(
             images,
             img_masks,
@@ -1111,26 +1218,38 @@ class VLAFlowMatching(nn.Module):
             lang_masks,
             state=state,
         )
-        suffix_embs, suffix_pad_masks, suffix_att_masks = self.embed_suffix(x_t, time)
 
-        pad_masks = torch.cat([prefix_pad_masks, suffix_pad_masks], dim=1)
-        att_masks = torch.cat([prefix_att_masks, suffix_att_masks], dim=1)
-
-        att_2d_masks = _make_att_2d_masks(pad_masks, att_masks)
-        position_ids = torch.cumsum(pad_masks, dim=1) - 1
-        (_, suffix_out), _ = self.vlm_with_expert.forward(
-            attention_mask=att_2d_masks,
-            position_ids=position_ids,
-            past_key_values=None,
-            inputs_embeds=[prefix_embs, suffix_embs],
-            use_cache=False,
-            fill_kv_cache=False,
+        fm_losses = self._forward_fm(
+            images,
+            img_masks,
+            lang_tokens,
+            lang_masks,
+            state,
+            actions,
+            noise,
+            time,
+            prefix_embs,
+            prefix_pad_masks,
+            prefix_att_masks,
         )
-        suffix_out = suffix_out[:, -self._chunk_size :]
-        # Original openpi code, upcast attention output
-        suffix_out = suffix_out.to(dtype=torch.float32)
-        v_t = self.action_out_proj(suffix_out)
-        return F.mse_loss(u_t, v_t, reduction="none")
+
+        bsize = actions.shape[0]
+        device = actions.device
+        fm_mask = torch.rand(bsize, device=device) < self._snapflow_alpha
+
+        x_1 = self._sample_noise(actions.shape, actions.device)
+        t1 = torch.ones(bsize, dtype=torch.float32, device=device)
+        with torch.no_grad():
+            v_1 = self._predict_velocity(x_1, t1, t1, prefix_embs, prefix_pad_masks, prefix_att_masks)
+            x_half = x_1 - 0.5 * v_1
+            t_half = torch.full((bsize,), 0.5, dtype=torch.float32, device=device)
+            v_half = self._predict_velocity(x_half, t_half, t_half, prefix_embs, prefix_pad_masks, prefix_att_masks)
+            v_target = 0.5 * (v_1 + v_half)
+
+        t_zero = torch.zeros(bsize, dtype=torch.float32, device=device)
+        v_pred = self._predict_velocity(x_1, t1, t_zero, prefix_embs, prefix_pad_masks, prefix_att_masks)
+        consistency_losses = F.mse_loss(v_pred, v_target.detach(), reduction="none")
+        return torch.where(fm_mask[:, None, None], fm_losses, self._snapflow_lambda * consistency_losses)
 
     def sample_actions(  # noqa: PLR0914
         self,
@@ -1186,19 +1305,23 @@ class VLAFlowMatching(nn.Module):
             use_cache=self._use_cache,
             fill_kv_cache=True,
         )
-        num_steps = self._num_steps
+        num_steps = self._snapflow_num_inference_steps if self._snapflow_enabled else self._num_steps
         dt = -1.0 / num_steps
 
         x_t = noise
         for step in range(num_steps):
             time = 1.0 + step * dt
             time_tensor = torch.tensor(time, dtype=torch.float32, device=device).expand(bsize)
+            target_time = (
+                torch.zeros(bsize, dtype=torch.float32, device=device) if self._snapflow_enabled else time_tensor
+            )
 
             v_t = self.denoise_step(
                 x_t=x_t,
                 prefix_pad_masks=prefix_pad_masks,
                 past_key_values=past_key_values,
                 timestep=time_tensor,
+                target_time=target_time,
             )
             x_t += dt * v_t
 
@@ -1210,6 +1333,7 @@ class VLAFlowMatching(nn.Module):
         past_key_values: dict,
         x_t: torch.Tensor,
         timestep: torch.Tensor,
+        target_time: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Apply one de-noising step of the noise `x_t` at a given timestep.
 
@@ -1228,7 +1352,11 @@ class VLAFlowMatching(nn.Module):
             Tensor of shape (batch_size, chunk_size, action_dim) containing the
             predicted denoised action output after projection.
         """
-        suffix_embs, suffix_pad_masks, suffix_att_masks = self.embed_suffix(x_t, timestep)
+        suffix_embs, suffix_pad_masks, suffix_att_masks = self.embed_suffix(
+            x_t,
+            timestep,
+            target_time=target_time,
+        )
 
         suffix_len = suffix_pad_masks.shape[1]
         batch_size = prefix_pad_masks.shape[0]
@@ -1388,7 +1516,7 @@ class _SmolVLMWithExpertModel(nn.Module):
         self.expert_hidden_size = lm_expert_config.hidden_size
         self.set_requires_grad()
 
-    def get_vlm_model(self) -> torch.nn.Module:
+    def get_vlm_model(self) -> Any:
         return self.vlm.model
 
     def set_requires_grad(self) -> None:
@@ -1420,7 +1548,7 @@ class _SmolVLMWithExpertModel(nn.Module):
             if "lm_head" in name:
                 params.requires_grad = False
 
-    def train(self, mode: bool = True) -> None:  # noqa: FBT002, FBT001 : torch is not compatible with the fix
+    def train(self, mode: bool = True) -> _SmolVLMWithExpertModel:  # noqa: FBT002, FBT001 : torch is not compatible with the fix
         super().train(mode)
 
         if self.freeze_vision_encoder:
@@ -1429,11 +1557,14 @@ class _SmolVLMWithExpertModel(nn.Module):
         if self.train_expert_only:
             self.vlm.eval()
 
+        return self
+
     def embed_image(self, image: torch.Tensor) -> torch.Tensor:
         patch_attention_mask = None
         # Get sequence from the vision encoder
         image_hidden_states = (
-            self.get_vlm_model()
+            self
+            .get_vlm_model()
             .vision_model(
                 pixel_values=image.to(dtype=self.get_vlm_model().vision_model.dtype),
                 patch_attention_mask=patch_attention_mask,
@@ -1448,8 +1579,8 @@ class _SmolVLMWithExpertModel(nn.Module):
 
     def forward_attn_layer(  # noqa: PLR0914
         self,
-        model_layers: list[nn.Module],
-        inputs_embeds: list[torch.Tensor],
+        model_layers: list[list[Any]],
+        inputs_embeds: list[torch.Tensor | None],
         layer_idx: int,
         position_ids: torch.Tensor,
         attention_mask: torch.Tensor,
@@ -1493,7 +1624,7 @@ class _SmolVLMWithExpertModel(nn.Module):
         key_states = []
         value_states = []
         for i, hidden_states in enumerate(inputs_embeds):
-            layer = model_layers[i][layer_idx]
+            layer = cast("Any", model_layers[i][layer_idx])
             if hidden_states is None or layer is None:
                 continue
             hidden_states_ = layer.input_layernorm(hidden_states)
@@ -1560,8 +1691,8 @@ class _SmolVLMWithExpertModel(nn.Module):
 
     def forward_cross_attn_layer(  # noqa: PLR0914, PLR0915
         self,
-        model_layers: list[nn.Module],
-        inputs_embeds: list[torch.Tensor],
+        model_layers: list[list[Any]],
+        inputs_embeds: list[torch.Tensor | None],
         layer_idx: int,
         position_ids: torch.Tensor,
         attention_mask: torch.Tensor,
@@ -1608,6 +1739,8 @@ class _SmolVLMWithExpertModel(nn.Module):
                 conditions are not met.
         """
         attention_interface = self.get_attention_interface()
+        key_states: torch.Tensor | None = None
+        value_states: torch.Tensor | None = None
         att_outputs = []
         required_embeds_num = 2
 
@@ -1620,13 +1753,17 @@ class _SmolVLMWithExpertModel(nn.Module):
 
         if len(inputs_embeds) == required_embeds_num and not past_key_values:
             # Prefix attention
-            seq_len = inputs_embeds[0].shape[1]
+            prefix_inputs = inputs_embeds[0]
+            if prefix_inputs is None:
+                msg = "Missing prefix inputs for cross attention."
+                raise RuntimeError(msg)
+            seq_len = prefix_inputs.shape[1]
             position_id, expert_position_id = position_ids[:, :seq_len], position_ids[:, seq_len:]
             prefix_attention_mask = attention_mask[:, :seq_len, :seq_len]
 
-            layer = model_layers[0][layer_idx]
+            layer = cast("Any", model_layers[0][layer_idx])
 
-            hidden_states = layer.input_layernorm(inputs_embeds[0])
+            hidden_states = layer.input_layernorm(prefix_inputs)
 
             input_shape = hidden_states.shape[:-1]
             hidden_shape = (*input_shape, -1, layer.self_attn.head_dim)
@@ -1656,6 +1793,9 @@ class _SmolVLMWithExpertModel(nn.Module):
             if past_key_values is None:
                 past_key_values = {}
             if fill_kv_cache:
+                if key_states is None or value_states is None:
+                    msg = "Missing key/value states while filling cache."
+                    raise RuntimeError(msg)
                 past_key_values[layer_idx] = {
                     "key_states": key_states,
                     "value_states": value_states,
@@ -1668,10 +1808,18 @@ class _SmolVLMWithExpertModel(nn.Module):
                 key_states = past_key_values[layer_idx]["key_states"]
                 value_states = past_key_values[layer_idx]["value_states"]
 
+        if key_states is None or value_states is None:
+            msg = "Missing key/value states for cross attention."
+            raise RuntimeError(msg)
+
         # Expert
-        expert_layer = model_layers[1][layer_idx]
+        expert_layer = cast("Any", model_layers[1][layer_idx])
         if expert_layer is not None:
-            expert_hidden_states = expert_layer.input_layernorm(inputs_embeds[1])
+            expert_inputs = inputs_embeds[1]
+            if expert_inputs is None:
+                msg = "Missing expert inputs for cross attention."
+                raise RuntimeError(msg)
+            expert_hidden_states = expert_layer.input_layernorm(expert_inputs)
 
             expert_input_shape = expert_hidden_states.shape[:-1]
             expert_hidden_shape = (*expert_input_shape, -1, expert_layer.self_attn.head_dim)
@@ -1702,7 +1850,7 @@ class _SmolVLMWithExpertModel(nn.Module):
             expert_position_id -= torch.min(expert_position_id, dim=1, keepdim=True).values  # start from 0
             expert_attention_mask = attention_mask[
                 :,
-                -inputs_embeds[1].shape[1] :,
+                -expert_inputs.shape[1] :,
                 : expert_key_states.shape[1] :,
             ]  # take into account kv
 
@@ -1722,9 +1870,9 @@ class _SmolVLMWithExpertModel(nn.Module):
 
         return att_outputs, past_key_values
 
-    def get_model_layers(self, models: list) -> list:
-        vlm_layers = []
-        expert_layers = []
+    def get_model_layers(self, models: list[Any]) -> list[list[Any]]:
+        vlm_layers: list[Any] = []
+        expert_layers: list[Any] = []
         multiple_of = self.num_vlm_layers // self.num_expert_layers
         for i in range(self.num_vlm_layers):
             if multiple_of > 0 and i > 0 and i % multiple_of != 0:
@@ -1749,6 +1897,7 @@ class _SmolVLMWithExpertModel(nn.Module):
         models = [self.get_vlm_model().text_model, self.lm_expert]
         model_layers = self.get_model_layers(models)
 
+        batch_size = attention_mask.shape[0]
         for hidden_states in inputs_embeds:
             # to-do this is very inefficient
             # dtype is always the same, batch size too (if > 1 len)
@@ -1794,7 +1943,7 @@ class _SmolVLMWithExpertModel(nn.Module):
             outputs_embeds = []
             start = 0
             for i, hidden_states in enumerate(inputs_embeds):
-                layer = model_layers[i][layer_idx]
+                layer = cast("Any", model_layers[i][layer_idx])
                 att_output = att_outputs[i] if i < len(att_outputs) else att_outputs[0]  # in case of self_attn
                 if hidden_states is not None:
                     if layer is None:
