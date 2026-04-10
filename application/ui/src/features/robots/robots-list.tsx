@@ -13,7 +13,14 @@ import classes from './robots-list.module.scss';
 
 const MenuActions = ({ robot_id }: { robot_id: string }) => {
     const { project_id } = useProjectId();
-    const deleteRobotMutation = $api.useMutation('delete', '/api/projects/{project_id}/robots/{robot_id}');
+    const deleteRobotMutation = $api.useMutation('delete', '/api/projects/{project_id}/robots/{robot_id}', {
+        meta: {
+            invalidates: [
+                ['get', '/api/projects/{project_id}/robots', { params: { path: { project_id } } }],
+                ['get', '/api/projects/{project_id}/robots/online', { params: { path: { project_id } } }],
+            ],
+        },
+    });
 
     return (
         <MenuTrigger>

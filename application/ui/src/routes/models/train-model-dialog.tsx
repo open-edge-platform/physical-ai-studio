@@ -252,7 +252,11 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
     const [numWorkers, setNumWorkers] = useState<Key | null>('auto');
     const [autoScaleBatchSize, setAutoScaleBatchSize] = useState<boolean>(true);
 
-    const trainMutation = $api.useMutation('post', '/api/jobs:train');
+    const trainMutation = $api.useMutation('post', '/api/jobs:train', {
+        meta: {
+            invalidates: [['get', '/api/jobs']],
+        },
+    });
 
     const save = () => {
         const dataset_id = selectedDataset?.toString();

@@ -23,7 +23,11 @@ import classes from './project-list.module.scss';
 
 export const NewProjectLink = ({ className }: { className?: string }) => {
     const navigate = useNavigate();
-    const saveMutation = $api.useMutation('post', '/api/projects');
+    const saveMutation = $api.useMutation('post', '/api/projects', {
+        meta: {
+            invalidates: [['get', '/api/projects']],
+        },
+    });
     const [name, setName] = useState<string>('');
 
     const save = (e: React.FormEvent<HTMLFormElement>) => {

@@ -30,7 +30,11 @@ import classes from './../../features/robots/robots-list.module.scss';
 
 const MenuActions = ({ camera_id }: { camera_id: string }) => {
     const { project_id } = useProjectId();
-    const deleteCameraMutation = $api.useMutation('delete', '/api/projects/{project_id}/cameras/{camera_id}');
+    const deleteCameraMutation = $api.useMutation('delete', '/api/projects/{project_id}/cameras/{camera_id}', {
+        meta: {
+            invalidates: [['get', '/api/projects/{project_id}/cameras', { params: { path: { project_id } } }]],
+        },
+    });
 
     return (
         <MenuTrigger>

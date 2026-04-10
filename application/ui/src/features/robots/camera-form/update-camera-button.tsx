@@ -10,7 +10,18 @@ export const UpdateCameraButton = () => {
     const navigate = useNavigate();
     const { project_id, camera_id } = useCameraId();
 
-    const updateCameraMutation = $api.useMutation('put', '/api/projects/{project_id}/cameras/{camera_id}');
+    const updateCameraMutation = $api.useMutation('put', '/api/projects/{project_id}/cameras/{camera_id}', {
+        meta: {
+            invalidates: [
+                ['get', '/api/projects/{project_id}/cameras', { params: { path: { project_id } } }],
+                [
+                    'get',
+                    '/api/projects/{project_id}/cameras/{camera_id}',
+                    { params: { path: { project_id, camera_id } } },
+                ],
+            ],
+        },
+    });
     const body = useCameraFormBody(camera_id);
 
     return (

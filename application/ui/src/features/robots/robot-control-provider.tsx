@@ -181,6 +181,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
             ),
     });
 
+    // TODO: verify invalidation needs for WebSocket-only mutations
     const startEpisode = useMutation({
         meta: { skipInvalidation: true },
         mutationFn: async (task: string) => {
