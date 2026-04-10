@@ -480,13 +480,31 @@ class Pi05(ExportablePolicyMixin, Policy):
             ValueError: If the model is not initialized.
         """
         if self.training:
-            if self.model is None or self._preprocessor is None:
-                msg = "Model is not initialized"
-                raise ValueError(msg)
-
-            processed_batch = self._preprocessor(batch.to_dict())
-            return self.model(processed_batch)
+            return self.compute_loss(batch)
         return self.predict_action_chunk(batch)
+
+    def compute_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, float]]:
+        """Compute flow matching loss on a batch.
+
+        Unlike ``forward``, this does not depend on ``self.training`` and can
+        be called in eval mode for validation loss computation without
+        activating dropout or gradient checkpointing.
+
+        Args:
+            batch: Observation batch.
+
+        Returns:
+            Tuple of (loss tensor, loss dict).
+
+        Raises:
+            ValueError: If the model is not initialized.
+        """
+        if self.model is None or self._preprocessor is None:
+            msg = "Model is not initialized"
+            raise ValueError(msg)
+
+        processed_batch = self._preprocessor(batch.to_dict())
+        return self.model.compute_loss(processed_batch)
 
     @torch.no_grad()
     def predict_action_chunk(self, batch: Observation) -> torch.Tensor:

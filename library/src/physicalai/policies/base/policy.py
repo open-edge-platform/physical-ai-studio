@@ -270,12 +270,31 @@ class Policy(L.LightningModule, ABC):
             return self._eval_loss_step(batch, batch_idx)
         return self.evaluate_gym(batch, batch_idx, stage="val")
 
+    def compute_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, float]]:
+        """Compute forward-pass loss on a batch.
+
+        Override this in subclasses to compute loss without toggling training
+        mode (avoids activating dropout / gradient checkpointing during
+        validation).  The default implementation temporarily enables training
+        mode so that ``forward()`` returns a loss tuple.
+
+        Args:
+            batch: Observation batch.
+
+        Returns:
+            Tuple of (loss tensor, dict with at least a ``"loss"`` key).
+        """
+        self.train()
+        try:
+            return self(batch)
+        finally:
+            self.eval()
+
     def _eval_loss_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
         """Compute validation loss on a dataset batch.
 
-        Temporarily sets the module to training mode so that the forward pass
-        computes and returns the loss (many policies branch on ``self.training``
-        and return only predicted actions in eval mode).
+        Calls :meth:`compute_loss` which subclasses can override to avoid
+        toggling training mode.
 
         Args:
             batch: Observation batch from the eval dataset.
@@ -285,9 +304,7 @@ class Policy(L.LightningModule, ABC):
             Loss tensor.
         """
         del batch_idx
-        self.train()
-        loss, loss_dict = self(batch)
-        self.eval()
+        loss, loss_dict = self.compute_loss(batch)
         self.log("val/loss", loss_dict["loss"], prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
         return loss
 

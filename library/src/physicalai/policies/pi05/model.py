@@ -939,7 +939,24 @@ class Pi05Model(ExportableModelMixin, Model):
         self,
         batch: dict[str, Any],
     ) -> tuple[Tensor, dict[str, float]] | Tensor:
-        """Training forward pass: compute flow matching loss.
+        """Forward pass: delegates to compute_loss (training) or predict_action_chunk (eval).
+
+        Args:
+            batch: Preprocessed batch dict.
+
+        Returns:
+            Training: (loss, loss_dict). Eval: action tensor.
+        """
+        if self.training:
+            return self.compute_loss(batch)
+        return self.predict_action_chunk(batch)
+
+    def compute_loss(self, batch: dict[str, Any]) -> tuple[Tensor, dict[str, float]]:  # noqa: PLR0914
+        """Compute flow matching loss.
+
+        Can be called in any mode (train or eval). Does not depend on
+        ``self.training``; gradient checkpointing is used only when the model
+        is in training mode.
 
         Args:
             batch: Preprocessed batch dict containing IMAGES, IMAGE_MASKS,
@@ -948,81 +965,79 @@ class Pi05Model(ExportableModelMixin, Model):
         Returns:
             Tuple of (mean loss tensor, loss dict with "loss" key).
         """
-        if self.training:
-            images = batch[IMAGES]
-            img_masks = batch[IMAGE_MASKS]
-            tokens = batch[TOKENIZED_PROMPT]
-            masks = batch[TOKENIZED_PROMPT_MASK]
-            actions = batch[ACTION]
+        images = batch[IMAGES]
+        img_masks = batch[IMAGE_MASKS]
+        tokens = batch[TOKENIZED_PROMPT]
+        masks = batch[TOKENIZED_PROMPT_MASK]
+        actions = batch[ACTION]
 
-            noise = self.sample_noise(actions.shape, actions.device)
-            time = self.sample_time(actions.shape[0], actions.device)
+        noise = self.sample_noise(actions.shape, actions.device)
+        time = self.sample_time(actions.shape[0], actions.device)
 
-            time_expanded = time[:, None, None]
-            x_t = time_expanded * noise + (1 - time_expanded) * actions
-            u_t = noise - actions
+        time_expanded = time[:, None, None]
+        x_t = time_expanded * noise + (1 - time_expanded) * actions
+        u_t = noise - actions
 
-            prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, tokens, masks)
-            suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(x_t, time)
+        prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, tokens, masks)
+        suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(x_t, time)
 
-            if (
-                self.paligemma_with_expert.paligemma.model.language_model.layers[0].self_attn.q_proj.weight.dtype
-                == torch.bfloat16
-            ):
-                suffix_embs = suffix_embs.to(dtype=torch.bfloat16)
-                prefix_embs = prefix_embs.to(dtype=torch.bfloat16)
+        if (
+            self.paligemma_with_expert.paligemma.model.language_model.layers[0].self_attn.q_proj.weight.dtype
+            == torch.bfloat16
+        ):
+            suffix_embs = suffix_embs.to(dtype=torch.bfloat16)
+            prefix_embs = prefix_embs.to(dtype=torch.bfloat16)
 
-            pad_masks_combined = torch.cat([prefix_pad_masks, suffix_pad_masks], dim=1)
-            att_masks_combined = torch.cat([prefix_att_masks, suffix_att_masks], dim=1)
+        pad_masks_combined = torch.cat([prefix_pad_masks, suffix_pad_masks], dim=1)
+        att_masks_combined = torch.cat([prefix_att_masks, suffix_att_masks], dim=1)
 
-            att_2d_masks = _make_att_2d_masks(pad_masks_combined, att_masks_combined)
-            position_ids = torch.cumsum(pad_masks_combined, dim=1) - 1
+        att_2d_masks = _make_att_2d_masks(pad_masks_combined, att_masks_combined)
+        position_ids = torch.cumsum(pad_masks_combined, dim=1) - 1
 
-            att_2d_masks_4d = self._prepare_attention_masks_4d(att_2d_masks)
+        att_2d_masks_4d = self._prepare_attention_masks_4d(att_2d_masks)
 
-            def forward_func(
-                prefix_embs: Tensor,
-                suffix_embs: Tensor,
-                att_2d_masks_4d: Tensor,
-                position_ids: Tensor,
-                adarms_cond: Tensor,
-            ) -> Tensor:
-                (_, suffix_out), _ = self.paligemma_with_expert.forward(
-                    attention_mask=att_2d_masks_4d,
-                    position_ids=position_ids,
-                    past_key_values=None,
-                    inputs_embeds=[prefix_embs, suffix_embs],
-                    use_cache=False,
-                    adarms_cond=[None, adarms_cond],
-                )
-                return suffix_out
-
-            suffix_out = self._apply_checkpoint(
-                forward_func,
-                prefix_embs,
-                suffix_embs,
-                att_2d_masks_4d,
-                position_ids,
-                adarms_cond,
+        def forward_func(
+            prefix_embs: Tensor,
+            suffix_embs: Tensor,
+            att_2d_masks_4d: Tensor,
+            position_ids: Tensor,
+            adarms_cond: Tensor,
+        ) -> Tensor:
+            (_, suffix_out), _ = self.paligemma_with_expert.forward(
+                attention_mask=att_2d_masks_4d,
+                position_ids=position_ids,
+                past_key_values=None,
+                inputs_embeds=[prefix_embs, suffix_embs],
+                use_cache=False,
+                adarms_cond=[None, adarms_cond],
             )
+            return suffix_out
 
-            suffix_out = suffix_out[:, -self._chunk_size :]
-            suffix_out = suffix_out.to(dtype=torch.float32)
+        suffix_out = self._apply_checkpoint(
+            forward_func,
+            prefix_embs,
+            suffix_embs,
+            att_2d_masks_4d,
+            position_ids,
+            adarms_cond,
+        )
 
-            def action_out_proj_func(suffix_out: Tensor) -> Tensor:
-                return self.action_out_proj(suffix_out)
+        suffix_out = suffix_out[:, -self._chunk_size :]
+        suffix_out = suffix_out.to(dtype=torch.float32)
 
-            v_t = self._apply_checkpoint(action_out_proj_func, suffix_out)
+        def action_out_proj_func(suffix_out: Tensor) -> Tensor:
+            return self.action_out_proj(suffix_out)
 
-            losses = F.mse_loss(u_t, v_t, reduction="none")
+        v_t = self._apply_checkpoint(action_out_proj_func, suffix_out)
 
-            # Truncate losses to actual action dimensions to avoid dilution from padding
-            original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
-            losses = losses[:, :, :original_action_dim]
+        losses = F.mse_loss(u_t, v_t, reduction="none")
 
-            loss = losses.mean()
-            return loss, {"loss": loss.item()}
-        return self.predict_action_chunk(batch)
+        # Truncate losses to actual action dimensions to avoid dilution from padding
+        original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
+        losses = losses[:, :, :original_action_dim]
+
+        loss = losses.mean()
+        return loss, {"loss": loss.item()}
 
     def predict_action_chunk(self, batch: dict[str, Any]) -> Tensor:
         """Predict a chunk of actions from a preprocessed batch.
