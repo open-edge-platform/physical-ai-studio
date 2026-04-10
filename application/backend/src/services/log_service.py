@@ -14,7 +14,8 @@ from loguru import logger
 from sse_starlette import ServerSentEvent
 
 from core.logging.utils import get_job_logs_path
-from schemas.job import JobType, TrainJobPayload
+from schemas.base_job import JobType
+from schemas.job import TrainJobPayload
 from schemas.logs import LogSource
 from services.job_service import JobService
 from settings import Settings

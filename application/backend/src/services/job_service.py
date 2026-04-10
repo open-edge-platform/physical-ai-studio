@@ -8,7 +8,8 @@ from db.schema import JobDB
 from exceptions import DuplicateJobException, ResourceInUseError, ResourceNotFoundError, ResourceType
 from repositories import JobRepository
 from schemas import Job
-from schemas.job import JobStatus, JobType, TrainJobPayload
+from schemas.base_job import JobStatus, JobType
+from schemas.job import TrainJob, TrainJobPayload
 
 
 class JobService:
@@ -45,10 +46,9 @@ class JobService:
                 raise DuplicateJobException
 
             try:
-                job = Job(
+                job = TrainJob(
                     project_id=payload.project_id,
-                    type=JobType.TRAINING,
-                    payload=payload.model_dump(),
+                    payload=payload,
                     message="Training job submitted",
                 )
                 return await repo.save(job)
@@ -94,7 +94,7 @@ class JobService:
             if job is None:
                 raise ResourceNotFoundError(ResourceType.JOB, str(job_id))
 
-            if job.status != "failed":
+            if job.status not in {JobStatus.FAILED, JobStatus.CANCELED}:
                 raise ResourceInUseError(ResourceType.JOB, str(job_id))
 
             await repo.delete_by_id(job_id)

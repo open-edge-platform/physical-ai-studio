@@ -8,7 +8,8 @@ from loguru import logger
 from api.dependencies import get_event_processor_ws, get_job_id, get_job_service, get_scheduler
 from core.scheduler import Scheduler
 from schemas import Job
-from schemas.job import JobStatus, TrainJobPayload
+from schemas.base_job import JobStatus
+from schemas.job import TrainJobPayload
 from services.event_processor import EventProcessor, EventType
 from services.job_service import JobService
 
