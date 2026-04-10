@@ -23,6 +23,15 @@ async def list_jobs(
     return await job_service.get_job_list()
 
 
+@router.get("/{job_id}")
+async def get_job(
+    job_id: Annotated[UUID, Depends(get_job_id)],
+    job_service: Annotated[JobService, Depends(get_job_service)],
+) -> Job:
+    """Fetch one job by id."""
+    return await job_service.get_job_by_id(job_id)
+
+
 @router.delete("/{job_id}")
 async def delete_job(
     job_id: Annotated[UUID, Depends(get_job_id)],
