@@ -340,7 +340,8 @@ class Pi0Model(Model):
         return self.predict_action_chunk(batch)
 
     def compute_loss(
-        self, batch: Mapping[str, Any] | Observation
+        self,
+        batch: Mapping[str, Any] | Observation,
     ) -> tuple[torch.Tensor, dict[str, Any]]:
         """Compute flow matching training loss.
 

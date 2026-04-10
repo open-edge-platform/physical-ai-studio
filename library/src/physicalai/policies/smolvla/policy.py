@@ -23,7 +23,6 @@ from .model import SmolVLAModel
 
 if TYPE_CHECKING:
     from physicalai.data import Observation
-    from physicalai.gyms import Gym
 
     from .preprocessor import SmolVLAPostprocessor, SmolVLAPreprocessor
 

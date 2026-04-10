@@ -935,7 +935,7 @@ class Pi05Model(ExportableModelMixin, Model):
 
         return embs, pad_masks, att_masks, adarms_cond
 
-    def forward(  # noqa: PLR0914
+    def forward(
         self,
         batch: dict[str, Any],
     ) -> tuple[Tensor, dict[str, float]] | Tensor:
@@ -958,6 +958,9 @@ class Pi05Model(ExportableModelMixin, Model):
         """Compute flow matching training loss.
 
         Delegates to :meth:`_flow_matching_loss`.
+
+        Returns:
+            Tuple of (loss tensor, loss dict with ``"loss"`` key).
         """
         return self._flow_matching_loss(batch)
 
