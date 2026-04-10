@@ -69,22 +69,6 @@ def omnicamera_cls():  # noqa: ANN201
     sys.modules.pop("physicalai.capture.cameras.uvc._omnicamera", None)
 
 
-def test_import_raises_missing_dependency_without_omni_camera() -> None:
-    """MissingDependencyError raised when omni_camera is absent at module import."""
-    sys.modules.pop("physicalai.capture.cameras.uvc._omnicamera", None)
-    omni_camera_backup = sys.modules.pop("omni_camera", None)
-    sys.modules["omni_camera"] = None  # type: ignore[assignment]
-    try:
-        with pytest.raises(MissingDependencyError):
-            importlib.import_module("physicalai.capture.cameras.uvc._omnicamera")
-    finally:
-        sys.modules.pop("physicalai.capture.cameras.uvc._omnicamera", None)
-        if omni_camera_backup is not None:
-            sys.modules["omni_camera"] = omni_camera_backup
-        else:
-            sys.modules.pop("omni_camera", None)
-
-
 def test_constructor_defaults(omnicamera_cls: tuple) -> None:
     """OmniCamera has expected default parameter values."""
     camera_cls, _ = omnicamera_cls

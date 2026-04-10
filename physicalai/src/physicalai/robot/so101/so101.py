@@ -3,8 +3,8 @@
 
 """SO-101 robot arm driver.
 
-Concrete implementation of the :class:`~physicalai.robot.protocol.Robot` protocol
-for the SO-101 robot arm (6-DOF, Feetech STS3215 servos).
+Concrete implementation of the :class:`~physicalai.robot.Robot`
+protocol for the SO-101 robot arm (6-DOF, Feetech STS3215 servos).
 
 Requires the ``feetech-servo-sdk`` package::
 
@@ -31,7 +31,14 @@ from typing import Any, ClassVar, Literal
 
 import numpy as np
 from loguru import logger
+from scservo_sdk import (
+    GroupSyncRead,
+    GroupSyncWrite,
+    PacketHandler,
+    PortHandler,
+)
 
+from physicalai.capture.frame import Frame
 from physicalai.robot import Robot
 from physicalai.robot.so101.calibration import SO101Calibration
 from physicalai.robot.so101.constants import (
@@ -53,6 +60,22 @@ class _SO101Connection:
     packet_handler: Any
     group_sync_read: Any
     group_sync_write: Any
+
+
+@dataclass
+class SO101Observation:
+    """Observation from the SO-101 robot arm.
+
+    Attributes:
+        joint_positions: Array of shape ``(6,)`` with joint positions in radians by default,
+               or raw ticks in explicit uncalibrated mode.
+        timestamp: ``time.monotonic()`` at the moment of capture.
+    """
+
+    joint_positions: np.ndarray
+    timestamp: float
+    sensor_data: dict[str, np.ndarray] | None = None  # no extra sensors available on SO-101
+    images: dict[str, Frame] | None = None  # no built-in camera implementation
 
 
 class SO101(Robot):
@@ -157,6 +180,11 @@ class SO101(Robot):
         )
 
     @property
+    def joint_names(self) -> list[str]:
+        """List of joint names in the order they appear in state/action arrays."""
+        return self.JOINT_ORDER
+
+    @property
     def port(self) -> str:
         """Serial port path."""
         return self._port
@@ -238,24 +266,11 @@ class SO101(Robot):
         no-op.
 
         Raises:
-            ImportError: If ``feetech-servo-sdk`` is not installed.
             ConnectionError: If the serial port cannot be opened or a servo
                 does not respond to ping.
         """
-        if self._connection is not None:
+        if self.is_connected():
             return  # already connected
-
-        # Lazy import — only pull in the SDK when actually connecting.
-        try:
-            from scservo_sdk import (  # type: ignore[import-untyped]  # noqa: PLC0415
-                GroupSyncRead,
-                GroupSyncWrite,
-                PacketHandler,
-                PortHandler,
-            )
-        except ImportError:
-            msg = "feetech-servo-sdk is required for SO-101 support. Install it with:  pip install physicalai[so101]"
-            raise ImportError(msg) from None
 
         # Open port ---------------------------------------------------------
         port_handler = PortHandler(self.port)
@@ -370,15 +385,20 @@ class SO101(Robot):
 
         logger.info(f"SO-101 disconnected from {self.port}")
 
-    def get_observation(self) -> dict[str, Any]:
+    def get_observation(self) -> SO101Observation:
         """Read current joint positions from all servos.
 
         Returns:
-            A dict with:
+            :class:`SO101Observation` with:
 
-            * ``"state"``: ``np.ndarray`` of shape ``(6,)`` — joint positions
-                            in radians by default, or raw ticks in explicit uncalibrated mode.
-            * ``"timestamp"``: ``float`` from ``time.monotonic()``.
+            - ``joint_positions``: ``np.ndarray`` of shape ``(6,)`` with
+                joint positions in radians by default, or raw ticks in explicit
+                uncalibrated mode.
+            - ``timestamp``: ``float`` from ``time.monotonic()``.
+            - ``sensor_data``: always ``None`` because SO-101 exposes no
+                auxiliary sensors through this driver.
+            - ``images``: always ``None`` because SO-101 has no built-in
+                camera support in this implementation.
         """
         raw_positions = self._read_joint_positions()
 
@@ -394,10 +414,10 @@ class SO101(Robot):
                 self._warned_uncalibrated = True
             state = raw_positions.astype(np.float32)
 
-        return {
-            "state": state,
-            "timestamp": time.monotonic(),
-        }
+        return SO101Observation(
+            joint_positions=state,
+            timestamp=time.monotonic(),
+        )
 
     def send_action(self, action: np.ndarray) -> None:
         """Send joint position commands to all servos.
@@ -421,6 +441,14 @@ class SO101(Robot):
 
         ticks = self._radians_to_ticks(action) if self._calibration is not None else np.round(action).astype(np.int32)
         self._write_joint_positions(ticks)
+
+    def is_connected(self) -> bool:
+        """Check if robot is connected.
+
+        Returns:
+            True if the serial connection is active, otherwise False.
+        """
+        return self._connection is not None
 
     def _ticks_to_radians(self, ticks: np.ndarray) -> np.ndarray:
         """Convert raw servo ticks to radians using calibration data.

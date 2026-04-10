@@ -60,7 +60,7 @@ def _test_joint(
         time.sleep(delay)
 
         obs = robot.get_observation()
-        actual = obs["state"][joint_idx]
+        actual = obs.joint_positions[joint_idx]
         expected = start_pose[joint_idx] + sign * offset
         delta = abs(actual - expected)
         if calibrated:
@@ -144,7 +144,7 @@ def main(argv: list[str] | None = None) -> None:
 
     # Read starting pose
     obs = robot.get_observation()
-    start_pose = obs["state"].copy()
+    start_pose = obs.joint_positions.copy()
     if calibrated:
         start_pose_text = ", ".join(f"{v:.4f}" for v in start_pose)
     else:

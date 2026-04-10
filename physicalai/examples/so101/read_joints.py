@@ -77,8 +77,8 @@ def main(argv: list[str] | None = None) -> None:
         while True:
             t0 = time.monotonic()
             obs = robot.get_observation()
-            state = obs["state"]
-            ts = obs["timestamp"]
+            state = obs.joint_positions
+            ts = obs.timestamp
 
             # Update FPS every 0.5 seconds
             frame_count += 1
