@@ -164,8 +164,8 @@ class Trainer(lightning.Trainer):
         # When using auto strategy with multiple GPUs, default to DDP with
         # find_unused_parameters=True. Policies like Pi05 freeze large portions
         # of the model, so not all parameters participate in every training step.
-        _multi_gpu = (isinstance(devices, int) and devices > 1) or (isinstance(devices, list) and len(devices) > 1)
-        if strategy == "auto" and _multi_gpu:
+        multi_gpu = (isinstance(devices, int) and devices > 1) or (isinstance(devices, list) and len(devices) > 1)
+        if strategy == "auto" and multi_gpu:
             strategy = DDPStrategy(find_unused_parameters=True)
 
         # Call parent Lightning Trainer __init__ with all parameters
