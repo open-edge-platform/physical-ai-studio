@@ -69,6 +69,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
             batch_size: batchSize,
             num_workers: numWorkers === 'auto' ? 'auto' : Number(numWorkers),
             auto_scale_batch_size: autoScaleBatchSize,
+            val_split: 0.1,
             ...extraPayload,
         };
         trainMutation.mutateAsync({ body: payload }).then((response) => {
