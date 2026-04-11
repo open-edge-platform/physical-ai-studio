@@ -216,7 +216,6 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         Called by both lazy (setup) and eager (checkpoint) paths.
 
         Args:
-            env_action_dim: Environment action dimension.
             dataset_stats: Dataset normalization statistics.
         """
         from .preprocessor import make_smolvla_preprocessors  # noqa: PLC0415
@@ -389,7 +388,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         processed_batch = self._preprocessor(batch.to_dict())
         return self.model.compute_val_loss(processed_batch)
 
-    def configure_optimizers(self) -> Any:
+    def configure_optimizers(self) -> Any:  # noqa: ANN401
         """Configure optimizer and scheduler.
 
         Returns:
@@ -423,7 +422,12 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             },
         }
 
-    def to_onnx(self, *args: Any, **kwargs: Any) -> None:
+    def to_onnx(self, *args: Any, **kwargs: Any) -> None:  # noqa: ANN401
+        """Export model to ONNX format.
+
+        Raises:
+            ValueError: If output_path is not provided.
+        """
         output_path = kwargs.pop("output_path", None)
         input_sample = kwargs.pop("input_sample", None)
         if output_path is None and args:

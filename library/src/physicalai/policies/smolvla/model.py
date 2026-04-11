@@ -127,6 +127,12 @@ class SmolVLAModel(ExportableModelMixin, Model):
             use_random_input_noise: Whether to use random noise as the initial input for the
                 denoising process during inference. If False, zeros are used instead.
             tokenizer_max_length: Maximum token length for the tokenizer. Default: 48.
+            snapflow_enabled: Whether to enable SnapFlow self-distillation during training.
+            snapflow_alpha: Probability of replacing flow-matching loss with SnapFlow
+                consistency loss on each training step.
+            snapflow_lambda: Weight multiplier for the SnapFlow consistency loss term.
+            snapflow_num_inference_steps: Number of Euler steps used during SnapFlow
+                inference at test time.
         """
         super().__init__()
         self._chunk_size = chunk_size
@@ -807,6 +813,12 @@ class VLAFlowMatching(nn.Module):
             max_period: Maximum period for sine-cosine positional encoding of timesteps.
             use_random_input_noise: Whether to use random noise as the initial input for the
                 denoising process during inference. If False, zeros are used instead.
+            snapflow_enabled: Whether to enable SnapFlow self-distillation during training.
+            snapflow_alpha: Probability of replacing flow-matching loss with SnapFlow
+                consistency loss on each training step.
+            snapflow_lambda: Weight multiplier for the SnapFlow consistency loss term.
+            snapflow_num_inference_steps: Number of Euler steps used during SnapFlow
+                inference at test time.
         """
         super().__init__()
         self._chunk_size = chunk_size
@@ -1086,7 +1098,7 @@ class VLAFlowMatching(nn.Module):
             target_time_emb = self.target_time_mlp_in(target_time_emb)
             target_time_emb = F.silu(target_time_emb)
             target_time_emb = self.target_time_mlp_out(target_time_emb)
-            time_emb = time_emb + target_time_emb
+            time_emb += target_time_emb
 
         time_emb = time_emb[:, None, :].expand_as(action_emb)
         action_time_emb = torch.cat([action_emb, time_emb], dim=2)
@@ -1136,7 +1148,7 @@ class VLAFlowMatching(nn.Module):
         suffix_out = suffix_out.to(dtype=torch.float32)
         return self.action_out_proj(suffix_out)
 
-    def _forward_fm(  # noqa: PLR0914
+    def _forward_fm(
         self,
         images: torch.Tensor,
         img_masks: torch.Tensor,
@@ -1165,6 +1177,9 @@ class VLAFlowMatching(nn.Module):
             actions: Ground truth action sequence tensor of shape (batch_size, chunk_size, action_dim).
             noise: Optional pre-sampled noise tensor. If None, noise is sampled internally.
             time: Optional time step tensor for the diffusion process. If None, time is sampled uniformly.
+            prefix_embs: Optional pre-computed prefix embeddings. If None, computed internally.
+            prefix_pad_masks: Optional pre-computed prefix padding masks.
+            prefix_att_masks: Optional pre-computed prefix attention masks.
 
         Returns:
             torch.Tensor: Per-element MSE loss between predicted and target velocity fields,
@@ -1202,6 +1217,26 @@ class VLAFlowMatching(nn.Module):
         noise: torch.Tensor | None = None,
         time: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Compute flow matching training loss, optionally with SnapFlow self-distillation.
+
+        When ``snapflow_enabled`` is *False* this delegates to :meth:`_forward_fm`.
+        When enabled, the standard flow-matching loss is augmented with a
+        consistency distillation term controlled by ``snapflow_alpha`` and
+        ``snapflow_lambda``.
+
+        Args:
+            images: Image tensors from camera views.
+            img_masks: Attention masks for each image tensor.
+            lang_tokens: Tokenized language instruction tensor.
+            lang_masks: Attention masks for language tokens.
+            state: Robot state tensor containing proprioceptive information.
+            actions: Ground truth action sequence tensor.
+            noise: Optional pre-sampled noise tensor.
+            time: Optional diffusion time step tensor.
+
+        Returns:
+            Per-element MSE loss tensor of shape (batch_size, chunk_size, action_dim).
+        """
         if not self._snapflow_enabled:
             return self._forward_fm(images, img_masks, lang_tokens, lang_masks, state, actions, noise, time)
 
@@ -1347,6 +1382,8 @@ class VLAFlowMatching(nn.Module):
                 used to avoid recomputing prefix representations.
             x_t: Noisy action tensor at the current timestep to be denoised.
             timestep: Current diffusion timestep indicating the noise level.
+            target_time: Optional target time for SnapFlow inference. When provided,
+                the target time embedding is added to the source time embedding.
 
         Returns:
             Tensor of shape (batch_size, chunk_size, action_dim) containing the
@@ -1516,7 +1553,7 @@ class _SmolVLMWithExpertModel(nn.Module):
         self.expert_hidden_size = lm_expert_config.hidden_size
         self.set_requires_grad()
 
-    def get_vlm_model(self) -> Any:
+    def get_vlm_model(self) -> Any:  # noqa: ANN401
         return self.vlm.model
 
     def set_requires_grad(self) -> None:
@@ -1689,7 +1726,7 @@ class _SmolVLMWithExpertModel(nn.Module):
         )
         return [att_output], past_key_values
 
-    def forward_cross_attn_layer(  # noqa: PLR0914, PLR0915
+    def forward_cross_attn_layer(  # noqa: PLR0912, PLR0914, PLR0915
         self,
         model_layers: list[list[Any]],
         inputs_embeds: list[torch.Tensor | None],
@@ -1737,6 +1774,7 @@ class _SmolVLMWithExpertModel(nn.Module):
         Raises:
             ValueError: If inputs_embeds doesn't contain exactly 2 tensors and caching
                 conditions are not met.
+            RuntimeError: If prefix inputs or key/value states are missing.
         """
         attention_interface = self.get_attention_interface()
         key_states: torch.Tensor | None = None

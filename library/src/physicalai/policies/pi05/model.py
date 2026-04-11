@@ -594,6 +594,12 @@ class Pi05Model(ExportableModelMixin, Model):
             time_sampling_offset: Offset for time sampling.
             min_period: Minimum period for sine-cosine positional encoding.
             max_period: Maximum period for sine-cosine positional encoding.
+            snapflow_enabled: Whether to enable SnapFlow self-distillation during training.
+            snapflow_alpha: Probability of replacing flow-matching loss with SnapFlow
+                consistency loss on each training step.
+            snapflow_lambda: Weight multiplier for the SnapFlow consistency loss term.
+            snapflow_num_inference_steps: Number of Euler steps used during SnapFlow
+                inference at test time.
             image_resolution: Target image resolution (height, width). Must be square.
             tokenizer_max_length: Maximum token length for the tokenizer.
             freeze_vision_encoder: Whether to freeze the vision encoder during training.
@@ -976,7 +982,7 @@ class Pi05Model(ExportableModelMixin, Model):
                 return self.target_time_mlp_out(x)
 
             target_time_emb = self._apply_checkpoint(target_time_mlp_func, target_time_emb)
-            time_emb = time_emb + target_time_emb
+            time_emb += target_time_emb
         action_time_emb = action_emb
         adarms_cond = time_emb
 
