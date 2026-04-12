@@ -6,7 +6,7 @@ import pytest
 from physicalai.robot.so101.calibration import SO101Calibration, SO101JointCalibration
 from physicalai.robot.so101.constants import RADIANS_PER_TICK, SO101_JOINT_ORDER
 
-from robots.protocol_adapter import SO101Adapter, _clamp, _clamp_joints
+from robots.robot_adapter import SO101Adapter, _clamp, _clamp_joints
 from schemas.calibration import Calibration, CalibrationValue
 
 

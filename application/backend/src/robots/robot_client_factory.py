@@ -1,7 +1,7 @@
 from physicalai.robot.so101 import SO101, SO101Calibration
 
 from exceptions import ResourceNotFoundError, ResourceType
-from robots.protocol_adapter import SO101Adapter
+from robots.robot_adapter import SO101Adapter
 from robots.robot_client import RobotClient
 from robots.widowxai.trossen_widowx_ai_follower import TrossenWidowXAIFollower
 from robots.widowxai.trossen_widowx_ai_leader import TrossenWidowXAILeader
