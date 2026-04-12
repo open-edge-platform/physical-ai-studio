@@ -1,4 +1,5 @@
 import asyncio
+import time
 from multiprocessing import Event, Queue
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -11,6 +12,21 @@ from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
 from internal_datasets.mutations.recording_mutation import RecordingMutation
 from schemas.environment import EnvironmentWithRelations
 from workers.robot_control_worker import RobotControlWorker
+
+
+def _wait_until_state(queue: Queue, timeout: float = 2, **expected: bool) -> dict:
+    """Drain 'state' messages until all *expected* fields are ``True``."""
+    t = time.perf_counter()
+    latest = None
+    while time.perf_counter() - t < timeout:
+        try:
+            msg = wait_until_message_from_queue(queue, "state", timeout=0.2)
+            latest = msg["data"]
+            if all(latest.get(k) == v for k, v in expected.items()):
+                return latest
+        except TimeoutError:
+            pass
+    raise TimeoutError(f"State never reached {expected}; last seen: {latest}")
 
 
 @pytest.fixture
@@ -99,15 +115,12 @@ def loaded_inference_worker(
     with patch("workers.robot_control_worker.EnvironmentIntegration", return_value=environment_integration):
         robot_control_worker.load_environment(test_environment)
     model_integration.allow_setup()
-    thread_flush()
     environment_integration.allow_setup()
-    thread_flush()
-    clear_queue(robot_control_worker.queue)
 
-    state = robot_control_worker.state
-    assert state is not None
-    assert state.model_loaded
-    assert state.environment_loaded
+    state = _wait_until_state(robot_control_worker.queue, model_loaded=True, environment_loaded=True)
+    assert state["model_loaded"]
+    assert state["environment_loaded"]
+    clear_queue(robot_control_worker.queue)
 
     return robot_control_worker
 

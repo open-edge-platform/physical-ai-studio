@@ -207,4 +207,5 @@ markers = [
 filterwarnings = [
   "ignore:XPU device count is zero!:UserWarning",
   "ignore:This process.*is multi-threaded:DeprecationWarning", # using actual queues in tests
+  "ignore:ResourceTracker called reentrantly:UserWarning", # CPython 3.12 bug (gh-109981): semaphore cleanup races during GC at shutdown
 ]
