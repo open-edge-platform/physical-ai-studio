@@ -30,30 +30,40 @@ class SystemService:
         # Intel XPU devices
         if torch.xpu.is_available():
             for device_idx in range(torch.xpu.device_count()):
-                props = torch.xpu.get_device_properties(device_idx)
+                xpu_props = torch.xpu.get_device_properties(device_idx)
                 devices.append(
                     DeviceInfo(
                         type=DeviceType.XPU,
-                        name=props.name,
-                        memory=props.total_memory,
+                        name=xpu_props.name,
+                        memory=xpu_props.total_memory,
                         index=device_idx,
                     ),
                 )
-                logger.debug("Detected XPU device {}: {} ({} bytes)", device_idx, props.name, props.total_memory)
+                logger.debug(
+                    "Detected XPU device {}: {} ({} bytes)",
+                    device_idx,
+                    xpu_props.name,
+                    xpu_props.total_memory,
+                )
 
         # NVIDIA CUDA devices
         if torch.cuda.is_available():
             for device_idx in range(torch.cuda.device_count()):
-                props = torch.cuda.get_device_properties(device_idx)
+                cuda_props = torch.cuda.get_device_properties(device_idx)
                 devices.append(
                     DeviceInfo(
                         type=DeviceType.CUDA,
-                        name=props.name,
-                        memory=props.total_memory,
+                        name=cuda_props.name,
+                        memory=cuda_props.total_memory,
                         index=device_idx,
                     ),
                 )
-                logger.debug("Detected CUDA device {}: {} ({} bytes)", device_idx, props.name, props.total_memory)
+                logger.debug(
+                    "Detected CUDA device {}: {} ({} bytes)",
+                    device_idx,
+                    cuda_props.name,
+                    cuda_props.total_memory,
+                )
 
         # Apple MPS
         if torch.mps.is_available():
