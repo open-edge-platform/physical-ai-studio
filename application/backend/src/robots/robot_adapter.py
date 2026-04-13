@@ -39,8 +39,8 @@ class SO101Adapter(RobotClient):
     """Adapt physicalai's :class:`SO101` to the backend's :class:`RobotClient` interface.
 
     Unit flow:
-        read:  physicalai (radians) → ticks → normalized
-        write: normalized → ticks → physicalai (radians)
+        read:  physicalai (radians) → normalized
+        write: normalized → radians
     """
 
     name = "So101"
@@ -62,11 +62,37 @@ class SO101Adapter(RobotClient):
         self._joint_params: dict[str, dict] = {}
         for name in SO101_JOINT_ORDER:
             cal_val = self._calibration.values[name]
+            direction = -1 if cal_val.drive_mode == 1 else 1
+            rng = cal_val.range_max - cal_val.range_min
+            is_gripper = name == "gripper"
+
+            # Precompute linear coefficients: norm = rad * scale + bias
+            # Derived from combining tick<->radian and tick<->normalized formulas:
+            #   tick = rad / (direction * RADIANS_PER_TICK) + homing_offset
+            #   norm_body = ((tick - min) / range) * 200 - 100
+            #   norm_grip = ((tick - min) / range) * 100
+            if rng == 0:
+                scale = 0.0
+                bias = 0.0
+            elif is_gripper:
+                scale = 100.0 / (direction * RADIANS_PER_TICK * rng)
+                bias = ((cal_val.homing_offset - cal_val.range_min) / rng) * 100.0
+            else:
+                scale = 200.0 / (direction * RADIANS_PER_TICK * rng)
+                bias = ((cal_val.homing_offset - cal_val.range_min) / rng) * 200.0 - 100.0
+
+            # drive_mode=1 flips: body → negate, gripper → 100-norm
+            if cal_val.drive_mode == 1 and not is_gripper:
+                scale = -scale
+                bias = -bias
+            elif cal_val.drive_mode == 1 and is_gripper:
+                scale = -scale
+                bias = 100.0 - bias
+
             self._joint_params[name] = {
-                "drive_mode": cal_val.drive_mode,
-                "homing_offset": cal_val.homing_offset,
-                "range_min": cal_val.range_min,
-                "range_max": cal_val.range_max,
+                "scale": scale,
+                "bias": bias,
+                "is_gripper": is_gripper,
             }
 
     @property
@@ -79,91 +105,24 @@ class SO101Adapter(RobotClient):
     def is_connected(self) -> bool:
         return self._robot.is_connected()
 
-    # Normalization formulas match lerobot motors_bus.py _normalize/_unnormalize:
-    #   RANGE_M100_100 (body): norm = (((ticks - min) / (max - min)) * 200) - 100
-    #   RANGE_0_100 (gripper): norm = ((ticks - min) / (max - min)) * 100
-    #   If drive_mode == 1, flip sign (M100) or flip to 100-norm (0_100).
-
-    def _radians_to_ticks(self, radians: np.ndarray) -> np.ndarray:
-        cal = self._robot._calibration
-        if cal is None:
-            msg = "Robot calibration is required for unit conversion"
-            raise RuntimeError(msg)
-
-        ticks = np.empty(len(SO101_JOINT_ORDER), dtype=np.int32)
-        for i, name in enumerate(SO101_JOINT_ORDER):
-            jcal = cal.joints[name]
-            raw = round(radians[i] / (jcal.direction * RADIANS_PER_TICK) + jcal.homing_offset)
-            ticks[i] = int(np.clip(raw, jcal.range_min, jcal.range_max))
-        return ticks
-
-    def _ticks_to_radians(self, ticks: np.ndarray) -> np.ndarray:
-        cal = self._robot._calibration
-        if cal is None:
-            msg = "Robot calibration is required for unit conversion"
-            raise RuntimeError(msg)
-
-        result = np.empty(len(SO101_JOINT_ORDER), dtype=np.float32)
-        for i, name in enumerate(SO101_JOINT_ORDER):
-            jcal = cal.joints[name]
-            result[i] = (ticks[i] - jcal.homing_offset) * jcal.direction * RADIANS_PER_TICK
-        return result
-
-    def _ticks_to_normalized(self, ticks: np.ndarray) -> dict[str, float]:
-        result: dict[str, float] = {}
-        for i, name in enumerate(SO101_JOINT_ORDER):
-            params = self._joint_params[name]
-            rng_min = params["range_min"]
-            rng_max = params["range_max"]
-            drive_mode = params["drive_mode"]
-            tick = float(ticks[i])
-
-            if name == "gripper":
-                # RANGE_0_100
-                norm = ((tick - rng_min) / (rng_max - rng_min)) * 100.0 if rng_max != rng_min else 0.0
-                if drive_mode == 1:
-                    norm = 100.0 - norm
-            else:
-                # RANGE_M100_100
-                norm = (((tick - rng_min) / (rng_max - rng_min)) * 200.0) - 100.0 if rng_max != rng_min else 0.0
-                if drive_mode == 1:
-                    norm = -norm
-
-            result[f"{name}.pos"] = norm
-        return result
-
-    def _normalized_to_ticks(self, joints: dict[str, float]) -> np.ndarray:
-        ticks = np.empty(len(SO101_JOINT_ORDER), dtype=np.int32)
-        for i, name in enumerate(SO101_JOINT_ORDER):
-            params = self._joint_params[name]
-            rng_min = params["range_min"]
-            rng_max = params["range_max"]
-            drive_mode = params["drive_mode"]
-
-            key = f"{name}.pos"
-            norm = joints[key]
-
-            if name == "gripper":
-                # RANGE_0_100 reverse
-                if drive_mode == 1:
-                    norm = 100.0 - norm
-                tick = (norm / 100.0) * (rng_max - rng_min) + rng_min
-            else:
-                # RANGE_M100_100 reverse
-                if drive_mode == 1:
-                    norm = -norm
-                tick = ((norm + 100.0) / 200.0) * (rng_max - rng_min) + rng_min
-
-            ticks[i] = round(tick)
-        return ticks
+    # Linear conversion between physicalai radians and backend normalized values.
+    # Body joints use [-100, 100], gripper uses [0, 100].
+    # Coefficients (scale, bias) are precomputed per joint in __init__.
 
     def _radians_to_normalized(self, radians: np.ndarray) -> dict[str, float]:
-        ticks = self._radians_to_ticks(radians)
-        return self._ticks_to_normalized(ticks)
+        result: dict[str, float] = {}
+        for i, name in enumerate(SO101_JOINT_ORDER):
+            p = self._joint_params[name]
+            norm = float(radians[i]) * p["scale"] + p["bias"]
+            result[f"{name}.pos"] = max(0.0, min(100.0, norm)) if p["is_gripper"] else max(-100.0, min(100.0, norm))
+        return result
 
     def _normalized_to_radians(self, joints: dict[str, float]) -> np.ndarray:
-        ticks = self._normalized_to_ticks(joints)
-        return self._ticks_to_radians(ticks)
+        result = np.empty(len(SO101_JOINT_ORDER), dtype=np.float32)
+        for i, name in enumerate(SO101_JOINT_ORDER):
+            p = self._joint_params[name]
+            result[i] = (joints[f"{name}.pos"] - p["bias"]) / p["scale"] if p["scale"] != 0 else 0.0
+        return result
 
     async def connect(self) -> None:
         logger.info(f"Connecting to SO101 {self._mode} on {self._robot.port}")

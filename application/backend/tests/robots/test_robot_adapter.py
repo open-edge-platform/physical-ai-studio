@@ -101,15 +101,6 @@ class TestClampJoints:
 
 
 class TestNormalizationRoundtrip:
-    def test_ticks_to_normalized_and_back(self):
-        adapter, _ = _make_adapter()
-
-        ticks_in = np.array([1024, 2048, 3072, 512, 3584, 2000], dtype=np.int32)
-        normalized = adapter._ticks_to_normalized(ticks_in)
-        ticks_out = adapter._normalized_to_ticks(normalized)
-
-        np.testing.assert_array_equal(ticks_in, ticks_out)
-
     def test_radians_to_normalized_and_back(self):
         adapter, _ = _make_adapter()
 
@@ -117,47 +108,64 @@ class TestNormalizationRoundtrip:
         normalized = adapter._radians_to_normalized(radians_in)
         radians_out = adapter._normalized_to_radians(normalized)
 
-        np.testing.assert_allclose(radians_in, radians_out, atol=RADIANS_PER_TICK)
+        np.testing.assert_allclose(radians_in, radians_out, atol=1e-5)
 
 
 class TestNormalizationValues:
-    def test_center_tick_gives_zero_for_body(self):
+    """Verify boundary values using radians that correspond to tick boundaries.
+
+    With homing_offset=2048 and drive_mode=0:
+        0 radians  → tick 2048 → normalized ~0 (body) / ~50 (gripper)
+        tick 0     → radians = (0 - 2048) * 1 * RADIANS_PER_TICK
+        tick 4095  → radians = (4095 - 2048) * 1 * RADIANS_PER_TICK
+    """
+
+    @staticmethod
+    def _ticks_to_rad(tick: int, homing_offset: int = 2048) -> float:
+        return (tick - homing_offset) * RADIANS_PER_TICK
+
+    def test_zero_radians_gives_center_normalized_for_body(self):
         adapter, _ = _make_adapter()
-        ticks = np.array([2048, 2048, 2048, 2048, 2048, 2048], dtype=np.int32)
-        result = adapter._ticks_to_normalized(ticks)
+        radians = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
+        result = adapter._radians_to_normalized(radians)
 
         for name in SO101_JOINT_ORDER:
             if name != "gripper":
-                assert result[f"{name}.pos"] == pytest.approx(0.02442, abs=0.05)
+                assert result[f"{name}.pos"] == pytest.approx(0.0, abs=0.05)
 
-    def test_min_tick_gives_minus_100_for_body(self):
+    def test_min_radians_gives_minus_100_for_body(self):
         adapter, _ = _make_adapter()
-        ticks = np.array([0, 0, 0, 0, 0, 0], dtype=np.int32)
-        result = adapter._ticks_to_normalized(ticks)
+        rad = self._ticks_to_rad(0)
+        radians = np.full(6, rad, dtype=np.float32)
+        result = adapter._radians_to_normalized(radians)
 
         for name in SO101_JOINT_ORDER:
             if name != "gripper":
                 assert result[f"{name}.pos"] == pytest.approx(-100.0, abs=0.1)
 
-    def test_max_tick_gives_100_for_body(self):
+    def test_max_radians_gives_100_for_body(self):
         adapter, _ = _make_adapter()
-        ticks = np.array([4095, 4095, 4095, 4095, 4095, 4095], dtype=np.int32)
-        result = adapter._ticks_to_normalized(ticks)
+        rad = self._ticks_to_rad(4095)
+        radians = np.full(6, rad, dtype=np.float32)
+        result = adapter._radians_to_normalized(radians)
 
         for name in SO101_JOINT_ORDER:
             if name != "gripper":
                 assert result[f"{name}.pos"] == pytest.approx(100.0, abs=0.1)
 
-    def test_min_tick_gives_zero_for_gripper(self):
+    def test_min_radians_gives_zero_for_gripper(self):
         adapter, _ = _make_adapter()
-        ticks = np.array([0, 0, 0, 0, 0, 0], dtype=np.int32)
-        result = adapter._ticks_to_normalized(ticks)
+        rad = self._ticks_to_rad(0)
+        radians = np.full(6, rad, dtype=np.float32)
+        result = adapter._radians_to_normalized(radians)
         assert result["gripper.pos"] == pytest.approx(0.0, abs=0.1)
 
-    def test_max_tick_gives_100_for_gripper(self):
+    def test_max_radians_gives_100_for_gripper(self):
         adapter, _ = _make_adapter()
-        ticks = np.array([0, 0, 0, 0, 0, 4095], dtype=np.int32)
-        result = adapter._ticks_to_normalized(ticks)
+        rad_body = self._ticks_to_rad(0)
+        rad_grip = self._ticks_to_rad(4095)
+        radians = np.array([rad_body, rad_body, rad_body, rad_body, rad_body, rad_grip], dtype=np.float32)
+        result = adapter._radians_to_normalized(radians)
         assert result["gripper.pos"] == pytest.approx(100.0, abs=0.1)
 
 
@@ -166,9 +174,15 @@ class TestDriveModeFlip:
         adapter_normal, _ = _make_adapter(drive_modes={})
         adapter_flipped, _ = _make_adapter(drive_modes={"shoulder_pan": 1})
 
-        ticks = np.array([3072, 2048, 2048, 2048, 2048, 2048], dtype=np.int32)
-        norm_normal = adapter_normal._ticks_to_normalized(ticks)
-        norm_flipped = adapter_flipped._ticks_to_normalized(ticks)
+        # Same physical tick=3072 produces opposite radians under different drive_modes:
+        #   drive_mode=0: rad = (3072-2048) * +1 * RPT
+        #   drive_mode=1: rad = (3072-2048) * -1 * RPT
+        rad_val = (3072 - 2048) * RADIANS_PER_TICK
+        radians_normal = np.array([rad_val, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
+        radians_flipped = np.array([-rad_val, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
+
+        norm_normal = adapter_normal._radians_to_normalized(radians_normal)
+        norm_flipped = adapter_flipped._radians_to_normalized(radians_flipped)
 
         assert norm_normal["shoulder_pan.pos"] == pytest.approx(-norm_flipped["shoulder_pan.pos"], abs=0.1)
 
@@ -176,9 +190,12 @@ class TestDriveModeFlip:
         adapter_normal, _ = _make_adapter(drive_modes={})
         adapter_flipped, _ = _make_adapter(drive_modes={"gripper": 1})
 
-        ticks = np.array([0, 0, 0, 0, 0, 1024], dtype=np.int32)
-        norm_normal = adapter_normal._ticks_to_normalized(ticks)
-        norm_flipped = adapter_flipped._ticks_to_normalized(ticks)
+        rad_val = (1024 - 2048) * RADIANS_PER_TICK
+        radians_normal = np.array([0.0, 0.0, 0.0, 0.0, 0.0, rad_val], dtype=np.float32)
+        radians_flipped = np.array([0.0, 0.0, 0.0, 0.0, 0.0, -rad_val], dtype=np.float32)
+
+        norm_normal = adapter_normal._radians_to_normalized(radians_normal)
+        norm_flipped = adapter_flipped._radians_to_normalized(radians_flipped)
 
         assert norm_normal["gripper.pos"] + norm_flipped["gripper.pos"] == pytest.approx(100.0, abs=0.1)
 
