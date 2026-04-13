@@ -14,8 +14,7 @@ name: Validate Renovate configuration
 
 on:
   pull_request:
-    paths:
-      - ".github/renovate.json5"
+    branches: [main]
 
 permissions: {} # No permissions by default on workflow level
 
@@ -24,8 +23,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  check-paths:
+    name: Check if workflow should run
+    runs-on: ubuntu-latest
+    outputs:
+      run_workflow: ${{ steps.check_paths.outputs.run }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout configuration
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Check paths
+        id: check_paths
+        uses: open-edge-platform/geti-ci/actions/check-paths@3c8d37fc4b106224f9e29d72db4a025b62e07e37 #FIXME
+        with:
+          files_yaml: |
+            test:
+              - .github/renovate.json5
+
   validate:
     runs-on: ubuntu-latest
+    needs: check-paths
+    if: needs.check-paths.outputs.run_workflow == 'true'
     permissions:
       contents: read # to checkout code
     steps:
@@ -37,7 +59,27 @@ jobs:
       - name: Validate configuration
         run: |
           # renovate: datasource=docker
-          export RENOVATE_IMAGE=ghcr.io/renovatebot/renovate:40.11
+          export RENOVATE_IMAGE=ghcr.io/renovatebot/renovate:43.86.0@sha256:a09b54d017aa7bd24b61a6d79f78fac6ebc651fb6c0cabaedd22915690c854c6
           docker run --rm --entrypoint "renovate-config-validator" \
           -v "${{ github.workspace }}/.github/renovate.json5":"/renovate.json5" \
           ${RENOVATE_IMAGE} "/renovate.json5"
+
+  required-check:
+    name: Required Check renovate-config-validator
+    needs:
+      - check-paths
+      - validate
+    runs-on: ubuntu-latest
+    env:
+      CHECKS: ${{ join(needs.*.result, ' ') }}
+    if: always() && !cancelled()
+    steps:
+      - name: Check jobs results
+        run: |
+          for check in ${CHECKS}; do
+            echo "::notice::check=${check}"
+            if [[ "$check" != "success" && "$check" != "skipped" ]]; then
+              echo "::error ::Required status checks failed. They must succeed before this pull request can be merged."
+              exit 1
+            fi
+          done

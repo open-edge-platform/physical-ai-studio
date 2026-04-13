@@ -8,9 +8,39 @@ on:
   pull_request:
   workflow_dispatch: # run on request (no need for PR)
 
+concurrency:
+  group: ui-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  check-paths:
+    name: Check if workflow should run
+    runs-on: ubuntu-latest
+    outputs:
+      run_workflow: ${{ steps.check_paths.outputs.run }}
+    permissions:
+      contents: read
+    steps:
+      - &checkout
+        name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Check paths
+        id: check_paths
+        uses: open-edge-platform/geti-ci/actions/check-paths@3c8d37fc4b106224f9e29d72db4a025b62e07e37 #FIXME
+        with:
+          files_yaml: |
+            test:
+              - application/ui/**
+              - application/backend/**
+              - .github/**
+
   generate-openapi-spec:
     name: Generate OpenAPI Spec
+    needs: check-paths
+    if: needs.check-paths.outputs.run_workflow == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read # to checkout code
@@ -61,11 +91,7 @@ jobs:
     permissions:
       contents: read # to checkout code
     steps:
-      - &checkout
-        name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
+      - *checkout
 
       - &setup-node
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
@@ -201,3 +227,27 @@ jobs:
           name: playwright-report
           path: application/ui/playwright-report/
           retention-days: 30
+
+  required-check:
+    name: Required Check ui
+    needs:
+      - check-paths
+      - generate-openapi-spec
+      - build
+      - lint
+      - unit-tests
+      - playwright-tests
+    runs-on: ubuntu-latest
+    env:
+      CHECKS: ${{ join(needs.*.result, ' ') }}
+    if: always() && !cancelled()
+    steps:
+      - name: Check jobs results
+        run: |
+          for check in ${CHECKS}; do
+            echo "::notice::check=${check}"
+            if [[ "$check" != "success" && "$check" != "skipped" ]]; then
+              echo "::error ::Required status checks failed. They must succeed before this pull request can be merged."
+              exit 1
+            fi
+          done
