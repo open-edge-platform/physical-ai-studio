@@ -29,8 +29,8 @@ if TYPE_CHECKING:
     from physicalai.gyms import Gym
 
 if TYPE_CHECKING or module_available("lerobot"):
-    from lerobot.datasets.lerobot_dataset import LeRobotDataset
     from lerobot.datasets.feature_utils import dataset_to_policy_features
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
     from lerobot.policies.factory import make_pre_post_processors
     from lerobot.policies.smolvla.configuration_smolvla import SmolVLAConfig as _LeRobotSmolVLAConfig
 
