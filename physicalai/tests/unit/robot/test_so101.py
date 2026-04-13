@@ -46,6 +46,7 @@ def _make_mock_sdk() -> MagicMock:
     packet_handler = MagicMock()
     packet_handler.ping.return_value = (0, 0, 0)  # model, comm_result, error
     packet_handler.write1ByteTxRx.return_value = (0, 0)
+    packet_handler.write2ByteTxRx.return_value = (0, 0)
     sdk.PacketHandler.return_value = packet_handler
 
     # GroupSyncRead
@@ -223,22 +224,27 @@ class TestSO101Lifecycle:
         robot.disconnect()  # should not raise
 
     def test_follower_enables_torque(self, mock_sdk: MagicMock) -> None:
-        """Follower role enables torque on connect."""
+        """Follower role enables torque on connect (after servo configuration)."""
         robot = _create_robot(mock_sdk, role="follower")
         robot.connect()
 
-        # Check that write1ByteTxRx was called with torque_enable=1
+        # Filter to torque writes only (address 40 = TORQUE_ENABLE)
         calls = mock_sdk.PacketHandler.return_value.write1ByteTxRx.call_args_list
-        torque_values = [c.args[3] if len(c.args) > 3 else c[0][3] for c in calls]
-        assert all(v == 1 for v in torque_values)
+        torque_calls = [c for c in calls if (c.args[2] if len(c.args) > 2 else c[0][2]) == 40]
+        # Last 6 torque writes should be enable (value=1), preceding 6 are disable for config
+        final_torque_values = [c.args[3] if len(c.args) > 3 else c[0][3] for c in torque_calls[-6:]]
+        assert all(v == 1 for v in final_torque_values)
 
     def test_leader_disables_torque(self, mock_sdk: MagicMock) -> None:
         """Leader role disables torque on connect."""
         robot = _create_robot(mock_sdk, role="leader")
         robot.connect()
 
+        # Filter to torque writes only (address 40 = TORQUE_ENABLE)
         calls = mock_sdk.PacketHandler.return_value.write1ByteTxRx.call_args_list
-        torque_values = [c.args[3] if len(c.args) > 3 else c[0][3] for c in calls]
+        torque_calls = [c for c in calls if (c.args[2] if len(c.args) > 2 else c[0][2]) == 40]
+        # All torque writes should be disable (value=0) — config disables, leader keeps disabled
+        torque_values = [c.args[3] if len(c.args) > 3 else c[0][3] for c in torque_calls]
         assert all(v == 0 for v in torque_values)
 
     def test_port_open_failure_raises(self, mock_sdk: MagicMock) -> None:
@@ -256,6 +262,71 @@ class TestSO101Lifecycle:
 
         with pytest.raises(ConnectionError, match="did not respond"):
             robot.connect()
+
+
+# ---------------------------------------------------------------------------
+# Tests: servo configuration
+# ---------------------------------------------------------------------------
+
+
+class TestSO101ServoConfiguration:
+    """Tests for _configure_servos() called during connect()."""
+
+    def _get_write_calls(self, mock_sdk: MagicMock) -> tuple[list, list]:
+        """Return (write1Byte_calls, write2Byte_calls) from packet_handler."""
+        ph = mock_sdk.PacketHandler.return_value
+        return ph.write1ByteTxRx.call_args_list, ph.write2ByteTxRx.call_args_list
+
+    def _extract_register_writes(self, calls: list, address: int) -> list[tuple[int, int]]:
+        """Extract (servo_id, value) pairs for writes to a specific address."""
+        results = []
+        for c in calls:
+            args = c.args if c.args else c[0]
+            if args[2] == address:
+                results.append((args[1], args[3]))
+        return results
+
+    def test_torque_disabled_before_config_writes(self, mock_sdk: MagicMock) -> None:
+        """Torque is disabled before any configuration registers are written."""
+        robot = _create_robot(mock_sdk, role="follower")
+        robot.connect()
+
+        calls_1byte, _ = self._get_write_calls(mock_sdk)
+
+        # First 6 write1ByteTxRx calls should be torque disable (addr=40, value=0)
+        first_six = [(c.args[2], c.args[3]) for c in calls_1byte[:6]]
+        assert all(addr == 40 and val == 0 for addr, val in first_six)
+
+    def test_operating_mode_set_to_position(self, mock_sdk: MagicMock) -> None:
+        """Operating mode is set to position control (0) for all servos."""
+        robot = _create_robot(mock_sdk, role="follower")
+        robot.connect()
+
+        calls_1byte, _ = self._get_write_calls(mock_sdk)
+        mode_writes = self._extract_register_writes(calls_1byte, 33)
+
+        assert len(mode_writes) == 6
+        assert all(val == 0 for _, val in mode_writes)
+
+    def test_gripper_protection_written_only_for_gripper(self, mock_sdk: MagicMock) -> None:
+        """Gripper protection registers are written only to the gripper servo (ID 6)."""
+        robot = _create_robot(mock_sdk, role="follower")
+        robot.connect()
+
+        calls_1byte, calls_2byte = self._get_write_calls(mock_sdk)
+
+        # 2-byte writes: MAX_TORQUE_LIMIT (addr 16) and PROTECTION_CURRENT (addr 28)
+        torque_limit_writes = self._extract_register_writes(calls_2byte, 16)
+        current_writes = self._extract_register_writes(calls_2byte, 28)
+        # 1-byte write: OVERLOAD_TORQUE (addr 36)
+        overload_writes = self._extract_register_writes(calls_1byte, 36)
+
+        assert len(torque_limit_writes) == 1
+        assert torque_limit_writes[0] == (6, 500)
+        assert len(current_writes) == 1
+        assert current_writes[0] == (6, 250)
+        assert len(overload_writes) == 1
+        assert overload_writes[0] == (6, 25)
 
 
 # ---------------------------------------------------------------------------
@@ -380,8 +451,7 @@ class TestSO101Calibration:
     def test_from_path_bad_drive_mode(self, tmp_path: Path) -> None:
         """Calibration with drive_mode not in {0, 1} raises ValueError."""
         bad_cal = {
-            name: {**v, "drive_mode": 2} if name == "shoulder_pan" else v
-            for name, v in SAMPLE_CALIBRATION.items()
+            name: {**v, "drive_mode": 2} if name == "shoulder_pan" else v for name, v in SAMPLE_CALIBRATION.items()
         }
         path = tmp_path / "bad_drive_mode.json"
         path.write_text(json.dumps(bad_cal), encoding="utf-8")
