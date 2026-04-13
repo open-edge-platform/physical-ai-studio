@@ -154,8 +154,8 @@ class ExportWrapper(ExportablePolicyMixin):
     def metadata_extra(self) -> dict[str, Any]:
         return {"chunk_size": 10, "use_action_queue": True}
 
-    @property
-    def supported_export_backends(self) -> list[str | ExportBackend]:
+    @staticmethod
+    def get_supported_export_backends() -> list[str | ExportBackend]:
         return [ExportBackend.ONNX, ExportBackend.OPENVINO, ExportBackend.EXECUTORCH]
 
 
@@ -171,7 +171,7 @@ class TestToOnnx:
         wrapper.to_onnx(output_path)
 
         assert output_path.exists()
-        assert ExportBackend.ONNX in wrapper.supported_export_backends
+        assert ExportBackend.ONNX in wrapper.get_supported_export_backends()
 
         # Verify the ONNX model can be loaded
         onnx_model = onnx.load(str(output_path))
@@ -199,7 +199,7 @@ class TestToOnnx:
         wrapper.to_onnx(output_path, input_sample=input_sample)
 
         assert output_path.exists()
-        assert ExportBackend.ONNX in wrapper.supported_export_backends
+        assert ExportBackend.ONNX in wrapper.get_supported_export_backends()
 
         # Verify the ONNX model
         onnx_model = onnx.load(str(output_path))
@@ -215,7 +215,7 @@ class TestToOnnx:
         wrapper.to_onnx(output_path, output_names=["custom_output"])
 
         assert output_path.exists()
-        assert ExportBackend.ONNX in wrapper.supported_export_backends
+        assert ExportBackend.ONNX in wrapper.get_supported_export_backends()
 
         # Verify the ONNX model
         onnx_model = onnx.load(str(output_path))
@@ -234,7 +234,7 @@ class TestToOnnx:
         wrapper.to_onnx(output_path)
 
         assert output_path.exists()
-        assert ExportBackend.ONNX in wrapper.supported_export_backends
+        assert ExportBackend.ONNX in wrapper.get_supported_export_backends()
 
         # Verify the ONNX model
         onnx_model = onnx.load(str(output_path))
@@ -254,7 +254,7 @@ class TestToOnnx:
         wrapper.to_onnx(output_path)
 
         assert output_path.exists()
-        assert ExportBackend.ONNX in wrapper.supported_export_backends
+        assert ExportBackend.ONNX in wrapper.get_supported_export_backends()
 
         # Verify the ONNX model
         onnx_model = onnx.load(str(output_path))
@@ -267,7 +267,7 @@ class TestToOnnx:
         wrapper = ExportWrapper(model)
 
         output_path = tmp_path / "model.onnx"
-        assert ExportBackend.ONNX in wrapper.supported_export_backends
+        assert ExportBackend.ONNX in wrapper.get_supported_export_backends()
 
         with pytest.raises(RuntimeError, match="input sample must be provided"):
             wrapper.to_onnx(output_path)
@@ -281,7 +281,7 @@ class TestToOnnx:
         wrapper.export(backend="onnx", output_path=output_path)
 
         assert output_path.exists()
-        assert ExportBackend.ONNX in wrapper.supported_export_backends
+        assert ExportBackend.ONNX in wrapper.get_supported_export_backends()
 
         # Verify the ONNX model can be loaded
         onnx_model = onnx.load(str(output_path))
@@ -299,7 +299,7 @@ class TestToOpenVINO:
         output_path = tmp_path / "model.xml"
         wrapper.to_openvino(output_path)
 
-        assert ExportBackend.OPENVINO in wrapper.supported_export_backends
+        assert ExportBackend.OPENVINO in wrapper.get_supported_export_backends()
         assert output_path.exists()
         assert (tmp_path / "model.bin").exists()
 
@@ -313,7 +313,7 @@ class TestToOpenVINO:
         wrapper.to_openvino(output_path)
 
         assert output_path.exists()
-        assert ExportBackend.OPENVINO in wrapper.supported_export_backends
+        assert ExportBackend.OPENVINO in wrapper.get_supported_export_backends()
 
     def test_to_openvino_with_provided_input_sample(self, tmp_path):
         """Test OpenVINO export with explicitly provided input sample."""
@@ -336,7 +336,7 @@ class TestToOpenVINO:
 
         wrapper.to_openvino(output_path, input_sample=input_sample)
 
-        assert ExportBackend.OPENVINO in wrapper.supported_export_backends
+        assert ExportBackend.OPENVINO in wrapper.get_supported_export_backends()
         assert output_path.exists()
         assert (tmp_path / "model.bin").exists()
 
@@ -348,7 +348,7 @@ class TestToOpenVINO:
         output_path = tmp_path / "model.xml"
         wrapper.to_openvino(output_path)
 
-        assert ExportBackend.OPENVINO in wrapper.supported_export_backends
+        assert ExportBackend.OPENVINO in wrapper.get_supported_export_backends()
         assert output_path.exists()
         assert (tmp_path / "model.bin").exists()
 
@@ -360,7 +360,7 @@ class TestToOpenVINO:
         output_path = tmp_path / "model.xml"
         wrapper.to_openvino(output_path)
 
-        assert ExportBackend.OPENVINO in wrapper.supported_export_backends
+        assert ExportBackend.OPENVINO in wrapper.get_supported_export_backends()
         assert output_path.exists()
         assert (tmp_path / "model.bin").exists()
 

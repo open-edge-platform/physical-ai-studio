@@ -5,25 +5,9 @@ import useWebSocket from 'react-use-websocket';
 
 import { fetchClient } from '../../api/client';
 import { SchemaProjectCamera } from '../../api/types';
-import { useContainerSize } from '../../components/zoom/use-container-size';
+import { useFittedMediaSize } from './use-fitted-media-size';
 
 const CAMERA_WS_URL = fetchClient.PATH('/api/cameras/ws');
-
-const calculateCanvasDimensions = (containerSize: { width: number; height: number }, aspectRatio: number) => {
-    const containerAspectRatio = containerSize.width / containerSize.height;
-
-    if (containerAspectRatio > aspectRatio) {
-        return {
-            width: containerSize.height * aspectRatio,
-            height: containerSize.height,
-        };
-    } else {
-        return {
-            width: containerSize.width,
-            height: containerSize.width / aspectRatio,
-        };
-    }
-};
 
 const CameraCanvas = ({ camera, width, height }: { camera: SchemaProjectCamera; width: number; height: number }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -116,14 +100,13 @@ const CameraCanvas = ({ camera, width, height }: { camera: SchemaProjectCamera; 
 };
 
 export const WebsocketCamera = ({ camera }: { camera: SchemaProjectCamera }) => {
-    const ref = useRef<HTMLDivElement>(null);
-    const containerSize = useContainerSize(ref);
-
-    const cameraAspectRatio = Number(camera.payload?.width) / Number(camera.payload?.height);
-    const { width, height } = calculateCanvasDimensions(containerSize, cameraAspectRatio);
+    const { containerRef, width, height } = useFittedMediaSize(
+        Number(camera.payload?.width),
+        Number(camera.payload?.height)
+    );
 
     return (
-        <div ref={ref} style={{ height: '100%', width: '100%' }}>
+        <div ref={containerRef} style={{ height: '100%', width: '100%' }}>
             <CameraCanvas camera={camera} width={width} height={height} />
         </div>
     );

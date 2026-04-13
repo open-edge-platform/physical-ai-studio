@@ -125,7 +125,6 @@ class Pi05Preprocessor(torch.nn.Module):
     5. Pads actions to max dimensions
 
     Args:
-        max_state_dim: Maximum state dimension for padding.
         max_action_dim: Maximum action dimension for padding.
         image_resolution: Target image resolution (height, width).
         features: Dictionary mapping feature names to Feature objects for normalization.
@@ -136,7 +135,6 @@ class Pi05Preprocessor(torch.nn.Module):
 
     def __init__(
         self,
-        max_state_dim: int = 32,
         max_action_dim: int = 32,
         image_resolution: tuple[int, int] = (224, 224),
         features: dict[str, Feature] | None = None,
@@ -147,7 +145,6 @@ class Pi05Preprocessor(torch.nn.Module):
         """Initialize Pi05Preprocessor."""
         super().__init__()
 
-        self.max_state_dim = max_state_dim
         self.max_action_dim = max_action_dim
         self.image_resolution = image_resolution
         self.max_token_len = max_token_len
@@ -290,7 +287,6 @@ class Pi05Preprocessor(torch.nn.Module):
             max_length=self.max_token_len,
             truncation=True,
             padding="max_length",
-            padding_side="right",
             return_tensors="pt",
         )
 
@@ -311,39 +307,12 @@ class Pi05Preprocessor(torch.nn.Module):
                     self.tokenizer_name,
                     revision="35e4f46485b4d07967e7e9935bc3786aad50687c",
                     use_fast=True,
+                    padding_side="right",
                 )
             except ImportError as e:
                 msg = "Tokenizer requires transformers. Install with: uv pip install transformers"
                 raise ImportError(msg) from e
         return self._tokenizer
-
-    @property
-    def exportable_tokenizer(self) -> Any:  # noqa: ANN401
-        """Get tokenizer for export.
-
-        This method is used during model export to retrieve the tokenizer for
-        conversion to ONNX or OpenVINO format. It simply returns the same
-        tokenizer instance used during preprocessing.
-
-        Returns:
-            The tokenizer instance used by this preprocessor.
-
-        Raises:
-            ImportError: If transformers library is not installed.
-        """
-        try:
-            from transformers import AutoTokenizer  # noqa: PLC0415
-
-            # Revision pinned for reproducibility and security
-            tokenizer = AutoTokenizer.from_pretrained(
-                self.tokenizer_name,
-                revision="35e4f46485b4d07967e7e9935bc3786aad50687c",
-                use_fast=False,
-            )
-        except ImportError as e:
-            msg = "Tokenizer requires transformers. Install with: pip install transformers"
-            raise ImportError(msg) from e
-        return tokenizer
 
 
 class Pi05Postprocessor(torch.nn.Module):
@@ -381,7 +350,6 @@ class Pi05Postprocessor(torch.nn.Module):
 
 
 def make_pi05_preprocessors(
-    max_state_dim: int = 32,
     max_action_dim: int = 32,
     stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
     *,
@@ -392,7 +360,6 @@ def make_pi05_preprocessors(
     """Create preprocessor and postprocessor pair for Pi05.
 
     Args:
-        max_state_dim: Maximum state dimension.
         max_action_dim: Maximum action dimension.
         stats: Dataset statistics as nested dicts.
         image_resolution: Target image resolution.
@@ -428,7 +395,6 @@ def make_pi05_preprocessors(
             )
 
     preprocessor = Pi05Preprocessor(
-        max_state_dim=max_state_dim,
         max_action_dim=max_action_dim,
         image_resolution=image_resolution,
         features=features,

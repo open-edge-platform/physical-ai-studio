@@ -46,7 +46,7 @@ runs:
   using: composite
   steps:
     - name: Cleanup runner
-      uses: open-edge-platform/geti-ci/actions/cleanup-runner@cc6fbe840db6ebd16ebd18d409f475bff5a8c182
+      uses: open-edge-platform/geti-ci/actions/cleanup-runner@e80098b3d180db37914f11ff6021f9fa34d0bb9f
       with:
         type: all
 
@@ -59,7 +59,9 @@ runs:
       with:
         context: .
         file: application/docker/Dockerfile
-        build-contexts: libs=library
+        build-contexts: |
+          libs=library
+          pai=physicalai
         target: physical-ai-studio-${{ inputs.device }}
         platforms: linux/amd64
         push: ${{ inputs.push }}

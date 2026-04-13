@@ -133,7 +133,7 @@ class SO101SetupWorker(TransportWorker):
         {"event": "positions", ...}
         {"event": "state_was_updated", "state": {...}}
         {"event": "calibration_result", ...}
-        {"event": "error", "message": ...}
+        {"event": "error", "message": ..., "error_code": ...}
     """
 
     def __init__(
@@ -148,6 +148,7 @@ class SO101SetupWorker(TransportWorker):
         self.phase = SetupPhase.CONNECTING
 
         self.bus: FeetechMotorsBus | None = None
+        self.port: str | None = None  # Resolved device path (e.g. /dev/ttyACM0)
         self.motors = _build_motors()
 
         # Serialize all bus I/O — the Feetech SDK has no internal locking,
@@ -168,6 +169,15 @@ class SO101SetupWorker(TransportWorker):
     # ------------------------------------------------------------------
     # Helpers — bus / homing guard
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _classify_error(exc: Exception) -> str:
+        """Map an exception to a frontend-friendly error code."""
+        if isinstance(exc, PermissionError):
+            return "permission_denied"
+        if isinstance(exc, ConnectionError):
+            return "device_not_found"
+        return "connection_failed"
 
     def _require_bus(self) -> FeetechMotorsBus:
         """Return the motor bus, raising if not connected."""
@@ -216,7 +226,13 @@ class SO101SetupWorker(TransportWorker):
             self.state = WorkerState.ERROR
             self.error_message = str(e)
             logger.exception(f"Setup worker error: {e}")
-            await self._send_event("error", message=str(e))
+
+            await self._send_event(
+                "error",
+                message=str(e),
+                error_code=SO101SetupWorker._classify_error(e),
+                port=self.port,
+            )
         finally:
             await self._cleanup()
             await self.shutdown()
@@ -234,11 +250,21 @@ class SO101SetupWorker(TransportWorker):
         if not port:
             raise ConnectionError(f"No USB device found with serial number '{self.serial_number}'")
 
+        self.port = port
         logger.info(f"Setup worker: connecting to {port} (serial={self.serial_number})")
 
         self.bus = FeetechMotorsBus(port=port, motors=self.motors)
-        async with self._bus_lock:
-            await asyncio.to_thread(self.bus.connect, handshake=False)
+        try:
+            async with self._bus_lock:
+                await asyncio.to_thread(self.bus.connect, handshake=False)
+        except PermissionError as e:
+            raise PermissionError(
+                f"Permission denied for port {port}. "
+                f"Fix with: sudo chmod 666 {port} — "
+                f"or add your user to the dialout group: sudo usermod -aG dialout $USER"
+            ) from e
+        except OSError as e:
+            raise ConnectionError(f"Could not open port {port}: {e}") from e
 
         await self._send_phase_status(f"Connected to {port}")
 
@@ -481,6 +507,7 @@ class SO101SetupWorker(TransportWorker):
                 "error",
                 message=f"Some motors have the same min and max values: {same_min_max}. "
                 "Please move all joints through their full range.",
+                error_code="command_error",
             )
             return
 
@@ -730,7 +757,7 @@ class SO101SetupWorker(TransportWorker):
                     await self._dispatch_command(command, data)
                 except Exception as e:
                     logger.exception(f"Error handling command '{command}': {e}")
-                    await self._send_event("error", message=str(e))
+                    await self._send_event("error", message=str(e), error_code="command_error")
         except asyncio.CancelledError:
             pass
 
@@ -747,7 +774,7 @@ class SO101SetupWorker(TransportWorker):
             case "motor_connected":
                 motor_name = data.get("motor", "")
                 if motor_name not in self.motors:
-                    await self._send_event("error", message=f"Unknown motor: {motor_name}")
+                    await self._send_event("error", message=f"Unknown motor: {motor_name}", error_code="command_error")
                 else:
                     await self._handle_motor_setup(motor_name)
 
@@ -775,7 +802,7 @@ class SO101SetupWorker(TransportWorker):
                 await self._run_motor_probe()
 
             case _:
-                await self._send_event("error", message=f"Unknown command: {command}")
+                await self._send_event("error", message=f"Unknown command: {command}", error_code="command_error")
 
     # ------------------------------------------------------------------
     # Event helpers

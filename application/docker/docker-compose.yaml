@@ -64,6 +64,7 @@ x-common: &common
       - "${DIALOUT_GID:-dialout}" # serial ports (/dev/ttyACM*)
       - "${PLUGDEV_GID:-plugdev}" # pluggable USB devices
       - "${VIDEO_GID:-video}" # cameras & video (/dev/video*)
+      - "${RENDER_GID:-render}" # Intel GPU render nodes
 
     # Persisted data and storage volumes + shared robot calibration
     volumes:
@@ -100,6 +101,8 @@ x-common-build: &common-build
     dockerfile: application/docker/Dockerfile
     additional_contexts:
       libs: ../../library
+      # TODO(#450): Remove once physicalai is published from its own repo.
+      pai: ../../physicalai
     args:
       - APP_UID=${APP_UID:-1000}
       - APP_GID=${APP_GID:-1000}
