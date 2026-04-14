@@ -219,8 +219,7 @@ class SmolVLAPreprocessor(torch.nn.Module):
         rename_map = self.rename_map
 
         def _sort_key(key: str) -> str:
-            parts = key.split(".", 1)
-            base_name = parts[1] if len(parts) > 1 else key
+            base_name = key.rsplit(".", 1)[-1]
             return rename_map.get(base_name, base_name)
 
         return sorted(batch_img_keys, key=_sort_key)
@@ -294,7 +293,7 @@ class SmolVLAPreprocessor(torch.nn.Module):
         if not image_keys:
             return
 
-        batch_camera_bases = {k.split(".", 1)[1] if "." in k else k for k in image_keys}
+        batch_camera_bases = {k.rsplit(".", 1)[-1] for k in image_keys}
 
         # Map through rename_map to get logical names for validation
         if self.rename_map:

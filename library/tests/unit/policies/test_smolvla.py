@@ -482,6 +482,31 @@ class TestCameraRenameMap:
 
         assert result == [f"{IMAGES}.top", f"{IMAGES}.wrist"]
 
+    def test_reorder_image_keys_deeply_nested_keys(self) -> None:
+        """rsplit extracts the last segment, so deeply nested keys like
+        'observation.images.wrist' correctly resolve to 'wrist'."""
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        rename_map = {"top": "camera1", "wrist": "camera2"}
+        preprocessor = SmolVLAPreprocessor(rename_map=rename_map)
+
+        keys = ["observation.images.wrist", "observation.images.top"]
+        result = preprocessor._reorder_image_keys(keys)
+
+        assert result == ["observation.images.top", "observation.images.wrist"]
+
+    def test_reorder_image_keys_bare_keys(self) -> None:
+        """Keys without any dots are used as-is for rename_map lookup."""
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        rename_map = {"top": "camera1", "wrist": "camera2"}
+        preprocessor = SmolVLAPreprocessor(rename_map=rename_map)
+
+        keys = ["wrist", "top"]
+        result = preprocessor._reorder_image_keys(keys)
+
+        assert result == ["top", "wrist"]
+
     def test_reorder_does_not_mutate_batch_keys(self) -> None:
         """Batch keys remain as original dataset names after forward()."""
         from physicalai.data.observation import IMAGES
@@ -737,6 +762,30 @@ class TestCameraNameValidation:
             f"{IMAGES}.top": torch.randn(2, 3, 64, 64),
             f"{IMAGES}.wrist": torch.randn(2, 3, 64, 64),
             f"_{IMAGES}_keys": [f"{IMAGES}.top", f"{IMAGES}.wrist"],
+        }
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            preprocessor._validate_camera_names(batch)
+
+        assert "Camera name mismatch" not in caplog.text
+
+    def test_validate_deeply_nested_keys_extract_base_name(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Validation extracts the last segment via rsplit, so deeply nested
+        keys like 'observation.images.top' resolve to 'top' for matching."""
+        from physicalai.data.observation import IMAGES
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(
+            expected_camera_names={"camera1", "camera2"},
+            rename_map={"top": "camera1", "wrist": "camera2"},
+        )
+
+        batch = {
+            f"observation.{IMAGES}.top": torch.randn(2, 3, 64, 64),
+            f"observation.{IMAGES}.wrist": torch.randn(2, 3, 64, 64),
+            f"_{IMAGES}_keys": [f"observation.{IMAGES}.top", f"observation.{IMAGES}.wrist"],
         }
 
         import logging
