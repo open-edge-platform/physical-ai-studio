@@ -328,7 +328,8 @@ class GrootModel(Model):
             return self.action_head(backbone_outputs, groot_inputs)
 
     def forward(
-        self, batch: Mapping[str, torch.Tensor]
+        self,
+        batch: Mapping[str, torch.Tensor],
     ) -> tuple[torch.Tensor, dict[str, float]] | torch.Tensor:
         """Forward pass dispatching between training and evaluation.
 

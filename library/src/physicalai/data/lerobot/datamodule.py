@@ -250,7 +250,7 @@ class LeRobotDataModule(DataModule):
                 rng = random.Random(val_split_seed)  # noqa: S311
                 val_episodes = sorted(rng.sample(all_episodes, n_val))
             else:
-                val_episodes = sorted(random.sample(all_episodes, n_val))  # noqa: S311
+                val_episodes = sorted(random.sample(all_episodes, n_val))
             train_episodes = sorted(ep for ep in all_episodes if ep not in set(val_episodes))
             logger.warning(
                 "Val split (%.0f%%): %d val episodes %s, %d train episodes (of %d total)",
