@@ -106,6 +106,49 @@ data:
     # Use accumulate_grad_batches to achieve larger effective batch sizes
     train_batch_size: 1
 
+    # -------------------------------------------------------------------------
+    # Image Augmentations
+    # -------------------------------------------------------------------------
+    image_transforms:
+      class_path: physicalai.transforms.RandomSubsetApply
+      init_args:
+        n_subset: 3
+        random_order: false
+        transforms:
+          - class_path: torchvision.transforms.v2.ColorJitter
+            init_args:
+              brightness:
+                - 0.8
+                - 1.2
+          - class_path: torchvision.transforms.v2.ColorJitter
+            init_args:
+              contrast:
+                - 0.8
+                - 1.2
+          - class_path: torchvision.transforms.v2.ColorJitter
+            init_args:
+              saturation:
+                - 0.5
+                - 1.5
+          - class_path: torchvision.transforms.v2.ColorJitter
+            init_args:
+              hue:
+                - -0.05
+                - 0.05
+          - class_path: physicalai.transforms.SharpnessJitter
+            init_args:
+              sharpness:
+                - 0.5
+                - 1.5
+          - class_path: torchvision.transforms.v2.RandomAffine
+            init_args:
+              degrees:
+                - -5.0
+                - 5.0
+              translate:
+                - 0.05
+                - 0.05
+
 trainer:
   # ---------------------------------------------------------------------------
   # Training Control
