@@ -315,7 +315,7 @@ class Groot(ExportablePolicyMixin, Policy):
             batch: Input observation batch.
 
         Returns:
-            Training: dict with 'loss' key.  Eval: action chunk tensor.
+            Training: (loss tensor, loss dict).  Eval: action chunk tensor.
 
         Raises:
             RuntimeError: If model is not initialized.
@@ -330,7 +330,7 @@ class Groot(ExportablePolicyMixin, Policy):
             msg = "Preprocessor not initialized. Call setup() first."
             raise RuntimeError(msg)
         preprocessed = self._preprocessor(batch)
-        return self.model(preprocessed)
+        return self.model.compute_loss(preprocessed)
 
     def training_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
         """Training step - compute loss.
@@ -344,10 +344,9 @@ class Groot(ExportablePolicyMixin, Policy):
         """
         del batch_idx  # Unused
 
-        outputs = self(batch)
-        loss = outputs["loss"]
+        loss, loss_dict = self(batch)
 
-        self.log("train/loss", loss, prog_bar=True)
+        self.log("train/loss", loss_dict["loss"], prog_bar=True)
         return loss
 
     def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, float]]:

@@ -139,6 +139,7 @@ class DataModule(LightningDataModule):
         val_gym: Gym | None = None,
         num_rollouts_val: int = 10,
         val_eval_dataset: Dataset | None = None,
+        val_batch_size: int = 1,
         test_gym: Gym | None = None,
         num_rollouts_test: int = 10,
         max_episode_steps: int | None = 300,
@@ -154,6 +155,7 @@ class DataModule(LightningDataModule):
             num_rollouts_val (int): Number of rollouts to run for validation environments.
             val_eval_dataset (Dataset | None): Validation dataset for computing eval loss.
                 When provided, validation computes loss on this dataset instead of gym rollouts.
+            val_batch_size (int): Batch size for the eval-loss validation DataLoader. Defaults to 1.
             test_gym (Gym | None): Test environment.
             num_rollouts_test (int): Number of rollouts to run for test environments.
             max_episode_steps (int, None): Maximum steps allowed per episode. If None, no time limit.
@@ -168,6 +170,7 @@ class DataModule(LightningDataModule):
 
         # eval-loss validation dataset
         self.val_eval_dataset: Dataset | None = val_eval_dataset
+        self.val_batch_size: int = val_batch_size
 
         # gym environments
         self.val_gym: Gym | None = val_gym
@@ -243,7 +246,7 @@ class DataModule(LightningDataModule):
             return DataLoader(
                 self.val_eval_dataset,
                 num_workers=self.num_workers,
-                batch_size=1,
+                batch_size=self.val_batch_size,
                 shuffle=False,
                 drop_last=False,
                 collate_fn=_collate_observations,

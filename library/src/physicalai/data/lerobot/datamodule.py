@@ -140,6 +140,8 @@ class LeRobotDataModule(DataModule):
         data_format: Literal["physicalai", "lerobot"] | DataFormat = "physicalai",
         # Eval-loss validation
         val_split: float = 0.0,
+        val_split_seed: int | None = None,
+        val_batch_size: int = 1,
         # Base DataModule parameters (val/test gyms)
         val_gym: Gym | None = None,
         num_rollouts_val: int = 10,
@@ -188,6 +190,12 @@ class LeRobotDataModule(DataModule):
                 validation (e.g. ``0.1`` for 10%). The last N episodes are used as the
                 validation set. Must be in ``[0, 1)``. ``0`` disables eval-loss validation.
                 Defaults to ``0.0``.
+            val_split_seed (int | None, optional): Random seed for the train/val episode split.
+                ``None`` (default) uses the global ``random`` module, which respects
+                ``seed_everything()``. Set an explicit int to use an isolated RNG
+                independent of the global seed. Defaults to ``None``.
+            val_batch_size (int, optional): Batch size for the eval-loss validation DataLoader.
+                Defaults to ``1``.
             val_gym (Gym | None, optional): Validation gym environment.
                 Defaults to `None`.
             num_rollouts_val (int, optional): Number of rollouts for validation.
@@ -237,11 +245,14 @@ class LeRobotDataModule(DataModule):
             total_episodes = _read_total_episodes(repo_id, root)
             all_episodes = episodes if episodes is not None else list(range(total_episodes))
             n_val = max(1, int(len(all_episodes) * val_split))
-            # Randomly select val episodes with a fixed seed for reproducibility
-            rng = random.Random(42)  # noqa: S311
-            val_episodes = sorted(rng.sample(all_episodes, n_val))
+            # Use isolated RNG if seed given, otherwise global random (respects seed_everything)
+            if val_split_seed is not None:
+                rng = random.Random(val_split_seed)  # noqa: S311
+                val_episodes = sorted(rng.sample(all_episodes, n_val))
+            else:
+                val_episodes = sorted(random.sample(all_episodes, n_val))  # noqa: S311
             train_episodes = sorted(ep for ep in all_episodes if ep not in set(val_episodes))
-            logger.info(
+            logger.warning(
                 "Val split (%.0f%%): %d val episodes %s, %d train episodes (of %d total)",
                 val_split * 100,
                 len(val_episodes),
@@ -322,6 +333,7 @@ class LeRobotDataModule(DataModule):
             val_gym=val_gym,
             num_rollouts_val=num_rollouts_val,
             val_eval_dataset=val_eval_dataset,
+            val_batch_size=val_batch_size,
             test_gym=test_gym,
             num_rollouts_test=num_rollouts_test,
             max_episode_steps=max_episode_steps,

@@ -304,15 +304,11 @@ class GrootModel(Model):
 
         return model
 
-    def forward(self, batch: Mapping[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-        """Training forward pass - computes loss.
+    def _forward_backbone(self, batch: Mapping[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        """Run backbone + action head forward pass (training mode).
 
         Args:
-            batch: Input batch with:
-                - eagle_* tensors from preprocessor
-                - state, state_mask
-                - action, action_mask
-                - embodiment_id
+            batch: Input batch with eagle_* tensors, state, action, etc.
 
         Returns:
             Dict with 'loss' key containing training loss.
@@ -331,10 +327,32 @@ class GrootModel(Model):
             backbone_outputs = self.backbone(groot_inputs)
             return self.action_head(backbone_outputs, groot_inputs)
 
+    def forward(
+        self, batch: Mapping[str, torch.Tensor]
+    ) -> tuple[torch.Tensor, dict[str, float]] | torch.Tensor:
+        """Forward pass dispatching between training and evaluation.
+
+        Training mode: computes flow-matching loss (with gradients).
+        Eval mode: returns predicted actions via :meth:`get_action`.
+
+        Args:
+            batch: Input batch with:
+                - eagle_* tensors from preprocessor
+                - state, state_mask
+                - action, action_mask
+                - embodiment_id
+
+        Returns:
+            Training: (loss tensor, loss dict).  Eval: action tensor.
+        """
+        if self.training:
+            return self.compute_loss(batch)
+        return self.get_action(batch)
+
     def compute_loss(self, batch: Mapping[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]]:
         """Compute training loss.
 
-        Delegates to :meth:`forward` and reformats the return value.
+        Delegates to :meth:`_forward_backbone` and reformats the return value.
 
         Args:
             batch: Preprocessed batch dict.
@@ -342,7 +360,7 @@ class GrootModel(Model):
         Returns:
             Tuple of (loss tensor, loss dict with ``"loss"`` key).
         """
-        result = self.forward(batch)
+        result = self._forward_backbone(batch)
         loss = result["loss"]
         return loss, {"loss": loss.item()}
 

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import random
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -234,6 +235,7 @@ class TestValSplit:
             root=str(dataset_dir),
             train_batch_size=4,
             val_split=0.2,
+            val_split_seed=42,
         )
         val_eps = dm.val_eval_dataset._lerobot_dataset.requested_episodes
         # With seed=42 and 20 episodes, the val episodes should NOT be [16,17,18,19]
@@ -241,14 +243,39 @@ class TestValSplit:
         assert val_eps != list(range(16, 20))
 
     def test_val_split_deterministic(self, tmp_path: Path):
-        """Same val_split produces the same split every time."""
+        """Same val_split_seed produces the same split every time."""
         dataset_dir = _create_local_dataset(tmp_path, total_episodes=20)
 
-        dm1 = LeRobotDataModule(root=str(dataset_dir), train_batch_size=4, val_split=0.2)
-        dm2 = LeRobotDataModule(root=str(dataset_dir), train_batch_size=4, val_split=0.2)
+        dm1 = LeRobotDataModule(root=str(dataset_dir), train_batch_size=4, val_split=0.2, val_split_seed=42)
+        dm2 = LeRobotDataModule(root=str(dataset_dir), train_batch_size=4, val_split=0.2, val_split_seed=42)
 
         eps1 = dm1.val_eval_dataset._lerobot_dataset.requested_episodes
         eps2 = dm2.val_eval_dataset._lerobot_dataset.requested_episodes
+        assert eps1 == eps2
+
+    def test_val_split_seed_changes_split(self, tmp_path: Path):
+        """Different val_split_seed produces a different split."""
+        dataset_dir = _create_local_dataset(tmp_path, total_episodes=20)
+
+        dm1 = LeRobotDataModule(root=str(dataset_dir), train_batch_size=4, val_split=0.2, val_split_seed=42)
+        dm2 = LeRobotDataModule(root=str(dataset_dir), train_batch_size=4, val_split=0.2, val_split_seed=99)
+
+        eps1 = dm1.val_eval_dataset._lerobot_dataset.requested_episodes
+        eps2 = dm2.val_eval_dataset._lerobot_dataset.requested_episodes
+        assert eps1 != eps2
+
+    def test_val_split_respects_global_seed(self, tmp_path: Path):
+        """Default (no val_split_seed) uses global random, respecting seed_everything."""
+        dataset_dir = _create_local_dataset(tmp_path, total_episodes=20)
+
+        random.seed(123)
+        dm1 = LeRobotDataModule(root=str(dataset_dir), train_batch_size=4, val_split=0.2)
+        eps1 = dm1.val_eval_dataset._lerobot_dataset.requested_episodes
+
+        random.seed(123)
+        dm2 = LeRobotDataModule(root=str(dataset_dir), train_batch_size=4, val_split=0.2)
+        eps2 = dm2.val_eval_dataset._lerobot_dataset.requested_episodes
+
         assert eps1 == eps2
 
     def test_val_split_minimum_one_episode(self, tmp_path: Path):
