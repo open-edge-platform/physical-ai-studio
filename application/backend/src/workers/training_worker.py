@@ -116,6 +116,10 @@ class TrainingWorker(BaseProcessWorker):
         try:
             path = Path(model.path)
 
+            # Resolve training device -- explicit from payload or auto-detected
+            device_type = payload.device.type if payload.device else None
+            device_index = payload.device.index if payload.device else None
+
             l_dm = LeRobotDataModule(
                 repo_id="snapshot",  # doesnt matter for loading the data.
                 root=snapshot.path,
@@ -148,8 +152,9 @@ class TrainingWorker(BaseProcessWorker):
                     ),
                     TrainingLogCallback(),
                 ],
-                accelerator=get_torch_device(),
-                strategy=get_lightning_strategy(),
+                accelerator=get_torch_device(device_type),
+                strategy=get_lightning_strategy(device_type),
+                devices=[device_index] if device_index is not None else "auto",
                 max_steps=payload.max_steps,
                 auto_scale_batch_size=payload.auto_scale_batch_size,
             )
