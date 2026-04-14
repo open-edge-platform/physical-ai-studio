@@ -33,6 +33,7 @@ async def robot_setup_websocket(
             {
                 "event": "error",
                 "message": f"Unsupported robot type for setup: {robot_type}",
+                "error_code": "invalid_config",
             }
         )
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -44,6 +45,7 @@ async def robot_setup_websocket(
             {
                 "event": "error",
                 "message": "serial_number is required",
+                "error_code": "invalid_config",
             }
         )
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)

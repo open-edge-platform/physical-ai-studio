@@ -36,7 +36,7 @@ export const getArchiveBlobFromResponse = async (
     }
 
     const reader = response.body.getReader();
-    const chunks: Uint8Array[] = [];
+    const chunks: Uint8Array<ArrayBuffer>[] = [];
 
     let downloadedBytes = 0;
 

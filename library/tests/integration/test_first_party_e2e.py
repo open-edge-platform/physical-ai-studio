@@ -23,11 +23,11 @@ from physicalai.policies.base.policy import Policy
 from physicalai.train import Trainer
 
 # Export backend constants
-EXPORT_BACKENDS = ["openvino", "onnx", "executorch"]
+DEPLOYMENT_EXPORT_BACKENDS = ["openvino", "onnx", "executorch"]
 
 # Policy names for parametrization
-FIRST_PARTY_VLA_POLICIES = ["groot", "pi0", "smolvla", "pi05"]
-FIRST_PARTY_POLICIES_WITH_EXPORT = ["act"]
+FIRST_PARTY_VLA_POLICIES = ["groot", "pi0"]
+FIRST_PARTY_POLICIES_WITH_EXPORT = ["act", "smolvla", "pi05"]
 
 
 @pytest.fixture(scope="class")
@@ -60,6 +60,11 @@ class CoreE2ETests:
         trainer.fit(policy, datamodule=datamodule)
         return policy
 
+    @pytest.fixture(scope="class")
+    def initialized_policy(self, policy_name: str, datamodule: LeRobotDataModule) -> Policy:
+        """Create first-party policy instance."""
+        return get_policy(policy_name, source="physicalai", dataset_stats=datamodule.train_dataset.stats).eval()
+
     def test_train_policy(self, trained_policy: Policy, trainer: Trainer) -> None:
         """Test that policy was trained successfully."""
         assert trainer.state.finished
@@ -78,11 +83,15 @@ class CoreE2ETests:
 class ExportE2ETests:
     """Base class with export E2E tests (export/inference/consistency)."""
 
-    @pytest.mark.parametrize("backend", EXPORT_BACKENDS)
-    def test_export_to_backend(self, trained_policy: Policy, backend: str, tmp_path: Path) -> None:
+    @pytest.mark.parametrize("backend", DEPLOYMENT_EXPORT_BACKENDS)
+    def test_export_to_backend(self, initialized_policy: Policy, backend: str, tmp_path: Path) -> None:
         """Test that trained policy can be exported to different backends."""
-        export_dir = tmp_path / f"{trained_policy.__class__.__name__.lower()}_{backend}"
-        trained_policy.export(export_dir, backend)
+        export_dir = tmp_path / f"{initialized_policy.__class__.__name__.lower()}_{backend}"
+
+        if backend not in initialized_policy.get_supported_export_backends():
+            pytest.skip(f"{initialized_policy.__class__.__name__} does not support export to {backend}")
+
+        initialized_policy.export(export_dir, backend)
 
         assert export_dir.exists()
         assert (export_dir / "metadata.yaml").exists()
@@ -97,17 +106,20 @@ class ExportE2ETests:
         elif backend == "executorch":
             assert any(export_dir.glob("*.pte"))
 
-    @pytest.mark.parametrize("backend", EXPORT_BACKENDS)
+    @pytest.mark.parametrize("backend", DEPLOYMENT_EXPORT_BACKENDS)
     def test_inference_with_exported_model(
         self,
-        trained_policy: Policy,
+        initialized_policy: Policy,
         backend: str,
         datamodule: LeRobotDataModule,
         tmp_path: Path,
     ) -> None:
         """Test that exported model can be loaded and used for inference."""
-        export_dir = tmp_path / f"{trained_policy.__class__.__name__.lower()}_{backend}"
-        trained_policy.export(export_dir, backend)
+        if backend not in initialized_policy.get_supported_export_backends():
+            pytest.skip(f"{initialized_policy.__class__.__name__} does not support export to {backend}")
+
+        export_dir = tmp_path / f"{initialized_policy.__class__.__name__.lower()}_{backend}"
+        initialized_policy.export(export_dir, backend)
 
         inference_model = InferenceModel.load(export_dir)
         assert inference_model.backend.value == backend
@@ -123,16 +135,19 @@ class ExportE2ETests:
         assert inference_output.shape[-1] == 2
         assert len(inference_output.shape) in {1, 2, 3}, f"Expected 1-3D tensor, got {inference_output.shape}"
 
-    @pytest.mark.parametrize("backend", EXPORT_BACKENDS)
+    @pytest.mark.parametrize("backend", DEPLOYMENT_EXPORT_BACKENDS)
     def test_numerical_consistency_training_vs_inference(
         self,
-        trained_policy: Policy,
+        initialized_policy: Policy,
         backend: str,
         datamodule: LeRobotDataModule,
         tmp_path: Path,
     ) -> None:
         """Test numerical consistency between training and inference outputs."""
-        policy_name = trained_policy.__class__.__name__.lower()
+        policy_name = initialized_policy.__class__.__name__.lower()
+        if backend not in initialized_policy.get_supported_export_backends():
+            pytest.skip(f"{policy_name} does not support export to {backend}")
+
         export_dir = tmp_path / f"{policy_name}_{backend}"
 
         from physicalai.data.lerobot import FormatConverter
@@ -143,9 +158,9 @@ class ExportE2ETests:
 
         # Get training output
         torch.manual_seed(42)
-        trained_policy.eval()
+        initialized_policy.eval()
         with torch.no_grad():
-            train_action = trained_policy.predict_action_chunk(single_observation)
+            train_action = initialized_policy.predict_action_chunk(single_observation)
         if isinstance(train_action, tuple):
             train_action = train_action[0]
         train_action = train_action.squeeze(0)
@@ -153,7 +168,7 @@ class ExportE2ETests:
             train_action = train_action[0]
 
         # Export and get inference output
-        trained_policy.export(export_dir, backend)
+        initialized_policy.export(export_dir, backend)
         inference_model = InferenceModel.load(export_dir)
 
         torch.manual_seed(42)
@@ -164,7 +179,7 @@ class ExportE2ETests:
         if len(inference_output_cpu.shape) > 1:
             inference_output_cpu = inference_output_cpu[0]
 
-        torch.testing.assert_close(inference_output_cpu, train_action, rtol=0.2, atol=0.2)
+        torch.testing.assert_close(inference_output_cpu.to(train_action.dtype), train_action, rtol=0.2, atol=0.2)
 
 
 @pytest.mark.slow

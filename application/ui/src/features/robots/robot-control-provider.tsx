@@ -182,6 +182,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
     });
 
     const startEpisode = useMutation({
+        meta: { skipInvalidation: true },
         mutationFn: async (task: string) => {
             const message = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'start_recording', data: { task } },
@@ -192,6 +193,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
     });
 
     const saveEpisode = useMutation({
+        meta: { skipInvalidation: true },
         mutationFn: async () => {
             const message = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'save_episode', data: {} },
@@ -202,6 +204,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
     });
 
     const discardEpisode = useMutation({
+        meta: { skipInvalidation: true },
         mutationFn: async () => {
             const message = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'discard_episode', data: {} },
@@ -212,6 +215,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
     });
 
     const setFollowerSource = useMutation({
+        meta: { skipInvalidation: true },
         mutationFn: async (follower_source: FollowerSource) => {
             const message = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'set_follower_source', data: { follower_source } },

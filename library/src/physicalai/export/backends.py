@@ -47,7 +47,8 @@ class ExportParameters:
     """Parameters for exporting a model."""
 
     exporter_kwargs: dict = field(default_factory=dict)
-    preprocessing_type: str = ""
+    preprocessors_specs: list = field(default_factory=list)
+    postprocessors_specs: list = field(default_factory=list)
 
 
 @dataclass

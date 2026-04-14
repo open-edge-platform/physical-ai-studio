@@ -53,6 +53,10 @@ COPY --link application/backend/pyproject.toml application/backend/uv.lock \
     /app/application/backend/
 COPY --link application/backend/run.sh /app/application/backend/run.sh
 
+# physicalai hardware package (local path dependency)
+# TODO(#450): Remove once physicalai is published from its own repo.
+COPY --link --from=pai . /app/physicalai/
+
 # Built UI assets
 COPY --link --from=web-ui /home/app/web_ui/dist /app/application/ui/
 
@@ -64,7 +68,7 @@ COPY --link --from=web-ui /home/app/web_ui/dist /app/application/ui/
 # This separation ensures that source-only changes do not invalidate
 # the expensive uv sync layers in the device-specific builders below.
 # ===========================================================================
-FROM python:${PYTHON_VERSION}-slim@sha256:3d5ed973e45820f5ba5e46bd065bd88b3a504ff0724d85980dcd05eab361fcf4 AS builder-base
+FROM python:${PYTHON_VERSION}-slim@sha256:804ddf3251a60bbf9c92e73b7566c40428d54d0e79d3428194edf40da6521286 AS builder-base
 
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0
@@ -96,6 +100,8 @@ WORKDIR /app
 # The real library source is overlaid via app-source in the final image.
 COPY --link pyproject.toml uv.lock ./
 COPY --link --from=libs ./pyproject.toml /app/library/pyproject.toml
+# TODO(#450): Remove once physicalai is published from its own repo.
+COPY --link --from=pai ./pyproject.toml /app/physicalai/pyproject.toml
 
 # Backend manifests only (not src/ or run.sh) — sufficient for dep resolution.
 COPY --link application/backend/pyproject.toml application/backend/uv.lock \
@@ -119,6 +125,7 @@ FROM builder-base AS builder-cpu
 
 RUN --mount=type=cache,id=uv-cpu,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
+    --mount=type=bind,from=pai,target=/app/physicalai \
     uv sync --frozen --no-dev --no-editable --extra cpu
 
 # ===========================================================================
@@ -128,6 +135,7 @@ FROM builder-base AS builder-xpu
 
 RUN --mount=type=cache,id=uv-xpu,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
+    --mount=type=bind,from=pai,target=/app/physicalai \
     uv sync --frozen --no-dev --no-editable --extra xpu
 
 # ===========================================================================
@@ -137,6 +145,7 @@ FROM builder-base AS builder-cuda
 
 RUN --mount=type=cache,id=uv-cuda,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
+    --mount=type=bind,from=pai,target=/app/physicalai \
     uv sync --frozen --no-dev --no-editable --extra cuda
 
 # ===========================================================================
@@ -146,7 +155,7 @@ RUN --mount=type=cache,id=uv-cuda,target=/root/.cache/uv \
 # variables, and directory structure. Healthcheck is defined in
 # docker-compose.yaml (not here) so it can reference runtime PORT.
 # ===========================================================================
-FROM python:${PYTHON_VERSION}-slim@sha256:3d5ed973e45820f5ba5e46bd065bd88b3a504ff0724d85980dcd05eab361fcf4 AS runtime-base
+FROM python:${PYTHON_VERSION}-slim@sha256:804ddf3251a60bbf9c92e73b7566c40428d54d0e79d3428194edf40da6521286 AS runtime-base
 
 # uv is needed at runtime for `uv run` in run.sh
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/

@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router';
 import { DiagnosticSection } from '../shared/diagnostic-section';
 import { InlineAlert } from '../shared/inline-alert';
 import { StatusBadge } from '../shared/status-badge';
+import { DiagnosticsError } from './diagnostics-step-error';
 import { useSetupActions, useSetupState, WizardStep } from './wizard-provider';
 
 import classes from '../shared/setup-wizard.module.scss';
@@ -19,17 +20,11 @@ export const DiagnosticsStep = () => {
     const { goNext, markCompleted, markSkipped, goToStep, commands } = useSetupActions();
     const navigate = useNavigate();
 
-    const { voltageResult, probeResult, error } = wsState;
+    const { voltageResult, probeResult, error, errorCode, port } = wsState;
     const isLoading = !voltageResult || !probeResult;
 
     if (error) {
-        return (
-            <Flex direction='column' gap='size-200'>
-                <InlineAlert variant='error'>
-                    <strong>Connection Error:</strong> {error}
-                </InlineAlert>
-            </Flex>
-        );
+        return <DiagnosticsError error={error} errorCode={errorCode} port={port} />;
     }
 
     if (isLoading) {

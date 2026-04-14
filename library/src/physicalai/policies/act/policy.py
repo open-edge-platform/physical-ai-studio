@@ -425,8 +425,8 @@ class ACT(ExportablePolicyMixin, Policy):
         if hasattr(self.model, "reset") and callable(self.model.reset):
             self.model.reset()
 
-    @property
-    def supported_export_backends(self) -> list[str | ExportBackend]:
+    @staticmethod
+    def get_supported_export_backends() -> list[str | ExportBackend]:
         """Get a list of export backends supported by policy.
 
         This method returns a list of supported export backends as strings.

@@ -15,7 +15,7 @@ export const SubmitNewEnvironmentButton = () => {
 
     const environment_id = uuidv4();
     const body = useEnvironmentFormBody(environment_id);
-    const isDisabled = body.name.length === 0 || body.robots.length === 0 || body.camera_ids.length === 0;
+    const isDisabled = false; // body.name.length === 0 || body.robots.length === 0 || body.camera_ids.length === 0;
 
     return (
         <Button

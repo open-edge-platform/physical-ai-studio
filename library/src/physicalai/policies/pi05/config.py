@@ -60,6 +60,8 @@ class Pi05Config(Config):
             automatically set to the total training steps via
             ``trainer.estimated_stepping_batches``. Defaults to None.
         scheduler_decay_lr: Final learning rate after decay. Defaults to 2.5e-6.
+        use_random_input_noise: Whether to use random noise as the initial input for the denoising process
+            during inference. If False, zeros are used instead. Defaults to False.
     """
 
     paligemma_variant: Literal["gemma_300m", "gemma_2b"] = "gemma_2b"
@@ -103,6 +105,8 @@ class Pi05Config(Config):
     scheduler_warmup_steps: int = 1_000
     scheduler_decay_steps: int | None = None
     scheduler_decay_lr: float = 2.5e-6
+
+    use_random_input_noise: bool = True
 
     def __post_init__(self) -> None:
         """Validate configuration parameters after initialization.
