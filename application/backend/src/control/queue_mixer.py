@@ -32,7 +32,7 @@ class QueueMixer:
             self.queue = row
         else:
             # Take remaining part of existing queue.
-            remaining_queue = self.queue[self.index:]
+            remaining_queue = self.queue[self.index :]
 
             # Remove part of queue that has already passed during inference.
             upcoming_queue = row[offset:]
