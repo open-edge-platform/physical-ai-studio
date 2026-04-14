@@ -275,26 +275,21 @@ class Policy(L.LightningModule, ABC):
     def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, float]]:
         """Compute validation loss on a batch.
 
-        Override this in subclasses to define how validation loss is computed.
+        Subclasses must override this to define how validation loss is computed.
         For example, diffusion/flow-matching policies should run the full
         denoising loop and compare predicted vs ground-truth actions (action
         prediction MSE), rather than reusing the stochastic training loss.
-
-        The default implementation temporarily enables training mode so that
-        ``forward()`` returns a loss tuple.  Subclasses should override this
-        to avoid toggling training mode and to use a more meaningful metric.
 
         Args:
             batch: Observation batch (must contain ground-truth actions).
 
         Returns:
             Tuple of (loss tensor, dict with at least a ``"loss"`` key).
+
+        Raises:
+            NotImplementedError: Always, unless overridden by a subclass.
         """
-        self.train()
-        try:
-            return self(batch)
-        finally:
-            self.eval()
+        raise NotImplementedError
 
     def test_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
         """Test step for the policy.
