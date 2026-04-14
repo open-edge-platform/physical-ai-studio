@@ -1,10 +1,7 @@
-from multiprocessing.synchronize import Event as EventClass
-
 from physicalai.data import Observation
 
 from control.inference_poller import InferencePoller
 from control.queue_mixer import QueueMixer
-from schemas import Model
 from workers.model_worker import ModelWorker
 
 
@@ -14,12 +11,8 @@ class SyncMixedModelIntegration:
     inference_poller: InferencePoller
     fps: int
 
-    def __init__(self, model: Model, backend: str, stop_event: EventClass, fps: int):
-        self.model_worker = ModelWorker(
-            model=model,
-            backend=backend,
-            stop_event=stop_event,
-        )
+    def __init__(self, model_worker: ModelWorker, fps: int):
+        self.model_worker = model_worker
         self.fps = fps
 
         # Communication layer to model worker. It ensures no queue.
@@ -33,7 +26,7 @@ class SyncMixedModelIntegration:
             inference_result = self.inference_poller.get_result()
             offset = int(inference_result.time * self.fps)
             self.queue_mixer.add(inference_result.data, offset)
-            self.queue_mixer.lerp_duration = max(offset, 1)  # inference time should be a good guide for now.
+            self.queue_mixer.lerp_duration = max(offset, 1)
 
         if not self.inference_poller.busy:
             self.inference_poller.run_inference(observation)
@@ -47,9 +40,8 @@ class SyncMixedModelIntegration:
         self.inference_poller.reset()
 
     async def setup(self) -> None:
-        self.model_worker.start()
+        # Worker is already running (pre-spawned); just wait for model to load.
         await self.model_worker.wait_for_loading_to_complete()
 
     def teardown(self) -> None:
-        self.model_worker.stop()
-        self.model_worker.join(timeout=5)
+        self.inference_poller.reset()

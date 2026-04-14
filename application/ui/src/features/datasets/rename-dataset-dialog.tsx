@@ -15,7 +15,14 @@ export const RenameDatasetDialog = ({
     onDone: (dataset: SchemaDatasetOutput | undefined) => void;
 }) => {
     const [name, setName] = useState(dataset.name);
-    const renameMutation = $api.useMutation('put', '/api/dataset/{dataset_id}');
+    const renameMutation = $api.useMutation('put', '/api/dataset/{dataset_id}', {
+        meta: {
+            invalidates: [
+                ['get', '/api/dataset/{dataset_id}', { params: { path: { dataset_id: dataset.id! } } }],
+                ['get', '/api/projects'],
+            ],
+        },
+    });
 
     const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();

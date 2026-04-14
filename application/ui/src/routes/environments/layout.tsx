@@ -30,7 +30,12 @@ const MenuActions = ({ environment_id }: { environment_id: string }) => {
     const { project_id } = useProjectId();
     const deleteEnvironmentMutation = $api.useMutation(
         'delete',
-        '/api/projects/{project_id}/environments/{environment_id}'
+        '/api/projects/{project_id}/environments/{environment_id}',
+        {
+            meta: {
+                invalidates: [['get', '/api/projects/{project_id}/environments', { params: { path: { project_id } } }]],
+            },
+        }
     );
 
     return (

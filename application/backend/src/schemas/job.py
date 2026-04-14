@@ -1,44 +1,49 @@
-from datetime import datetime
-from enum import StrEnum
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_serializer
+from loguru import logger
+from pydantic import BaseModel, Field, field_serializer, model_validator
 
-from schemas.base import BaseIDModel
-
-
-class JobType(StrEnum):
-    TRAINING = "training"
-
-
-class JobStatus(StrEnum):
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELED = "canceled"
-
-
-class Job(BaseIDModel):
-    project_id: UUID
-    type: JobType = JobType.TRAINING
-    progress: int = Field(default=0, ge=0, le=100, description="Progress percentage from 0 to 100")
-    status: JobStatus = JobStatus.PENDING
-    payload: dict
-    extra_info: dict | None = None
-    message: str = "Job created"
-    start_time: datetime | None = None
-    end_time: datetime | None = None
-    created_at: datetime | None = Field(None)
-
-    @field_serializer("project_id")
-    def serialize_project_id(self, project_id: UUID, _info: Any) -> str:
-        return str(project_id)
+from schemas.base_job import BaseJob, JobType
+from schemas.hardware import DeviceType
 
 
 class JobList(BaseModel):
-    jobs: list[Job]
+    jobs: list["Job"]
+
+
+class TrainingDevice(BaseModel):
+    """Device specification for training."""
+
+    type: DeviceType = Field(..., description="Device type, e.g. 'cpu', 'xpu', 'cuda'")
+    index: int | None = Field(default=None, ge=0, description="Device index (null for CPU/NPU)")
+
+    @model_validator(mode="after")
+    def validate_index_for_device_type(self) -> "TrainingDevice":
+        """Ensure index is consistent with the device type.
+
+        Indexed types (cuda, xpu) default to index 0 when omitted.
+        Non-indexed types (cpu, npu) ignore a supplied index with a warning.
+        """
+        device_type_str = str(self.type).lower()
+        indexed_types = {"cuda", "xpu"}
+        non_indexed_types = {"cpu", "npu"}
+
+        if device_type_str in non_indexed_types:
+            if self.index is not None:
+                logger.warning(
+                    "Device type '{}' does not support an index. Got index={}. Disregarding index.",
+                    self.type,
+                    self.index,
+                )
+                self.index = None
+        elif device_type_str in indexed_types and self.index is None:
+            logger.warning(
+                "Device type '{}' requires an index (e.g., 'cuda:0', 'xpu:0'). Using default index 0.",
+                device_type_str,
+            )
+            self.index = 0
+        return self
 
 
 class TrainJobPayload(BaseModel):
@@ -59,6 +64,7 @@ class TrainJobPayload(BaseModel):
         lt=1.0,
         description="Fraction of episodes to hold out for eval-loss validation (0 = disabled)",
     )
+    device: TrainingDevice | None = Field(default=None, description="Target training device (auto-detected if null)")
 
     @field_serializer("project_id")
     def serialize_project_id(self, project_id: UUID, _info: Any) -> str:
@@ -71,3 +77,18 @@ class TrainJobPayload(BaseModel):
     @field_serializer("base_model_id")
     def serialize_base_model_id(self, base_model_id: UUID | None, _info: Any) -> str | None:
         return str(base_model_id) if base_model_id else None
+
+
+class TrainJob(BaseJob):
+    type: Literal[JobType.TRAINING] = JobType.TRAINING  # type: ignore[valid-type]
+    payload: TrainJobPayload
+
+
+JobPayload = TrainJobPayload
+
+Job = Annotated[
+    TrainJob,
+    Field(discriminator="type"),
+]
+
+JobList.model_rebuild()

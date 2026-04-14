@@ -25,7 +25,11 @@ interface NewDatasetFormProps {
     onDone: (dataset: SchemaDatasetOutput | undefined) => void;
 }
 export const NewDatasetForm = ({ project_id, onDone }: NewDatasetFormProps) => {
-    const saveMutation = $api.useMutation('post', '/api/dataset');
+    const saveMutation = $api.useMutation('post', '/api/dataset', {
+        meta: {
+            invalidates: [['get', '/api/projects/{project_id}', { params: { path: { project_id } } }]],
+        },
+    });
     const [name, setName] = useState<string>('');
     const [defaultTask, setDefaultTask] = useState<string>('');
     const { geti_action_dataset_path } = useSettings();

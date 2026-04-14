@@ -28,7 +28,11 @@ type ProjectCardProps = {
 //};
 
 export const ProjectCard = ({ item, isActive }: ProjectCardProps) => {
-    const deleteMutation = $api.useMutation('delete', '/api/projects/{project_id}');
+    const deleteMutation = $api.useMutation('delete', '/api/projects/{project_id}', {
+        meta: {
+            invalidates: [['get', '/api/projects']],
+        },
+    });
 
     const onAction = (key: Key) => {
         switch (key.toString()) {

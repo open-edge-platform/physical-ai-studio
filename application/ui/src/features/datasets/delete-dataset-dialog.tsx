@@ -9,7 +9,11 @@ type Dataset = SchemaDatasetOutput;
 
 export const DeleteDatasetDialog = ({ dataset, onDone }: { dataset: Dataset; onDone: () => void }) => {
     const [removeFiles, setRemoveFiles] = useState(false);
-    const deleteMutation = $api.useMutation('delete', '/api/dataset/{dataset_id}');
+    const deleteMutation = $api.useMutation('delete', '/api/dataset/{dataset_id}', {
+        meta: {
+            invalidates: [['get', '/api/projects']],
+        },
+    });
 
     const onDelete = async () => {
         if (dataset.id === undefined) {

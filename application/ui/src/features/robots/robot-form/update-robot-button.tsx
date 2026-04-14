@@ -10,7 +10,14 @@ export const UpdateRobotButton = () => {
     const navigate = useNavigate();
     const { project_id, robot_id } = useRobotId();
 
-    const updateRobotMutation = $api.useMutation('put', '/api/projects/{project_id}/robots/{robot_id}');
+    const updateRobotMutation = $api.useMutation('put', '/api/projects/{project_id}/robots/{robot_id}', {
+        meta: {
+            invalidates: [
+                ['get', '/api/projects/{project_id}/robots', { params: { path: { project_id } } }],
+                ['get', '/api/projects/{project_id}/robots/{robot_id}', { params: { path: { project_id, robot_id } } }],
+            ],
+        },
+    });
     const body = useRobotFormBody(robot_id);
 
     return (
