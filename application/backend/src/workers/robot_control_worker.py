@@ -6,7 +6,7 @@ from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
 from pathlib import Path
 from typing import Literal
-from uuid import UUID
+from uuid import UUID  # noqa: TC003
 
 from loguru import logger
 from pydantic import BaseModel

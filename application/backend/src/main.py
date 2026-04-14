@@ -79,7 +79,7 @@ if (
     app.mount("/", static_files, name="webui")
 
 if __name__ == "__main__":
-    #if get_torch_device() == "xpu" and mp.get_start_method(allow_none=True) != "spawn":
-    mp.set_start_method("spawn", force=True)
+    if get_torch_device() == "xpu" and mp.get_start_method(allow_none=True) != "spawn":
+        mp.set_start_method("spawn", force=True)
     uvicorn_port = int(os.environ.get("HTTP_SERVER_PORT", settings.port))
     uvicorn.run(app, host=settings.host, port=uvicorn_port)

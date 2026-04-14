@@ -24,15 +24,13 @@ def stop_event():
 def registry(stop_event):
     """Registry with 2 pre-spawned mock workers (no real processes)."""
     with patch("workers.model_worker_registry.ModelWorker", side_effect=lambda **_: _make_mock_worker()):
-        reg = ModelWorkerRegistry(max_workers=2, stop_event=stop_event)
-    return reg
+        return ModelWorkerRegistry(max_workers=2, stop_event=stop_event)
 
 
 @pytest.fixture
 def single_worker_registry(stop_event):
     with patch("workers.model_worker_registry.ModelWorker", side_effect=lambda **_: _make_mock_worker()):
-        reg = ModelWorkerRegistry(max_workers=1, stop_event=stop_event)
-    return reg
+        return ModelWorkerRegistry(max_workers=1, stop_event=stop_event)
 
 
 class TestModelWorkerRegistryInit:
@@ -95,6 +93,7 @@ class TestModelWorkerRegistryRelease:
 
     def test_release_unknown_id_is_noop(self, registry):
         from uuid import uuid4
+
         asyncio.run(registry.release(uuid4()))  # should not raise
 
 
@@ -105,6 +104,7 @@ class TestModelWorkerRegistryGet:
 
     def test_get_unknown_id_returns_none(self, registry):
         from uuid import uuid4
+
         assert registry.get(uuid4()) is None
 
 
@@ -123,10 +123,10 @@ class TestModelWorkerRegistryShutdown:
 
     def test_context_manager_calls_shutdown_all(self, stop_event):
         with patch("workers.model_worker_registry.ModelWorker", side_effect=lambda **_: _make_mock_worker()):
+
             async def run():
                 async with ModelWorkerRegistry(max_workers=1, stop_event=stop_event) as reg:
-                    workers = list(reg._workers.values())
-                return workers
+                    return list(reg._workers.values())
 
             workers = asyncio.run(run())
 

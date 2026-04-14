@@ -59,9 +59,7 @@ class ModelWorkerRegistry:
         """
         async with self._lock:
             if not self._idle:
-                raise ValueError(
-                    f"No idle model workers available (all {self._max_workers} are busy)"
-                )
+                raise ValueError(f"No idle model workers available (all {self._max_workers} are busy)")
             worker_id = next(iter(self._idle))
             self._idle.discard(worker_id)
             self._busy.add(worker_id)
