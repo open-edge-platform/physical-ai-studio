@@ -16,18 +16,18 @@ class TrainingDevice(BaseModel):
     """Device specification for training."""
 
     type: DeviceType = Field(..., description="Device type, e.g. 'cpu', 'xpu', 'cuda'")
-    index: int | None = Field(default=None, ge=0, description="Device index (null for CPU/MPS/NPU)")
+    index: int | None = Field(default=None, ge=0, description="Device index (null for CPU/NPU)")
 
     @model_validator(mode="after")
     def validate_index_for_device_type(self) -> "TrainingDevice":
         """Ensure index is consistent with the device type.
 
         Indexed types (cuda, xpu) default to index 0 when omitted.
-        Non-indexed types (cpu, mps, npu) ignore a supplied index with a warning.
+        Non-indexed types (cpu, npu) ignore a supplied index with a warning.
         """
         device_type_str = str(self.type).lower()
         indexed_types = {"cuda", "xpu"}
-        non_indexed_types = {"cpu", "mps", "npu"}
+        non_indexed_types = {"cpu", "npu"}
 
         if device_type_str in non_indexed_types:
             if self.index is not None:

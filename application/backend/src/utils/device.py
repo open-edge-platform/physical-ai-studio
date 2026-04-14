@@ -9,7 +9,7 @@ def get_torch_device(device: str | None = None) -> str:
 
     When *device* is provided it is returned as-is, allowing the caller to
     override auto-detection.  When ``None``, the best available accelerator
-    is chosen automatically (XPU > CUDA > MPS > CPU).
+    is chosen automatically (XPU > CUDA > CPU).
     """
     if device is not None:
         return device

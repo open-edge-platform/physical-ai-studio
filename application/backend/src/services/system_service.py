@@ -16,7 +16,7 @@ class SystemService:
     def get_training_devices() -> list[DeviceInfo]:
         """Get available compute devices for training.
 
-        Enumerates CPU, Intel XPU, NVIDIA CUDA, and Apple MPS devices
+        Enumerates CPU, Intel XPU and NVIDIA CUDA
         that PyTorch can use for model training.
 
         Returns:
@@ -64,13 +64,6 @@ class SystemService:
                     cuda_props.name,
                     cuda_props.total_memory,
                 )
-
-        # Apple MPS
-        if torch.mps.is_available():
-            devices.append(
-                DeviceInfo(type=DeviceType.MPS, name="MPS", memory=None, index=None),
-            )
-            logger.debug("Detected MPS device")
 
         return devices
 
