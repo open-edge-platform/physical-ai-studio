@@ -38,7 +38,7 @@ jobs:
 
       - name: Check paths
         id: check_paths
-        uses: open-edge-platform/geti-ci/actions/check-paths@3c8d37fc4b106224f9e29d72db4a025b62e07e37 #FIXME
+        uses: open-edge-platform/geti-ci/actions/check-paths@7e686c1248b3939f8ee8e04e2612da727e379d91
         with:
           files_yaml: |
             test:
