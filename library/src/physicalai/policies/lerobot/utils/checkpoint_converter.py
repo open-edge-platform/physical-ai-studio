@@ -58,6 +58,10 @@ def lightning_to_lerobot(
 
     config_dict = checkpoint[CONFIG_KEY]
 
+    policy_name = checkpoint.get(POLICY_NAME_KEY) or config_dict.get("type")
+    if policy_name and "type" not in config_dict:
+        config_dict["type"] = policy_name
+
     with (output_dir / "config.json").open("w") as f:
         json.dump(config_dict, f, indent=4)
 

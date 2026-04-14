@@ -196,6 +196,20 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
 
         self.save_hyperparameters()
 
+    def _init_pretrained_shell(self) -> None:
+        """Minimal initialization for instances created by ``from_pretrained``.
+
+        Calls ``Policy.__init__`` (which chains to ``LightningModule.__init__``)
+        to set up the action queue, rollout metrics, and Lightning internals,
+        **without** requiring the ``policy_name`` or feature arguments that the
+        full ``LeRobotPolicy.__init__`` demands.
+
+        This avoids hard-coding ``Policy.__init__(self, …)`` inside the mixin,
+        keeping the initializer hierarchy-safe if intermediate classes are
+        inserted later.
+        """
+        Policy.__init__(self, n_action_steps=1)
+
     def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
         """Save model config and policy name to checkpoint for reconstruction.
 
@@ -203,7 +217,9 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             checkpoint: Lightning checkpoint dictionary to modify in-place.
         """
         if self._config is not None:
-            checkpoint[CONFIG_KEY] = dataclass_to_dict(self._config)
+            config_dict = dataclass_to_dict(self._config)
+            config_dict["type"] = self.policy_name
+            checkpoint[CONFIG_KEY] = config_dict
             checkpoint[POLICY_NAME_KEY] = self.policy_name
             if self._dataset_stats is not None:
                 checkpoint[DATASET_STATS_KEY] = dataclass_to_dict(self._dataset_stats)
@@ -533,6 +549,27 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             raise RuntimeError(msg)
         return self._lerobot_policy
 
+    @property  # type: ignore[override]
+    def model(self) -> PreTrainedPolicy:  # type: ignore[override]
+        """Alias for :attr:`lerobot_policy`.
+
+        Defined as a ``@property`` so that the underlying ``_lerobot_policy``
+        sub-module is **not** registered twice in the state dict.  When
+        ``model`` was a plain attribute set to ``self._lerobot_policy``,
+        PyTorch recorded every parameter under both ``model.*`` **and**
+        ``_lerobot_policy.*``, doubling the checkpoint size and forcing
+        ``strict=False`` on reload.
+
+        The base :class:`Policy.__init__` already skips
+        ``self.model = None`` when it detects a property descriptor on the
+        subclass, so this is fully compatible with the base class.
+        """
+        return self.lerobot_policy
+
+    @model.setter
+    def model(self, value: Any) -> None:  # noqa: ANN401
+        """No-op setter to absorb stale assignments during deserialization."""
+
     def _initialize_policy(
         self,
         input_features: dict[str, PolicyFeature] | None,
@@ -577,9 +614,6 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         # Instantiate the LeRobot policy
         policy = policy_cls(config)
         self.add_module("_lerobot_policy", policy)
-
-        # Use LeRobot policy directly as model (it's already an nn.Module)
-        self.model = self._lerobot_policy
 
         # Create preprocessor/postprocessor for normalization
         self._preprocessor, self._postprocessor = make_pre_post_processors(config, dataset_stats=dataset_stats)

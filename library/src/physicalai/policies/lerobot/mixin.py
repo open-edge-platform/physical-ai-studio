@@ -11,14 +11,38 @@ from __future__ import annotations
 
 import dataclasses
 import inspect
+import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self
 
 from physicalai.config.mixin import FromConfig
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from lerobot.configs.policies import PreTrainedConfig
+
+logger = logging.getLogger(__name__)
+
+_PROCESSOR_CONFIG_FILENAME = "policy_preprocessor.json"
+
+
+def _has_processor_file(pretrained_name_or_path: str) -> bool:
+    """Check whether a model directory or Hub repo contains a processor config.
+
+    Returns:
+        True if ``policy_preprocessor.json`` exists at the given path or Hub repo.
+    """
+    local_path = Path(pretrained_name_or_path)
+    if local_path.is_dir():
+        return (local_path / _PROCESSOR_CONFIG_FILENAME).exists()
+
+    # Hub repo — lightweight HEAD request via huggingface_hub
+    try:
+        from huggingface_hub import file_exists  # noqa: PLC0415
+
+        return file_exists(pretrained_name_or_path, _PROCESSOR_CONFIG_FILENAME)
+    except Exception:  # noqa: BLE001
+        logger.debug("Could not probe Hub for %s; assuming no processor config", pretrained_name_or_path)
+        return False
 
 
 class LeRobotFromConfig(FromConfig):
@@ -252,10 +276,9 @@ class LeRobotFromConfig(FromConfig):
         # Create wrapper instance without calling __init__
         wrapper: Any = cls.__new__(cls)
 
-        # Initialize as PyTorch Module - we need to call the parent __init__
-        # since we bypassed it with __new__. PyTorch Module.__init__ sets up
-        # critical internal state (_modules, _parameters, etc.)
-        super(cls, wrapper).__init__()
+        # Initialize Lightning internals, action queue, and rollout metrics
+        # without requiring the full LeRobotPolicy.__init__ arguments.
+        wrapper._init_pretrained_shell()  # noqa: SLF001
 
         # Set required attributes
         wrapper._is_pretrained = True  # noqa: SLF001
@@ -265,9 +288,8 @@ class LeRobotFromConfig(FromConfig):
         # Config from pretrained models should have this; if not, user must provide it for training
         wrapper.learning_rate = kwargs.get("learning_rate", getattr(config, "optimizer_lr", None))
 
-        # For LeRobotPolicy (universal wrapper), set policy_name
-        if cls.__name__ == "LeRobotPolicy":
-            wrapper.policy_name = config.type
+        # Set policy_name from the loaded config (needed by all wrapper types)
+        wrapper.policy_name = config.type
 
         # Register the loaded policy
         wrapper.add_module("_lerobot_policy", lerobot_policy)
@@ -275,20 +297,22 @@ class LeRobotFromConfig(FromConfig):
         from physicalai.devices import get_available_device  # noqa: PLC0415
 
         device = get_available_device()
+        device_overrides = {
+            "preprocessor_overrides": {"device_processor": {"device": device}},
+            "postprocessor_overrides": {"device_processor": {"device": device}},
+        }
+
+        # Probe whether the model ships a saved processor config.
+        # Models saved with lerobot ≥ 0.5.1 include policy_preprocessor.json;
+        # older Hub models don't — fall back to building from config only.
+        pretrained_path = str(pretrained_name_or_path)
+        has_processor_config = _has_processor_file(pretrained_path)
+
         wrapper._preprocessor, wrapper._postprocessor = make_pre_post_processors(  # noqa: SLF001
             config,
-            pretrained_path=str(pretrained_name_or_path),
-            preprocessor_overrides={"device_processor": {"device": device}},
-            postprocessor_overrides={"device_processor": {"device": device}},
+            **({"pretrained_path": pretrained_path} if has_processor_config else {}),
+            **device_overrides,
         )
-
-        # Expose model attribute if available
-        if hasattr(lerobot_policy, "model"):
-            wrapper.model = lerobot_policy.model
-        elif hasattr(lerobot_policy, "diffusion"):
-            wrapper.model = lerobot_policy.diffusion
-        else:
-            wrapper.model = None
 
         # Set to eval mode (LeRobot's from_pretrained sets policy to eval)
         wrapper.eval()
