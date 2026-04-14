@@ -12,6 +12,7 @@ set -euo pipefail
 # Usage:
 #   SEED_DB=true ./run.sh       # Seed database before launching server
 #   ./run.sh                    # Run server without seeding
+#   ./run.sh --dev              # Force dev mode (hot reload enabled)
 #
 # Environment variables:
 #   SEED_DB       If set to "true", runs database seeding before starting.
@@ -28,7 +29,13 @@ APP_MODULE=${APP_MODULE:-src/main.py}
 UV_CMD=${UV_CMD:-uv run --no-sync}
 
 export PYTHONUNBUFFERED=1
-export PYTHONPATH=.
+export PYTHONPATH=src
+
+if [[ "${1:-}" == "--dev" ]]; then
+    export ENVIRONMENT=dev
+    export DEBUG=true
+    echo "Dev mode enabled: hot reload is on"
+fi
 
 # Always run migrations — Alembic is idempotent and will skip
 # already-applied migrations. This ensures the persistent volume

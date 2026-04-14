@@ -82,4 +82,11 @@ if __name__ == "__main__":
     if get_torch_device() == "xpu" and mp.get_start_method(allow_none=True) != "spawn":
         mp.set_start_method("spawn", force=True)
     uvicorn_port = int(os.environ.get("HTTP_SERVER_PORT", settings.port))
-    uvicorn.run(app, host=settings.host, port=uvicorn_port)
+    reload = settings.environment == "dev"
+    uvicorn.run(
+        "main:app",
+        host=settings.host,
+        port=uvicorn_port,
+        reload=reload,
+        reload_dirs=["src"] if reload else None,
+    )
