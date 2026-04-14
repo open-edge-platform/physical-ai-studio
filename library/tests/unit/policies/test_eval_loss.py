@@ -9,6 +9,7 @@ training-only behaviors that would bias the validation signal.
 
 from __future__ import annotations
 
+import pytest
 import torch
 import torch.nn as nn
 
@@ -58,7 +59,7 @@ class _DropoutPolicy(Policy):
 class _NoOverridePolicy(_DropoutPolicy):
     """Same as _DropoutPolicy, but does NOT override compute_val_loss.
 
-    Uses the base Policy default which toggles train mode.
+    Uses the base Policy default which raises NotImplementedError.
     """
 
     compute_val_loss = Policy.compute_val_loss  # type: ignore[assignment]
@@ -102,39 +103,25 @@ class TestEvalLossTrainModeLeak:
         assert not any(modes_during_loss), "compute_val_loss should NOT set training=True"
         assert not policy.training, "Policy should still be in eval mode after compute_val_loss"
 
-    def test_default_compute_val_loss_toggles_train_mode(self) -> None:
-        """Base Policy.compute_val_loss (no override) temporarily enables train mode."""
-        policy = _NoOverridePolicy()
-        policy.eval()
-
-        batch = _make_batch()
-        modes_during_loss: list[bool] = []
-        orig_forward = policy.linear.forward
-
-        def tracking_forward(x: torch.Tensor) -> torch.Tensor:
-            modes_during_loss.append(policy.training)
-            return orig_forward(x)
-
-        policy.linear.forward = tracking_forward  # type: ignore[method-assign]
-        policy.compute_val_loss(batch)
-
-        assert any(modes_during_loss), "Default compute_val_loss SHOULD toggle training=True"
-        assert not policy.training, "Policy should be back in eval mode after compute_val_loss"
-
-    def test_dropout_causes_variance_in_train_mode(self) -> None:
-        """Demonstrate that train-mode loss has variance from dropout."""
+    def test_default_compute_val_loss_raises(self) -> None:
+        """Base Policy.compute_val_loss (no override) raises NotImplementedError."""
         policy = _NoOverridePolicy()
         policy.eval()
 
         batch = _make_batch()
 
-        # Collect losses using default compute_val_loss (toggles train → dropout active)
-        train_mode_losses = []
-        for _ in range(20):
-            loss, _ = policy.compute_val_loss(batch)
-            train_mode_losses.append(loss.item())
+        with pytest.raises(NotImplementedError):
+            policy.compute_val_loss(batch)
 
-        assert len(set(train_mode_losses)) > 1, "Train-mode losses should vary due to dropout"
+    def test_dropout_variance_without_override_raises(self) -> None:
+        """Policy without compute_val_loss override raises NotImplementedError."""
+        policy = _NoOverridePolicy()
+        policy.eval()
+
+        batch = _make_batch()
+
+        with pytest.raises(NotImplementedError):
+            policy.compute_val_loss(batch)
 
     def test_eval_mode_loss_is_deterministic(self) -> None:
         """Loss computed via overridden compute_val_loss (eval mode) is deterministic."""
