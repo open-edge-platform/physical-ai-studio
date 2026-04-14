@@ -128,10 +128,11 @@ class SmolVLAPreprocessor(torch.nn.Module):
                 processing. Defaults to "HuggingFaceTB/SmolVLM2-500M-Video-Instruct".
             padding: Padding strategy for tokenization. Defaults to "longest".
             rename_map: Optional mapping of camera base names to target names.
-                Maps source camera names to the names expected by the pretrained model.
-                Example: {"top": "camera1", "wrist": "camera2"} renames
-                images.top → images.camera1. Keys not in the map pass through unchanged.
-                Defaults to None (no renaming).
+                Maps source camera names to the pretrained model's expected camera slots.
+                Example: {"top": "camera1", "wrist": "camera2"} ensures images from
+                the "top" camera are placed in the camera1 tensor slot position.
+                Keys not in the map pass through in their original order after mapped keys.
+                Defaults to None (no reordering).
             expected_camera_names: Camera names the pretrained model expects. Used for
                 validation warnings when batch camera names don't match. Defaults to
                 SMOLVLA_EXPECTED_CAMERA_NAMES (camera1, camera2, camera3).
@@ -169,9 +170,6 @@ class SmolVLAPreprocessor(torch.nn.Module):
             A dictionary containing the processed batch with added 'tokenized_prompt'
             and 'tokenized_prompt_mask' tensors, after applying state-action normalization.
         """
-        if self.rename_map:
-            batch = self._apply_rename_map(batch)
-
         self._validate_camera_names(batch)
 
         batch = self._newline_processor(batch)
@@ -199,14 +197,44 @@ class SmolVLAPreprocessor(torch.nn.Module):
 
         return self._state_action_normalizer(batch)
 
+    def _reorder_image_keys(self, batch_img_keys: list[str]) -> list[str]:
+        """Reorder image keys to match canonical camera slot order via rename_map.
+
+        Maps each raw batch key to its logical target name using rename_map,
+        then sorts by target name to ensure deterministic camera-to-tensor-slot
+        assignment matching the pretrained model's expectations.
+
+        Keys not in rename_map retain their original base name for sorting,
+        placing them after mapped keys in alphabetical order.
+
+        Args:
+            batch_img_keys: List of flattened image keys (e.g. ["images.top", "images.wrist"]).
+
+        Returns:
+            Reordered list of image keys sorted by their mapped target names.
+        """
+        if not self.rename_map:
+            return batch_img_keys
+
+        rename_map = self.rename_map
+
+        def _sort_key(key: str) -> str:
+            parts = key.split(".", 1)
+            base_name = parts[1] if len(parts) > 1 else key
+            return rename_map.get(base_name, base_name)
+
+        return sorted(batch_img_keys, key=_sort_key)
+
     def _preprocess_images(self, batch: dict[str, torch.Tensor]) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
         """Apply SmolVLA preprocessing to the images.
 
         This method processes image tensors from a batch by:
-        1. Extracting the last frame if the input is a 5D tensor (video sequence)
-        2. Optionally resizing images with padding to maintain aspect ratio
-        3. Converting pixel values from [0.0, 1.0] range to [-1.0, 1.0] range as required by SigLIP
-        4. Extracting or creating padding masks for each image
+        1. Reordering image keys to match canonical camera slot order (via rename_map)
+        2. Extracting the last frame if the input is a 5D tensor (video sequence)
+        3. Optionally resizing images with padding to maintain aspect ratio
+        4. Converting pixel values from [0.0, 1.0] range to [-1.0, 1.0] range as required by SigLIP
+        5. Extracting or creating padding masks for each image
+
         Args:
             batch: A dictionary containing image tensors and optional padding masks.
                 Image tensors should be 4D (B, C, H, W) or 5D (B, T, C, H, W).
@@ -224,6 +252,7 @@ class SmolVLAPreprocessor(torch.nn.Module):
 
         batch_img_keys = Observation.get_flattened_keys(batch, IMAGES)
         batch_img_keys = [key for key in batch_img_keys if "is_pad" not in key]
+        batch_img_keys = self._reorder_image_keys(batch_img_keys)
 
         max_image_dim = 5
         for key in batch_img_keys:
@@ -246,57 +275,12 @@ class SmolVLAPreprocessor(torch.nn.Module):
 
         return images, img_masks
 
-    def _apply_rename_map(self, batch: dict[str, Any]) -> dict[str, Any]:
-        """Rename camera keys in the batch according to self.rename_map.
-
-        Renames flattened image keys (e.g. images.top → images.camera1) and
-        their associated padding mask keys in EXTRA. Updates the _images_keys
-        helper list to reflect renamed keys.
-
-        Args:
-            batch: Flattened observation dict from Observation.to_dict(flatten=True).
-
-        Returns:
-            Updated batch dict with renamed camera keys.
-        """
-        if not self.rename_map:
-            return batch
-
-        image_keys = Observation.get_flattened_keys(batch, IMAGES)
-        image_keys = [k for k in image_keys if "is_pad" not in k]
-
-        new_keys_list: list[str] = []
-        for key in image_keys:
-            parts = key.split(".", 1)
-            base_name = parts[1] if len(parts) > 1 else key
-
-            if base_name in self.rename_map:
-                new_name = self.rename_map[base_name]
-                new_key = f"{IMAGES}.{new_name}"
-
-                batch[new_key] = batch.pop(key)
-
-                old_mask_key = EXTRA + f".{key}_padding_mask"
-                if old_mask_key in batch:
-                    new_mask_key = EXTRA + f".{new_key}_padding_mask"
-                    batch[new_mask_key] = batch.pop(old_mask_key)
-
-                new_keys_list.append(new_key)
-                logger.debug("Renamed camera key: %s → %s", key, new_key)
-            else:
-                new_keys_list.append(key)
-
-        if f"_{IMAGES}_keys" in batch:
-            batch[f"_{IMAGES}_keys"] = new_keys_list
-
-        return batch
-
     def _validate_camera_names(self, batch: dict[str, Any]) -> None:
         """Check if batch camera names match expected normalization feature names.
 
-        Logs a warning if camera names in the batch don't match any known
-        normalization stat names, which typically indicates a rename_map is needed.
-        Only runs once per preprocessor lifetime to avoid log spam.
+        When rename_map is active, validates the mapped logical names (not raw
+        batch names) against expected camera names. Only runs once per
+        preprocessor lifetime to avoid log spam.
         """
         if self._camera_names_validated:
             return
@@ -312,7 +296,13 @@ class SmolVLAPreprocessor(torch.nn.Module):
 
         batch_camera_bases = {k.split(".", 1)[1] if "." in k else k for k in image_keys}
 
-        if not batch_camera_bases & self._expected_camera_names:
+        # Map through rename_map to get logical names for validation
+        if self.rename_map:
+            mapped_bases = {self.rename_map.get(base, base) for base in batch_camera_bases}
+        else:
+            mapped_bases = batch_camera_bases
+
+        if not mapped_bases & self._expected_camera_names:
             logger.warning(
                 "Camera name mismatch detected. Dataset cameras: %s, "
                 "but pretrained model expects: %s. "
