@@ -25,6 +25,7 @@ from services.robot_calibration_service import RobotCalibrationService
 from settings import get_settings
 from utils.serial_robot_tools import RobotConnectionManager
 from workers.camera_worker_registry import CameraWorkerRegistry
+from workers.model_worker_registry import ModelWorkerRegistry
 from workers.robot_worker_registry import RobotWorkerRegistry
 
 
@@ -226,3 +227,14 @@ def get_robot_registry(request: HTTPConnection) -> RobotWorkerRegistry:
 
 CameraRegistryDep = Annotated[CameraWorkerRegistry, Depends(get_camera_registry)]
 RobotRegistryDep = Annotated[RobotWorkerRegistry, Depends(get_robot_registry)]
+
+
+def get_model_registry(request: HTTPConnection) -> ModelWorkerRegistry:
+    """Dependency to get model worker registry."""
+    registry = getattr(request.app.state, "model_registry", None)
+    if registry is None:
+        raise RuntimeError("Model worker registry not initialized")
+    return registry
+
+
+ModelRegistryDep = Annotated[ModelWorkerRegistry, Depends(get_model_registry)]
