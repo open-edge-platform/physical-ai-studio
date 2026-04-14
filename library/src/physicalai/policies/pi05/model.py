@@ -10,14 +10,24 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import Tensor, nn
 from transformers.cache_utils import DynamicCache
 
-from physicalai.data.observation import ACTION, IMAGES
+from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
+from physicalai.data.observation import ACTION, IMAGES, STATE, TASK
+from physicalai.export import ExportableModelMixin
+from physicalai.export.backends import (
+    ExportParameters,
+    ONNXExportParameters,
+    OpenVINOExportParameters,
+    TorchExportParameters,
+)
+from physicalai.inference.manifest import ComponentSpec
+from physicalai.policies.base import Model
 
 from .pi_gemma import (
     PaliGemmaForConditionalGenerationWithPiGemma,
@@ -63,7 +73,7 @@ def _get_safe_dtype(
     return target_dtype
 
 
-def create_sinusoidal_pos_embedding(
+def _create_sinusoidal_pos_embedding(
     time: torch.Tensor,
     dimension: int,
     min_period: float,
@@ -99,7 +109,7 @@ def create_sinusoidal_pos_embedding(
     return torch.cat([torch.sin(sin_input), torch.cos(sin_input)], dim=1)
 
 
-def sample_beta(
+def _sample_beta(
     alpha: float,
     beta: float,
     bsize: int,
@@ -116,7 +126,7 @@ def sample_beta(
     return dist.sample((bsize,)).to(device)
 
 
-def make_att_2d_masks(
+def _make_att_2d_masks(
     pad_masks: Tensor,
     att_masks: Tensor,
 ) -> Tensor:
@@ -159,7 +169,7 @@ def _clone_kv_cache(past_key_values: DynamicCache) -> DynamicCache:
     return cloned
 
 
-def compute_layer_complete(  # noqa: PLR0914
+def _compute_layer_complete(  # noqa: PLR0914
     layer_idx: int,
     inputs_embeds: list[Tensor],
     attention_mask: Tensor,
@@ -478,7 +488,7 @@ class PaliGemmaWithExpertModel(nn.Module):
             for layer_idx in range(num_layers):
                 if use_gradient_checkpointing:
                     inputs_embeds = torch.utils.checkpoint.checkpoint(
-                        compute_layer_complete,
+                        _compute_layer_complete,
                         layer_idx,
                         inputs_embeds,
                         attention_mask,
@@ -490,7 +500,7 @@ class PaliGemmaWithExpertModel(nn.Module):
                         gemma_expert=self.gemma_expert,
                     )
                 else:
-                    inputs_embeds = compute_layer_complete(
+                    inputs_embeds = _compute_layer_complete(
                         layer_idx,
                         inputs_embeds,
                         attention_mask,
@@ -528,7 +538,7 @@ class PaliGemmaWithExpertModel(nn.Module):
         return [prefix_output, suffix_output], prefix_past_key_values
 
 
-class Pi05Model(nn.Module):
+class Pi05Model(ExportableModelMixin, Model):
     """Core Pi05 PyTorch model for flow matching VLA.
 
     This is the nn.Module that contains the actual model logic,
@@ -553,9 +563,12 @@ class Pi05Model(nn.Module):
         min_period: float = 4e-3,
         max_period: float = 4.0,
         image_resolution: tuple[int, int] = (224, 224),
+        tokenizer_max_length: int = 200,
         freeze_vision_encoder: bool = False,
         train_expert_only: bool = True,
+        gradient_checkpointing: bool = False,
         compile_model: bool = False,
+        use_random_input_noise: bool = False,
     ) -> None:
         """Initialize Pi05Model.
 
@@ -576,9 +589,13 @@ class Pi05Model(nn.Module):
             min_period: Minimum period for sine-cosine positional encoding.
             max_period: Maximum period for sine-cosine positional encoding.
             image_resolution: Target image resolution (height, width). Must be square.
+            tokenizer_max_length: Maximum token length for the tokenizer.
             freeze_vision_encoder: Whether to freeze the vision encoder during training.
             train_expert_only: Whether to train only the action expert.
+            gradient_checkpointing: Whether to enable gradient checkpointing for memory optimization.
             compile_model: Whether to use torch.compile.
+            use_random_input_noise: Whether to use random noise as the initial input for the denoising
+                process during inference. If False, zeros are used instead.
 
         Raises:
             ValueError: If image resolution is not square.
@@ -595,6 +612,9 @@ class Pi05Model(nn.Module):
         self._time_sampling_offset = time_sampling_offset
         self._min_period = min_period
         self._max_period = max_period
+        self._image_resolution = image_resolution
+        self._tokenizer_max_length = tokenizer_max_length
+        self._use_random_input_noise = use_random_input_noise
 
         paligemma_config = get_gemma_config(paligemma_variant)
         action_expert_config = get_gemma_config(action_expert_variant)
@@ -620,6 +640,8 @@ class Pi05Model(nn.Module):
         self.time_mlp_out = nn.Linear(action_expert_config.width, action_expert_config.width)
 
         self.gradient_checkpointing_enabled = False
+        if gradient_checkpointing:
+            self.gradient_checkpointing_enable()
 
         if compile_model:
             torch.set_float32_matmul_precision("high")
@@ -628,6 +650,138 @@ class Pi05Model(nn.Module):
             compile_mode = "default"
             self.sample_actions = torch.compile(self.sample_actions, mode=compile_mode)  # type: ignore[method-assign]
             self.forward = torch.compile(self.forward, mode=compile_mode)  # type: ignore[method-assign]
+
+    def set_dataset_stats(self, dataset_stats: dict) -> None:
+        """Update dataset statistics used for normalization."""
+        self._dataset_stats = dataset_stats
+
+    @property
+    def extra_export_args(self) -> dict[str, ExportParameters]:
+        """Additional export arguments for model conversion.
+
+        This property provides extra configuration parameters needed when exporting
+        the model to different formats (ONNX, OpenVINO, and PyTorch).
+
+        Returns:
+            dict[str, ExportParameters]: A dictionary mapping format names to their export parameters.
+            Supported formats: 'onnx', 'openvino', 'torch'.
+
+        Example:
+            >>> model = Pi05(input_features, output_features)
+            >>> export_args = model.extra_export_args
+            >>> onnx_args = export_args['onnx']
+            >>> print(onnx_args.exporter_kwargs)
+            {'output_names': ['action']}
+        """
+        preproc_specs = [
+            ComponentSpec(type="pi05", image_resolution=self._image_resolution),
+            ComponentSpec(
+                type="hf_tokenizer",
+                tokenizer_name="google/paligemma-3b-pt-224",
+                revision="35e4f46485b4d07967e7e9935bc3786aad50687c",
+                max_token_len=self._tokenizer_max_length,
+            ),
+        ]
+        postproc_specs = [
+            ComponentSpec(
+                type="denormalize",
+                stats={ACTION: self._dataset_stats[ACTION]},
+                mode="mean_std",
+            ),
+        ]
+        extra_args: dict[str, ExportParameters] = {}
+        extra_args["onnx"] = ONNXExportParameters(
+            exporter_kwargs={
+                "output_names": ["action"],
+            },
+            export_tokenizer=False,
+            preprocessors_specs=preproc_specs,
+            postprocessors_specs=postproc_specs,
+        )
+        extra_args["openvino"] = OpenVINOExportParameters(
+            outputs=["action"],
+            compress_to_fp16=True,
+            via_onnx=True,
+            export_tokenizer=False,
+            exporter_kwargs={},
+            preprocessors_specs=preproc_specs,
+            postprocessors_specs=postproc_specs,
+        )
+        extra_args["torch"] = TorchExportParameters()
+
+        return extra_args
+
+    @property
+    def sample_input(self) -> dict[str, torch.Tensor | str]:
+        """Generate a sample input dictionary for the model with random tensors.
+
+        This method creates a dictionary containing sample input tensors that match the expected
+        input format of the model. The tensors are randomly initialized and have shapes derived
+        from the model's configuration.
+
+        Returns:
+            dict[str, torch.Tensor | dict[str, torch.Tensor]]: A dictionary with two keys
+                - 'state': A tensor representing the robot state with shape (1, *state_feature.shape).
+                - 'images': Either a single tensor or a dictionary of tensors representing visual inputs,
+                    depending on the number of image features configured.
+
+        Note:
+            The batch dimension (first dimension) is set to 1 for all tensors.
+            The tensors are created on the same device as the model's parameters.
+        """
+        device = next(self.paligemma_with_expert.parameters()).device
+
+        sample_input = {}
+
+        num_image_features = sum(1 for key in self._dataset_stats if "image" in key)
+
+        for feature_id in self._dataset_stats:
+            if STATE in feature_id:
+                state_feature = self._dataset_stats[feature_id]
+                sample_input[STATE] = torch.randn(1, *cast("tuple", state_feature["shape"]), device=device)
+            elif "image" in feature_id:
+                image_feature = self._dataset_stats[feature_id]
+                if num_image_features == 1:
+                    sample_input[IMAGES] = torch.randn(1, *cast("tuple", image_feature["shape"]), device=device)
+                else:
+                    sample_input[IMAGES + "." + str(image_feature["name"])] = torch.randn(
+                        1,
+                        *cast("tuple", image_feature["shape"]),
+                        device=device,
+                    )
+
+        sample_input[TASK] = "sample_task"
+
+        return sample_input
+
+    @property
+    def reward_delta_indices(self) -> None:
+        """Return reward indices.
+
+        Currently returns `None` as rewards are not implemented.
+
+        Returns:
+            None
+        """
+        return None
+
+    @property
+    def action_delta_indices(self) -> list[int]:
+        """Get indices of actions relative to the current timestep.
+
+        Returns:
+            list[int]: A list of relative action indices.
+        """
+        return list(range(self._chunk_size))
+
+    @property
+    def observation_delta_indices(self) -> None:
+        """Get indices of observations relative to the current timestep.
+
+        Returns:
+            None
+        """
+        return None
 
     def gradient_checkpointing_enable(self) -> None:
         """Enable gradient checkpointing for memory optimization."""
@@ -672,21 +826,20 @@ class Pi05Model(nn.Module):
         att_2d_masks_4d = att_2d_masks[:, None, :, :]
         return torch.where(att_2d_masks_4d, 0.0, OPENPI_ATTENTION_MASK_VALUE)
 
-    def sample_noise(self, shape: tuple, device: torch.device) -> Tensor:  # noqa: PLR6301
+    def sample_noise(self, shape: tuple, device: torch.device) -> Tensor:
         """Sample noise for the model.
 
         Returns:
             Noise tensor.
         """
-        if torch.jit.is_tracing() or torch.onnx.is_in_onnx_export():
+        if not self._use_random_input_noise:
             return torch.zeros(shape, dtype=torch.float32, device=device)
         return torch.normal(
             mean=0.0,
             std=1.0,
             size=shape,
-            dtype=torch.float32,
             device=device,
-        )
+        ).to(dtype=torch.float32)
 
     def sample_time(self, bsize: int, device: torch.device) -> Tensor:
         """Sample time values for the model.
@@ -699,7 +852,7 @@ class Pi05Model(nn.Module):
             beta = self._time_sampling_beta_beta
             time_beta = torch.full((bsize,), alpha / (alpha + beta), device=device, dtype=torch.float32)  # Beta mean
         else:
-            time_beta = sample_beta(
+            time_beta = _sample_beta(
                 self._time_sampling_beta_alpha,
                 self._time_sampling_beta_beta,
                 bsize,
@@ -710,8 +863,8 @@ class Pi05Model(nn.Module):
 
     def embed_prefix(
         self,
-        images: list[Tensor],
-        img_masks: list[Tensor],
+        images: Tensor,
+        img_masks: Tensor,
         tokens: Tensor,
         masks: Tensor,
     ) -> tuple[Tensor, Tensor, Tensor]:
@@ -771,7 +924,7 @@ class Pi05Model(nn.Module):
         pad_masks = []
         att_masks = []
 
-        time_emb = create_sinusoidal_pos_embedding(
+        time_emb = _create_sinusoidal_pos_embedding(
             timestep,
             self.action_in_proj.out_features,
             min_period=self._min_period,
@@ -812,99 +965,106 @@ class Pi05Model(nn.Module):
     def forward(  # noqa: PLR0914
         self,
         batch: dict[str, Any],
-    ) -> tuple[Tensor, dict[str, float]]:
+    ) -> tuple[Tensor, dict[str, float]] | Tensor:
         """Training forward pass: compute flow matching loss.
 
         Args:
-            batch: Preprocessed batch dict containing IMAGES, "image_masks",
-                "tokenized_prompt", "tokenized_prompt_mask", and ACTION.
+            batch: Preprocessed batch dict containing IMAGES, IMAGE_MASKS,
+                TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK, and ACTION.
 
         Returns:
             Tuple of (mean loss tensor, loss dict with "loss" key).
         """
-        images = batch[IMAGES]
-        img_masks = batch["image_masks"]
-        tokens = batch["tokenized_prompt"]
-        masks = batch["tokenized_prompt_mask"]
-        actions = batch[ACTION]
+        if self.training:
+            images = batch[IMAGES]
+            img_masks = batch[IMAGE_MASKS]
+            tokens = batch[TOKENIZED_PROMPT]
+            masks = batch[TOKENIZED_PROMPT_MASK]
+            actions = batch[ACTION]
 
-        noise = self.sample_noise(actions.shape, actions.device)
-        time = self.sample_time(actions.shape[0], actions.device)
+            noise = self.sample_noise(actions.shape, actions.device)
+            time = self.sample_time(actions.shape[0], actions.device)
 
-        time_expanded = time[:, None, None]
-        x_t = time_expanded * noise + (1 - time_expanded) * actions
-        u_t = noise - actions
+            time_expanded = time[:, None, None]
+            x_t = time_expanded * noise + (1 - time_expanded) * actions
+            u_t = noise - actions
 
-        prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, tokens, masks)
-        suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(x_t, time)
+            prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, tokens, masks)
+            suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(x_t, time)
 
-        if (
-            self.paligemma_with_expert.paligemma.model.language_model.layers[0].self_attn.q_proj.weight.dtype
-            == torch.bfloat16
-        ):
-            suffix_embs = suffix_embs.to(dtype=torch.bfloat16)
-            prefix_embs = prefix_embs.to(dtype=torch.bfloat16)
+            if (
+                self.paligemma_with_expert.paligemma.model.language_model.layers[0].self_attn.q_proj.weight.dtype
+                == torch.bfloat16
+            ):
+                suffix_embs = suffix_embs.to(dtype=torch.bfloat16)
+                prefix_embs = prefix_embs.to(dtype=torch.bfloat16)
 
-        pad_masks_combined = torch.cat([prefix_pad_masks, suffix_pad_masks], dim=1)
-        att_masks_combined = torch.cat([prefix_att_masks, suffix_att_masks], dim=1)
+            pad_masks_combined = torch.cat([prefix_pad_masks, suffix_pad_masks], dim=1)
+            att_masks_combined = torch.cat([prefix_att_masks, suffix_att_masks], dim=1)
 
-        att_2d_masks = make_att_2d_masks(pad_masks_combined, att_masks_combined)
-        position_ids = torch.cumsum(pad_masks_combined, dim=1) - 1
+            att_2d_masks = _make_att_2d_masks(pad_masks_combined, att_masks_combined)
+            position_ids = torch.cumsum(pad_masks_combined, dim=1) - 1
 
-        att_2d_masks_4d = self._prepare_attention_masks_4d(att_2d_masks)
+            att_2d_masks_4d = self._prepare_attention_masks_4d(att_2d_masks)
 
-        def forward_func(
-            prefix_embs: Tensor,
-            suffix_embs: Tensor,
-            att_2d_masks_4d: Tensor,
-            position_ids: Tensor,
-            adarms_cond: Tensor,
-        ) -> Tensor:
-            (_, suffix_out), _ = self.paligemma_with_expert.forward(
-                attention_mask=att_2d_masks_4d,
-                position_ids=position_ids,
-                past_key_values=None,
-                inputs_embeds=[prefix_embs, suffix_embs],
-                use_cache=False,
-                adarms_cond=[None, adarms_cond],
+            def forward_func(
+                prefix_embs: Tensor,
+                suffix_embs: Tensor,
+                att_2d_masks_4d: Tensor,
+                position_ids: Tensor,
+                adarms_cond: Tensor,
+            ) -> Tensor:
+                (_, suffix_out), _ = self.paligemma_with_expert.forward(
+                    attention_mask=att_2d_masks_4d,
+                    position_ids=position_ids,
+                    past_key_values=None,
+                    inputs_embeds=[prefix_embs, suffix_embs],
+                    use_cache=False,
+                    adarms_cond=[None, adarms_cond],
+                )
+                return suffix_out
+
+            suffix_out = self._apply_checkpoint(
+                forward_func,
+                prefix_embs,
+                suffix_embs,
+                att_2d_masks_4d,
+                position_ids,
+                adarms_cond,
             )
-            return suffix_out
 
-        suffix_out = self._apply_checkpoint(
-            forward_func,
-            prefix_embs,
-            suffix_embs,
-            att_2d_masks_4d,
-            position_ids,
-            adarms_cond,
-        )
+            suffix_out = suffix_out[:, -self._chunk_size :]
+            suffix_out = suffix_out.to(dtype=torch.float32)
 
-        suffix_out = suffix_out[:, -self._chunk_size :]
-        suffix_out = suffix_out.to(dtype=torch.float32)
+            def action_out_proj_func(suffix_out: Tensor) -> Tensor:
+                return self.action_out_proj(suffix_out)
 
-        def action_out_proj_func(suffix_out: Tensor) -> Tensor:
-            return self.action_out_proj(suffix_out)
+            v_t = self._apply_checkpoint(action_out_proj_func, suffix_out)
 
-        v_t = self._apply_checkpoint(action_out_proj_func, suffix_out)
+            losses = F.mse_loss(u_t, v_t, reduction="none")
 
-        losses = F.mse_loss(u_t, v_t, reduction="none")
-        loss = losses.mean()
-        return loss, {"loss": loss.item()}
+            # Truncate losses to actual action dimensions to avoid dilution from padding
+            original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
+            losses = losses[:, :, :original_action_dim]
+
+            loss = losses.mean()
+            return loss, {"loss": loss.item()}
+        return self.predict_action_chunk(batch)
 
     def predict_action_chunk(self, batch: dict[str, Any]) -> Tensor:
         """Predict a chunk of actions from a preprocessed batch.
 
         Args:
-            batch: Preprocessed batch dict containing IMAGES, "image_masks",
-                "tokenized_prompt", and "tokenized_prompt_mask".
+            batch: Preprocessed batch dict containing IMAGES, IMAGE_MASKS,
+                TOKENIZED_PROMPT, and TOKENIZED_PROMPT_MASK.
 
         Returns:
             Denoised action tensor, unpadded and clipped to n_action_steps.
         """
         images = batch[IMAGES]
-        img_masks = batch["image_masks"]
-        tokens = batch["tokenized_prompt"]
-        masks = batch["tokenized_prompt_mask"]
+        img_masks = batch[IMAGE_MASKS]
+        tokens = batch[TOKENIZED_PROMPT]
+        masks = batch[TOKENIZED_PROMPT_MASK]
         actions = self.sample_actions(images, img_masks, tokens, masks)
 
         # Unpad actions to actual action dimension
@@ -944,7 +1104,7 @@ class Pi05Model(nn.Module):
             noise = self.sample_noise(actions_shape, device)
 
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, tokens, masks)
-        prefix_att_2d_masks = make_att_2d_masks(prefix_pad_masks, prefix_att_masks)
+        prefix_att_2d_masks = _make_att_2d_masks(prefix_pad_masks, prefix_att_masks)
         prefix_position_ids = torch.cumsum(prefix_pad_masks, dim=1) - 1
 
         prefix_att_2d_masks_4d = self._prepare_attention_masks_4d(prefix_att_2d_masks)
@@ -995,7 +1155,7 @@ class Pi05Model(nn.Module):
         prefix_len = prefix_pad_masks.shape[1]
 
         prefix_pad_2d_masks = prefix_pad_masks[:, None, :].expand(batch_size, suffix_len, prefix_len)
-        suffix_att_2d_masks = make_att_2d_masks(suffix_pad_masks, suffix_att_masks)
+        suffix_att_2d_masks = _make_att_2d_masks(suffix_pad_masks, suffix_att_masks)
         full_att_2d_masks = torch.cat([prefix_pad_2d_masks, suffix_att_2d_masks], dim=2)
 
         prefix_offsets = torch.sum(prefix_pad_masks, dim=-1)[:, None]

@@ -130,6 +130,11 @@
     color: var(--spectrum-semantic-negative-color-default, #e34850);
 }
 
+.statusWarning {
+    background-color: color-mix(in srgb, var(--spectrum-semantic-notice-color-default, #e68619), transparent 85%);
+    color: var(--brand-daisy-tint);
+}
+
 .statusPending {
     background-color: color-mix(in srgb, var(--spectrum-global-color-gray-500), transparent 85%);
     color: var(--spectrum-global-color-gray-600);
@@ -222,4 +227,16 @@
     background-color: color-mix(in srgb, var(--spectrum-semantic-positive-color-default, #12805c), transparent 92%);
     font-size: 13px;
     line-height: 1.5;
+}
+
+/* Code block inside inline alerts (e.g. remediation commands) */
+.codeBlock {
+    padding: 0;
+    margin: 0;
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
 }

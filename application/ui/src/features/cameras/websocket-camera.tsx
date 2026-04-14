@@ -1,14 +1,15 @@
 import { useCallback, useRef, useState } from 'react';
 
-import { Flex, ProgressCircle } from '@geti/ui';
+import { Flex, ProgressCircle } from '@geti-ui/ui';
 import useWebSocket from 'react-use-websocket';
 
 import { fetchClient } from '../../api/client';
 import { SchemaProjectCamera } from '../../api/types';
+import { useFittedMediaSize } from './use-fitted-media-size';
 
 const CAMERA_WS_URL = fetchClient.PATH('/api/cameras/ws');
 
-export const WebsocketCamera = ({ camera }: { camera: SchemaProjectCamera }) => {
+const CameraCanvas = ({ camera, width, height }: { camera: SchemaProjectCamera; width: number; height: number }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [isLoading, setIsLoading] = useState(true);
     const processingRef = useRef(false);
@@ -89,16 +90,24 @@ export const WebsocketCamera = ({ camera }: { camera: SchemaProjectCamera }) => 
             )}
             <canvas
                 ref={canvasRef}
-                width={Number(camera.payload?.width)}
-                height={Number(camera.payload?.height)}
-                style={{
-                    display: isLoading ? 'none' : 'block',
-                    objectFit: 'contain',
-                    height: '100%',
-                    width: '100%',
-                }}
+                width={width}
+                height={height}
+                style={{ display: isLoading ? 'none' : 'block' }}
                 aria-label={`Camera: ${camera.name}`}
             />
         </>
+    );
+};
+
+export const WebsocketCamera = ({ camera }: { camera: SchemaProjectCamera }) => {
+    const { containerRef, width, height } = useFittedMediaSize(
+        Number(camera.payload?.width),
+        Number(camera.payload?.height)
+    );
+
+    return (
+        <div ref={containerRef} style={{ height: '100%', width: '100%' }}>
+            <CameraCanvas camera={camera} width={width} height={height} />
+        </div>
     );
 };

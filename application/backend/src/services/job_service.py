@@ -4,10 +4,12 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 
 from db import get_async_db_session_ctx
+from db.schema import JobDB
 from exceptions import DuplicateJobException, ResourceInUseError, ResourceNotFoundError, ResourceType
 from repositories import JobRepository
 from schemas import Job
-from schemas.job import JobStatus, JobType, TrainJobPayload
+from schemas.base_job import JobStatus, JobType
+from schemas.job import TrainJob, TrainJobPayload
 
 
 class JobService:
@@ -27,6 +29,16 @@ class JobService:
             return job
 
     @staticmethod
+    async def get_jobs_by_ids(job_ids: list[UUID]) -> list[Job]:
+        """Fetch multiple jobs by id in a single query."""
+        if not job_ids:
+            return []
+
+        async with get_async_db_session_ctx() as session:
+            repo = JobRepository(session)
+            return await repo.get_all(expressions=[JobDB.id.in_([str(job_id) for job_id in job_ids])])
+
+    @staticmethod
     async def submit_train_job(payload: TrainJobPayload) -> Job:
         async with get_async_db_session_ctx() as session:
             repo = JobRepository(session)
@@ -34,10 +46,9 @@ class JobService:
                 raise DuplicateJobException
 
             try:
-                job = Job(
+                job = TrainJob(
                     project_id=payload.project_id,
-                    type=JobType.TRAINING,
-                    payload=payload.model_dump(),
+                    payload=payload,
                     message="Training job submitted",
                 )
                 return await repo.save(job)
@@ -83,7 +94,7 @@ class JobService:
             if job is None:
                 raise ResourceNotFoundError(ResourceType.JOB, str(job_id))
 
-            if job.status != "failed":
+            if job.status not in {JobStatus.FAILED, JobStatus.CANCELED}:
                 raise ResourceInUseError(ResourceType.JOB, str(job_id))
 
             await repo.delete_by_id(job_id)

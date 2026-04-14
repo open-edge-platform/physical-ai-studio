@@ -12,6 +12,7 @@ import torch
 import yaml
 
 from physicalai.data.observation import Observation
+from physicalai.export.backends import TorchExportParameters
 from physicalai.policies import get_physicalai_policy_class as get_policy_class
 
 from .base import RuntimeAdapter
@@ -79,8 +80,12 @@ class TorchAdapter(RuntimeAdapter):
             self._policy = policy_class.load_from_checkpoint(model_path, map_location="cpu").to(self.device).eval()
 
             policy_model: Any = self._policy.model
-            torch_export_args = policy_model.extra_export_args["torch"]
-            self._output_names = list(torch_export_args["output_names"])
+            if hasattr(policy_model, "extra_export_args") and "torch" in policy_model.extra_export_args:
+                torch_export_args: TorchExportParameters = policy_model.extra_export_args["torch"]
+            else:
+                torch_export_args = TorchExportParameters()
+
+            self._output_names = list(torch_export_args.output_names)
             # Torch policies consume structured Observation payloads via
             # Observation.from_dict(...) in predict(). Keep input_names empty
             # so InferenceModel does not attempt adapter-level key filtering.

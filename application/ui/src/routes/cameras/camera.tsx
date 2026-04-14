@@ -1,4 +1,4 @@
-import { View } from '@geti/ui';
+import { View } from '@geti-ui/ui';
 
 import { CameraFeed } from '../../features/cameras/camera-feed';
 import { useCamera } from '../../features/robots/use-camera';

@@ -11,7 +11,6 @@
         "build": "rsbuild build",
         "build:api": "npx openapi-typescript ./src/api/openapi-spec.json -o ./src/api/openapi-spec.d.ts  --root-types && prettier --write src/api/openapi-spec.d.ts",
         "build:api:download": "curl -o ./src/api/openapi-spec.json http://localhost:7860/api/openapi.json && prettier --write src/api/openapi-spec.json",
-        "clone-geti-ui-packages": "npx tiged --force --mode=git https://github.com/open-edge-platform/geti.git/web_ui/packages/config#66e564274dbc35e173b78802587060e463846060 packages/config && npx tiged --force --mode=git https://github.com/open-edge-platform/geti.git/web_ui/packages/ui#66e564274dbc35e173b78802587060e463846060 packages/ui",
         "clone-so101": "npx tiged git@github.com:TheRobotStudio/SO-ARM100.git/Simulation/SO101 public/SO101 --force",
         "clone-widowx": "npx tiged github:TrossenRobotics/trossen_arm_description public/widowx --force",
         "cyclic-deps-check": "npx madge --circular src/**/*.ts*",
@@ -20,7 +19,7 @@
         "format:check": "prettier --check --cache \"./src/**/*.{js,ts,jsx,tsx,css,scss,sass}\"",
         "lint": "eslint \"src/**/*.ts*\" --max-warnings 0",
         "lint:fix": "eslint --fix \"./src/**/*.ts*\"",
-        "preinstall": "npm run clone-geti-ui-packages && npm run clone-so101 && npm run clone-widowx",
+        "preinstall": "npm run clone-so101 && npm run clone-widowx",
         "preview": "rsbuild preview",
         "test:unit": "vitest --config vitest.config.ts",
         "test:unit:watch": "vitest --config vitest.config.ts --reporter=verbose --watch",
@@ -29,8 +28,8 @@
     },
     "dependencies": {
         "@adobe/react-spectrum": "^3.41.0",
-        "@geti/config": "*",
-        "@geti/ui": "*",
+        "@geti-ui/blocks": "^1.1.2",
+        "@geti-ui/ui": "^1.1.2",
         "@react-three/drei": "^10.7.6",
         "@react-three/fiber": "^9.4.0",
         "@scalar/api-reference-react": "^0.7.48",
@@ -78,6 +77,7 @@
         "@types/three": "^0.180.0",
         "@types/uuid": "^10.0.0",
         "@typescript-eslint/eslint-plugin": "^8.31.1",
+        "@typescript-eslint/parser": "^8.31.1",
         "@vitejs/plugin-react": "^4.7.0",
         "babel-preset-react-app": "^10.1.0",
         "eslint": "^9.25.1",
@@ -89,6 +89,7 @@
         "eslint-plugin-react": "^7.37.5",
         "eslint-plugin-react-compiler": "^19.1.0-rc.2",
         "eslint-plugin-react-hooks": "^5.2.0",
+        "globals": "^16.4.0",
         "identity-obj-proxy": "^3.0.0",
         "jsdom": "^26.1.0",
         "msw": "^2.10.4",
@@ -101,8 +102,5 @@
         "vite": "^7.0.6",
         "vite-plugin-svgr": "^4.3.0",
         "vitest": "^3.2.4"
-    },
-    "workspaces": [
-        "packages/*"
-    ]
+    }
 }

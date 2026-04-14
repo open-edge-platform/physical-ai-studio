@@ -43,7 +43,7 @@ This is called the **"multiple heads"** problem.
 
 ## Automated Protection with pre-commit
 
-Prek is used to run a pre-commit hook that checks whenever you commit changes to migration files (`src/alembic/versions/*.py`). This catches conflicts before you push. 
+Prek is used to run a pre-commit hook that checks whenever you commit changes to migration files (`src/alembic/versions/*.py`). This catches conflicts before you push.
 
 The hook is defined in `.pre-commit-config.yaml` under the `check-alembic-heads` ID.
 We also run this check in the backend Github Action workflow.
@@ -145,4 +145,3 @@ git push
 - **Check heads after rebase.** After any rebase, run `uv run alembic -c src/alembic.ini heads` to verify you still have a single head.
 
 - **Never manually edit revision IDs.** Only change `down_revision` when resolving a conflict. Never modify the `revision` field — it is auto-generated and referenced by other migrations.
-

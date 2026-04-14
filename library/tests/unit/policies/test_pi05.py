@@ -65,7 +65,7 @@ class TestPi05Config:
         assert config.optimizer_weight_decay == 0.01
         assert config.optimizer_grad_clip_norm == 1.0
         assert config.scheduler_warmup_steps == 1_000
-        assert config.scheduler_decay_steps == 30_000
+        assert config.scheduler_decay_steps is None
         assert config.scheduler_decay_lr == 2.5e-6
 
     def test_flow_matching_config_values(self) -> None:
@@ -260,122 +260,122 @@ class TestModelUtilities:
 
     def test_pad_vector_shorter(self) -> None:
         """Test pad_vector pads shorter vectors."""
-        from physicalai.policies.pi05.preprocessor import pad_vector
+        from physicalai.policies.pi05.preprocessor import _pad_vector
 
         v = torch.randn(2, 7)
-        padded = pad_vector(v, 32)
+        padded = _pad_vector(v, 32)
         assert padded.shape == (2, 32)
         torch.testing.assert_close(padded[:, :7], v)
         assert (padded[:, 7:] == 0).all()
 
     def test_pad_vector_equal(self) -> None:
         """Test pad_vector with equal dimensions (no-op)."""
-        from physicalai.policies.pi05.preprocessor import pad_vector
+        from physicalai.policies.pi05.preprocessor import _pad_vector
 
         v = torch.randn(2, 32)
-        padded = pad_vector(v, 32)
+        padded = _pad_vector(v, 32)
         assert padded.shape == (2, 32)
         torch.testing.assert_close(padded, v)
 
     def test_pad_vector_longer(self) -> None:
         """Test pad_vector with longer vector (no-op)."""
-        from physicalai.policies.pi05.preprocessor import pad_vector
+        from physicalai.policies.pi05.preprocessor import _pad_vector
 
         v = torch.randn(2, 64)
-        padded = pad_vector(v, 32)
+        padded = _pad_vector(v, 32)
         assert padded.shape == (2, 64)
 
     def test_resize_with_pad_shape(self) -> None:
         """Test resize_with_pad produces correct output shape."""
-        from physicalai.policies.pi05.preprocessor import resize_with_pad_torch
+        from physicalai.policies.pi05.preprocessor import _resize_with_pad_torch
 
         img = torch.rand(2, 480, 640, 3)  # [B, H, W, C]
-        result = resize_with_pad_torch(img, 224, 224)
+        result = _resize_with_pad_torch(img, 224, 224)
         assert result.shape == (2, 224, 224, 3)
 
     def test_resize_with_pad_channels_first(self) -> None:
         """Test resize_with_pad with channels-first format."""
-        from physicalai.policies.pi05.preprocessor import resize_with_pad_torch
+        from physicalai.policies.pi05.preprocessor import _resize_with_pad_torch
 
         img = torch.rand(2, 3, 480, 640)  # [B, C, H, W]
-        result = resize_with_pad_torch(img, 224, 224)
+        result = _resize_with_pad_torch(img, 224, 224)
         assert result.shape == (2, 3, 224, 224)
 
     def test_resize_with_pad_3d(self) -> None:
         """Test resize_with_pad with 3D input (no batch dim)."""
-        from physicalai.policies.pi05.preprocessor import resize_with_pad_torch
+        from physicalai.policies.pi05.preprocessor import _resize_with_pad_torch
 
         img = torch.rand(480, 640, 3)  # [H, W, C]
-        result = resize_with_pad_torch(img, 224, 224)
+        result = _resize_with_pad_torch(img, 224, 224)
         assert result.shape == (1, 224, 224, 3)
 
     def test_resize_with_pad_uint8(self) -> None:
         """Test resize_with_pad with uint8 images."""
-        from physicalai.policies.pi05.preprocessor import resize_with_pad_torch
+        from physicalai.policies.pi05.preprocessor import _resize_with_pad_torch
 
         img = torch.randint(0, 256, (2, 480, 640, 3), dtype=torch.uint8)
-        result = resize_with_pad_torch(img, 224, 224)
+        result = _resize_with_pad_torch(img, 224, 224)
         assert result.dtype == torch.uint8
         assert result.shape == (2, 224, 224, 3)
 
     def test_resize_with_pad_unsupported_dtype(self) -> None:
         """Test resize_with_pad raises error for unsupported dtype."""
-        from physicalai.policies.pi05.preprocessor import resize_with_pad_torch
+        from physicalai.policies.pi05.preprocessor import _resize_with_pad_torch
 
         img = torch.rand(2, 480, 640, 3).to(torch.float16)
         with pytest.raises(ValueError, match="Unsupported image dtype"):
-            resize_with_pad_torch(img, 224, 224)
+            _resize_with_pad_torch(img, 224, 224)
 
     def test_create_sinusoidal_pos_embedding_shape(self) -> None:
         """Test sinusoidal positional embedding has correct shape."""
-        from physicalai.policies.pi05.model import create_sinusoidal_pos_embedding
+        from physicalai.policies.pi05.model import _create_sinusoidal_pos_embedding
 
         time = torch.tensor([0.1, 0.5, 0.9])
-        emb = create_sinusoidal_pos_embedding(time, 64, min_period=4e-3, max_period=4.0, device=time.device)
+        emb = _create_sinusoidal_pos_embedding(time, 64, min_period=4e-3, max_period=4.0, device=time.device)
         assert emb.shape == (3, 64)
 
     def test_create_sinusoidal_pos_embedding_odd_dim(self) -> None:
         """Test sinusoidal embedding raises for odd dimension."""
-        from physicalai.policies.pi05.model import create_sinusoidal_pos_embedding
+        from physicalai.policies.pi05.model import _create_sinusoidal_pos_embedding
 
         time = torch.tensor([0.5])
         with pytest.raises(ValueError, match="divisible by 2"):
-            create_sinusoidal_pos_embedding(time, 65, min_period=4e-3, max_period=4.0, device=time.device)
+            _create_sinusoidal_pos_embedding(time, 65, min_period=4e-3, max_period=4.0, device=time.device)
 
     def test_create_sinusoidal_pos_embedding_wrong_ndim(self) -> None:
         """Test sinusoidal embedding raises for wrong ndim."""
-        from physicalai.policies.pi05.model import create_sinusoidal_pos_embedding
+        from physicalai.policies.pi05.model import _create_sinusoidal_pos_embedding
 
         time = torch.tensor([[0.5]])  # 2D instead of 1D
         with pytest.raises(ValueError, match="batch_size"):
-            create_sinusoidal_pos_embedding(time, 64, min_period=4e-3, max_period=4.0, device=time.device)
+            _create_sinusoidal_pos_embedding(time, 64, min_period=4e-3, max_period=4.0, device=time.device)
 
     def test_sample_beta(self) -> None:
         """Test sample_beta returns correct shape."""
-        from physicalai.policies.pi05.model import sample_beta
+        from physicalai.policies.pi05.model import _sample_beta
 
-        result = sample_beta(1.5, 1.0, 4, torch.device("cpu"))
+        result = _sample_beta(1.5, 1.0, 4, torch.device("cpu"))
         assert result.shape == (4,)
         assert (result >= 0).all() and (result <= 1).all()
 
     def test_make_att_2d_masks_shape(self) -> None:
         """Test make_att_2d_masks returns correct shape."""
-        from physicalai.policies.pi05.model import make_att_2d_masks
+        from physicalai.policies.pi05.model import _make_att_2d_masks
 
         pad_masks = torch.ones(2, 10, dtype=torch.bool)
         att_masks = torch.zeros(2, 10, dtype=torch.bool)
-        result = make_att_2d_masks(pad_masks, att_masks)
+        result = _make_att_2d_masks(pad_masks, att_masks)
         assert result.shape == (2, 10, 10)
         assert result.dtype == torch.bool
 
     def test_make_att_2d_masks_wrong_ndim(self) -> None:
         """Test make_att_2d_masks raises for wrong ndim."""
-        from physicalai.policies.pi05.model import make_att_2d_masks
+        from physicalai.policies.pi05.model import _make_att_2d_masks
 
         pad_masks = torch.ones(2, 3, 10, dtype=torch.bool)  # 3D
         att_masks = torch.zeros(2, 10, dtype=torch.bool)
         with pytest.raises(ValueError, match="2D"):
-            make_att_2d_masks(pad_masks, att_masks)
+            _make_att_2d_masks(pad_masks, att_masks)
 
     def test_get_gemma_config_300m(self) -> None:
         """Test get_gemma_config for gemma_300m variant."""
@@ -549,7 +549,6 @@ class TestPi05Preprocessor:
         from physicalai.policies.pi05.preprocessor import make_pi05_preprocessors
 
         preprocessor, postprocessor = make_pi05_preprocessors(
-            max_state_dim=32,
             max_action_dim=32,
             stats=None,
             image_resolution=(224, 224),
@@ -574,7 +573,6 @@ class TestPi05Preprocessor:
 
         preprocessor = Pi05Preprocessor()
 
-        assert preprocessor.max_state_dim == 32
         assert preprocessor.max_action_dim == 32
         assert preprocessor.image_resolution == (224, 224)
         assert preprocessor.max_token_len == 200
@@ -586,14 +584,12 @@ class TestPi05Preprocessor:
         from physicalai.policies.pi05.preprocessor import Pi05Preprocessor
 
         preprocessor = Pi05Preprocessor(
-            max_state_dim=64,
             max_action_dim=16,
             image_resolution=(512, 512),
             max_token_len=300,
             empty_cameras=2,
         )
 
-        assert preprocessor.max_state_dim == 64
         assert preprocessor.max_action_dim == 16
         assert preprocessor.image_resolution == (512, 512)
         assert preprocessor.max_token_len == 300
@@ -640,7 +636,6 @@ class TestPi05Preprocessor:
         }
 
         preprocessor, postprocessor = make_pi05_preprocessors(
-            max_state_dim=32,
             max_action_dim=32,
             stats=stats,
             image_resolution=(224, 224),
@@ -854,3 +849,134 @@ class TestPretrainedUtils:
         """Test _resolve_feature_shape falls back to (1,)."""
         shape = resolve_feature_shape("unknown", {}, {})
         assert shape == (1,)
+
+
+# ============================================================================ #
+# Fine-tuning & Pretrained Path Tests                                          #
+# ============================================================================ #
+
+
+class TestPi05FineTuning:
+    """Tests for Pi05 fine-tuning and pretrained configuration forwarding."""
+
+    def test_gradient_checkpointing_default_true(self) -> None:
+        """Test gradient_checkpointing defaults to True in Pi05 policy."""
+        policy = Pi05()
+        assert policy.config.gradient_checkpointing is True
+
+    def test_gradient_checkpointing_false(self) -> None:
+        """Test gradient_checkpointing can be set to False."""
+        policy = Pi05(gradient_checkpointing=False)
+        assert policy.config.gradient_checkpointing is False
+
+    def test_save_hyperparameters_ignores_pretrained(self) -> None:
+        """Test pretrained_name_or_path is excluded from saved hyperparameters."""
+        policy = Pi05()
+        assert "pretrained_name_or_path" not in policy.hparams
+
+    def test_update_preprocessor_stats(self) -> None:
+        """Test _update_preprocessor_stats rebuilds preprocessors with new stats."""
+        stats = {
+            "observation.state": {
+                "name": "observation.state",
+                "shape": (8,),
+                "mean": [0.0] * 8,
+                "std": [1.0] * 8,
+            },
+            "action": {
+                "name": "action",
+                "shape": (7,),
+                "mean": [0.0] * 7,
+                "std": [1.0] * 7,
+            },
+        }
+        # Use smallest variants to keep memory usage low
+        policy = Pi05(
+            dataset_stats=stats,
+            paligemma_variant="gemma_300m",
+            action_expert_variant="gemma_300m",
+        )
+        assert policy._preprocessor is not None
+
+        # Now update with different stats
+        new_stats = {
+            "observation.state": {
+                "name": "observation.state",
+                "shape": (4,),
+                "mean": [1.0] * 4,
+                "std": [2.0] * 4,
+            },
+            "action": {
+                "name": "action",
+                "shape": (3,),
+                "mean": [1.0] * 3,
+                "std": [2.0] * 3,
+            },
+        }
+        old_preprocessor = policy._preprocessor
+        policy._update_preprocessor_stats(new_stats)
+
+        assert policy._dataset_stats is new_stats
+        assert policy.hparams["dataset_stats"] is new_stats
+        # Preprocessor should be a new object
+        assert policy._preprocessor is not old_preprocessor
+
+    def test_update_preprocessor_stats_updates_model(self) -> None:
+        """Test _update_preprocessor_stats forwards stats to model."""
+        stats = {
+            "observation.state": {
+                "name": "observation.state",
+                "shape": (8,),
+                "mean": [0.0] * 8,
+                "std": [1.0] * 8,
+            },
+            "action": {
+                "name": "action",
+                "shape": (7,),
+                "mean": [0.0] * 7,
+                "std": [1.0] * 7,
+            },
+        }
+        policy = Pi05(
+            dataset_stats=stats,
+            paligemma_variant="gemma_300m",
+            action_expert_variant="gemma_300m",
+        )
+
+        new_stats = {
+            "observation.state": {
+                "name": "observation.state",
+                "shape": (4,),
+                "mean": [2.0] * 4,
+                "std": [3.0] * 4,
+            },
+            "action": {
+                "name": "action",
+                "shape": (3,),
+                "mean": [2.0] * 3,
+                "std": [3.0] * 3,
+            },
+        }
+        policy._update_preprocessor_stats(new_stats)
+        assert policy.model._dataset_stats is new_stats
+
+    def test_config_with_all_optimizer_params(self) -> None:
+        """Test all optimizer/scheduler params are stored in config."""
+        policy = Pi05(
+            optimizer_lr=1e-3,
+            optimizer_betas=(0.8, 0.99),
+            optimizer_eps=1e-7,
+            optimizer_weight_decay=0.1,
+            optimizer_grad_clip_norm=0.5,
+            scheduler_warmup_steps=500,
+            scheduler_decay_steps=10_000,
+            scheduler_decay_lr=1e-5,
+        )
+        assert policy.config.optimizer_lr == 1e-3
+        assert policy.config.optimizer_betas == (0.8, 0.99)
+        assert policy.config.optimizer_eps == 1e-7
+        assert policy.config.optimizer_weight_decay == 0.1
+        assert policy.config.optimizer_grad_clip_norm == 0.5
+        assert policy.config.scheduler_warmup_steps == 500
+        assert policy.config.scheduler_decay_steps == 10_000
+        assert policy.config.scheduler_decay_lr == 1e-5

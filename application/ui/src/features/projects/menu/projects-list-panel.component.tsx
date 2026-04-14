@@ -1,25 +1,30 @@
+import { useState } from 'react';
+
 import {
     ActionButton,
     ActionMenu,
     ButtonGroup,
     Content,
     Dialog,
+    DialogContainer,
     DialogTrigger,
     Divider,
     Flex,
     Header,
     Heading,
+    Icon,
     Item,
     Link,
     Menu,
     PhotoPlaceholder,
     Text,
     View,
-} from '@geti/ui';
-import { ChevronRightSmallLight } from '@geti/ui/icons';
+} from '@geti-ui/ui';
+import { ChevronRightSmallLight, LogsIcon } from '@geti-ui/ui/icons';
 
 import { $api } from '../../../api/client';
 import { paths } from '../../../router';
+import { LogsDialog } from '../../logs/logs-dialog';
 import { NewProjectLink } from '../list/new-project-link.component';
 import { useProjectId } from './../use-project';
 
@@ -87,53 +92,90 @@ export const ProjectsListPanel = () => {
     });
     const otherProjects = projects.filter(({ id }) => id !== project_id);
 
+    const [logsIsOpen, setLogsIsOpen] = useState(false);
+
     const selectedProjectName = project.name;
 
     return (
-        <DialogTrigger type='popover' hideArrow>
-            <SelectedProjectButton name={selectedProjectName} />
+        <>
+            <DialogTrigger type='popover' hideArrow>
+                <SelectedProjectButton name={selectedProjectName} />
 
-            <Dialog width={'size-4600'} UNSAFE_className={styles.dialog}>
-                <Header>
-                    <Flex direction={'column'} justifyContent={'center'} width={'100%'} alignItems={'center'}>
-                        <PhotoPlaceholder
-                            name={selectedProjectName}
-                            indicator={selectedProjectName}
-                            height={'size-1000'}
-                            width={'size-1000'}
-                        />
-                        <Heading level={2} marginBottom={0}>
-                            {selectedProjectName}
-                        </Heading>
-                    </Flex>
-                </Header>
-                <Content UNSAFE_className={styles.panelContent}>
-                    {otherProjects.length > 0 && (
-                        <>
-                            <Divider size={'S'} marginY={'size-200'} />
-                            <ProjectsList projects={otherProjects} />
-                        </>
-                    )}
-                    <Divider size={'S'} marginTop={'size-200'} />
+                {(close) => {
+                    const handleOpenLogs = () => {
+                        close();
+                        setLogsIsOpen(true);
+                    };
+                    return (
+                        <Dialog width={'size-4600'} UNSAFE_className={styles.dialog} onDismiss={close}>
+                            <Header>
+                                <Flex
+                                    direction={'column'}
+                                    justifyContent={'center'}
+                                    width={'100%'}
+                                    alignItems={'center'}
+                                >
+                                    <PhotoPlaceholder
+                                        name={selectedProjectName}
+                                        indicator={selectedProjectName}
+                                        height={'size-1000'}
+                                        width={'size-1000'}
+                                    />
+                                    <Heading level={2} marginBottom={0}>
+                                        {selectedProjectName}
+                                    </Heading>
+                                </Flex>
+                            </Header>
+                            <Content UNSAFE_className={styles.panelContent}>
+                                {otherProjects.length > 0 && (
+                                    <>
+                                        <Divider size={'S'} marginY={'size-200'} />
+                                        <ProjectsList projects={otherProjects} />
+                                    </>
+                                )}
+                                <Divider size={'S'} marginTop={'size-200'} />
 
-                    <Link
-                        href={paths.openapi({})}
-                        UNSAFE_style={{ color: 'white', textDecoration: 'none' }}
-                        UNSAFE_className={styles.openApiLink}
-                    >
-                        <Flex alignItems={'center'} gap='size-100'>
-                            <ChevronRightSmallLight fill='white' />
-                            OpenAPI Spec
-                        </Flex>
-                    </Link>
+                                <Link
+                                    href={paths.openapi({})}
+                                    UNSAFE_style={{ color: 'white', textDecoration: 'none' }}
+                                    UNSAFE_className={styles.openApiLink}
+                                >
+                                    <Flex alignItems={'center'} gap='size-100'>
+                                        <ChevronRightSmallLight fill='white' />
+                                        OpenAPI Spec
+                                    </Flex>
+                                </Link>
 
-                    <Divider size={'S'} marginBottom={'size-200'} />
-                </Content>
+                                <Divider size={'S'} />
 
-                <ButtonGroup UNSAFE_className={styles.panelButtons}>
-                    <NewProjectLink className={styles.addProjectButton} />
-                </ButtonGroup>
-            </Dialog>
-        </DialogTrigger>
+                                <ActionButton
+                                    isQuiet
+                                    onPress={handleOpenLogs}
+                                    UNSAFE_className={styles.openApiLink}
+                                    width='100%'
+                                    height='size-700'
+                                >
+                                    <Flex gap='size-50' marginEnd='size-100' width='100%'>
+                                        <Icon size='S'>
+                                            <LogsIcon />
+                                        </Icon>
+                                        Logs
+                                    </Flex>
+                                </ActionButton>
+
+                                <Divider size={'S'} marginBottom={'size-200'} />
+                            </Content>
+
+                            <ButtonGroup UNSAFE_className={styles.panelButtons}>
+                                <NewProjectLink className={styles.addProjectButton} />
+                            </ButtonGroup>
+                        </Dialog>
+                    );
+                }}
+            </DialogTrigger>
+            <DialogContainer onDismiss={() => setLogsIsOpen(false)} type='fullscreen'>
+                {logsIsOpen && <LogsDialog close={() => setLogsIsOpen(false)} />}
+            </DialogContainer>
+        </>
     );
 };

@@ -2,6 +2,7 @@ import base64
 import copy
 import shutil
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import cv2
@@ -20,6 +21,8 @@ from internal_datasets.lerobot.streaming_encoding_settings import StreamingEncod
 from internal_datasets.mutations.recording_mutation import RecordingMutation
 from schemas import Episode, EpisodeInfo, EpisodeVideo
 from settings import get_settings
+
+EpisodeMetadata = dict[str, Any]
 
 
 class InternalLeRobotDataset(DatasetClient):
@@ -150,7 +153,8 @@ class InternalLeRobotDataset(DatasetClient):
         if not self.exists_on_disk:
             return []
 
-        return [self._build_episode_from_metadata(episode) for episode in self._dataset.meta.episodes]
+        episodes = self._get_episode_metadata_list()
+        return [self._build_episode_from_metadata(episode) for episode in episodes]
 
     def find_episode(self, episode_index: int) -> Episode | None:
         """Find episode by index or return None."""
@@ -169,6 +173,7 @@ class InternalLeRobotDataset(DatasetClient):
             return []
 
         metadata = self._dataset.meta
+        episodes = self._get_episode_metadata_list()
         return [
             EpisodeInfo(
                 episode_index=episode["episode_index"],
@@ -176,7 +181,7 @@ class InternalLeRobotDataset(DatasetClient):
                 length=episode["length"],
                 fps=metadata.fps,
             )
-            for episode in metadata.episodes
+            for episode in episodes
         ]
 
     def add_frame(self, obs: dict, act: dict, task: str) -> None:
@@ -322,7 +327,7 @@ class InternalLeRobotDataset(DatasetClient):
         actions = self._dataset.hf_dataset["action"][from_idx:to_idx]
         return torch.stack(actions)
 
-    def _build_episode_from_metadata(self, episode: dict) -> Episode:
+    def _build_episode_from_metadata(self, episode: EpisodeMetadata) -> Episode:
         metadata = self._dataset.meta
         episode_index = episode["episode_index"]
         action_feature_names = self._dataset.features.get("action", {}).get("names", [])
@@ -339,15 +344,18 @@ class InternalLeRobotDataset(DatasetClient):
                 for video_key in self._dataset.meta.video_keys
             },
             action_keys=action_feature_names,
-            thumbnail=None,
             **episode,
         )
 
-    def _find_episode_metadata(self, episode_index: int) -> dict | None:
-        for episode in self._dataset.meta.episodes:
+    def _find_episode_metadata(self, episode_index: int) -> EpisodeMetadata | None:
+        episodes = self._get_episode_metadata_list()
+        for episode in episodes:
             if episode["episode_index"] == episode_index:
                 return episode
         return None
+
+    def _get_episode_metadata_list(self) -> list[EpisodeMetadata]:
+        return [episode for episode in self._dataset.meta.episodes if isinstance(episode, dict)]
 
     def _build_thumbnail_png_bytes(self, episode: dict, image_key: str, width: int, height: int) -> bytes | None:
         if image_key not in self._dataset.meta.camera_keys:

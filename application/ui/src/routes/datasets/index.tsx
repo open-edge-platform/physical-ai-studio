@@ -1,30 +1,13 @@
-import { useState } from 'react';
-
-import {
-    Content,
-    Flex,
-    Heading,
-    Icon,
-    IllustratedMessage,
-    Item,
-    Key,
-    TabList,
-    TabPanels,
-    Tabs,
-    Text,
-    View,
-} from '@geti/ui';
-import { Add } from '@geti/ui/icons';
+import { Content, Flex, Heading, IllustratedMessage, Item, TabPanels, Tabs, Text, View } from '@geti-ui/ui';
 import { useParams } from 'react-router';
 
 import { SchemaDatasetOutput } from '../../api/openapi-spec';
+import { DatasetTabs } from '../../features/datasets/dataset-tabs';
 import { useProject, useProjectId } from '../../features/projects/use-project';
-import { paths } from '../../router';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
-import { DatasetDownloadButton } from './dataset-download-button';
 import { DatasetProvider } from './dataset-provider';
 import { DatasetViewer } from './dataset-viewer';
-import { NewDatasetDialogContainer, NewDatasetLink } from './new-dataset.component';
+import { NewDatasetLink } from './new-dataset.component';
 
 interface DatasetsProps {
     datasets: SchemaDatasetOutput[];
@@ -34,14 +17,6 @@ const Datasets = ({ datasets }: DatasetsProps) => {
     const { project_id } = useProjectId();
     const params = useParams();
     const dataset_id = params.dataset_id ?? datasets[0]?.id;
-
-    const [showDialog, setShowDialog] = useState<boolean>(false);
-
-    const onSelectionChange = (key: Key) => {
-        if (key.toString() === '#new-dataset') {
-            setShowDialog(true);
-        }
-    };
 
     if (datasets.length === 0) {
         return (
@@ -61,40 +36,17 @@ const Datasets = ({ datasets }: DatasetsProps) => {
 
     return (
         <Flex height='100%'>
-            <Tabs onSelectionChange={onSelectionChange} selectedKey={dataset_id} flex='1' margin={'size-200'}>
-                <Flex>
-                    <TabList flex='1 1 auto' minWidth='0px'>
-                        {[
-                            ...datasets.map((data) => (
-                                <Item
-                                    key={data.id}
-                                    href={paths.project.datasets.show({ project_id, dataset_id: data.id! })}
-                                >
-                                    <Text UNSAFE_style={{ fontSize: '16px' }}>{data.name}</Text>
-                                </Item>
-                            )),
-                            <Item key='#new-dataset'>
-                                <Icon>
-                                    <Add />
-                                </Icon>
-                            </Item>,
-                        ]}
-                    </TabList>
-
-                    {dataset_id && (
-                        <View
-                            borderBottomColor={'gray-300'}
-                            borderBottomWidth={'thick'}
-                            UNSAFE_style={{
-                                display: 'flex',
-                                flex: '0 0 auto',
-                            }}
-                        >
-                            <DatasetDownloadButton datasetId={dataset_id} />
-                        </View>
-                    )}
-                </Flex>
-                <TabPanels UNSAFE_style={{ border: 'none' }} marginTop={'size-200'}>
+            <Tabs
+                aria-label='Datasets'
+                selectedKey={dataset_id}
+                flex='1'
+                margin={'size-200'}
+                UNSAFE_style={{
+                    '--spectrum-tabs-item-gap': 'var(--spectrum-global-dimension-size-100)',
+                }}
+            >
+                <DatasetTabs datasets={datasets} selectedDatasetId={dataset_id} />
+                <TabPanels UNSAFE_style={{ border: 'none' }} marginTop={'size-200'} minHeight={0}>
                     <Item key={dataset_id}>
                         <Flex height='100%' flex>
                             {dataset_id === undefined ? (
@@ -108,11 +60,6 @@ const Datasets = ({ datasets }: DatasetsProps) => {
                     </Item>
                 </TabPanels>
             </Tabs>
-            <NewDatasetDialogContainer
-                project_id={project_id}
-                show={showDialog}
-                onDismiss={() => setShowDialog(false)}
-            />
         </Flex>
     );
 };

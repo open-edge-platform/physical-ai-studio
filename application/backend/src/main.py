@@ -14,6 +14,7 @@ from api.dependencies import CameraRegistryDep, RobotRegistryDep
 from api.environments import router as project_environments_router
 from api.hardware import router as hardware_router
 from api.job import router as job_router
+from api.logs import router as logs_router
 from api.models import router as models_router
 from api.project import router as project_router
 from api.project_camera import router as project_cameras_router
@@ -52,6 +53,7 @@ app.include_router(record_router)
 app.include_router(settings_router)
 app.include_router(models_router)
 app.include_router(job_router)
+app.include_router(logs_router)
 
 register_application_exception_handlers(app)
 

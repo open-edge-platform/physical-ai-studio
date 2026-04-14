@@ -255,3 +255,5 @@ async def handle_command(  # noqa: PLR0911
                 raise UnsupportedCommandError.for_command(cmd.command)
 
             return await robot_connection.read_motor_calibration()
+
+    raise UnsupportedCommandError.for_command(getattr(cmd, "command", "unknown"))

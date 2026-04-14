@@ -10,6 +10,7 @@ dependencies = [
   'harvesters; sys_platform != "darwin"',
   "fastapi[standard]",
   "physicalai-train[pi0,smolvla]",
+  "physicalai[so101]",
   "lerobot[feetech]==0.4.4",
   "numpy",
   "websockets",
@@ -27,7 +28,8 @@ dependencies = [
   "tenacity>=9.1.2",
   "aiofiles>=25.1.0",
   "types-aiofiles>=25.1.0.20251011",
-  "trossen-arm==1.9.0"
+  "trossen-arm==1.9.0",
+  "sse-starlette>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -82,6 +84,8 @@ explicit = false
 [tool.uv.sources]
 FrameSource = { git = "https://github.com/ArendJanKramer/FrameSource.git", rev = "c3023714ceaa2bf50cf04e1d2861d9fe7cd01422" }
 physicalai-train = { path = "../../library", editable = true }
+# TODO(#450): Replace with published package once physicalai is back in its own repo.
+physicalai = { path = "../../physicalai", editable = true }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cuda" },
@@ -97,14 +101,17 @@ pytorch-triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
 [dependency-groups]
 dev = [
   "ruff~=0.11.2",
+  "pyrefly>=0.18.0",
 ]
 lint = [
   "ruff~=0.11.2",
   "mypy~=1.17",
+  "pyrefly>=0.18.0",
 ]
 all = [
   "ruff~=0.11.2",
   "mypy~=1.17",
+  "pyrefly>=0.18.0",
 ]
 
 [tool.uv]
@@ -177,6 +184,17 @@ python_version = "3.12"
 ignore_missing_imports = true
 show_error_codes = true
 
+[tool.pyrefly]
+python-version = "3.12"
+search-path = ["src"]
+project-includes = ["src"]
+project-excludes = [
+  "src/alembic/versions/**",
+  ".venv/**",
+  "dist/**",
+]
+replace-imports-with-any = ["trossen_arm"]
+
 [tool.pytest.ini_options]
 addopts = ["--strict-markers", "--strict-config", "--showlocals", "-ra"]
 testpaths = "tests"
@@ -189,4 +207,5 @@ markers = [
 filterwarnings = [
   "ignore:XPU device count is zero!:UserWarning",
   "ignore:This process.*is multi-threaded:DeprecationWarning", # using actual queues in tests
+  "ignore:ResourceTracker called reentrantly:UserWarning", # CPython 3.12 bug (gh-109981): semaphore cleanup races during GC at shutdown
 ]

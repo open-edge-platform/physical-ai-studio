@@ -9,6 +9,7 @@ from services.event_processor import EventProcessor
 from settings import get_settings
 from utils.serial_robot_tools import RobotConnectionManager
 from workers.camera_worker_registry import CameraWorkerRegistry
+from workers.model_worker_registry import ModelWorkerRegistry
 from workers.robot_worker_registry import RobotWorkerRegistry
 
 from .scheduler import Scheduler
@@ -36,6 +37,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     logger.info("Starting %s application...", settings.app_name)
     app_scheduler = Scheduler()
     app_scheduler.start_workers()
+
+    app.state.model_registry = ModelWorkerRegistry(
+        max_workers=1,
+        stop_event=app_scheduler.mp_stop_event,
+    )
     app.state.scheduler = app_scheduler
     app.state.event_processor = EventProcessor(app_scheduler.event_queue)
     logger.info("Application startup completed")
@@ -54,6 +60,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     robot_registry: RobotWorkerRegistry = app.state.robot_registry
     await robot_registry.shutdown_all()
+
+    model_registry: ModelWorkerRegistry = app.state.model_registry
+    await model_registry.shutdown_all()
 
     # We might want to shutdown the hardware manager too, though releasing workers should handle it.
     # But a global cleanup is safe.

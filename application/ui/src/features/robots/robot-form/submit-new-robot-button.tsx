@@ -1,4 +1,4 @@
-import { Button } from '@geti/ui';
+import { Button } from '@geti-ui/ui';
 import { useNavigate } from 'react-router';
 import { v4 as uuidv4 } from 'uuid';
 

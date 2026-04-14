@@ -91,9 +91,13 @@ class BaseRepository(Generic[ModelType, SchemaType], metaclass=abc.ABCMeta):
         schema_item: SchemaType = self.to_schema(to_update)
         await self.db.merge(schema_item)
         await self.db.commit()
-        updated = await self.get_by_id(item.id)
+
+        item_id = getattr(item, "id", None)
+        if item_id is None:
+            raise TypeError(f"{item.__class__.__name__} does not provide a usable `id` for update refresh")
+        updated = await self.get_by_id(item_id)
         if updated is None:
-            raise ValueError(f"{item.__class__} with ID `{item.id}` doesn't exist")
+            raise ValueError(f"{item.__class__} with ID `{item_id}` doesn't exist")
         return updated
 
     async def delete_by_id(self, obj_id: str | UUID) -> None:
@@ -145,9 +149,13 @@ class ProjectBaseRepository(BaseRepository, metaclass=abc.ABCMeta):
 
         await self.db.merge(schema_item)
         await self.db.commit()
-        updated = await self.get_by_id(item.id)
+
+        item_id = getattr(item, "id", None)
+        if item_id is None:
+            raise TypeError(f"{item.__class__.__name__} does not provide a usable `id` for update refresh")
+        updated = await self.get_by_id(item_id)
         if updated is None:
-            raise ValueError(f"{item.__class__} with ID `{item.id}` doesn't exist")
+            raise ValueError(f"{item.__class__} with ID `{item_id}` doesn't exist")
         return updated
 
     @property

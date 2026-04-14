@@ -1,8 +1,11 @@
-import { ActionButton, Button, DialogTrigger, Flex, Grid, Item, Key, Menu, MenuTrigger, Text, View } from '@geti/ui';
-import { MoreMenu } from '@geti/ui/icons';
+import { useState } from 'react';
 
-import { SchemaJob, SchemaModel } from '../../api/openapi-spec';
+import { ActionButton, Button, DialogTrigger, Flex, Grid, Item, Key, Menu, MenuTrigger, Text, View } from '@geti-ui/ui';
+import { MoreMenu } from '@geti-ui/ui/icons';
+
+import { SchemaModel, SchemaTrainJob } from '../../api/openapi-spec';
 import { GRID_COLUMNS } from './constants';
+import { ModelDownloadDialog } from './model-download-dialog.component';
 import { StartInferenceDialog } from './start-model-modal.component';
 import { durationBetween } from './utils';
 
@@ -26,12 +29,16 @@ export const ModelRow = ({
     trainingJob,
     onDelete,
     onRetrain,
+    onViewLogs,
 }: {
     model: SchemaModel;
-    trainingJob?: SchemaJob;
+    trainingJob?: SchemaTrainJob;
     onDelete: () => void;
     onRetrain: () => void;
+    onViewLogs?: () => void;
 }) => {
+    const [isDownloadDialogOpen, setDownloadDialogOpen] = useState(false);
+
     const onAction = (key: Key) => {
         const action = key.toString();
         if (action === 'delete') {
@@ -40,12 +47,21 @@ export const ModelRow = ({
         if (action === 'retrain') {
             onRetrain();
         }
+        if (action === 'logs') {
+            onViewLogs?.();
+        }
+        if (action === 'download') {
+            setDownloadDialogOpen(true);
+        }
     };
 
     const duration =
         trainingJob?.start_time && trainingJob?.end_time
             ? durationBetween(trainingJob.start_time, trainingJob.end_time)
             : null;
+
+    // Disable logs if we don't know the training job
+    const disabledKeys = !model.train_job_id ? ['logs'] : [];
 
     const version = model.version ?? 1;
 
@@ -68,16 +84,23 @@ export const ModelRow = ({
                     )}
                 </DialogTrigger>
             </View>
-            <View>
-                <MenuTrigger>
+            <View justifySelf={'end'}>
+                <MenuTrigger direction='left'>
                     <ActionButton isQuiet UNSAFE_style={{ fill: 'var(--spectrum-gray-900)' }} aria-label='options'>
                         <MoreMenu />
                     </ActionButton>
-                    <Menu onAction={onAction}>
+                    <Menu onAction={onAction} disabledKeys={disabledKeys}>
+                        <Item key='logs'>Logs</Item>
+                        <Item key='download'>Download</Item>
                         <Item key='retrain'>Retrain</Item>
                         <Item key='delete'>Delete</Item>
                     </Menu>
                 </MenuTrigger>
+                <ModelDownloadDialog
+                    modelId={model.id!}
+                    isOpen={isDownloadDialogOpen}
+                    onClose={() => setDownloadDialogOpen(false)}
+                />
             </View>
         </Grid>
     );

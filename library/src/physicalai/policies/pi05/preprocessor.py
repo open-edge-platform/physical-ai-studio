@@ -23,6 +23,7 @@ import torch
 import torch.nn.functional as F  # noqa: N812
 
 from physicalai.data import Feature, FeatureType, NormalizationParameters
+from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, Observation
 from physicalai.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
 
@@ -34,7 +35,7 @@ NORM_MAP = {
 }
 
 
-def pad_vector(vector: torch.Tensor, new_dim: int) -> torch.Tensor:
+def _pad_vector(vector: torch.Tensor, new_dim: int) -> torch.Tensor:
     """Pad the last dimension of a vector to new_dim with zeros.
 
     Returns:
@@ -45,7 +46,7 @@ def pad_vector(vector: torch.Tensor, new_dim: int) -> torch.Tensor:
     return F.pad(vector, (0, new_dim - vector.shape[-1]))
 
 
-def resize_with_pad_torch(  # noqa: PLR0914
+def _resize_with_pad_torch(  # noqa: PLR0914
     images: torch.Tensor,
     height: int,
     width: int,
@@ -124,7 +125,6 @@ class Pi05Preprocessor(torch.nn.Module):
     5. Pads actions to max dimensions
 
     Args:
-        max_state_dim: Maximum state dimension for padding.
         max_action_dim: Maximum action dimension for padding.
         image_resolution: Target image resolution (height, width).
         features: Dictionary mapping feature names to Feature objects for normalization.
@@ -135,7 +135,6 @@ class Pi05Preprocessor(torch.nn.Module):
 
     def __init__(
         self,
-        max_state_dim: int = 32,
         max_action_dim: int = 32,
         image_resolution: tuple[int, int] = (224, 224),
         features: dict[str, Feature] | None = None,
@@ -146,7 +145,6 @@ class Pi05Preprocessor(torch.nn.Module):
         """Initialize Pi05Preprocessor."""
         super().__init__()
 
-        self.max_state_dim = max_state_dim
         self.max_action_dim = max_action_dim
         self.image_resolution = image_resolution
         self.max_token_len = max_token_len
@@ -159,7 +157,7 @@ class Pi05Preprocessor(torch.nn.Module):
         else:
             self._state_action_normalizer = torch.nn.Identity()
 
-    def forward(self, batch: dict[str, Any]) -> dict[str, Any]:
+    def forward(self, batch: dict[str, Any]) -> dict[str, torch.Tensor]:
         """Process a batch for Pi05 model input.
 
         Args:
@@ -200,8 +198,8 @@ class Pi05Preprocessor(torch.nn.Module):
 
         # Tokenize
         tokens, masks = self._tokenize(full_prompts)
-        batch["tokenized_prompt"] = tokens.to(state.device)
-        batch["tokenized_prompt_mask"] = masks.to(state.device)
+        batch[TOKENIZED_PROMPT] = tokens.to(state.device)
+        batch[TOKENIZED_PROMPT_MASK] = masks.to(state.device)
 
         # Preprocess images
         images, img_masks = self._preprocess_images(batch)
@@ -212,12 +210,19 @@ class Pi05Preprocessor(torch.nn.Module):
                 images.append(torch.ones_like(images[-1]) * -1)
                 img_masks.append(torch.zeros_like(img_masks[-1]))
 
+        if images:
+            images = torch.stack(images, dim=0)
+            img_masks = torch.stack(img_masks, dim=0)
+        else:
+            images = torch.empty(0, device=batch[STATE].device)
+            img_masks = torch.empty(0, device=batch[STATE].device)
+
         batch[IMAGES] = images
-        batch["image_masks"] = img_masks
+        batch[IMAGE_MASKS] = img_masks
 
         # Pad actions if present
         if ACTION in batch and batch[ACTION] is not None:
-            batch[ACTION] = pad_vector(batch[ACTION], self.max_action_dim)
+            batch[ACTION] = _pad_vector(batch[ACTION], self.max_action_dim)
 
         return batch
 
@@ -253,7 +258,7 @@ class Pi05Preprocessor(torch.nn.Module):
 
             # Resize with padding
             if img.shape[1:3] != tuple(self.image_resolution):
-                img = resize_with_pad_torch(img, *self.image_resolution)
+                img = _resize_with_pad_torch(img, *self.image_resolution)
 
             # Normalize [0,1] -> [-1,1]
             img = img * 2.0 - 1.0
@@ -282,7 +287,6 @@ class Pi05Preprocessor(torch.nn.Module):
             max_length=self.max_token_len,
             truncation=True,
             padding="max_length",
-            padding_side="right",
             return_tensors="pt",
         )
 
@@ -299,7 +303,12 @@ class Pi05Preprocessor(torch.nn.Module):
             try:
                 from transformers import AutoTokenizer  # noqa: PLC0415
 
-                self._tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_name)  # nosec B615
+                self._tokenizer = AutoTokenizer.from_pretrained(
+                    self.tokenizer_name,
+                    revision="35e4f46485b4d07967e7e9935bc3786aad50687c",
+                    use_fast=True,
+                    padding_side="right",
+                )
             except ImportError as e:
                 msg = "Tokenizer requires transformers. Install with: uv pip install transformers"
                 raise ImportError(msg) from e
@@ -341,7 +350,6 @@ class Pi05Postprocessor(torch.nn.Module):
 
 
 def make_pi05_preprocessors(
-    max_state_dim: int = 32,
     max_action_dim: int = 32,
     stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
     *,
@@ -352,7 +360,6 @@ def make_pi05_preprocessors(
     """Create preprocessor and postprocessor pair for Pi05.
 
     Args:
-        max_state_dim: Maximum state dimension.
         max_action_dim: Maximum action dimension.
         stats: Dataset statistics as nested dicts.
         image_resolution: Target image resolution.
@@ -388,7 +395,6 @@ def make_pi05_preprocessors(
             )
 
     preprocessor = Pi05Preprocessor(
-        max_state_dim=max_state_dim,
         max_action_dim=max_action_dim,
         image_resolution=image_resolution,
         features=features,

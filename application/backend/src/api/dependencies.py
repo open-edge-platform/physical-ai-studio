@@ -11,7 +11,7 @@ from services import (
     DatasetDownloadService,
     DatasetService,
     EpisodeThumbnailService,
-    JobService,
+    ModelDownloadService,
     ModelService,
     ProjectCameraService,
     ProjectService,
@@ -19,10 +19,13 @@ from services import (
 )
 from services.environment_service import EnvironmentService
 from services.event_processor import EventProcessor
+from services.job_service import JobService
+from services.log_service import LogService
 from services.robot_calibration_service import RobotCalibrationService
 from settings import get_settings
 from utils.serial_robot_tools import RobotConnectionManager
 from workers.camera_worker_registry import CameraWorkerRegistry
+from workers.model_worker_registry import ModelWorkerRegistry
 from workers.robot_worker_registry import RobotWorkerRegistry
 
 
@@ -109,9 +112,23 @@ def get_model_service() -> ModelService:
 
 
 @lru_cache
+def get_model_download_service() -> ModelDownloadService:
+    """Provides a ModelDownloadService instance for model exports."""
+    return ModelDownloadService()
+
+
+@lru_cache
 def get_job_service() -> JobService:
     """Provides a JobService instance for managing jobs."""
     return JobService()
+
+
+def get_log_service(request: HTTPConnection) -> LogService:
+    """Provides a LogService instance for managing logs."""
+    settings = getattr(request.app.state, "settings", None)
+    if settings is None:
+        settings = get_settings()
+    return LogService(settings=settings, job_service=JobService())
 
 
 def get_project_id(project_id: str) -> UUID:
@@ -126,6 +143,13 @@ def get_dataset_id(dataset_id: str) -> UUID:
     if not is_valid_uuid(dataset_id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid dataset ID")
     return UUID(dataset_id)
+
+
+def get_model_id(model_id: str) -> UUID:
+    """Initialize and validates a model ID."""
+    if not is_valid_uuid(model_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid model ID")
+    return UUID(model_id)
 
 
 def get_robot_id(robot_id: str) -> UUID:
@@ -203,3 +227,14 @@ def get_robot_registry(request: HTTPConnection) -> RobotWorkerRegistry:
 
 CameraRegistryDep = Annotated[CameraWorkerRegistry, Depends(get_camera_registry)]
 RobotRegistryDep = Annotated[RobotWorkerRegistry, Depends(get_robot_registry)]
+
+
+def get_model_registry(request: HTTPConnection) -> ModelWorkerRegistry:
+    """Dependency to get model worker registry."""
+    registry = getattr(request.app.state, "model_registry", None)
+    if registry is None:
+        raise RuntimeError("Model worker registry not initialized")
+    return registry
+
+
+ModelRegistryDep = Annotated[ModelWorkerRegistry, Depends(get_model_registry)]

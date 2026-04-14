@@ -8,6 +8,8 @@ from schemas.robot import RobotType
 
 
 class TrossenWidowXAILeader(RobotClient):
+    _HOME_POSITION: list[float] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
     def __init__(self, config: NetworkIpRobotConfig):
         self.driver = trossen_arm.TrossenArmDriver()
         self.connection_string = config.connection_string
@@ -50,13 +52,13 @@ class TrossenWidowXAILeader(RobotClient):
         self.driver.set_all_modes(trossen_arm.Mode.external_effort)
 
         self.driver.set_all_external_efforts(
-            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            self._HOME_POSITION,  # type: ignore
             0.0,
             False,
         )
 
         self.driver.set_all_modes(trossen_arm.Mode.position)
-        self.driver.set_all_positions(np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), 2.0, True)
+        self.driver.set_all_positions(self._HOME_POSITION, 2.0, True)  # type: ignore
 
     async def set_joints_state(self, joints: dict, goal_time: float) -> dict:  # noqa: ARG002
         raise Exception("Not implemented for leaders")
@@ -99,14 +101,14 @@ class TrossenWidowXAILeader(RobotClient):
             raise
 
     async def read_forces(self) -> dict | None:
-        pass
+        return None
 
     async def set_forces(self, forces: dict) -> dict:
         force_feedback_gain = 0.1
 
         efforts = {key.removesuffix(".eff"): val for key, val in forces.items() if key.endswith(".eff")}
 
-        effs = [0] * len(self.motor_names)
+        effs = [0.0] * len(self.motor_names)
 
         # Map motor name / value pair into the right position of list
         for p, v in efforts.items():
@@ -116,7 +118,7 @@ class TrossenWidowXAILeader(RobotClient):
 
         self.driver.set_all_modes(trossen_arm.Mode.external_effort)
         self.driver.set_all_external_efforts(
-            -force_feedback_gain * np.array(effs),
+            [-force_feedback_gain * value for value in effs],  # type: ignore
             0.0,
             False,
         )
@@ -149,7 +151,7 @@ class TrossenWidowXAILeader(RobotClient):
     async def disconnect(self) -> None:
         try:
             self.driver.set_all_modes(trossen_arm.Mode.position)
-            self.driver.set_all_positions(np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), 2.0, True)
+            self.driver.set_all_positions(self._HOME_POSITION, 2.0, True)  # type: ignore
         except Exception:
             logger.error("Failed to home trossen WidowX AI leader")
         finally:

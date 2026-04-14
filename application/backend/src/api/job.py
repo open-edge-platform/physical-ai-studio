@@ -8,9 +8,10 @@ from loguru import logger
 from api.dependencies import get_event_processor_ws, get_job_id, get_job_service, get_scheduler
 from core.scheduler import Scheduler
 from schemas import Job
-from schemas.job import JobStatus, TrainJobPayload
-from services import JobService
+from schemas.base_job import JobStatus
+from schemas.job import TrainJobPayload
 from services.event_processor import EventProcessor, EventType
+from services.job_service import JobService
 
 router = APIRouter(prefix="/api/jobs", tags=["Jobs"])
 
@@ -21,6 +22,15 @@ async def list_jobs(
 ) -> list[Job]:
     """Fetch all jobs."""
     return await job_service.get_job_list()
+
+
+@router.get("/{job_id}")
+async def get_job(
+    job_id: Annotated[UUID, Depends(get_job_id)],
+    job_service: Annotated[JobService, Depends(get_job_service)],
+) -> Job:
+    """Fetch one job by id."""
+    return await job_service.get_job_by_id(job_id)
 
 
 @router.delete("/{job_id}")

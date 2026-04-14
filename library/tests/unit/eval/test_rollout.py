@@ -83,3 +83,83 @@ class TestRollout:
 
         assert isinstance(result["episode_length"], int)
         assert isinstance(result["sum_reward"], (float, torch.Tensor))
+
+
+# ============================================================================ #
+# _collect_frame Tests                                                         #
+# ============================================================================ #
+
+
+class TestCollectFrame:
+    """Tests for _collect_frame handling of different image types."""
+
+    def test_collect_frame_tensor_single_camera(self) -> None:
+        """Test _collect_frame with a single-camera Tensor observation."""
+        from physicalai.data import Observation
+        from physicalai.eval.rollout.functional import _collect_frame
+
+        # Single camera: images is a Tensor [1, C, H, W]
+        images = torch.rand(1, 3, 96, 96)
+        obs = Observation(state=torch.randn(1, 4), images=images)
+        frame = _collect_frame(obs, "camera")
+
+        assert frame is not None
+        assert frame.shape == (96, 96, 3)  # H, W, C after permute
+
+    def test_collect_frame_ndarray_single_camera(self) -> None:
+        """Test _collect_frame with a single-camera numpy ndarray observation."""
+        import numpy as np
+
+        from physicalai.data import Observation
+        from physicalai.eval.rollout.functional import _collect_frame
+
+        images = np.random.rand(1, 3, 96, 96).astype(np.float32)
+        obs = Observation(state=torch.randn(1, 4), images=images)
+        frame = _collect_frame(obs, "camera")
+
+        assert frame is not None
+        assert frame.shape == (96, 96, 3)
+
+    def test_collect_frame_dict_multi_camera(self) -> None:
+        """Test _collect_frame with a dict of images (multiple cameras)."""
+        from physicalai.data import Observation
+        from physicalai.eval.rollout.functional import _collect_frame
+
+        images = {
+            "top": torch.rand(1, 3, 64, 64),
+            "wrist": torch.rand(1, 3, 64, 64),
+        }
+        obs = Observation(state=torch.randn(1, 4), images=images)
+
+        frame = _collect_frame(obs, "top")
+        assert frame is not None
+        assert frame.shape == (64, 64, 3)
+
+    def test_collect_frame_dict_missing_key(self) -> None:
+        """Test _collect_frame returns None for missing key in dict."""
+        from physicalai.data import Observation
+        from physicalai.eval.rollout.functional import _collect_frame
+
+        images = {"top": torch.rand(1, 3, 64, 64)}
+        obs = Observation(state=torch.randn(1, 4), images=images)
+
+        frame = _collect_frame(obs, "nonexistent")
+        assert frame is None
+
+    def test_collect_frame_no_images(self) -> None:
+        """Test _collect_frame returns None when images is None."""
+        from physicalai.data import Observation
+        from physicalai.eval.rollout.functional import _collect_frame
+
+        obs = Observation(state=torch.randn(1, 4), images=None)
+        frame = _collect_frame(obs, "camera")
+        assert frame is None
+
+    def test_collect_frame_unsupported_type(self) -> None:
+        """Test _collect_frame returns None for unsupported image type."""
+        from physicalai.data import Observation
+        from physicalai.eval.rollout.functional import _collect_frame
+
+        obs = Observation(state=torch.randn(1, 4), images="not_an_image")
+        frame = _collect_frame(obs, "camera")
+        assert frame is None

@@ -8,7 +8,7 @@ from typing import Any, cast
 import torch
 
 from physicalai.data import Dataset, Feature, FeatureType, NormalizationParameters, Observation
-from physicalai.export.mixin_export import Export, ExportBackend
+from physicalai.export.mixin_policy import ExportablePolicyMixin, ExportBackend
 from physicalai.gyms import Gym
 from physicalai.policies.act.config import ACTConfig
 from physicalai.policies.act.model import ACT as ACTModel  # noqa: N811
@@ -17,7 +17,7 @@ from physicalai.policies.base import Policy
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 
-class ACT(Export, Policy):
+class ACT(ExportablePolicyMixin, Policy):
     """Action Chunking with Transformers (ACT) policy implementation.
 
     This class implements the ACT policy for imitation learning, which uses a transformer-based
@@ -428,8 +428,8 @@ class ACT(Export, Policy):
         if hasattr(self.model, "reset") and callable(self.model.reset):
             self.model.reset()
 
-    @property
-    def supported_export_backends(self) -> list[str | ExportBackend]:
+    @staticmethod
+    def get_supported_export_backends() -> list[str | ExportBackend]:
         """Get a list of export backends supported by policy.
 
         This method returns a list of supported export backends as strings.
@@ -437,4 +437,9 @@ class ACT(Export, Policy):
         Returns:
             list[str | ExportBackend]: A list of supported export backends.
         """
-        return [ExportBackend.TORCH, ExportBackend.OPENVINO, ExportBackend.ONNX, ExportBackend.TORCH_EXPORT_IR]
+        return [
+            ExportBackend.TORCH,
+            ExportBackend.OPENVINO,
+            ExportBackend.ONNX,
+            ExportBackend.EXECUTORCH,
+        ]

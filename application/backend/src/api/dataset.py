@@ -1,11 +1,10 @@
-import re
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi.responses import FileResponse
-from loguru import logger
+from pydantic import BaseModel
 from starlette.background import BackgroundTask
 
 from api.dependencies import (
@@ -15,6 +14,7 @@ from api.dependencies import (
     get_dataset_service,
     get_episode_thumbnail_service,
 )
+from api.utils import safe_archive_name
 from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
 from internal_datasets.mutations.delete_episode_mutation import DeleteEpisodesMutation
 from internal_datasets.utils import get_internal_dataset
@@ -22,11 +22,6 @@ from schemas import Dataset, Episode, EpisodeInfo
 from services import DatasetDownloadService, DatasetService, EpisodeThumbnailService
 
 router = APIRouter(prefix="/api/dataset", tags=["Dataset"])
-
-
-def _safe_archive_name(name: str) -> str:
-    sanitized = re.sub(r"[^A-Za-z0-9_.-]+", "-", name).strip(".-")
-    return sanitized or "dataset"
 
 
 @router.get("/{dataset_id}")
@@ -129,7 +124,6 @@ async def dataset_video_endpoint(
     """Get path to video of episode"""
     dataset = await dataset_service.get_dataset_by_id(dataset_id)
     requested_path = (Path(dataset.path) / video_path).resolve()
-    logger.info(requested_path)
 
     if not str(requested_path).startswith(str(dataset.path)):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access to the requested file is forbidden.")
@@ -154,7 +148,7 @@ async def dataset_download_endpoint(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset path not found.")
 
     archive_path = dataset_download_service.create_dataset_archive(dataset_path)
-    filename = f"{_safe_archive_name(dataset.name)}.zip"
+    filename = f"{safe_archive_name(dataset.name, fallback='dataset')}.zip"
     return FileResponse(
         archive_path,
         media_type="application/zip",
@@ -169,3 +163,27 @@ async def create_dataset(
 ) -> Dataset:
     """Create a new dataset."""
     return await dataset_service.create_dataset(dataset)
+
+
+class DatasetNameUpdate(BaseModel):
+    name: str
+
+
+@router.put("/{dataset_id}")
+async def update_dataset_name(
+    dataset_id: Annotated[UUID, Depends(get_dataset_id)],
+    payload: DatasetNameUpdate,
+    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
+) -> Dataset:
+    """Update dataset name by id."""
+    return await dataset_service.update_dataset_name(dataset_id=dataset_id, name=payload.name)
+
+
+@router.delete("/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_dataset(
+    dataset_id: Annotated[UUID, Depends(get_dataset_id)],
+    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
+    remove_files: bool = False,
+) -> None:
+    """Delete dataset by id and optionally remove dataset files."""
+    await dataset_service.delete_dataset(dataset_id=dataset_id, remove_files=remove_files)

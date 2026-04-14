@@ -11,13 +11,14 @@ import pytest
 import torch
 
 from physicalai.data.observation import Observation
-from physicalai.export.mixin_export import ExportBackend
+from physicalai.export.backends import TorchExportParameters
+from physicalai.export.mixin_policy import ExportBackend
 from physicalai.inference.adapters import (
+    ExecuTorchAdapter,
     ONNXAdapter,
     OpenVINOAdapter,
     RuntimeAdapter,
     TorchAdapter,
-    TorchExportAdapter,
     get_adapter,
 )
 
@@ -31,7 +32,6 @@ class TestGetAdapter:
         [
             ("openvino", OpenVINOAdapter),
             ("onnx", ONNXAdapter),
-            ("torch_export_ir", TorchExportAdapter),
             ("torch", TorchAdapter),
         ],
     )
@@ -63,13 +63,16 @@ class TestOpenVINOAdapter:
         (tmp_path / "model.bin").touch()
 
         mock_model = MagicMock()
+        mock_compiled_model = MagicMock()
         mock_input, mock_output = Mock(), Mock()
         mock_input.any_name, mock_output.any_name = "input", "output"
-        mock_model.inputs, mock_model.outputs = [mock_input], [mock_output]
-        mock_model.return_value = [np.array([[1.0, 2.0]])]
+        mock_model.inputs = [mock_input]
+        mock_compiled_model.outputs = [mock_output]
+        mock_compiled_model.return_value = [np.array([[1.0, 2.0]])]
 
         mock_ov = MagicMock()
-        mock_ov.Core.return_value.compile_model.return_value = mock_model
+        mock_ov.Core.return_value.read_model.return_value = mock_model
+        mock_ov.Core.return_value.compile_model.return_value = mock_compiled_model
 
         # Test init, load, and predict
         with patch.dict("sys.modules", {"openvino": mock_ov}):
@@ -176,7 +179,7 @@ class TestTorchAdapter:
         mock_model.return_value = torch.tensor([[1.0, 2.0]])
         mock_model.eval.return_value = mock_model
         mock_model.to.return_value = mock_model
-        mock_model.model.extra_export_args = {"torch": {"output_names": ["action"], "input_names": ["observation"]}}
+        mock_model.model.extra_export_args = {"torch": TorchExportParameters()}
 
         with patch("physicalai.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
             adapter = TorchAdapter(device="cpu")
@@ -207,7 +210,7 @@ class TestTorchAdapter:
         mock_model.eval.return_value = mock_model
         mock_model.to.return_value = mock_model
         mock_model.model.sample_input = {"state": torch.zeros(1, 2), "images": torch.zeros(1, 3, 96, 96)}
-        mock_model.model.extra_export_args = {"torch": {"output_names": ["action"]}}
+        mock_model.model.extra_export_args = {"torch": TorchExportParameters()}
 
         with patch("physicalai.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
             adapter = TorchAdapter(device="cpu")
@@ -234,7 +237,7 @@ class TestTorchAdapter:
         mock_model.to.return_value = mock_model
         if hasattr(mock_model.model, "sample_input"):
             del mock_model.model.sample_input
-        mock_model.model.extra_export_args = {"torch": {"output_names": ["action"], "input_names": ["observation"]}}
+        mock_model.model.extra_export_args = {"torch": TorchExportParameters()}
 
         with patch("physicalai.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
             adapter = TorchAdapter(device="cpu")
@@ -291,92 +294,6 @@ class TestTorchAdapter:
 
         assert adapter.input_names == []
         assert adapter.output_names == []
-
-
-class TestTorchExportAdapter:
-    """Test Torch Export IR adapter."""
-
-    def test_lifecycle(self, tmp_path: Path) -> None:
-        """Test complete adapter lifecycle."""
-        import torch
-
-        model_path = tmp_path / "model.pt2"
-        model_path.touch()
-
-        mock_program = MagicMock()
-        mock_module = MagicMock()
-        mock_module.return_value = {"output": torch.tensor([[1.0, 2.0]])}
-        mock_program.module.return_value = mock_module
-
-        # Mock call_spec for input names.
-        # Adapter traversal: in_spec.child(0) -> args_spec,
-        #   args_spec.children() truthy -> dict_spec = args_spec.child(0),
-        #   dict_spec.context = ["input"]
-        mock_dict_spec = Mock()
-        mock_dict_spec.context = ["input"]
-
-        mock_args_spec = Mock()
-        mock_args_spec.children.return_value = [mock_dict_spec]  # truthy -> positional-args path
-        mock_args_spec.child.return_value = mock_dict_spec        # args_spec.child(0) -> dict_spec
-
-        mock_in_spec = Mock()
-        mock_in_spec.children.return_value = [mock_args_spec]    # len == 1, no kwargs branch
-        mock_in_spec.child.return_value = mock_args_spec          # in_spec.child(0) -> args_spec
-        mock_program.call_spec.in_spec = mock_in_spec
-
-        # Mock graph_signature for output names
-        mock_program.graph_signature.user_outputs = ["output"]
-
-        with patch("torch.export.load", return_value=mock_program):
-            adapter = TorchExportAdapter()
-            adapter.load(model_path)
-
-            assert adapter.input_names == ["input"] and adapter.output_names == ["output"]
-
-            outputs = adapter.predict({"input": np.array([[1.0]])})
-            assert "output" in outputs and isinstance(outputs["output"], np.ndarray)
-
-    def test_error_cases(self, tmp_path: Path) -> None:
-        """Test error handling."""
-        adapter = TorchExportAdapter()
-
-        with pytest.raises(FileNotFoundError):
-            adapter.load(Path("/nonexistent/model.pt2"))
-
-        with pytest.raises(RuntimeError, match="Model not loaded"):
-            adapter.predict({"input": np.array([1.0])})
-
-        model_path = tmp_path / "model.pt2"
-        model_path.touch()
-
-        with patch("torch.export.load", side_effect=RuntimeError("Load error")):
-            with pytest.raises(RuntimeError, match="Failed to load"):
-                adapter.load(model_path)
-
-        # Test missing inputs
-        mock_program = MagicMock()
-        mock_program.module.return_value = MagicMock()
-
-        # Mock call_spec for input names (same traversal as test_lifecycle)
-        mock_dict_spec = Mock()
-        mock_dict_spec.context = ["input1", "input2"]
-
-        mock_args_spec = Mock()
-        mock_args_spec.children.return_value = [mock_dict_spec]
-        mock_args_spec.child.return_value = mock_dict_spec
-
-        mock_in_spec = Mock()
-        mock_in_spec.children.return_value = [mock_args_spec]
-        mock_in_spec.child.return_value = mock_args_spec
-        mock_program.call_spec.in_spec = mock_in_spec
-
-        # Mock graph_signature for output names
-        mock_program.graph_signature.user_outputs = ["output"]
-
-        with patch("torch.export.load", return_value=mock_program):
-            adapter.load(model_path)
-            with pytest.raises(ValueError, match="Missing required inputs"):
-                adapter.predict({"input1": np.array([1.0])})
 
 
 class TestRuntimeAdapter:
@@ -458,3 +375,115 @@ class TestDefaultDevice:
         """Test OpenVINOAdapter default_device returns 'CPU'."""
         adapter = OpenVINOAdapter()
         assert adapter.default_device() == "CPU"
+
+
+class TestExecuTorchAdapter:
+    """Test ExecuTorch inference adapter."""
+
+    @staticmethod
+    def _build_executorch_mocks() -> tuple[MagicMock, MagicMock, MagicMock, MagicMock]:
+        """Build the mock objects for executorch.runtime.
+
+        Returns:
+            Tuple of (mock_et_runtime, mock_runtime_instance, mock_program, mock_method).
+        """
+        mock_method = MagicMock()
+        mock_program = MagicMock()
+        mock_program.load_method.return_value = mock_method
+
+        mock_runtime_instance = MagicMock()
+        mock_runtime_instance.load_program.return_value = mock_program
+
+        mock_runtime_class = MagicMock()
+        mock_runtime_class.get.return_value = mock_runtime_instance
+
+        mock_et_runtime = MagicMock()
+        mock_et_runtime.Runtime = mock_runtime_class
+
+        return mock_et_runtime, mock_runtime_instance, mock_program, mock_method
+
+    def test_load_happy_path(self, tmp_path: Path) -> None:
+        """Test successful load with metadata."""
+        model_path = tmp_path / "model.pte"
+        model_path.touch()
+
+        metadata_path = tmp_path / "metadata.yaml"
+        metadata_path.write_text("input_names: [state, action]\noutput_names: [prediction]\n")
+
+        mock_et_runtime, _, _, _ = self._build_executorch_mocks()
+
+        with patch.dict("sys.modules", {"executorch": MagicMock(), "executorch.runtime": mock_et_runtime}):
+            adapter = ExecuTorchAdapter()
+            adapter.load(model_path)
+
+            assert adapter.input_names == ["state", "action"]
+            assert adapter.output_names == ["prediction"]
+
+    def test_load_file_not_found(self) -> None:
+        """Test FileNotFoundError for missing file."""
+        adapter = ExecuTorchAdapter()
+        with pytest.raises(FileNotFoundError, match="Model file not found"):
+            adapter.load(Path("/nonexistent/model.pte"))
+
+    def test_load_import_error(self, tmp_path: Path) -> None:
+        """Test ImportError when executorch not installed."""
+        model_path = tmp_path / "model.pte"
+        model_path.touch()
+
+        with patch.dict("sys.modules", {"executorch": None, "executorch.runtime": None}):
+            adapter = ExecuTorchAdapter()
+            with pytest.raises(ImportError, match="executorch"):
+                adapter.load(model_path)
+
+    def test_predict_happy_path(self, tmp_path: Path) -> None:
+        """Test successful prediction."""
+        model_path = tmp_path / "model.pte"
+        model_path.touch()
+
+        metadata_path = tmp_path / "metadata.yaml"
+        metadata_path.write_text("input_names: [state]\noutput_names: [action]\n")
+
+        mock_et_runtime, _, _, mock_method = self._build_executorch_mocks()
+        mock_method.execute.return_value = [torch.tensor([[1.0, 2.0]])]
+
+        with patch.dict("sys.modules", {"executorch": MagicMock(), "executorch.runtime": mock_et_runtime}):
+            adapter = ExecuTorchAdapter()
+            adapter.load(model_path)
+
+            outputs = adapter.predict({"state": np.array([[0.5]])})
+            assert "action" in outputs
+            assert isinstance(outputs["action"], np.ndarray)
+            np.testing.assert_array_almost_equal(outputs["action"], [[1.0, 2.0]])
+
+    def test_predict_not_loaded(self) -> None:
+        """Test RuntimeError when predict called before load."""
+        adapter = ExecuTorchAdapter()
+        with pytest.raises(RuntimeError, match="not loaded"):
+            adapter.predict({"state": np.array([[0.5]])})
+
+    def test_predict_dict_to_tuple_ordering(self) -> None:
+        """Test input order matches input_names, not dict insertion order."""
+        adapter = ExecuTorchAdapter()
+        mock_method = MagicMock()
+        mock_method.execute.return_value = [torch.tensor([[0.0]])]
+
+        adapter._method = mock_method
+        adapter._input_names = ["b_input", "a_input"]
+        adapter._output_names = ["out"]
+
+        adapter.predict({"a_input": np.array([[1.0]]), "b_input": np.array([[2.0]])})
+
+        # Verify execute was called with ordered inputs matching input_names order
+        call_args = mock_method.execute.call_args[0][0]
+        # First tensor should be b_input (2.0), second should be a_input (1.0)
+        np.testing.assert_array_almost_equal(call_args[0].numpy(), [[2.0]])
+        np.testing.assert_array_almost_equal(call_args[1].numpy(), [[1.0]])
+
+    def test_input_output_names(self) -> None:
+        """Test properties return correct values."""
+        adapter = ExecuTorchAdapter()
+        adapter._input_names = ["x"]
+        adapter._output_names = ["y"]
+
+        assert adapter.input_names == ["x"]
+        assert adapter.output_names == ["y"]

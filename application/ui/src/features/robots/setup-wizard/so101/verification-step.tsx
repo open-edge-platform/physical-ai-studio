@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { Button, Flex, Heading, Text } from '@geti/ui';
+import { Button, Flex, Heading, Text } from '@geti-ui/ui';
 import { useNavigate } from 'react-router';
 import { degToRad } from 'three/src/math/MathUtils.js';
 import { v4 as uuidv4 } from 'uuid';

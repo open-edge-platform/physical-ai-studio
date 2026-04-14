@@ -43,6 +43,10 @@ uv sync
 
 This installs all backend dependencies including FastAPI, SQLAlchemy, aiortc, and the physicalai library.
 
+### (Optional) Enable hardware acceleration for video encoding
+Using hardware acceleration for video encoding can improve the speed of recording significantly.
+Please check out [this document](docs/video_hardware_acceleration_intel.md) for more information.
+
 ## Usage
 
 ### Start Server
@@ -123,6 +127,9 @@ uv run ruff check .
 
 # Type check
 uv run mypy src/
+
+# Type check (Pyrefly)
+uv run pyrefly check -c pyproject.toml
 ```
 
 ### Project Structure

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { Button, ButtonGroup, Content, Dialog, Divider, Heading } from '@geti/ui';
+import { Button, ButtonGroup, Content, Dialog, Divider, Heading } from '@geti-ui/ui';
 import { useNavigate } from 'react-router';
 
 import { BackendSelection, defaultBackend } from '../../features/configuration/shared/backend-selection';

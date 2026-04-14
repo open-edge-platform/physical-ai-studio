@@ -40,7 +40,8 @@ class InferenceRunner(ABC):
 
     Examples:
         >>> runner = SinglePass()
-        >>> action = runner.run(adapter, inputs)
+        >>> outputs = runner.run(adapter, inputs)
+        >>> action = outputs["action"]
         >>> runner.reset()  # new episode
     """
 
@@ -49,16 +50,15 @@ class InferenceRunner(ABC):
         self,
         adapter: RuntimeAdapter,
         inputs: dict[str, np.ndarray],
-    ) -> np.ndarray:
-        """Execute one inference step and return an action.
+    ) -> dict[str, np.ndarray]:
+        """Execute one inference step and return model outputs.
 
         Args:
             adapter: The loaded runtime adapter to call ``predict`` on.
             inputs: Pre-processed model inputs (flat dict of numpy arrays).
 
         Returns:
-            Action array. Shape depends on the runner but is typically
-            ``(batch_size, action_dim)`` or ``(action_dim,)``.
+            Dict mapping output names to numpy arrays.
         """
 
     @abstractmethod
