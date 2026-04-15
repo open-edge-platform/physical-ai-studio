@@ -14,7 +14,7 @@ permissions: {}
 jobs:
   analysis:
     name: Scorecards analysis
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
     permissions:
       # Needed to upload the results to code-scanning dashboard
       security-events: write
