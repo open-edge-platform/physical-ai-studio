@@ -4,14 +4,19 @@ import { AlertDialog, Checkbox, Flex, Text } from '@geti-ui/ui';
 
 import { $api } from '../../api/client';
 import { SchemaDatasetOutput } from '../../api/openapi-spec';
+import { useProjectId } from '../projects/use-project';
 
 type Dataset = SchemaDatasetOutput;
 
 export const DeleteDatasetDialog = ({ dataset, onDone }: { dataset: Dataset; onDone: () => void }) => {
     const [removeFiles, setRemoveFiles] = useState(false);
+    const { project_id } = useProjectId();
     const deleteMutation = $api.useMutation('delete', '/api/dataset/{dataset_id}', {
         meta: {
-            invalidates: [['get', '/api/projects']],
+            invalidates: [
+                ['get', '/api/projects'],
+                ['get', '/api/projects/{project_id}', { params: { path: { project_id } } }],
+            ],
         },
     });
 

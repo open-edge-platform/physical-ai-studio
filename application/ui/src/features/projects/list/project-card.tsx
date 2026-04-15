@@ -15,18 +15,6 @@ type ProjectCardProps = {
     isActive: boolean;
 };
 
-//const robotNameFromTypeMap: { [key: string]: string } = {
-//    so100_follower: 'SO-100',
-//    so101_follower: 'SO-101',
-//    koch_follower: 'Koch',
-//    stretch3: 'Stretch 3',
-//    lekiwi: 'LeKiwi',
-//    viperx: 'ViperX',
-//    hope_jr_arm: 'HopeJrArm',
-//    bi_so100_follower: 'Bi SO-100',
-//    reachy2: 'Reachy2 Robot',
-//};
-
 export const ProjectCard = ({ item, isActive }: ProjectCardProps) => {
     const deleteMutation = $api.useMutation('delete', '/api/projects/{project_id}', {
         meta: {
