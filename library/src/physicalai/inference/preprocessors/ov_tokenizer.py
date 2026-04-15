@@ -9,9 +9,9 @@ from pathlib import Path
 
 import numpy as np
 
-from physicalai.inference.preprocessors import Preprocessor
 from physicalai.inference.adapters import OpenVINOAdapter
 from physicalai.inference.constants import TASK, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
+from physicalai.inference.preprocessors import Preprocessor
 
 
 class OVTokenizer(Preprocessor):
@@ -26,6 +26,9 @@ class OVTokenizer(Preprocessor):
 
         Args:
             artifact: Path to the OpenVINO tokenizer artifact.
+
+        Raises:
+            ValueError: If the adapter does not have exactly one input.
         """
         super().__init__()
         self._artifact = Path(artifact)
@@ -35,8 +38,8 @@ class OVTokenizer(Preprocessor):
         self._adapter.load(self._artifact)
 
         if len(self._adapter.input_names) != 1:
-            raise ValueError("Expected exactly one input for the OV tokenizer, "
-                             f"but got {len(self._adapter.input_names)}")
+            msg = f"Expected exactly one input for the OV tokenizer, but got {len(self._adapter.input_names)}"
+            raise ValueError(msg)
         self._input_name = self._adapter.input_names[0]
 
     def __call__(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
@@ -47,6 +50,9 @@ class OVTokenizer(Preprocessor):
 
         Returns:
             Dictionary with tokenized outputs.
+
+        Raises:
+            TypeError: If `TASK` is not a list of strings.
         """
         batch_tasks = inputs[TASK]
         outputs = dict(inputs)
