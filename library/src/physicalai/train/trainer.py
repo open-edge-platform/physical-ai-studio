@@ -7,16 +7,14 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 import lightning
+import torch
 from lightning.pytorch.callbacks import BatchSizeFinder
 from lightning.pytorch.strategies import DDPStrategy
 
 from physicalai.train.callbacks import PolicyDatasetInteraction
-
-logger = logging.getLogger(__name__)
 
 
 class Trainer(lightning.Trainer):
@@ -68,6 +66,8 @@ class Trainer(lightning.Trainer):
         # physicalai-specific parameters
         experiment_name: str | None = None,
         auto_scale_batch_size: bool = False,
+        allow_tf32: bool = True,
+        cudnn_benchmark: bool = True,
         # Hardware
         accelerator: str | Any = "auto",
         strategy: str | Any = "auto",
@@ -132,6 +132,10 @@ class Trainer(lightning.Trainer):
             auto_scale_batch_size: Add a ``BatchSizeFinder`` callback to find the
                 largest batch size that fits in memory before training.
                 ``False`` (default) disables it.  ``True`` enables exponential (power) scaling.
+            allow_tf32: Enable TF32 precision for matmul on Ampere+ GPUs. Provides ~3x speedup
+                for float32 operations with minimal accuracy loss. Defaults to True.
+            cudnn_benchmark: Enable cuDNN benchmark mode to auto-tune convolution algorithms.
+                Speeds up training when input sizes are constant. Defaults to True.
             default_root_dir: Root directory for experiments (default: "experiments" instead of current dir)
             accelerator: Hardware accelerator ('auto', 'cpu', 'gpu', 'tpu', 'ipu', 'mps')
             max_epochs: Maximum number of epochs to train
@@ -160,6 +164,13 @@ class Trainer(lightning.Trainer):
 
         if auto_scale_batch_size:
             callbacks.append(BatchSizeFinder(mode="power"))
+
+        if allow_tf32:
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+
+        if cudnn_benchmark:
+            torch.backends.cudnn.benchmark = True
 
         # When using auto strategy with multiple GPUs, default to DDP with
         # find_unused_parameters=True. Policies like Pi05 freeze large portions

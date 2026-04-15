@@ -45,7 +45,7 @@ class Pi05Config(Config):
         image_resolution: Target image resolution (height, width). Defaults to (224, 224).
         empty_cameras: Number of empty camera slots to add. Defaults to 0.
         tokenizer_max_length: Maximum length for tokenizer output. Defaults to 200.
-        gradient_checkpointing: Enable gradient checkpointing for memory optimization. Defaults to False.
+        gradient_checkpointing: Enable gradient checkpointing for memory optimization. Defaults to True.
         compile_model: Whether to use torch.compile. Defaults to False.
         compile_mode: Torch compile mode. Defaults to "max-autotune".
         freeze_vision_encoder: Whether to freeze vision encoder during training. Defaults to False.
@@ -89,7 +89,7 @@ class Pi05Config(Config):
 
     tokenizer_max_length: int = 200
 
-    gradient_checkpointing: bool = False
+    gradient_checkpointing: bool = True
     compile_model: bool = False
     compile_mode: str = "default"
 

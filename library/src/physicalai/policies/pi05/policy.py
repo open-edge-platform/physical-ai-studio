@@ -59,7 +59,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         num_inference_steps: Denoising steps for inference. Default: 10.
         image_resolution: Target image resolution. Default: (224, 224).
         tokenizer_max_length: Maximum tokenizer length. Default: 200.
-        gradient_checkpointing: Enable gradient checkpointing. Default: False.
+        gradient_checkpointing: Enable gradient checkpointing. Default: True.
         freeze_vision_encoder: Freeze vision encoder. Default: False.
         train_expert_only: Train only action expert. Default: True.
         optimizer_lr: Learning rate. Default: 2.5e-5.
@@ -277,7 +277,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         n_action_steps: int | None = 10,
         max_state_dim: int | None = None,
         num_inference_steps: int | None = None,
-        gradient_checkpointing: bool = False,
+        gradient_checkpointing: bool = True,
         compile_model: bool = False,
         compile_mode: str | None = "max-autotune",
         freeze_vision_encoder: bool = False,
