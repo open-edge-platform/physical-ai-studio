@@ -50,9 +50,20 @@ def _make_mock_trossen_arm() -> MagicMock:
 
 @pytest.fixture
 def mock_trossen_arm() -> Generator[MagicMock, None, None]:
-    """Inject a mock trossen_arm into sys.modules for each test."""
+    """Inject a mock trossen_arm into sys.modules and into the widowxai module.
+
+    The widowxai module binds ``trossen_arm`` at import time.  If the real
+    ``trossen_arm`` package is installed, that binding happens before the test
+    fixture runs (triggered by ``from physicalai.robot.trossen.constants ...``
+    importing ``__init__.py`` which eagerly imports ``widowxai``).  We must
+    therefore also patch the module-level name inside ``widowxai`` so that
+    ``connect()`` / ``disconnect()`` see the mock, not the real SDK.
+    """
     mock_module = _make_mock_trossen_arm()
-    with patch.dict("sys.modules", {"trossen_arm": mock_module}):
+    with (
+        patch.dict("sys.modules", {"trossen_arm": mock_module}),
+        patch("physicalai.robot.trossen.widowxai.trossen_arm", mock_module),
+    ):
         yield mock_module
 
 
