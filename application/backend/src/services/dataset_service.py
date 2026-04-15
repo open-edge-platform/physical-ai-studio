@@ -1,3 +1,5 @@
+import shutil
+from pathlib import Path
 from uuid import UUID
 
 from db import get_async_db_session_ctx
@@ -29,7 +31,24 @@ class DatasetService:
             return await repo.save(dataset)
 
     @staticmethod
-    async def delete_dataset(dataset_id: UUID) -> None:
+    async def update_dataset_name(dataset_id: UUID, name: str) -> Dataset:
         async with get_async_db_session_ctx() as session:
             repo = DatasetRepository(session)
+            dataset = await repo.get_by_id(dataset_id)
+            if dataset is None:
+                raise ResourceNotFoundError(ResourceType.DATASET, str(dataset_id))
+
+            return await repo.update(dataset, {"name": name})
+
+    @staticmethod
+    async def delete_dataset(dataset_id: UUID, remove_files: bool = False) -> None:
+        async with get_async_db_session_ctx() as session:
+            repo = DatasetRepository(session)
+            dataset = await repo.get_by_id(dataset_id)
+            if dataset is None:
+                raise ResourceNotFoundError(ResourceType.DATASET, str(dataset_id))
+
             await repo.delete_by_id(dataset_id)
+
+            if remove_files:
+                shutil.rmtree(Path(dataset.path).expanduser())

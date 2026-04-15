@@ -4,7 +4,7 @@
 import { Suspense, useMemo, useState } from 'react';
 
 import { Button, ButtonGroup, Content, Dialog, Divider, Flex, Heading, Loading, Text } from '@geti-ui/ui';
-import { queryOptions, experimental_streamedQuery as streamedQuery, useQuery } from '@tanstack/react-query';
+import { experimental_streamedQuery as streamedQuery, useQuery } from '@tanstack/react-query';
 
 import { fetchClient } from '../../api/client';
 import { fetchSSE } from '../../api/fetch-sse';
@@ -13,21 +13,19 @@ import type { LogEntry } from './log-types';
 import { SourcesPicker } from './sources-picker';
 
 const LogStreamContent = ({ sourceId }: { sourceId: string }) => {
-    const query = useQuery(
-        queryOptions({
-            queryKey: ['get', '/api/logs/{source_id}/stream', sourceId],
-            queryFn: streamedQuery({
-                queryFn: (context) => {
-                    const url = fetchClient.PATH('/api/logs/{source_id}/stream', {
-                        params: { path: { source_id: sourceId } },
-                    });
+    const query = useQuery({
+        queryKey: ['get', '/api/logs/{source_id}/stream', sourceId],
+        queryFn: streamedQuery({
+            streamFn: (context) => {
+                const url = fetchClient.PATH('/api/logs/{source_id}/stream', {
+                    params: { path: { source_id: sourceId } },
+                });
 
-                    return fetchSSE<LogEntry>(url, { signal: context.signal });
-                },
-            }),
-            staleTime: Infinity,
-        })
-    );
+                return fetchSSE<LogEntry>(url, { signal: context.signal });
+            },
+        }),
+        staleTime: Infinity,
+    });
 
     const validLogs = useMemo(() => {
         if (!query.data) return [];

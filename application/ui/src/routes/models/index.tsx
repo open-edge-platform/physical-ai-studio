@@ -17,7 +17,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import useWebSocket from 'react-use-websocket';
 
 import { $api, fetchClient } from '../../api/client';
-import { SchemaJob, SchemaModel } from '../../api/openapi-spec';
+import { SchemaTrainJob as SchemaJob, SchemaModel } from '../../api/openapi-spec';
 import { LogsDialog } from '../../features/logs/logs-dialog';
 import { useProjectId } from '../../features/projects/use-project';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
@@ -42,7 +42,12 @@ const ModelList = ({
 
     const jobsById = new Map(jobs.map((j) => [j.id, j]));
 
-    const deleteModelMutation = $api.useMutation('delete', '/api/models/{model_id}');
+    const { project_id } = useProjectId();
+    const deleteModelMutation = $api.useMutation('delete', '/api/models/{model_id}', {
+        meta: {
+            invalidates: [['get', '/api/projects/{project_id}/models', { params: { path: { project_id } } }]],
+        },
+    });
 
     const deleteModel = (model: SchemaModel) => {
         deleteModelMutation.mutate({ params: { path: { model_id: model.id! } } });
@@ -70,7 +75,11 @@ const JobList = ({ jobs, onViewLogs }: { jobs: SchemaTrainJob[]; onViewLogs: (jo
         .filter((m) => m.status !== 'completed')
         .toSorted((a, b) => new Date(b.created_at!).getTime() - new Date(a.created_at!).getTime());
 
-    const interruptMutation = $api.useMutation('post', '/api/jobs/{job_id}:interrupt');
+    const interruptMutation = $api.useMutation('post', '/api/jobs/{job_id}:interrupt', {
+        meta: {
+            invalidates: [['get', '/api/jobs']],
+        },
+    });
     const onInterrupt = (job: SchemaTrainJob) => {
         if (job.id !== undefined) {
             interruptMutation.mutate({

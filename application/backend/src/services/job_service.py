@@ -5,10 +5,18 @@ from sqlalchemy.exc import IntegrityError
 
 from db import get_async_db_session_ctx
 from db.schema import JobDB
-from exceptions import DuplicateJobException, ResourceInUseError, ResourceNotFoundError, ResourceType
+from exceptions import (
+    DuplicateJobException,
+    ResourceInUseError,
+    ResourceNotFoundError,
+    ResourceType,
+    UnsupportedDeviceError,
+)
 from repositories import JobRepository
 from schemas import Job
-from schemas.job import JobStatus, JobType, TrainJobPayload
+from schemas.base_job import JobStatus, JobType
+from schemas.job import TrainJob, TrainJobPayload
+from services.system_service import SystemService
 
 
 class JobService:
@@ -39,16 +47,22 @@ class JobService:
 
     @staticmethod
     async def submit_train_job(payload: TrainJobPayload) -> Job:
+        # Validate the requested training device before persisting the job
+        if payload.device is not None and not SystemService.is_device_supported_for_training(payload.device.type):
+            raise UnsupportedDeviceError(
+                device_type=payload.device.type,
+                supported=SystemService.supported_training_device_types(),
+            )
+
         async with get_async_db_session_ctx() as session:
             repo = JobRepository(session)
             if await repo.is_job_duplicate(project_id=payload.project_id, payload=payload):
                 raise DuplicateJobException
 
             try:
-                job = Job(
+                job = TrainJob(
                     project_id=payload.project_id,
-                    type=JobType.TRAINING,
-                    payload=payload.model_dump(),
+                    payload=payload,
                     message="Training job submitted",
                 )
                 return await repo.save(job)
@@ -94,7 +108,7 @@ class JobService:
             if job is None:
                 raise ResourceNotFoundError(ResourceType.JOB, str(job_id))
 
-            if job.status != "failed":
+            if job.status not in {JobStatus.FAILED, JobStatus.CANCELED}:
                 raise ResourceInUseError(ResourceType.JOB, str(job_id))
 
             await repo.delete_by_id(job_id)

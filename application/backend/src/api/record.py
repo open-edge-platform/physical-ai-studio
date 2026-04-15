@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, WebSocket
 from fastapi.responses import Response
 from loguru import logger
 
-from api.dependencies import RobotCalibrationServiceDep, RobotConnectionManagerDep, get_scheduler_ws
+from api.dependencies import ModelRegistryDep, RobotCalibrationServiceDep, RobotConnectionManagerDep, get_scheduler_ws
 from core.scheduler import Scheduler
 from robots.robot_client_factory import RobotClientFactory
 from schemas import Dataset, Model
@@ -77,6 +77,7 @@ async def robot_control_websocket(
     robot_manager: RobotConnectionManagerDep,
     calibration_service: RobotCalibrationServiceDep,
     scheduler: Annotated[Scheduler, Depends(get_scheduler_ws)],
+    model_registry: ModelRegistryDep,
 ) -> None:
     """Robot control websocket."""
     await websocket.accept()
@@ -88,6 +89,7 @@ async def robot_control_websocket(
             calibration_service=calibration_service,
         ),
         queue=queue,
+        model_worker_registry=model_registry,
     )
     process.start()
 

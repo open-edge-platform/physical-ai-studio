@@ -14,7 +14,7 @@ permissions: {}
 jobs:
   analysis:
     name: Scorecards analysis
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
     permissions:
       # Needed to upload the results to code-scanning dashboard
       security-events: write
@@ -36,6 +36,6 @@ jobs:
 
       # Upload the results to GitHub's code scanning dashboard
       - name: Upload to code-scanning
-        uses: github/codeql-action/upload-sarif@0d579ffd059c29b07949a3cce3983f0780820c98 # v4.32.6
+        uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4.35.2
         with:
           sarif_file: results.sarif

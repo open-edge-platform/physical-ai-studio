@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { SchemaEpisode } from '../../api/openapi-spec';
+import { SchemaEpisode } from '../../../api/openapi-spec';
 
 export interface Player {
     time: number;

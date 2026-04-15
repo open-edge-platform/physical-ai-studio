@@ -14,7 +14,7 @@ import yaml
 
 from physicalai.export.backends import ExportBackend
 from physicalai.inference.adapters import get_adapter
-from physicalai.inference.component_factory import instantiate_component
+from physicalai.inference.component_factory import instantiate_component, resolve_artifact
 from physicalai.inference.constants import ACTION
 from physicalai.inference.manifest import ComponentSpec, Manifest
 from physicalai.inference.runners import get_runner
@@ -343,9 +343,11 @@ class InferenceModel:
 
         return Manifest()
 
-    @staticmethod
-    def _load_processors(specs: list[ComponentSpec]) -> list[Any]:
+    def _load_processors(self, specs: list[ComponentSpec]) -> list[Any]:
         """Instantiate preprocessors or postprocessors from component specs.
+
+        Resolves relative ``artifact`` paths to absolute paths using
+        the export directory before instantiation.
 
         Args:
             specs: List of component specifications to instantiate.
@@ -353,7 +355,7 @@ class InferenceModel:
         Returns:
             List of instantiated processor objects.
         """
-        return [instantiate_component(spec) for spec in specs]
+        return [instantiate_component(resolve_artifact(spec, self.export_dir)) for spec in specs]
 
     def _detect_policy_name(self) -> str:
         """Auto-detect policy name from manifest or file heuristics.

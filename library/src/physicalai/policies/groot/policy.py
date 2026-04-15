@@ -315,7 +315,7 @@ class Groot(ExportablePolicyMixin, Policy):
             batch: Input observation batch.
 
         Returns:
-            Training: dict with 'loss' key.  Eval: action chunk tensor.
+            Training: (loss tensor, loss dict).  Eval: action chunk tensor.
 
         Raises:
             RuntimeError: If model is not initialized.
@@ -330,7 +330,7 @@ class Groot(ExportablePolicyMixin, Policy):
             msg = "Preprocessor not initialized. Call setup() first."
             raise RuntimeError(msg)
         preprocessed = self._preprocessor(batch)
-        return self.model(preprocessed)
+        return self.model.compute_loss(preprocessed)
 
     def training_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
         """Training step - compute loss.
@@ -344,23 +344,30 @@ class Groot(ExportablePolicyMixin, Policy):
         """
         del batch_idx  # Unused
 
-        outputs = self(batch)
-        loss = outputs["loss"]
+        loss, loss_dict = self(batch)
 
-        self.log("train/loss", loss, prog_bar=True)
+        self.log("train/loss", loss_dict["loss"], prog_bar=True)
         return loss
 
-    def validation_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
-        """Validation step - gym rollout.
+    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, float]]:
+        """Compute validation loss on a batch.
+
+        Delegates to the model's ``compute_val_loss``.
 
         Args:
-            batch: Gym environment to evaluate.
-            batch_idx: Batch index.
+            batch: Observation batch (must contain ground-truth actions).
 
         Returns:
-            Metrics from rollout.
+            Tuple of (loss tensor, loss dict).
+
+        Raises:
+            RuntimeError: If model is not initialized.
         """
-        return self.evaluate_gym(batch, batch_idx, stage="val")
+        if self.model is None or self._preprocessor is None:
+            msg = "Model not initialized. Call setup() first."
+            raise RuntimeError(msg)
+        preprocessed = self._preprocessor(batch)
+        return self.model.compute_val_loss(preprocessed)
 
     def test_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
         """Test step - gym rollout.

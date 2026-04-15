@@ -1,0 +1,8 @@
+[package]
+name = "nokhwa_probe"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+nokhwa = { version = "0.10", default-features = false, features = ["input-native"] }

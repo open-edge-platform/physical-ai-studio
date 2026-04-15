@@ -9,9 +9,16 @@ on:
 
 permissions: {} # No permissions by default on workflow level
 
+concurrency:
+  group: library-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  code-quality:
-    runs-on: ubuntu-latest
+  check-paths:
+    name: Check if workflow should run
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    outputs:
+      run_workflow: ${{ steps.check_paths.outputs.run }}
     permissions:
       contents: read
     steps:
@@ -21,6 +28,25 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check paths
+        id: check_paths
+        uses: open-edge-platform/geti-ci/actions/check-paths@7e686c1248b3939f8ee8e04e2612da727e379d91
+        with:
+          files_yaml: |
+            test:
+              - library/**
+              - physicalai/**
+              - .github/**
+
+  code-quality:
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    needs: check-paths
+    if: needs.check-paths.outputs.run_workflow == 'true'
+    permissions:
+      contents: read
+    steps:
+      - *checkout
+
       - &set-up-python
         name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -28,13 +54,15 @@ jobs:
           python-version-file: "./library/.python-version"
 
       - name: Run prek
-        uses: j178/prek-action@0bb87d7f00b0c99306c8bcb8b8beba1eb581c037 # v1
+        uses: j178/prek-action@cbc2f23eb5539cf20d82d1aabd0d0ecbcc56f4e3 # v2
         with:
           extra-args: --all-files
           working-directory: library
 
   unit-tests:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    needs: check-paths
+    if: needs.check-paths.outputs.run_workflow == 'true'
     permissions:
       contents: read
     steps:
@@ -48,7 +76,7 @@ jobs:
           sudo apt-get install -y libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev
 
       - name: Install uv
-        uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
+        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
         with:
           version: "0.10.4"
 
@@ -70,3 +98,24 @@ jobs:
           PYOPENGL_PLATFORM: egl
         run: |
           uv run --no-sync pytest tests/unit
+
+  required-check:
+    name: Required Check library
+    needs:
+      - check-paths
+      - code-quality
+      - unit-tests
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    env:
+      CHECKS: ${{ join(needs.*.result, ' ') }}
+    if: always() && !cancelled()
+    steps:
+      - name: Check jobs results
+        run: |
+          for check in ${CHECKS}; do
+            echo "::notice::check=${check}"
+            if [[ "$check" != "success" && "$check" != "skipped" ]]; then
+              echo "::error ::Required status checks failed. They must succeed before this pull request can be merged."
+              exit 1
+            fi
+          done

@@ -46,6 +46,7 @@ export default defineConfig({
         proxy: {
             '/api': {
                 target: 'http://localhost:7860',
+                //target: 'http://192.168.2.117:7860',
                 changeOrigin: true,
                 ws: true,
                 //pathRewrite: { '^/api': '' }, // strip the /api prefix

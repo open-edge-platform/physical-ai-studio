@@ -6,6 +6,12 @@ export const useDeleteEpisodeQuery = (dataset_id: string) => {
     const queryClient = useQueryClient();
 
     const mutation = $api.useMutation('delete', '/api/dataset/{dataset_id}/episodes', {
+        meta: {
+            invalidates: [
+                ['get', '/api/dataset/{dataset_id}/episodes', { params: { path: { dataset_id } } }],
+                ['get', '/api/dataset/{dataset_id}', { params: { path: { dataset_id } } }],
+            ],
+        },
         onSuccess: (data) => {
             const query_key = [
                 'get',
