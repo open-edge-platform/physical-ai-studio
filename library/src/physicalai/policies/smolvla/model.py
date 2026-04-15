@@ -1280,15 +1280,16 @@ class _SmolVLMWithExpertModel(nn.Module):
         lm_expert_config.hidden_size = int(hidden_size * expert_width_multiplier)  # hidden_size // 2
         lm_expert_config.intermediate_size = _get_intermediate_size(int(hidden_size * expert_width_multiplier))
         lm_expert_config.num_hidden_layers = self.num_vlm_layers
-        if num_expert_layers > 0 and len(self.get_vlm_model().text_model.layers) % num_expert_layers == 0:
+        if num_expert_layers > 0:
+            if len(self.get_vlm_model().text_model.layers) % num_expert_layers != 0:
+                msg = (
+                    f"Number of layers in the VLM {len(self.get_vlm_model().text_model.layers)} are "
+                    f"not multiple of num_expert_layers {num_expert_layers}"
+                )
+                raise RuntimeError(msg)
             lm_expert_config.num_hidden_layers = num_expert_layers
-            msg = (
-                f"Number of layers in the VLM {len(self.get_vlm_model().text_model.layers)} are "
-                f"not multiple of num_expert_layers {num_expert_layers}"
-            )
-            raise RuntimeError(msg)
-        self.lm_expert = auto_model_cls.from_config(lm_expert_config)
 
+        self.lm_expert = auto_model_cls.from_config(lm_expert_config)
         self.num_expert_layers = len(self.lm_expert.layers)
         self.self_attn_every_n_layers = self_attn_every_n_layers
         if "cross" in attention_mode:
