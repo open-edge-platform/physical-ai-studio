@@ -6,7 +6,7 @@
 """Utilities for loading pretrained Pi05 weights from HuggingFace/lerobot format.
 
 Handles:
-- Normalization stat conversion (QUANTILES/MIN_MAX → MEAN_STD)
+- Normalization stat extraction (preserves q01/q99 and derives mean/std)
 - State dict key remapping (lerobot → Pi05Model)
 - Feature shape resolution from config or stats
 """
@@ -38,11 +38,12 @@ def extract_dataset_stats(
     """Build ``dataset_stats`` dict that ``make_pi05_preprocessors`` expects.
 
     The stats format expected by the preprocessor is:
-    ``{feature_name: {"name": str, "shape": tuple, "mean": list, "std": list}}``
+    ``{feature_name: {"name": str, "shape": tuple, "mean": list, "std": list,
+    "q01": list (optional), "q99": list (optional)}}``
 
     Lerobot models use QUANTILES normalization with q01/q99 stats.
-    We convert to mean/std that produces an equivalent [-1, 1] mapping:
-    ``mean = (q01 + q99) / 2``  and  ``std = (q99 - q01) / 2``.
+    We derive mean/std for backward compatibility and preserve the raw
+    q01/q99 so QUANTILES normalization mode works directly.
 
     Returns:
         Dataset stats dict mapping feature names to stat dicts.
@@ -114,12 +115,17 @@ def parse_preprocessor_stats(
             shape = resolve_feature_shape(feat_name, hf_config, feat_stats)
             mean, std = convert_normalization_stats(feat_stats)
             if mean is not None and std is not None:
-                stats[feat_name] = {
+                entry: dict[str, Any] = {
                     "name": feat_name,
                     "shape": shape,
                     "mean": mean,
                     "std": std,
                 }
+                # Preserve raw q01/q99 for QUANTILES normalization mode
+                if "q01" in feat_stats and "q99" in feat_stats:
+                    entry["q01"] = feat_stats["q01"]
+                    entry["q99"] = feat_stats["q99"]
+                stats[feat_name] = entry
 
     return stats
 
@@ -154,6 +160,9 @@ def parse_config_features(hf_config: dict[str, Any]) -> dict[str, dict[str, Any]
                     "shape": shape,
                     "mean": [0.0] * dim,
                     "std": [1.0] * dim,
+                    # Identity-equivalent quantile stats so QUANTILES mode works
+                    "q01": [-1.0] * dim,
+                    "q99": [1.0] * dim,
                 }
 
     return stats

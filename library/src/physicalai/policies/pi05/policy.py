@@ -114,6 +114,8 @@ class Pi05(ExportablePolicyMixin, Policy):
         # Finetuning
         freeze_vision_encoder: bool = False,
         train_expert_only: bool = True,
+        # Normalization
+        normalization_mode: str = "QUANTILES",
         # Optimizer
         optimizer_lr: float = 2.5e-5,
         optimizer_betas: tuple[float, float] = (0.9, 0.95),
@@ -178,6 +180,7 @@ class Pi05(ExportablePolicyMixin, Policy):
                 compile_mode=compile_mode,
                 freeze_vision_encoder=freeze_vision_encoder,
                 train_expert_only=train_expert_only,
+                normalization_mode=normalization_mode,
                 optimizer_lr=optimizer_lr,
                 optimizer_betas=optimizer_betas,
                 optimizer_eps=optimizer_eps,
@@ -232,6 +235,7 @@ class Pi05(ExportablePolicyMixin, Policy):
             gradient_checkpointing=self.config.gradient_checkpointing,
             compile_model=self.config.compile_model,
             use_random_input_noise=self.config.use_random_input_noise,
+            normalization_mode=self.config.normalization_mode.lower(),
         )
         if weights_file is not None:
             # load raw state dict
@@ -265,6 +269,7 @@ class Pi05(ExportablePolicyMixin, Policy):
             image_resolution=self.config.image_resolution,
             max_token_len=self.config.tokenizer_max_length,
             empty_cameras=self.config.empty_cameras,
+            normalization_mode=self.config.normalization_mode,
         )
 
         self._dataset_stats = dataset_stats
@@ -463,6 +468,7 @@ class Pi05(ExportablePolicyMixin, Policy):
             image_resolution=self.config.image_resolution,
             max_token_len=self.config.tokenizer_max_length,
             empty_cameras=self.config.empty_cameras,
+            normalization_mode=self.config.normalization_mode,
         )
         self._dataset_stats = dataset_stats
         self.hparams["dataset_stats"] = dataset_stats

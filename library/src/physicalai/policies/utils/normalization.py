@@ -19,6 +19,7 @@ class NormalizationType(StrEnum):
 
     MIN_MAX = "MIN_MAX"
     MEAN_STD = "MEAN_STD"
+    QUANTILES = "QUANTILES"
     IDENTITY = "IDENTITY"
 
 
@@ -147,6 +148,22 @@ class FeatureNormalizeTransform(nn.Module):
                 # normalize to [-1, 1]
                 batch[key] = batch[key] * 2 - 1
 
+        elif norm_mode == NormalizationType.QUANTILES:
+            q01 = buffer["q01"]
+            q99 = buffer["q99"]
+            check_inf(q01, "q01")
+            check_inf(q99, "q99")
+            denom = q99 - q01
+            denom = torch.where(
+                denom == 0,
+                torch.tensor(1e-8, device=denom.device, dtype=denom.dtype),
+                denom,
+            )
+            if inverse:
+                batch[key] = (batch[key] + 1.0) * denom / 2.0 + q01
+            else:
+                batch[key] = 2.0 * (batch[key] - q01) / denom - 1.0
+
         elif norm_mode == NormalizationType.IDENTITY:
             # No transformation for identity normalization
             pass
@@ -256,6 +273,21 @@ class FeatureNormalizeTransform(nn.Module):
                 )
                 buffer["min"].data = get_torch_tensor(cast("NormalizationParameters", ft.normalization_data).min, shape)
                 buffer["max"].data = get_torch_tensor(cast("NormalizationParameters", ft.normalization_data).max, shape)
+            elif norm_mode is NormalizationType.QUANTILES:
+                q01 = torch.ones(shape, dtype=torch.float32) * torch.inf
+                q99 = torch.ones(shape, dtype=torch.float32) * torch.inf
+                buffer = nn.ParameterDict(
+                    {
+                        "q01": nn.Parameter(q01, requires_grad=False),
+                        "q99": nn.Parameter(q99, requires_grad=False),
+                    },
+                )
+                buffer["q01"].data = get_torch_tensor(
+                    cast("NormalizationParameters", ft.normalization_data).q01, shape
+                )
+                buffer["q99"].data = get_torch_tensor(
+                    cast("NormalizationParameters", ft.normalization_data).q99, shape
+                )
 
             stats_buffers[key] = buffer
         return stats_buffers

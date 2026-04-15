@@ -20,6 +20,7 @@ from physicalai.data import DataModule
 
 from .converters import DataFormat
 from .dataset import _LeRobotDatasetAdapter
+from .utils.quantile_stats import augment_dataset_quantile_stats, has_quantile_stats
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -325,6 +326,28 @@ class LeRobotDataModule(DataModule):
             msg = "Must provide either 'repo_id' or a 'dataset' instance."
             raise ValueError(msg)
 
+        # Ensure quantile stats (q01/q99) exist — older datasets only have
+        # mean/std/min/max.  Compute over all episodes (pre-split) so the
+        # normalizer sees the full data distribution.
+        if data_format == DataFormat.PHYSICALAI:
+            if repo_id is not None:
+                self._ensure_quantile_stats(
+                    train_dataset,
+                    val_eval_dataset,
+                    repo_id=repo_id,
+                    root=root,
+                    revision=revision,
+                    force_cache_sync=force_cache_sync,
+                    download_videos=download_videos,
+                    video_backend=video_backend,
+                )
+            elif isinstance(train_dataset, _LeRobotDatasetAdapter):
+                # Pre-built dataset path: compute quantiles on it directly
+                lr_ds = train_dataset._lerobot_dataset  # noqa: SLF001
+                if not has_quantile_stats(lr_ds):
+                    logger.info("Pre-built dataset lacks quantile stats — computing")
+                    augment_dataset_quantile_stats(lr_ds)
+
         # Pass the dataset to the parent class
         super().__init__(
             train_dataset=train_dataset,
@@ -361,6 +384,56 @@ class LeRobotDataModule(DataModule):
             shuffle=True,
             drop_last=True,
         )
+
+    @staticmethod
+    def _ensure_quantile_stats(
+        train_dataset: _LeRobotDatasetAdapter,
+        val_dataset: _LeRobotDatasetAdapter | None,
+        *,
+        repo_id: str,
+        root: str | Path | None,
+        revision: str | None,
+        force_cache_sync: bool,
+        download_videos: bool,
+        video_backend: str | None,
+    ) -> None:
+        """Compute q01/q99 on the full (unsplit) dataset when missing.
+
+        Creates a temporary ``LeRobotDataset`` with **all** episodes,
+        computes quantile stats, then patches them into the train (and
+        optionally val) adapter's underlying ``meta.stats``.
+        """
+        # Quick check using the train adapter's stats
+        train_lr = train_dataset._lerobot_dataset  # noqa: SLF001
+        if has_quantile_stats(train_lr):
+            return
+
+        logger.info("Dataset lacks quantile stats — computing from all episodes")
+
+        # Build a full-dataset instance (no episode filter)
+        full_ds = LeRobotDataset(
+            repo_id=repo_id,
+            root=root,
+            revision=revision,
+            force_cache_sync=force_cache_sync,
+            download_videos=download_videos,
+            video_backend=video_backend,
+        )
+        augment_dataset_quantile_stats(full_ds)
+
+        # Propagate computed quantiles to the train adapter
+        for key, feat_stats in full_ds.meta.stats.items():
+            if "q01" in feat_stats and key in train_lr.meta.stats:
+                train_lr.meta.stats[key]["q01"] = feat_stats["q01"]
+                train_lr.meta.stats[key]["q99"] = feat_stats["q99"]
+
+        # Propagate to val adapter if it exists
+        if val_dataset is not None:
+            val_lr = val_dataset._lerobot_dataset  # noqa: SLF001
+            for key, feat_stats in full_ds.meta.stats.items():
+                if "q01" in feat_stats and key in val_lr.meta.stats:
+                    val_lr.meta.stats[key]["q01"] = feat_stats["q01"]
+                    val_lr.meta.stats[key]["q99"] = feat_stats["q99"]
 
 
 __all__ = ["LeRobotDataModule"]
