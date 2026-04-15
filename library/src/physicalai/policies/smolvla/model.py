@@ -952,8 +952,7 @@ class VLAFlowMatching(nn.Module):
         ) in enumerate(zip(images, img_masks, strict=False)):
             if self.add_image_special_tokens:
                 image_start_token = (
-                    self.vlm_with_expert
-                    .embed_language_tokens(
+                    self.vlm_with_expert.embed_language_tokens(
                         self.global_image_start_token.to(device=self.vlm_with_expert.vlm.device),
                     )
                     .unsqueeze(0)
@@ -983,8 +982,7 @@ class VLAFlowMatching(nn.Module):
             att_masks += [0] * (num_img_embs)
             if self.add_image_special_tokens:
                 image_end_token = (
-                    self.vlm_with_expert
-                    .embed_language_tokens(
+                    self.vlm_with_expert.embed_language_tokens(
                         self.image_end_token.to(device=self.vlm_with_expert.vlm.device),
                     )
                     .unsqueeze(0)
@@ -1600,8 +1598,7 @@ class _SmolVLMWithExpertModel(nn.Module):
         patch_attention_mask = None
         # Get sequence from the vision encoder
         image_hidden_states = (
-            self
-            .get_vlm_model()
+            self.get_vlm_model()
             .vision_model(
                 pixel_values=image.to(dtype=self.get_vlm_model().vision_model.dtype),
                 patch_attention_mask=patch_attention_mask,
