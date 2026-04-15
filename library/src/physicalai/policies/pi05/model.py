@@ -164,7 +164,7 @@ def _clone_kv_cache(past_key_values: DynamicCache) -> DynamicCache:
         Cloned DynamicCache instance.
     """
     cloned = DynamicCache()
-    for layer_idx, (key_states, value_states) in enumerate(past_key_values):
+    for layer_idx, (key_states, value_states, _) in enumerate(past_key_values):
         cloned.update(key_states.clone(), value_states.clone(), layer_idx)
     return cloned
 
@@ -675,14 +675,8 @@ class Pi05Model(ExportableModelMixin, Model):
             >>> print(onnx_args.exporter_kwargs)
             {'output_names': ['action']}
         """
-        preproc_specs = [
+        base_preproc_specs = [
             ComponentSpec(type="pi05", image_resolution=self._image_resolution),
-            ComponentSpec(
-                type="hf_tokenizer",
-                tokenizer_name="google/paligemma-3b-pt-224",
-                revision="35e4f46485b4d07967e7e9935bc3786aad50687c",
-                max_token_len=self._tokenizer_max_length,
-            ),
         ]
         postproc_specs = [
             ComponentSpec(
@@ -694,19 +688,33 @@ class Pi05Model(ExportableModelMixin, Model):
         extra_args: dict[str, ExportParameters] = {}
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
-                "output_names": ["action"],
+                "output_names": [ACTION],
             },
             export_tokenizer=False,
-            preprocessors_specs=preproc_specs,
+            preprocessors_specs=[
+                *base_preproc_specs,
+                ComponentSpec(
+                    type="hf_tokenizer",
+                    tokenizer_name="google/paligemma-3b-pt-224",
+                    revision="35e4f46485b4d07967e7e9935bc3786aad50687c",
+                    max_token_len=self._tokenizer_max_length,
+                ),
+            ],
             postprocessors_specs=postproc_specs,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
-            outputs=["action"],
+            outputs=[ACTION],
             compress_to_fp16=True,
             via_onnx=True,
-            export_tokenizer=False,
+            export_tokenizer=True,
             exporter_kwargs={},
-            preprocessors_specs=preproc_specs,
+            preprocessors_specs=[
+                *base_preproc_specs,
+                ComponentSpec(
+                    type="ov_tokenizer",
+                    artifact="tokenizer.xml",
+                ),
+            ],
             postprocessors_specs=postproc_specs,
         )
         extra_args["torch"] = TorchExportParameters()
