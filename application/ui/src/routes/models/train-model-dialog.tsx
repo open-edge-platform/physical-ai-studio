@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import {
     Button,
@@ -19,18 +19,21 @@ import {
     Key,
     NumberField,
     Picker,
+    StatusLight,
     Text,
     TextField,
+    View,
 } from '@geti-ui/ui';
 
 import { $api } from '../../api/client';
-import { SchemaJob, SchemaModel, SchemaTrainJobPayload } from '../../api/openapi-spec';
+import { SchemaDeviceInfo, SchemaTrainJob as SchemaJob, SchemaModel } from '../../api/openapi-spec';
 import { useProject } from '../../features/projects/use-project';
+import { InlineAlert } from '../../features/robots/setup-wizard/shared/inline-alert';
 
 import classes from './train-model-dialog.module.scss';
 
 export type SchemaTrainJob = Omit<SchemaJob, 'payload'> & {
-    payload: SchemaTrainJobPayload;
+    payload: SchemaJob['payload'];
 };
 
 const GB = 1024 ** 3;
@@ -91,6 +94,12 @@ interface PolicySelectionProps {
 }
 
 const PolicySelection = ({ selectedPolicy, onSelectionChange, isDisabled }: PolicySelectionProps) => {
+    const bestDevice = useBestTrainingDevice();
+    const availableVram = bestDevice?.memory ?? 0;
+
+    const selectedModel = MODELS.find((m) => m.id === selectedPolicy) ?? null;
+    const hasInsufficientVram = selectedModel !== null && availableVram > 0 && selectedModel.minVRAM > availableVram;
+
     return (
         <Flex direction='column' gap='size-100'>
             <Text UNSAFE_style={{ fontSize: 12 }}>Policy</Text>
@@ -129,14 +138,54 @@ const PolicySelection = ({ selectedPolicy, onSelectionChange, isDisabled }: Poli
                                     </Flex>
                                 </Flex>
                                 <Divider size='S' />
-                                <Text UNSAFE_style={{ fontSize: 12 }} marginTop='size-50'>
-                                    {model.description}
-                                </Text>
+                                <Text UNSAFE_style={{ fontSize: 12 }}>{model.description}</Text>
                             </Flex>
                         </Card>
                     );
                 })}
             </div>
+
+            {hasInsufficientVram && (
+                <View marginTop='size-100'>
+                    <InlineAlert variant='warning'>
+                        {selectedModel.name} requires at least {formatBytes(selectedModel!.minVRAM)} VRAM but your
+                        device has {formatBytes(availableVram)}. Training may fail or be very slow.
+                    </InlineAlert>
+                </View>
+            )}
+        </Flex>
+    );
+};
+
+const useBestTrainingDevice = (): SchemaDeviceInfo | null => {
+    const { data: trainingDevices = [] } = $api.useQuery('get', '/api/system/devices/training');
+
+    // Pick the GPU with the most VRAM (if any)
+    return useMemo(() => {
+        return trainingDevices
+            .filter((d) => d.type !== 'cpu' && d.memory != null)
+            .reduce((best, device): SchemaDeviceInfo | null => {
+                if (best === null || (device.memory ?? 0) > (best.memory ?? 0)) {
+                    return device;
+                }
+
+                return best;
+            }, null);
+    }, [trainingDevices]);
+};
+
+const TrainingDeviceInfo = () => {
+    const bestDevice = useBestTrainingDevice();
+
+    return (
+        <Flex UNSAFE_style={{ textAlign: 'right' }} direction='column' gap='size-75'>
+            {bestDevice ? (
+                <StatusLight variant='positive'>
+                    {bestDevice.name}, {formatBytes(bestDevice.memory!)} VRAM
+                </StatusLight>
+            ) : (
+                <StatusLight variant='neutral'>CPU only (no GPU detected)</StatusLight>
+            )}
         </Flex>
     );
 };
@@ -252,7 +301,11 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
     const [numWorkers, setNumWorkers] = useState<Key | null>('auto');
     const [autoScaleBatchSize, setAutoScaleBatchSize] = useState<boolean>(true);
 
-    const trainMutation = $api.useMutation('post', '/api/jobs:train');
+    const trainMutation = $api.useMutation('post', '/api/jobs:train', {
+        meta: {
+            invalidates: [['get', '/api/jobs']],
+        },
+    });
 
     const save = () => {
         const dataset_id = selectedDataset?.toString();
@@ -261,7 +314,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
             return;
         }
 
-        const payload: SchemaTrainJobPayload = {
+        const payload: SchemaJob['payload'] = {
             dataset_id,
             project_id: projectId,
             model_name: name,
@@ -270,6 +323,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
             batch_size: batchSize,
             num_workers: numWorkers === 'auto' ? 'auto' : Number(numWorkers),
             auto_scale_batch_size: autoScaleBatchSize,
+            val_split: 0.1,
             ...extraPayload,
         };
         trainMutation.mutateAsync({ body: payload }).then((response) => {
@@ -282,6 +336,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
             <Heading>
                 <Flex justifyContent={'space-between'}>
                     <Text> Train model</Text>
+
+                    <TrainingDeviceInfo />
                 </Flex>
             </Heading>
             <Divider />

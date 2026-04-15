@@ -58,7 +58,11 @@ const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
 };
 
 const JobMenu = ({ trainJob, onViewLogs }: { trainJob: SchemaTrainJob; onViewLogs: () => void }) => {
-    const deleteJobMutation = $api.useMutation('delete', '/api/jobs/{job_id}');
+    const deleteJobMutation = $api.useMutation('delete', '/api/jobs/{job_id}', {
+        meta: {
+            invalidates: [['get', '/api/jobs']],
+        },
+    });
     const onAction = (key: Key) => {
         const action = key.toString();
         if (action === 'logs') {

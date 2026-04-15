@@ -304,15 +304,11 @@ class GrootModel(Model):
 
         return model
 
-    def forward(self, batch: Mapping[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-        """Training forward pass - computes loss.
+    def _forward_backbone(self, batch: Mapping[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        """Run backbone + action head forward pass (training mode).
 
         Args:
-            batch: Input batch with:
-                - eagle_* tensors from preprocessor
-                - state, state_mask
-                - action, action_mask
-                - embodiment_id
+            batch: Input batch with eagle_* tensors, state, action, etc.
 
         Returns:
             Dict with 'loss' key containing training loss.
@@ -330,6 +326,76 @@ class GrootModel(Model):
         with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=self.use_bf16):
             backbone_outputs = self.backbone(groot_inputs)
             return self.action_head(backbone_outputs, groot_inputs)
+
+    def forward(
+        self,
+        batch: Mapping[str, torch.Tensor],
+    ) -> tuple[torch.Tensor, dict[str, float]] | torch.Tensor:
+        """Forward pass dispatching between training and evaluation.
+
+        Training mode: computes flow-matching loss (with gradients).
+        Eval mode: returns predicted actions via :meth:`get_action`.
+
+        Args:
+            batch: Input batch with:
+                - eagle_* tensors from preprocessor
+                - state, state_mask
+                - action, action_mask
+                - embodiment_id
+
+        Returns:
+            Training: (loss tensor, loss dict).  Eval: action tensor.
+        """
+        if self.training:
+            return self.compute_loss(batch)
+        return self.get_action(batch)
+
+    def compute_loss(self, batch: Mapping[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]]:
+        """Compute training loss.
+
+        Delegates to :meth:`_forward_backbone` and reformats the return value.
+
+        Args:
+            batch: Preprocessed batch dict.
+
+        Returns:
+            Tuple of (loss tensor, loss dict with ``"loss"`` key).
+        """
+        result = self._forward_backbone(batch)
+        loss = result["loss"]
+        return loss, {"loss": loss.item()}
+
+    @torch.no_grad()
+    def compute_val_loss(self, batch: Mapping[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]]:
+        """Compute validation loss: MSE between predicted and ground-truth actions.
+
+        Runs the full denoising loop and compares predicted actions with
+        ground truth.  Deterministic, unlike the stochastic flow-matching
+        training loss.
+
+        Args:
+            batch: Preprocessed batch dict containing ground-truth ``action``.
+
+        Returns:
+            Tuple of (mean MSE loss tensor, loss dict with ``"loss"`` key).
+        """
+        gt_actions = batch["action"]
+        predicted = self.get_action(batch)
+
+        # Apply action_mask if present to ignore padded dimensions
+        action_mask = batch.get("action_mask")
+
+        min_len = min(gt_actions.shape[1], predicted.shape[1])
+        gt_trimmed = gt_actions[:, :min_len]
+        pred_trimmed = predicted[:, :min_len]
+
+        if action_mask is not None:
+            mask = action_mask[:, :min_len].unsqueeze(-1)
+            loss = (torch.nn.functional.mse_loss(pred_trimmed, gt_trimmed, reduction="none") * mask).sum() / mask.sum()
+        else:
+            loss = torch.nn.functional.mse_loss(pred_trimmed, gt_trimmed)
+
+        return loss, {"loss": loss.item()}
 
     def get_action(self, batch: Mapping[str, torch.Tensor]) -> torch.Tensor:
         """Inference - predict actions.

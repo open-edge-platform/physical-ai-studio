@@ -12,6 +12,7 @@ from typing import Any
 
 import lightning
 from lightning.pytorch.callbacks import BatchSizeFinder
+from lightning.pytorch.strategies import DDPStrategy
 
 from physicalai.train.callbacks import PolicyDatasetInteraction
 
@@ -159,6 +160,13 @@ class Trainer(lightning.Trainer):
 
         if auto_scale_batch_size:
             callbacks.append(BatchSizeFinder(mode="power"))
+
+        # When using auto strategy with multiple GPUs, default to DDP with
+        # find_unused_parameters=True. Policies like Pi05 freeze large portions
+        # of the model, so not all parameters participate in every training step.
+        multi_gpu = (isinstance(devices, int) and devices > 1) or (isinstance(devices, list) and len(devices) > 1)
+        if strategy == "auto" and multi_gpu:
+            strategy = DDPStrategy(find_unused_parameters=True)
 
         # Call parent Lightning Trainer __init__ with all parameters
         super().__init__(

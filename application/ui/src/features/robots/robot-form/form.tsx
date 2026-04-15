@@ -82,7 +82,9 @@ const RefreshRobotsButton = () => {
 
 const IdentifyRobot = () => {
     const robotForm = useRobotForm();
-    const identifyMutation = $api.useMutation('post', '/api/hardware/identify');
+    const identifyMutation = $api.useMutation('post', '/api/hardware/identify', {
+        meta: { skipInvalidation: true },
+    });
 
     const isDisabled = identifyMutation.isPending || !robotForm.name || !robotForm.type || !robotForm.connection_string;
 

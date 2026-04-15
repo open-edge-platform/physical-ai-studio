@@ -423,6 +423,26 @@ class SO101SetupWorker(TransportWorker):
             )
 
     # ------------------------------------------------------------------
+    # Phase: Calibration — enter (disable torque so user can move arm)
+    # ------------------------------------------------------------------
+
+    async def _enter_calibration(self) -> None:
+        """Enter calibration phase, disabling torque so the user can move the arm.
+
+        On a follower robot the servos actively hold position (torque enabled
+        from a previous session or from the motor-probe phase).  Torque must
+        be disabled *before* the user is asked to centre the arm, otherwise
+        the joints cannot be moved by hand.
+        """
+        bus = self._require_bus()
+
+        async with self._bus_lock:
+            await asyncio.to_thread(bus.disable_torque)
+
+        self.phase = SetupPhase.CALIBRATION_INSTRUCTIONS
+        await self._send_phase_status("Torque disabled — you can now move the arm freely.")
+
+    # ------------------------------------------------------------------
     # Phase: Calibration — homing offsets
     # ------------------------------------------------------------------
 
@@ -436,7 +456,7 @@ class SO101SetupWorker(TransportWorker):
 
         bus = self._require_bus()
 
-        # Disable torque and set operating mode
+        # Ensure torque is off and set operating mode
         async with self._bus_lock:
             await asyncio.to_thread(bus.disable_torque)
             for motor in bus.motors:
@@ -783,7 +803,7 @@ class SO101SetupWorker(TransportWorker):
                 await self._run_motor_probe()
 
             case "enter_calibration":
-                self.phase = SetupPhase.CALIBRATION_INSTRUCTIONS
+                await self._enter_calibration()
 
             case "start_homing":
                 await self._handle_start_homing()

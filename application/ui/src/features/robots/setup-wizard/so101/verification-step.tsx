@@ -113,12 +113,28 @@ export const VerificationStep = () => {
     // Sync live joint positions to the 3D model
     useSyncJointState(wsState.jointState);
 
-    const addRobotMutation = $api.useMutation('post', '/api/projects/{project_id}/robots');
+    const addRobotMutation = $api.useMutation('post', '/api/projects/{project_id}/robots', {
+        meta: {
+            invalidates: [
+                ['get', '/api/projects/{project_id}/robots', { params: { path: { project_id } } }],
+                ['get', '/api/projects/{project_id}/robots/online', { params: { path: { project_id } } }],
+            ],
+        },
+    });
     const saveCalibrationMutation = $api.useMutation(
         'post',
-        '/api/projects/{project_id}/robots/{robot_id}/calibrations'
+        '/api/projects/{project_id}/robots/{robot_id}/calibrations',
+        {
+            meta: {
+                invalidates: [['get', '/api/projects/{project_id}/robots', { params: { path: { project_id } } }]],
+            },
+        }
     );
-    const updateRobotMutation = $api.useMutation('put', '/api/projects/{project_id}/robots/{robot_id}');
+    const updateRobotMutation = $api.useMutation('put', '/api/projects/{project_id}/robots/{robot_id}', {
+        meta: {
+            invalidates: [['get', '/api/projects/{project_id}/robots', { params: { path: { project_id } } }]],
+        },
+    });
 
     const robotBody: SchemaRobot | null =
         robotForm.type !== null && robotForm.name

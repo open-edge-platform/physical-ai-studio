@@ -42,6 +42,7 @@ from physicalai.capture.frame import Frame
 from physicalai.robot import Robot
 from physicalai.robot.so101.calibration import SO101Calibration
 from physicalai.robot.so101.constants import (
+    POSITION_MODE,
     PROTOCOL_VERSION,
     RADIANS_PER_TICK,
     SO101_JOINT_ORDER,
@@ -318,6 +319,9 @@ class SO101(Robot):
             # Ping all servos ---------------------------------------------------
             self._ping_servos()
 
+            # Configure servo registers (PID, timing, gripper protection) ------
+            self._configure_servos()
+
             # Configure torque based on role ------------------------------------
             self._set_torque(enabled=self.role == "follower")
         except Exception:
@@ -482,6 +486,77 @@ class SO101(Robot):
             ticks_val = round(radians[i] / (cal.direction * RADIANS_PER_TICK) + cal.homing_offset)
             result[i] = int(np.clip(ticks_val, cal.range_min, cal.range_max))
         return result
+
+    def _configure_servos(self) -> None:
+        """Write hardware configuration registers to all servos.
+
+        Must be called after ping and before role-based torque configuration.
+        Disables torque first because EPROM registers require torque off.
+
+        Writes:
+        - Bus timing (Return_Delay_Time, Maximum_Acceleration, Acceleration)
+        - Operating mode (position control)
+        - PID coefficients (P=16, I=0, D=32)
+        - Gripper protection (torque limit, current protection, overload torque)
+        """
+        conn = self._require_connection()
+
+        self._set_torque(enabled=False)
+
+        for name, servo_id in self.servo_ids.items():
+            SO101._write_register(conn, servo_id, STS3215Addr.RETURN_DELAY_TIME, 0)
+            SO101._write_register(conn, servo_id, STS3215Addr.MAXIMUM_ACCELERATION, 254)
+            SO101._write_register(conn, servo_id, STS3215Addr.ACCELERATION, 254)
+
+            SO101._write_register(conn, servo_id, STS3215Addr.OPERATING_MODE, POSITION_MODE)
+
+            SO101._write_register(conn, servo_id, STS3215Addr.P_COEFFICIENT, 16)
+            SO101._write_register(conn, servo_id, STS3215Addr.I_COEFFICIENT, 0)
+            SO101._write_register(conn, servo_id, STS3215Addr.D_COEFFICIENT, 32)
+
+            if name == "gripper":
+                SO101._write_register(conn, servo_id, STS3215Addr.MAX_TORQUE_LIMIT, 500)
+                SO101._write_register(conn, servo_id, STS3215Addr.PROTECTION_CURRENT, 250)
+                SO101._write_register(conn, servo_id, STS3215Addr.OVERLOAD_TORQUE, 25)
+
+    @staticmethod
+    def _write_register(
+        conn: _SO101Connection,
+        servo_id: int,
+        address: STS3215Addr,
+        value: int,
+    ) -> None:
+        """Write a single register value to a servo.
+
+        The byte width is derived from :class:`STS3215Len` using
+        the register's name.
+
+        Raises:
+            ValueError: If the register's byte width is not supported.
+        """
+        byte_width = STS3215Len[address.name]
+        if byte_width == 1:
+            comm_result, error = conn.packet_handler.write1ByteTxRx(
+                conn.port_handler,
+                servo_id,
+                address,
+                value,
+            )
+        elif byte_width == 2:  # noqa: PLR2004
+            comm_result, error = conn.packet_handler.write2ByteTxRx(
+                conn.port_handler,
+                servo_id,
+                address,
+                value,
+            )
+        else:
+            msg = f"Unsupported byte_width={byte_width} for register write"
+            raise ValueError(msg)
+
+        if comm_result != 0:
+            logger.warning(f"Register write failed: addr={address} servo={servo_id} comm={comm_result}")
+        if error != 0:
+            logger.warning(f"Register write error: addr={address} servo={servo_id} err={error}")
 
     def _ping_servos(self) -> None:
         """Ping every servo and raise on failure.

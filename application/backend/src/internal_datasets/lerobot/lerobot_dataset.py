@@ -9,8 +9,8 @@ import cv2
 import numpy as np
 import torch
 from lerobot.datasets.dataset_tools import delete_episodes as lerobot_delete_episodes
+from lerobot.datasets.feature_utils import build_dataset_frame
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
-from lerobot.datasets.utils import build_dataset_frame
 from lerobot.processor import make_default_processors
 from lerobot.processor.pipeline import RobotProcessorPipeline
 from lerobot.utils.constants import ACTION, OBS_STR
@@ -127,11 +127,13 @@ class InternalLeRobotDataset(DatasetClient):
 
     def prepare_for_writing(self) -> None:
         """Start image writer &"""
-        if getattr(self._dataset, "_streaming_encoder", None) is not None:
+        if self._dataset.writer is None:
+            return
+        if getattr(self._dataset.writer, "_streaming_encoder", None) is not None:
             logger.info("Streaming encoding enabled; skipping image writer startup")
             return
         num_threads = 4 * len(self._dataset.meta.camera_keys)
-        self._dataset.start_image_writer(
+        self._dataset.writer.start_image_writer(
             num_processes=0,
             num_threads=num_threads,
         )
@@ -214,7 +216,8 @@ class InternalLeRobotDataset(DatasetClient):
     def finalize(self) -> None:
         """Finalize changes to dataset."""
         logger.info(f"Finalizing dataset {self.path}")
-        self._dataset.stop_image_writer()
+        if self._dataset.writer is not None:
+            self._dataset.writer.stop_image_writer()
         self._dataset.finalize()
 
     def _process_frame(self, obs: dict, act: dict, task: str) -> dict:
@@ -291,7 +294,7 @@ class InternalLeRobotDataset(DatasetClient):
         if self._dataset is None:
             raise Exception("No dataset loaded.")
 
-        episode_buffer = copy.deepcopy(self._dataset.episode_buffer)
+        episode_buffer = copy.deepcopy(self._dataset.writer.episode_buffer)
         if episode_buffer is None:
             raise Exception("Attempting to save episode, but no episode in buffer.")
 

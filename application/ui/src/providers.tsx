@@ -1,31 +1,13 @@
 import { ReactNode } from 'react';
 
 import { ThemeProvider, ToastContainer } from '@geti-ui/ui';
-import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouterProps, RouterProvider } from 'react-router';
 import { MemoryRouter as Router } from 'react-router-dom';
 
 import { ZoomProvider } from './components/zoom/zoom';
+import { queryClient } from './query-client/query-client';
 import { router } from './router';
-
-const queryClient = new QueryClient({
-    defaultOptions: {
-        queries: {
-            gcTime: 30 * 60 * 1000,
-            staleTime: 5 * 60 * 1000,
-            networkMode: 'always',
-        },
-        mutations: {
-            networkMode: 'always',
-        },
-    },
-    mutationCache: new MutationCache({
-        onSuccess: (_data, _variables, _context, mutation) => {
-            if (mutation.options.meta?.skipInvalidation) return;
-            queryClient.invalidateQueries();
-        },
-    }),
-});
 
 export const Providers = () => {
     return (

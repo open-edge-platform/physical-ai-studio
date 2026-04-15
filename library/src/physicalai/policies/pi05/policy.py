@@ -472,7 +472,7 @@ class Pi05(ExportablePolicyMixin, Policy):
     def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
         """Forward pass through the model.
 
-        Training mode: returns (loss, loss_dict).
+        Training mode: returns flow matching (loss, loss_dict) with gradients.
         Eval mode: returns action chunk predictions.
 
         Returns:
@@ -485,10 +485,32 @@ class Pi05(ExportablePolicyMixin, Policy):
             if self.model is None or self._preprocessor is None:
                 msg = "Model is not initialized"
                 raise ValueError(msg)
-
             processed_batch = self._preprocessor(batch.to_dict())
             return self.model(processed_batch)
         return self.predict_action_chunk(batch)
+
+    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, float]]:
+        """Compute action prediction MSE on a batch (for validation).
+
+        Runs the full denoising loop and compares predicted actions to
+        ground-truth.  This is deterministic and directly measures action
+        prediction quality, unlike the stochastic flow matching training loss.
+
+        Args:
+            batch: Observation batch (must contain ground-truth actions).
+
+        Returns:
+            Tuple of (MSE loss tensor, loss dict).
+
+        Raises:
+            ValueError: If the model is not initialized.
+        """
+        if self.model is None or self._preprocessor is None:
+            msg = "Model is not initialized"
+            raise ValueError(msg)
+
+        processed_batch = self._preprocessor(batch.to_dict())
+        return self.model.compute_val_loss(processed_batch)
 
     @torch.no_grad()
     def predict_action_chunk(self, batch: Observation) -> torch.Tensor:

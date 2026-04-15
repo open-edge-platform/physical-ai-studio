@@ -11,7 +11,11 @@ export const SubmitNewEnvironmentButton = () => {
     const navigate = useNavigate();
     const { project_id } = useProjectId();
 
-    const addEnvironmentMutation = $api.useMutation('post', '/api/projects/{project_id}/environments');
+    const addEnvironmentMutation = $api.useMutation('post', '/api/projects/{project_id}/environments', {
+        meta: {
+            invalidates: [['get', '/api/projects/{project_id}/environments', { params: { path: { project_id } } }]],
+        },
+    });
 
     const environment_id = uuidv4();
     const body = useEnvironmentFormBody(environment_id);

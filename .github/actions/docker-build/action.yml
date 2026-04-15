@@ -46,7 +46,7 @@ runs:
   using: composite
   steps:
     - name: Cleanup runner
-      uses: open-edge-platform/geti-ci/actions/cleanup-runner@e80098b3d180db37914f11ff6021f9fa34d0bb9f
+      uses: open-edge-platform/geti-ci/actions/cleanup-runner@7e686c1248b3939f8ee8e04e2612da727e379d91
       with:
         type: all
 
@@ -55,7 +55,7 @@ runs:
 
     - name: Build Docker image
       id: build
-      uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+      uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
       with:
         context: .
         file: application/docker/Dockerfile
