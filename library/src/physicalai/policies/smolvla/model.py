@@ -359,7 +359,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
         ]
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
-                "output_names": ["action"],
+                "output_names": [ACTION],
             },
             preprocessors_specs=[
                 *base_preproc_specs,
@@ -374,7 +374,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
             export_tokenizer=False,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
-            outputs=["action"],
+            outputs=[ACTION],
             compress_to_fp16=False,
             export_tokenizer=True,
             exporter_kwargs={},
