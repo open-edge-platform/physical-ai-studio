@@ -19,12 +19,28 @@ Example:
 
 from __future__ import annotations
 
+from enum import IntEnum
 from typing import TYPE_CHECKING
 
 from physicalai.benchmark.benchmark import Benchmark
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+class LiberoMaxSteps(IntEnum):
+    """Maximum steps per episode for each LIBERO task suite.
+
+    Used to resolve the default ``max_steps`` when none is provided
+    falls back to ``DEFAULT`` for unrecognised suite names.
+    """
+
+    libero_spatial = 280
+    libero_object = 280
+    libero_goal = 300
+    libero_10 = 520
+    libero_90 = 400
+    DEFAULT = 300
 
 
 class LiberoBenchmark(Benchmark):
@@ -63,9 +79,6 @@ class LiberoBenchmark(Benchmark):
         >>> results = benchmark.evaluate(policy)
     """
 
-    # Default max steps for LIBERO tasks
-    DEFAULT_MAX_STEPS = 300
-
     def __init__(
         self,
         task_suite: str = "libero_10",
@@ -86,7 +99,7 @@ class LiberoBenchmark(Benchmark):
 
         # Use LIBERO default max_steps if not specified
         if max_steps is None:
-            max_steps = self.DEFAULT_MAX_STEPS
+            max_steps = getattr(LiberoMaxSteps, task_suite, LiberoMaxSteps.DEFAULT).value
 
         # Create gyms for the task suite
         gyms = self._create_gyms()
