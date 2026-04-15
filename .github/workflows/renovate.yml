@@ -71,7 +71,7 @@ jobs:
         uses: renovatebot/github-action@eb932558ad942cccfd8211cf535f17ff183a9f74 # v46.1.9
         with:
           # renovate: datasource=github-releases depName=renovatebot/renovate
-          renovate-version: 43.120.1
+          renovate-version: 43.122.0
           configurationFile: .github/renovate.json5
           token: "${{ steps.get-github-app-token.outputs.token }}"
         env:
