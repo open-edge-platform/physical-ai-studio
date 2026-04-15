@@ -346,15 +346,9 @@ class SmolVLAModel(ExportableModelMixin, Model):
             {'output_names': ['action']}
         """
         extra_args: dict[str, ExportParameters] = {}
-        preproc_specs = [
+        base_preproc_specs = [
             ComponentSpec(type="smolvla_resize", image_resolution=self._resize_imgs_with_padding),
             ComponentSpec(type="new_line"),
-            ComponentSpec(
-                type="hf_tokenizer",
-                tokenizer_name=self._vlm_model_name,
-                revision="7b375e1b73b11138ff12fe22c8f2822d8fe03467",
-                max_token_len=self._tokenizer_max_length,
-            ),
         ]
         postproc_specs = [
             ComponentSpec(
@@ -367,16 +361,30 @@ class SmolVLAModel(ExportableModelMixin, Model):
             exporter_kwargs={
                 "output_names": ["action"],
             },
-            preprocessors_specs=preproc_specs,
+            preprocessors_specs=[
+                *base_preproc_specs,
+                ComponentSpec(
+                    type="hf_tokenizer",
+                    tokenizer_name=self._vlm_model_name,
+                    revision="7b375e1b73b11138ff12fe22c8f2822d8fe03467",
+                    max_token_len=self._tokenizer_max_length,
+                ),
+            ],
             postprocessors_specs=postproc_specs,
             export_tokenizer=False,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
             outputs=["action"],
             compress_to_fp16=False,
-            export_tokenizer=False,
+            export_tokenizer=True,
             exporter_kwargs={},
-            preprocessors_specs=preproc_specs,
+            preprocessors_specs=[
+                *base_preproc_specs,
+                ComponentSpec(
+                    type="ov_tokenizer",
+                    artifact="tokenizer.xml",
+                ),
+            ],
             postprocessors_specs=postproc_specs,
         )
         extra_args["torch"] = TorchExportParameters()
