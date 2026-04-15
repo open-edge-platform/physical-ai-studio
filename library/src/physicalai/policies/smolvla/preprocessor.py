@@ -216,11 +216,9 @@ class SmolVLAPreprocessor(torch.nn.Module):
         if not self.rename_map:
             return batch_img_keys
 
-        rename_map = self.rename_map
-
         def _sort_key(key: str) -> str:
             base_name = key.rsplit(".", 1)[-1]
-            return rename_map.get(base_name, base_name)
+            return self.rename_map.get(base_name, base_name)
 
         return sorted(batch_img_keys, key=_sort_key)
 
