@@ -396,8 +396,8 @@ class TestCompileFallback:
                 assert "falling back" not in msg.lower()
 
     @pytest.mark.anyio
-    async def test_precision_default_passes_none_to_trainer(self, worker, event_queue, tmp_path):
-        """When precision is 'default', None should be passed to Trainer."""
+    async def test_precision_default_on_cpu_passes_none_to_trainer(self, worker, event_queue, tmp_path):
+        """When precision is 'default' on CPU, None should be passed to Trainer."""
         payload = _make_payload(compile_model=False, precision=TrainingPrecision.DEFAULT)
         model = _make_model(tmp_path)
         snapshot = _make_snapshot(tmp_path)
@@ -460,6 +460,47 @@ class TestCompileFallback:
             patch(f"{MODULE}.TrainingTrackingCallback"),
             patch(f"{MODULE}.TrainingLogCallback"),
             patch(f"{MODULE}.get_torch_device", return_value="cpu"),
+            patch(f"{MODULE}.get_lightning_strategy", return_value="auto"),
+        ):
+            MockDispatcher.return_value = MagicMock()
+            MockDispatcher.return_value.start = MagicMock()
+            MockDispatcher.return_value.is_alive = MagicMock(return_value=False)
+
+            trainer_instance = MagicMock()
+            trainer_instance.fit = MagicMock()
+            MockTrainer.return_value = trainer_instance
+
+            completed_job = MagicMock()
+            MockJobService.update_job_status = AsyncMock(side_effect=[MagicMock(), completed_job])
+            MockModelService.create_model = AsyncMock(return_value=model)
+
+            await worker._train_model(job, model, snapshot, payload, base_model=None)
+
+            assert MockTrainer.call_args.kwargs["precision"] == "bf16-mixed"
+
+    @pytest.mark.anyio
+    async def test_precision_default_on_cuda_passes_bf16_mixed(self, worker, event_queue, tmp_path):
+        """When precision is 'default' on CUDA, bf16-mixed should be passed to Trainer."""
+        payload = _make_payload(compile_model=False, precision=TrainingPrecision.DEFAULT)
+        model = _make_model(tmp_path)
+        snapshot = _make_snapshot(tmp_path)
+        job = _make_job(payload)
+
+        policy = MagicMock()
+
+        with (
+            patch(f"{MODULE}.setup_policy", return_value=policy),
+            patch(f"{MODULE}.Trainer") as MockTrainer,
+            patch(f"{MODULE}.JobService") as MockJobService,
+            patch(f"{MODULE}.ModelService") as MockModelService,
+            patch(f"{MODULE}.LeRobotDataModule"),
+            patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
+            patch(f"{MODULE}.CSVLogger"),
+            patch(f"{MODULE}.ModelCheckpoint"),
+            patch(f"{MODULE}.TrainingTrackingDispatcher") as MockDispatcher,
+            patch(f"{MODULE}.TrainingTrackingCallback"),
+            patch(f"{MODULE}.TrainingLogCallback"),
+            patch(f"{MODULE}.get_torch_device", return_value="cuda"),
             patch(f"{MODULE}.get_lightning_strategy", return_value="auto"),
         ):
             MockDispatcher.return_value = MagicMock()

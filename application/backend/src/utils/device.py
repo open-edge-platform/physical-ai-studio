@@ -38,7 +38,22 @@ def get_lightning_strategy(device: str | None = None) -> str:
             import physicalai.devices.xpu
 
             return "xpu_single"
-        return "auto"
+    return "auto"
+
+
+_DEFAULT_PRECISION_BY_DEVICE: dict[str, str] = {
+    "cuda": "bf16-mixed",
+    "xpu": "32",
+}
+
+
+def get_default_precision(device: str) -> str | None:
+    """Return the default training precision for a given device type.
+
+    Returns a Lightning-compatible precision string, or None to let
+    Lightning choose (which resolves to ``"32-true"``).
+    """
+    return _DEFAULT_PRECISION_BY_DEVICE.get(device)
 
     import torch
 

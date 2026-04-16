@@ -305,8 +305,9 @@ const TrainingParameters = ({
                         <Heading>Training precision</Heading>
                         <Content>
                             <Text>
-                                Controls numerical precision during training. BF16 Mixed uses half-precision where safe
-                                for faster training and lower memory usage. 32-bit uses full precision for maximum
+                                Controls numerical precision during training. Default selects the optimal precision for
+                                your device (BF16 Mixed for CUDA, 32-bit for XPU). BF16 Mixed uses half-precision where
+                                safe for faster training and lower memory usage. 32-bit uses full precision for maximum
                                 numerical stability.
                             </Text>
                         </Content>

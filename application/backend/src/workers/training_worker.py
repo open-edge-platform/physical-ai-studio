@@ -39,7 +39,7 @@ from services.training_service import (
     TrainingTrackingCallback,
     TrainingTrackingDispatcher,
 )
-from utils.device import get_lightning_strategy, get_torch_device
+from utils.device import get_default_precision, get_lightning_strategy, get_torch_device
 from workers.base import BaseProcessWorker
 
 SCHEDULE_INTERVAL_SEC = 5
@@ -121,6 +121,8 @@ class TrainingWorker(BaseProcessWorker):
             device_type = payload.device.type if payload.device else None
             device_index = payload.device.index if payload.device else None
 
+            accelerator = get_torch_device(device_type)
+
             l_dm = LeRobotDataModule(
                 repo_id="snapshot",  # doesnt matter for loading the data.
                 root=snapshot.path,
@@ -134,7 +136,10 @@ class TrainingWorker(BaseProcessWorker):
             else:
                 policy = setup_policy(model, compile_model=payload.compile_model)
 
-            precision = str(payload.precision) if payload.precision != TrainingPrecision.DEFAULT else None
+            if payload.precision != TrainingPrecision.DEFAULT:
+                precision = str(payload.precision)
+            else:
+                precision = get_default_precision(accelerator)
 
             checkpoint_callback = ModelCheckpoint(
                 dirpath=path,
@@ -156,7 +161,7 @@ class TrainingWorker(BaseProcessWorker):
                     ),
                     TrainingLogCallback(),
                 ],
-                accelerator=get_torch_device(device_type),
+                accelerator=accelerator,
                 strategy=get_lightning_strategy(device_type),
                 devices=[device_index] if device_index is not None else "auto",
                 max_steps=payload.max_steps,
@@ -192,7 +197,7 @@ class TrainingWorker(BaseProcessWorker):
                         ),
                         TrainingLogCallback(),
                     ],
-                    accelerator=get_torch_device(device_type),
+                    accelerator=accelerator,
                     strategy=get_lightning_strategy(device_type),
                     devices=[device_index] if device_index is not None else "auto",
                     max_steps=payload.max_steps,
