@@ -100,3 +100,14 @@ class UnsupportedDeviceError(BaseException):
             error_code="unsupported_device",
             http_status=http.HTTPStatus.BAD_REQUEST,
         )
+
+
+class UploadTooLargeError(BaseException):
+    """Raised when the HTTP upload exceeds the configured maximum size."""
+
+    def __init__(self, message: str = "Uploaded file exceeds the maximum allowed size") -> None:
+        super().__init__(
+            message=message,
+            error_code="upload_too_large",
+            http_status=http.HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+        )
