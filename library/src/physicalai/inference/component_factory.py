@@ -106,6 +106,7 @@ component_registry.register("normalize", "physicalai.inference.preprocessors.Sta
 component_registry.register("smolvla_resize", "physicalai.inference.preprocessors.ResizeSmolVLA")
 component_registry.register("new_line", "physicalai.inference.preprocessors.NewLinePreprocessor")
 component_registry.register("hf_tokenizer", "physicalai.inference.preprocessors.HFTokenizer")
+component_registry.register("ov_tokenizer", "physicalai.inference.preprocessors.OVTokenizer")
 component_registry.register("pi05", "physicalai.inference.preprocessors.Pi05Preprocessor")
 
 # Postprocessors
