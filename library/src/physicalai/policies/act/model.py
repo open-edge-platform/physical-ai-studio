@@ -77,6 +77,7 @@ class ACT(ExportableModelMixin, Model):
         dropout: float = 0.1,
         kl_weight: float = 10.0,
         n_obs_steps: int = 1,
+        compile_model: bool = False,
     ) -> None:
         """Initialize the ACT model.
 
@@ -185,6 +186,10 @@ class ACT(ExportableModelMixin, Model):
             inverse=True,
         )
         self._model = _ACT(self._config)
+
+        if compile_model:
+            torch.set_float32_matmul_precision("high")
+            self.forward = torch.compile(self.forward, mode="default")  # type: ignore[method-assign]
 
     @property
     def config(self) -> ACTConfig:

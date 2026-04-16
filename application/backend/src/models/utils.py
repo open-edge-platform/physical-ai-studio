@@ -35,15 +35,15 @@ def load_inference_model(model: Model, backend: str) -> InferenceModel:
     return InferenceModel(export_dir=export_dir, policy_name=model.policy, backend=backend, device=inference_device)
 
 
-def setup_policy(model: Model) -> Policy:
+def setup_policy(model: Model, *, compile_model: bool = False) -> Policy:
     """Setup policy for Model training."""
     if model.policy == "act":
-        return ACT()
+        return ACT(compile_model=compile_model)
     if model.policy == "pi0":
-        return Pi0()
+        return Pi0(compile_model=compile_model)
     if model.policy == "pi05":
-        return Pi05(pretrained_name_or_path="lerobot/pi05_base")
+        return Pi05(pretrained_name_or_path="lerobot/pi05_base", compile_model=compile_model)
     if model.policy == "smolvla":
-        return SmolVLA()
+        return SmolVLA(compile_model=compile_model)
 
     raise ValueError(f"Policy not implemented yet: {model.policy}")

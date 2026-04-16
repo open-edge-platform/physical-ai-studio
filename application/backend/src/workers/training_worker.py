@@ -13,6 +13,7 @@ from lightning.pytorch.loggers import CSVLogger
 
 from core.logging.utils import job_logging_ctx
 from models.utils import load_policy, setup_policy
+from schemas.job import TrainingPrecision
 from services.snapshot_service import SnapshotService
 from settings import get_settings
 
@@ -131,7 +132,9 @@ class TrainingWorker(BaseProcessWorker):
             if base_model is not None:
                 policy = load_policy(base_model)
             else:
-                policy = setup_policy(model)
+                policy = setup_policy(model, compile_model=payload.compile_model)
+
+            precision = str(payload.precision) if payload.precision != TrainingPrecision.DEFAULT else None
 
             checkpoint_callback = ModelCheckpoint(
                 dirpath=path,
@@ -158,6 +161,7 @@ class TrainingWorker(BaseProcessWorker):
                 devices=[device_index] if device_index is not None else "auto",
                 max_steps=payload.max_steps,
                 auto_scale_batch_size=payload.auto_scale_batch_size,
+                precision=precision,
                 check_val_every_n_epoch=1,
             )
 

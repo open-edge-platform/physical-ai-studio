@@ -115,6 +115,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         min_period: float = 4e-3,  # sensitivity range for the timestep used in sine-cosine positional encoding
         max_period: float = 4.0,
         use_random_input_noise: bool = False,
+        # Compilation
+        compile_model: bool = False,  # noqa: FBT001, FBT002
         # Decoding
         num_steps: int = 10,
         # Attention utils
@@ -163,6 +165,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             min_period=min_period,
             max_period=max_period,
             use_random_input_noise=use_random_input_noise,
+            compile_model=compile_model,
             num_steps=num_steps,
             use_cache=use_cache,
             freeze_vision_encoder=freeze_vision_encoder,
@@ -235,6 +238,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             max_period=self.config.max_period,
             use_random_input_noise=self.config.use_random_input_noise,
             tokenizer_max_length=self.config.tokenizer_max_length,
+            compile_model=self.config.compile_model,
         )
 
         self._preprocessor, self._postprocessor = make_smolvla_preprocessors(

@@ -1,3 +1,4 @@
+from enum import StrEnum
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -6,6 +7,14 @@ from pydantic import BaseModel, Field, field_serializer, model_validator
 
 from schemas.base_job import BaseJob, JobType
 from schemas.hardware import DeviceType
+
+
+class TrainingPrecision(StrEnum):
+    """Supported training precision modes."""
+
+    DEFAULT = "default"
+    BF16_MIXED = "bf16-mixed"
+    FULL_32 = "32"
 
 
 class JobList(BaseModel):
@@ -65,6 +74,10 @@ class TrainJobPayload(BaseModel):
         description="Fraction of episodes to hold out for eval-loss validation (0 = disabled)",
     )
     device: TrainingDevice | None = Field(default=None, description="Target training device (auto-detected if null)")
+    precision: TrainingPrecision = Field(
+        default=TrainingPrecision.DEFAULT, description="Training precision mode ('default', 'bf16-mixed', '32')"
+    )
+    compile_model: bool = Field(default=False, description="Enable torch.compile for supported policies")
 
     @field_serializer("project_id")
     def serialize_project_id(self, project_id: UUID, _info: Any) -> str:

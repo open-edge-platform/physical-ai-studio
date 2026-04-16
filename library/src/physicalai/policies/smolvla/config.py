@@ -124,6 +124,8 @@ class SmolVLAConfig(Config):
 
     use_random_input_noise: bool = True
 
+    compile_model: bool = False
+
     def __post_init__(self) -> None:
         """Validate configuration parameters after initialization.
 
