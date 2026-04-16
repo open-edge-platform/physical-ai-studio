@@ -21,7 +21,6 @@ import {
     Picker,
     StatusLight,
     Text,
-    TextField,
     View,
 } from '@geti-ui/ui';
 
@@ -296,14 +295,12 @@ const TrainingParameters = ({
 export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: TrainModelDialogProps) => {
     const bestDevice = useBestTrainingDevice();
 
-    const defaultName = baseModel?.name ?? '';
     const defaultDatasetId = baseModel?.dataset_id ?? null;
     const extraPayload = baseModel ? { base_model_id: baseModel.id! } : undefined;
 
     const [selectedPolicy, setSelectedPolicy] = useState<string>(baseModel?.policy ?? 'act');
     const { datasets, id: projectId } = useProject();
 
-    const [name, setName] = useState<string>(defaultName);
     const [selectedDataset, setSelectedDataset] = useState<Key | null>(defaultDatasetId);
     const [maxSteps, setMaxSteps] = useState<number>(defaultMaxSteps);
     const [batchSize, setBatchSize] = useState<number>(8);
@@ -322,6 +319,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
         if (!dataset_id || !selectedPolicy) {
             return;
         }
+
+        const name = baseModel?.name ?? MODELS.find((policy) => policy.id === selectedPolicy)?.name ?? '';
 
         const payload: SchemaJob['payload'] = {
             dataset_id,
@@ -359,8 +358,6 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
                     validationBehavior='native'
                 >
                     <Flex direction='column' gap='size-200' width='100%'>
-                        <TextField label='Name' value={name} onChange={setName} width='100%' />
-
                         <Picker
                             label='Dataset'
                             selectedKey={selectedDataset}
