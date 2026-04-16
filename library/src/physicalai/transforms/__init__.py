@@ -8,8 +8,8 @@ replacements for standard transforms.
 """
 
 from physicalai.transforms.image_transforms import (
-    RandomSubsetApply,
-    SharpnessJitter,
+    RandomChoiceApply,
+    RandomSharpness,
 )
 from physicalai.transforms.onnx_transforms import (
     CenterCrop,
@@ -19,8 +19,8 @@ from physicalai.transforms.onnx_transforms import (
 
 __all__ = [
     "CenterCrop",
-    "RandomSubsetApply",
-    "SharpnessJitter",
+    "RandomChoiceApply",
+    "RandomSharpness",
     "center_crop_image",
     "replace_center_crop_with_onnx_compatible",
 ]

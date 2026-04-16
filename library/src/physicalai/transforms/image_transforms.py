@@ -16,12 +16,13 @@ from torchvision.transforms.v2 import functional as F  # noqa: N812
 _EXPECTED_SHARPNESS_LEN = 2
 
 
-class RandomSubsetApply(Transform):
+class RandomChoiceApply(Transform):
     """Apply a random subset of N transforms from a list of transforms.
 
-    Each forward pass samples ``n_subset`` transforms from the pool using
-    weighted multinomial sampling *without replacement*. This produces more
-    diverse augmentations than applying all transforms every time.
+    Similar to :class:`torchvision.transforms.v2.RandomChoice`, but samples
+    *multiple* transforms per forward pass using weighted multinomial sampling
+    *without replacement*. This produces more diverse augmentations than
+    applying all transforms every time.
 
     Args:
         transforms: Sequence of callable transforms.
@@ -41,7 +42,7 @@ class RandomSubsetApply(Transform):
         ...     v2.ColorJitter(contrast=(0.8, 1.2)),
         ...     v2.RandomAffine(degrees=5),
         ... ]
-        >>> augment = RandomSubsetApply(tfs, n_subset=2)
+        >>> augment = RandomChoiceApply(tfs, n_subset=2)
     """
 
     def __init__(
@@ -106,12 +107,12 @@ class RandomSubsetApply(Transform):
         return f"transforms={self.transforms}, p={self.p}, n_subset={self.n_subset}, random_order={self.random_order}"
 
 
-class SharpnessJitter(Transform):
-    """Randomly jitter the sharpness of an image or video.
+class RandomSharpness(Transform):
+    """Randomly adjust the sharpness of an image or video.
 
     Unlike :class:`torchvision.transforms.v2.RandomAdjustSharpness` which
     applies a *fixed* sharpness factor with some probability,
-    ``SharpnessJitter`` samples a *continuous* random factor from a uniform
+    ``RandomSharpness`` samples a *continuous* random factor from a uniform
     distribution on every call, producing more diverse augmentations.
 
     A sharpness factor of 0 gives a blurred image, 1 gives the original,
@@ -124,7 +125,7 @@ class SharpnessJitter(Transform):
             the range ``[max(0, 1-s), 1+s]``), or a ``[min, max]`` sequence.
 
     Example:
-        >>> jitter = SharpnessJitter(sharpness=[0.5, 1.5])
+        >>> jitter = RandomSharpness(sharpness=[0.5, 1.5])
     """
 
     def __init__(self, sharpness: float | Sequence[float]) -> None:
