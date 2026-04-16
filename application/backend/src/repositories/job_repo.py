@@ -7,7 +7,8 @@ from db.schema import JobDB
 from repositories.base import BaseRepository
 from repositories.mappers import JobMapper
 from schemas import Job
-from schemas.job import JobStatus, JobType, TrainJobPayload
+from schemas.base_job import JobStatus, JobType
+from schemas.job import TrainJobPayload
 
 
 class JobRepository(BaseRepository):

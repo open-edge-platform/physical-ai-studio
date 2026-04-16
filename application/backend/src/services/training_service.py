@@ -12,7 +12,7 @@ from lightning.pytorch.callbacks import Callback, ProgressBar
 from lightning.pytorch.utilities.types import STEP_OUTPUT
 from loguru import logger
 
-from schemas.job import JobStatus, JobType
+from schemas.base_job import JobStatus, JobType
 from services.event_processor import EventType
 from services.job_service import JobService
 from workers.base import BaseThreadWorker

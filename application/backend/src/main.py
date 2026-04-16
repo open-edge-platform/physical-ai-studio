@@ -6,7 +6,9 @@ import os
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import Response
+from starlette.middleware.base import RequestResponseEndpoint
 
 from api.camera import router as camera_router
 from api.dataset import router as dataset_router
@@ -24,9 +26,11 @@ from api.robot_control import router as robot_control_router
 from api.robot_setup import router as robot_setup_router
 from api.robots import router as project_robots_router
 from api.settings import router as settings_router
+from api.system import system_router
 from api.webui import SPAStaticFiles
 from core import lifespan
 from exception_handlers import register_application_exception_handlers
+from middleware.upload_size_guard import upload_size_guard_middleware
 from settings import get_settings
 from utils.device import get_torch_device
 
@@ -54,8 +58,14 @@ app.include_router(settings_router)
 app.include_router(models_router)
 app.include_router(job_router)
 app.include_router(logs_router)
+app.include_router(system_router)
 
 register_application_exception_handlers(app)
+
+
+@app.middleware("http")
+async def _upload_size_guard(request: Request, call_next: RequestResponseEndpoint) -> Response:
+    return await upload_size_guard_middleware(request, call_next)
 
 
 @app.get("/api/health")

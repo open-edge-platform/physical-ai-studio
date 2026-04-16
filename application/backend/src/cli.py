@@ -4,8 +4,8 @@ import sys
 
 import click
 
-from db import MigrationManager
 from db.engine import get_sync_db_session
+from db.migration import MigrationManager
 from db.schema import (
     CalibrationValuesDB,
     DatasetDB,

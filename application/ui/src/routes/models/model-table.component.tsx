@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { ActionButton, Button, DialogTrigger, Flex, Grid, Item, Key, Menu, MenuTrigger, Text, View } from '@geti-ui/ui';
 import { MoreMenu } from '@geti-ui/ui/icons';
 
-import { SchemaJob, SchemaModel } from '../../api/openapi-spec';
+import { SchemaModel, SchemaTrainJob } from '../../api/openapi-spec';
 import { GRID_COLUMNS } from './constants';
 import { ModelDownloadDialog } from './model-download-dialog.component';
 import { StartInferenceDialog } from './start-model-modal.component';
@@ -32,7 +32,7 @@ export const ModelRow = ({
     onViewLogs,
 }: {
     model: SchemaModel;
-    trainingJob?: SchemaJob;
+    trainingJob?: SchemaTrainJob;
     onDelete: () => void;
     onRetrain: () => void;
     onViewLogs?: () => void;

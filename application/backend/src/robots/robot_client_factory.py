@@ -1,6 +1,8 @@
+from physicalai.robot.so101 import SO101, SO101Calibration
+
 from exceptions import ResourceNotFoundError, ResourceType
 from robots.robot_client import RobotClient
-from robots.so101.so101 import So101
+from robots.so101.adapter import SO101Adapter
 from robots.widowxai.trossen_widowx_ai_follower import TrossenWidowXAIFollower
 from robots.widowxai.trossen_widowx_ai_leader import TrossenWidowXAILeader
 from schemas.calibration import Calibration
@@ -44,7 +46,7 @@ class RobotClientFactory:
             case _:
                 raise ValueError(f"Unsupported robot type: {robot.type}")
 
-    async def _build_so101(self, robot: Robot) -> So101:
+    async def _build_so101(self, robot: Robot) -> SO101Adapter:
         port = await self._find_robot_port(robot)
         calibration = await self._get_robot_calibration(robot)
 
@@ -52,8 +54,25 @@ class RobotClientFactory:
             raise ResourceNotFoundError(ResourceType.ROBOT_CALIBRATION, robot.serial_number)
         if port is None:
             raise ResourceNotFoundError(ResourceType.ROBOT, robot.serial_number)
+
         mode = "follower" if robot.type == RobotType.SO101_FOLLOWER else "teleoperator"
-        return So101(port=port, id=robot.name.lower(), mode=mode, calibration=calibration)
+        role = "follower" if mode == "follower" else "leader"
+
+        so101_cal = SO101Calibration.from_dict(
+            {
+                name: {
+                    "id": val.id,
+                    "drive_mode": val.drive_mode,
+                    "homing_offset": val.homing_offset,
+                    "range_min": val.range_min,
+                    "range_max": val.range_max,
+                }
+                for name, val in calibration.values.items()
+            }
+        )
+
+        so101 = SO101(port=port, calibration=so101_cal, role=role)
+        return SO101Adapter(robot=so101, mode=mode, calibration=calibration)
 
     async def _find_robot_port(self, robot: Robot) -> str:
         port = await find_robot_port(self.robot_manager, robot)
