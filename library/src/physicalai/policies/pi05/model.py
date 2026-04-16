@@ -564,6 +564,10 @@ class Pi05Model(ExportableModelMixin, Model):
         time_sampling_offset: float = 0.001,
         min_period: float = 4e-3,
         max_period: float = 4.0,
+        snapflow_enabled: bool = False,
+        snapflow_alpha: float = 0.5,
+        snapflow_lambda: float = 1.0,
+        snapflow_num_inference_steps: int = 1,
         image_resolution: tuple[int, int] = (224, 224),
         tokenizer_max_length: int = 200,
         freeze_vision_encoder: bool = False,
@@ -590,6 +594,12 @@ class Pi05Model(ExportableModelMixin, Model):
             time_sampling_offset: Offset for time sampling.
             min_period: Minimum period for sine-cosine positional encoding.
             max_period: Maximum period for sine-cosine positional encoding.
+            snapflow_enabled: Whether to enable SnapFlow self-distillation during training.
+            snapflow_alpha: Probability of replacing flow-matching loss with SnapFlow
+                consistency loss on each training step.
+            snapflow_lambda: Weight multiplier for the SnapFlow consistency loss term.
+            snapflow_num_inference_steps: Number of Euler steps used during SnapFlow
+                inference at test time.
             image_resolution: Target image resolution (height, width). Must be square.
             tokenizer_max_length: Maximum token length for the tokenizer.
             freeze_vision_encoder: Whether to freeze the vision encoder during training.
@@ -617,6 +627,10 @@ class Pi05Model(ExportableModelMixin, Model):
         self._image_resolution = image_resolution
         self._tokenizer_max_length = tokenizer_max_length
         self._use_random_input_noise = use_random_input_noise
+        self._snapflow_enabled = snapflow_enabled
+        self._snapflow_alpha = snapflow_alpha
+        self._snapflow_lambda = snapflow_lambda
+        self._snapflow_num_inference_steps = snapflow_num_inference_steps
 
         paligemma_config = get_gemma_config(paligemma_variant)
         action_expert_config = get_gemma_config(action_expert_variant)
@@ -640,6 +654,10 @@ class Pi05Model(ExportableModelMixin, Model):
 
         self.time_mlp_in = nn.Linear(action_expert_config.width, action_expert_config.width)
         self.time_mlp_out = nn.Linear(action_expert_config.width, action_expert_config.width)
+        self.target_time_mlp_in = nn.Linear(action_expert_config.width, action_expert_config.width)
+        self.target_time_mlp_out = nn.Linear(action_expert_config.width, action_expert_config.width)
+        nn.init.zeros_(self.target_time_mlp_out.weight)
+        nn.init.zeros_(self.target_time_mlp_out.bias)
 
         self.gradient_checkpointing_enabled = False
         if gradient_checkpointing:
@@ -916,6 +934,7 @@ class Pi05Model(ExportableModelMixin, Model):
         self,
         noisy_actions: Tensor,
         timestep: Tensor,
+        target_time: Tensor | None = None,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         """Embed noisy_actions and timestep for Expert Gemma processing.
 
@@ -947,6 +966,23 @@ class Pi05Model(ExportableModelMixin, Model):
             return F.silu(x)
 
         time_emb = self._apply_checkpoint(time_mlp_func, time_emb)
+        if target_time is not None:
+            target_time_emb = _create_sinusoidal_pos_embedding(
+                target_time,
+                self.action_in_proj.out_features,
+                min_period=self._min_period,
+                max_period=self._max_period,
+                device=target_time.device,
+            )
+            target_time_emb = target_time_emb.type(dtype=timestep.dtype)
+
+            def target_time_mlp_func(emb: Tensor) -> Tensor:
+                x = self.target_time_mlp_in(emb)
+                x = F.silu(x)
+                return self.target_time_mlp_out(x)
+
+            target_time_emb = self._apply_checkpoint(target_time_mlp_func, target_time_emb)
+            time_emb += target_time_emb
         action_time_emb = action_emb
         adarms_cond = time_emb
 
@@ -963,6 +999,80 @@ class Pi05Model(ExportableModelMixin, Model):
         att_masks = att_masks[None, :].expand(bsize, len(att_masks))
 
         return embs, pad_masks, att_masks, adarms_cond
+
+    def _predict_velocity(
+        self,
+        x_t: Tensor,
+        timestep: Tensor,
+        target_time: Tensor,
+        prefix_embs: Tensor,
+        prefix_pad_masks: Tensor,
+        prefix_att_masks: Tensor,
+    ) -> Tensor:
+        suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(
+            x_t,
+            timestep,
+            target_time=target_time,
+        )
+
+        local_prefix_embs = prefix_embs
+        if (
+            self.paligemma_with_expert.paligemma.model.language_model.layers[0].self_attn.q_proj.weight.dtype
+            == torch.bfloat16
+        ):
+            suffix_embs = suffix_embs.to(dtype=torch.bfloat16)
+            local_prefix_embs = prefix_embs.to(dtype=torch.bfloat16)
+
+        pad_masks = torch.cat([prefix_pad_masks, suffix_pad_masks], dim=1)
+        att_masks = torch.cat([prefix_att_masks, suffix_att_masks], dim=1)
+        att_2d_masks = _make_att_2d_masks(pad_masks, att_masks)
+        position_ids = torch.cumsum(pad_masks, dim=1) - 1
+        att_2d_masks_4d = self._prepare_attention_masks_4d(att_2d_masks)
+
+        def forward_func(
+            prefix_embs: Tensor,
+            suffix_embs: Tensor,
+            att_2d_masks_4d: Tensor,
+            position_ids: Tensor,
+            adarms_cond: Tensor,
+        ) -> Tensor:
+            (_, suffix_out), _ = self.paligemma_with_expert.forward(
+                attention_mask=att_2d_masks_4d,
+                position_ids=position_ids,
+                past_key_values=None,
+                inputs_embeds=[prefix_embs, suffix_embs],
+                use_cache=False,
+                adarms_cond=[None, adarms_cond],
+            )
+            return suffix_out
+
+        if torch.is_grad_enabled():
+            suffix_out = self._apply_checkpoint(
+                forward_func,
+                local_prefix_embs,
+                suffix_embs,
+                att_2d_masks_4d,
+                position_ids,
+                adarms_cond,
+            )
+        else:
+            suffix_out = forward_func(
+                local_prefix_embs,
+                suffix_embs,
+                att_2d_masks_4d,
+                position_ids,
+                adarms_cond,
+            )
+
+        suffix_out = suffix_out[:, -self._chunk_size :]
+        suffix_out = suffix_out.to(dtype=torch.float32)
+
+        def action_out_proj_func(suffix_out: Tensor) -> Tensor:
+            return self.action_out_proj(suffix_out)
+
+        if torch.is_grad_enabled():
+            return self._apply_checkpoint(action_out_proj_func, suffix_out)
+        return action_out_proj_func(suffix_out)
 
     def forward(
         self,
@@ -998,8 +1108,8 @@ class Pi05Model(ExportableModelMixin, Model):
 
         Samples random noise and timesteps, interpolates noisy actions,
         predicts the velocity field, and returns the MSE between predicted
-        and target velocities.  Gradient checkpointing is applied when the
-        model is in training mode.
+        and target velocities.  When SnapFlow is enabled, uses a mixture
+        of standard FM loss and consistency distillation loss.
 
         Args:
             batch: Preprocessed batch dict containing IMAGES, IMAGE_MASKS,
@@ -1014,66 +1124,78 @@ class Pi05Model(ExportableModelMixin, Model):
         masks = batch[TOKENIZED_PROMPT_MASK]
         actions = batch[ACTION]
 
-        noise = self.sample_noise(actions.shape, actions.device)
-        time = self.sample_time(actions.shape[0], actions.device)
+        bsize = actions.shape[0]
+        device = actions.device
+        noise = self.sample_noise(actions.shape, device)
+        time = self.sample_time(bsize, device)
 
         time_expanded = time[:, None, None]
         x_t = time_expanded * noise + (1 - time_expanded) * actions
         u_t = noise - actions
 
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, tokens, masks)
-        suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(x_t, time)
-
-        if (
-            self.paligemma_with_expert.paligemma.model.language_model.layers[0].self_attn.q_proj.weight.dtype
-            == torch.bfloat16
-        ):
-            suffix_embs = suffix_embs.to(dtype=torch.bfloat16)
-            prefix_embs = prefix_embs.to(dtype=torch.bfloat16)
-
-        pad_masks_combined = torch.cat([prefix_pad_masks, suffix_pad_masks], dim=1)
-        att_masks_combined = torch.cat([prefix_att_masks, suffix_att_masks], dim=1)
-
-        att_2d_masks = _make_att_2d_masks(pad_masks_combined, att_masks_combined)
-        position_ids = torch.cumsum(pad_masks_combined, dim=1) - 1
-
-        att_2d_masks_4d = self._prepare_attention_masks_4d(att_2d_masks)
-
-        def forward_func(
-            prefix_embs: Tensor,
-            suffix_embs: Tensor,
-            att_2d_masks_4d: Tensor,
-            position_ids: Tensor,
-            adarms_cond: Tensor,
-        ) -> Tensor:
-            (_, suffix_out), _ = self.paligemma_with_expert.forward(
-                attention_mask=att_2d_masks_4d,
-                position_ids=position_ids,
-                past_key_values=None,
-                inputs_embeds=[prefix_embs, suffix_embs],
-                use_cache=False,
-                adarms_cond=[None, adarms_cond],
+        if not self._snapflow_enabled:
+            v_t = self._predict_velocity(
+                x_t,
+                time,
+                time,
+                prefix_embs,
+                prefix_pad_masks,
+                prefix_att_masks,
             )
-            return suffix_out
+            losses = F.mse_loss(u_t, v_t, reduction="none")
+        else:
+            fm_mask = torch.rand(bsize, device=device) < self._snapflow_alpha
 
-        suffix_out = self._apply_checkpoint(
-            forward_func,
-            prefix_embs,
-            suffix_embs,
-            att_2d_masks_4d,
-            position_ids,
-            adarms_cond,
-        )
+            v_fm = self._predict_velocity(
+                x_t,
+                time,
+                time,
+                prefix_embs,
+                prefix_pad_masks,
+                prefix_att_masks,
+            )
+            fm_losses = F.mse_loss(u_t, v_fm, reduction="none")
 
-        suffix_out = suffix_out[:, -self._chunk_size :]
-        suffix_out = suffix_out.to(dtype=torch.float32)
+            x_1 = self.sample_noise(actions.shape, device)
+            with torch.no_grad():
+                t1 = torch.ones(bsize, device=device)
+                v_1 = self._predict_velocity(
+                    x_1,
+                    t1,
+                    t1,
+                    prefix_embs,
+                    prefix_pad_masks,
+                    prefix_att_masks,
+                )
+                x_half = x_1 - 0.5 * v_1
+                t_half = torch.full((bsize,), 0.5, device=device)
+                v_half = self._predict_velocity(
+                    x_half,
+                    t_half,
+                    t_half,
+                    prefix_embs,
+                    prefix_pad_masks,
+                    prefix_att_masks,
+                )
+                v_target = 0.5 * (v_1 + v_half)
 
-        def action_out_proj_func(suffix_out: Tensor) -> Tensor:
-            return self.action_out_proj(suffix_out)
-
-        v_t = self._apply_checkpoint(action_out_proj_func, suffix_out)
-
-        losses = F.mse_loss(u_t, v_t, reduction="none")
+            t1 = torch.ones(bsize, device=device)
+            t_zero = torch.zeros(bsize, device=device)
+            v_pred = self._predict_velocity(
+                x_1,
+                t1,
+                t_zero,
+                prefix_embs,
+                prefix_pad_masks,
+                prefix_att_masks,
+            )
+            consistency_losses = F.mse_loss(v_pred, v_target.detach(), reduction="none")
+            losses = torch.where(
+                fm_mask[:, None, None],
+                fm_losses,
+                self._snapflow_lambda * consistency_losses,
+            )
 
         # Truncate losses to actual action dimensions to avoid dilution from padding
         original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
@@ -1153,7 +1275,9 @@ class Pi05Model(ExportableModelMixin, Model):
         Returns:
             Denoised action tensor.
         """
-        if num_steps is None:
+        if self._snapflow_enabled:
+            num_steps = self._snapflow_num_inference_steps
+        elif num_steps is None:
             num_steps = self._num_inference_steps
 
         bsize = tokens.shape[0]
@@ -1184,12 +1308,14 @@ class Pi05Model(ExportableModelMixin, Model):
         for step in range(num_steps):
             time = 1.0 + step * dt
             time_tensor = torch.tensor(time, dtype=torch.float32, device=device).expand(bsize)
+            target_time = torch.zeros(bsize, device=device) if self._snapflow_enabled else time_tensor
 
             v_t = self.denoise_step(
                 prefix_pad_masks=prefix_pad_masks,
                 past_key_values=past_key_values,
                 x_t=x_t,
                 timestep=time_tensor,
+                target_time=target_time,
             )
 
             x_t += dt * v_t
@@ -1202,13 +1328,18 @@ class Pi05Model(ExportableModelMixin, Model):
         past_key_values: DynamicCache | None,
         x_t: Tensor,
         timestep: Tensor,
+        target_time: Tensor | None = None,
     ) -> Tensor:
         """Apply one denoising step of noise x_t at a given timestep.
 
         Returns:
             Velocity prediction tensor for this denoising step.
         """
-        suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(x_t, timestep)
+        suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(
+            x_t,
+            timestep,
+            target_time=target_time,
+        )
 
         suffix_len = suffix_pad_masks.shape[1]
         batch_size = prefix_pad_masks.shape[0]
