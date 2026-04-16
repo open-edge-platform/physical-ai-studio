@@ -49,7 +49,7 @@ For users who prefer a visual interface for end-to-end workflow:
 
 #### Docker
 
-Run the full application (backend + UI) in a single container:
+Run the full application (backend + UI) in a single container (using [Docker](https://docs.docker.com/engine/install/ubuntu/)):
 
 ```bash
 # Clone the repository
