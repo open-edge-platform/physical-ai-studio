@@ -44,6 +44,6 @@ def setup_policy(model: Model) -> Policy:
     if model.policy == "pi05":
         return Pi05(pretrained_name_or_path="lerobot/pi05_base")
     if model.policy == "smolvla":
-        return SmolVLA()
+        return SmolVLA(pretrained_name_or_path="lerobot/smolvla_base")
 
     raise ValueError(f"Policy not implemented yet: {model.policy}")
