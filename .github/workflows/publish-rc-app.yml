@@ -10,7 +10,7 @@ permissions: {} # No permissions by default
 jobs:
   validate:
     name: Validate RC tag
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
     permissions:
       contents: read
     timeout-minutes: 5
@@ -145,7 +145,7 @@ jobs:
   publish-rc:
     name: Build and push container RC (${{ matrix.device }})
     needs: validate
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
     permissions:
       contents: read # Checkout code
       packages: write # Push images to GHCR

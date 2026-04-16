@@ -25,7 +25,7 @@ concurrency:
 jobs:
   check-paths:
     name: Check if workflow should run
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
     outputs:
       run_workflow: ${{ steps.check_paths.outputs.run }}
     permissions:
@@ -43,9 +43,11 @@ jobs:
           files_yaml: |
             test:
               - .github/renovate.json5
+              - .github/workflows/renovate.yml
+              - .github/workflows/renovate-config-validator.yml
 
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
     needs: check-paths
     if: needs.check-paths.outputs.run_workflow == 'true'
     permissions:
@@ -59,7 +61,7 @@ jobs:
       - name: Validate configuration
         run: |
           # renovate: datasource=docker
-          export RENOVATE_IMAGE=ghcr.io/renovatebot/renovate:43.120.1@sha256:6488fcff4416a3872e2bbb305bfff73e9aa65556e89c39778c2920a2a52832ed
+          export RENOVATE_IMAGE=ghcr.io/renovatebot/renovate:43.122.0@sha256:b3ba6ebacd6fe5d3cb6c3a32350570e4e779d96121106ac54a086811190ab426
           docker run --rm --entrypoint "renovate-config-validator" \
           -v "${{ github.workspace }}/.github/renovate.json5":"/renovate.json5" \
           ${RENOVATE_IMAGE} "/renovate.json5"
@@ -69,7 +71,7 @@ jobs:
     needs:
       - check-paths
       - validate
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
     env:
       CHECKS: ${{ join(needs.*.result, ' ') }}
     if: always() && !cancelled()

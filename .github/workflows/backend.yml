@@ -14,7 +14,7 @@ concurrency:
 jobs:
   check-paths:
     name: Check if workflow should run
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
     outputs:
       run_workflow: ${{ steps.check_paths.outputs.run }}
     permissions:
@@ -38,7 +38,7 @@ jobs:
               - .github/**
 
   code-quality:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
     needs: check-paths
     if: needs.check-paths.outputs.run_workflow == 'true'
     permissions:
@@ -65,7 +65,7 @@ jobs:
           working-directory: application/backend
 
   unit-tests:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
     needs: check-paths
     if: needs.check-paths.outputs.run_workflow == 'true'
     permissions:
@@ -99,7 +99,7 @@ jobs:
       - check-paths
       - code-quality
       - unit-tests
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
     env:
       CHECKS: ${{ join(needs.*.result, ' ') }}
     if: always() && !cancelled()
