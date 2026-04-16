@@ -123,6 +123,12 @@ class DataModule(LightningDataModule):
 
     Handles training, evaluation, and test datasets, including Gym environments
     wrapped as datasets. Provides DataLoaders for training, validation, and testing.
+
+    Supports two validation modes:
+    - **Gym-based**: Set ``val_gym`` to run environment rollouts during validation.
+    - **Eval-loss**: Set ``val_eval_dataset`` to compute validation loss on a held-out dataset split.
+
+    When both are provided, ``val_eval_dataset`` takes precedence (eval-loss mode).
     """
 
     def __init__(
@@ -132,6 +138,8 @@ class DataModule(LightningDataModule):
         num_workers: int | Literal["auto"] = "auto",
         val_gym: Gym | None = None,
         num_rollouts_val: int = 10,
+        val_eval_dataset: Dataset | None = None,
+        val_batch_size: int = 1,
         test_gym: Gym | None = None,
         num_rollouts_test: int = 10,
         max_episode_steps: int | None = 300,
@@ -145,6 +153,9 @@ class DataModule(LightningDataModule):
                 ``"auto"`` (default) uses ``min(cpu_count, 8)``.
             val_gym (Gym | None): Validation environment.
             num_rollouts_val (int): Number of rollouts to run for validation environments.
+            val_eval_dataset (Dataset | None): Validation dataset for computing eval loss.
+                When provided, validation computes loss on this dataset instead of gym rollouts.
+            val_batch_size (int): Batch size for the eval-loss validation DataLoader. Defaults to 1.
             test_gym (Gym | None): Test environment.
             num_rollouts_test (int): Number of rollouts to run for test environments.
             max_episode_steps (int, None): Maximum steps allowed per episode. If None, no time limit.
@@ -156,6 +167,10 @@ class DataModule(LightningDataModule):
         self.train_batch_size: int = train_batch_size
         self.num_workers: int = resolve_auto_num_workers() if num_workers == "auto" else num_workers
         logger.info("DataLoader workers: %d%s", self.num_workers, " (auto)" if num_workers == "auto" else "")
+
+        # eval-loss validation dataset
+        self.val_eval_dataset: Dataset | None = val_eval_dataset
+        self.val_batch_size: int = val_batch_size
 
         # gym environments
         self.val_gym: Gym | None = val_gym
@@ -189,7 +204,7 @@ class DataModule(LightningDataModule):
         Args:
             stage (str): Stage of training ('fit', 'test', etc.).
         """
-        if stage == "fit" and self.val_gym:
+        if stage == "fit" and self.val_gym and self.val_eval_dataset is None:
             self.val_dataset = GymDataset(
                 env=self.val_gym,
                 num_rollouts=self.num_rollouts_val,
@@ -219,13 +234,24 @@ class DataModule(LightningDataModule):
     def val_dataloader(self) -> DataLoader[Any]:
         """Return the DataLoader for validation.
 
-        If no validation dataset is configured, returns an empty DataLoader
-        to allow training to proceed without validation.
+        Returns an eval-loss DataLoader when ``val_eval_dataset`` is set,
+        a gym DataLoader when ``val_dataset`` (from gym) is set, or an empty
+        DataLoader otherwise.
 
         Returns:
-            DataLoader[Any]: Validation DataLoader with collate function for Gym environments,
-                           or empty DataLoader if no validation dataset is configured.
+            DataLoader[Any]: Validation DataLoader.
         """
+        # Eval-loss mode: return batched Observations
+        if self.val_eval_dataset is not None:
+            return DataLoader(
+                self.val_eval_dataset,
+                num_workers=self.num_workers,
+                batch_size=self.val_batch_size,
+                shuffle=False,
+                drop_last=False,
+                collate_fn=_collate_observations,
+            )
+
         if self.val_dataset is None:
             # Return empty dataloader when no validation dataset
             # This allows training to proceed without validation

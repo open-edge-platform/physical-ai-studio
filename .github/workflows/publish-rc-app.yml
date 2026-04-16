@@ -10,7 +10,7 @@ permissions: {} # No permissions by default
 jobs:
   validate:
     name: Validate RC tag
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
     permissions:
       contents: read
     timeout-minutes: 5
@@ -145,7 +145,7 @@ jobs:
   publish-rc:
     name: Build and push container RC (${{ matrix.device }})
     needs: validate
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
     permissions:
       contents: read # Checkout code
       packages: write # Push images to GHCR
@@ -163,7 +163,7 @@ jobs:
           persist-credentials: false
 
       - name: Log in to Container Registry
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -187,7 +187,7 @@ jobs:
           use-cache: "false" # Disable cache for RC builds (security and reproducibility)
 
       - name: Sign Docker image
-        uses: open-edge-platform/geti-ci/actions/sign-image@cc6fbe840db6ebd16ebd18d409f475bff5a8c182
+        uses: open-edge-platform/geti-ci/actions/sign-image@7e686c1248b3939f8ee8e04e2612da727e379d91
         with:
           image-uri: ${{ steps.meta.outputs.tags }}
 

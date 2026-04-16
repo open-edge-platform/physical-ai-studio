@@ -860,6 +860,7 @@ class TestObservationIndexing:
         batch = Observation(
             action=torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0]]),
             state=torch.randn(4, 5),
+            task=["pick", "place", "pick", "place"],
         )
 
         sub_batch = batch[1:3]
@@ -867,6 +868,7 @@ class TestObservationIndexing:
         assert sub_batch.action.shape == (2, 2)
         assert torch.equal(sub_batch.action, torch.tensor([[3.0, 4.0], [5.0, 6.0]]))
         assert sub_batch.state.shape == (2, 5)
+        assert sub_batch.task == ["place", "pick"]
 
     def test_slice_preserves_batch_dimension(self):
         """Test slice can preserve batch dimension."""

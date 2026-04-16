@@ -40,6 +40,12 @@ interface ProjectListProps {
 }
 
 export const ProjectsList = ({ menuWidth = '100%', projects }: ProjectListProps) => {
+    const deleteMutation = $api.useMutation('delete', '/api/projects/{project_id}', {
+        meta: {
+            invalidates: [['get', '/api/projects']],
+        },
+    });
+
     return (
         <Menu UNSAFE_className={styles.projectMenu} width={menuWidth} items={projects}>
             {(item) => (
@@ -47,8 +53,16 @@ export const ProjectsList = ({ menuWidth = '100%', projects }: ProjectListProps)
                     <Text>
                         <Flex justifyContent='space-between' alignItems='center' marginX={'size-200'}>
                             {item.name}
-                            <ActionMenu isQuiet>
-                                <Item>Rename</Item>
+                            <ActionMenu
+                                isQuiet
+                                onAction={(key) => {
+                                    if (key === 'delete' && item.id) {
+                                        deleteMutation.mutate({
+                                            params: { path: { project_id: item.id } },
+                                        });
+                                    }
+                                }}
+                            >
                                 <Item>Delete</Item>
                             </ActionMenu>
                         </Flex>

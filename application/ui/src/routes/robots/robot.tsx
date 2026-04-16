@@ -11,7 +11,9 @@ import { useRobot } from '../../features/robots/use-robot';
 export const Robot = () => {
     const robot = useRobot();
 
-    const identifyMutation = $api.useMutation('post', '/api/hardware/identify');
+    const identifyMutation = $api.useMutation('post', '/api/hardware/identify', {
+        meta: { skipInvalidation: true },
+    });
 
     const onIdentify = identifyMutation.isPending
         ? undefined

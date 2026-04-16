@@ -262,14 +262,12 @@ class ACT(ExportableModelMixin, Model):
             exporter_kwargs={
                 "output_names": ["action"],
             },
-            preprocessing_type="image_resize",
         )
         extra_args["openvino"] = OpenVINOExportParameters(
             outputs=["action"],
             export_tokenizer=False,
             compress_to_fp16=False,
             exporter_kwargs={},
-            preprocessing_type="image_resize",
         )
         extra_args["executorch"] = ExecuTorchExportParameters()
         extra_args["torch"] = TorchExportParameters()
@@ -298,28 +296,40 @@ class ACT(ExportableModelMixin, Model):
             - KL divergence loss is computed when config.use_vae is True
         """
         if self._model.training:
-            batch = self._input_normalizer(batch)
-
-            actions_hat, (mu_hat, log_sigma_x2_hat) = self._model(batch)
-
-            l1_loss = (
-                F.l1_loss(batch[ACTION], actions_hat, reduction="none") * ~batch[EXTRA + ".action_is_pad"].unsqueeze(-1)
-            ).mean()
-
-            loss_dict = {"l1_loss": l1_loss.item()}
-            if self._config.use_vae:
-                # Calculate Dₖₗ(latent_pdf || standard_normal). Note: After computing the KL-divergence for
-                # each dimension independently, we sum over the latent dimension to get the total
-                # KL-divergence per batch element, then take the mean over the batch.
-                # (See App. B of https://huggingface.co/papers/1312.6114 for more details).
-                mean_kld = (-0.5 * (1 + log_sigma_x2_hat - mu_hat.pow(2) - (log_sigma_x2_hat).exp())).sum(-1).mean()
-                loss_dict["kld_loss"] = mean_kld.item()
-                loss = l1_loss + mean_kld * self._config.kl_weight
-            else:
-                loss = l1_loss
-
-            return loss, loss_dict
+            return self.compute_loss(batch)
         return self.predict_action_chunk(batch)
+
+    def compute_loss(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]]:
+        """Compute training loss (L1 + optional KL divergence).
+
+        Args:
+            batch: Preprocessed batch dict.
+
+        Returns:
+            Tuple of (loss tensor, loss dict with ``"l1_loss"`` and optionally ``"kld_loss"``).
+        """
+        batch = self._input_normalizer(batch)
+
+        actions_hat, (mu_hat, log_sigma_x2_hat) = self._model(batch)
+
+        l1_loss = (
+            F.l1_loss(batch[ACTION], actions_hat, reduction="none") * ~batch[EXTRA + ".action_is_pad"].unsqueeze(-1)
+        ).mean()
+
+        loss_dict: dict[str, float] = {"l1_loss": l1_loss.item()}
+        if self._config.use_vae:
+            # Calculate Dₖₗ(latent_pdf || standard_normal). Note: After computing the KL-divergence for
+            # each dimension independently, we sum over the latent dimension to get the total
+            # KL-divergence per batch element, then take the mean over the batch.
+            # (See App. B of https://huggingface.co/papers/1312.6114 for more details).
+            mean_kld = (-0.5 * (1 + log_sigma_x2_hat - mu_hat.pow(2) - (log_sigma_x2_hat).exp())).sum(-1).mean()
+            loss_dict["kld_loss"] = mean_kld.item()
+            loss = l1_loss + mean_kld * self._config.kl_weight
+        else:
+            loss = l1_loss
+
+        loss_dict["loss"] = loss.item()
+        return loss, loss_dict
 
     @torch.no_grad()
     def predict_action_chunk(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:

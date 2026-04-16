@@ -45,6 +45,8 @@ class StatsDenormalizer(Postprocessor):
             **all** features found in the stats file are denormalized.
         artifact: Alias for *stats_path* used by manifest artifact
             resolution.  Provide one or the other, not both.
+        stats: Optional pre-loaded stats dict.  If provided, skips
+            lazy loading from file.
 
     Examples:
         Constructed via manifest (type-based resolution)::
@@ -68,6 +70,7 @@ class StatsDenormalizer(Postprocessor):
         features: list[str] | None = None,
         *,
         artifact: str | None = None,
+        stats: dict[str, dict[str, np.ndarray]] | None = None,
     ) -> None:
         """Initialize with stats file path and denormalization config.
 
@@ -80,6 +83,8 @@ class StatsDenormalizer(Postprocessor):
                 denormalized.
             artifact: Alias for *stats_path*, used when the path is
                 supplied via manifest ``artifact`` resolution.
+            stats: Optional pre-loaded stats dict.  If provided, skips
+                lazy loading from file.
 
         Raises:
             ValueError: If *mode* is not a recognized normalization mode
@@ -91,14 +96,14 @@ class StatsDenormalizer(Postprocessor):
             raise ValueError(msg)
 
         resolved_path = stats_path or artifact
-        if resolved_path is None:
-            msg = "Either stats_path or artifact must be provided"
+        if resolved_path is None and stats is None:
+            msg = "Either stats_path, artifact, or stats must be provided"
             raise ValueError(msg)
 
         self._stats_path = resolved_path
         self._mode = mode
         self._features: set[str] = set(features) if features else set()
-        self._stats: dict[str, dict[str, np.ndarray]] | None = None
+        self._stats: dict[str, dict[str, np.ndarray]] | None = stats
 
     def load_stats(self) -> None:
         """Eagerly load stats from the safetensors file.

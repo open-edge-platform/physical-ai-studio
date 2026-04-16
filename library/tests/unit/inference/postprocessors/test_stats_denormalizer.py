@@ -44,7 +44,7 @@ class TestStatsDenormalizerInit:
         assert isinstance(denormalizer, Postprocessor)
 
     def test_neither_stats_path_nor_artifact_raises(self) -> None:
-        with pytest.raises(ValueError, match="Either stats_path or artifact must be provided"):
+        with pytest.raises(ValueError, match="Either stats_path, artifact, or stats must be provided"):
             StatsDenormalizer()
 
     def test_artifact_param_accepted(self, stats_dir: Path) -> None:
@@ -88,6 +88,21 @@ class TestStatsDenormalizerMeanStd:
         expected_action = np.array([1.0, 1.0, 1.0]) * np.array([0.5, 1.0, 1.5]) + np.array([1.0, 2.0, 3.0])
         np.testing.assert_allclose(result["action"], expected_action)
         np.testing.assert_array_equal(result["action.gripper"], np.array([2.0]))
+
+    def test_denormalizes_via_stats_param(self) -> None:
+        stats = {
+            "action": {"mean": np.array([1.0, 2.0, 3.0]), "std": np.array([0.5, 1.0, 1.5])},
+            "action.gripper": {"mean": np.array([0.5]), "std": np.array([0.1])},
+        }
+        denormalizer = StatsDenormalizer(stats=stats, mode="mean_std")
+        outputs = {
+            "action": np.array([0.0, 0.0, 0.0]),
+            "action.gripper": np.array([0.0]),
+        }
+        result = denormalizer(outputs)
+
+        np.testing.assert_allclose(result["action"], np.array([1.0, 2.0, 3.0]))
+        np.testing.assert_allclose(result["action.gripper"], np.array([0.5]))
 
     def test_roundtrip_mean_std(self, stats_dir: Path) -> None:
         from physicalai.inference.preprocessors import StatsNormalizer
