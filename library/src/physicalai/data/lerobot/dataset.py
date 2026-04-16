@@ -227,17 +227,19 @@ class _LeRobotDatasetAdapter(Dataset):
     @property
     def delta_indices(self) -> dict[str, list[int]]:
         """Expose delta_indices from the DatasetReader (lerobot >=0.5.1)."""
-        reader = self._lerobot_dataset.reader
-        if reader is None:
-            return {}
-        return reader.delta_indices or {}
+        reader = getattr(self._lerobot_dataset, "reader", None)
+        if reader is not None:
+            return reader.delta_indices or {}
+        return getattr(self._lerobot_dataset, "delta_indices", None) or {}
 
     @delta_indices.setter
     def delta_indices(self, indices: dict[str, list[int]]) -> None:
         """Set delta_indices on DatasetReader so the training callback can inject them post-construction."""
-        reader = self._lerobot_dataset.reader
+        reader = getattr(self._lerobot_dataset, "reader", None)
         if reader is not None:
             reader.delta_indices = indices
+        else:
+            self._lerobot_dataset.delta_indices = indices
 
 
 __all__ = ["_LeRobotDatasetAdapter"]
