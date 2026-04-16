@@ -96,7 +96,7 @@ class Pi05Preprocessor(Preprocessor):
 
     def _preprocess_images(
         self,
-        inputs: dict[str, np.ndarray | list[str]],
+        inputs: dict[str, np.ndarray | list[str] | dict[str, np.ndarray]],
     ) -> tuple[list[np.ndarray], list[np.ndarray]]:
         """Resize, pad, and normalize all camera images found in *inputs*.
 
@@ -114,13 +114,24 @@ class Pi05Preprocessor(Preprocessor):
             - ``images``: list of ``(B, C, H, W)`` float32 arrays, one per camera.
             - ``masks``: list of ``(B,)`` bool arrays (all ``True`` for real cameras).
         """
-        img_keys = [key for key in inputs if key.startswith(IMAGES)]
+        input_images: list[np.ndarray] = []
+        images_value = inputs.get(IMAGES)
+        if isinstance(images_value, np.ndarray):
+            input_images.append(images_value)
+        elif isinstance(images_value, dict):
+            input_images.extend(list(images_value.values()))
+        else:
+            img_keys = [key for key in inputs if key.startswith(IMAGES)]
+            input_images.extend(
+                [inputs[img_keys[0]]] if len(img_keys) == 1 else [inputs[key] for key in img_keys],
+            )
+
         images: list[np.ndarray] = []
         masks: list[np.ndarray] = []
 
         max_image_dim = 5
-        for key in img_keys:
-            img: np.ndarray = inputs[key]
+        for image in input_images:
+            img = image
             if img.ndim == max_image_dim:
                 img = img[:, -1, :, :, :]
 

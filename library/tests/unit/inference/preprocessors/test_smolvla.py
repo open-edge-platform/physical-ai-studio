@@ -89,6 +89,19 @@ class TestResizeSmolVLACall:
         assert result[IMAGES].shape[3] == 64
         assert result[IMAGES].shape[4] == 64
 
+    def test_dict_images_stacked(self) -> None:
+        prep = ResizeSmolVLA(image_resolution=(64, 64))
+        inputs = {
+            IMAGES: {
+                "top": np.random.rand(1, 3, 48, 48).astype(np.float32),
+                "wrist": np.random.rand(1, 3, 32, 64).astype(np.float32),
+            },
+        }
+        result = prep(inputs)
+        assert result[IMAGES].shape == (2, 1, 3, 64, 64)
+        assert result[IMAGE_MASKS].shape == (2, 1)
+        assert result[IMAGE_MASKS].all()
+
     def test_consistency_vs_ref(self) -> None:
         input_batch = {
         "images": np.random.rand(1, 3, 640, 640).astype(np.float32),
