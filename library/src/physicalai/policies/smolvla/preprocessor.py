@@ -493,44 +493,59 @@ class SmolVLAPostprocessor(torch.nn.Module):
         return batch
 
 
-def rename_stats(
+def reorder_stats(
     stats: dict[str, dict[str, Any]],
     rename_map: dict[str, str],
 ) -> dict[str, dict[str, Any]]:
-    """Rename top-level keys in a dataset statistics dict to match renamed camera names.
+    """Reorder dataset statistics entries to match the canonical camera slot order.
 
-    This aligns normalization statistics with renamed observation keys so that
-    FeatureNormalizeTransform can match stats buffers to the correct batch keys.
+    SmolVLA base weights expect cameras in a specific positional order but don't
+    care about key names. This function reorders stats entries so that image
+    statistics appear in the order determined by rename_map target names, without
+    changing any keys. Non-image stats (state, action) are preserved in their
+    original relative order.
 
     The rename_map uses the same short key format as SmolVLAPreprocessor: base camera
     names only (e.g. {"top": "camera1"}). Stats keys like "observation.images.top"
-    will be matched by checking if the key ends with any source name in the map.
-
-    Keys not matching any entry in rename_map pass through unchanged.
-    A defensive deep copy is performed to avoid mutating the original stats.
+    are matched by extracting the last segment after ".".
 
     Args:
         stats: Dataset statistics dict with top-level keys like "observation.images.top",
             "observation.state", "action".
         rename_map: Mapping of source camera base names to target names.
+            Used only for determining sort order, not for renaming.
 
     Returns:
-        New statistics dict with renamed top-level keys.
+        New statistics dict with entries reordered by mapped target names.
+        Keys and values are unchanged; only insertion order differs.
     """
     if not stats:
         return {}
-    renamed: dict[str, dict[str, Any]] = {}
-    for old_key, sub_stats in stats.items():
-        new_key = old_key
-        for src_name, dst_name in rename_map.items():
-            suffix = f".{src_name}"
-            if old_key.endswith(suffix):
-                new_key = old_key[: -len(src_name)] + dst_name
-                break
-        renamed[new_key] = deepcopy(sub_stats) if sub_stats is not None else {}
-        if new_key != old_key and "name" in renamed[new_key]:
-            renamed[new_key]["name"] = new_key
-    return renamed
+
+    def _sort_key(item: tuple[str, dict[str, Any]]) -> tuple[int, str]:
+        key = item[0]
+        base = key.rsplit(".", 1)[-1]
+        mapped = rename_map.get(base, base)
+        is_mapped = 0 if base in rename_map else 1
+        return (is_mapped, mapped)
+
+    image_items = []
+    other_items = []
+    for key, sub_stats in stats.items():
+        base = key.rsplit(".", 1)[-1]
+        if base in rename_map:
+            image_items.append((key, sub_stats))
+        else:
+            other_items.append((key, sub_stats))
+
+    image_items.sort(key=_sort_key)
+
+    reordered: dict[str, dict[str, Any]] = {}
+    for key, sub_stats in image_items:
+        reordered[key] = deepcopy(sub_stats) if sub_stats is not None else {}
+    for key, sub_stats in other_items:
+        reordered[key] = deepcopy(sub_stats) if sub_stats is not None else {}
+    return reordered
 
 
 def make_smolvla_preprocessors(
@@ -563,7 +578,7 @@ def make_smolvla_preprocessors(
         Tuple of (preprocessor, postprocessor).
     """
     if rename_map and stats is not None:
-        stats = rename_stats(stats, rename_map)
+        stats = reorder_stats(stats, rename_map)
 
     expected_camera_names: set[str] | None = SMOLVLA_EXPECTED_CAMERA_NAMES
     features: dict[str, Feature] = {}
@@ -590,7 +605,7 @@ def make_smolvla_preprocessors(
                 ),
             )
 
-        if rename_map and image_stat_names:
+        if image_stat_names:
             expected_camera_names = image_stat_names
 
     preprocessor = SmolVLAPreprocessor(

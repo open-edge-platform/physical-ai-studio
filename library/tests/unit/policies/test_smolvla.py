@@ -567,55 +567,81 @@ class TestCameraRenameMap:
         assert torch.allclose(images[1], img_top * 2.0 - 1.0, atol=1e-5)
 
 
-class TestRenameStats:
-    """Tests for rename_stats helper function."""
+class TestReorderStats:
+    """Tests for reorder_stats helper function."""
 
-    def test_rename_stats_renames_image_keys(self) -> None:
-        from physicalai.policies.smolvla.preprocessor import rename_stats
+    def test_reorder_stats_preserves_keys(self) -> None:
+        from physicalai.policies.smolvla.preprocessor import reorder_stats
 
         stats = {
-            "observation.top": {"name": "top", "mean": [0.5], "std": [0.1]},
+            "observation.images.wrist": {
+                "name": "observation.images.wrist",
+                "type": "VISUAL",
+                "mean": [0.5],
+                "std": [0.1],
+            },
+            "observation.images.top": {
+                "name": "observation.images.top",
+                "type": "VISUAL",
+                "mean": [0.3],
+                "std": [0.2],
+            },
+            "observation.state": {"name": "observation.state", "mean": [0.0], "std": [1.0]},
+            "action": {"name": "action", "mean": [0.0], "std": [1.0]},
+        }
+        rename_map = {"top": "camera1", "wrist": "camera2"}
+        result = reorder_stats(stats, rename_map)
+
+        assert set(result.keys()) == set(stats.keys())
+        assert list(result.keys()) == [
+            "observation.images.top",
+            "observation.images.wrist",
+            "observation.state",
+            "action",
+        ]
+
+    def test_reorder_stats_preserves_unmapped_keys(self) -> None:
+        from physicalai.policies.smolvla.preprocessor import reorder_stats
+
+        stats = {
             "observation.state": {"name": "observation.state", "mean": [0.0], "std": [1.0]},
             "action": {"name": "action", "mean": [0.0], "std": [1.0]},
         }
         rename_map = {"top": "camera1"}
-        result = rename_stats(stats, rename_map)
-
-        assert "observation.camera1" in result
-        assert "observation.top" not in result
-        assert result["observation.camera1"]["name"] == "observation.camera1"
-        assert result["observation.state"]["name"] == "observation.state"
-        assert result["action"]["name"] == "action"
-
-    def test_rename_stats_preserves_unmapped_keys(self) -> None:
-        from physicalai.policies.smolvla.preprocessor import rename_stats
-
-        stats = {
-            "observation.state": {"name": "observation.state", "mean": [0.0], "std": [1.0]},
-            "action": {"name": "action", "mean": [0.0], "std": [1.0]},
-        }
-        rename_map = {"top": "camera1"}
-        result = rename_stats(stats, rename_map)
+        result = reorder_stats(stats, rename_map)
 
         assert "observation.state" in result
         assert "action" in result
 
-    def test_rename_stats_empty_stats(self) -> None:
-        from physicalai.policies.smolvla.preprocessor import rename_stats
+    def test_reorder_stats_empty_stats(self) -> None:
+        from physicalai.policies.smolvla.preprocessor import reorder_stats
 
-        assert rename_stats({}, {"top": "camera1"}) == {}
+        assert reorder_stats({}, {"top": "camera1"}) == {}
 
-    def test_rename_stats_does_not_mutate_original(self) -> None:
-        from physicalai.policies.smolvla.preprocessor import rename_stats
+    def test_reorder_stats_does_not_mutate_original(self) -> None:
+        from physicalai.policies.smolvla.preprocessor import reorder_stats
 
         stats = {
-            "observation.top": {"name": "top", "mean": [0.5], "std": [0.1]},
+            "observation.images.top": {"name": "observation.images.top", "mean": [0.5], "std": [0.1]},
         }
-        original_keys = set(stats.keys())
-        rename_stats(stats, {"top": "camera1"})
+        original_keys = list(stats.keys())
+        reorder_stats(stats, {"top": "camera1"})
 
-        assert set(stats.keys()) == original_keys
-        assert stats["observation.top"]["name"] == "top"
+        assert list(stats.keys()) == original_keys
+        assert stats["observation.images.top"]["name"] == "observation.images.top"
+
+    def test_reorder_stats_does_not_rename_keys(self) -> None:
+        from physicalai.policies.smolvla.preprocessor import reorder_stats
+
+        stats = {
+            "observation.images.top": {"name": "observation.images.top", "mean": [0.5], "std": [0.1]},
+        }
+        rename_map = {"top": "camera1"}
+        result = reorder_stats(stats, rename_map)
+
+        assert "observation.images.top" in result
+        assert "observation.images.camera1" not in result
+        assert result["observation.images.top"]["name"] == "observation.images.top"
 
 
 class TestCameraNameValidation:
@@ -804,7 +830,7 @@ class TestCameraNameValidation:
         preprocessor, _ = make_smolvla_preprocessors(rename_map=rename_map)
         assert preprocessor.rename_map == rename_map
 
-    def test_factory_renames_stats(self) -> None:
+    def test_factory_reorders_stats(self) -> None:
         from physicalai.policies.smolvla.preprocessor import make_smolvla_preprocessors
 
         stats: dict[str, dict[str, list[float] | str | tuple]] = {
