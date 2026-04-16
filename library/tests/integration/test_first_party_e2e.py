@@ -17,6 +17,7 @@ import pytest
 import torch
 
 from physicalai.data import LeRobotDataModule
+from physicalai.data.lerobot.utils.delta_timestamps import get_delta_timestamps_from_policy
 from physicalai.inference import InferenceModel
 from physicalai.policies import get_policy
 from physicalai.policies.base.policy import Policy
@@ -261,10 +262,12 @@ class TestE2E(CoreE2ETests, ExportE2ETests):
     """E2E tests for policies with export support (ACT, etc.)."""
 
     @pytest.fixture(scope="class")
-    def datamodule(self) -> LeRobotDataModule:
-        """Create datamodule for first-party policies."""
+    def datamodule(self, policy_name: str) -> LeRobotDataModule:
+        """Create datamodule for first-party policies with delta timestamps."""
+        delta_timestamps = get_delta_timestamps_from_policy(policy_name, fps=10)
         return LeRobotDataModule(
             repo_id="lerobot/pusht",
             train_batch_size=8,
             episodes=list(range(10)),
+            delta_timestamps=delta_timestamps,
         )

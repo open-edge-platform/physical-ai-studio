@@ -180,32 +180,71 @@ class SmolVLAModel(ExportableModelMixin, Model):
             If inference: Output from predict_action_chunk (action predictions)
         """
         if self.training:
-            batch = self._preprocess_batch(batch)
-            images, img_masks = batch[IMAGES], batch[IMAGE_MASKS]
-            state = self._prepare_state(batch)
-            actions = self._prepare_action(batch)
-
-            lang_tokens = batch[TOKENIZED_PROMPT]
-            lang_masks = batch[TOKENIZED_PROMPT_MASK]
-            actions_is_pad = batch.get(EXTRA + ".actions_id_pad")
-            loss_dict = {}
-            losses = self._model.forward(images, img_masks, lang_tokens, lang_masks, state, actions)
-            loss_dict["losses_after_forward"] = losses.clone()
-
-            if actions_is_pad is not None:
-                in_episode_bound = ~actions_is_pad
-                losses *= in_episode_bound.unsqueeze(-1)
-                loss_dict["losses_after_in_ep_bound"] = losses.clone()
-
-            # Truncate losses to actual action dimensions to avoid dilution from padding
-            original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
-            losses = losses[:, :, :original_action_dim]
-            loss_dict["losses_after_rm_padding"] = losses.clone()
-
-            loss = losses.mean()
-            loss_dict["loss"] = loss.item()
-            return loss, loss_dict
+            return self.compute_loss(batch)
         return self.predict_action_chunk(batch)
+
+    def compute_loss(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]]:
+        """Compute training loss for action prediction.
+
+        Args:
+            batch: Raw batch dict.
+
+        Returns:
+            Tuple of (mean loss tensor, loss dict with intermediate values).
+        """
+        batch = self._preprocess_batch(batch)
+        images, img_masks = batch[IMAGES], batch[IMAGE_MASKS]
+        state = self._prepare_state(batch)
+        actions = self._prepare_action(batch)
+
+        lang_tokens = batch[TOKENIZED_PROMPT]
+        lang_masks = batch[TOKENIZED_PROMPT_MASK]
+        actions_is_pad = batch.get(EXTRA + ".actions_id_pad")
+        loss_dict: dict[str, float] = {}
+        losses = self._model.forward(images, img_masks, lang_tokens, lang_masks, state, actions)
+        loss_dict["losses_after_forward"] = losses.clone()
+
+        if actions_is_pad is not None:
+            in_episode_bound = ~actions_is_pad
+            losses *= in_episode_bound.unsqueeze(-1)
+            loss_dict["losses_after_in_ep_bound"] = losses.clone()
+
+        # Truncate losses to actual action dimensions to avoid dilution from padding
+        original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
+        losses = losses[:, :, :original_action_dim]
+        loss_dict["losses_after_rm_padding"] = losses.clone()
+
+        loss = losses.mean()
+        loss_dict["loss"] = loss.item()
+        return loss, loss_dict
+
+    @torch.no_grad()
+    def compute_val_loss(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]]:
+        """Compute validation loss: MSE between predicted and ground-truth actions.
+
+        Runs the full denoising loop and compares predicted actions with
+        ground truth.  Deterministic, unlike the stochastic flow-matching
+        training loss.
+
+        Args:
+            batch: Raw batch dict containing ground-truth ACTION.
+
+        Returns:
+            Tuple of (mean MSE loss tensor, loss dict with ``"loss"`` key).
+        """
+        processed = self._preprocess_batch(batch)
+        gt_actions = self._prepare_action(processed)
+
+        predicted = self.predict_action_chunk(batch)
+
+        # Compare in the original (unpadded) action space
+        original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
+        gt_trimmed = gt_actions[:, :, :original_action_dim]
+        pred_trimmed = predicted[:, :, :original_action_dim]
+
+        min_len = min(gt_trimmed.shape[1], pred_trimmed.shape[1])
+        loss = F.mse_loss(pred_trimmed[:, :min_len], gt_trimmed[:, :min_len])
+        return loss, {"loss": loss.item()}
 
     def predict_action_chunk(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """Predict a chunk of actions from input batch.

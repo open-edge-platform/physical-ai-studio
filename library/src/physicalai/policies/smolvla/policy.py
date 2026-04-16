@@ -23,7 +23,6 @@ from .model import SmolVLAModel
 
 if TYPE_CHECKING:
     from physicalai.data import Observation
-    from physicalai.gyms import Gym
 
     from .preprocessor import SmolVLAPostprocessor, SmolVLAPreprocessor
 
@@ -347,20 +346,26 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
         return loss
 
-    def validation_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:  # type: ignore[override]
-        """Lightning validation step.
+    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, float]]:
+        """Compute validation loss on a batch.
 
-        Runs gym-based validation via rollout evaluation. The DataModule's val_dataloader
-        returns Gym environment instances directly.
+        Delegates to the model's ``compute_val_loss`` without toggling
+        train mode.
 
         Args:
-            batch: Gym environment to evaluate.
-            batch_idx: Index of the batch (used as seed for reproducibility).
+            batch: Observation batch (must contain ground-truth actions).
 
         Returns:
-            Dictionary of metrics from the gym rollout evaluation.
+            Tuple of (loss tensor, loss dict).
+
+        Raises:
+            ValueError: If the model is not initialized.
         """
-        return self.evaluate_gym(batch, batch_idx, stage="val")
+        if self.model is None or self._preprocessor is None:
+            msg = "Model is not initialized"
+            raise ValueError(msg)
+        processed_batch = self._preprocessor(batch.to_dict())
+        return self.model.compute_val_loss(processed_batch)
 
     def configure_optimizers(self) -> dict[str, Any]:
         """Configure optimizer and scheduler.

@@ -9,9 +9,16 @@ on:
 
 permissions: {} # No permissions by default on workflow level
 
+concurrency:
+  group: library-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  code-quality:
-    runs-on: ubuntu-latest
+  check-paths:
+    name: Check if workflow should run
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    outputs:
+      run_workflow: ${{ steps.check_paths.outputs.run }}
     permissions:
       contents: read
     steps:
@@ -21,6 +28,25 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check paths
+        id: check_paths
+        uses: open-edge-platform/geti-ci/actions/check-paths@7e686c1248b3939f8ee8e04e2612da727e379d91
+        with:
+          files_yaml: |
+            test:
+              - library/**
+              - physicalai/**
+              - .github/**
+
+  code-quality:
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    needs: check-paths
+    if: needs.check-paths.outputs.run_workflow == 'true'
+    permissions:
+      contents: read
+    steps:
+      - *checkout
+
       - &set-up-python
         name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -28,13 +54,15 @@ jobs:
           python-version-file: "./library/.python-version"
 
       - name: Run prek
-        uses: j178/prek-action@53276d8b0d10f8b6672aa85b4588c6921d0370cc # v2
+        uses: j178/prek-action@cbc2f23eb5539cf20d82d1aabd0d0ecbcc56f4e3 # v2
         with:
           extra-args: --all-files
           working-directory: library
 
   unit-tests:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    needs: check-paths
+    if: needs.check-paths.outputs.run_workflow == 'true'
     permissions:
       contents: read
     steps:
@@ -70,3 +98,24 @@ jobs:
           PYOPENGL_PLATFORM: egl
         run: |
           uv run --no-sync pytest tests/unit
+
+  required-check:
+    name: Required Check library
+    needs:
+      - check-paths
+      - code-quality
+      - unit-tests
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    env:
+      CHECKS: ${{ join(needs.*.result, ' ') }}
+    if: always() && !cancelled()
+    steps:
+      - name: Check jobs results
+        run: |
+          for check in ${CHECKS}; do
+            echo "::notice::check=${check}"
+            if [[ "$check" != "success" && "$check" != "skipped" ]]; then
+              echo "::error ::Required status checks failed. They must succeed before this pull request can be merged."
+              exit 1
+            fi
+          done

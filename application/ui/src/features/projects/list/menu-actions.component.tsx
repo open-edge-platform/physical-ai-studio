@@ -11,8 +11,6 @@ export const MenuActions = ({ onAction }: MenuActionsProps) => {
                 <MoreMenu />
             </ActionButton>
             <Menu onAction={onAction}>
-                <Item key={'export'}>Export</Item>
-                <Item key={'duplicate'}>Duplicate</Item>
                 <Item key={'delete'}>Delete</Item>
             </Menu>
         </MenuTrigger>

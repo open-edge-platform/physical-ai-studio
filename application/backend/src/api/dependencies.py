@@ -22,6 +22,7 @@ from services.event_processor import EventProcessor
 from services.job_service import JobService
 from services.log_service import LogService
 from services.robot_calibration_service import RobotCalibrationService
+from services.system_service import SystemService
 from settings import get_settings
 from utils.serial_robot_tools import RobotConnectionManager
 from workers.camera_worker_registry import CameraWorkerRegistry
@@ -40,6 +41,12 @@ def is_valid_uuid(identifier: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+@lru_cache
+def get_system_service() -> SystemService:
+    """Provide a SystemService instance for querying system hardware."""
+    return SystemService()
 
 
 @lru_cache
