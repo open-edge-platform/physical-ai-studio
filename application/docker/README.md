@@ -6,7 +6,7 @@ Docker container with support for CPU, Intel XPU, and NVIDIA CUDA hardware.
 
 ## Prerequisites
 
-- **Docker Engine** 24+ with **Docker Compose** v2
+- [**Docker Engine**](https://docs.docker.com/engine/install/ubuntu/) 24+ with **Docker Compose** v2
 - A supported hardware backend:
   - **CPU** — any x86_64 system (default)
   - **Intel XPU** — Intel discrete/integrated GPU with Level Zero drivers on the host
