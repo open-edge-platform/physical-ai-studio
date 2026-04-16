@@ -113,7 +113,7 @@ class Pi0Model(Model):
         time_max_period: float = 4.0,
         preprocessor: Pi0Preprocessor | None = None,
         postprocessor: Pi0Postprocessor | None = None,
-        compile_model: bool = False,  # noqa: FBT001, FBT002
+        compile_model: bool = False,
     ) -> None:
         """Initialize Pi0Model."""
         super().__init__()

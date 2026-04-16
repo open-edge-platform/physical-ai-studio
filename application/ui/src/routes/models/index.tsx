@@ -18,6 +18,7 @@ import useWebSocket from 'react-use-websocket';
 
 import { $api, fetchClient } from '../../api/client';
 import { SchemaTrainJob as SchemaJob, SchemaModel } from '../../api/openapi-spec';
+import { notify } from '../../components/notification/notification.component';
 import { LogsDialog } from '../../features/logs/logs-dialog';
 import { useProjectId } from '../../features/projects/use-project';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
@@ -166,6 +167,11 @@ export const Index = () => {
             }
 
             updateJob(message.data as SchemaTrainJob);
+
+            if (message.data.message && message.data.status === 'running') {
+                notify('info', message.data.message);
+            }
+
             if (message.data.status === 'completed') {
                 client.invalidateQueries({ queryKey: ['get', '/api/projects/{project_id}/models'] });
             }
