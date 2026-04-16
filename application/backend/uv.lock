@@ -3054,6 +3054,8 @@ so101 = [
 requires-dist = [
     { name = "feetech-servo-sdk", marker = "extra == 'so101'" },
     { name = "loguru", specifier = ">=0.7" },
+    { name = "matplotlib", marker = "extra == 'notebooks'" },
+    { name = "matplotlib-inline", marker = "extra == 'notebooks'" },
     { name = "mypy", marker = "extra == 'tests'" },
     { name = "numpy", specifier = ">=1.24" },
     { name = "omni-camera", git = "https://github.com/ArendJanKramer/OmniCamera.git?rev=master" },
@@ -3066,10 +3068,12 @@ requires-dist = [
     { name = "physicalai", extras = ["trossen"], marker = "extra == 'robots'" },
     { name = "physicalai", extras = ["ur"], marker = "extra == 'robots'" },
     { name = "pydantic", specifier = ">=2.5" },
+    { name = "pyrealsense2", marker = "sys_platform != 'darwin' and extra == 'realsense'" },
+    { name = "pyrealsense2-macosx", marker = "sys_platform == 'darwin' and extra == 'realsense'" },
     { name = "pytest", marker = "extra == 'tests'" },
     { name = "pyturbojpeg", marker = "sys_platform == 'linux'", specifier = "<2" },
 ]
-provides-extras = ["tests", "realsense", "basler", "genicam", "capture", "ur", "abb", "franka", "trossen", "so101", "robots"]
+provides-extras = ["tests", "notebooks", "realsense", "basler", "genicam", "capture", "ur", "abb", "franka", "trossen", "so101", "robots"]
 
 [package.metadata.requires-dev]
 dev = [
