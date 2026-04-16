@@ -108,6 +108,7 @@ class ACT(ExportableModelMixin, Model):
             dropout (float, optional): Dropout rate. Defaults to 0.1.
             kl_weight (float, optional): Weight for KL divergence loss in VAE. Defaults to 10.0.
             n_obs_steps (int, optional): Number of observation steps. Defaults to 1.
+            compile_model (bool, optional): Whether to apply torch.compile to the model. Defaults to False.
 
         Raises:
             ValueError: If the number of state observation features is not exactly one.

@@ -124,6 +124,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
             use_random_input_noise: Whether to use random noise as the initial input for the
                 denoising process during inference. If False, zeros are used instead.
             tokenizer_max_length: Maximum token length for the tokenizer. Default: 48.
+            compile_model: Whether to apply torch.compile to the model.
         """
         super().__init__()
         self._chunk_size = chunk_size

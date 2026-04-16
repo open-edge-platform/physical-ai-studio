@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import queue
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -13,12 +13,14 @@ import pytest
 
 # Pre-import to break circular dependency: scheduler -> training_worker -> scheduler
 import core.scheduler  # noqa: F401
-
 from schemas.base_job import JobStatus, JobType
 from schemas.dataset import Snapshot
-from schemas.job import TrainJobPayload, TrainingPrecision
+from schemas.job import TrainingPrecision, TrainJobPayload
 from schemas.model import Model
 from services.event_processor import EventType
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 MODULE = "workers.training_worker"
@@ -110,7 +112,7 @@ def interrupt_event():
 @pytest.fixture
 def worker(stop_event, interrupt_event, event_queue):
     """Build a minimal TrainingWorker without triggering circular imports from scheduler."""
-    from workers.training_worker import TrainingWorker
+    from workers.training_worker import TrainingWorker  # noqa: PLC0415
 
     w = object.__new__(TrainingWorker)
     w._stop_event = stop_event
@@ -235,7 +237,7 @@ class TestCompileFallback:
             patch(f"{MODULE}.setup_policy", return_value=policy) as mock_setup,
             patch(f"{MODULE}.Trainer", return_value=trainer),
             patch(f"{MODULE}.JobService") as MockJobService,
-            patch(f"{MODULE}.ModelService") as MockModelService,
+            patch(f"{MODULE}.ModelService"),
             patch(f"{MODULE}.LeRobotDataModule"),
             patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
             patch(f"{MODULE}.CSVLogger"),

@@ -241,7 +241,8 @@ const TrainingParameters = ({
                         <Heading>Auto scale batch size</Heading>
                         <Content>
                             <Text>
-                                Automatically finds the largest batch size that fits in GPU memory before training starts.
+                                Automatically finds the largest batch size that fits in GPU memory before training
+                                starts.
                             </Text>
                         </Content>
                     </ContextualHelp>
@@ -260,8 +261,8 @@ const TrainingParameters = ({
                         <Heading>Max steps</Heading>
                         <Content>
                             <Text>
-                                Total number of gradient update steps. Training will stop after this many steps regardless
-                                of epochs.
+                                Total number of gradient update steps. Training will stop after this many steps
+                                regardless of epochs.
                             </Text>
                         </Content>
                     </ContextualHelp>
@@ -325,9 +326,9 @@ const TrainingParameters = ({
                         <Heading>Compile model</Heading>
                         <Content>
                             <Text>
-                                Enables torch.compile for all policies. Can significantly speed up training after an initial
-                                compilation warmup, but increases startup time. If compilation fails, training automatically
-                                retries without compilation.
+                                Enables torch.compile for all policies. Can significantly speed up training after an
+                                initial compilation warmup, but increases startup time. If compilation fails, training
+                                automatically retries without compilation.
                             </Text>
                         </Content>
                     </ContextualHelp>
