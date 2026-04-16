@@ -115,10 +115,12 @@ const JobList = ({ jobs, onViewLogs }: { jobs: SchemaTrainJob[]; onViewLogs: (jo
     );
 };
 
-const useProjectJobs = (project_id: string): SchemaJob[] => {
-    const { data: allJobs } = $api.useQuery('get', '/api/jobs');
+const useProjectTrainingJobs = (project_id: string): SchemaJob[] => {
+    const { data: allJobs = [] } = $api.useQuery('get', '/api/jobs');
 
-    return allJobs?.filter((j) => j.project_id === project_id) ?? [];
+    return allJobs
+        .filter((job) => job.project_id === project_id)
+        .filter((job): job is SchemaJob => job.type === 'training');
 };
 
 export const Index = () => {
@@ -127,7 +129,7 @@ export const Index = () => {
         params: { path: { project_id } },
     });
 
-    const jobs = useProjectJobs(project_id);
+    const jobs = useProjectTrainingJobs(project_id);
     const [retrainModel, setRetrainModel] = useState<SchemaModel | null>(null);
     const [logsSourceId, setLogsSourceId] = useState<string | undefined>();
 
