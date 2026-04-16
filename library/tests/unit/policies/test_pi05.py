@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 import torch
 from physicalai.config import Config
+from physicalai.data.observation import IMAGES, STATE
 from physicalai.policies.pi05 import Pi05, Pi05Config, Pi05Model
 from physicalai.policies.pi05.pretrained_utils import (
     convert_normalization_stats,
@@ -317,6 +318,23 @@ class TestModelUtilities:
         result = _resize_with_pad_torch(img, 224, 224)
         assert result.dtype == torch.uint8
         assert result.shape == (2, 224, 224, 3)
+
+    def test_preprocess_images_pops_source_keys(self) -> None:
+        """Test _preprocess_images removes original image keys from batch."""
+        from physicalai.policies.pi05.preprocessor import Pi05Preprocessor
+
+        prep = Pi05Preprocessor(image_resolution=(64, 64))
+        batch = {
+            STATE: torch.randn(1, 4),
+            f"{IMAGES}.0": torch.rand(1, 3, 48, 48),
+            f"{IMAGES}.1": torch.rand(1, 3, 32, 64),
+        }
+        images, masks = prep._preprocess_images(batch)
+
+        assert f"{IMAGES}.0" not in batch
+        assert f"{IMAGES}.1" not in batch
+        assert len(images) == 2
+        assert len(masks) == 2
 
     def test_resize_with_pad_unsupported_dtype(self) -> None:
         """Test resize_with_pad raises error for unsupported dtype."""

@@ -246,6 +246,7 @@ class Pi05Preprocessor(torch.nn.Module):
         max_image_dim = 5
         for key in batch_img_keys:
             img = batch[key][:, -1, :, :, :] if batch[key].ndim == max_image_dim else batch[key]
+            batch.pop(key)
 
             if img.dtype != torch.float32:
                 img = img.to(torch.float32)

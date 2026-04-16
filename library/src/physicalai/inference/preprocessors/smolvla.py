@@ -52,8 +52,15 @@ class ResizeSmolVLA(Preprocessor):
             - IMAGE_MASKS: Boolean masks of shape (batch_size, height, width) indicating
                              valid image regions (all ones for padded images).
         """
-        img_keys = [key for key in inputs if key.startswith(IMAGES)]
-        images = [inputs[img_keys[0]]] if len(img_keys) == 1 else [inputs[key] for key in img_keys]
+        inputs = dict(inputs)
+
+        if IMAGES in inputs and isinstance(inputs[IMAGES], np.ndarray):
+            images = [inputs[IMAGES]]
+        elif IMAGES in inputs and isinstance(inputs[IMAGES], dict):
+            images = list(inputs[IMAGES].values())
+        else:
+            img_keys = [key for key in inputs if key.startswith(IMAGES)]
+            images = [inputs[img_keys[0]]] if len(img_keys) == 1 else [inputs[key] for key in img_keys]
 
         img_masks = []
         resized_images = []

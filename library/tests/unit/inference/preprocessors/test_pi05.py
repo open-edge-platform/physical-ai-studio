@@ -93,6 +93,17 @@ class TestPi05PreprocessorImages:
         assert result[IMAGES].shape[3] == 64
         assert result[IMAGES].shape[4] == 64
 
+    def test_dict_images_stacked(self, preprocessor) -> None:
+        inputs = _make_inputs()
+        inputs[IMAGES] = {
+            "top": np.random.rand(1, 3, 48, 48).astype(np.float32),
+            "wrist": np.random.rand(1, 3, 32, 64).astype(np.float32),
+        }
+        result = preprocessor(inputs)
+        assert result[IMAGES].shape == (2, 1, 3, 64, 64)
+        assert result[IMAGE_MASKS].shape == (2, 1)
+        assert result[IMAGE_MASKS].all()
+
     def test_empty_cameras_appended(self) -> None:
         prep = Pi05Preprocessor(image_resolution=(64, 64), empty_cameras=1)
         inputs = _make_inputs()
