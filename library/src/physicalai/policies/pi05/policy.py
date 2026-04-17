@@ -572,9 +572,11 @@ class Pi05(ExportablePolicyMixin, Policy):
             eps=self.config.optimizer_eps,
         )
 
+        num_training_steps = self.trainer.estimated_stepping_batches
+
         num_decay_steps = self.config.scheduler_decay_steps
         if num_decay_steps is None:
-            num_decay_steps = self.trainer.estimated_stepping_batches
+            num_decay_steps = num_training_steps
             msg = f"scheduler_decay_steps=None, using total training steps: {num_decay_steps}"
             logger.info(msg)
 
@@ -584,6 +586,7 @@ class Pi05(ExportablePolicyMixin, Policy):
             decay_lr=self.config.scheduler_decay_lr,
             num_warmup_steps=self.config.scheduler_warmup_steps,
             num_decay_steps=num_decay_steps,
+            num_training_steps=num_training_steps,
         )
 
         return {
