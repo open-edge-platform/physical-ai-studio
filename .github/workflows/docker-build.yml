@@ -100,9 +100,9 @@ jobs:
           COMPOSE_PROFILES=${DEVICE}
           # CI runners don't have actual hardware devices, so exact GIDs don't matter
           DIALOUT_GID=1000
-          PLUGDEV_GID=1000
-          VIDEO_GID=1000
-          RENDER_GID=1000
+          PLUGDEV_GID=1001
+          VIDEO_GID=1002
+          RENDER_GID=1003
           EOF
 
           echo "Starting service ${SERVICE_NAME} via docker compose..."
