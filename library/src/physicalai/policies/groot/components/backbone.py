@@ -557,7 +557,7 @@ class EagleProcessor:
             str(cache_dir),
             trust_remote_code=True,
         )
-        # Set left padding for decoder-style models
+
         processor.tokenizer.padding_side = "left"
         return processor
 
@@ -599,13 +599,13 @@ class EagleProcessor:
         eagle_inputs = self.processor(
             text=text_list,
             images=image_inputs,
+            text_kwargs={"padding": True, "return_tensors": return_tensors},
             images_kwargs={
                 "min_dynamic_tiles": self.min_dynamic_tiles,
                 "max_dynamic_tiles": self.max_dynamic_tiles,
                 "use_thumbnail": self.use_thumbnail,
+                "return_tensors": return_tensors,
             },
-            return_tensors=return_tensors,
-            padding=True,
         )
 
         # Prefix keys with eagle_
@@ -650,13 +650,13 @@ class EagleProcessor:
         eagle_inputs = self.processor(
             text=all_text,
             images=all_images,
+            text_kwargs={"padding": True, "return_tensors": return_tensors},
             images_kwargs={
                 "min_dynamic_tiles": self.min_dynamic_tiles,
                 "max_dynamic_tiles": self.max_dynamic_tiles,
                 "use_thumbnail": self.use_thumbnail,
+                "return_tensors": return_tensors,
             },
-            return_tensors=return_tensors,
-            padding=True,
         )
 
         return {f"eagle_{k}": v for k, v in eagle_inputs.items()}

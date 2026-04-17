@@ -91,11 +91,11 @@ interface PolicySelectionProps {
     selectedPolicy: string;
     onSelectionChange: (policy: string) => void;
     isDisabled?: boolean;
+    trainingDevice: SchemaDeviceInfo | null;
 }
 
-const PolicySelection = ({ selectedPolicy, onSelectionChange, isDisabled }: PolicySelectionProps) => {
-    const bestDevice = useBestTrainingDevice();
-    const availableVram = bestDevice?.memory ?? 0;
+const PolicySelection = ({ selectedPolicy, onSelectionChange, isDisabled, trainingDevice }: PolicySelectionProps) => {
+    const availableVram = trainingDevice?.memory ?? 0;
 
     const selectedModel = MODELS.find((m) => m.id === selectedPolicy) ?? null;
     const hasInsufficientVram = selectedModel !== null && availableVram > 0 && selectedModel.minVRAM > availableVram;
@@ -203,6 +203,7 @@ interface TrainingParametersProps {
     onPrecisionChange: (value: Key | null) => void;
     compileModel: boolean;
     onCompileModelChange: (value: boolean) => void;
+    isAutoScaleBatchDisabled: boolean;
 }
 
 const TrainingParameters = ({
@@ -218,6 +219,7 @@ const TrainingParameters = ({
     onPrecisionChange,
     compileModel,
     onCompileModelChange,
+    isAutoScaleBatchDisabled,
 }: TrainingParametersProps) => (
     <Flex direction='column' gap='size-150' width='100%'>
         <Flex direction='row' gap='size-150' width='100%'>
@@ -230,11 +232,15 @@ const TrainingParameters = ({
                     maxValue={256}
                     step={1}
                     width='100%'
-                    isDisabled={autoScaleBatchSize}
+                    isDisabled={autoScaleBatchSize || isAutoScaleBatchDisabled}
                     flex
                 />
                 <Flex direction='row' gap='size-100' alignItems='center'>
-                    <Checkbox isSelected={autoScaleBatchSize} onChange={onAutoScaleBatchSizeChange}>
+                    <Checkbox
+                        isSelected={autoScaleBatchSize}
+                        onChange={onAutoScaleBatchSizeChange}
+                        isDisabled={isAutoScaleBatchDisabled}
+                    >
                         Auto scale batch size
                     </Checkbox>
                     <ContextualHelp variant='info'>
@@ -242,7 +248,7 @@ const TrainingParameters = ({
                         <Content>
                             <Text>
                                 Automatically finds the largest batch size that fits in GPU memory before training
-                                starts.
+                                starts. On XPU auto batch size is disabled.
                             </Text>
                         </Content>
                     </ContextualHelp>
@@ -336,10 +342,11 @@ const TrainingParameters = ({
                 </Flex>
             </Flex>
         </Flex>
-    </Flex>
 );
 
 export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: TrainModelDialogProps) => {
+    const bestDevice = useBestTrainingDevice();
+
     const defaultName = baseModel?.name ?? '';
     const defaultDatasetId = baseModel?.dataset_id ?? null;
     const extraPayload = baseModel ? { base_model_id: baseModel.id! } : undefined;
@@ -352,7 +359,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
     const [maxSteps, setMaxSteps] = useState<number>(defaultMaxSteps);
     const [batchSize, setBatchSize] = useState<number>(8);
     const [numWorkers, setNumWorkers] = useState<Key | null>('auto');
-    const [autoScaleBatchSize, setAutoScaleBatchSize] = useState<boolean>(true);
+    const [autoScaleBatchSize, setAutoScaleBatchSize] = useState<boolean>(bestDevice?.type === 'cuda');
     const [precision, setPrecision] = useState<Key | null>('default');
     const [compileModel, setCompileModel] = useState<boolean>(false);
 
@@ -424,12 +431,14 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
                             selectedPolicy={selectedPolicy}
                             onSelectionChange={setSelectedPolicy}
                             isDisabled={baseModel !== undefined}
+                            trainingDevice={bestDevice}
                         />
 
                         <Disclosure
                             isQuiet
                             UNSAFE_style={{ padding: 0 }}
                             UNSAFE_className={classes.advancedSettingsDisclosure}
+                            defaultExpanded={bestDevice?.type !== 'cuda'}
                         >
                             <DisclosureTitle UNSAFE_style={{ fontSize: 13, padding: '4px 0' }}>
                                 Advanced settings
@@ -448,6 +457,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
                                     onPrecisionChange={setPrecision}
                                     compileModel={compileModel}
                                     onCompileModelChange={setCompileModel}
+                                    isAutoScaleBatchDisabled={bestDevice?.type !== 'cuda'}
                                 />
                             </DisclosurePanel>
                         </Disclosure>

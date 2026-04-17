@@ -354,15 +354,9 @@ class SmolVLAModel(ExportableModelMixin, Model):
             {'output_names': ['action']}
         """
         extra_args: dict[str, ExportParameters] = {}
-        preproc_specs = [
+        base_preproc_specs = [
             ComponentSpec(type="smolvla_resize", image_resolution=self._resize_imgs_with_padding),
             ComponentSpec(type="new_line"),
-            ComponentSpec(
-                type="hf_tokenizer",
-                tokenizer_name=self._vlm_model_name,
-                revision="7b375e1b73b11138ff12fe22c8f2822d8fe03467",
-                max_token_len=self._tokenizer_max_length,
-            ),
         ]
         postproc_specs = [
             ComponentSpec(
@@ -373,18 +367,32 @@ class SmolVLAModel(ExportableModelMixin, Model):
         ]
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
-                "output_names": ["action"],
+                "output_names": [ACTION],
             },
-            preprocessors_specs=preproc_specs,
+            preprocessors_specs=[
+                *base_preproc_specs,
+                ComponentSpec(
+                    type="hf_tokenizer",
+                    tokenizer_name=self._vlm_model_name,
+                    revision="7b375e1b73b11138ff12fe22c8f2822d8fe03467",
+                    max_token_len=self._tokenizer_max_length,
+                ),
+            ],
             postprocessors_specs=postproc_specs,
             export_tokenizer=False,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
-            outputs=["action"],
+            outputs=[ACTION],
             compress_to_fp16=False,
-            export_tokenizer=False,
+            export_tokenizer=True,
             exporter_kwargs={},
-            preprocessors_specs=preproc_specs,
+            preprocessors_specs=[
+                *base_preproc_specs,
+                ComponentSpec(
+                    type="ov_tokenizer",
+                    artifact="tokenizer.xml",
+                ),
+            ],
             postprocessors_specs=postproc_specs,
         )
         extra_args["torch"] = TorchExportParameters()
@@ -1358,15 +1366,16 @@ class _SmolVLMWithExpertModel(nn.Module):
         lm_expert_config.hidden_size = int(hidden_size * expert_width_multiplier)  # hidden_size // 2
         lm_expert_config.intermediate_size = _get_intermediate_size(int(hidden_size * expert_width_multiplier))
         lm_expert_config.num_hidden_layers = self.num_vlm_layers
-        if num_expert_layers > 0 and len(self.get_vlm_model().text_model.layers) % num_expert_layers == 0:
+        if num_expert_layers > 0:
+            if len(self.get_vlm_model().text_model.layers) % num_expert_layers != 0:
+                msg = (
+                    f"Number of layers in the VLM {len(self.get_vlm_model().text_model.layers)} are "
+                    f"not multiple of num_expert_layers {num_expert_layers}"
+                )
+                raise RuntimeError(msg)
             lm_expert_config.num_hidden_layers = num_expert_layers
-            msg = (
-                f"Number of layers in the VLM {len(self.get_vlm_model().text_model.layers)} are "
-                f"not multiple of num_expert_layers {num_expert_layers}"
-            )
-            raise RuntimeError(msg)
-        self.lm_expert = auto_model_cls.from_config(lm_expert_config)
 
+        self.lm_expert = auto_model_cls.from_config(lm_expert_config)
         self.num_expert_layers = len(self.lm_expert.layers)
         self.self_attn_every_n_layers = self_attn_every_n_layers
         if "cross" in attention_mode:
