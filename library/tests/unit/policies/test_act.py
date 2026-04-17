@@ -121,6 +121,7 @@ class TestACTolicy:
         input_batch = copy.deepcopy(batch).to_dict()
         input_batch["images"] = input_batch["images"].to(dtype)
         input_batch["state"] = input_batch["state"].to(dtype)
+        input_batch["action"] = input_batch["action"].to(dtype)
 
         actions = eval_policy.model(input_batch)
         assert isinstance(actions, torch.Tensor)
