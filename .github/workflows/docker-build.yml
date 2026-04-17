@@ -82,47 +82,68 @@ jobs:
           # cache export to avoid 403 errors from GHCR.
           cache-write: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
 
-      - name: Smoke-test docker image via compose
+      - name: Smoke-test docker image
         env:
           IMAGE: ${{ steps.docker_build.outputs.image-name }}
           DEVICE: ${{ matrix.device }}
         working-directory: application/docker
         run: |
           SERVICE_NAME="physical-ai-studio-${DEVICE}"
-          DEVICE_UPPER=$(echo "${DEVICE}" | tr '[:lower:]' '[:upper:]')
-          IMAGE_VAR="${DEVICE_UPPER}_IMAGE"
+          
+          # CUDA requires GPU hardware, test with docker run instead of compose
+          # CPU and XPU test via compose to validate the full deployment config
+          if [ "${DEVICE}" = "cuda" ]; then
+            docker run -d --name "${SERVICE_NAME}" -p 7860:7860 "${IMAGE}"
+            CLEANUP_CMD="docker rm -f ${SERVICE_NAME}"
+          else
+            DEVICE_UPPER=$(echo "${DEVICE}" | tr '[:lower:]' '[:upper:]')
+            IMAGE_VAR="${DEVICE_UPPER}_IMAGE"
 
-          # Create minimal .env for CI testing
-          cat > .env << EOF
+            # Create minimal .env for CI testing
+            cat > .env << EOF
           ${IMAGE_VAR}=${IMAGE}
           HOST=0.0.0.0
           PORT=7860
           COMPOSE_PROFILES=${DEVICE}
-          # CI runners don't have actual hardware devices, so exact GIDs don't matter
+          # Use unique numeric GIDs to avoid group resolution issues
           DIALOUT_GID=1000
           PLUGDEV_GID=1001
           VIDEO_GID=1002
           RENDER_GID=1003
           EOF
 
-          echo "Starting service ${SERVICE_NAME} via docker compose..."
-          docker compose up -d
+            echo "Starting service ${SERVICE_NAME} via docker compose..."
+            docker compose up -d
+            CLEANUP_CMD="docker compose down -v"
+          fi
 
-          # Wait for health check to pass
-          echo "Waiting for container health check..."
+          # Wait for health check to pass (compose) or /health endpoint (docker run)
+          echo "Waiting for service to be ready..."
           for i in $(seq 1 30); do
-            STATUS=$(docker inspect --format='{{.State.Health.Status}}' "${SERVICE_NAME}" 2>/dev/null || echo "starting")
-            echo "Health status: ${STATUS}"
-
-            if [ "${STATUS}" = "healthy" ]; then
-              echo "✅ Container is healthy!"
-              break
+            if [ "${DEVICE}" = "cuda" ]; then
+              # For docker run, check the health endpoint directly
+              if curl -sf http://localhost:7860/api/health > /dev/null 2>&1; then
+                echo "Backend health check passed!"
+                break
+              fi
+            else
+              # For compose, check Docker's health status
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' "${SERVICE_NAME}" 2>/dev/null || echo "starting")
+              echo "Health status: ${STATUS}"
+              if [ "${STATUS}" = "healthy" ]; then
+                echo "Backend health check passed!"
+                break
+              fi
             fi
 
             if [ "$i" -eq 30 ]; then
-              echo "❌ Health check failed after 60 seconds."
-              docker compose logs
-              docker compose down -v
+              echo "Backend health check failed after 60 seconds."
+              if [ "${DEVICE}" = "cuda" ]; then
+                docker logs "${SERVICE_NAME}"
+              else
+                docker compose logs
+              fi
+              eval "${CLEANUP_CMD}"
               exit 1
             fi
             sleep 2
@@ -140,18 +161,23 @@ jobs:
             echo "❌ HTML title check failed - expected title '$EXPECTED_TITLE' not found"
             echo "Actual HTML content:"
             echo "$HTML_CONTENT"
-            docker compose logs
-            docker compose down -v
+            if [ "${DEVICE}" = "cuda" ]; then
+              docker logs "${SERVICE_NAME}"
+            else
+              docker compose logs
+            fi
+            eval "${CLEANUP_CMD}"
             exit 1
           fi
 
-          # Verify volumes were created
-          echo "Checking volumes..."
-          docker volume ls | grep physical-ai-studio-data || { echo "❌ Data volume missing"; docker compose down -v; exit 1; }
-          docker volume ls | grep physical-ai-studio-storage || { echo "❌ Storage volume missing"; docker compose down -v; exit 1; }
-          echo "✅ Volumes created successfully"
+          # Verify volumes were created (compose only)
+          if [ "${DEVICE}" != "cuda" ]; then
+            docker volume ls | grep physical-ai-studio-data || { echo "Data volume missing"; eval "${CLEANUP_CMD}"; exit 1; }
+            docker volume ls | grep physical-ai-studio-storage || { echo "Storage volume missing"; eval "${CLEANUP_CMD}"; exit 1; }
+            echo "Volumes created successfully"
+          fi
 
-          docker compose down -v
+          eval "${CLEANUP_CMD}"
 
       - name: Get Docker image size
         id: image_size
