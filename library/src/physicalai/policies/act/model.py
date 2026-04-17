@@ -750,10 +750,7 @@ class _ACT(nn.Module):
 
             # Sample the latent with the reparameterization trick during training.
             # In eval/validation mode use the mean directly for deterministic behavior.
-            if self.training:
-                latent_sample = mu + log_sigma_x2.div(2).exp() * torch.randn_like(mu)
-            else:
-                latent_sample = mu
+            latent_sample = mu + log_sigma_x2.div(2).exp() * torch.randn_like(mu) if self.training else mu
         else:
             # When not using the VAE encoder, we set the latent to be all zeros.
             mu = log_sigma_x2 = None
