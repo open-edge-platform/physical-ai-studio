@@ -703,7 +703,7 @@ class _ACT(nn.Module):
         batch_size = batch[STATE].shape[0]
 
         # Prepare the latent for input to the transformer encoder.
-        if self.config.use_vae and ACTION in batch and self.training:
+        if self.config.use_vae and ACTION in batch:
             # Prepare the input to the VAE encoder: [cls, *joint_space_configuration, *action_sequence].
             cls_embed = einops.repeat(
                 self.vae_encoder_cls_embed.weight,
@@ -748,8 +748,12 @@ class _ACT(nn.Module):
             # This is 2log(sigma). Done this way to match the original implementation.
             log_sigma_x2 = latent_pdf_params[:, self.config.latent_dim :]
 
-            # Sample the latent with the reparameterization trick.
-            latent_sample = mu + log_sigma_x2.div(2).exp() * torch.randn_like(mu)
+            # Sample the latent with the reparameterization trick during training.
+            # In eval/validation mode use the mean directly for deterministic behavior.
+            if self.training:
+                latent_sample = mu + log_sigma_x2.div(2).exp() * torch.randn_like(mu)
+            else:
+                latent_sample = mu
         else:
             # When not using the VAE encoder, we set the latent to be all zeros.
             mu = log_sigma_x2 = None
