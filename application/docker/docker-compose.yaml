@@ -118,7 +118,7 @@ services:
     <<: *common
     profiles: [cpu]
     container_name: physical-ai-studio-cpu
-    image: ${CPU_IMAGE:-${REGISTRY:-ghcr.io/open-edge-platform/}physical-ai-studio-cpu:${IMAGE_TAG:-main}}
+    image: ${REGISTRY:-ghcr.io/open-edge-platform/}physical-ai-studio-cpu:${IMAGE_TAG:-main}
     build:
       <<: *common-build
       target: physical-ai-studio-cpu
@@ -127,7 +127,7 @@ services:
     <<: *common
     profiles: [xpu]
     container_name: physical-ai-studio-xpu
-    image: ${XPU_IMAGE:-${REGISTRY:-ghcr.io/open-edge-platform/}physical-ai-studio-xpu:${IMAGE_TAG:-main}}
+    image: ${REGISTRY:-ghcr.io/open-edge-platform/}physical-ai-studio-xpu:${IMAGE_TAG:-main}
     build:
       <<: *common-build
       target: physical-ai-studio-xpu
@@ -146,7 +146,7 @@ services:
     <<: *common
     profiles: [cuda]
     container_name: physical-ai-studio-cuda
-    image: ${CUDA_IMAGE:-${REGISTRY:-ghcr.io/open-edge-platform/}physical-ai-studio-cuda:${IMAGE_TAG:-main}}
+    image: ${REGISTRY:-ghcr.io/open-edge-platform/}physical-ai-studio-cuda:${IMAGE_TAG:-main}
     build:
       <<: *common-build
       target: physical-ai-studio-cuda

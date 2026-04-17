@@ -96,15 +96,21 @@ jobs:
             docker run -d --name "${SERVICE_NAME}" -p 7860:7860 "${IMAGE}"
             CLEANUP_CMD="docker rm -f ${SERVICE_NAME}"
           else
-            DEVICE_UPPER=$(echo "${DEVICE}" | tr '[:lower:]' '[:upper:]')
-            IMAGE_VAR="${DEVICE_UPPER}_IMAGE"
+            echo "Testing ${IMAGE} via docker compose..."
+
+            # Extract registry and tag from the built image name
+            # IMAGE format: registry/org/name:tag
+            # Example: ghcr.io/open-edge-platform/physical-ai-studio-cpu:sha-abc123
+            REGISTRY=$(echo "${IMAGE}" | sed 's|\(.*\)/[^/]*$|\1/|')
+            IMAGE_TAG=$(echo "${IMAGE}" | sed 's|.*:||')
 
             # Create minimal .env for CI testing
             cat > .env << EOF
-          ${IMAGE_VAR}=${IMAGE}
           HOST=0.0.0.0
           PORT=7860
           COMPOSE_PROFILES=${DEVICE}
+          REGISTRY=${REGISTRY}
+          IMAGE_TAG=${IMAGE_TAG}
           # Use unique numeric GIDs to avoid group resolution issues
           DIALOUT_GID=1000
           PLUGDEV_GID=1001
