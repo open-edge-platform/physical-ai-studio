@@ -342,6 +342,7 @@ const TrainingParameters = ({
                 </Flex>
             </Flex>
         </Flex>
+    </Flex>
 );
 
 export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: TrainModelDialogProps) => {

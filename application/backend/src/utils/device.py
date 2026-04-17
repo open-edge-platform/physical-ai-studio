@@ -33,11 +33,10 @@ def get_lightning_strategy(device: str | None = None) -> str:
     ``'auto'``.  When *device* is ``None`` the decision is based on
     hardware auto-detection.
     """
-    if device is not None:
-        if device == "xpu":
-            import physicalai.devices.xpu
+    if device is not None and device == "xpu":
+        import physicalai.devices.xpu  # noqa: F401
 
-            return "xpu_single"
+        return "xpu_single"
     return "auto"
 
 
@@ -54,12 +53,3 @@ def get_default_precision(device: str) -> str | None:
     Lightning choose (which resolves to ``"32-true"``).
     """
     return _DEFAULT_PRECISION_BY_DEVICE.get(device)
-
-    import torch
-
-    if torch.xpu.is_available():
-        import physicalai.devices.xpu  # noqa: F401 — registers XPU accelerator/strategy with Lightning
-
-        return "xpu_single"
-
-    return "auto"

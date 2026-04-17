@@ -116,7 +116,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         max_period: float = 4.0,
         use_random_input_noise: bool = False,
         # Compilation
-        compile_model: bool = False,  # noqa: FBT001, FBT002
+        compile_model: bool = False,
         # Decoding
         num_steps: int = 10,
         # Attention utils
