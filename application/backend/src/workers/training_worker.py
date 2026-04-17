@@ -132,7 +132,7 @@ class TrainingWorker(BaseProcessWorker):
             )
 
             if base_model is not None:
-                policy = load_policy(base_model)
+                policy = load_policy(base_model, compile_model=payload.compile_model)
             else:
                 policy = setup_policy(model, compile_model=payload.compile_model)
 
@@ -150,43 +150,8 @@ class TrainingWorker(BaseProcessWorker):
             )
             csv_logger = CSVLogger(path.parent, name=path.stem)
 
-            trainer = Trainer(
-                logger=csv_logger,
-                callbacks=[
-                    checkpoint_callback,
-                    TrainingTrackingCallback(
-                        shutdown_event=self._stop_event,
-                        interrupt_event=self.interrupt_event,
-                        dispatcher=dispatcher,
-                    ),
-                    TrainingLogCallback(),
-                ],
-                accelerator=accelerator,
-                strategy=get_lightning_strategy(device_type),
-                devices=[device_index] if device_index is not None else "auto",
-                max_steps=payload.max_steps,
-                auto_scale_batch_size=payload.auto_scale_batch_size,
-                precision=precision,
-                check_val_every_n_epoch=1,
-            )
-
-            dispatcher.start()
-
-            try:
-                trainer.fit(model=policy, datamodule=l_dm)
-            except Exception as fit_exc:
-                if not payload.compile_model:
-                    raise
-
-                logger.warning(f"Training with compile failed: {fit_exc} — retrying without compilation")
-                compile_fallback_msg = "Model compilation failed, falling back to non-compiled training."
-                job = await JobService.update_job_status(
-                    job_id=job.id, status=JobStatus.RUNNING, message=compile_fallback_msg
-                )
-                self.queue.put((EventType.JOB_UPDATE, job))
-
-                policy = setup_policy(model, compile_model=False)
-                trainer = Trainer(
+            def _create_trainer() -> Trainer:
+                return Trainer(
                     logger=csv_logger,
                     callbacks=[
                         checkpoint_callback,
@@ -205,6 +170,26 @@ class TrainingWorker(BaseProcessWorker):
                     precision=precision,
                     check_val_every_n_epoch=1,
                 )
+
+            trainer = _create_trainer()
+
+            dispatcher.start()
+
+            try:
+                trainer.fit(model=policy, datamodule=l_dm)
+            except Exception as fit_exc:
+                if not payload.compile_model:
+                    raise
+
+                logger.exception(f"Training with compile failed: {fit_exc} — retrying without compilation")
+                compile_fallback_msg = "Model compilation failed, falling back to non-compiled training."
+                job = await JobService.update_job_status(
+                    job_id=job.id, status=JobStatus.RUNNING, message=compile_fallback_msg
+                )
+                self.queue.put((EventType.JOB_UPDATE, job))
+
+                policy = setup_policy(model, compile_model=False)
+                trainer = _create_trainer()
                 trainer.fit(model=policy, datamodule=l_dm)
 
             for backend in settings.supported_backends:
