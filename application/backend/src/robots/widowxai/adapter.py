@@ -65,10 +65,8 @@ class WidowXAIAdapter(RobotClient):
 
         return result
 
-    def _state_to_action(self, joints: dict) -> tuple[np.ndarray, np.ndarray]:
-        num_joints = len(joints)
-        positions = np.zeros(num_joints)
-        velocities = np.zeros(num_joints)
+    def _state_to_action(self, joints: dict) -> np.ndarray:
+        positions = np.zeros(len(self._robot.joint_names))
 
         for i, name in enumerate(self._robot.joint_names):
             if name == "gripper":
@@ -76,9 +74,7 @@ class WidowXAIAdapter(RobotClient):
             else:
                 positions[i] = np.deg2rad(joints[f"{name}.pos"])
 
-            velocities[i] = joints.get(f"{name}.vel", 0.0)
-
-        return positions, velocities
+        return positions
 
     async def connect(self) -> None:
         logger.info(f"Connecting to WidowXAI {self._mode} at {self._robot.ip}")
@@ -114,15 +110,13 @@ class WidowXAIAdapter(RobotClient):
         if self._mode == "leader":
             raise RuntimeError("Cannot send actions to a leader arm")
 
-        positions, velocities = self._state_to_action(joints)
+        positions = self._state_to_action(joints)
 
         async with self._bus_lock, asyncio.timeout(HARDWARE_TIMEOUT_COMMAND):
             await asyncio.to_thread(
-                self._robot._require_driver().set_all_positions,
-                positions.tolist(),
-                goal_time,
-                False,
-                velocities.tolist(),
+                self._robot.send_action,
+                positions,
+                goal_time=goal_time,
             )
 
         return self._create_event("joints_state_was_set", joints=joints)

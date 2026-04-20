@@ -79,6 +79,7 @@ class WidowXAI(Robot):
         self._ip = ip
         self._role = role
         self._driver: TrossenArmDriver | None = None
+        self._last_positions: np.ndarray | None = None
 
     @property
     def joint_names(self) -> list[str]:
@@ -156,6 +157,7 @@ class WidowXAI(Robot):
             except Exception:  # noqa: BLE001
                 logger.warning("Error during WidowXAI cleanup; continuing.")
             self._driver = None
+            self._last_positions = None
 
     def get_observation(self) -> WidowXAIObservation:
         """Read current joint state and auxiliary sensor data.
@@ -207,7 +209,14 @@ class WidowXAI(Robot):
             raise ValueError(msg)
 
         driver = self._require_driver()
-        driver.set_all_positions(action.tolist(), goal_time, False)  # noqa: FBT003
+
+        if self._last_positions is not None:
+            velocities = ((action - self._last_positions) / goal_time).tolist()
+            driver.set_all_positions(action.tolist(), goal_time, False, velocities)  # noqa: FBT003
+        else:
+            driver.set_all_positions(action.tolist(), goal_time, False)  # noqa: FBT003
+
+        self._last_positions = action.copy()
 
     def is_connected(self) -> bool:
         """Return True when the SDK driver is configured."""
