@@ -5,7 +5,7 @@ from loguru import logger
 from robots.robot_client import RobotClient
 from schemas import NetworkIpRobotConfig
 from schemas.robot import RobotType
-
+from lerobot.robots.utils import ensure_safe_goal_position
 
 class TrossenWidowXAIFollower(RobotClient):
     _HOME_POSITION: list[float] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
@@ -24,6 +24,7 @@ class TrossenWidowXAIFollower(RobotClient):
             5: "wrist_roll",
             6: "gripper",
         }
+        self.max_relative_target = 0.25
         self.name = "trossen_widowx_ai_follower"
 
     @property
@@ -44,29 +45,30 @@ class TrossenWidowXAIFollower(RobotClient):
         return self._create_event("pong")
 
     async def set_joints_state(self, joints: dict, goal_time: float) -> dict:
-        positions = {key.removesuffix(".pos"): val for key, val in joints.items() if key.endswith(".pos")}
-        velocities = {key.removesuffix(".vel"): val for key, val in joints.items() if key.endswith(".vel")}
+        positions = {key.removesuffix(".pos"): np.deg2rad(val) if "gripper" not in key else val for key, val in joints.items() if key.endswith(".pos")}
 
-        ps = [0.0] * len(self.motor_names)
-        vs = [0.0] * len(self.motor_names)
+        present_pos = dict(
+            zip(
+                self.motor_names.values(),
+                self.driver.get_all_positions(),
+                strict=True,
+            )
+        )
+        goal_present_pos = {
+            key: (g_pos, present_pos[key]) for key, g_pos in positions.items()
+        }
+        goal_pos = ensure_safe_goal_position(
+            goal_present_pos, self.max_relative_target
+        )
 
-        # Map motor name / value pair into the right position of list
-        for p, v in positions.items():
-            i = next((k for k, v in self.motor_names.items() if v == p), None)
-            if i is not None:
-                ps[i] = np.deg2rad(v) if "gripper" not in p else v
-
-        # Map motor name / value pair into the right position of list
-        for p, v in velocities.items():
-            i = next((k for k, v in self.motor_names.items() if v == p), None)
-            if i is not None:
-                vs[i] = v
+        safe_pos = [
+                goal_pos[joint_name] for joint_name in self.motor_names.values()
+            ]
 
         self.driver.set_all_positions(
-            ps,  # type: ignore
-            goal_time,
+            safe_pos,
+            goal_time*3,
             False,
-            vs,  # type: ignore
         )
 
         return joints
@@ -170,8 +172,6 @@ class TrossenWidowXAIFollower(RobotClient):
             True,
             timeout=5,
         )
-        self.driver.set_all_modes(trossen_arm.Mode.position)
-
         self.driver.set_all_modes(trossen_arm.Mode.position)
         self.driver.set_all_positions(self._HOME_POSITION, 2.0, True)  # type: ignore
 
