@@ -95,7 +95,7 @@ class TestLiberoBenchmark:
     def test_init(self):
         with patch("physicalai.gyms.create_libero_gyms", return_value=[MagicMock() for _ in range(10)]):
             b = LiberoBenchmark(task_suite="libero_10", num_episodes=20)
-        assert b.task_suite == "libero_10" and len(b.gyms) == 10 and b.max_steps == 300
+        assert b.task_suite == "libero_10" and len(b.gyms) == 10 and b.max_steps == 520
 
     def test_task_ids_subset(self):
         with patch("physicalai.gyms.create_libero_gyms", return_value=[MagicMock() for _ in range(3)]):

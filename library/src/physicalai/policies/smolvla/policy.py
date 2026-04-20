@@ -205,11 +205,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         Called by both lazy (setup) and eager (checkpoint) paths.
 
         Args:
-            env_action_dim: Environment action dimension.
             dataset_stats: Dataset normalization statistics.
         """
-        from .preprocessor import make_smolvla_preprocessors  # noqa: PLC0415
-
         self.model = SmolVLAModel(
             dataset_stats,
             chunk_size=self.config.chunk_size,
@@ -237,6 +234,22 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             tokenizer_max_length=self.config.tokenizer_max_length,
         )
 
+        self._update_preprocessor_stats(dataset_stats)
+
+    def _update_preprocessor_stats(
+        self,
+        dataset_stats: dict[str, dict[str, list[float] | str | tuple]],
+    ) -> None:
+        """Rebuild pre- and postprocessors from dataset_stats.
+
+        Used on the fine-tuning path to replace pretrained normalization with
+        training-data statistics, and by _initialize_model on the lazy path.
+
+        Args:
+            dataset_stats: Dataset normalization statistics.
+        """
+        from .preprocessor import make_smolvla_preprocessors  # noqa: PLC0415
+
         self._preprocessor, self._postprocessor = make_smolvla_preprocessors(
             max_state_dim=self.config.max_state_dim,
             max_action_dim=self.config.max_action_dim,
@@ -260,9 +273,6 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         """
         del stage  # Unused argument
 
-        if self.model is not None:
-            return
-
         from physicalai.data.dataset import Dataset  # noqa: PLC0415
 
         datamodule = self.trainer.datamodule  # type: ignore[attr-defined]
@@ -273,6 +283,11 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             raise TypeError(msg)
 
         stats_dict = train_dataset.stats
+
+        if self.model is not None:
+            self._update_preprocessor_stats(stats_dict)
+            reformat_dataset_to_match_policy(self, datamodule)
+            return
 
         # Save to hparams for checkpoint
         self.hparams["dataset_stats"] = stats_dict

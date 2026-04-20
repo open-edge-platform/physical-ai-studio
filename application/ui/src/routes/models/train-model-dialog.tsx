@@ -13,7 +13,6 @@ import {
     DisclosureTitle,
     Divider,
     Flex,
-    Form,
     Heading,
     Item,
     Key,
@@ -21,7 +20,6 @@ import {
     Picker,
     StatusLight,
     Text,
-    TextField,
     View,
 } from '@geti-ui/ui';
 
@@ -91,11 +89,11 @@ interface PolicySelectionProps {
     selectedPolicy: string;
     onSelectionChange: (policy: string) => void;
     isDisabled?: boolean;
+    trainingDevice: SchemaDeviceInfo | null;
 }
 
-const PolicySelection = ({ selectedPolicy, onSelectionChange, isDisabled }: PolicySelectionProps) => {
-    const bestDevice = useBestTrainingDevice();
-    const availableVram = bestDevice?.memory ?? 0;
+const PolicySelection = ({ selectedPolicy, onSelectionChange, isDisabled, trainingDevice }: PolicySelectionProps) => {
+    const availableVram = trainingDevice?.memory ?? 0;
 
     const selectedModel = MODELS.find((m) => m.id === selectedPolicy) ?? null;
     const hasInsufficientVram = selectedModel !== null && availableVram > 0 && selectedModel.minVRAM > availableVram;
@@ -199,6 +197,7 @@ interface TrainingParametersProps {
     onNumWorkersChange: (value: Key | null) => void;
     autoScaleBatchSize: boolean;
     onAutoScaleBatchSizeChange: (value: boolean) => void;
+    isAutoScaleBatchDisabled: boolean;
 }
 
 const TrainingParameters = ({
@@ -210,6 +209,7 @@ const TrainingParameters = ({
     onNumWorkersChange,
     autoScaleBatchSize,
     onAutoScaleBatchSizeChange,
+    isAutoScaleBatchDisabled,
 }: TrainingParametersProps) => (
     <Flex direction='row' gap='size-150' width='100%'>
         <Flex direction='column' gap='size-150' width='100%'>
@@ -225,7 +225,11 @@ const TrainingParameters = ({
                 flex
             />
             <Flex direction='row' gap='size-100' alignItems='center'>
-                <Checkbox isSelected={autoScaleBatchSize} onChange={onAutoScaleBatchSizeChange}>
+                <Checkbox
+                    isSelected={autoScaleBatchSize}
+                    onChange={onAutoScaleBatchSizeChange}
+                    isDisabled={isAutoScaleBatchDisabled}
+                >
                     Auto scale batch size
                 </Checkbox>
                 <ContextualHelp variant='info'>
@@ -233,6 +237,7 @@ const TrainingParameters = ({
                     <Content>
                         <Text>
                             Automatically finds the largest batch size that fits in GPU memory before training starts.
+                            On XPU auto batch size is disabled.
                         </Text>
                     </Content>
                 </ContextualHelp>
@@ -287,19 +292,19 @@ const TrainingParameters = ({
 );
 
 export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: TrainModelDialogProps) => {
-    const defaultName = baseModel?.name ?? '';
+    const bestDevice = useBestTrainingDevice();
+
     const defaultDatasetId = baseModel?.dataset_id ?? null;
     const extraPayload = baseModel ? { base_model_id: baseModel.id! } : undefined;
 
     const [selectedPolicy, setSelectedPolicy] = useState<string>(baseModel?.policy ?? 'act');
     const { datasets, id: projectId } = useProject();
 
-    const [name, setName] = useState<string>(defaultName);
     const [selectedDataset, setSelectedDataset] = useState<Key | null>(defaultDatasetId);
     const [maxSteps, setMaxSteps] = useState<number>(defaultMaxSteps);
     const [batchSize, setBatchSize] = useState<number>(8);
     const [numWorkers, setNumWorkers] = useState<Key | null>('auto');
-    const [autoScaleBatchSize, setAutoScaleBatchSize] = useState<boolean>(true);
+    const [autoScaleBatchSize, setAutoScaleBatchSize] = useState<boolean>(bestDevice?.type === 'cuda');
 
     const trainMutation = $api.useMutation('post', '/api/jobs:train', {
         meta: {
@@ -313,6 +318,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
         if (!dataset_id || !selectedPolicy) {
             return;
         }
+
+        const name = baseModel?.name ?? MODELS.find((policy) => policy.id === selectedPolicy)?.name ?? '';
 
         const payload: SchemaJob['payload'] = {
             dataset_id,
@@ -342,56 +349,49 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
             </Heading>
             <Divider />
             <Content width={'700px'}>
-                <Form
-                    onSubmit={(e) => {
-                        e.preventDefault();
-                        save();
-                    }}
-                    validationBehavior='native'
-                >
-                    <Flex direction='column' gap='size-200' width='100%'>
-                        <TextField label='Name' value={name} onChange={setName} width='100%' />
+                <Flex direction='column' gap='size-200' width='100%'>
+                    <Picker
+                        label='Dataset'
+                        selectedKey={selectedDataset}
+                        onSelectionChange={setSelectedDataset}
+                        width='100%'
+                    >
+                        {datasets.map((dataset) => (
+                            <Item key={dataset.id}>{dataset.name}</Item>
+                        ))}
+                    </Picker>
 
-                        <Picker
-                            label='Dataset'
-                            selectedKey={selectedDataset}
-                            onSelectionChange={setSelectedDataset}
-                            width='100%'
-                        >
-                            {datasets.map((dataset) => (
-                                <Item key={dataset.id}>{dataset.name}</Item>
-                            ))}
-                        </Picker>
+                    <PolicySelection
+                        selectedPolicy={selectedPolicy}
+                        onSelectionChange={setSelectedPolicy}
+                        isDisabled={baseModel !== undefined}
+                        trainingDevice={bestDevice}
+                    />
 
-                        <PolicySelection
-                            selectedPolicy={selectedPolicy}
-                            onSelectionChange={setSelectedPolicy}
-                            isDisabled={baseModel !== undefined}
-                        />
-
-                        <Disclosure
-                            isQuiet
-                            UNSAFE_style={{ padding: 0 }}
-                            UNSAFE_className={classes.advancedSettingsDisclosure}
-                        >
-                            <DisclosureTitle UNSAFE_style={{ fontSize: 13, padding: '4px 0' }}>
-                                Advanced settings
-                            </DisclosureTitle>
-                            <DisclosurePanel UNSAFE_style={{ padding: 0 }}>
-                                <TrainingParameters
-                                    maxSteps={maxSteps}
-                                    onMaxStepsChange={setMaxSteps}
-                                    batchSize={batchSize}
-                                    onBatchSizeChange={setBatchSize}
-                                    numWorkers={numWorkers}
-                                    onNumWorkersChange={setNumWorkers}
-                                    autoScaleBatchSize={autoScaleBatchSize}
-                                    onAutoScaleBatchSizeChange={setAutoScaleBatchSize}
-                                />
-                            </DisclosurePanel>
-                        </Disclosure>
-                    </Flex>
-                </Form>
+                    <Disclosure
+                        isQuiet
+                        UNSAFE_style={{ padding: 0 }}
+                        UNSAFE_className={classes.advancedSettingsDisclosure}
+                        defaultExpanded={bestDevice?.type !== 'cuda'}
+                    >
+                        <DisclosureTitle UNSAFE_style={{ fontSize: 13, padding: '4px 0' }}>
+                            Advanced settings
+                        </DisclosureTitle>
+                        <DisclosurePanel UNSAFE_style={{ padding: 0 }}>
+                            <TrainingParameters
+                                maxSteps={maxSteps}
+                                onMaxStepsChange={setMaxSteps}
+                                batchSize={batchSize}
+                                onBatchSizeChange={setBatchSize}
+                                numWorkers={numWorkers}
+                                onNumWorkersChange={setNumWorkers}
+                                autoScaleBatchSize={autoScaleBatchSize}
+                                onAutoScaleBatchSizeChange={setAutoScaleBatchSize}
+                                isAutoScaleBatchDisabled={bestDevice?.type !== 'cuda'}
+                            />
+                        </DisclosurePanel>
+                    </Disclosure>
+                </Flex>
             </Content>
             <ButtonGroup>
                 <Button variant='secondary' onPress={() => close(undefined)}>

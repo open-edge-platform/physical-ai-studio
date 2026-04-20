@@ -86,24 +86,70 @@ jobs:
         env:
           IMAGE: ${{ steps.docker_build.outputs.image-name }}
           DEVICE: ${{ matrix.device }}
+        working-directory: application/docker
         run: |
-          CONTAINER_NAME="physical-ai-studio-healthcheck-${DEVICE}"
+          SERVICE_NAME="physical-ai-studio-${DEVICE}"
+          
+          # CUDA requires GPU hardware, test with docker run instead of compose
+          # CPU and XPU test via compose to validate the full deployment config
+          if [ "${DEVICE}" = "cuda" ]; then
+            docker run -d --name "${SERVICE_NAME}" -p 7860:7860 "${IMAGE}"
+            CLEANUP_CMD="docker rm -f ${SERVICE_NAME}"
+          else
+            echo "Testing ${IMAGE} via docker compose..."
 
-          echo "Starting container from ${IMAGE} ..."
-          docker run -d --name "${CONTAINER_NAME}" -p 7860:7860 "${IMAGE}"
+            # Extract registry and tag from the built image name
+            # IMAGE format: registry/org/name:tag
+            # Example: ghcr.io/open-edge-platform/physical-ai-studio-cpu:sha-abc123
+            REGISTRY=$(echo "${IMAGE}" | sed 's|\(.*\)/[^/]*$|\1/|')
+            IMAGE_TAG=$(echo "${IMAGE}" | sed 's|.*:||')
 
-          # Wait up to 60 seconds for the /health endpoint to respond
-          echo "Waiting for /health endpoint ..."
+            # Create minimal .env for CI testing
+            cat > .env << EOF
+          HOST=0.0.0.0
+          PORT=7860
+          COMPOSE_PROFILES=${DEVICE}
+          REGISTRY=${REGISTRY}
+          IMAGE_TAG=${IMAGE_TAG}
+          # Use unique numeric GIDs to avoid group resolution issues
+          DIALOUT_GID=1000
+          PLUGDEV_GID=1001
+          VIDEO_GID=1002
+          RENDER_GID=1003
+          EOF
+
+            echo "Starting service ${SERVICE_NAME} via docker compose..."
+            docker compose up -d
+            CLEANUP_CMD="docker compose down -v"
+          fi
+
+          # Wait for health check to pass (compose) or /health endpoint (docker run)
+          echo "Waiting for service to be ready..."
           for i in $(seq 1 30); do
-            if curl -sf http://localhost:7860/api/health; then
-              echo ""
-              echo "Backend health check passed!"
-              break
+            if [ "${DEVICE}" = "cuda" ]; then
+              # For docker run, check the health endpoint directly
+              if curl -sf http://localhost:7860/api/health > /dev/null 2>&1; then
+                echo "Backend health check passed!"
+                break
+              fi
+            else
+              # For compose, check Docker's health status
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' "${SERVICE_NAME}" 2>/dev/null || echo "starting")
+              echo "Health status: ${STATUS}"
+              if [ "${STATUS}" = "healthy" ]; then
+                echo "Backend health check passed!"
+                break
+              fi
             fi
+
             if [ "$i" -eq 30 ]; then
               echo "Backend health check failed after 60 seconds."
-              docker logs "${CONTAINER_NAME}"
-              docker rm -f "${CONTAINER_NAME}" > /dev/null 2>&1
+              if [ "${DEVICE}" = "cuda" ]; then
+                docker logs "${SERVICE_NAME}"
+              else
+                docker compose logs
+              fi
+              eval "${CLEANUP_CMD}"
               exit 1
             fi
             sleep 2
@@ -121,19 +167,46 @@ jobs:
             echo "❌ HTML title check failed - expected title '$EXPECTED_TITLE' not found"
             echo "Actual HTML content:"
             echo "$HTML_CONTENT"
-            docker logs "${CONTAINER_NAME}"
-            docker rm -f "${CONTAINER_NAME}" > /dev/null 2>&1
+            if [ "${DEVICE}" = "cuda" ]; then
+              docker logs "${SERVICE_NAME}"
+            else
+              docker compose logs
+            fi
+            eval "${CLEANUP_CMD}"
             exit 1
           fi
 
-          docker rm -f "${CONTAINER_NAME}" > /dev/null 2>&1
+          # Verify volumes were created (compose only)
+          if [ "${DEVICE}" != "cuda" ]; then
+            docker volume ls | grep physical-ai-studio-data || { echo "Data volume missing"; eval "${CLEANUP_CMD}"; exit 1; }
+            docker volume ls | grep physical-ai-studio-storage || { echo "Storage volume missing"; eval "${CLEANUP_CMD}"; exit 1; }
+            echo "Volumes created successfully"
+          fi
+
+          eval "${CLEANUP_CMD}"
 
       - name: Get Docker image size
         id: image_size
         env:
           IMAGE: ${{ steps.docker_build.outputs.image-name }}
         run: |
-          SIZE_BYTES=$(docker image inspect "${IMAGE}" --format='{{.Size}}')
+          # docker image inspect .Size may undercount with the docker buildx
+          # driver because it only reports the diff/top-layer size.  Summing
+          # all layer sizes via `docker history` gives the true uncompressed
+          # on-disk total.
+          SIZE_BYTES=$(docker history "${IMAGE}" --format '{{.Size}}' \
+            | awk '
+                /[0-9]+(\.[0-9]+)?[kKmMgG]?[bB]/ {
+                  n = $1+0; unit = $1;
+                  gsub(/[0-9.]+/, "", unit);
+                  unit = toupper(unit);
+                  if (unit == "KB") n *= 1024;
+                  else if (unit == "MB") n *= 1024*1024;
+                  else if (unit == "GB") n *= 1024*1024*1024;
+                  total += n
+                }
+                END { printf "%d", total }
+              ')
           SIZE_MB=$(awk "BEGIN {printf \"%.1f\", ${SIZE_BYTES} / 1024 / 1024}")
           SIZE_GB=$(awk "BEGIN {printf \"%.2f\", ${SIZE_BYTES} / 1024 / 1024 / 1024}")
           echo "bytes=${SIZE_BYTES}" >> "$GITHUB_OUTPUT"

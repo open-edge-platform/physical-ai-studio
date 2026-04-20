@@ -1,10 +1,11 @@
 import { createContext, ReactNode, RefObject, useContext, useRef, useState } from 'react';
 
-import { useMutation, UseMutationResult } from '@tanstack/react-query';
+import { useMutation, UseMutationResult, useQueryClient } from '@tanstack/react-query';
 
 import { fetchClient } from '../../api/client';
 import { SchemaDatasetOutput, SchemaEnvironmentWithRelations, SchemaModel } from '../../api/openapi-spec';
 import useWebSocketWithResponse from '../../components/websockets/use-websocket-with-response';
+import { useDatasetId } from '../datasets/use-dataset';
 
 type FollowerSource = 'teleoperation' | 'model' | null;
 
@@ -81,6 +82,23 @@ type RobotControlContextValue = null | {
 
 const RobotControlContext = createContext<RobotControlContextValue>(null);
 
+const useRefreshEpisodes = () => {
+    const queryClient = useQueryClient();
+    const { dataset_id } = useDatasetId();
+
+    return () => {
+        queryClient.invalidateQueries({
+            queryKey: [
+                'get',
+                '/api/dataset/{dataset_id}/episodes',
+                {
+                    params: { path: { dataset_id } },
+                },
+            ],
+        });
+    };
+};
+
 export const RobotControlProvider = (props: useRobotControlProps) => {
     const [state, setState] = useState<RobotControlState>(createRobotControlState());
     const observation = useRef<Observation | undefined>(undefined);
@@ -101,13 +119,18 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         }
     };
 
+    const invalidateEpisodesQuery = useRefreshEpisodes();
     const { sendJsonMessageAndWait, readyState } = useWebSocketWithResponse(
         fetchClient.PATH('/api/record/robot_control/ws'),
         {
             shouldReconnect: () => true,
             onMessage: (event: WebSocketEventMap['message']) => onMessage(event),
             onError: console.error,
-            onClose: () => setState(createRobotControlState()),
+            onClose: () => {
+                invalidateEpisodesQuery();
+
+                setState(createRobotControlState());
+            },
             onOpen,
         }
     );
