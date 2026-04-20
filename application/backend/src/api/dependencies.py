@@ -12,8 +12,8 @@ from services import (
     DatasetService,
     EpisodeThumbnailService,
     ModelDownloadService,
-    ModelService,
     ModelMetricsService,
+    ModelService,
     ProjectCameraService,
     ProjectService,
     RobotService,
@@ -118,6 +118,7 @@ def get_model_service() -> ModelService:
     """Provides a ModelService instance for managing models."""
     return ModelService()
 
+
 @lru_cache
 def get_model_metrics_service(request: HTTPConnection) -> ModelMetricsService:
     """Provides a ModelService instance for managing models."""
@@ -202,13 +203,6 @@ def get_environment_id(environment_id: str) -> UUID:
     if not is_valid_uuid(environment_id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid environment ID")
     return UUID(environment_id)
-
-
-def get_model_id(model_id: str) -> UUID:
-    """Initialize and validates UUID."""
-    if not is_valid_uuid(model_id):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid model ID")
-    return UUID(model_id)
 
 
 def get_scheduler(request: HTTPConnection) -> Scheduler:

@@ -1,18 +1,24 @@
-from sse_starlette import EventSourceResponse
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
 from loguru import logger
+from sse_starlette import EventSourceResponse
 
-from api.dependencies import get_event_processor_ws, get_job_id, get_job_service, get_scheduler, get_model_metrics_service
+from api.dependencies import (
+    get_event_processor_ws,
+    get_job_id,
+    get_job_service,
+    get_model_metrics_service,
+    get_scheduler,
+)
 from core.scheduler import Scheduler
 from schemas import Job
 from schemas.base_job import JobStatus
 from schemas.job import TrainJobPayload
-from services.event_processor import EventProcessor, EventType
 from services import JobService, ModelMetricsService
+from services.event_processor import EventProcessor, EventType
 
 router = APIRouter(prefix="/api/jobs", tags=["Jobs"])
 
@@ -63,6 +69,7 @@ async def interrupt_job(
     if job.status == JobStatus.RUNNING:
         scheduler.training_interrupt_event.set()
     await job_service.update_job_status(job_id, status=JobStatus.CANCELED)
+
 
 @router.get("/{job_id}/model_metrics")
 async def get_model_job_metrics(

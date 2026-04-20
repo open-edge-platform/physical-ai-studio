@@ -89,6 +89,7 @@ class ResourceAlreadyExistsError(BaseException):
             http_status=http.HTTPStatus.CONFLICT,
         )
 
+
 class UnsupportedDeviceError(BaseException):
     """Exception raised when a requested training device is not available on the system."""
 
@@ -110,6 +111,7 @@ class UploadTooLargeError(BaseException):
             error_code="upload_too_large",
             http_status=http.HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
         )
+
 
 class InvalidResourceError(BaseException):
     """

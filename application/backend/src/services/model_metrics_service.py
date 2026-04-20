@@ -1,19 +1,20 @@
-from exceptions import InvalidResourceError, ResourceType
-import json
 import asyncio
 import csv
-import anyio
-from sse_starlette import ServerSentEvent
+import json
 from collections.abc import AsyncGenerator
 from pathlib import Path
-from loguru import logger
 
-from settings import Settings
-from schemas.model import Model
+import anyio
+from loguru import logger
+from sse_starlette import ServerSentEvent
+
+from exceptions import InvalidResourceError, ResourceType
 from schemas.job import Job, JobType
+from schemas.model import Model
+from settings import Settings
+
 
 class ModelMetricsService:
-
     def __init__(self, settings: Settings):
         self.settings = settings
 

@@ -1,33 +1,26 @@
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID
-import csv
-import json
 
-from collections.abc import AsyncGenerator
-from sse_starlette import EventSourceResponse, ServerSentEvent
 from fastapi import APIRouter, Depends
 from fastapi.exceptions import HTTPException
 from fastapi.responses import FileResponse
+from sse_starlette import EventSourceResponse
 from starlette import status
 from starlette.background import BackgroundTask
 
-from api.dependencies import get_dataset_service, get_model_download_service, get_model_id, get_model_service
+from api.dependencies import (
+    get_dataset_service,
+    get_model_download_service,
+    get_model_id,
+    get_model_metrics_service,
+    get_model_service,
+)
 from api.utils import safe_archive_name
 from exceptions import ResourceNotFoundError, ResourceType
 from internal_datasets.utils import get_internal_dataset
 from schemas import Model
-from services import DatasetService, ModelDownloadService, ModelService
-from loguru import logger
-from pathlib import Path
-import asyncio
-import anyio
-
-from api.dependencies import get_dataset_service, get_model_service, get_model_id, get_model_metrics_service
-from exceptions import ResourceNotFoundError, ResourceType
-from internal_datasets.utils import get_internal_dataset
-from schemas import Model
-from services import DatasetService, ModelService, ModelMetricsService
+from services import DatasetService, ModelDownloadService, ModelMetricsService, ModelService
 
 router = APIRouter(prefix="/api/models", tags=["Models"])
 
