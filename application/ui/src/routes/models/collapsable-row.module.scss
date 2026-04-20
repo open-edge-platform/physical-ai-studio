@@ -2,11 +2,6 @@
     border-top: 1px solid var(--spectrum-global-color-gray-200);
 }
 
-.collapsableRow:hover {
-    background-color: var(--spectrum-global-color-gray-100);
-}
-
-
 .collapsableRowCollapsed {
     background-color: var(--spectrum-global-color-gray-75);
     cursor: pointer;

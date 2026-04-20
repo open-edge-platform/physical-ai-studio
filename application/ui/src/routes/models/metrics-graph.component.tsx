@@ -1,6 +1,6 @@
 
 import { Flex, View } from '@geti/ui';
-import { CartesianGrid, Text, Line, LineChart, Area, AreaChart, Tooltip, XAxis, YAxis, ResponsiveContainer } from 'recharts';
+import { CartesianGrid, Area, AreaChart, XAxis, YAxis, ResponsiveContainer } from 'recharts';
 import { Box } from './box.component';
 
 export type MetricGraphPoint = {
@@ -19,7 +19,6 @@ const X_AXIS_TICK_COUNT = 8;
 const Y_AXIS_TICK_COUNT = 4;
 
 export const MetricGraph = ({ title, data, xAxisLabel, yAxisLabel }: MetricGraphProps) => {
-    console.log(data);
     return (
         <Flex flex={1} direction={'column'} minWidth={'size-5000'}>
             <Box
@@ -52,10 +51,6 @@ export const MetricGraph = ({ title, data, xAxisLabel, yAxisLabel }: MetricGraph
                                     tickCount={Y_AXIS_TICK_COUNT}
                                     tickMargin={12}
                                     tickFormatter={(value) => Number(value).toFixed(4)}
-                                />
-                                <Tooltip
-                                    contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc' }}
-                                    labelStyle={{ color: '#333' }}
                                 />
                                 <Area
                                     type='linear'
