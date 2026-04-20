@@ -1,6 +1,8 @@
+import { useId } from 'react';
 
-import { Flex, View } from '@geti/ui';
-import { CartesianGrid, Area, AreaChart, XAxis, YAxis, ResponsiveContainer } from 'recharts';
+import { Flex, View } from '@geti-ui/ui';
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, XAxis, YAxis } from 'recharts';
+
 import { Box } from './box.component';
 
 export type MetricGraphPoint = {
@@ -19,6 +21,8 @@ const X_AXIS_TICK_COUNT = 8;
 const Y_AXIS_TICK_COUNT = 4;
 
 export const MetricGraph = ({ title, data, xAxisLabel, yAxisLabel }: MetricGraphProps) => {
+    const gradientId = useId();
+
     return (
         <Flex flex={1} direction={'column'} minWidth={'size-5000'}>
             <Box
@@ -32,7 +36,7 @@ export const MetricGraph = ({ title, data, xAxisLabel, yAxisLabel }: MetricGraph
                                 margin={{ top: 35, bottom: 35, left: 35 }}
                             >
                                 <defs>
-                                    <linearGradient id='areaGradient' x1='0' y1='0' x2='0' y2='1'>
+                                    <linearGradient id={gradientId} x1='0' y1='0' x2='0' y2='1'>
                                         <stop offset='5%' stopColor='var(--energy-blue)' stopOpacity={0.3} />
                                         <stop offset='95%' stopColor='var(--energy-blue)' stopOpacity={0} />
                                     </linearGradient>
@@ -58,7 +62,7 @@ export const MetricGraph = ({ title, data, xAxisLabel, yAxisLabel }: MetricGraph
                                     name={yAxisLabel}
                                     stroke='var(--energy-blue)'
                                     strokeWidth={2}
-                                    fill='url(#areaGradient)'
+                                    fill={`url(#${gradientId})`}
                                     dot={false}
                                     isAnimationActive={false}
                                 />
