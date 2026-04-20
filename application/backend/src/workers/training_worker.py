@@ -71,8 +71,7 @@ class TrainingWorker(BaseProcessWorker):
 
                     dataset = await DatasetService.get_dataset_by_id(payload.dataset_id)
                     model_dir = Path(str(settings.models_dir / str(id)))
-                    model_dir.mkdir(parents=True)
-                    snapshot_dir = model_dir / SnapshotService.generate_snapshot_folder_name()
+                    snapshot_dir = settings.snapshot_dir / SnapshotService.generate_snapshot_folder_name()
                     snapshot = await SnapshotService.create_snapshot_for_dataset(dataset, destination=snapshot_dir)
 
                     model = Model(
@@ -166,12 +165,13 @@ class TrainingWorker(BaseProcessWorker):
             dispatcher.start()
             trainer.fit(model=policy, datamodule=l_dm)
 
+            moved = shutil.move(cache_path, path.parent)
+            Path(moved).rename(path)
+
             for backend in settings.supported_backends:
                 export_dir = path / "exports" / backend
                 if isinstance(policy, ExportablePolicyMixin):
                     policy.export(export_dir, backend=backend)
-
-            shutil.move(cache_path, path)
 
             job = await JobService.update_job_status(
                 job_id=job.id, status=JobStatus.COMPLETED, message="Training finished"

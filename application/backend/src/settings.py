@@ -57,6 +57,11 @@ class Settings(BaseSettings):
         return self.storage_dir / "datasets"
 
     @property
+    def snapshot_dir(self) -> Path:
+        """Storage directory for snapshots."""
+        return self.storage_dir / "snapshots"
+
+    @property
     def cache_dir(self) -> Path:
         """Storage directory for cache."""
         return self.storage_dir / "cache"
