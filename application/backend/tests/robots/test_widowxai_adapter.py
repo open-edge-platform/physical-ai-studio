@@ -101,9 +101,8 @@ class TestDegreeRadianConversion:
 
         asyncio.run(adapter.set_joints_state(joints, goal_time=0.1))
 
-        driver = robot._require_driver()
-        call_args = driver.set_all_positions.call_args
-        positions_sent = call_args[0][0]
+        robot.send_action.assert_called_once()
+        positions_sent = robot.send_action.call_args[0][0]
 
         expected_radians = [1.0, 0.5, -0.5, 1.5, -1.0, 0.3]
         for i, expected_rad in enumerate(expected_radians):
@@ -127,9 +126,8 @@ class TestDegreeRadianConversion:
 
         asyncio.run(adapter.set_joints_state(joints, goal_time=0.1))
 
-        driver = robot._require_driver()
-        call_args = driver.set_all_positions.call_args
-        positions_sent = call_args[0][0]
+        robot.send_action.assert_called_once()
+        positions_sent = robot.send_action.call_args[0][0]
 
         for i, expected_rad in enumerate(original_radians):
             assert positions_sent[i] == pytest.approx(expected_rad, abs=0.01)
@@ -168,7 +166,7 @@ class TestPing:
 
 
 class TestSetJointsState:
-    def test_calls_set_all_positions_with_velocities(self):
+    def test_calls_send_action_with_positions_and_goal_time(self):
         adapter, robot = _make_adapter()
         joints = {}
         for name in WIDOWXAI_JOINT_ORDER:
@@ -177,11 +175,10 @@ class TestSetJointsState:
 
         asyncio.run(adapter.set_joints_state(joints, goal_time=0.1))
 
-        driver = robot._require_driver()
-        call_args = driver.set_all_positions.call_args
-        assert len(call_args[0]) == 4
-        assert call_args[0][1] == 0.1
-        assert call_args[0][2] is False
+        robot.send_action.assert_called_once()
+        call_args = robot.send_action.call_args
+        assert call_args[0][0].shape == (7,)
+        assert call_args[1]["goal_time"] == 0.1
 
     def test_raises_for_leader(self):
         adapter, _ = _make_adapter(mode="leader")
