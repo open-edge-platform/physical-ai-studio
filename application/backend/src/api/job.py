@@ -14,6 +14,7 @@ from api.dependencies import (
     get_scheduler,
 )
 from core.scheduler import Scheduler
+from exceptions import ResourceNotFoundError, ResourceType
 from schemas import Job
 from schemas.base_job import JobStatus
 from schemas.job import TrainJobPayload
@@ -66,6 +67,9 @@ async def interrupt_job(
 ) -> None:
     """Endpoint to interrupt job"""
     job = await job_service.get_job_by_id(job_id)
+    if job is None:
+        raise ResourceNotFoundError(ResourceType.JOB, job_id)
+
     if job.status == JobStatus.RUNNING:
         scheduler.training_interrupt_event.set()
     await job_service.update_job_status(job_id, status=JobStatus.CANCELED)
