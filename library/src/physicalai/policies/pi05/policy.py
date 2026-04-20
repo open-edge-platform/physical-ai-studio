@@ -26,6 +26,7 @@ from physicalai.train.utils import reformat_dataset_to_match_policy
 from .config import Pi05Config
 from .model import Pi05Model
 from .preprocessor import make_pi05_preprocessors
+from .pretrained_utils import detect_normalization_mode as _detect_normalization_mode
 from .pretrained_utils import extract_dataset_stats as _extract_dataset_stats
 from .pretrained_utils import fix_state_dict_keys as _fix_state_dict_keys
 
@@ -133,6 +134,8 @@ class Pi05(ExportablePolicyMixin, Policy):
         # Finetuning
         freeze_vision_encoder: bool = False,
         train_expert_only: bool = True,
+        # Normalization
+        normalization_mode: Literal["MEAN_STD", "QUANTILES"] = "QUANTILES",
         # Optimizer
         optimizer_lr: float = 2.5e-5,
         optimizer_betas: tuple[float, float] = (0.9, 0.95),
@@ -197,6 +200,7 @@ class Pi05(ExportablePolicyMixin, Policy):
                 compile_mode=compile_mode,
                 freeze_vision_encoder=freeze_vision_encoder,
                 train_expert_only=train_expert_only,
+                normalization_mode=normalization_mode,
                 optimizer_lr=optimizer_lr,
                 optimizer_betas=optimizer_betas,
                 optimizer_eps=optimizer_eps,
@@ -251,6 +255,7 @@ class Pi05(ExportablePolicyMixin, Policy):
             gradient_checkpointing=self.config.gradient_checkpointing,
             compile_model=self.config.compile_model,
             use_random_input_noise=self.config.use_random_input_noise,
+            normalization_mode=self.config.normalization_mode.lower(),
         )
         if weights_file is not None:
             # load raw state dict
@@ -284,11 +289,12 @@ class Pi05(ExportablePolicyMixin, Policy):
             image_resolution=self.config.image_resolution,
             max_token_len=self.config.tokenizer_max_length,
             empty_cameras=self.config.empty_cameras,
+            normalization_mode=self.config.normalization_mode,
         )
 
         self._dataset_stats = dataset_stats
 
-    def _from_hf(  # noqa: PLR6301, PLR0913
+    def _from_hf(  # noqa: PLR6301, PLR0913, PLR0915
         self,
         pretrained_name_or_path: str | Path,
         *,
@@ -420,6 +426,13 @@ class Pi05(ExportablePolicyMixin, Policy):
         hf_config["scheduler_decay_steps"] = scheduler_decay_steps
         hf_config["scheduler_decay_lr"] = scheduler_decay_lr
 
+        # Auto-detect normalization_mode from pretrained preprocessor.
+        # The pretrained model's mode always wins over caller defaults.
+        if preprocessor_file is not None:
+            detected = _detect_normalization_mode(preprocessor_file)
+            if detected is not None:
+                hf_config["normalization_mode"] = detected
+
         # from_dict skips unknown keys and coerces lists→tuples via type hints
         config = Pi05Config.from_dict(hf_config)
 
@@ -482,6 +495,7 @@ class Pi05(ExportablePolicyMixin, Policy):
             image_resolution=self.config.image_resolution,
             max_token_len=self.config.tokenizer_max_length,
             empty_cameras=self.config.empty_cameras,
+            normalization_mode=self.config.normalization_mode,
         )
         self._dataset_stats = dataset_stats
         self.hparams["dataset_stats"] = dataset_stats

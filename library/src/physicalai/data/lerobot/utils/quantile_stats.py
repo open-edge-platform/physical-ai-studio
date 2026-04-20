@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """Compute quantile statistics for LeRobot datasets that lack them.
@@ -15,6 +15,7 @@ import logging
 from typing import TYPE_CHECKING
 
 import torch
+from lerobot.scripts.augment_dataset_quantile_stats import compute_quantile_stats_for_dataset
 
 if TYPE_CHECKING:
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -23,11 +24,12 @@ logger = logging.getLogger(__name__)
 
 
 def has_quantile_stats(dataset: LeRobotDataset) -> bool:
-    """Check whether the dataset's pre-computed stats already contain q01/q99."""
-    for feature_stats in dataset.meta.stats.values():
-        if "q01" in feature_stats or "q99" in feature_stats:
-            return True
-    return False
+    """Check whether the dataset's pre-computed stats already contain q01/q99.
+
+    Returns:
+        True if any feature has q01 or q99 stats.
+    """
+    return any("q01" in feature_stats or "q99" in feature_stats for feature_stats in dataset.meta.stats.values())
 
 
 def augment_dataset_quantile_stats(dataset: LeRobotDataset) -> None:
@@ -44,10 +46,6 @@ def augment_dataset_quantile_stats(dataset: LeRobotDataset) -> None:
         dataset: A ``LeRobotDataset`` instance.  Its ``meta.stats`` is
             modified in-place.
     """
-    from lerobot.scripts.augment_dataset_quantile_stats import (  # noqa: PLC0415
-        compute_quantile_stats_for_dataset,
-    )
-
     logger.info(
         "Computing quantile stats via LeRobot for %d episodes",
         dataset.num_episodes,

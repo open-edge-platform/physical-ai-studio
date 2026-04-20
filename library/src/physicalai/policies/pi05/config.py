@@ -98,6 +98,8 @@ class Pi05Config(Config):
     freeze_vision_encoder: bool = False
     train_expert_only: bool = True
 
+    normalization_mode: Literal["MEAN_STD", "QUANTILES"] = "QUANTILES"
+
     optimizer_lr: float = 2.5e-5
     optimizer_betas: tuple[float, float] = (0.9, 0.95)
     optimizer_eps: float = 1e-8

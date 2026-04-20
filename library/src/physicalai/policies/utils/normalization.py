@@ -172,7 +172,7 @@ class FeatureNormalizeTransform(nn.Module):
             raise ValueError(norm_mode)
 
     @staticmethod
-    def _create_stats_buffers(
+    def _create_stats_buffers(  # noqa: C901
         features: dict[str, Feature],
         norm_map: dict[FeatureType, NormalizationType],
     ) -> dict[str, dict[str, nn.ParameterDict]]:
@@ -283,10 +283,12 @@ class FeatureNormalizeTransform(nn.Module):
                     },
                 )
                 buffer["q01"].data = get_torch_tensor(
-                    cast("NormalizationParameters", ft.normalization_data).q01, shape
+                    cast("NormalizationParameters", ft.normalization_data).q01,
+                    shape,
                 )
                 buffer["q99"].data = get_torch_tensor(
-                    cast("NormalizationParameters", ft.normalization_data).q99, shape
+                    cast("NormalizationParameters", ft.normalization_data).q99,
+                    shape,
                 )
 
             stats_buffers[key] = buffer

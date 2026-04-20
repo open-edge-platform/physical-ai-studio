@@ -121,7 +121,7 @@ class LeRobotDataModule(DataModule):
         ... )
     """
 
-    def __init__(  # noqa: PLR0912, PLR0913, PLR0915
+    def __init__(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self,
         *,
         repo_id: str | None = None,

@@ -152,6 +152,7 @@ class Pi05Preprocessor(torch.nn.Module):
         max_token_len: int = 200,
         tokenizer_name: str = "google/paligemma-3b-pt-224",
         empty_cameras: int = 0,
+        normalization_mode: str = "QUANTILES",
     ) -> None:
         """Initialize Pi05Preprocessor."""
         super().__init__()
@@ -162,8 +163,9 @@ class Pi05Preprocessor(torch.nn.Module):
         self.tokenizer_name = tokenizer_name
         self._tokenizer = None
         self.empty_cameras = empty_cameras
+        self.normalization_mode = normalization_mode
 
-        norm_map = _norm_map_for_mode("QUANTILES")
+        norm_map = _norm_map_for_mode(normalization_mode)
         if features is not None:
             self._state_action_normalizer = FeatureNormalizeTransform(features, norm_map)
         else:
@@ -331,21 +333,22 @@ class Pi05Preprocessor(torch.nn.Module):
 class Pi05Postprocessor(torch.nn.Module):
     """Postprocessor for Pi05 model outputs.
 
-    Denormalizes predicted actions back to the original action space
-    using quantile normalization.
+    Denormalizes predicted actions back to the original action space.
 
     Args:
         features: Dictionary mapping feature names to Feature objects.
+        normalization_mode: Normalization method matching the preprocessor.
     """
 
     def __init__(
         self,
         features: dict[str, Feature] | None = None,
+        normalization_mode: str = "QUANTILES",
     ) -> None:
         """Initialize Pi05Postprocessor."""
         super().__init__()
 
-        norm_map = _norm_map_for_mode("QUANTILES")
+        norm_map = _norm_map_for_mode(normalization_mode)
         if features is not None:
             action_features = {k: v for k, v in features.items() if v.ftype == FeatureType.ACTION}
             self._action_denormalizer = FeatureNormalizeTransform(action_features, norm_map, inverse=True)
@@ -371,6 +374,7 @@ def make_pi05_preprocessors(
     image_resolution: tuple[int, int] = (224, 224),
     max_token_len: int = 200,
     empty_cameras: int = 0,
+    normalization_mode: str = "QUANTILES",
 ) -> tuple[Pi05Preprocessor, Pi05Postprocessor]:
     """Create preprocessor and postprocessor pair for Pi05.
 
@@ -380,6 +384,7 @@ def make_pi05_preprocessors(
         image_resolution: Target image resolution.
         max_token_len: Maximum token length.
         empty_cameras: Number of empty camera slots to add.
+        normalization_mode: ``"MEAN_STD"`` or ``"QUANTILES"``.
 
     Returns:
         Tuple of (preprocessor, postprocessor).
@@ -424,10 +429,12 @@ def make_pi05_preprocessors(
         features=features,
         max_token_len=max_token_len,
         empty_cameras=empty_cameras,
+        normalization_mode=normalization_mode,
     )
 
     postprocessor = Pi05Postprocessor(
         features=features,
+        normalization_mode=normalization_mode,
     )
 
     return preprocessor, postprocessor

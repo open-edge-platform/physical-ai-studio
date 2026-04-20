@@ -14,7 +14,6 @@ from physicalai.config import Config
 from physicalai.data.observation import IMAGES, STATE
 from physicalai.policies.pi05 import Pi05, Pi05Config, Pi05Model
 from physicalai.policies.pi05.pretrained_utils import (
-    convert_normalization_stats,
     fix_state_dict_keys,
     parse_config_features,
     resolve_feature_shape,
@@ -735,48 +734,6 @@ class TestFeatureNormalization:
 
 class TestPretrainedUtils:
     """Tests for pretrained_utils helper functions."""
-
-    def test_convert_normalization_stats_mean_std(self) -> None:
-        """Test _convert_normalization_stats with mean/std."""
-        mean, std = convert_normalization_stats({
-            "mean": [0.0, 1.0, 2.0],
-            "std": [0.5, 1.0, 1.5],
-        })
-        assert mean == [0.0, 1.0, 2.0]
-        assert std == [0.5, 1.0, 1.5]
-
-    def test_convert_normalization_stats_quantiles(self) -> None:
-        """Test _convert_normalization_stats with quantiles (q01/q99)."""
-        mean, std = convert_normalization_stats({
-            "q01": [-1.0, -2.0],
-            "q99": [1.0, 2.0],
-        })
-        assert mean == [0.0, 0.0]
-        assert std == [1.0, 2.0]
-
-    def test_convert_normalization_stats_min_max(self) -> None:
-        """Test _convert_normalization_stats with min/max."""
-        mean, std = convert_normalization_stats({
-            "min": [-1.0, -2.0],
-            "max": [1.0, 2.0],
-        })
-        assert mean == [0.0, 0.0]
-        assert std == [1.0, 2.0]
-
-    def test_convert_normalization_stats_empty(self) -> None:
-        """Test _convert_normalization_stats with no recognized stats."""
-        mean, std = convert_normalization_stats({})
-        assert mean is None
-        assert std is None
-
-    def test_convert_normalization_stats_quantiles_zero_range(self) -> None:
-        """Test _convert_normalization_stats clamps std to 1e-8 for zero range."""
-        mean, std = convert_normalization_stats({
-            "q01": [5.0],
-            "q99": [5.0],
-        })
-        assert mean == [5.0]
-        assert std == [1e-8]
 
     def test_fix_state_dict_keys_strips_model_prefix(self) -> None:
         """Test _fix_state_dict_keys strips 'model.' prefix."""

@@ -59,10 +59,17 @@ def cosine_decay_with_warmup_scheduler(
         actual_decay_steps = num_training_steps
         logger.warning(
             "Auto-scaling LR scheduler: "
-            f"num_training_steps ({num_training_steps}) < num_decay_steps ({num_decay_steps}). "
-            f"Scaling warmup: {num_warmup_steps} -> {actual_warmup_steps}, "
-            f"decay: {num_decay_steps} -> {actual_decay_steps} "
-            f"(scale factor: {scale_factor:.3f})"
+            "num_training_steps (%d) < num_decay_steps (%d). "
+            "Scaling warmup: %d -> %d, "
+            "decay: %d -> %d "
+            "(scale factor: %.3f)",
+            num_training_steps,
+            num_decay_steps,
+            num_warmup_steps,
+            actual_warmup_steps,
+            num_decay_steps,
+            actual_decay_steps,
+            scale_factor,
         )
 
     alpha = decay_lr / peak_lr
