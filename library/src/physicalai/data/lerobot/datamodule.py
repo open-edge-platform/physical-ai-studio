@@ -404,8 +404,8 @@ class LeRobotDataModule(DataModule):
         optionally val) adapter's underlying ``meta.stats``.
         """
         # Quick check using the train adapter's stats
-        train_lr = train_dataset._lerobot_dataset  # noqa: SLF001
-        if has_quantile_stats(train_lr):
+        train_lerobot_ds = train_dataset._lerobot_dataset  # noqa: SLF001
+        if has_quantile_stats(train_lerobot_ds):
             return
 
         logger.info("Dataset lacks quantile stats — computing from all episodes")
@@ -423,17 +423,17 @@ class LeRobotDataModule(DataModule):
 
         # Propagate computed quantiles to the train adapter
         for key, feat_stats in full_ds.meta.stats.items():
-            if "q01" in feat_stats and key in train_lr.meta.stats:
-                train_lr.meta.stats[key]["q01"] = feat_stats["q01"]
-                train_lr.meta.stats[key]["q99"] = feat_stats["q99"]
+            if "q01" in feat_stats and key in train_lerobot_ds.meta.stats:
+                train_lerobot_ds.meta.stats[key]["q01"] = feat_stats["q01"]
+                train_lerobot_ds.meta.stats[key]["q99"] = feat_stats["q99"]
 
         # Propagate to val adapter if it exists
         if val_dataset is not None:
-            val_lr = val_dataset._lerobot_dataset  # noqa: SLF001
+            val_lerobot_ds = val_dataset._lerobot_dataset  # noqa: SLF001
             for key, feat_stats in full_ds.meta.stats.items():
-                if "q01" in feat_stats and key in val_lr.meta.stats:
-                    val_lr.meta.stats[key]["q01"] = feat_stats["q01"]
-                    val_lr.meta.stats[key]["q99"] = feat_stats["q99"]
+                if "q01" in feat_stats and key in val_lerobot_ds.meta.stats:
+                    val_lerobot_ds.meta.stats[key]["q01"] = feat_stats["q01"]
+                    val_lerobot_ds.meta.stats[key]["q99"] = feat_stats["q99"]
 
 
 __all__ = ["LeRobotDataModule"]

@@ -4,8 +4,9 @@
 """Compute quantile statistics for LeRobot datasets that lack them.
 
 Older LeRobot datasets (pre-quantile era) only store mean/std/min/max.
-This module computes q01 and q99 over the full dataset using a streaming
-histogram approach (adapted from LeRobot's ``RunningQuantileStats``).
+This module delegates to LeRobot's own statistics computation so that
+the resulting q01/q99 values are identical to those produced by
+``lerobot.scripts.augment_dataset_quantile_stats``.
 """
 
 from __future__ import annotations
@@ -13,15 +14,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-import numpy as np
 import torch
 
 if TYPE_CHECKING:
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 logger = logging.getLogger(__name__)
-
-QUANTILES = (0.01, 0.99)
 
 
 def has_quantile_stats(dataset: LeRobotDataset) -> bool:
@@ -35,73 +33,37 @@ def has_quantile_stats(dataset: LeRobotDataset) -> bool:
 def augment_dataset_quantile_stats(dataset: LeRobotDataset) -> None:
     """Compute q01/q99 quantile stats in-place for a ``LeRobotDataset``.
 
-    Iterates over all samples, collects state/action tensors, and computes
-    per-feature q01 and q99 using ``numpy.quantile``. The results are
-    injected into ``dataset.meta.stats`` so downstream consumers (e.g.
-    ``_LeRobotDatasetAdapter``) pick them up automatically.
+    Delegates to LeRobot's ``compute_quantile_stats_for_dataset`` so that
+    the computed values match those produced by the upstream
+    ``augment_dataset_quantile_stats`` script.
 
-    Only processes non-image, non-string features that have existing stats
-    entries (observation.state, action, etc.).
+    Only injects the ``q01`` and ``q99`` keys into ``dataset.meta.stats``;
+    existing keys (mean, std, min, max) are left untouched.
 
     Args:
         dataset: A ``LeRobotDataset`` instance.  Its ``meta.stats`` is
             modified in-place.
     """
-    features_to_compute: list[str] = []
-    for key in dataset.meta.stats:
-        feat_info = dataset.features.get(key, {})
-        dtype = feat_info.get("dtype", "")
-        if dtype in ("image", "video", "string"):
-            continue
-        if key.startswith(("observation.", "action")):
-            features_to_compute.append(key)
-
-    if not features_to_compute:
-        return
-
-    logger.info(
-        "Computing quantile stats (q01/q99) for %d features over %d samples",
-        len(features_to_compute),
-        len(dataset),
+    from lerobot.scripts.augment_dataset_quantile_stats import (  # noqa: PLC0415
+        compute_quantile_stats_for_dataset,
     )
 
-    # Use sub-sampling for large datasets to avoid excessive iteration time.
-    n = len(dataset)
-    max_samples = 10_000
-    if n > max_samples:
-        indices = np.round(np.linspace(0, n - 1, max_samples)).astype(int).tolist()
-        logger.info("Sub-sampling %d of %d frames for quantile estimation", max_samples, n)
-    else:
-        indices = list(range(n))
+    logger.info(
+        "Computing quantile stats via LeRobot for %d episodes",
+        dataset.num_episodes,
+    )
 
-    # Collect data per feature
-    collected: dict[str, list[np.ndarray]] = {k: [] for k in features_to_compute}
+    new_stats = compute_quantile_stats_for_dataset(dataset)
 
-    for idx in indices:
-        item = dataset[idx]
-        for key in features_to_compute:
-            val = item.get(key)
-            if val is None:
-                continue
-            if isinstance(val, torch.Tensor):
-                val = val.cpu().numpy()
-            collected[key].append(val)
-
-    # Compute quantiles and inject into meta.stats
-    for key, arrays in collected.items():
-        if not arrays:
+    # Inject only q01/q99 into existing meta.stats
+    for key, feat_stats in new_stats.items():
+        if key not in dataset.meta.stats:
             continue
-        stacked = np.stack(arrays, axis=0).astype(np.float32)
+        for q_key in ("q01", "q99"):
+            if q_key in feat_stats:
+                val = feat_stats[q_key]
+                if not isinstance(val, torch.Tensor):
+                    val = torch.from_numpy(val).float()
+                dataset.meta.stats[key][q_key] = val
 
-        # stacked shape: (N, *feature_shape)
-        # Collapse all but the last dim for per-feature quantiles
-        flat = stacked.reshape(-1, stacked.shape[-1])
-
-        q01 = np.quantile(flat, 0.01, axis=0)
-        q99 = np.quantile(flat, 0.99, axis=0)
-
-        # Store as torch tensors to match existing stats format
-        dataset.meta.stats[key]["q01"] = torch.from_numpy(q01).float()
-        dataset.meta.stats[key]["q99"] = torch.from_numpy(q99).float()
-
-    logger.info("Quantile stats computed for features: %s", features_to_compute)
+    logger.info("Quantile stats computed via LeRobot for dataset")
