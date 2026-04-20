@@ -528,7 +528,11 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+basler = [
+    { name = "pypylon" },
+]
 capture = [
+    { name = "pypylon" },
     { name = "pyrealsense2", marker = "sys_platform != 'darwin'" },
     { name = "pyrealsense2-macosx", marker = "sys_platform == 'darwin'" },
 ]
@@ -578,6 +582,7 @@ requires-dist = [
     { name = "physicalai", extras = ["trossen"], marker = "extra == 'robots'" },
     { name = "physicalai", extras = ["ur"], marker = "extra == 'robots'" },
     { name = "pydantic", specifier = ">=2.5" },
+    { name = "pypylon", marker = "extra == 'basler'" },
     { name = "pyrealsense2", marker = "sys_platform != 'darwin' and extra == 'realsense'" },
     { name = "pyrealsense2-macosx", marker = "sys_platform == 'darwin' and extra == 'realsense'" },
     { name = "pytest", marker = "extra == 'tests'" },
@@ -802,6 +807,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f3/91/9c6ee907786a473bf81c5f53cf703ba0957b23ab84c264080fb5a450416f/pyparsing-3.3.2.tar.gz", hash = "sha256:c777f4d763f140633dcb6d8a3eda953bf7a214dc4eff598413c070bcdc117cbc", size = 6851574, upload-time = "2026-01-21T03:57:59.36Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/10/bd/c038d7cc38edc1aa5bf91ab8068b63d4308c66c4c8bb3cbba7dfbc049f9c/pyparsing-3.3.2-py3-none-any.whl", hash = "sha256:850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d", size = 122781, upload-time = "2026-01-21T03:57:55.912Z" },
+]
+
+[[package]]
+name = "pypylon"
+version = "26.3.1"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/16/db/79edfe8758ba0a01fac336bdd9501d3f27daf07ac952f846ffd410891400/pypylon-26.3.1-cp39-abi3-macosx_14_0_arm64.whl", hash = "sha256:5d179d3c5057169f3ca76db6dcc89e361a0cae6c4b8439880700c132a89a9536", size = 30375440, upload-time = "2026-03-31T15:23:06.579Z" },
+    { url = "https://files.pythonhosted.org/packages/cc/f9/5f75907aef5d6a58b2b913ba6347ae89143be734c8be64fdc1f4ea27404f/pypylon-26.3.1-cp39-abi3-macosx_14_0_x86_64.whl", hash = "sha256:327cdd5d77ab92e47a1544d9ea5400777cc2460eb549c8e5ea1fada3975db2b1", size = 30428383, upload-time = "2026-03-31T15:23:09.748Z" },
+    { url = "https://files.pythonhosted.org/packages/c3/96/e3150eb787f4ee21be670bc203d5b924a50df60d236352872ab4664fa50f/pypylon-26.3.1-cp39-abi3-manylinux_2_31_aarch64.whl", hash = "sha256:308929ca9ebf411f5dd5c0abc4e14ee3b7bdcf907d1547cd744aa9b6722b1bb1", size = 70435361, upload-time = "2026-03-31T15:24:43.178Z" },
+    { url = "https://files.pythonhosted.org/packages/f9/a4/7a3785bdd3bc1edaaf805922d6cf504170dbd344a4b08f0ec2f7c820a897/pypylon-26.3.1-cp39-abi3-manylinux_2_31_x86_64.whl", hash = "sha256:8ce8e45e1d244504b37eb5863650e913d6e25d141dbb33ac3d8ca0d08586e154", size = 87829961, upload-time = "2026-03-31T15:24:00.134Z" },
+    { url = "https://files.pythonhosted.org/packages/16/a2/90ebc867de259bc23d7feff7331050840918f27d5999c1386c0b38694f78/pypylon-26.3.1-cp39-abi3-win_amd64.whl", hash = "sha256:b02e4072f321eaca33112c82787d6de68785aee569f40739038b2665bb43d3ee", size = 110463935, upload-time = "2026-03-31T15:24:24.011Z" },
 ]
 
 [[package]]

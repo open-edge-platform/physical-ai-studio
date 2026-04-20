@@ -30,7 +30,7 @@ realsense = [
     "pyrealsense2; sys_platform != 'darwin'",
     "pyrealsense2-macosx; sys_platform == 'darwin'",
 ]
-basler = []
+basler = ["pypylon"]
 genicam = []
 capture = [
     "physicalai[realsense]",
