@@ -97,7 +97,7 @@ async def stream_metrics(
     return EventSourceResponse(model_metrics_service.empty_metrics_stream())
 
 
-@router.delete("")
+@router.delete("/{model_id}")
 async def remove_model(
     model_id: Annotated[UUID, Depends(get_model_id)],
     model_service: Annotated[ModelService, Depends(get_model_service)],
