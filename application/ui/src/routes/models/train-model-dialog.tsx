@@ -13,7 +13,6 @@ import {
     DisclosureTitle,
     Divider,
     Flex,
-    Form,
     Heading,
     Item,
     Key,
@@ -350,57 +349,49 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
             </Heading>
             <Divider />
             <Content width={'700px'}>
-                <Form
-                    onSubmit={(e) => {
-                        e.preventDefault();
-                        save();
-                    }}
-                    validationBehavior='native'
-                >
-                    <Flex direction='column' gap='size-200' width='100%'>
-                        <Picker
-                            label='Dataset'
-                            selectedKey={selectedDataset}
-                            onSelectionChange={setSelectedDataset}
-                            width='100%'
-                        >
-                            {datasets.map((dataset) => (
-                                <Item key={dataset.id}>{dataset.name}</Item>
-                            ))}
-                        </Picker>
+                <Flex direction='column' gap='size-200' width='100%'>
+                    <Picker
+                        label='Dataset'
+                        selectedKey={selectedDataset}
+                        onSelectionChange={setSelectedDataset}
+                        width='100%'
+                    >
+                        {datasets.map((dataset) => (
+                            <Item key={dataset.id}>{dataset.name}</Item>
+                        ))}
+                    </Picker>
 
-                        <PolicySelection
-                            selectedPolicy={selectedPolicy}
-                            onSelectionChange={setSelectedPolicy}
-                            isDisabled={baseModel !== undefined}
-                            trainingDevice={bestDevice}
-                        />
+                    <PolicySelection
+                        selectedPolicy={selectedPolicy}
+                        onSelectionChange={setSelectedPolicy}
+                        isDisabled={baseModel !== undefined}
+                        trainingDevice={bestDevice}
+                    />
 
-                        <Disclosure
-                            isQuiet
-                            UNSAFE_style={{ padding: 0 }}
-                            UNSAFE_className={classes.advancedSettingsDisclosure}
-                            defaultExpanded={bestDevice?.type !== 'cuda'}
-                        >
-                            <DisclosureTitle UNSAFE_style={{ fontSize: 13, padding: '4px 0' }}>
-                                Advanced settings
-                            </DisclosureTitle>
-                            <DisclosurePanel UNSAFE_style={{ padding: 0 }}>
-                                <TrainingParameters
-                                    maxSteps={maxSteps}
-                                    onMaxStepsChange={setMaxSteps}
-                                    batchSize={batchSize}
-                                    onBatchSizeChange={setBatchSize}
-                                    numWorkers={numWorkers}
-                                    onNumWorkersChange={setNumWorkers}
-                                    autoScaleBatchSize={autoScaleBatchSize}
-                                    onAutoScaleBatchSizeChange={setAutoScaleBatchSize}
-                                    isAutoScaleBatchDisabled={bestDevice?.type !== 'cuda'}
-                                />
-                            </DisclosurePanel>
-                        </Disclosure>
-                    </Flex>
-                </Form>
+                    <Disclosure
+                        isQuiet
+                        UNSAFE_style={{ padding: 0 }}
+                        UNSAFE_className={classes.advancedSettingsDisclosure}
+                        defaultExpanded={bestDevice?.type !== 'cuda'}
+                    >
+                        <DisclosureTitle UNSAFE_style={{ fontSize: 13, padding: '4px 0' }}>
+                            Advanced settings
+                        </DisclosureTitle>
+                        <DisclosurePanel UNSAFE_style={{ padding: 0 }}>
+                            <TrainingParameters
+                                maxSteps={maxSteps}
+                                onMaxStepsChange={setMaxSteps}
+                                batchSize={batchSize}
+                                onBatchSizeChange={setBatchSize}
+                                numWorkers={numWorkers}
+                                onNumWorkersChange={setNumWorkers}
+                                autoScaleBatchSize={autoScaleBatchSize}
+                                onAutoScaleBatchSizeChange={setAutoScaleBatchSize}
+                                isAutoScaleBatchDisabled={bestDevice?.type !== 'cuda'}
+                            />
+                        </DisclosurePanel>
+                    </Disclosure>
+                </Flex>
             </Content>
             <ButtonGroup>
                 <Button variant='secondary' onPress={() => close(undefined)}>
