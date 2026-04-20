@@ -1,6 +1,6 @@
 
 import { Flex, View } from '@geti/ui';
-import { CartesianGrid, Text, Line, LineChart, Tooltip, XAxis, YAxis, ResponsiveContainer } from 'recharts';
+import { CartesianGrid, Text, Line, LineChart, Area, AreaChart, Tooltip, XAxis, YAxis, ResponsiveContainer } from 'recharts';
 import { Box } from './box.component';
 
 export type MetricGraphPoint = {
@@ -27,11 +27,17 @@ export const MetricGraph = ({ title, data, xAxisLabel, yAxisLabel }: MetricGraph
                 content={
                     <View backgroundColor={'gray-50'} minHeight={'size-3000'}>
                         <ResponsiveContainer width='100%' height={300} style={{ userSelect: 'none' }}>
-                            <LineChart
+                            <AreaChart
                                 style={{ aspectRatio: 1.6 }}
                                 data={data}
                                 margin={{ top: 35, bottom: 35, left: 35 }}
                             >
+                                <defs>
+                                    <linearGradient id='areaGradient' x1='0' y1='0' x2='0' y2='1'>
+                                        <stop offset='5%' stopColor='var(--energy-blue)' stopOpacity={0.3} />
+                                        <stop offset='95%' stopColor='var(--energy-blue)' stopOpacity={0} />
+                                    </linearGradient>
+                                </defs>
                                 <CartesianGrid />
                                 <XAxis
                                     dataKey='x'
@@ -51,15 +57,17 @@ export const MetricGraph = ({ title, data, xAxisLabel, yAxisLabel }: MetricGraph
                                     contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc' }}
                                     labelStyle={{ color: '#333' }}
                                 />
-                                <Line
+                                <Area
                                     type='linear'
                                     dataKey='y'
                                     name={yAxisLabel}
                                     stroke='var(--energy-blue)'
                                     strokeWidth={2}
+                                    fill='url(#areaGradient)'
                                     dot={false}
+                                    isAnimationActive={false}
                                 />
-                            </LineChart>
+                            </AreaChart>
                         </ResponsiveContainer>
                     </View>
                 }

@@ -69,9 +69,7 @@ export const MetricsContent = ({modelId}: {modelId: string}) => {
         return filterLossStepMetrics(query.data);
     }, [query.data])
 
-    console.log(query.data);
-
     return (
-        <MetricGraph title={"Loss"} yAxisLabel={"Loss"} data={lossStepMetrics}/>
+        <MetricGraph title={"Loss"} yAxisLabel={"Loss"} xAxisLabel='Step' data={lossStepMetrics}/>
     )
 }
