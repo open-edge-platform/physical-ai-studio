@@ -1,6 +1,5 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-# pyright: reportMissingImports=false, reportMissingModuleSource=false
 
 """Trossen WidowX AI robot arm driver.
 
@@ -32,7 +31,7 @@ from physicalai.robot import Robot
 from physicalai.robot.trossen.constants import HOME_POSITION, VALID_ROLES, WIDOWXAI_JOINT_ORDER
 
 if TYPE_CHECKING:
-    from trossen_arm import TrossenArmDriver  # type: ignore[import-not-found]
+    from trossen_arm import TrossenArmDriver
 
     from physicalai.capture.frame import Frame
 

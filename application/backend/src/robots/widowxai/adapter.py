@@ -12,8 +12,7 @@ from typing import Literal
 
 import numpy as np
 from loguru import logger
-from physicalai.robot.trossen import WidowXAI
-from physicalai.robot.trossen.widowxai import WidowXAIObservation
+from physicalai.robot.trossen import WidowXAI, WidowXAIObservation
 
 from robots.robot_client import RobotClient
 from schemas.robot import RobotType
