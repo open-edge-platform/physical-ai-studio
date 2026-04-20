@@ -1,15 +1,15 @@
 import { ActionButton, Button, Flex, Grid, Item, Key, Menu, MenuTrigger, ProgressBar, Text, View } from '@geti-ui/ui';
 import { MoreMenu } from '@geti-ui/ui/icons';
 
-import { $api, fetchClient } from '../../api/client';
+import { $api } from '../../api/client';
 import { GRID_COLUMNS } from './constants';
 import { SingleBadge, SplitBadge } from './split-badge.component';
 import { SchemaTrainJob } from './train-model-dialog';
 import { durationBetween, elapsedSince } from './utils';
 
 import classes from './model-table.module.scss';
-import { experimental_streamedQuery as streamedQuery, queryOptions, useQuery } from '@tanstack/react-query';
-import { JobMetricsContent } from './metrics';
+import { CollapsableRow } from './collapsable-row.component';
+import { JobRowContent } from './job-row-content.component';
 
 export const TrainingHeader = () => {
     return (
@@ -110,30 +110,29 @@ export const TrainingRow = ({
 
     return (
         <View>
-            <Grid columns={GRID_COLUMNS} alignItems={'center'} width={'100%'} UNSAFE_className={classes.modelRow}>
-                <TrainJobStatus job={trainJob} />
-                <Text>{loss ? loss.toFixed(2) : '...'}</Text>
-                <div />
-                <Text>{trainJob.payload.policy.toUpperCase()}</Text>
-                <View>
-                    {trainJob.status === 'running' && (
-                        <Button variant='secondary' onPress={onInterrupt}>
-                            Interrupt
-                        </Button>
-                    )}
-                </View>
-                <View justifySelf={'end'}>
-                    <JobMenu trainJob={trainJob} onViewLogs={onViewLogs} />
-                </View>
-            </Grid>
-
+            <CollapsableRow header={
+                <Grid columns={GRID_COLUMNS} alignItems={'center'} width={'100%'} UNSAFE_className={classes.modelRow}>
+                    <TrainJobStatus job={trainJob} />
+                    <Text>{loss ? loss.toFixed(2) : '...'}</Text>
+                    <div />
+                    <Text>{trainJob.payload.policy.toUpperCase()}</Text>
+                    <View>
+                        {trainJob.status === 'running' && (
+                            <Button variant='secondary' onPress={onInterrupt}>
+                                Interrupt
+                            </Button>
+                        )}
+                    </View>
+                    <View justifySelf={'end'}>
+                        <JobMenu trainJob={trainJob} onViewLogs={onViewLogs} />
+                    </View>
+                </Grid>
+            }>
+                <JobRowContent job={trainJob}/>
+            </CollapsableRow>
             {trainJob.status === 'running' && (
                 <ProgressBar size='S' UNSAFE_className={classes.progressBar} width={'100%'} value={trainJob.progress} />
             )}
-
-            <Flex height="size-6000">
-                <JobMetricsContent jobId={trainJob.id!}/>
-            </Flex>
         </View>
     );
 };

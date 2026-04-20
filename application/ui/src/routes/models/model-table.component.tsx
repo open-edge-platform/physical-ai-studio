@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { ActionButton, Button, DialogTrigger, Flex, Grid, Item, Key, Menu, MenuTrigger, TabList, Tabs, Text, View, TabPanels } from '@geti-ui/ui';
+import { ActionButton, Button, DialogTrigger, Flex, Grid, Item, Key, Menu, MenuTrigger, Text, View } from '@geti-ui/ui';
 import { MoreMenu } from '@geti-ui/ui/icons';
 
 import { SchemaModel, SchemaTrainJob } from '../../api/openapi-spec';
@@ -10,7 +10,6 @@ import { StartInferenceDialog } from './start-model-modal.component';
 import { durationBetween } from './utils';
 
 import classes from './model-table.module.scss';
-import { MetricsContent } from './metrics';
 import { CollapsableRow } from './collapsable-row.component';
 import { ModelRowContent } from './model-row-content.component';
 

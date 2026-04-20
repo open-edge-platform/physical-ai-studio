@@ -1,30 +1,26 @@
-import { Item, TabList, Tabs, View, TabPanels, Heading } from '@geti-ui/ui';
-import { SchemaModel } from "../../api/openapi-spec"
-import { MetricsContent } from './metrics';
+import { ActionButton, Button, DialogTrigger, Flex, Grid, Item, Key, Menu, MenuTrigger, TabList, Tabs, Text, View, TabPanels, Heading } from '@geti-ui/ui';
+import { SchemaTrainJob } from "../../api/openapi-spec"
+import { JobMetricsContent, MetricsContent } from './metrics';
 
 import classes from './model-row-content.module.scss'
 
-interface ModelRowContentProps {
-    model: SchemaModel;
+interface JobRowContentProps {
+    job: SchemaTrainJob;
 }
 
-export const ModelRowContent = ({ model }: ModelRowContentProps) => {
+export const JobRowContent = ({ job }: JobRowContentProps) => {
     return (
         <View UNSAFE_className={classes.modelRowContent}>
             <Tabs>
                 <TabList>
                     <Item key="metrics">Model Metrics</Item>
                     <Item key="datasets">Training Datasets</Item>
-                    <Item key="export">Export</Item>
                 </TabList>
                 <TabPanels>
                     <Item key="metrics">
-                        <MetricsContent modelId={model.id!} />
+                        <JobMetricsContent jobId={job.id!} />
                     </Item>
                     <Item key="datasets">
-                      <Heading>Coming soon</Heading>
-                    </Item>
-                    <Item key="export">
                       <Heading>Coming soon</Heading>
                     </Item>
                 </TabPanels>

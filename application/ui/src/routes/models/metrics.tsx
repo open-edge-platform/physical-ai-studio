@@ -15,7 +15,7 @@ const filterLossStepMetrics = (data?: MetricsEntry[]) => {
     if (!data) return [];
     const stepRows = data.filter((entry): entry is MetricsEntry => {
         return (
-            entry.train_loss_step !== null
+            entry.train_loss !== null
         )
     });
     return stepRows.map((row) => ({x: row.step, y: row.train_loss!}))
@@ -43,7 +43,7 @@ export const JobMetricsContent = ({jobId}: {jobId: string}) => {
     }, [query.data])
 
     return (
-        <MetricGraph title={"Loss"} yAxisLabel={"Loss"} data={lossStepMetrics}/>
+        <MetricGraph title={"Loss"} yAxisLabel={"Loss"} xAxisLabel='Step' data={lossStepMetrics}/>
     )
 }
 
