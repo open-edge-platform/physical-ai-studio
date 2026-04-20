@@ -254,7 +254,7 @@ def test_discover_returns_device_info_list(realsense_cls: tuple) -> None:
     assert isinstance(devices[0], DeviceInfo)
     assert devices[0].device_id == "test-serial"
     assert devices[0].driver == "realsense"
-    assert devices[0].manufacturer == "Intel"
+    assert devices[0].manufacturer == "RealSense"
 
 
 def test_discover_returns_empty_when_no_sdk() -> None:
