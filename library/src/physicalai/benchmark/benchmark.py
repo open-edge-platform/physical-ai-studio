@@ -198,6 +198,8 @@ class Benchmark:
 
         return results
 
+    frame_key: str = "image"
+
     def _evaluate_gym(
         self,
         gym: Gym,
@@ -235,6 +237,7 @@ class Benchmark:
                 n_episodes=self.num_episodes,
                 start_seed=self.seed,
                 max_steps=self.max_steps,
+                frame_key=self.frame_key,
                 video_recorder=video_recorder,
             )
         except Exception:

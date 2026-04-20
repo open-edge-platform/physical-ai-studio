@@ -34,6 +34,7 @@ Examples:
 
 from physicalai.benchmark.benchmark import Benchmark
 from physicalai.benchmark.libero import LiberoBenchmark
+from physicalai.benchmark.pusht import PushTBenchmark
 from physicalai.benchmark.results import BenchmarkResults, TaskResult
 from physicalai.eval.video import RecordMode, VideoRecorder
 
@@ -41,6 +42,7 @@ __all__ = [
     "Benchmark",
     "BenchmarkResults",
     "LiberoBenchmark",
+    "PushTBenchmark",
     "RecordMode",
     "TaskResult",
     "VideoRecorder",
