@@ -571,7 +571,6 @@ class Pi05Model(ExportableModelMixin, Model):
         gradient_checkpointing: bool = False,
         compile_model: bool = False,
         use_random_input_noise: bool = False,
-        normalization_mode: str = "quantiles",
     ) -> None:
         """Initialize Pi05Model.
 
@@ -618,7 +617,6 @@ class Pi05Model(ExportableModelMixin, Model):
         self._image_resolution = image_resolution
         self._tokenizer_max_length = tokenizer_max_length
         self._use_random_input_noise = use_random_input_noise
-        self._normalization_mode = normalization_mode
 
         paligemma_config = get_gemma_config(paligemma_variant)
         action_expert_config = get_gemma_config(action_expert_variant)
@@ -684,7 +682,7 @@ class Pi05Model(ExportableModelMixin, Model):
             ComponentSpec(
                 type="denormalize",
                 stats={ACTION: self._dataset_stats[ACTION]},
-                mode=self._normalization_mode,
+                mode="quantiles",
             ),
         ]
         extra_args: dict[str, ExportParameters] = {}
