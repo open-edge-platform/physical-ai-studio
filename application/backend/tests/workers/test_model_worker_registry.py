@@ -106,4 +106,3 @@ class TestModelWorkerRegistryGet:
         from uuid import uuid4
 
         assert registry.get(uuid4()) is None
-
