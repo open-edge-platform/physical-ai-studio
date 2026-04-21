@@ -16,12 +16,11 @@ Supports two normalization modes:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, override
+from typing import override
+
+import numpy as np
 
 from physicalai.inference.preprocessors.base import Preprocessor
-
-if TYPE_CHECKING:
-    import numpy as np
 
 _EPS = 1e-8
 
@@ -69,6 +68,7 @@ class StatsNormalizer(Preprocessor):
         features: list[str] | None = None,
         *,
         artifact: str | None = None,
+        stats: dict[str, dict[str, np.ndarray]] | None = None,
     ) -> None:
         """Initialize with stats file path and normalization config.
 
@@ -80,6 +80,8 @@ class StatsNormalizer(Preprocessor):
                 all features present in the stats file are normalized.
             artifact: Alias for *stats_path*, used when the path is
                 supplied via manifest ``artifact`` resolution.
+            stats: Optional pre-loaded stats dict.  If provided, skips
+                lazy loading from file.
 
         Raises:
             ValueError: If *mode* is not a recognized normalization mode
@@ -91,14 +93,14 @@ class StatsNormalizer(Preprocessor):
             raise ValueError(msg)
 
         resolved_path = stats_path or artifact
-        if resolved_path is None:
-            msg = "Either stats_path or artifact must be provided"
+        if resolved_path is None and stats is None:
+            msg = "Either stats_path, artifact, or stats must be provided"
             raise ValueError(msg)
 
         self._stats_path = resolved_path
         self._mode = mode
         self._features: set[str] = set(features) if features else set()
-        self._stats: dict[str, dict[str, np.ndarray]] | None = None
+        self._stats: dict[str, dict[str, np.ndarray]] | None = stats
 
     def load_stats(self) -> None:
         """Eagerly load stats from the safetensors file.
@@ -167,7 +169,7 @@ def _normalize(
     if mode == "mean_std":
         mean = stats["mean"]
         std = stats["std"]
-        return (tensor - mean) / (std + _EPS)
+        return (tensor - mean) / (std + np.array(_EPS))
 
     if mode == "min_max":
         min_val = stats["min"]
