@@ -19,10 +19,14 @@ def stats_dir(tmp_path: Path) -> Path:
         "action/std": np.array([0.5, 1.0, 1.5]),
         "action/min": np.array([0.0, 0.0, 0.0]),
         "action/max": np.array([2.0, 4.0, 6.0]),
+        "action/q01": np.array([0.1, 0.2, 0.3]),
+        "action/q99": np.array([1.9, 3.8, 5.7]),
         "action.gripper/mean": np.array([0.5]),
         "action.gripper/std": np.array([0.1]),
         "action.gripper/min": np.array([0.0]),
         "action.gripper/max": np.array([1.0]),
+        "action.gripper/q01": np.array([0.05]),
+        "action.gripper/q99": np.array([0.95]),
     }
     stats_path = tmp_path / "stats.safetensors"
     save_file(stats, str(stats_path))
@@ -35,7 +39,7 @@ class TestStatsDenormalizerInit:
             StatsDenormalizer(stats_path=str(stats_dir / "stats.safetensors"), mode="bad")
 
     def test_valid_modes_accepted(self, stats_dir: Path) -> None:
-        for mode in ("mean_std", "min_max", "identity"):
+        for mode in ("mean_std", "min_max", "quantiles", "identity"):
             denormalizer = StatsDenormalizer(stats_path=str(stats_dir / "stats.safetensors"), mode=mode)
             assert denormalizer._mode == mode
 
@@ -174,6 +178,61 @@ class TestStatsDenormalizerIdentity:
         np.testing.assert_array_equal(result["action"], np.array([42.0, 99.0, 7.0]))
 
 
+class TestStatsDenormalizerQuantiles:
+    def test_denormalizes_all_features(self, stats_dir: Path) -> None:
+        denormalizer = StatsDenormalizer(stats_path=str(stats_dir / "stats.safetensors"), mode="quantiles")
+
+        # normalized -1 → q01, +1 → q99
+        outputs = {"action": np.array([-1.0, -1.0, -1.0])}
+        result = denormalizer(outputs)
+        np.testing.assert_allclose(result["action"], np.array([0.1, 0.2, 0.3]))
+
+        outputs_max = {"action": np.array([1.0, 1.0, 1.0])}
+        result_max = denormalizer(outputs_max)
+        np.testing.assert_allclose(result_max["action"], np.array([1.9, 3.8, 5.7]))
+
+    def test_denormalizes_filtered_features(self, stats_dir: Path) -> None:
+        denormalizer = StatsDenormalizer(
+            stats_path=str(stats_dir / "stats.safetensors"),
+            mode="quantiles",
+            features=["action"],
+        )
+        outputs = {
+            "action": np.array([0.0, 0.0, 0.0]),
+            "action.gripper": np.array([0.5]),
+        }
+        result = denormalizer(outputs)
+
+        # denorm(0) with quantiles: (0 + 1) * (q99 - q01) / 2 + q01 = midpoint
+        expected = (np.array([1.9, 3.8, 5.7]) + np.array([0.1, 0.2, 0.3])) / 2.0
+        np.testing.assert_allclose(result["action"], expected)
+        np.testing.assert_array_equal(result["action.gripper"], np.array([0.5]))
+
+    def test_roundtrip_quantiles(self, stats_dir: Path) -> None:
+        from physicalai.inference.preprocessors import StatsNormalizer
+
+        original = {"action": np.array([1.0, 2.0, 3.0])}
+
+        normalizer = StatsNormalizer(stats_path=str(stats_dir / "stats.safetensors"), mode="quantiles")
+        denormalizer = StatsDenormalizer(stats_path=str(stats_dir / "stats.safetensors"), mode="quantiles")
+
+        normalized = normalizer(dict(original))
+        recovered = denormalizer(normalized)
+
+        np.testing.assert_allclose(recovered["action"], original["action"], atol=1e-6)
+
+    def test_denormalizes_via_stats_param(self) -> None:
+        stats = {
+            "action": {"q01": np.array([0.1, 0.2, 0.3]), "q99": np.array([1.9, 3.8, 5.7])},
+        }
+        denormalizer = StatsDenormalizer(stats=stats, mode="quantiles")
+        outputs = {"action": np.array([0.0, 0.0, 0.0])}
+        result = denormalizer(outputs)
+
+        expected = (np.array([1.9, 3.8, 5.7]) + np.array([0.1, 0.2, 0.3])) / 2.0
+        np.testing.assert_allclose(result["action"], expected)
+
+
 class TestStatsDenormalizerLazyLoading:
     def test_stats_not_loaded_at_init(self, stats_dir: Path) -> None:
         denormalizer = StatsDenormalizer(stats_path=str(stats_dir / "stats.safetensors"))
@@ -291,4 +350,4 @@ class TestParseFlatStats:
         denormalizer.load_stats()
         assert denormalizer._stats is not None
         assert set(denormalizer._stats.keys()) == {"action", "action.gripper"}
-        assert set(denormalizer._stats["action"].keys()) == {"mean", "std", "min", "max"}
+        assert set(denormalizer._stats["action"].keys()) == {"mean", "std", "min", "max", "q01", "q99"}

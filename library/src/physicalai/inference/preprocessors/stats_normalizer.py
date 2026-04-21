@@ -12,16 +12,16 @@ Supports two normalization modes:
 
 - **mean_std**: ``(x - mean) / (std + eps)``
 - **min_max**: ``2 * (x - min) / (max - min + eps) - 1`` → [-1, 1]
+- **quantiles**: ``2 * (x - q01) / (q99 - q01 + eps) - 1`` → [-1, 1]
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, override
+from typing import override
+
+import numpy as np
 
 from physicalai.inference.preprocessors.base import Preprocessor
-
-if TYPE_CHECKING:
-    import numpy as np
 
 _EPS = 1e-8
 
@@ -85,7 +85,7 @@ class StatsNormalizer(Preprocessor):
             ValueError: If *mode* is not a recognized normalization mode
                 or neither *stats_path* nor *artifact* is provided.
         """
-        valid_modes = {"mean_std", "min_max", "identity"}
+        valid_modes = {"mean_std", "min_max", "quantiles", "identity"}
         if mode not in valid_modes:
             msg = f"Unknown normalization mode {mode!r}. Expected one of {sorted(valid_modes)}"
             raise ValueError(msg)
@@ -174,5 +174,12 @@ def _normalize(
         max_val = stats["max"]
         denom = max_val - min_val + _EPS
         return 2.0 * (tensor - min_val) / denom - 1.0
+
+    if mode == "quantiles":
+        q01 = stats["q01"]
+        q99 = stats["q99"]
+        denom = q99 - q01
+        denom = np.where(denom == 0, _EPS, denom)
+        return 2.0 * (tensor - q01) / denom - 1.0
 
     return tensor

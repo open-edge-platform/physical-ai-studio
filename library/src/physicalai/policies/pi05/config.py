@@ -50,6 +50,10 @@ class Pi05Config(Config):
         compile_mode: Torch compile mode. Defaults to "max-autotune".
         freeze_vision_encoder: Whether to freeze vision encoder during training. Defaults to False.
         train_expert_only: Whether to train only the action expert. Defaults to True.
+        normalization_mode: Normalization method for state/action features.
+            ``"QUANTILES"`` maps data to [-1, 1] using the 1st and 99th percentiles,
+            which is robust to outliers. ``"MEAN_STD"`` uses zero-mean unit-variance
+            normalization. Defaults to ``"QUANTILES"`` (matching lerobot pi0/pi05).
 
         optimizer_lr: Learning rate for the optimizer. Defaults to 2.5e-5.
         optimizer_betas: Beta coefficients for Adam optimizer. Defaults to (0.9, 0.95).

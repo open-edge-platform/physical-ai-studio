@@ -73,6 +73,8 @@ class Pi05(ExportablePolicyMixin, Policy):
         compile_mode: Torch compile mode. Default: "max-autotune".
         freeze_vision_encoder: Freeze vision encoder. Default: False.
         train_expert_only: Train only action expert. Default: True.
+        normalization_mode: Normalization method for state/action features — ``"QUANTILES"``
+            (percentile-based, robust to outliers) or ``"MEAN_STD"``. Default: ``"QUANTILES"``.
 
         optimizer_lr: Learning rate. Default: 2.5e-5.
         optimizer_betas: Adam beta coefficients. Default: (0.9, 0.95).
