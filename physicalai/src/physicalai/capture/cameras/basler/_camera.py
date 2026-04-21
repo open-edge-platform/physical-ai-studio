@@ -33,6 +33,8 @@ class BaslerCamera(Camera):
         super().__init__(color_mode=color_mode)
         self._serial_number = serial_number
         self._fps = fps
+        # User-requested dimensions (None = full sensor). Resolved to actual
+        # output dimensions in _configure_camera once the sensor size is known.
         self._requested_width = width
         self._requested_height = height
         self._width: int = 0
@@ -135,11 +137,7 @@ class BaslerCamera(Camera):
                 raise CaptureError(msg) from err
 
             if grab_result.GrabSucceeded():
-                converted = converter.Convert(grab_result)
-                # GetArray() returns a view into the PylonImage's C++ buffer; copy
-                # so the numpy array survives after converted is garbage-collected.
-                self._last_frame_data = self._resize(converted.GetArray().copy())
-                grab_result.Release()
+                self._last_frame_data = self._convert_result(grab_result, converter)
                 self._connected = True
                 self._sequence = 0
                 logger.info(
@@ -176,14 +174,34 @@ class BaslerCamera(Camera):
         self._last_frame_data = None
         self._connected = False
 
-    def _resize(self, data: np.ndarray) -> np.ndarray:
-        """Downsample full-sensor frame to the requested output dimensions.
+    def _subsample(self, data: np.ndarray) -> np.ndarray:
+        """Nearest-neighbor downsample via precomputed index arrays.
+
+        Picks evenly-spaced rows and columns — no interpolation.
+        Fast and avoids an OpenCV dependency.
 
         Returns:
-            Resized frame array, or the original if no resize is needed.
+            Subsampled image data.
         """
         if self._needs_resize and self._row_indices is not None and self._col_indices is not None:
             return data[np.ix_(self._row_indices, self._col_indices)]
+        return data
+
+    def _convert_result(
+        self,
+        grab_result: pylon.GrabResult,
+        converter: pylon.ImageFormatConverter,
+    ) -> np.ndarray:
+        """Convert a grab result to an owned numpy array and release the buffer.
+
+        Returns:
+            Converted frame data as a numpy array.
+        """
+        converted = converter.Convert(grab_result)
+        # GetArray() returns a view into the PylonImage's C++ buffer; copy
+        # so the numpy array survives after converted is garbage-collected.
+        data = self._subsample(converted.GetArray().copy())
+        grab_result.Release()
         return data
 
     @property
@@ -210,11 +228,7 @@ class BaslerCamera(Camera):
                 raise CaptureTimeoutError(msg) from err
 
             if grab_result.GrabSucceeded():
-                converted = converter.Convert(grab_result)
-                # GetArray() returns a view into the PylonImage's C++ buffer; copy
-                # so the numpy array survives after converted is garbage-collected.
-                data = self._resize(converted.GetArray().copy())
-                grab_result.Release()
+                data = self._convert_result(grab_result, converter)
 
                 self._last_frame_data = data
                 self._sequence += 1
@@ -234,11 +248,7 @@ class BaslerCamera(Camera):
 
         if grab_result is not None and grab_result.IsValid():
             if grab_result.GrabSucceeded():
-                converted = converter.Convert(grab_result)
-                # GetArray() returns a view into the PylonImage's C++ buffer; copy
-                # so the numpy array survives after converted is garbage-collected.
-                data = self._resize(converted.GetArray().copy())
-                grab_result.Release()
+                data = self._convert_result(grab_result, converter)
                 self._last_frame_data = data
                 self._sequence += 1
                 self._last_timestamp = time.monotonic()
