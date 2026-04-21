@@ -3419,6 +3419,13 @@ pi0 = [
     { name = "sentencepiece" },
     { name = "transformers" },
 ]
+pi05 = [
+    { name = "peft" },
+    { name = "pillow" },
+    { name = "safetensors" },
+    { name = "sentencepiece" },
+    { name = "transformers" },
+]
 smolvla = [
     { name = "num2words" },
     { name = "safetensors" },
@@ -3473,6 +3480,8 @@ requires-dist = [
     { name = "physicalai-train", extras = ["groot"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["libero"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["pi0"], marker = "extra == 'all'" },
+    { name = "physicalai-train", extras = ["pi0"], marker = "extra == 'pi05'" },
+    { name = "physicalai-train", extras = ["pi05"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["smolvla"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["tests"], marker = "extra == 'all'" },
     { name = "pillow" },
@@ -3499,7 +3508,7 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'pi0'", specifier = ">=5.3.0,<5.4.0" },
     { name = "transformers", marker = "extra == 'smolvla'", specifier = ">=5.3.0,<5.4.0" },
 ]
-provides-extras = ["cpu", "cu128", "xpu", "tests", "libero", "pi0", "groot", "smolvla", "executorch", "executorch-openvino", "all"]
+provides-extras = ["cpu", "cu128", "xpu", "tests", "libero", "pi0", "pi05", "groot", "smolvla", "executorch", "executorch-openvino", "all"]
 
 [package.metadata.requires-dev]
 dev = [
