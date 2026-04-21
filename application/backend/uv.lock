@@ -3054,6 +3054,7 @@ trossen = [
 [package.metadata]
 requires-dist = [
     { name = "feetech-servo-sdk", marker = "extra == 'so101'" },
+    { name = "iceoryx2", marker = "extra == 'transport'", specifier = ">=0.8" },
     { name = "ipykernel", marker = "extra == 'notebooks'" },
     { name = "loguru", specifier = ">=0.7" },
     { name = "matplotlib", marker = "extra == 'notebooks'" },
@@ -3078,7 +3079,7 @@ requires-dist = [
     { name = "pyturbojpeg", marker = "sys_platform == 'linux'", specifier = "<2" },
     { name = "trossen-arm", marker = "extra == 'trossen'", specifier = ">=1.9.0" },
 ]
-provides-extras = ["tests", "notebooks", "realsense", "basler", "genicam", "capture", "ur", "abb", "franka", "trossen", "so101", "robots"]
+provides-extras = ["tests", "notebooks", "realsense", "basler", "transport", "genicam", "capture", "ur", "abb", "franka", "trossen", "so101", "robots"]
 
 [package.metadata.requires-dev]
 dev = [
