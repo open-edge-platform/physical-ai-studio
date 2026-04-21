@@ -74,6 +74,7 @@ pi0 = [
     "Pillow>=10.0.0,<13.0.0",
     "sentencepiece<=0.2.1",
 ]
+pi05 = ["physicalai-train[pi0]"]
 
 # NVIDIA GR00T-N1 foundation model
 # Requires ~24GB+ GPU memory for training, supports LoRA fine-tuning
@@ -107,6 +108,7 @@ all = [
     "physicalai-train[tests]",
     "physicalai-train[libero]",
     "physicalai-train[pi0]",
+    "physicalai-train[pi05]",
     "physicalai-train[groot]",
     "physicalai-train[smolvla]",
 ]

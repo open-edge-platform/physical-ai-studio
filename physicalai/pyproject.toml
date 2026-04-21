@@ -25,7 +25,11 @@ dependencies = [
 
 [project.optional-dependencies]
 tests = ["pytest", "mypy"]
-realsense = []
+notebooks = ["matplotlib", "matplotlib-inline"]
+realsense = [
+    "pyrealsense2; sys_platform != 'darwin'",
+    "pyrealsense2-macosx; sys_platform == 'darwin'",
+]
 basler = []
 genicam = []
 capture = [

@@ -4,7 +4,7 @@ from uuid import UUID
 
 from db import get_async_db_session_ctx
 from exceptions import ResourceNotFoundError, ResourceType
-from repositories import ModelRepository
+from repositories import ModelRepository, SnapshotRepository
 from schemas import Model
 
 
@@ -40,10 +40,17 @@ class ModelService:
     @staticmethod
     async def delete_model(model: Model) -> None:
         async with get_async_db_session_ctx() as session:
-            repo = ModelRepository(session)
-            await repo.delete_by_id(model.id)
-            model_path = Path(model.path).expanduser()
-            shutil.rmtree(model_path)
+            model_repo = ModelRepository(session)
+            snapshot_repo = SnapshotRepository(session)
+
+            await model_repo.delete_by_id(model.id)
+
+            # Remove the associated snapshot row to avoid stale FK references
+            if model.snapshot_id is not None:
+                await snapshot_repo.delete_by_id(model.snapshot_id)
+
+        model_path = Path(model.path).expanduser()
+        shutil.rmtree(model_path)
 
     @staticmethod
     async def get_project_models(project_id: UUID) -> list[Model]:
