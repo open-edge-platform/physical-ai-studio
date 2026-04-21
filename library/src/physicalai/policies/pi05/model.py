@@ -677,6 +677,11 @@ class Pi05Model(ExportableModelMixin, Model):
         """
         base_preproc_specs = [
             ComponentSpec(type="pi05", image_resolution=self._image_resolution),
+            ComponentSpec(
+                type="normalize",
+                stats={STATE: self._dataset_stats[f"observation.{STATE}"]},
+                mode="mean_std",
+            ),
         ]
         postproc_specs = [
             ComponentSpec(
