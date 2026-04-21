@@ -3,107 +3,79 @@
 
 """LeRobot policies integration.
 
-This module provides integration with LeRobot's state-of-the-art robot learning policies,
-offering two flexible approaches for incorporating pre-trained models into your workflows.
+Lightning-compatible wrappers around `LeRobot <https://github.com/huggingface/lerobot>`_
+policies. Each first-class supported policy is exposed as a thin
+:class:`NamedLeRobotPolicy` subclass that binds a single ``POLICY_NAME``;
+configuration flows through LeRobot's own ``PreTrainedConfig`` dataclasses
+rather than hand-mirrored constructor kwargs.
 
-Approaches:
-    1. **Explicit Wrappers** (Recommended for most users):
-        - Full parameter definitions with IDE autocomplete
-        - Type-safe with compile-time checking
-        - Direct YAML configuration support
-        - Currently available: ACT, Diffusion
+Two access tiers:
 
-    2. **Universal Wrapper** (Flexible for advanced users):
-        - Single wrapper for all LeRobot policies
-        - Runtime policy selection
-        - Minimal code overhead
-        - Supports: act, diffusion, vqbet, tdmpc, sac, pi0, pi05, pi0_fast, smolvla
+- **Named wrappers** (the eight in :data:`SUPPORTED_POLICIES`) get one-line
+  factory classes for ergonomic use. The subset listed in
+  :data:`VALIDATED_EQUIVALENCE_POLICIES` carries a hard equivalence guarantee
+  enforced by the test suite; the remainder (currently ``groot``, ``xvla``)
+  are named for API parity but cannot be validated end-to-end yet (see the
+  ``Known limitations`` section in their alias docstrings).
+- **Universal escape hatch** — :class:`LeRobotPolicy` accepts any
+  ``policy_name`` that LeRobot's ``PreTrainedConfig`` registry knows
+  (``vqbet``, ``tdmpc``, ``sac``, …). These work best-effort: a one-time
+  :class:`UserWarning` is emitted and no equivalence is asserted. LeRobot's
+  own validation runs only when the policy is eagerly constructed (e.g. via
+  :meth:`LeRobotPolicy.from_dataset` or Lightning's ``setup`` hook).
 
 Note:
-    LeRobot must be installed to use these policies:
-        ``pip install lerobot``
+    LeRobot must be installed::
 
-    Or install physicalai with LeRobot support:
-        ``pip install physicalai-train[lerobot]``
+        pip install physicalai-train[lerobot]
 
-    For more information, see: https://github.com/huggingface/lerobot
+    See https://github.com/huggingface/lerobot for upstream documentation and
+    the per-policy ``PreTrainedConfig`` dataclasses that define every tunable
+    field (e.g. :class:`lerobot.policies.act.configuration_act.ACTConfig`).
 
 Examples:
-    Loading pretrained models from HuggingFace Hub:
-
-        >>> from physicalai.policies.lerobot import ACT, Diffusion
-
-        >>> # Load pretrained ACT model
-        >>> act_policy = ACT.from_pretrained(
-        ...     "lerobot/act_aloha_sim_transfer_cube_human"
-        ... )
-
-        >>> # Load pretrained Diffusion model
-        >>> diffusion_policy = Diffusion.from_pretrained(
-        ...     "lerobot/diffusion_pusht"
-        ... )
-
-    Using the explicit ACT wrapper with full type safety and autocomplete:
+    Load a pretrained checkpoint from the HuggingFace Hub::
 
         >>> from physicalai.policies.lerobot import ACT
+        >>> policy = ACT.from_pretrained("lerobot/act_aloha_sim_transfer_cube_human")
 
-        >>> # Create ACT policy with explicit parameters
-        >>> policy = ACT(
-        ...     dim_model=512,
-        ...     chunk_size=10,
-        ...     n_action_steps=10,
-        ...     learning_rate=1e-5,
-        ... )
-
-    Using the explicit Diffusion wrapper:
+    Construct from a dataset (features are inferred)::
 
         >>> from physicalai.policies.lerobot import Diffusion
+        >>> policy = Diffusion.from_dataset("lerobot/pusht", optimizer_lr=1e-4)
 
-        >>> # Create Diffusion policy with explicit parameters
-        >>> policy = Diffusion(
-        ...     n_obs_steps=2,
-        ...     horizon=16,
-        ...     n_action_steps=8,
-        ...     learning_rate=1e-4,
+    Override individual config fields at construction time::
+
+        >>> from physicalai.policies.lerobot import ACT
+        >>> policy = ACT(
+        ...     input_features=input_features,
+        ...     output_features=output_features,
+        ...     dim_model=512,
+        ...     chunk_size=10,
+        ...     optimizer_lr=1e-5,
         ... )
 
-    Using the universal wrapper for runtime policy selection:
+    Dispatch dynamically by policy name (named or escape-hatch)::
 
-        >>> from physicalai.policies.lerobot import LeRobotPolicy
-
-        >>> # Create any LeRobot policy dynamically by name
-        >>> policy = LeRobotPolicy(
-        ...     policy_name="vqbet",
-        ...     learning_rate=1e-4,
-        ... )
-
-    Using convenience aliases for cleaner code:
-
-        >>> from physicalai.policies.lerobot import VQBeT, TDMPC
-
-        >>> # Convenience aliases wrap LeRobotPolicy with specific policy names
-        >>> vqbet_policy = VQBeT(learning_rate=1e-4)
-        >>> tdmpc_policy = TDMPC(learning_rate=1e-4)
-
-    Checking availability before using LeRobot policies:
-
-        >>> from physicalai.policies import lerobot
-
-        >>> if lerobot.is_available():
-        ...     policies = lerobot.list_available_policies()
-        ...     print(f"Available policies: {policies}")
-        ...     policy = lerobot.ACT(dim_model=512, chunk_size=10)
-        ... else:
-        ...     print("LeRobot not installed. Install with: pip install lerobot")
+        >>> from physicalai.policies.lerobot import get_lerobot_policy
+        >>> policy = get_lerobot_policy("act", optimizer_lr=1e-4)
 """
+
+from typing import Any
 
 from lightning_utilities.core.imports import module_available
 
-from physicalai.policies.lerobot.act import ACT
-from physicalai.policies.lerobot.diffusion import Diffusion
-from physicalai.policies.lerobot.groot import Groot
-from physicalai.policies.lerobot.smolvla import SmolVLA
-from physicalai.policies.lerobot.universal import LeRobotPolicy
+from physicalai.policies.lerobot.aliases import (
+    ACT,
+    PI0,
+    PI05,
+    XVLA,
+    Diffusion,
+    Groot,
+    PI0Fast,
+    SmolVLA,
+)
+from physicalai.policies.lerobot.policy import LeRobotPolicy, NamedLeRobotPolicy
 from physicalai.policies.lerobot.utils.checkpoint_converter import lerobot_to_lightning, lightning_to_lerobot
 
 LEROBOT_AVAILABLE = module_available("lerobot")
@@ -115,201 +87,137 @@ SUPPORTED_POLICIES: tuple[str, ...] = (
     "pi0",
     "pi05",
     "pi0_fast",
-    "sac",
     "smolvla",
-    "tdmpc",
-    "vqbet",
+    "xvla",
+)
+"""First-class LeRobot policies exposed as named :class:`NamedLeRobotPolicy` subclasses.
+
+Membership implies a wrapper class exists in :mod:`physicalai.policies.lerobot.aliases`
+and the policy is in scope for the equivalence test suite. Other policies in
+LeRobot's ``PreTrainedConfig`` registry remain reachable through
+:class:`LeRobotPolicy` directly with no equivalence guarantee.
+"""
+
+VALIDATED_EQUIVALENCE_POLICIES: tuple[str, ...] = (
+    "act",
+    "diffusion",
+    "smolvla",
+    "pi0",
+    "pi05",
+    "pi0_fast",
+)
+"""Subset of :data:`SUPPORTED_POLICIES` with measured wrapper-vs-native numerical equivalence.
+
+A policy listed here passes the equivalence test suite under tier-appropriate
+tolerances:
+
+- Unit tier (CPU, fp32, manual forward/backward): ``rtol=atol=1e-6`` for forward,
+  gradient, and post-step weight comparisons. Applies to ``act``, ``diffusion``,
+  ``smolvla``.
+- Integration tier (Lightning Trainer, CUDA/XPU + bf16-mixed for VLAs): ``rtol=1e-5``
+  for loss trajectories and ``rtol=5e-5`` for post-training weights (calibrated
+  from observed float32-accumulation drift; see test docstrings). Applies to all
+  six entries.
+
+Membership implies a hard guarantee: any wrapper change that breaks equivalence
+must show up as a failing test in ``library/tests/unit/policies/test_lerobot.py``
+or ``library/tests/integration/test_lerobot_wrapper_equivalence.py``.
+
+Policies in :data:`SUPPORTED_POLICIES` but not here (``groot``, ``xvla``) are
+named for API ergonomics but cannot currently be validated end-to-end — see the
+``Known limitations`` section in their alias docstrings and the
+``_EQUIVALENCE_XFAIL_REASONS`` table in the integration test for details.
+"""
+
+_NAMED_WRAPPERS: tuple[type[NamedLeRobotPolicy], ...] = (
+    ACT,
+    Diffusion,
+    Groot,
+    PI0,
+    PI05,
+    PI0Fast,
+    SmolVLA,
+    XVLA,
 )
 
-
-# Convenience wrapper classes for universal policies
-class VQBeT(LeRobotPolicy):
-    """VQ-BeT Policy via universal wrapper.
-
-    This is a convenience class that wraps LeRobotPolicy with policy_name="vqbet".
-    """
-
-    def __init__(self, **kwargs) -> None:  # noqa: ANN003
-        """Initialize VQ-BeT policy."""
-        super().__init__(policy_name="vqbet", **kwargs)
-
-
-class TDMPC(LeRobotPolicy):
-    """TD-MPC Policy via universal wrapper.
-
-    This is a convenience class that wraps LeRobotPolicy with policy_name="tdmpc".
-    """
-
-    def __init__(self, **kwargs) -> None:  # noqa: ANN003
-        """Initialize TD-MPC policy."""
-        super().__init__(policy_name="tdmpc", **kwargs)
-
-
-class SAC(LeRobotPolicy):
-    """SAC Policy via universal wrapper.
-
-    This is a convenience class that wraps LeRobotPolicy with policy_name="sac".
-    """
-
-    def __init__(self, **kwargs) -> None:  # noqa: ANN003
-        """Initialize SAC policy."""
-        super().__init__(policy_name="sac", **kwargs)
-
-
-class PI0(LeRobotPolicy):
-    """PI0 Policy via universal wrapper.
-
-    This is a convenience class that wraps LeRobotPolicy with policy_name="pi0".
-    """
-
-    def __init__(self, **kwargs) -> None:  # noqa: ANN003
-        """Initialize PI0 policy."""
-        super().__init__(policy_name="pi0", **kwargs)
-
-
-class PI05(LeRobotPolicy):
-    """PI0.5 Policy via universal wrapper.
-
-    This is a convenience class that wraps LeRobotPolicy with policy_name="pi05".
-    """
-
-    def __init__(self, **kwargs) -> None:  # noqa: ANN003
-        """Initialize PI0.5 policy."""
-        super().__init__(policy_name="pi05", **kwargs)
-
-
-class PI0Fast(LeRobotPolicy):
-    """PI0Fast Policy via universal wrapper.
-
-    This is a convenience class that wraps LeRobotPolicy with policy_name="pi0_fast".
-    """
-
-    def __init__(self, **kwargs) -> None:  # noqa: ANN003
-        """Initialize PI0Fast policy."""
-        super().__init__(policy_name="pi0_fast", **kwargs)
+_POLICY_MAP: dict[str, type[NamedLeRobotPolicy]] = {cls.POLICY_NAME: cls for cls in _NAMED_WRAPPERS}
 
 
 __all__ = [
     "ACT",
     "PI0",
     "PI05",
-    "SAC",
     "SUPPORTED_POLICIES",
-    "TDMPC",
+    "VALIDATED_EQUIVALENCE_POLICIES",
+    "XVLA",
     "Diffusion",
     "Groot",
     "LeRobotPolicy",
+    "NamedLeRobotPolicy",
     "PI0Fast",
     "SmolVLA",
-    "VQBeT",
     "get_lerobot_policy",
+    "is_available",
     "lerobot_to_lightning",
     "lightning_to_lerobot",
+    "list_available_policies",
 ]
 
 
-def get_lerobot_policy(policy_name: str, **kwargs) -> LeRobotPolicy:  # noqa: ANN003
-    """Factory function to create LeRobot policy instances by name.
+def get_lerobot_policy(policy_name: str, **kwargs: Any) -> LeRobotPolicy:  # noqa: ANN401
+    """Instantiate a LeRobot policy by name.
 
-    This function provides a convenient way to instantiate LeRobot policies dynamically
-    based on a string name, making it ideal for configuration-driven workflows, testing,
-    and CLI applications.
+    Names in :data:`SUPPORTED_POLICIES` dispatch to the matching named
+    wrapper. Other names fall through to the dynamic :class:`LeRobotPolicy`
+    (best-effort, triggers a one-time :class:`UserWarning`). Validation of
+    unknown names is deferred to LeRobot's own ``PreTrainedConfig`` registry
+    and only fires when the policy is eagerly constructed (e.g. via
+    :meth:`LeRobotPolicy.from_dataset` or a Lightning ``setup`` hook).
 
     Args:
-        policy_name: Name of the LeRobot policy to create. Supported values:
-            - Explicit wrappers: "act", "diffusion"
-            - Universal wrapper: "vqbet", "tdmpc", "sac", "pi0", "pi05", "pi0_fast", "smolvla"
-        **kwargs: Additional keyword arguments passed to the policy constructor.
+        policy_name: Either a name in :data:`SUPPORTED_POLICIES` or any
+            other entry in LeRobot's ``PreTrainedConfig.get_known_choices()``.
+        **kwargs: Forwarded to the wrapper constructor (see
+            :class:`NamedLeRobotPolicy` / :class:`LeRobotPolicy` for the
+            shared signature).
 
     Returns:
-        LeRobotPolicy: Instance of the requested LeRobot policy.
+        A configured policy wrapper instance.
 
     Raises:
         ImportError: If LeRobot is not installed.
-        ValueError: If the policy name is unknown.
 
     Examples:
-        Create ACT policy using explicit wrapper:
-
-            >>> from physicalai.policies.lerobot import get_lerobot_policy
-            >>> policy = get_lerobot_policy("act", dim_model=512, chunk_size=10)
-
-        Create Diffusion policy:
-
-            >>> policy = get_lerobot_policy("diffusion", n_obs_steps=2, learning_rate=1e-4)
-
-        Create policy via universal wrapper:
-
-            >>> policy = get_lerobot_policy("vqbet", learning_rate=1e-4)
-
-        Use in configuration:
-
-            >>> config = {"policy_name": "act", "dim_model": 512}
-            >>> policy = get_lerobot_policy(**config)
+        >>> from physicalai.policies.lerobot import get_lerobot_policy
+        >>> policy = get_lerobot_policy("act", dim_model=512, chunk_size=10)
     """
     if not LEROBOT_AVAILABLE:
         msg = (
             "LeRobot is not installed. Please install it with:\n"
-            "  uv pip install lerobot\n"
+            "  pip install lerobot\n"
             "or install physicalai with LeRobot support:\n"
-            "  uv pip install physicalai-train[lerobot]"
+            "  pip install physicalai-train[lerobot]"
         )
         raise ImportError(msg)
 
-    policy_name_lower = policy_name.lower()
-
-    # Map policy names to their classes
-    policy_map = {
-        # Explicit wrappers
-        "act": ACT,
-        "diffusion": Diffusion,
-        "smolvla": SmolVLA,
-        "groot": Groot,
-        # Universal wrapper classes
-        "vqbet": VQBeT,
-        "tdmpc": TDMPC,
-        "sac": SAC,
-        "pi0": PI0,
-        "pi05": PI05,
-        "pi0_fast": PI0Fast,
-    }
-
-    if policy_name_lower in policy_map:
-        return policy_map[policy_name_lower](**kwargs)
-
-    # List available policies for error message
-    available = ", ".join(sorted(policy_map.keys()))
-    msg = f"Unknown LeRobot policy: {policy_name}. Available policies: {available}"
-    raise ValueError(msg)
+    cls = _POLICY_MAP.get(policy_name.lower())
+    if cls is not None:
+        return cls(**kwargs)
+    return LeRobotPolicy(policy_name=policy_name, **kwargs)
 
 
 def is_available() -> bool:
-    """Check if LeRobot is available.
-
-    Returns:
-        bool: True if LeRobot is installed and available, False otherwise.
-
-    Examples:
-        >>> from physicalai.policies import lerobot
-        >>> if lerobot.is_available():
-        ...     from physicalai.policies.lerobot import ACT
-        ...     policy = ACT(hidden_dim=512)
-        ... else:
-        ...     print("LeRobot not available, using native policy")
-    """
+    """Return ``True`` if LeRobot is importable in the current environment."""
     return LEROBOT_AVAILABLE
 
 
 def list_available_policies() -> list[str]:
-    """List available LeRobot policies.
+    """List first-class policy names with named wrappers and equivalence scope.
 
     Returns:
-        list[str]: List of available policy names. Empty if LeRobot is not installed.
-
-    Examples:
-        >>> from physicalai.policies import lerobot
-        >>> policies = lerobot.list_available_policies()
-        >>> print(f"Available policies: {policies}")
+        ``list(SUPPORTED_POLICIES)`` if LeRobot is installed, else ``[]``.
+        Note this excludes the best-effort escape-hatch policies still
+        reachable through :class:`LeRobotPolicy` directly.
     """
     if LEROBOT_AVAILABLE:
         return list(SUPPORTED_POLICIES)

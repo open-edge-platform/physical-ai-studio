@@ -13,6 +13,7 @@ from pathlib import Path
 import torch
 
 from physicalai.export.mixin_policy import CONFIG_KEY, POLICY_NAME_KEY
+from physicalai.policies.lerobot.policy import LeRobotPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -27,50 +28,38 @@ def lightning_to_lerobot(
 ) -> Path:
     """Convert a Lightning checkpoint to LeRobot-compatible format.
 
-    Extracts ``config.json`` and ``model.safetensors`` from a physicalai
-    Lightning ``.ckpt`` file so the result can be loaded by
-    ``PreTrainedPolicy.from_pretrained()``.
+    Reconstructs the wrapper (config, dataset stats, weights, **and the
+    pre/post-processors**) via :meth:`LeRobotPolicy.load_from_checkpoint`
+    and persists it through :meth:`LeRobotPolicy.save_pretrained`. Going
+    through the wrapper — instead of hand-rolling ``config.json`` /
+    ``model.safetensors`` here — guarantees the output directory contains
+    every artefact LeRobot's loader expects (in particular the processor
+    JSONs that the previous hand-rolled converter silently dropped).
 
     Args:
         checkpoint_path: Path to the Lightning ``.ckpt`` file.
-        output_dir: Directory where ``config.json`` and ``model.safetensors``
-            will be written.
+        output_dir: Directory where the LeRobot-format artefacts will be
+            written. Created if missing.
         map_location: Device mapping for ``torch.load``.
 
     Returns:
         Path to the output directory.
 
-    Raises:
-        KeyError: If checkpoint is missing the required model config.
+    Note:
+        Propagates ``KeyError`` from
+        :meth:`LeRobotPolicy.load_from_checkpoint` if the checkpoint is
+        missing its embedded config, and ``RuntimeError`` from
+        :meth:`LeRobotPolicy.save_pretrained` if the reconstructed wrapper
+        has no processors (e.g. checkpoints predating processor
+        persistence).
     """
-    from safetensors.torch import save_file  # noqa: PLC0415
-
     checkpoint_path = Path(checkpoint_path)
     output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
 
-    # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
-    checkpoint = torch.load(checkpoint_path, map_location=map_location, weights_only=True)  # nosec B614
+    policy = LeRobotPolicy.load_from_checkpoint(checkpoint_path, map_location=map_location)
+    policy.save_pretrained(output_dir)
 
-    if CONFIG_KEY not in checkpoint:
-        msg = f"Checkpoint missing '{CONFIG_KEY}'. Cannot extract config."
-        raise KeyError(msg)
-
-    config_dict = checkpoint[CONFIG_KEY]
-
-    policy_name = checkpoint.get(POLICY_NAME_KEY) or config_dict.get("type")
-    if policy_name and "type" not in config_dict:
-        config_dict["type"] = policy_name
-
-    with (output_dir / "config.json").open("w") as f:
-        json.dump(config_dict, f, indent=4)
-
-    state_dict = checkpoint.get("state_dict", {})
-    lerobot_state_dict = _strip_prefix(state_dict, _LEROBOT_PREFIX)
-
-    save_file(lerobot_state_dict, str(output_dir / "model.safetensors"))
-
-    logger.info("Converted %s -> %s (config.json + model.safetensors)", checkpoint_path, output_dir)
+    logger.info("Converted %s -> %s (LeRobot-format directory)", checkpoint_path, output_dir)
     return output_dir
 
 
@@ -139,19 +128,6 @@ def lerobot_to_lightning(
 
     logger.info("Converted %s -> %s", lerobot_dir, output_path)
     return output_path
-
-
-def _strip_prefix(state_dict: dict[str, torch.Tensor], prefix: str) -> dict[str, torch.Tensor]:
-    result: dict[str, torch.Tensor] = OrderedDict()
-    dropped: list[str] = []
-    for key, value in state_dict.items():
-        if key.startswith(prefix):
-            result[key[len(prefix) :]] = value
-        else:
-            dropped.append(key)
-    if dropped:
-        logger.warning("Dropped %d key(s) without prefix %r: %s", len(dropped), prefix, dropped[:5])
-    return result
 
 
 def _add_prefix(state_dict: dict[str, torch.Tensor], prefix: str) -> dict[str, torch.Tensor]:
