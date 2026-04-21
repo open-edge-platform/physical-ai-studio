@@ -213,12 +213,16 @@ class TestPi05Policy:
                 "shape": (8,),
                 "mean": [0.0] * 8,
                 "std": [1.0] * 8,
+                "q01": [-1.0] * 8,
+                "q99": [1.0] * 8,
             },
             "action": {
                 "name": "action",
                 "shape": (7,),
                 "mean": [0.0] * 7,
                 "std": [1.0] * 7,
+                "q01": [-1.0] * 7,
+                "q99": [1.0] * 7,
             },
         }
         # Use smallest variants to keep memory usage low in CI (~300M params instead of ~2.6B)
@@ -643,12 +647,16 @@ class TestPi05Preprocessor:
                 "shape": (8,),
                 "mean": [0.0] * 8,
                 "std": [1.0] * 8,
+                "q01": [-1.0] * 8,
+                "q99": [1.0] * 8,
             },
             "action": {
                 "name": "action",
                 "shape": (7,),
                 "mean": [0.0] * 7,
                 "std": [1.0] * 7,
+                "q01": [-1.0] * 7,
+                "q99": [1.0] * 7,
             },
         }
 
@@ -672,6 +680,8 @@ class TestPi05Preprocessor:
                 "shape": (8,),
                 "mean": [0.0] * 8,
                 "std": [1.0] * 8,
+                "q01": [-1.0] * 8,
+                "q99": [1.0] * 8,
             },
         }
 
@@ -701,6 +711,8 @@ class TestFeatureNormalization:
                 normalization_data=NormalizationParameters(
                     mean=[0.0] * 8,
                     std=[1.0] * 8,
+                    q01=[-1.0] * 8,
+                    q99=[1.0] * 8,
                 ),
             ),
         }
@@ -720,6 +732,8 @@ class TestFeatureNormalization:
                 normalization_data=NormalizationParameters(
                     mean=[0.0] * 7,
                     std=[1.0] * 7,
+                    q01=[-1.0] * 7,
+                    q99=[1.0] * 7,
                 ),
             ),
         }
@@ -857,12 +871,16 @@ class TestPi05FineTuning:
                 "shape": (8,),
                 "mean": [0.0] * 8,
                 "std": [1.0] * 8,
+                "q01": [-1.0] * 8,
+                "q99": [1.0] * 8,
             },
             "action": {
                 "name": "action",
                 "shape": (7,),
                 "mean": [0.0] * 7,
                 "std": [1.0] * 7,
+                "q01": [-1.0] * 7,
+                "q99": [1.0] * 7,
             },
         }
         # Use smallest variants to keep memory usage low
@@ -880,12 +898,16 @@ class TestPi05FineTuning:
                 "shape": (4,),
                 "mean": [1.0] * 4,
                 "std": [2.0] * 4,
+                "q01": [-2.0] * 4,
+                "q99": [2.0] * 4,
             },
             "action": {
                 "name": "action",
                 "shape": (3,),
                 "mean": [1.0] * 3,
                 "std": [2.0] * 3,
+                "q01": [-2.0] * 3,
+                "q99": [2.0] * 3,
             },
         }
         old_preprocessor = policy._preprocessor
@@ -904,12 +926,16 @@ class TestPi05FineTuning:
                 "shape": (8,),
                 "mean": [0.0] * 8,
                 "std": [1.0] * 8,
+                "q01": [-1.0] * 8,
+                "q99": [1.0] * 8,
             },
             "action": {
                 "name": "action",
                 "shape": (7,),
                 "mean": [0.0] * 7,
                 "std": [1.0] * 7,
+                "q01": [-1.0] * 7,
+                "q99": [1.0] * 7,
             },
         }
         policy = Pi05(
@@ -924,12 +950,16 @@ class TestPi05FineTuning:
                 "shape": (4,),
                 "mean": [2.0] * 4,
                 "std": [3.0] * 4,
+                "q01": [-3.0] * 4,
+                "q99": [3.0] * 4,
             },
             "action": {
                 "name": "action",
                 "shape": (3,),
                 "mean": [2.0] * 3,
                 "std": [3.0] * 3,
+                "q01": [-3.0] * 3,
+                "q99": [3.0] * 3,
             },
         }
         policy._update_preprocessor_stats(new_stats)

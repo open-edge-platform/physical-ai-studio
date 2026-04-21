@@ -159,7 +159,7 @@ class TestAugmentDatasetQuantileStats:
         ds = _FakeLeRobotDataset()
 
         with patch(
-            "lerobot.scripts.augment_dataset_quantile_stats.compute_quantile_stats_for_dataset"
+            "physicalai.data.lerobot.utils.quantile_stats.compute_quantile_stats_for_dataset"
         ) as mock_compute:
             # Return fake stats matching what LeRobot would produce
             mock_compute.return_value = {

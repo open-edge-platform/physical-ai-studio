@@ -67,12 +67,16 @@ class FakeLeRobotDataset:
                         "std": np.ones(6),
                         "min": np.full(6, -1.0),
                         "max": np.ones(6),
+                        "q01": np.full(6, -1.0),
+                        "q99": np.ones(6),
                     },
                     "action": {
                         "mean": np.zeros(6),
                         "std": np.ones(6),
                         "min": np.full(6, -1.0),
                         "max": np.ones(6),
+                        "q01": np.full(6, -1.0),
+                        "q99": np.ones(6),
                     },
                 }
 
