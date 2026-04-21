@@ -18,58 +18,54 @@ const filterLossStepMetrics = (data?: MetricsEntry[]) => {
             entry.train_loss !== null
         )
     });
-    return stepRows.map((row) => ({x: row.step, y: row.train_loss!}))
+    return stepRows.map((row) => ({ x: row.step, y: row.train_loss! }))
 }
 
-export const JobMetricsContent = ({jobId}: {jobId: string}) => {
-    const query = useQuery(
-        queryOptions({
-            queryKey: ['get', '/api/models/{job_id}/metrics', jobId],
-            queryFn: streamedQuery({
-                queryFn: (context) => {
-                    const url = fetchClient.PATH('/api/jobs/{job_id}/model_metrics', {
-                        params: { path: { job_id: jobId } },
-                    });
+export const JobMetricsContent = ({ jobId }: { jobId: string }) => {
+    const query = useQuery({
+        queryKey: ['get', '/api/models/{job_id}/metrics', jobId],
+        queryFn: streamedQuery({
+            streamFn: (context) => {
+                const url = fetchClient.PATH('/api/jobs/{job_id}/model_metrics', {
+                    params: { path: { job_id: jobId } },
+                });
 
-                    return fetchSSE<MetricsEntry>(url, { signal: context.signal });
-                },
-            }),
-            staleTime: Infinity,
-        })
-    );
+                return fetchSSE<MetricsEntry>(url, { signal: context.signal });
+            },
+        }),
+        staleTime: Infinity,
+    });
 
     const lossStepMetrics = useMemo(() => {
         return filterLossStepMetrics(query.data);
     }, [query.data])
 
     return (
-        <MetricGraph title={"Loss"} yAxisLabel={"Loss"} xAxisLabel='Step' data={lossStepMetrics}/>
+        <MetricGraph title={"Loss"} yAxisLabel={"Loss"} xAxisLabel='Step' data={lossStepMetrics} />
     )
 }
 
-export const MetricsContent = ({modelId}: {modelId: string}) => {
+export const MetricsContent = ({ modelId }: { modelId: string }) => {
 
-    const query = useQuery(
-        queryOptions({
-            queryKey: ['get', '/api/models/{model_id}/metrics', modelId],
-            queryFn: streamedQuery({
-                queryFn: (context) => {
-                    const url = fetchClient.PATH('/api/models/{model_id}/metrics', {
-                        params: { path: { model_id: modelId } },
-                    });
+    const query = useQuery({
+        queryKey: ['get', '/api/models/{model_id}/metrics', modelId],
+        queryFn: streamedQuery({
+            streamFn: (context) => {
+                const url = fetchClient.PATH('/api/models/{model_id}/metrics', {
+                    params: { path: { model_id: modelId } },
+                });
 
-                    return fetchSSE<MetricsEntry>(url, { signal: context.signal });
-                },
-            }),
-            staleTime: Infinity,
-        })
-    );
+                return fetchSSE<MetricsEntry>(url, { signal: context.signal });
+            },
+        }),
+        staleTime: Infinity,
+    });
 
     const lossStepMetrics = useMemo(() => {
         return filterLossStepMetrics(query.data);
     }, [query.data])
 
     return (
-        <MetricGraph title={"Loss"} yAxisLabel={"Loss"} xAxisLabel='Step' data={lossStepMetrics}/>
+        <MetricGraph title={"Loss"} yAxisLabel={"Loss"} xAxisLabel='Step' data={lossStepMetrics} />
     )
 }
