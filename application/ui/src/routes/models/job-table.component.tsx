@@ -2,14 +2,14 @@ import { ActionButton, Button, Flex, Grid, Item, Key, Menu, MenuTrigger, Progres
 import { MoreMenu } from '@geti-ui/ui/icons';
 
 import { $api } from '../../api/client';
+import { CollapsableRow } from './collapsable-row.component';
 import { GRID_COLUMNS } from './constants';
+import { JobRowContent } from './job-row-content.component';
 import { SingleBadge, SplitBadge } from './split-badge.component';
 import { SchemaTrainJob } from './train-model-dialog';
 import { durationBetween, elapsedSince } from './utils';
 
 import classes from './model-table.module.scss';
-import { CollapsableRow } from './collapsable-row.component';
-import { JobRowContent } from './job-row-content.component';
 
 export const TrainingHeader = () => {
     return (
@@ -30,7 +30,7 @@ const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
             <View>
                 <Flex gap={'size-100'}>
                     <Text UNSAFE_style={{ fontWeight: 500 }}>{job.payload.model_name}</Text>
-                    <SplitBadge first={job.status} second={'Fine-tuning the model - epoch n/n'} />
+                    <SplitBadge first={job.status} second={'Fine-tuning the model'} />
                 </Flex>
                 {job.start_time ? (
                     <Text UNSAFE_className={classes.modelInfo}>
@@ -110,25 +110,32 @@ export const TrainingRow = ({
 
     return (
         <View>
-            <CollapsableRow header={
-                <Grid columns={GRID_COLUMNS} alignItems={'center'} width={'100%'} UNSAFE_className={classes.modelRow}>
-                    <TrainJobStatus job={trainJob} />
-                    <Text>{loss ? loss.toFixed(2) : '...'}</Text>
-                    <div />
-                    <Text>{trainJob.payload.policy.toUpperCase()}</Text>
-                    <View>
-                        {trainJob.status === 'running' && (
-                            <Button variant='secondary' onPress={onInterrupt}>
-                                Interrupt
-                            </Button>
-                        )}
-                    </View>
-                    <View justifySelf={'end'}>
-                        <JobMenu trainJob={trainJob} onViewLogs={onViewLogs} />
-                    </View>
-                </Grid>
-            }>
-                <JobRowContent job={trainJob}/>
+            <CollapsableRow
+                header={
+                    <Grid
+                        columns={GRID_COLUMNS}
+                        alignItems={'center'}
+                        width={'100%'}
+                        UNSAFE_className={classes.modelRow}
+                    >
+                        <TrainJobStatus job={trainJob} />
+                        <Text>{loss ? loss.toFixed(2) : '...'}</Text>
+                        <div />
+                        <Text>{trainJob.payload.policy.toUpperCase()}</Text>
+                        <View>
+                            {trainJob.status === 'running' && (
+                                <Button variant='secondary' onPress={onInterrupt}>
+                                    Interrupt
+                                </Button>
+                            )}
+                        </View>
+                        <View justifySelf={'end'}>
+                            <JobMenu trainJob={trainJob} onViewLogs={onViewLogs} />
+                        </View>
+                    </Grid>
+                }
+            >
+                <JobRowContent job={trainJob} />
             </CollapsableRow>
             {trainJob.status === 'running' && (
                 <ProgressBar size='S' UNSAFE_className={classes.progressBar} width={'100%'} value={trainJob.progress} />

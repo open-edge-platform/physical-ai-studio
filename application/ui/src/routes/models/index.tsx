@@ -180,7 +180,7 @@ export const Index = () => {
         <Flex height='100%'>
             <Flex margin={'size-200'} direction={'column'} flex>
                 <Heading level={4}>Models</Heading>
-                <Divider size='S' marginTop='size-100' marginBottom={'size-100'} />
+                <Divider size='S' marginTop='size-100' />
                 {showIllustratedMessage ? (
                     <Well flex UNSAFE_style={{ backgroundColor: 'rgb(60,62,66)' }}>
                         <IllustratedMessage>

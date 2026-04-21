@@ -1,7 +1,9 @@
-import { experimental_streamedQuery as streamedQuery, queryOptions, useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
+
+import { experimental_streamedQuery as streamedQuery, useQuery } from '@tanstack/react-query';
+
 import { fetchClient } from '../../api/client';
 import { fetchSSE } from '../../api/fetch-sse';
-import { useMemo } from 'react';
 import { MetricGraph } from './metrics-graph.component';
 
 interface MetricsEntry {
@@ -14,16 +16,14 @@ interface MetricsEntry {
 const filterLossStepMetrics = (data?: MetricsEntry[]) => {
     if (!data) return [];
     const stepRows = data.filter((entry): entry is MetricsEntry => {
-        return (
-            entry.train_loss !== null
-        )
+        return entry.train_loss !== null;
     });
-    return stepRows.map((row) => ({ x: row.step, y: row.train_loss! }))
-}
+    return stepRows.map((row) => ({ x: row.step, y: row.train_loss! }));
+};
 
 export const JobMetricsContent = ({ jobId }: { jobId: string }) => {
     const query = useQuery({
-        queryKey: ['get', '/api/models/{job_id}/metrics', jobId],
+        queryKey: ['get', '/api/models/{job_id}/model_metrics', jobId],
         queryFn: streamedQuery({
             streamFn: (context) => {
                 const url = fetchClient.PATH('/api/jobs/{job_id}/model_metrics', {
@@ -38,15 +38,12 @@ export const JobMetricsContent = ({ jobId }: { jobId: string }) => {
 
     const lossStepMetrics = useMemo(() => {
         return filterLossStepMetrics(query.data);
-    }, [query.data])
+    }, [query.data]);
 
-    return (
-        <MetricGraph title={"Loss"} yAxisLabel={"Loss"} xAxisLabel='Step' data={lossStepMetrics} />
-    )
-}
+    return <MetricGraph title={'Loss'} yAxisLabel={'Loss'} xAxisLabel='Step' data={lossStepMetrics} />;
+};
 
 export const MetricsContent = ({ modelId }: { modelId: string }) => {
-
     const query = useQuery({
         queryKey: ['get', '/api/models/{model_id}/metrics', modelId],
         queryFn: streamedQuery({
@@ -63,9 +60,7 @@ export const MetricsContent = ({ modelId }: { modelId: string }) => {
 
     const lossStepMetrics = useMemo(() => {
         return filterLossStepMetrics(query.data);
-    }, [query.data])
+    }, [query.data]);
 
-    return (
-        <MetricGraph title={"Loss"} yAxisLabel={"Loss"} xAxisLabel='Step' data={lossStepMetrics} />
-    )
-}
+    return <MetricGraph title={'Loss'} yAxisLabel={'Loss'} xAxisLabel='Step' data={lossStepMetrics} />;
+};
