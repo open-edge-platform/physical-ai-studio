@@ -64,7 +64,6 @@ class SmolVLAModel(ExportableModelMixin, Model):
         chunk_size: int = 50,
         max_state_dim: int = 32,
         max_action_dim: int = 32,
-        resize_imgs_with_padding: tuple[int, int] | None = (512, 512),
         adapt_to_pi_aloha: bool = False,
         num_steps: int = 10,
         use_cache: bool = True,
@@ -83,7 +82,6 @@ class SmolVLAModel(ExportableModelMixin, Model):
         min_period: float = 4e-3,
         max_period: float = 4.0,
         use_random_input_noise: bool = True,
-        tokenizer_max_length: int = 48,
     ) -> None:
         """Initialize the SmolVLA model.
 
@@ -94,7 +92,6 @@ class SmolVLAModel(ExportableModelMixin, Model):
             chunk_size: Size of action chunks for prediction.
             max_state_dim: Maximum dimension for state vectors; shorter vectors will be padded.
             max_action_dim: Maximum dimension for action vectors; shorter vectors will be padded.
-            resize_imgs_with_padding: Target size (height, width) for image preprocessing with padding.
             adapt_to_pi_aloha: Whether to convert joint and gripper values from standard Aloha space
                 to pi internal runtime space.
             num_steps: Number of decoding steps for flow matching.
@@ -115,15 +112,12 @@ class SmolVLAModel(ExportableModelMixin, Model):
             max_period: Maximum period for sine-cosine positional encoding of timesteps.
             use_random_input_noise: Whether to use random noise as the initial input for the
                 denoising process during inference. If False, zeros are used instead.
-            tokenizer_max_length: Maximum token length for the tokenizer. Default: 48.
         """
         super().__init__()
         self._chunk_size = chunk_size
         self._max_state_dim = max_state_dim
         self._max_action_dim = max_action_dim
-        self._resize_imgs_with_padding = resize_imgs_with_padding
         self._adapt_to_pi_aloha = adapt_to_pi_aloha
-        self._tokenizer_max_length = tokenizer_max_length
         self._vlm_model_name = vlm_model_name
         self._model = VLAFlowMatching(
             chunk_size=chunk_size,
