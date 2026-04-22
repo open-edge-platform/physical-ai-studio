@@ -1,3 +1,5 @@
+from typing import Literal
+
 from physicalai.robot.so101 import SO101, SO101Calibration
 from physicalai.robot.trossen import WidowXAI
 
@@ -5,8 +7,9 @@ from exceptions import ResourceNotFoundError, ResourceType
 from robots.robot_client import RobotClient
 from robots.so101.adapter import SO101Adapter
 from robots.widowxai.adapter import WidowXAIAdapter
+from robots.widowxai.bimanual_adapter import BimanualWidowXAIAdapter
 from schemas.calibration import Calibration
-from schemas.robot import Robot, RobotType
+from schemas.robot import Robot, RobotType, SO101Robot, TrossenBimanualRobot
 from services.robot_calibration_service import RobotCalibrationService, find_robot_port
 from utils.serial_robot_tools import RobotConnectionManager
 
@@ -26,11 +29,17 @@ class RobotClientFactory:
     async def build(self, robot: Robot) -> RobotClient:
         match robot.type:
             case RobotType.TROSSEN_WIDOWXAI_FOLLOWER:
-                robot_driver = WidowXAI(ip=robot.payload.connection_string, role="follower")
+                trossen_robot = robot
+                robot_driver = WidowXAI(ip=trossen_robot.payload.connection_string, role="follower")
                 return WidowXAIAdapter(robot=robot_driver, mode="follower")
             case RobotType.TROSSEN_WIDOWXAI_LEADER:
-                robot_driver = WidowXAI(ip=robot.payload.connection_string, role="leader")
+                trossen_robot = robot
+                robot_driver = WidowXAI(ip=trossen_robot.payload.connection_string, role="leader")
                 return WidowXAIAdapter(robot=robot_driver, mode="leader")
+            case RobotType.TROSSEN_BIMANUAL_WIDOWXAI_FOLLOWER:
+                return self._build_bimanual_widowxai(robot, mode="follower")
+            case RobotType.TROSSEN_BIMANUAL_WIDOWXAI_LEADER:
+                return self._build_bimanual_widowxai(robot, mode="leader")
             case RobotType.SO101_FOLLOWER:
                 return await self._build_so101(robot)
             case RobotType.SO101_LEADER:
@@ -38,7 +47,17 @@ class RobotClientFactory:
             case _:
                 raise ValueError(f"Unsupported robot type: {robot.type}")
 
-    async def _build_so101(self, robot: Robot) -> SO101Adapter:
+    @staticmethod
+    def _build_bimanual_widowxai(
+        robot: TrossenBimanualRobot, mode: Literal["follower", "leader"]
+    ) -> BimanualWidowXAIAdapter:
+        left_driver = WidowXAI(ip=robot.payload.connection_string_left, role=mode)
+        right_driver = WidowXAI(ip=robot.payload.connection_string_right, role=mode)
+        left_adapter = WidowXAIAdapter(robot=left_driver, mode=mode)
+        right_adapter = WidowXAIAdapter(robot=right_driver, mode=mode)
+        return BimanualWidowXAIAdapter(left=left_adapter, right=right_adapter, mode=mode)
+
+    async def _build_so101(self, robot: SO101Robot) -> SO101Adapter:
         port = await self._find_robot_port(robot)
         calibration = await self._get_robot_calibration(robot)
 
@@ -66,14 +85,14 @@ class RobotClientFactory:
         so101 = SO101(port=port, calibration=so101_cal, role=role)
         return SO101Adapter(robot=so101, mode=mode, calibration=calibration)
 
-    async def _find_robot_port(self, robot: Robot) -> str:
+    async def _find_robot_port(self, robot: SO101Robot) -> str:
         port = await find_robot_port(self.robot_manager, robot)
         if port is None:
             raise ResourceNotFoundError(ResourceType.ROBOT, robot.payload.serial_number)
 
         return port
 
-    async def _get_robot_calibration(self, robot: Robot) -> Calibration | None:
+    async def _get_robot_calibration(self, robot: SO101Robot) -> Calibration | None:
         if robot.active_calibration_id is None:
             return None
 

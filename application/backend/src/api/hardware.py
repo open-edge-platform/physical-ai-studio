@@ -6,7 +6,7 @@ from schemas import CalibrationConfig, Camera, CameraProfile, Robot, SerialPortI
 from schemas.robot import RobotType
 from utils.calibration import get_calibrations
 from utils.serial_robot_tools import find_robots, identify_so101_robot_visually
-from utils.trossen_robot_tools import identify_trossen_robot_visually
+from utils.trossen_robot_tools import identify_trossen_bimanual_robot_visually, identify_trossen_robot_visually
 
 router = APIRouter(prefix="/api/hardware", tags=["Hardware"])
 
@@ -53,3 +53,6 @@ async def identify_robot(robot: Robot, joint: str | None = None) -> None:
 
     if robot.type in {RobotType.TROSSEN_WIDOWXAI_LEADER, RobotType.TROSSEN_WIDOWXAI_FOLLOWER}:
         await identify_trossen_robot_visually(robot)
+
+    if robot.type in {RobotType.TROSSEN_BIMANUAL_WIDOWXAI_LEADER, RobotType.TROSSEN_BIMANUAL_WIDOWXAI_FOLLOWER}:
+        await identify_trossen_bimanual_robot_visually(robot)
