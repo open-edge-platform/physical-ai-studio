@@ -12,16 +12,16 @@ Supports two normalization modes:
 
 - **mean_std**: ``(x - mean) / (std + eps)``
 - **min_max**: ``2 * (x - min) / (max - min + eps) - 1`` → [-1, 1]
+- **quantiles**: ``2 * (x - q01) / (q99 - q01 + eps) - 1`` → [-1, 1]
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, override
+from typing import override
+
+import numpy as np
 
 from physicalai.inference.preprocessors.base import Preprocessor
-
-if TYPE_CHECKING:
-    import numpy as np
 
 _EPS = 1e-8
 
@@ -69,6 +69,7 @@ class StatsNormalizer(Preprocessor):
         features: list[str] | None = None,
         *,
         artifact: str | None = None,
+        stats: dict[str, dict[str, np.ndarray]] | None = None,
     ) -> None:
         """Initialize with stats file path and normalization config.
 
@@ -80,25 +81,27 @@ class StatsNormalizer(Preprocessor):
                 all features present in the stats file are normalized.
             artifact: Alias for *stats_path*, used when the path is
                 supplied via manifest ``artifact`` resolution.
+            stats: Optional pre-loaded stats dict.  If provided, skips
+                lazy loading from file.
 
         Raises:
             ValueError: If *mode* is not a recognized normalization mode
                 or neither *stats_path* nor *artifact* is provided.
         """
-        valid_modes = {"mean_std", "min_max", "identity"}
+        valid_modes = {"mean_std", "min_max", "quantiles", "identity"}
         if mode not in valid_modes:
             msg = f"Unknown normalization mode {mode!r}. Expected one of {sorted(valid_modes)}"
             raise ValueError(msg)
 
         resolved_path = stats_path or artifact
-        if resolved_path is None:
-            msg = "Either stats_path or artifact must be provided"
+        if resolved_path is None and stats is None:
+            msg = "Either stats_path, artifact, or stats must be provided"
             raise ValueError(msg)
 
         self._stats_path = resolved_path
         self._mode = mode
         self._features: set[str] = set(features) if features else set()
-        self._stats: dict[str, dict[str, np.ndarray]] | None = None
+        self._stats: dict[str, dict[str, np.ndarray]] | None = stats
 
     def load_stats(self) -> None:
         """Eagerly load stats from the safetensors file.
@@ -167,12 +170,19 @@ def _normalize(
     if mode == "mean_std":
         mean = stats["mean"]
         std = stats["std"]
-        return (tensor - mean) / (std + _EPS)
+        return (tensor - mean) / (std + np.array(_EPS))
 
     if mode == "min_max":
         min_val = stats["min"]
         max_val = stats["max"]
         denom = max_val - min_val + _EPS
         return 2.0 * (tensor - min_val) / denom - 1.0
+
+    if mode == "quantiles":
+        q01 = stats["q01"]
+        q99 = stats["q99"]
+        denom = q99 - q01
+        denom = np.where(denom == 0, _EPS, denom)
+        return 2.0 * (tensor - q01) / denom - 1.0
 
     return tensor

@@ -14,7 +14,6 @@ from physicalai.config import Config
 from physicalai.data.observation import IMAGES, STATE
 from physicalai.policies.pi05 import Pi05, Pi05Config, Pi05Model
 from physicalai.policies.pi05.pretrained_utils import (
-    convert_normalization_stats,
     fix_state_dict_keys,
     parse_config_features,
     resolve_feature_shape,
@@ -66,7 +65,7 @@ class TestPi05Config:
         assert config.optimizer_weight_decay == 0.01
         assert config.optimizer_grad_clip_norm == 1.0
         assert config.scheduler_warmup_steps == 1_000
-        assert config.scheduler_decay_steps is None
+        assert config.scheduler_decay_steps == 30_000
         assert config.scheduler_decay_lr == 2.5e-6
 
     def test_flow_matching_config_values(self) -> None:
@@ -214,12 +213,16 @@ class TestPi05Policy:
                 "shape": (8,),
                 "mean": [0.0] * 8,
                 "std": [1.0] * 8,
+                "q01": [-1.0] * 8,
+                "q99": [1.0] * 8,
             },
             "action": {
                 "name": "action",
                 "shape": (7,),
                 "mean": [0.0] * 7,
                 "std": [1.0] * 7,
+                "q01": [-1.0] * 7,
+                "q99": [1.0] * 7,
             },
         }
         # Use smallest variants to keep memory usage low in CI (~300M params instead of ~2.6B)
@@ -644,12 +647,16 @@ class TestPi05Preprocessor:
                 "shape": (8,),
                 "mean": [0.0] * 8,
                 "std": [1.0] * 8,
+                "q01": [-1.0] * 8,
+                "q99": [1.0] * 8,
             },
             "action": {
                 "name": "action",
                 "shape": (7,),
                 "mean": [0.0] * 7,
                 "std": [1.0] * 7,
+                "q01": [-1.0] * 7,
+                "q99": [1.0] * 7,
             },
         }
 
@@ -673,6 +680,8 @@ class TestPi05Preprocessor:
                 "shape": (8,),
                 "mean": [0.0] * 8,
                 "std": [1.0] * 8,
+                "q01": [-1.0] * 8,
+                "q99": [1.0] * 8,
             },
         }
 
@@ -702,6 +711,8 @@ class TestFeatureNormalization:
                 normalization_data=NormalizationParameters(
                     mean=[0.0] * 8,
                     std=[1.0] * 8,
+                    q01=[-1.0] * 8,
+                    q99=[1.0] * 8,
                 ),
             ),
         }
@@ -721,6 +732,8 @@ class TestFeatureNormalization:
                 normalization_data=NormalizationParameters(
                     mean=[0.0] * 7,
                     std=[1.0] * 7,
+                    q01=[-1.0] * 7,
+                    q99=[1.0] * 7,
                 ),
             ),
         }
@@ -735,48 +748,6 @@ class TestFeatureNormalization:
 
 class TestPretrainedUtils:
     """Tests for pretrained_utils helper functions."""
-
-    def test_convert_normalization_stats_mean_std(self) -> None:
-        """Test _convert_normalization_stats with mean/std."""
-        mean, std = convert_normalization_stats({
-            "mean": [0.0, 1.0, 2.0],
-            "std": [0.5, 1.0, 1.5],
-        })
-        assert mean == [0.0, 1.0, 2.0]
-        assert std == [0.5, 1.0, 1.5]
-
-    def test_convert_normalization_stats_quantiles(self) -> None:
-        """Test _convert_normalization_stats with quantiles (q01/q99)."""
-        mean, std = convert_normalization_stats({
-            "q01": [-1.0, -2.0],
-            "q99": [1.0, 2.0],
-        })
-        assert mean == [0.0, 0.0]
-        assert std == [1.0, 2.0]
-
-    def test_convert_normalization_stats_min_max(self) -> None:
-        """Test _convert_normalization_stats with min/max."""
-        mean, std = convert_normalization_stats({
-            "min": [-1.0, -2.0],
-            "max": [1.0, 2.0],
-        })
-        assert mean == [0.0, 0.0]
-        assert std == [1.0, 2.0]
-
-    def test_convert_normalization_stats_empty(self) -> None:
-        """Test _convert_normalization_stats with no recognized stats."""
-        mean, std = convert_normalization_stats({})
-        assert mean is None
-        assert std is None
-
-    def test_convert_normalization_stats_quantiles_zero_range(self) -> None:
-        """Test _convert_normalization_stats clamps std to 1e-8 for zero range."""
-        mean, std = convert_normalization_stats({
-            "q01": [5.0],
-            "q99": [5.0],
-        })
-        assert mean == [5.0]
-        assert std == [1e-8]
 
     def test_fix_state_dict_keys_strips_model_prefix(self) -> None:
         """Test _fix_state_dict_keys strips 'model.' prefix."""
@@ -900,12 +871,16 @@ class TestPi05FineTuning:
                 "shape": (8,),
                 "mean": [0.0] * 8,
                 "std": [1.0] * 8,
+                "q01": [-1.0] * 8,
+                "q99": [1.0] * 8,
             },
             "action": {
                 "name": "action",
                 "shape": (7,),
                 "mean": [0.0] * 7,
                 "std": [1.0] * 7,
+                "q01": [-1.0] * 7,
+                "q99": [1.0] * 7,
             },
         }
         # Use smallest variants to keep memory usage low
@@ -923,12 +898,16 @@ class TestPi05FineTuning:
                 "shape": (4,),
                 "mean": [1.0] * 4,
                 "std": [2.0] * 4,
+                "q01": [-2.0] * 4,
+                "q99": [2.0] * 4,
             },
             "action": {
                 "name": "action",
                 "shape": (3,),
                 "mean": [1.0] * 3,
                 "std": [2.0] * 3,
+                "q01": [-2.0] * 3,
+                "q99": [2.0] * 3,
             },
         }
         old_preprocessor = policy._preprocessor
@@ -947,12 +926,16 @@ class TestPi05FineTuning:
                 "shape": (8,),
                 "mean": [0.0] * 8,
                 "std": [1.0] * 8,
+                "q01": [-1.0] * 8,
+                "q99": [1.0] * 8,
             },
             "action": {
                 "name": "action",
                 "shape": (7,),
                 "mean": [0.0] * 7,
                 "std": [1.0] * 7,
+                "q01": [-1.0] * 7,
+                "q99": [1.0] * 7,
             },
         }
         policy = Pi05(
@@ -967,12 +950,16 @@ class TestPi05FineTuning:
                 "shape": (4,),
                 "mean": [2.0] * 4,
                 "std": [3.0] * 4,
+                "q01": [-3.0] * 4,
+                "q99": [3.0] * 4,
             },
             "action": {
                 "name": "action",
                 "shape": (3,),
                 "mean": [2.0] * 3,
                 "std": [3.0] * 3,
+                "q01": [-3.0] * 3,
+                "q99": [3.0] * 3,
             },
         }
         policy._update_preprocessor_stats(new_stats)

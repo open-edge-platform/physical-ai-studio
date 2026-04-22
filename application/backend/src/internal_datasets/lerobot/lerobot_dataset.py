@@ -366,7 +366,10 @@ class InternalLeRobotDataset(DatasetClient):
 
         from_idx = int(episode["dataset_from_index"])
         try:
-            image = self._dataset[from_idx][image_key].permute(1, 2, 0).detach().numpy()
+            reader = self._dataset._ensure_reader()
+            if reader.hf_dataset is None:
+                reader.load_and_activate()
+            image = reader.get_item(from_idx)[image_key].permute(1, 2, 0).detach().numpy()
         except Exception:
             return None
 

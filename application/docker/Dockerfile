@@ -6,7 +6,7 @@ ARG PYTHON_VERSION=3.12
 # ===========================================================================
 # Stage 1: Clone Geti UI packages and URDF robot models
 # ===========================================================================
-FROM node:24-alpine3.22@sha256:4f33c7804fa7775b87875f512e25e515692210bfdeafd715eb8bc441c364e2f6 AS ui-packages
+FROM node:24-alpine3.22@sha256:b689d4005875ae167178471a7a622ec2909459a3bbb32277260be1971af7a99f AS ui-packages
 
 WORKDIR /home/app/web_ui/
 RUN apk add --no-cache git
@@ -19,7 +19,7 @@ RUN npm run clone-widowx
 # ===========================================================================
 # Stage 2: Build Web UI
 # ===========================================================================
-FROM node:24-alpine3.22@sha256:4f33c7804fa7775b87875f512e25e515692210bfdeafd715eb8bc441c364e2f6 AS web-ui
+FROM node:24-alpine3.22@sha256:b689d4005875ae167178471a7a622ec2909459a3bbb32277260be1971af7a99f AS web-ui
 
 WORKDIR /home/app/web_ui/
 

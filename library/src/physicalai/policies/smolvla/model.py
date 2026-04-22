@@ -357,6 +357,11 @@ class SmolVLAModel(ExportableModelMixin, Model):
         base_preproc_specs = [
             ComponentSpec(type="smolvla_resize", image_resolution=self._resize_imgs_with_padding),
             ComponentSpec(type="new_line"),
+            ComponentSpec(
+                type="normalize",
+                stats={STATE: self._dataset_stats[f"observation.{STATE}"]},
+                mode="mean_std",
+            ),
         ]
         postproc_specs = [
             ComponentSpec(

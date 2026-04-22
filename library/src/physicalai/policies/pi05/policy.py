@@ -26,6 +26,7 @@ from physicalai.train.utils import reformat_dataset_to_match_policy
 from .config import Pi05Config
 from .model import Pi05Model
 from .preprocessor import make_pi05_preprocessors
+from .pretrained_utils import detect_normalization_mode as _detect_normalization_mode
 from .pretrained_utils import extract_dataset_stats as _extract_dataset_stats
 from .pretrained_utils import fix_state_dict_keys as _fix_state_dict_keys
 
@@ -57,12 +58,33 @@ class Pi05(ExportablePolicyMixin, Policy):
         max_state_dim: Maximum state dimension (padded). Default: 32.
         max_action_dim: Maximum action dimension (padded). Default: 32.
         num_inference_steps: Denoising steps for inference. Default: 10.
+        time_sampling_beta_alpha: Alpha for beta distribution time sampling. Default: 1.5.
+        time_sampling_beta_beta: Beta for beta distribution time sampling. Default: 1.0.
+        time_sampling_scale: Scale factor for time sampling. Default: 0.999.
+        time_sampling_offset: Offset for time sampling. Default: 0.001.
+        min_period: Minimum period for sine-cosine positional encoding. Default: 4e-3.
+        max_period: Maximum period for sine-cosine positional encoding. Default: 4.0.
+        use_random_input_noise: Use random noise as initial denoising input. Default: False.
         image_resolution: Target image resolution. Default: (224, 224).
+        empty_cameras: Number of empty camera slots to add. Default: 0.
         tokenizer_max_length: Maximum tokenizer length. Default: 200.
         gradient_checkpointing: Enable gradient checkpointing. Default: True.
+        compile_model: Whether to use torch.compile. Default: False.
+        compile_mode: Torch compile mode. Default: "max-autotune".
         freeze_vision_encoder: Freeze vision encoder. Default: False.
         train_expert_only: Train only action expert. Default: True.
+        normalization_mode: Normalization method for state/action features — ``"QUANTILES"``
+            (percentile-based, robust to outliers) or ``"MEAN_STD"``. Default: ``"QUANTILES"``.
+
         optimizer_lr: Learning rate. Default: 2.5e-5.
+        optimizer_betas: Adam beta coefficients. Default: (0.9, 0.95).
+        optimizer_eps: Optimizer epsilon for numerical stability. Default: 1e-8.
+        optimizer_weight_decay: Weight decay coefficient. Default: 0.01.
+        optimizer_grad_clip_norm: Maximum gradient norm for clipping. Default: 1.0.
+        scheduler_warmup_steps: Number of linear warmup steps. Default: 1000.
+        scheduler_decay_steps: Cosine decay horizon in steps. ``None`` auto-scales
+            to total training steps. Default: 30000.
+        scheduler_decay_lr: Final learning rate after cosine decay. Default: 2.5e-6.
         dataset_stats: Dataset stats for eager initialization. Default: None.
 
     Example:
@@ -114,6 +136,8 @@ class Pi05(ExportablePolicyMixin, Policy):
         # Finetuning
         freeze_vision_encoder: bool = False,
         train_expert_only: bool = True,
+        # Normalization
+        normalization_mode: Literal["MEAN_STD", "QUANTILES"] = "QUANTILES",
         # Optimizer
         optimizer_lr: float = 2.5e-5,
         optimizer_betas: tuple[float, float] = (0.9, 0.95),
@@ -122,7 +146,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         optimizer_grad_clip_norm: float = 1.0,
         # Scheduler
         scheduler_warmup_steps: int = 1_000,
-        scheduler_decay_steps: int | None = None,
+        scheduler_decay_steps: int | None = 30_000,
         scheduler_decay_lr: float = 2.5e-6,
         # Eager initialization
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
@@ -178,6 +202,7 @@ class Pi05(ExportablePolicyMixin, Policy):
                 compile_mode=compile_mode,
                 freeze_vision_encoder=freeze_vision_encoder,
                 train_expert_only=train_expert_only,
+                normalization_mode=normalization_mode,
                 optimizer_lr=optimizer_lr,
                 optimizer_betas=optimizer_betas,
                 optimizer_eps=optimizer_eps,
@@ -232,6 +257,7 @@ class Pi05(ExportablePolicyMixin, Policy):
             gradient_checkpointing=self.config.gradient_checkpointing,
             compile_model=self.config.compile_model,
             use_random_input_noise=self.config.use_random_input_noise,
+            normalization_mode=self.config.normalization_mode.lower(),
         )
         if weights_file is not None:
             # load raw state dict
@@ -265,11 +291,12 @@ class Pi05(ExportablePolicyMixin, Policy):
             image_resolution=self.config.image_resolution,
             max_token_len=self.config.tokenizer_max_length,
             empty_cameras=self.config.empty_cameras,
+            normalization_mode=self.config.normalization_mode,
         )
 
         self._dataset_stats = dataset_stats
 
-    def _from_hf(  # noqa: PLR6301, PLR0913
+    def _from_hf(  # noqa: PLR6301, PLR0913, PLR0915
         self,
         pretrained_name_or_path: str | Path,
         *,
@@ -288,7 +315,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         optimizer_weight_decay: float = 0.01,
         optimizer_grad_clip_norm: float = 1.0,
         scheduler_warmup_steps: int = 1_000,
-        scheduler_decay_steps: int | None = None,
+        scheduler_decay_steps: int | None = 30_000,
         scheduler_decay_lr: float = 2.5e-6,
         **kwargs: Any,  # noqa: ANN401
     ) -> tuple[Pi05Config, dict[str, dict[str, list[float] | str | tuple]], Path]:
@@ -401,6 +428,13 @@ class Pi05(ExportablePolicyMixin, Policy):
         hf_config["scheduler_decay_steps"] = scheduler_decay_steps
         hf_config["scheduler_decay_lr"] = scheduler_decay_lr
 
+        # Auto-detect normalization_mode from pretrained preprocessor.
+        # The pretrained model's mode always wins over caller defaults.
+        if preprocessor_file is not None:
+            detected = _detect_normalization_mode(preprocessor_file)
+            if detected is not None:
+                hf_config["normalization_mode"] = detected
+
         # from_dict skips unknown keys and coerces lists→tuples via type hints
         config = Pi05Config.from_dict(hf_config)
 
@@ -463,6 +497,7 @@ class Pi05(ExportablePolicyMixin, Policy):
             image_resolution=self.config.image_resolution,
             max_token_len=self.config.tokenizer_max_length,
             empty_cameras=self.config.empty_cameras,
+            normalization_mode=self.config.normalization_mode,
         )
         self._dataset_stats = dataset_stats
         self.hparams["dataset_stats"] = dataset_stats
@@ -566,9 +601,11 @@ class Pi05(ExportablePolicyMixin, Policy):
             eps=self.config.optimizer_eps,
         )
 
+        num_training_steps = self.trainer.estimated_stepping_batches
+
         num_decay_steps = self.config.scheduler_decay_steps
         if num_decay_steps is None:
-            num_decay_steps = self.trainer.estimated_stepping_batches
+            num_decay_steps = num_training_steps
             msg = f"scheduler_decay_steps=None, using total training steps: {num_decay_steps}"
             logger.info(msg)
 
@@ -578,6 +615,7 @@ class Pi05(ExportablePolicyMixin, Policy):
             decay_lr=self.config.scheduler_decay_lr,
             num_warmup_steps=self.config.scheduler_warmup_steps,
             num_decay_steps=num_decay_steps,
+            num_training_steps=num_training_steps,
         )
 
         return {

@@ -131,6 +131,9 @@ services:
     build:
       <<: *common-build
       target: physical-ai-studio-xpu
+    environment:
+      - SYCL_CACHE_PERSISTENT=${SYCL_CACHE_PERSISTENT:-1}
+      - SYCL_CACHE_DIR=${SYCL_CACHE_DIR:-'/app/storage/.sycl-cache'}
     # --- Non-privileged XPU additions
     # When running in non-privileged mode, add these to grant
     # Intel GPU access via /dev/dri/renderD* nodes:

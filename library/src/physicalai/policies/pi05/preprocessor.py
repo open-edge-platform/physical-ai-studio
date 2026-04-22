@@ -29,10 +29,21 @@ from physicalai.policies.utils.normalization import FeatureNormalizeTransform, N
 
 logger = logging.getLogger(__name__)
 
-NORM_MAP = {
-    FeatureType.STATE: NormalizationType.MEAN_STD,
-    FeatureType.ACTION: NormalizationType.MEAN_STD,
-}
+
+def _norm_map_for_mode(mode: str) -> dict[FeatureType, NormalizationType]:
+    """Return the normalization type mapping for the given mode string.
+
+    Args:
+        mode: ``"MEAN_STD"`` or ``"QUANTILES"``.
+
+    Returns:
+        Mapping from ``FeatureType`` to ``NormalizationType``.
+    """
+    norm_type = NormalizationType(mode)
+    return {
+        FeatureType.STATE: norm_type,
+        FeatureType.ACTION: norm_type,
+    }
 
 
 def _pad_vector(vector: torch.Tensor, new_dim: int) -> torch.Tensor:
@@ -141,6 +152,7 @@ class Pi05Preprocessor(torch.nn.Module):
         max_token_len: int = 200,
         tokenizer_name: str = "google/paligemma-3b-pt-224",
         empty_cameras: int = 0,
+        normalization_mode: str = "QUANTILES",
     ) -> None:
         """Initialize Pi05Preprocessor."""
         super().__init__()
@@ -151,9 +163,11 @@ class Pi05Preprocessor(torch.nn.Module):
         self.tokenizer_name = tokenizer_name
         self._tokenizer = None
         self.empty_cameras = empty_cameras
+        self.normalization_mode = normalization_mode
 
+        norm_map = _norm_map_for_mode(normalization_mode)
         if features is not None:
-            self._state_action_normalizer = FeatureNormalizeTransform(features, NORM_MAP)
+            self._state_action_normalizer = FeatureNormalizeTransform(features, norm_map)
         else:
             self._state_action_normalizer = torch.nn.Identity()
 
@@ -170,7 +184,7 @@ class Pi05Preprocessor(torch.nn.Module):
         # Normalize state/action
         batch = self._state_action_normalizer(batch)
 
-        # Discretize state and build prompt with embedded state
+        # Extract state after normalization for discretization
         state = batch[STATE]
         state_dim = 2
         if state.ndim > state_dim:
@@ -323,18 +337,21 @@ class Pi05Postprocessor(torch.nn.Module):
 
     Args:
         features: Dictionary mapping feature names to Feature objects.
+        normalization_mode: Normalization method matching the preprocessor.
     """
 
     def __init__(
         self,
         features: dict[str, Feature] | None = None,
+        normalization_mode: str = "QUANTILES",
     ) -> None:
         """Initialize Pi05Postprocessor."""
         super().__init__()
 
+        norm_map = _norm_map_for_mode(normalization_mode)
         if features is not None:
             action_features = {k: v for k, v in features.items() if v.ftype == FeatureType.ACTION}
-            self._action_denormalizer = FeatureNormalizeTransform(action_features, NORM_MAP, inverse=True)
+            self._action_denormalizer = FeatureNormalizeTransform(action_features, norm_map, inverse=True)
         else:
             self._action_denormalizer = torch.nn.Identity()
 
@@ -357,6 +374,7 @@ def make_pi05_preprocessors(
     image_resolution: tuple[int, int] = (224, 224),
     max_token_len: int = 200,
     empty_cameras: int = 0,
+    normalization_mode: str = "QUANTILES",
 ) -> tuple[Pi05Preprocessor, Pi05Postprocessor]:
     """Create preprocessor and postprocessor pair for Pi05.
 
@@ -366,6 +384,7 @@ def make_pi05_preprocessors(
         image_resolution: Target image resolution.
         max_token_len: Maximum token length.
         empty_cameras: Number of empty camera slots to add.
+        normalization_mode: ``"MEAN_STD"`` or ``"QUANTILES"``.
 
     Returns:
         Tuple of (preprocessor, postprocessor).
@@ -385,14 +404,23 @@ def make_pi05_preprocessors(
             raw_name = str(stat["name"])
             mapped_name = raw_name.rsplit("observation.", maxsplit=1)[-1] if "observation." in raw_name else raw_name
 
+            mean = cast("list[float] | None", stat.get("mean"))
+            std = cast("list[float] | None", stat.get("std"))
+            q01 = cast("list[float] | None", stat.get("q01"))
+            q99 = cast("list[float] | None", stat.get("q99"))
+
+            norm_data = NormalizationParameters(
+                mean=mean,
+                std=std,
+                q01=q01,
+                q99=q99,
+            )
+
             features[mapped_name] = Feature(
                 name=mapped_name,
                 ftype=feature_type,
                 shape=cast("tuple[int, ...]", stat["shape"]),
-                normalization_data=NormalizationParameters(
-                    mean=cast("list[float]", stat["mean"]),
-                    std=cast("list[float]", stat["std"]),
-                ),
+                normalization_data=norm_data,
             )
 
     preprocessor = Pi05Preprocessor(
@@ -401,10 +429,12 @@ def make_pi05_preprocessors(
         features=features,
         max_token_len=max_token_len,
         empty_cameras=empty_cameras,
+        normalization_mode=normalization_mode,
     )
 
     postprocessor = Pi05Postprocessor(
         features=features,
+        normalization_mode=normalization_mode,
     )
 
     return preprocessor, postprocessor

@@ -50,6 +50,11 @@ class Pi05Config(Config):
         compile_mode: Torch compile mode. Defaults to "max-autotune".
         freeze_vision_encoder: Whether to freeze vision encoder during training. Defaults to False.
         train_expert_only: Whether to train only the action expert. Defaults to True.
+        normalization_mode: Normalization method for state/action features.
+            ``"QUANTILES"`` maps data to [-1, 1] using the 1st and 99th percentiles,
+            which is robust to outliers. ``"MEAN_STD"`` uses zero-mean unit-variance
+            normalization. Defaults to ``"QUANTILES"`` (matching lerobot pi0/pi05).
+
         optimizer_lr: Learning rate for the optimizer. Defaults to 2.5e-5.
         optimizer_betas: Beta coefficients for Adam optimizer. Defaults to (0.9, 0.95).
         optimizer_eps: Epsilon for optimizer numerical stability. Defaults to 1e-8.
@@ -58,7 +63,8 @@ class Pi05Config(Config):
         scheduler_warmup_steps: Number of warmup steps. Defaults to 1000.
         scheduler_decay_steps: Number of cosine decay steps. When ``None``,
             automatically set to the total training steps via
-            ``trainer.estimated_stepping_batches``. Defaults to None.
+            ``trainer.estimated_stepping_batches``. Defaults to 30000
+            (matching lerobot pi05).
         scheduler_decay_lr: Final learning rate after decay. Defaults to 2.5e-6.
         use_random_input_noise: Whether to use random noise as the initial input for the denoising process
             during inference. If False, zeros are used instead. Defaults to False.
@@ -96,6 +102,8 @@ class Pi05Config(Config):
     freeze_vision_encoder: bool = False
     train_expert_only: bool = True
 
+    normalization_mode: Literal["MEAN_STD", "QUANTILES"] = "QUANTILES"
+
     optimizer_lr: float = 2.5e-5
     optimizer_betas: tuple[float, float] = (0.9, 0.95)
     optimizer_eps: float = 1e-8
@@ -103,7 +111,7 @@ class Pi05Config(Config):
     optimizer_grad_clip_norm: float = 1.0
 
     scheduler_warmup_steps: int = 1_000
-    scheduler_decay_steps: int | None = None
+    scheduler_decay_steps: int | None = 30_000
     scheduler_decay_lr: float = 2.5e-6
 
     use_random_input_noise: bool = True
