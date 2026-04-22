@@ -666,20 +666,31 @@ class Pi05(ExportablePolicyMixin, Policy):
 
         Returns:
             dict[str, ExportParameters]: A dictionary mapping format names to their export parameters.
+
+        Raises:
+            ValueError: If dataset stats are not available for export.
         """
+        if self._dataset_stats is None:
+            msg = "Dataset stats are required for export. Initialize the policy with dataset_stats or train for at least one epoch to populate them."
+            raise ValueError(msg)
+
         base_preproc_specs = [
-            ComponentSpec(type="pi05", image_resolution=self.model._image_resolution),
+            ComponentSpec(
+                type="pi05",
+                image_resolution=self.config.image_resolution,
+                empty_cameras=self.config.empty_cameras,
+            ),
             ComponentSpec(
                 type="normalize",
-                stats={STATE: self.model._dataset_stats[f"observation.{STATE}"]},
-                mode="mean_std",
+                stats={STATE: self._dataset_stats[f"observation.{STATE}"]},
+                mode=self.config.normalization_mode,
             ),
         ]
         postproc_specs = [
             ComponentSpec(
                 type="denormalize",
-                stats={ACTION: self.model._dataset_stats[ACTION]},
-                mode=self.model._normalization_mode,
+                stats={ACTION: self._dataset_stats[ACTION]},
+                mode=self.config.normalization_mode,
             ),
         ]
         extra_args: dict[str, ExportParameters] = {}
@@ -694,7 +705,7 @@ class Pi05(ExportablePolicyMixin, Policy):
                     type="hf_tokenizer",
                     tokenizer_name="google/paligemma-3b-pt-224",
                     revision="35e4f46485b4d07967e7e9935bc3786aad50687c",
-                    max_token_len=self.model._tokenizer_max_length,
+                    max_token_len=self.config.tokenizer_max_length,
                 ),
             ],
             postprocessors_specs=postproc_specs,
