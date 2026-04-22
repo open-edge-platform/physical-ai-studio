@@ -1,18 +1,28 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Universal wrapper for any LeRobot policy.
+"""Dynamic LeRobot policy wrapper and named-alias base class.
 
-This module provides a generic wrapper that can instantiate any LeRobot policy
-dynamically without requiring explicit wrappers for each policy type.
+Provides :class:`LeRobotPolicy`, a generic Lightning wrapper that dispatches
+to any registered LeRobot policy by name at construction time, and
+:class:`NamedLeRobotPolicy`, a thin specialization that binds ``policy_name``
+from a class-level ClassVar so subclasses become trivial aliases — one per
+policy in LeRobot's :class:`PreTrainedConfig` registry, all defined in
+:mod:`physicalai.policies.lerobot.aliases`.
 
-For users who prefer explicit wrappers with full parameter definitions and IDE
-support, see the specific policy modules (e.g., ACT).
+Use :class:`LeRobotPolicy` directly only when the policy name must be
+selected at runtime (e.g. CLI- or YAML-driven dispatch). Otherwise prefer
+the named subclasses, which bind ``policy_name`` and so behave uniformly
+in configs.
 """
 
 from __future__ import annotations
 
-from typing import IO, TYPE_CHECKING, Any
+import logging
+import warnings
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import IO, TYPE_CHECKING, Any, ClassVar
 
 import torch
 from lightning_utilities import module_available
@@ -25,9 +35,10 @@ from physicalai.export.mixin_policy import CONFIG_KEY, DATASET_STATS_KEY, POLICY
 from physicalai.policies.base import Policy
 from physicalai.policies.lerobot.mixin import LeRobotFromConfig
 
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
     from lerobot.configs.types import FeatureType, PolicyFeature
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -55,73 +66,78 @@ else:
     LEROBOT_AVAILABLE = False
 
 
+_WARNED_UNSUPPORTED_NAMES: set[str] = set()
+
+
+def _warn_if_unsupported_policy(policy_name: str) -> None:
+    """Emit a one-time UserWarning when ``LeRobotPolicy`` is used as escape hatch.
+
+    Names in :data:`physicalai.policies.lerobot.SUPPORTED_POLICIES` carry a
+    wrapper-vs-native equivalence guarantee. Any other LeRobot-registered
+    name is reachable but unvalidated; signal that to users without
+    blocking the call.
+    """
+    from physicalai.policies.lerobot import SUPPORTED_POLICIES  # noqa: PLC0415
+
+    name = policy_name.lower()
+    if name in SUPPORTED_POLICIES or name in _WARNED_UNSUPPORTED_NAMES:
+        return
+    _WARNED_UNSUPPORTED_NAMES.add(name)
+    warnings.warn(
+        f"LeRobot policy {policy_name!r} is not in physicalai's supported set "
+        f"({', '.join(SUPPORTED_POLICIES)}); wrapper behavior is best-effort "
+        "and not covered by the equivalence test suite.",
+        UserWarning,
+        stacklevel=3,
+    )
+
+
 class LeRobotPolicy(Policy, LeRobotFromConfig):
-    """Universal wrapper for any LeRobot policy.
+    """Dynamic Lightning wrapper around any registered LeRobot policy.
 
-    This wrapper provides a generic interface to instantiate and use any LeRobot
-    policy without requiring an explicit wrapper for each policy type. It's ideal
-    for users who want flexibility and don't need full IDE autocomplete support.
+    Dispatches to the LeRobot policy identified by ``policy_name`` and
+    serves as the shared base for the named aliases in
+    :mod:`physicalai.policies.lerobot` — one per policy in LeRobot's
+    :class:`PreTrainedConfig` registry. Configuration flows through
+    LeRobot's own :class:`PreTrainedConfig` dataclasses; this wrapper does
+    not redeclare policy-specific fields.
 
-    For users who prefer explicit parameter definitions and full IDE support,
-    use the specific policy wrappers (e.g., ACT, Diffusion).
+    Use this class directly only when the policy must be chosen at runtime
+    (e.g. ``policy_name`` driven by a CLI flag or YAML key). Otherwise
+    prefer the named subclasses, which bind ``policy_name`` from a
+    class-level ``POLICY_NAME`` and behave uniformly in configs.
 
-    Supported policies (from LeRobot):
-        - act: Action Chunking Transformer for imitation learning
-        - diffusion: Diffusion Policy for behavior cloning
-        - vqbet: VQ-BeT (Vector Quantized Behavior Transformer)
-        - tdmpc: TD-MPC (Temporal Difference Model Predictive Control)
-        - sac: Soft Actor-Critic for reinforcement learning
-        - pi0: PI0 Vision-Language-Action policy
-        - pi05: PI0.5 (improved PI0 with better performance)
-        - smolvla: SmolVLA (Small Vision-Language-Action model)
-        - groot: GR00T policy for generalist robots
-        - xvla: XVLA (Cross-modal Vision-Language-Action)
-        - reward_classifier: Reward classifier for RL
-
-    Example:
-        >>> # Option 1: Load pretrained from HuggingFace Hub
+    Examples:
+        >>> # Dynamic dispatch
         >>> policy = LeRobotPolicy.from_pretrained("lerobot/act_pusht")
-
-        >>> # Option 2: Eager initialization from dataset/repo
         >>> policy = LeRobotPolicy.from_dataset("act", "lerobot/pusht", optimizer_lr=1e-4)
-
-        >>> # Option 3: Lazy initialization (features extracted in setup())
         >>> policy = LeRobotPolicy(policy_name="diffusion", num_inference_steps=100)
 
-        >>> # Option 4: Eager with explicit features
-        >>> policy = LeRobotPolicy(
-        ...     policy_name="act",
-        ...     input_features=input_features,
-        ...     output_features=output_features,
-        ...     dataset_stats=dataset.meta.stats,
-        ...     optimizer_lr=1e-4,  # Any LeRobot config param can be passed
-        ... )
-
-        >>> # Option 5: Use with LightningCLI (lazy init)
-        >>> # model:
-        >>> #   class_path: physicalai.policies.lerobot.LeRobotPolicy
-        >>> #   init_args:
-        >>> #     policy_name: act
-        >>> #     policy_config:
-        >>> #       optimizer_lr: 0.0001
+        >>> # Named alias (preferred for static use)
+        >>> from physicalai.policies.lerobot import ACT
+        >>> policy = ACT.from_dataset("lerobot/pusht", optimizer_lr=1e-4)
 
     Args:
-        policy_name: Name of the LeRobot policy to instantiate (e.g., 'act', 'diffusion').
-        input_features: Dictionary of input feature definitions (PolicyFeature objects).
-        output_features: Dictionary of output feature definitions (PolicyFeature objects).
-        config: Pre-built LeRobot config object. If provided, policy_config is ignored.
-        dataset_stats: Dataset statistics for normalization.
-        policy_config: Policy-specific parameters as a dict (for YAML configs).
-        **kwargs: Policy-specific parameters (for Python usage). Merged with policy_config;
-            kwargs take precedence if both specify the same key.
+        policy_name: LeRobot registry name (e.g. ``"act"``, ``"diffusion"``).
+            Must be registered with LeRobot's :func:`get_policy_class`.
+        input_features: Optional input feature definitions. When ``None``
+            features are extracted lazily in :meth:`setup` from the
+            attached DataModule.
+        output_features: Optional output feature definitions. Same lazy
+            semantics as ``input_features``.
+        config: Pre-built :class:`PreTrainedConfig`. When provided, it is
+            used as-is and ``policy_config`` / ``**kwargs`` apply field
+            overrides on it.
+        dataset_stats: Dataset statistics for the normalization processors.
+        policy_config: Mapping of policy-specific parameters (typically
+            from YAML configs). Merged with ``**kwargs``; ``**kwargs`` win
+            on key collisions for CLI override support.
+        **kwargs: Policy-specific parameters supplied positionally in
+            Python. Forwarded to LeRobot's :func:`make_policy_config`.
 
     Raises:
         ImportError: If LeRobot is not installed.
-        ValueError: If policy_name is not recognized by LeRobot.
-
-    Note:
-        This is the "universal wrapper" approach. For explicit parameter definitions
-        and better IDE support, consider using specific wrappers (e.g., ACT).
+        ValueError: If ``policy_name`` is not registered.
     """
 
     def __init__(
@@ -134,7 +150,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         policy_config: dict[str, Any] | None = None,
         **kwargs: Any,  # noqa: ANN401
     ) -> None:
-        """Initialize the universal LeRobot policy wrapper.
+        """Initialize the LeRobot policy wrapper.
 
         Supports both eager initialization (when input_features provided) and lazy
         initialization (features extracted in setup() hook from DataModule).
@@ -151,6 +167,9 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
 
         Raises:
             ImportError: If LeRobot is not installed.
+            AttributeError: If ``optimizer_lr`` is supplied alongside a
+                pre-built ``config`` whose dataclass lacks an
+                ``optimizer_lr`` field.
         """
         if not LEROBOT_AVAILABLE:
             msg = (
@@ -165,12 +184,26 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
 
         super().__init__(n_action_steps=1)  # LeRobot handles its own action chunking
 
-        # Store metadata
+        _warn_if_unsupported_policy(policy_name)
+
         self.policy_name = policy_name
 
         # Merge policy_config (from YAML) with kwargs (from Python)
         # kwargs take precedence for CLI override support
         merged_policy_config = {**(policy_config or {}), **kwargs}
+
+        # When a pre-built config is supplied, ``optimizer_lr`` must be
+        # applied to the config object itself (not stuffed into
+        # ``_policy_config``, which is only consumed during lazy build).
+        if config is not None and "optimizer_lr" in merged_policy_config:
+            override_lr = merged_policy_config.pop("optimizer_lr")
+            if not hasattr(config, "optimizer_lr"):
+                msg = (
+                    f"Cannot override optimizer_lr on {type(config).__name__}: "
+                    "this LeRobot config does not expose an optimizer_lr field."
+                )
+                raise AttributeError(msg)
+            config.optimizer_lr = override_lr
 
         # Store for lazy initialization
         self._input_features = input_features
@@ -192,6 +225,20 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
 
         self.save_hyperparameters()
 
+    def _init_pretrained_shell(self) -> None:
+        """Minimal initialization for instances created by ``from_pretrained``.
+
+        Calls ``Policy.__init__`` (which chains to ``LightningModule.__init__``)
+        to set up the action queue, rollout metrics, and Lightning internals,
+        **without** requiring the ``policy_name`` or feature arguments that the
+        full ``LeRobotPolicy.__init__`` demands.
+
+        This avoids hard-coding ``Policy.__init__(self, …)`` inside the mixin,
+        keeping the initializer hierarchy-safe if intermediate classes are
+        inserted later.
+        """
+        Policy.__init__(self, n_action_steps=1)
+
     def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
         """Save model config and policy name to checkpoint for reconstruction.
 
@@ -199,10 +246,144 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             checkpoint: Lightning checkpoint dictionary to modify in-place.
         """
         if self._config is not None:
-            checkpoint[CONFIG_KEY] = dataclass_to_dict(self._config)
+            config_dict = dataclass_to_dict(self._config)
+            config_dict["type"] = self.policy_name
+            checkpoint[CONFIG_KEY] = config_dict
             checkpoint[POLICY_NAME_KEY] = self.policy_name
             if self._dataset_stats is not None:
                 checkpoint[DATASET_STATS_KEY] = dataclass_to_dict(self._dataset_stats)
+
+    def save_pretrained(
+        self,
+        save_directory: str | Path,
+        *,
+        repo_id: str | None = None,
+        private: bool | None = None,
+        token: str | bool | None = None,
+    ) -> str | None:
+        """Save policy in LeRobot-compatible format (config.json + model.safetensors).
+
+        The output directory is directly loadable by both LeRobot's
+        ``PreTrainedPolicy.from_pretrained()`` and physicalai's
+        ``LeRobotPolicy.from_pretrained()``, enabling full round-trip
+        compatibility between the two frameworks.
+
+        If ``repo_id`` is provided the model is automatically pushed to the
+        HuggingFace Hub after saving locally.
+
+        Args:
+            save_directory: Path to directory where the policy will be saved.
+            repo_id: Repository ID on HuggingFace Hub (e.g., ``"username/my-policy"``).
+                When provided, the model is pushed to the Hub after saving.
+            private: Whether the Hub repository should be private.
+            token: HuggingFace authentication token.
+
+        Returns:
+            URL of the Hub commit if pushed, else ``None``.
+
+        Raises:
+            RuntimeError: If the wrapper has no initialized preprocessor or
+                postprocessor (the saved directory would not be reloadable).
+
+        Examples:
+            Save to local directory:
+
+                >>> policy = LeRobotPolicy.from_dataset("act", "lerobot/pusht")
+                >>> policy.save_pretrained("./my_act_model")
+
+            Save and push to Hub:
+
+                >>> policy.save_pretrained(
+                ...     "./my_act_model",
+                ...     repo_id="username/act-pusht",
+                ... )
+        """
+        save_dir = Path(save_directory)
+        save_dir.mkdir(parents=True, exist_ok=True)
+        self.lerobot_policy._save_pretrained(save_dir)  # noqa: SLF001
+
+        # Processors are mandatory: ``LeRobotPolicy.from_pretrained`` (and
+        # LeRobot's own loader) reads ``policy_preprocessor.json`` /
+        # ``policy_postprocessor.json`` from the saved directory. A wrapper
+        # without them was either never initialized (lazy mode pre-setup) or
+        # constructed via an incomplete code path; silently skipping them
+        # produces an unloadable directory. Fail loudly instead.
+        preprocessor = getattr(self, "_preprocessor", None)
+        postprocessor = getattr(self, "_postprocessor", None)
+        if preprocessor is None or postprocessor is None:
+            msg = (
+                f"Cannot save {type(self).__name__} to {save_dir}: processors are not "
+                "initialized. Ensure the policy was constructed with input/output "
+                "features (or via from_dataset / from_pretrained / Trainer.fit) before "
+                "calling save_pretrained."
+            )
+            raise RuntimeError(msg)
+        preprocessor._save_pretrained(save_dir)  # noqa: SLF001
+        postprocessor._save_pretrained(save_dir)  # noqa: SLF001
+
+        if repo_id is not None:
+            return self.push_to_hub(
+                repo_id=repo_id,
+                private=private,
+                token=token,
+            )
+        return None
+
+    def push_to_hub(
+        self,
+        repo_id: str,
+        *,
+        commit_message: str | None = None,
+        private: bool | None = None,
+        token: str | bool | None = None,
+        revision: str | None = None,
+    ) -> str:
+        """Push policy to the HuggingFace Hub in LeRobot-compatible format.
+
+        Saves the policy to a temporary directory using :meth:`save_pretrained`
+        and uploads the result via ``HfApi.upload_folder``.  The uploaded
+        artefacts are loadable by both LeRobot and physicalai.
+
+        Args:
+            repo_id: Repository ID on HuggingFace Hub (e.g., ``"username/my-policy"``).
+            commit_message: Custom commit message. Defaults to ``"Upload policy"``.
+            private: Whether the repository should be private.
+            token: HuggingFace authentication token.
+            revision: Branch to push to. Defaults to ``"main"``.
+
+        Returns:
+            URL of the commit on the HuggingFace Hub.
+
+        Examples:
+            Push a trained policy to the Hub:
+
+                >>> policy = LeRobotPolicy.from_dataset("act", "lerobot/pusht")
+                >>> url = policy.push_to_hub("username/act-pusht")
+                >>> print(url)
+        """
+        from huggingface_hub import HfApi  # noqa: PLC0415
+
+        api = HfApi(token=token)
+        repo_id = api.create_repo(repo_id=repo_id, private=private, exist_ok=True).repo_id
+
+        if commit_message is None:
+            commit_message = "Upload policy"
+
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            saved_path = Path(tmp) / repo_id
+            self.save_pretrained(saved_path)
+            result = api.upload_folder(
+                repo_id=repo_id,
+                repo_type="model",
+                folder_path=saved_path,
+                commit_message=commit_message,
+                revision=revision,
+                allow_patterns=["*.safetensors", "*.json", "*.yaml", "*.md"],
+                ignore_patterns=["*.tmp", "*.log"],
+            )
+
+        logger.info("Model pushed to %s", result)
+        return result
 
     @classmethod
     def load_from_checkpoint(
@@ -289,29 +470,19 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         config = dict_to_dataclass(config_cls, config_dict)
         dataset_stats = checkpoint.get(DATASET_STATS_KEY)
 
-        # Create policy instance with the reconstructed config
+        # All wrappers (LeRobotPolicy and every NamedLeRobotPolicy subclass)
+        # accept ``config=`` and forward it to the same initializer, so a
+        # single construction path suffices. Named subclasses bind their own
+        # ``policy_name`` from POLICY_NAME; pass ``policy_name`` only for the
+        # bare LeRobotPolicy where it is required positionally.
+        ctor_kwargs: dict[str, Any] = {
+            "config": config,
+            "dataset_stats": dataset_stats,
+            **kwargs,
+        }
         if cls is LeRobotPolicy:
-            # Universal wrapper - can use normal initialization
-            policy = cls(
-                policy_name=policy_name,
-                config=config,
-                dataset_stats=dataset_stats,
-                **kwargs,
-            )
-        else:
-            # Explicit wrapper (ACT, Diffusion, Groot, etc.) - bypass their __init__
-            # and call parent LeRobotPolicy.__init__ directly
-            policy = cls.__new__(cls)
-            # Initialize as PyTorch Module first
-            super(LeRobotPolicy, policy).__init__()
-            # Now call LeRobotPolicy.__init__ with the config
-            LeRobotPolicy.__init__(
-                policy,
-                policy_name=policy_name,
-                config=config,
-                dataset_stats=dataset_stats,
-                **kwargs,
-            )
+            ctor_kwargs["policy_name"] = policy_name
+        policy = cls(**ctor_kwargs)
 
         # Load state dict (model weights + normalizer stats)
         if "state_dict" in checkpoint:
@@ -413,6 +584,27 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             raise RuntimeError(msg)
         return self._lerobot_policy
 
+    @property  # type: ignore[override]
+    def model(self) -> PreTrainedPolicy:  # type: ignore[override]
+        """Alias for :attr:`lerobot_policy`.
+
+        Defined as a ``@property`` so that the underlying ``_lerobot_policy``
+        sub-module is **not** registered twice in the state dict.  When
+        ``model`` was a plain attribute set to ``self._lerobot_policy``,
+        PyTorch recorded every parameter under both ``model.*`` **and**
+        ``_lerobot_policy.*``, doubling the checkpoint size and forcing
+        ``strict=False`` on reload.
+
+        The base :class:`Policy.__init__` already skips
+        ``self.model = None`` when it detects a property descriptor on the
+        subclass, so this is fully compatible with the base class.
+        """
+        return self.lerobot_policy
+
+    @model.setter
+    def model(self, value: Any) -> None:  # noqa: ANN401
+        """No-op setter to absorb stale assignments during deserialization."""
+
     def _initialize_policy(
         self,
         input_features: dict[str, PolicyFeature] | None,
@@ -457,9 +649,6 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         # Instantiate the LeRobot policy
         policy = policy_cls(config)
         self.add_module("_lerobot_policy", policy)
-
-        # Use LeRobot policy directly as model (it's already an nn.Module)
-        self.model = self._lerobot_policy
 
         # Create preprocessor/postprocessor for normalization
         self._preprocessor, self._postprocessor = make_pre_post_processors(config, dataset_stats=dataset_stats)
@@ -614,7 +803,7 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         self,
         batch: Observation | dict[str, torch.Tensor],
     ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor] | None]:
-        """Forward pass for universal LeRobot policy.
+        """Forward pass for the LeRobot policy.
 
         Handles both training and inference modes:
         - Training: Returns (loss, loss_dict) for backpropagation
@@ -727,3 +916,83 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             lr_info = f"{optimizer_preset.lr}"
 
         return f"{self.__class__.__name__}(\n  policy_name={policy_name!r},\n  lr={lr_info},\n)"
+
+
+class NamedLeRobotPolicy(LeRobotPolicy):
+    """LeRobotPolicy specialization that binds ``policy_name`` from a ClassVar.
+
+    Subclasses set :attr:`POLICY_NAME` and inherit the entire
+    :class:`LeRobotPolicy` lifecycle. The base enforces two invariants the
+    bare :class:`LeRobotPolicy` cannot:
+
+    1. ``Subclass.from_dataset(...)`` returns an instance of ``Subclass``,
+       not a bare ``LeRobotPolicy`` (preserves ``isinstance`` discrimination).
+    2. ``Subclass(policy_name=other)`` is rejected, so a class named ``ACT``
+       can never silently build a different policy.
+    """
+
+    POLICY_NAME: ClassVar[str]
+
+    def __init__(
+        self,
+        config: PreTrainedConfig | None = None,
+        *,
+        input_features: dict[str, PolicyFeature] | None = None,
+        output_features: dict[str, PolicyFeature] | None = None,
+        dataset_stats: dict[str, dict[str, torch.Tensor]] | None = None,
+        policy_config: dict[str, Any] | None = None,
+        **overrides: Any,  # noqa: ANN401
+    ) -> None:
+        """Forward to :class:`LeRobotPolicy` with ``policy_name`` bound from POLICY_NAME.
+
+        Raises:
+            NotImplementedError: If the subclass did not set :attr:`POLICY_NAME`.
+            ValueError: If a conflicting ``policy_name`` kwarg is supplied.
+        """
+        policy_name = getattr(type(self), "POLICY_NAME", None)
+        if not policy_name:
+            msg = f"{type(self).__name__} must define a class-level POLICY_NAME."
+            raise NotImplementedError(msg)
+
+        explicit_name = overrides.pop("policy_name", None)
+        if explicit_name is not None and explicit_name != policy_name:
+            msg = (
+                f"{type(self).__name__} is bound to policy_name={policy_name!r}; "
+                f"refusing to override with policy_name={explicit_name!r}."
+            )
+            raise ValueError(msg)
+
+        super().__init__(
+            policy_name=policy_name,
+            input_features=input_features,
+            output_features=output_features,
+            config=config,
+            dataset_stats=dataset_stats,
+            policy_config=policy_config,
+            **overrides,
+        )
+
+    @classmethod
+    def from_dataset(  # type: ignore[override]
+        cls,
+        dataset: LeRobotDataset | _LeRobotDatasetAdapter | str,
+        **kwargs: Any,  # noqa: ANN401
+    ) -> NamedLeRobotPolicy:
+        """Build the subclass from a dataset; returns ``cls`` (not bare LeRobotPolicy).
+
+        Returns:
+            Instance of the calling subclass with features extracted from the dataset.
+        """
+        policy_name = getattr(cls, "POLICY_NAME", None)
+        if not policy_name:
+            msg = f"{cls.__name__} must define a class-level POLICY_NAME."
+            raise NotImplementedError(msg)
+
+        # Reuse the parent factory's feature-extraction logic but rebind
+        # ``cls`` so the returned instance is the subclass.
+        return LeRobotPolicy.from_dataset.__func__(  # type: ignore[attr-defined,no-any-return]
+            cls,
+            policy_name,
+            dataset,
+            **kwargs,
+        )
