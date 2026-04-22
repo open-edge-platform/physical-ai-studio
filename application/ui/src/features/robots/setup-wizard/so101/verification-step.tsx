@@ -9,7 +9,7 @@ import { $api } from '../../../../api/client';
 import { SchemaCalibration } from '../../../../api/openapi-spec';
 import { paths } from '../../../../router';
 import { useProjectId } from '../../../projects/use-project';
-import { useRobotForm } from '../../robot-form/provider';
+import { buildRobotBodyFromForm, useRobotForm } from '../../robot-form/provider';
 import { useRobotModels } from '../../robot-models-context';
 import { SchemaRobotInput } from '../../robot-types';
 import { InlineAlert } from '../shared/inline-alert';
@@ -137,19 +137,7 @@ export const VerificationStep = () => {
         },
     });
 
-    const robotBody: SchemaRobotInput | null =
-        robotForm.type !== null && robotForm.name
-            ? ({
-                  id: robotId,
-                  name: robotForm.name,
-                  type: robotForm.type,
-                  payload: {
-                      connection_string: robotForm.connection_string ?? '',
-                      serial_number: robotForm.serial_number ?? '',
-                  },
-                  active_calibration_id: null,
-              } as SchemaRobotInput)
-            : null;
+    const robotBody: SchemaRobotInput | null = buildRobotBodyFromForm(robotForm, robotId);
 
     const hasCalibration = wsState.calibrationResult !== null;
 

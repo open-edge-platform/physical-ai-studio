@@ -21,7 +21,7 @@ import { useProjectId } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
 import { SchemaRobotInput } from '../robot-types';
 import { PermissionDeniedError } from '../setup-wizard/so101/diagnostics-step-error';
-import { useRobotForm, useSetRobotForm } from './provider';
+import { buildRobotBodyFromForm, useRobotForm, useSetRobotForm } from './provider';
 import { SubmitNewRobotButton } from './submit-new-robot-button';
 
 import classes from './form.module.scss';
@@ -50,6 +50,8 @@ const RobotType = () => {
                               // Only reset when switching families (SO -> Trossen, etc)
                               serial_number: '',
                               connection_string: '',
+                              connection_string_left: '',
+                              connection_string_right: '',
                           }
                         : {}),
                 }));
@@ -59,6 +61,8 @@ const RobotType = () => {
             <Item key={'SO101_Leader'}>SO101 Leader</Item>
             <Item key={'Trossen_WidowXAI_Follower'}>Trossen WidowX AI Follower</Item>
             <Item key={'Trossen_WidowXAI_Leader'}>Trossen WidowX AI Leader</Item>
+            <Item key={'Trossen_Bimanual_WidowXAI_Follower'}>Trossen Bimanual WidowX AI Follower</Item>
+            <Item key={'Trossen_Bimanual_WidowXAI_Leader'}>Trossen Bimanual WidowX AI Leader</Item>
         </Picker>
     );
 };
@@ -90,23 +94,26 @@ const useIdentifyMutation = () => {
 const IdentifyRobot = ({ identifyMutation }: { identifyMutation: ReturnType<typeof useIdentifyMutation> }) => {
     const robotForm = useRobotForm();
 
-    const isDisabled = identifyMutation.isPending || !robotForm.name || !robotForm.type || !robotForm.connection_string;
+    const isBimanual = robotForm.type?.toLowerCase().includes('bimanual') ?? false;
+
+    const isDisabled =
+        identifyMutation.isPending ||
+        !robotForm.name ||
+        !robotForm.type ||
+        (isBimanual
+            ? !robotForm.connection_string_left || !robotForm.connection_string_right
+            : !robotForm.connection_string);
 
     const onIdentify = () => {
         if (isDisabled || robotForm.type === null) {
             return;
         }
 
-        const body: SchemaRobotInput = {
-            id: crypto.randomUUID(), // required by schema, not used by backend
-            name: robotForm.name,
-            type: robotForm.type,
-            payload: {
-                connection_string: robotForm.connection_string ?? '',
-                serial_number: robotForm.serial_number ?? '',
-            },
-            active_calibration_id: null,
-        } as SchemaRobotInput;
+        const body: SchemaRobotInput | null = buildRobotBodyFromForm(robotForm, crypto.randomUUID());
+
+        if (body === null) {
+            return;
+        }
 
         identifyMutation.mutate({ body });
     };
@@ -183,7 +190,45 @@ export const RobotForm = ({ heading = 'Add new robot', submitButton = <SubmitNew
                         <RobotType />
 
                         <Flex gap='size-100' justifyContent={'space-between'} alignItems={'end'}>
-                            {robotForm.type?.toLowerCase().startsWith('trossen') ? (
+                            {robotForm.type?.toLowerCase().includes('bimanual') ? (
+                                <>
+                                    <Flex direction='column' gap='size-100' width='100%'>
+                                        <TextField
+                                            isRequired
+                                            label='Left arm IP address'
+                                            width='100%'
+                                            value={robotForm.connection_string_left ?? ''}
+                                            onChange={(connection_string_left) => {
+                                                setRobotForm((oldForm) => ({
+                                                    ...oldForm,
+                                                    connection_string_left,
+                                                    serial_number: '',
+                                                }));
+                                            }}
+                                            placeholder='192.168.1.2'
+                                        />
+                                        <TextField
+                                            isRequired
+                                            label='Right arm IP address'
+                                            width='100%'
+                                            value={robotForm.connection_string_right ?? ''}
+                                            onChange={(connection_string_right) => {
+                                                setRobotForm((oldForm) => ({
+                                                    ...oldForm,
+                                                    connection_string_right,
+                                                    serial_number: '',
+                                                }));
+                                            }}
+                                            placeholder='192.168.1.3'
+                                        />
+                                    </Flex>
+                                    <Flex gap='size-100'>
+                                        <IdentifyRobot identifyMutation={identifyMutation} />
+                                    </Flex>
+                                </>
+                            ) : null}
+                            {robotForm.type?.toLowerCase().startsWith('trossen') &&
+                            !robotForm.type?.toLowerCase().includes('bimanual') ? (
                                 <>
                                     <TextField
                                         isRequired
