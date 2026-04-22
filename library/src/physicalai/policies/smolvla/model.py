@@ -20,13 +20,6 @@ from torch import nn
 from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, TASK, FeatureType
 from physicalai.export import ExportableModelMixin
-from physicalai.export.backends import (
-    ExportParameters,
-    ONNXExportParameters,
-    OpenVINOExportParameters,
-    TorchExportParameters,
-)
-from physicalai.inference.manifest import ComponentSpec
 from physicalai.policies.base import Model
 
 if TYPE_CHECKING:
@@ -326,75 +319,6 @@ class SmolVLAModel(ExportableModelMixin, Model):
         sample_input[TASK] = ["sample_task"]
 
         return sample_input
-
-    @property
-    def extra_export_args(self) -> dict[str, ExportParameters]:
-        """Additional export arguments for model conversion.
-
-        This property provides extra configuration parameters needed when exporting
-        the model to different formats (ONNX, OpenVINO, and PyTorch).
-
-        Returns:
-            dict[str, ExportParameters]: A dictionary mapping format names to their export parameters.
-            Supported formats: 'onnx', 'openvino', 'torch'.
-
-        Example:
-            >>> model = SmolVLA(input_features, output_features)
-            >>> export_args = model.extra_export_args
-            >>> onnx_args = export_args['onnx']
-            >>> print(onnx_args.exporter_kwargs)
-            {'output_names': ['action']}
-        """
-        extra_args: dict[str, ExportParameters] = {}
-        base_preproc_specs = [
-            ComponentSpec(type="smolvla_resize", image_resolution=self._resize_imgs_with_padding),
-            ComponentSpec(type="new_line"),
-            ComponentSpec(
-                type="normalize",
-                stats={STATE: self._dataset_stats[f"observation.{STATE}"]},
-                mode="mean_std",
-            ),
-        ]
-        postproc_specs = [
-            ComponentSpec(
-                type="denormalize",
-                stats={ACTION: self._dataset_stats[ACTION]},
-                mode="mean_std",
-            ),
-        ]
-        extra_args["onnx"] = ONNXExportParameters(
-            exporter_kwargs={
-                "output_names": [ACTION],
-            },
-            preprocessors_specs=[
-                *base_preproc_specs,
-                ComponentSpec(
-                    type="hf_tokenizer",
-                    tokenizer_name=self._vlm_model_name,
-                    revision="7b375e1b73b11138ff12fe22c8f2822d8fe03467",
-                    max_token_len=self._tokenizer_max_length,
-                ),
-            ],
-            postprocessors_specs=postproc_specs,
-            export_tokenizer=False,
-        )
-        extra_args["openvino"] = OpenVINOExportParameters(
-            outputs=[ACTION],
-            compress_to_fp16=False,
-            export_tokenizer=True,
-            exporter_kwargs={},
-            preprocessors_specs=[
-                *base_preproc_specs,
-                ComponentSpec(
-                    type="ov_tokenizer",
-                    artifact="tokenizer.xml",
-                ),
-            ],
-            postprocessors_specs=postproc_specs,
-        )
-        extra_args["torch"] = TorchExportParameters()
-
-        return extra_args
 
     @property
     def reward_delta_indices(self) -> None:

@@ -12,8 +12,15 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from physicalai.data.observation import ACTION
+from physicalai.data.observation import ACTION, STATE
 from physicalai.export import ExportablePolicyMixin, ExportBackend
+from physicalai.export.backends import (
+    ExportParameters,
+    ONNXExportParameters,
+    OpenVINOExportParameters,
+    TorchExportParameters,
+)
+from physicalai.inference.manifest import ComponentSpec
 from physicalai.policies.base import Policy
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
@@ -452,3 +459,61 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             list[str | ExportBackend]: A list of supported export backends.
         """
         return [ExportBackend.TORCH, ExportBackend.OPENVINO]
+
+    @property
+    def extra_export_args(self) -> dict[str, ExportParameters]:
+        """Additional export arguments for model conversion.
+
+        Returns:
+            dict[str, ExportParameters]: A dictionary mapping format names to their export parameters.
+        """
+        extra_args: dict[str, ExportParameters] = {}
+        base_preproc_specs = [
+            ComponentSpec(type="smolvla_resize", image_resolution=self.model._resize_imgs_with_padding),
+            ComponentSpec(type="new_line"),
+            ComponentSpec(
+                type="normalize",
+                stats={STATE: self.model._dataset_stats[f"observation.{STATE}"]},
+                mode="mean_std",
+            ),
+        ]
+        postproc_specs = [
+            ComponentSpec(
+                type="denormalize",
+                stats={ACTION: self.model._dataset_stats[ACTION]},
+                mode="mean_std",
+            ),
+        ]
+        extra_args["onnx"] = ONNXExportParameters(
+            exporter_kwargs={
+                "output_names": [ACTION],
+            },
+            preprocessors_specs=[
+                *base_preproc_specs,
+                ComponentSpec(
+                    type="hf_tokenizer",
+                    tokenizer_name=self.model._vlm_model_name,
+                    revision="7b375e1b73b11138ff12fe22c8f2822d8fe03467",
+                    max_token_len=self.model._tokenizer_max_length,
+                ),
+            ],
+            postprocessors_specs=postproc_specs,
+            export_tokenizer=False,
+        )
+        extra_args["openvino"] = OpenVINOExportParameters(
+            outputs=[ACTION],
+            compress_to_fp16=False,
+            export_tokenizer=True,
+            exporter_kwargs={},
+            preprocessors_specs=[
+                *base_preproc_specs,
+                ComponentSpec(
+                    type="ov_tokenizer",
+                    artifact="tokenizer.xml",
+                ),
+            ],
+            postprocessors_specs=postproc_specs,
+        )
+        extra_args["torch"] = TorchExportParameters()
+
+        return extra_args

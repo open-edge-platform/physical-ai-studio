@@ -20,13 +20,6 @@ from transformers.cache_utils import DynamicCache
 from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.data.observation import ACTION, IMAGES, STATE, TASK
 from physicalai.export import ExportableModelMixin
-from physicalai.export.backends import (
-    ExportParameters,
-    ONNXExportParameters,
-    OpenVINOExportParameters,
-    TorchExportParameters,
-)
-from physicalai.inference.manifest import ComponentSpec
 from physicalai.policies.base import Model
 
 from .pi_gemma import (
@@ -659,75 +652,6 @@ class Pi05Model(ExportableModelMixin, Model):
     def set_dataset_stats(self, dataset_stats: dict) -> None:
         """Update dataset statistics used for normalization."""
         self._dataset_stats = dataset_stats
-
-    @property
-    def extra_export_args(self) -> dict[str, ExportParameters]:
-        """Additional export arguments for model conversion.
-
-        This property provides extra configuration parameters needed when exporting
-        the model to different formats (ONNX, OpenVINO, and PyTorch).
-
-        Returns:
-            dict[str, ExportParameters]: A dictionary mapping format names to their export parameters.
-            Supported formats: 'onnx', 'openvino', 'torch'.
-
-        Example:
-            >>> model = Pi05(input_features, output_features)
-            >>> export_args = model.extra_export_args
-            >>> onnx_args = export_args['onnx']
-            >>> print(onnx_args.exporter_kwargs)
-            {'output_names': ['action']}
-        """
-        base_preproc_specs = [
-            ComponentSpec(type="pi05", image_resolution=self._image_resolution),
-            ComponentSpec(
-                type="normalize",
-                stats={STATE: self._dataset_stats[f"observation.{STATE}"]},
-                mode="mean_std",
-            ),
-        ]
-        postproc_specs = [
-            ComponentSpec(
-                type="denormalize",
-                stats={ACTION: self._dataset_stats[ACTION]},
-                mode=self._normalization_mode,
-            ),
-        ]
-        extra_args: dict[str, ExportParameters] = {}
-        extra_args["onnx"] = ONNXExportParameters(
-            exporter_kwargs={
-                "output_names": [ACTION],
-            },
-            export_tokenizer=False,
-            preprocessors_specs=[
-                *base_preproc_specs,
-                ComponentSpec(
-                    type="hf_tokenizer",
-                    tokenizer_name="google/paligemma-3b-pt-224",
-                    revision="35e4f46485b4d07967e7e9935bc3786aad50687c",
-                    max_token_len=self._tokenizer_max_length,
-                ),
-            ],
-            postprocessors_specs=postproc_specs,
-        )
-        extra_args["openvino"] = OpenVINOExportParameters(
-            outputs=[ACTION],
-            compress_to_fp16=True,
-            via_onnx=True,
-            export_tokenizer=True,
-            exporter_kwargs={},
-            preprocessors_specs=[
-                *base_preproc_specs,
-                ComponentSpec(
-                    type="ov_tokenizer",
-                    artifact="tokenizer.xml",
-                ),
-            ],
-            postprocessors_specs=postproc_specs,
-        )
-        extra_args["torch"] = TorchExportParameters()
-
-        return extra_args
 
     @property
     def sample_input(self) -> dict[str, torch.Tensor | str]:

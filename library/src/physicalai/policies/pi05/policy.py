@@ -17,8 +17,15 @@ from huggingface_hub import hf_hub_download
 from safetensors.torch import load_file
 
 from physicalai.data.dataset import Dataset
-from physicalai.data.observation import ACTION
+from physicalai.data.observation import ACTION, STATE
 from physicalai.export import ExportablePolicyMixin, ExportBackend
+from physicalai.export.backends import (
+    ExportParameters,
+    ONNXExportParameters,
+    OpenVINOExportParameters,
+    TorchExportParameters,
+)
+from physicalai.inference.manifest import ComponentSpec
 from physicalai.policies.base import Policy
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
@@ -652,3 +659,61 @@ class Pi05(ExportablePolicyMixin, Policy):
             list[str | ExportBackend]: A list of supported export backends.
         """
         return [ExportBackend.TORCH, ExportBackend.OPENVINO]
+
+    @property
+    def extra_export_args(self) -> dict[str, ExportParameters]:
+        """Additional export arguments for model conversion.
+
+        Returns:
+            dict[str, ExportParameters]: A dictionary mapping format names to their export parameters.
+        """
+        base_preproc_specs = [
+            ComponentSpec(type="pi05", image_resolution=self.model._image_resolution),
+            ComponentSpec(
+                type="normalize",
+                stats={STATE: self.model._dataset_stats[f"observation.{STATE}"]},
+                mode="mean_std",
+            ),
+        ]
+        postproc_specs = [
+            ComponentSpec(
+                type="denormalize",
+                stats={ACTION: self.model._dataset_stats[ACTION]},
+                mode=self.model._normalization_mode,
+            ),
+        ]
+        extra_args: dict[str, ExportParameters] = {}
+        extra_args["onnx"] = ONNXExportParameters(
+            exporter_kwargs={
+                "output_names": [ACTION],
+            },
+            export_tokenizer=False,
+            preprocessors_specs=[
+                *base_preproc_specs,
+                ComponentSpec(
+                    type="hf_tokenizer",
+                    tokenizer_name="google/paligemma-3b-pt-224",
+                    revision="35e4f46485b4d07967e7e9935bc3786aad50687c",
+                    max_token_len=self.model._tokenizer_max_length,
+                ),
+            ],
+            postprocessors_specs=postproc_specs,
+        )
+        extra_args["openvino"] = OpenVINOExportParameters(
+            outputs=[ACTION],
+            compress_to_fp16=True,
+            via_onnx=True,
+            export_tokenizer=True,
+            exporter_kwargs={},
+            preprocessors_specs=[
+                *base_preproc_specs,
+                ComponentSpec(
+                    type="ov_tokenizer",
+                    artifact="tokenizer.xml",
+                ),
+            ],
+            postprocessors_specs=postproc_specs,
+        )
+        extra_args["torch"] = TorchExportParameters()
+
+        return extra_args
