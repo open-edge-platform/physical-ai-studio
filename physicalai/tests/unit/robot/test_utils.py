@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import dataclass
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -14,13 +14,18 @@ import pytest
 from physicalai.robot.connect import connect
 
 
+@dataclass
+class _Obs:
+    joint_positions: np.ndarray
+    timestamp: float
+    sensor_data: dict[str, np.ndarray] | None = None
+    images: dict[str, object] | None = None
+
+
 def _make_mock_robot() -> MagicMock:
     """Create a MagicMock that looks like a Robot."""
     robot = MagicMock()
-    robot.get_observation.return_value = {
-        "state": np.zeros(6, dtype=np.float32),
-        "timestamp": 0.0,
-    }
+    robot.get_observation.return_value = _Obs(joint_positions=np.zeros(6, dtype=np.float32), timestamp=0.0)
     return robot
 
 
@@ -55,4 +60,4 @@ class TestConnect:
 
         with connect(robot) as r:
             obs = r.get_observation()
-            assert "state" in obs
+            assert isinstance(obs.joint_positions, np.ndarray)

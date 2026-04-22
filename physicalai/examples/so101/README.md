@@ -23,6 +23,9 @@ Use `--offset 0.15` (radians) for larger movements or `--delay 1.0` for more tim
 ## Finding your port
 
 ```bash
-ls /dev/tty.usb*        # macOS
+ls /dev/cu.usb*          # macOS
 ls /dev/ttyUSB*          # Linux
 ```
+
+> **macOS users:** Always use `/dev/cu.*` instead of `/dev/tty.*`. The `tty`
+> variant may hang on open (uninterruptible).

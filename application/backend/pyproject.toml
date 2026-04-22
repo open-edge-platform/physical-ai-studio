@@ -11,12 +11,13 @@ dependencies = [
   "fastapi[standard]",
   "physicalai-train[pi0,smolvla]",
   "physicalai[so101]",
-  "lerobot[feetech]==0.4.4",
+  "lerobot[feetech]==0.5.1",
   "numpy",
   "websockets",
   'pyrealsense2-macosx; sys_platform == "darwin"',
   'pyrealsense2; sys_platform != "darwin"',
   "aiortc>=1.13.0",
+  "pydantic>=2.12,<2.13",
   "pydantic-settings>=2.10.1",
   "sqlalchemy>=2.0.43",
   "aiosqlite~=0.21",
@@ -82,7 +83,7 @@ url = "https://download.pytorch.org/whl/xpu"
 explicit = false
 
 [tool.uv.sources]
-FrameSource = { git = "https://github.com/ArendJanKramer/FrameSource.git", rev = "c3023714ceaa2bf50cf04e1d2861d9fe7cd01422" }
+FrameSource = { git = "https://github.com/ArendJanKramer/FrameSource.git", rev = "cb9a20895669ba7e413f245b8d620dbcdf550d0a" }
 physicalai-train = { path = "../../library", editable = true }
 # TODO(#450): Replace with published package once physicalai is back in its own repo.
 physicalai = { path = "../../physicalai", editable = true }
@@ -193,6 +194,7 @@ project-excludes = [
   ".venv/**",
   "dist/**",
 ]
+replace-imports-with-any = ["trossen_arm"]
 
 [tool.pytest.ini_options]
 addopts = ["--strict-markers", "--strict-config", "--showlocals", "-ra"]
@@ -206,4 +208,5 @@ markers = [
 filterwarnings = [
   "ignore:XPU device count is zero!:UserWarning",
   "ignore:This process.*is multi-threaded:DeprecationWarning", # using actual queues in tests
+  "ignore:ResourceTracker called reentrantly:UserWarning", # CPython 3.12 bug (gh-109981): semaphore cleanup races during GC at shutdown
 ]

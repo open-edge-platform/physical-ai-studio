@@ -88,3 +88,26 @@ class ResourceAlreadyExistsError(BaseException):
             error_code=f"{resource_name}_already_exists",
             http_status=http.HTTPStatus.CONFLICT,
         )
+
+
+class UnsupportedDeviceError(BaseException):
+    """Exception raised when a requested training device is not available on the system."""
+
+    def __init__(self, device_type: str, supported: list[str]) -> None:
+        supported_str = ", ".join(supported) if supported else "none"
+        super().__init__(
+            message=f"Device type '{device_type}' is not available for training. Supported devices: {supported_str}.",
+            error_code="unsupported_device",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
+class UploadTooLargeError(BaseException):
+    """Raised when the HTTP upload exceeds the configured maximum size."""
+
+    def __init__(self, message: str = "Uploaded file exceeds the maximum allowed size") -> None:
+        super().__init__(
+            message=message,
+            error_code="upload_too_large",
+            http_status=http.HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+        )

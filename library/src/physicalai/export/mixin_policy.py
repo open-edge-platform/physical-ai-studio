@@ -277,7 +277,7 @@ class ExportablePolicyMixin:
 
         if extra_model_args.export_tokenizer:
             onnx_tokenizer = gen_processing_models(
-                self._preprocessor.exportable_tokenizer,
+                self._preprocessor.tokenizer,
                 pre_kwargs={
                     "padding": "max_length",
                     "truncation": True,
@@ -374,7 +374,11 @@ class ExportablePolicyMixin:
                     arg_name=arg_name,
                     **extra_export_kwargs,
                 )
-                ov_model = openvino.convert_model(tmp.name)
+                ov_model = openvino.convert_model(
+                    tmp.name,
+                    example_input={arg_name: input_sample},
+                    input=input_shapes,
+                )
         else:
             ov_model = openvino.convert_model(
                 self.model,
@@ -387,7 +391,7 @@ class ExportablePolicyMixin:
         openvino.save_model(ov_model, str(model_path), compress_to_fp16=extra_model_args.compress_to_fp16)
         if extra_model_args.export_tokenizer:
             ov_tokenizer = openvino_tokenizers.convert_tokenizer(
-                self._preprocessor.exportable_tokenizer,
+                self._preprocessor.tokenizer,
                 with_detokenizer=False,
                 max_length=self._preprocessor.max_token_len,
                 use_max_padding=True,

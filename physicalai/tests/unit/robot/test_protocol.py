@@ -5,11 +5,23 @@
 
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from physicalai.robot.interface import Robot
+from physicalai.robot.interface import Robot, RobotObservation
+
+if TYPE_CHECKING:
+    from physicalai.capture.frame import Frame
+
+
+@dataclass
+class _Obs(RobotObservation):
+    joint_positions: np.ndarray
+    timestamp: float
+    sensor_data: dict[str, np.ndarray] | None = None
+    images: dict[str, Frame] | None = None
 
 
 class _ValidRobot:
@@ -21,11 +33,18 @@ class _ValidRobot:
     def disconnect(self) -> None:
         pass
 
-    def get_observation(self) -> dict[str, Any]:
-        return {"state": np.zeros(6, dtype=np.float32), "timestamp": 0.0}
+    def get_observation(self) -> _Obs:
+        return _Obs(joint_positions=np.zeros(6, dtype=np.float32), timestamp=0.0)
 
     def send_action(self, action: np.ndarray) -> None:
         pass
+
+    def is_connected(self) -> bool:
+        return True
+
+    @property
+    def joint_names(self) -> list[str]:
+        return ["j0", "j1", "j2", "j3", "j4", "j5"]
 
 
 class _MissingConnect:
@@ -34,11 +53,18 @@ class _MissingConnect:
     def disconnect(self) -> None:
         pass
 
-    def get_observation(self) -> dict[str, Any]:
-        return {"state": np.zeros(6, dtype=np.float32), "timestamp": 0.0}
+    def get_observation(self) -> _Obs:
+        return _Obs(joint_positions=np.zeros(6, dtype=np.float32), timestamp=0.0)
 
     def send_action(self, action: np.ndarray) -> None:
         pass
+
+    def is_connected(self) -> bool:
+        return True
+
+    @property
+    def joint_names(self) -> list[str]:
+        return ["j0", "j1", "j2", "j3", "j4", "j5"]
 
 
 class _MissingSendAction:
@@ -50,15 +76,22 @@ class _MissingSendAction:
     def disconnect(self) -> None:
         pass
 
-    def get_observation(self) -> dict[str, Any]:
-        return {"state": np.zeros(6, dtype=np.float32), "timestamp": 0.0}
+    def get_observation(self) -> _Obs:
+        return _Obs(joint_positions=np.zeros(6, dtype=np.float32), timestamp=0.0)
+
+    def is_connected(self) -> bool:
+        return True
+
+    @property
+    def joint_names(self) -> list[str]:
+        return ["j0", "j1", "j2", "j3", "j4", "j5"]
 
 
 class TestRobotProtocol:
     """Tests for the Robot Protocol (runtime_checkable)."""
 
     def test_valid_robot_is_instance(self) -> None:
-        """A class with all four methods satisfies the protocol."""
+        """A class with all required members satisfies the protocol."""
         robot = _ValidRobot()
         assert isinstance(robot, Robot)
 

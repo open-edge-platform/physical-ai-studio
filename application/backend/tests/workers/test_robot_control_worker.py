@@ -1,6 +1,8 @@
 import asyncio
+import time
 from multiprocessing import Event, Queue
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 import pytest
 from tests.queue_utils import clear_queue, thread_flush, wait_until_message_from_queue
@@ -11,6 +13,21 @@ from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
 from internal_datasets.mutations.recording_mutation import RecordingMutation
 from schemas.environment import EnvironmentWithRelations
 from workers.robot_control_worker import RobotControlWorker
+
+
+def _wait_until_state(queue: Queue, timeout: float = 2, **expected: bool) -> dict:
+    """Drain 'state' messages until all *expected* fields are ``True``."""
+    t = time.perf_counter()
+    latest = None
+    while time.perf_counter() - t < timeout:
+        try:
+            msg = wait_until_message_from_queue(queue, "state", timeout=0.2)
+            latest = msg["data"]
+            if all(latest.get(k) == v for k, v in expected.items()):
+                return latest
+        except TimeoutError:
+            pass
+    raise TimeoutError(f"State never reached {expected}; last seen: {latest}")
 
 
 @pytest.fixture
@@ -75,11 +92,15 @@ def test_dataset_impl(recording_mutation):
 def robot_control_worker(mock_robot_client_factory):
     stop_event = Event()
     queue = Queue()
+    mock_registry = MagicMock()
+    mock_registry.acquire = AsyncMock(return_value=(uuid4(), MagicMock()))
+    mock_registry.release = AsyncMock()
 
     process = RobotControlWorker(
         stop_event=stop_event,
         robot_client_factory=mock_robot_client_factory,
         queue=queue,
+        model_worker_registry=mock_registry,
     )
     process.start()
 
@@ -95,19 +116,15 @@ def loaded_inference_worker(
 ):
     with patch("workers.robot_control_worker.SyncMixedModelIntegration", return_value=model_integration):
         robot_control_worker.load_model(test_model, "torch")
+        with patch("workers.robot_control_worker.EnvironmentIntegration", return_value=environment_integration):
+            robot_control_worker.load_environment(test_environment)
+        model_integration.allow_setup()
+        environment_integration.allow_setup()
+        state = _wait_until_state(robot_control_worker.queue, model_loaded=True, environment_loaded=True)
 
-    with patch("workers.robot_control_worker.EnvironmentIntegration", return_value=environment_integration):
-        robot_control_worker.load_environment(test_environment)
-    model_integration.allow_setup()
-    thread_flush()
-    environment_integration.allow_setup()
-    thread_flush()
+    assert state["model_loaded"]
+    assert state["environment_loaded"]
     clear_queue(robot_control_worker.queue)
-
-    state = robot_control_worker.state
-    assert state is not None
-    assert state.model_loaded
-    assert state.environment_loaded
 
     return robot_control_worker
 
@@ -179,14 +196,17 @@ class TestRobotControlWorker:
         report = wait_until_message_from_queue(robot_control_worker.queue, "state")
         assert report["event"] == "state"
 
+        # Keep patch active until after allow_setup(): _handle_new_model_load creates
+        # SyncMixedModelIntegration asynchronously, so the patch must outlive load_model().
         with patch("workers.robot_control_worker.SyncMixedModelIntegration", return_value=model_integration):
             robot_control_worker.load_model(test_model, "torch")
-        report = wait_until_message_from_queue(robot_control_worker.queue, "state")
-        assert report["event"] == "state"
-        assert not report["data"]["model_loaded"]
+            report = wait_until_message_from_queue(robot_control_worker.queue, "state")
+            assert report["event"] == "state"
+            assert not report["data"]["model_loaded"]
 
-        model_integration.allow_setup()
-        report = robot_control_worker.queue.get()
+            model_integration.allow_setup()
+            report = robot_control_worker.queue.get()
+
         assert report["event"] == "state"
         assert report["data"]["model_loaded"]
 

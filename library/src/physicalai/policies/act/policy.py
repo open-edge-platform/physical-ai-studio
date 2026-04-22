@@ -301,6 +301,27 @@ class ACT(ExportablePolicyMixin, Policy):
         # During evaluation, return action chunk predictions
         return self.predict_action_chunk(batch)
 
+    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, float]]:
+        """Compute validation loss on a batch.
+
+        Delegates to the model's ``compute_val_loss`` without toggling
+        train mode (avoiding dropout noise in the validation metric).
+
+        Args:
+            batch: Observation batch (must contain ground-truth actions).
+
+        Returns:
+            Tuple of (loss tensor, loss dict).
+
+        Raises:
+            RuntimeError: If the model is not initialized.
+        """
+        if self.model is None:
+            msg = "ACT model is not initialized."
+            raise RuntimeError(msg)
+        processed_batch = self._preprocessor(batch.to_dict())
+        return self.model.compute_val_loss(processed_batch)
+
     def training_step(self, batch: Observation, batch_idx: int) -> dict[str, torch.Tensor]:
         """Training step for the policy.
 
@@ -376,30 +397,6 @@ class ACT(ExportablePolicyMixin, Policy):
                 gradient_clip_val=clip_val,
                 gradient_clip_algorithm=gradient_clip_algorithm or "norm",
             )
-
-    def evaluation_step(self, batch: Observation, stage: str) -> None:  # noqa: PLR6301
-        """Evaluation step (no-op by default).
-
-        Args:
-            batch (Observation): Input batch.
-            stage (str): Evaluation stage, e.g., "val" or "test".
-        """
-        del batch, stage
-
-    def validation_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
-        """Validation step.
-
-        Runs gym-based validation via rollout evaluation. The DataModule's val_dataloader
-        returns Gym environment instances directly.
-
-        Args:
-            batch: Gym environment to evaluate.
-            batch_idx: Index of the batch.
-
-        Returns:
-            Metrics dict from gym rollout.
-        """
-        return self.evaluate_gym(batch, batch_idx, stage="val")
 
     def test_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
         """Test step.

@@ -6,6 +6,7 @@ from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
 from pathlib import Path
 from typing import Literal
+from uuid import UUID  # noqa: TC003
 
 from loguru import logger
 from pydantic import BaseModel
@@ -21,6 +22,7 @@ from schemas.dataset import Dataset, Episode
 from schemas.environment import EnvironmentWithRelations
 
 from .base import BaseThreadWorker
+from .model_worker_registry import ModelWorkerRegistry
 
 
 class RobotControlState(BaseModel):
@@ -68,12 +70,17 @@ class RobotControlWorker(BaseThreadWorker):
         stop_event: EventClass,
         queue: Queue,
         robot_client_factory: RobotClientFactory,
+        model_worker_registry: ModelWorkerRegistry,
     ):
         super().__init__(stop_event=stop_event)
         self.queue = queue
         self.state = RobotControlState()
         self.robot_client_factory = robot_client_factory
         self.events = WorkerEvents()
+        self._model_worker_registry = model_worker_registry
+        self._model_worker_id: UUID | None = None
+        self._pending_model: Model | None = None
+        self._pending_backend: str | None = None
 
     def start_task(self, task: str) -> None:
         if self.state.model_loaded and self.state.environment_loaded:
@@ -112,19 +119,11 @@ class RobotControlWorker(BaseThreadWorker):
         self._report_state()
 
     def load_model(self, model: Model, backend: str) -> None:
-        try:
-            self.model_integration = SyncMixedModelIntegration(
-                model=model,
-                backend=backend,
-                stop_event=self._stop_event,
-                fps=self.fps,
-            )
-            self.state.model_loaded = False
-            self.events.new_model.set()
-            self._report_state()
-        except Exception as e:
-            self.model_integration = None
-            self._report_error(e)
+        self._pending_model = model
+        self._pending_backend = backend
+        self.state.model_loaded = False
+        self.events.new_model.set()
+        self._report_state()
 
     def load_environment(self, environment: EnvironmentWithRelations) -> None:
         """Setup environment."""
@@ -219,11 +218,28 @@ class RobotControlWorker(BaseThreadWorker):
             self._report_error(e)
 
     async def _handle_new_model_load(self) -> None:
-        if self.model_integration and self.events.new_model.is_set():
+        if self._pending_model is not None and self.events.new_model.is_set():
             self.events.new_model.clear()
-            await self.model_integration.setup()
-            self.state.model_loaded = True
-            self._report_state()
+            try:
+                # Release any previously held worker slot
+                if self._model_worker_id is not None:
+                    await self._model_worker_registry.release(self._model_worker_id)
+                    self._model_worker_id = None
+
+                worker_id, worker = await self._model_worker_registry.acquire(
+                    self._pending_model, self._pending_backend or "torch"
+                )
+                self._model_worker_id = worker_id
+                self.model_integration = SyncMixedModelIntegration(model_worker=worker, fps=self.fps)
+                await self.model_integration.setup()
+                self.state.model_loaded = True
+                self._report_state()
+            except Exception as e:
+                self.model_integration = None
+                self._report_error(e)
+            finally:
+                self._pending_model = None
+                self._pending_backend = None
 
     async def _handle_setup_environment(self) -> None:
         if self.environment_integration and self.events.new_environment.is_set():
@@ -280,6 +296,10 @@ class RobotControlWorker(BaseThreadWorker):
 
         if self.model_integration is not None:
             self.model_integration.teardown()
+
+        if self._model_worker_id is not None:
+            await self._model_worker_registry.release(self._model_worker_id)
+            self._model_worker_id = None
 
         if self.recording_mutation:
             self.recording_mutation.teardown()

@@ -33,6 +33,24 @@ class Settings(BaseSettings):
 
     supported_backends: list[str] = ["torch"]
 
+    # Data import/upload safety (shared for dataset/model/project imports)
+    data_import_max_uncompressed_bytes: int = Field(
+        default=200 * 1024 * 1024 * 1024,
+        alias="DATA_IMPORT_MAX_UNCOMPRESSED_BYTES",
+    )
+    # Maximum raw upload size (Content-Length) accepted before any processing.
+    # Default: 100 GiB - supports large dataset imports while still guarding abuse.
+    data_import_max_upload_bytes: int = Field(
+        default=100 * 1024 * 1024 * 1024,
+        alias="DATA_IMPORT_MAX_UPLOAD_BYTES",
+    )
+    # Minimum free bytes that must remain on the target filesystem after the
+    # upload / extraction lands.  Default: 1 GiB headroom.
+    data_import_min_free_bytes: int = Field(
+        default=1 * 1024 * 1024 * 1024,
+        alias="DATA_IMPORT_MIN_FREE_BYTES",
+    )
+
     @property
     def datasets_dir(self) -> Path:
         """Storage directory for datasets."""

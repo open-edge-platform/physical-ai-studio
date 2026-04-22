@@ -11,7 +11,11 @@ export const SubmitNewCameraButton = () => {
     const navigate = useNavigate();
     const { project_id } = useProjectId();
 
-    const addCameraMutation = $api.useMutation('post', '/api/projects/{project_id}/cameras');
+    const addCameraMutation = $api.useMutation('post', '/api/projects/{project_id}/cameras', {
+        meta: {
+            invalidates: [['get', '/api/projects/{project_id}/cameras', { params: { path: { project_id } } }]],
+        },
+    });
 
     const body = useCameraFormBody(uuidv4());
 

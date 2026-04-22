@@ -75,7 +75,7 @@ class TestHFTokenizerInit:
             from physicalai.inference.preprocessors.hf_tokenizer import HFTokenizer
 
             HFTokenizer(tokenizer_name="my-model", revision="v2", max_token_len=128)
-            mock_transformers.AutoTokenizer.from_pretrained.assert_called_once_with("my-model", revision="v2", use_fast=True)
+            mock_transformers.AutoTokenizer.from_pretrained.assert_called_once_with("my-model", revision="v2", use_fast=True, padding_side="right")
 
 
 class TestHFTokenizerCall:

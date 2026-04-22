@@ -161,6 +161,12 @@ class TestRolloutIntegration:
 
     def test_device_placement(self, pusht_gym, dummy_policy):
         """Verify metric tensors are on correct device."""
+        # Destroy any leftover distributed process group from prior tests
+        # (e.g. Lightning Trainer) so torchmetrics doesn't attempt all_gather
+        # on CPU tensors with the NCCL backend.
+        if torch.distributed.is_initialized():
+            torch.distributed.destroy_process_group()
+
         metric = Rollout(max_steps=10)
         metric.update(env=pusht_gym, policy=dummy_policy, seed=0)
 

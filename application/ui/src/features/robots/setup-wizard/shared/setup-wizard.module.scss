@@ -228,3 +228,15 @@
     font-size: 13px;
     line-height: 1.5;
 }
+
+/* Code block inside inline alerts (e.g. remediation commands) */
+.codeBlock {
+    padding: 0;
+    margin: 0;
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+}

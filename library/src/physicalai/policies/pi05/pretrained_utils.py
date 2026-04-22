@@ -6,7 +6,7 @@
 """Utilities for loading pretrained Pi05 weights from HuggingFace/lerobot format.
 
 Handles:
-- Normalization stat conversion (QUANTILES/MIN_MAX → MEAN_STD)
+- Normalization stat extraction (preserves q01/q99 and derives mean/std)
 - State dict key remapping (lerobot → Pi05Model)
 - Feature shape resolution from config or stats
 """
@@ -30,6 +30,43 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def detect_normalization_mode(preprocessor_file: Path) -> str | None:
+    """Detect normalization mode from a pretrained preprocessor JSON.
+
+    Reads the ``norm_map`` from each step in the preprocessor config.
+    If all entries use ``MEAN_STD``, returns ``"MEAN_STD"``.
+    If all entries use ``QUANTILES``, returns ``"QUANTILES"``.
+    Otherwise returns ``None`` (caller keeps the default).
+
+    Returns:
+        Detected normalization mode string, or None if ambiguous.
+
+    Raises:
+        RuntimeError: If the preprocessor file cannot be read or parsed.
+    """
+    from pathlib import Path as _Path  # noqa: PLC0415
+
+    try:
+        with _Path(preprocessor_file).open(encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        msg = f"Failed to read preprocessor file {preprocessor_file}: {e}"
+        raise RuntimeError(msg) from e
+
+    modes: set[str] = set()
+    for step in data.get("steps", []):
+        norm_map = step.get("norm_map") or step.get("config", {}).get("norm_map")
+        if norm_map:
+            for value in norm_map.values():
+                if value != "IDENTITY":
+                    modes.add(value)
+    if modes == {"MEAN_STD"}:
+        return "MEAN_STD"
+    if modes == {"QUANTILES"}:
+        return "QUANTILES"
+    return None
+
+
 def extract_dataset_stats(
     hf_config: dict[str, Any],
     preprocessor_file: Path | None,
@@ -38,11 +75,12 @@ def extract_dataset_stats(
     """Build ``dataset_stats`` dict that ``make_pi05_preprocessors`` expects.
 
     The stats format expected by the preprocessor is:
-    ``{feature_name: {"name": str, "shape": tuple, "mean": list, "std": list}}``
+    ``{feature_name: {"name": str, "shape": tuple, ...stat fields...}}``
+    where stat fields include whichever of mean/std, q01/q99, or min/max
+    are present in the pretrained model's artifacts.
 
-    Lerobot models use QUANTILES normalization with q01/q99 stats.
-    We convert to mean/std that produces an equivalent [-1, 1] mapping:
-    ``mean = (q01 + q99) / 2``  and  ``std = (q99 - q01) / 2``.
+    The normalization mode (detected from the preprocessor JSON) determines
+    which stat fields the normalizer actually uses at runtime.
 
     Returns:
         Dataset stats dict mapping feature names to stat dicts.
@@ -76,8 +114,11 @@ def parse_preprocessor_stats(
     by ``state_file`` in each pipeline step). The keys are flat:
     ``"observation.state.q01"``, ``"action.q99"``, etc.
 
+    Stats are stored as-is without conversion — the normalization mode
+    detected from the preprocessor JSON determines which fields are used.
+
     Returns:
-        Dict mapping feature names to stat dicts with mean/std.
+        Dict mapping feature names to stat dicts.
     """
     stats: dict[str, dict[str, Any]] = {}
 
@@ -109,17 +150,21 @@ def parse_preprocessor_stats(
             feat_name, stat_name = flat_key.rsplit(".", 1)
             grouped.setdefault(feat_name, {})[stat_name] = tensor.cpu().tolist()
 
-        # Convert each feature's stats to mean/std
+        # Store all available stats directly — the normalization mode
+        # (detected from the preprocessor JSON) determines which fields
+        # the normalizer actually uses at runtime.
         for feat_name, feat_stats in grouped.items():
             shape = resolve_feature_shape(feat_name, hf_config, feat_stats)
-            mean, std = convert_normalization_stats(feat_stats)
-            if mean is not None and std is not None:
-                stats[feat_name] = {
-                    "name": feat_name,
-                    "shape": shape,
-                    "mean": mean,
-                    "std": std,
-                }
+            entry: dict[str, Any] = {
+                "name": feat_name,
+                "shape": shape,
+            }
+            for stat_key in ("mean", "std", "q01", "q99", "min", "max"):
+                if stat_key in feat_stats and isinstance(feat_stats[stat_key], list):
+                    entry[stat_key] = feat_stats[stat_key]
+            # Only include features that have at least one stat field
+            if len(entry) > 2:  # noqa: PLR2004
+                stats[feat_name] = entry
 
     return stats
 
@@ -154,6 +199,9 @@ def parse_config_features(hf_config: dict[str, Any]) -> dict[str, dict[str, Any]
                     "shape": shape,
                     "mean": [0.0] * dim,
                     "std": [1.0] * dim,
+                    # Identity-equivalent quantile stats so QUANTILES mode works
+                    "q01": [-1.0] * dim,
+                    "q99": [1.0] * dim,
                 }
 
     return stats
@@ -180,44 +228,6 @@ def resolve_feature_shape(feat_name: str, hf_config: dict[str, Any], feat_stats:
             return (len(val),)
 
     return (1,)
-
-
-def convert_normalization_stats(feat_stats: dict[str, Any]) -> tuple[list[float] | None, list[float] | None]:
-    """Convert lerobot normalization stats to mean/std.
-
-    Handles QUANTILES (q01/q99), MIN_MAX (min/max), and MEAN_STD (mean/std).
-    QUANTILES conversion: mean = (q01+q99)/2, std = (q99-q01)/2.
-    MIN_MAX conversion:   mean = (min+max)/2, std = (max-min)/2.
-
-    Returns:
-        Tuple of (mean, std) lists, or (None, None) if conversion fails.
-    """
-    # Already has mean/std
-    if "mean" in feat_stats and "std" in feat_stats:
-        mean = feat_stats["mean"]
-        std = feat_stats["std"]
-        if isinstance(mean, list) and isinstance(std, list):
-            return mean, std
-
-    # QUANTILES: q01/q99 → mean/std
-    if "q01" in feat_stats and "q99" in feat_stats:
-        q01 = feat_stats["q01"]
-        q99 = feat_stats["q99"]
-        if isinstance(q01, list) and isinstance(q99, list):
-            mean = [(a + b) / 2.0 for a, b in zip(q01, q99, strict=False)]
-            std = [max((b - a) / 2.0, 1e-8) for a, b in zip(q01, q99, strict=False)]
-            return mean, std
-
-    # MIN_MAX: min/max → mean/std
-    if "min" in feat_stats and "max" in feat_stats:
-        mn = feat_stats["min"]
-        mx = feat_stats["max"]
-        if isinstance(mn, list) and isinstance(mx, list):
-            mean = [(a + b) / 2.0 for a, b in zip(mn, mx, strict=False)]
-            std = [max((b - a) / 2.0, 1e-8) for a, b in zip(mn, mx, strict=False)]
-            return mean, std
-
-    return None, None
 
 
 def fix_state_dict_keys(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:

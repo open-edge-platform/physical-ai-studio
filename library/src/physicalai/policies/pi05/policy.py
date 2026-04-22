@@ -26,6 +26,7 @@ from physicalai.train.utils import reformat_dataset_to_match_policy
 from .config import Pi05Config
 from .model import Pi05Model
 from .preprocessor import make_pi05_preprocessors
+from .pretrained_utils import detect_normalization_mode as _detect_normalization_mode
 from .pretrained_utils import extract_dataset_stats as _extract_dataset_stats
 from .pretrained_utils import fix_state_dict_keys as _fix_state_dict_keys
 
@@ -57,12 +58,33 @@ class Pi05(ExportablePolicyMixin, Policy):
         max_state_dim: Maximum state dimension (padded). Default: 32.
         max_action_dim: Maximum action dimension (padded). Default: 32.
         num_inference_steps: Denoising steps for inference. Default: 10.
+        time_sampling_beta_alpha: Alpha for beta distribution time sampling. Default: 1.5.
+        time_sampling_beta_beta: Beta for beta distribution time sampling. Default: 1.0.
+        time_sampling_scale: Scale factor for time sampling. Default: 0.999.
+        time_sampling_offset: Offset for time sampling. Default: 0.001.
+        min_period: Minimum period for sine-cosine positional encoding. Default: 4e-3.
+        max_period: Maximum period for sine-cosine positional encoding. Default: 4.0.
+        use_random_input_noise: Use random noise as initial denoising input. Default: False.
         image_resolution: Target image resolution. Default: (224, 224).
+        empty_cameras: Number of empty camera slots to add. Default: 0.
         tokenizer_max_length: Maximum tokenizer length. Default: 200.
-        gradient_checkpointing: Enable gradient checkpointing. Default: False.
+        gradient_checkpointing: Enable gradient checkpointing. Default: True.
+        compile_model: Whether to use torch.compile. Default: False.
+        compile_mode: Torch compile mode. Default: "max-autotune".
         freeze_vision_encoder: Freeze vision encoder. Default: False.
         train_expert_only: Train only action expert. Default: True.
+        normalization_mode: Normalization method for state/action features — ``"QUANTILES"``
+            (percentile-based, robust to outliers) or ``"MEAN_STD"``. Default: ``"QUANTILES"``.
+
         optimizer_lr: Learning rate. Default: 2.5e-5.
+        optimizer_betas: Adam beta coefficients. Default: (0.9, 0.95).
+        optimizer_eps: Optimizer epsilon for numerical stability. Default: 1e-8.
+        optimizer_weight_decay: Weight decay coefficient. Default: 0.01.
+        optimizer_grad_clip_norm: Maximum gradient norm for clipping. Default: 1.0.
+        scheduler_warmup_steps: Number of linear warmup steps. Default: 1000.
+        scheduler_decay_steps: Cosine decay horizon in steps. ``None`` auto-scales
+            to total training steps. Default: 30000.
+        scheduler_decay_lr: Final learning rate after cosine decay. Default: 2.5e-6.
         dataset_stats: Dataset stats for eager initialization. Default: None.
 
     Example:
@@ -78,7 +100,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         >>> action = policy.select_action(obs)
     """
 
-    def __init__(  # noqa: PLR0913, PLR0917
+    def __init__(  # noqa: PLR0913
         self,
         # Pretrained model id
         pretrained_name_or_path: str | Path | None = None,
@@ -92,6 +114,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         n_action_steps: int = 50,
         max_state_dim: int = 32,
         max_action_dim: int = 32,
+        *,
         # Flow matching
         num_inference_steps: int = 10,
         time_sampling_beta_alpha: float = 1.5,
@@ -100,19 +123,21 @@ class Pi05(ExportablePolicyMixin, Policy):
         time_sampling_offset: float = 0.001,
         min_period: float = 4e-3,
         max_period: float = 4.0,
+        use_random_input_noise: bool = False,
         # Image preprocessing
         image_resolution: tuple[int, int] = (224, 224),
         empty_cameras: int = 0,
         # Tokenizer
         tokenizer_max_length: int = 200,
         # Optimization
-        *,
         gradient_checkpointing: bool = True,
         compile_model: bool = False,
         compile_mode: str = "max-autotune",
         # Finetuning
         freeze_vision_encoder: bool = False,
         train_expert_only: bool = True,
+        # Normalization
+        normalization_mode: Literal["MEAN_STD", "QUANTILES"] = "QUANTILES",
         # Optimizer
         optimizer_lr: float = 2.5e-5,
         optimizer_betas: tuple[float, float] = (0.9, 0.95),
@@ -121,7 +146,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         optimizer_grad_clip_norm: float = 1.0,
         # Scheduler
         scheduler_warmup_steps: int = 1_000,
-        scheduler_decay_steps: int | None = None,
+        scheduler_decay_steps: int | None = 30_000,
         scheduler_decay_lr: float = 2.5e-6,
         # Eager initialization
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
@@ -171,11 +196,13 @@ class Pi05(ExportablePolicyMixin, Policy):
                 image_resolution=image_resolution,
                 empty_cameras=empty_cameras,
                 tokenizer_max_length=tokenizer_max_length,
+                use_random_input_noise=use_random_input_noise,
                 gradient_checkpointing=gradient_checkpointing,
                 compile_model=compile_model,
                 compile_mode=compile_mode,
                 freeze_vision_encoder=freeze_vision_encoder,
                 train_expert_only=train_expert_only,
+                normalization_mode=normalization_mode,
                 optimizer_lr=optimizer_lr,
                 optimizer_betas=optimizer_betas,
                 optimizer_eps=optimizer_eps,
@@ -224,10 +251,13 @@ class Pi05(ExportablePolicyMixin, Policy):
             min_period=self.config.min_period,
             max_period=self.config.max_period,
             image_resolution=self.config.image_resolution,
+            tokenizer_max_length=self.config.tokenizer_max_length,
             freeze_vision_encoder=self.config.freeze_vision_encoder,
             train_expert_only=self.config.train_expert_only,
             gradient_checkpointing=self.config.gradient_checkpointing,
             compile_model=self.config.compile_model,
+            use_random_input_noise=self.config.use_random_input_noise,
+            normalization_mode=self.config.normalization_mode.lower(),
         )
         if weights_file is not None:
             # load raw state dict
@@ -256,17 +286,17 @@ class Pi05(ExportablePolicyMixin, Policy):
             self.model.paligemma_with_expert._set_requires_grad()  # noqa: SLF001
 
         self._preprocessor, self._postprocessor = make_pi05_preprocessors(
-            max_state_dim=self.config.max_state_dim,
             max_action_dim=self.config.max_action_dim,
             stats=dataset_stats,
             image_resolution=self.config.image_resolution,
             max_token_len=self.config.tokenizer_max_length,
             empty_cameras=self.config.empty_cameras,
+            normalization_mode=self.config.normalization_mode,
         )
 
         self._dataset_stats = dataset_stats
 
-    def _from_hf(  # noqa: PLR6301, PLR0913
+    def _from_hf(  # noqa: PLR6301, PLR0913, PLR0915
         self,
         pretrained_name_or_path: str | Path,
         *,
@@ -285,7 +315,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         optimizer_weight_decay: float = 0.01,
         optimizer_grad_clip_norm: float = 1.0,
         scheduler_warmup_steps: int = 1_000,
-        scheduler_decay_steps: int | None = None,
+        scheduler_decay_steps: int | None = 30_000,
         scheduler_decay_lr: float = 2.5e-6,
         **kwargs: Any,  # noqa: ANN401
     ) -> tuple[Pi05Config, dict[str, dict[str, list[float] | str | tuple]], Path]:
@@ -398,6 +428,13 @@ class Pi05(ExportablePolicyMixin, Policy):
         hf_config["scheduler_decay_steps"] = scheduler_decay_steps
         hf_config["scheduler_decay_lr"] = scheduler_decay_lr
 
+        # Auto-detect normalization_mode from pretrained preprocessor.
+        # The pretrained model's mode always wins over caller defaults.
+        if preprocessor_file is not None:
+            detected = _detect_normalization_mode(preprocessor_file)
+            if detected is not None:
+                hf_config["normalization_mode"] = detected
+
         # from_dict skips unknown keys and coerces lists→tuples via type hints
         config = Pi05Config.from_dict(hf_config)
 
@@ -455,12 +492,12 @@ class Pi05(ExportablePolicyMixin, Policy):
         """
         logger.info("Updating preprocessor stats for fine-tuning dataset")
         self._preprocessor, self._postprocessor = make_pi05_preprocessors(
-            max_state_dim=self.config.max_state_dim,
             max_action_dim=self.config.max_action_dim,
             stats=dataset_stats,
             image_resolution=self.config.image_resolution,
             max_token_len=self.config.tokenizer_max_length,
             empty_cameras=self.config.empty_cameras,
+            normalization_mode=self.config.normalization_mode,
         )
         self._dataset_stats = dataset_stats
         self.hparams["dataset_stats"] = dataset_stats
@@ -470,7 +507,7 @@ class Pi05(ExportablePolicyMixin, Policy):
     def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
         """Forward pass through the model.
 
-        Training mode: returns (loss, loss_dict).
+        Training mode: returns flow matching (loss, loss_dict) with gradients.
         Eval mode: returns action chunk predictions.
 
         Returns:
@@ -483,10 +520,32 @@ class Pi05(ExportablePolicyMixin, Policy):
             if self.model is None or self._preprocessor is None:
                 msg = "Model is not initialized"
                 raise ValueError(msg)
-
             processed_batch = self._preprocessor(batch.to_dict())
             return self.model(processed_batch)
         return self.predict_action_chunk(batch)
+
+    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, float]]:
+        """Compute action prediction MSE on a batch (for validation).
+
+        Runs the full denoising loop and compares predicted actions to
+        ground-truth.  This is deterministic and directly measures action
+        prediction quality, unlike the stochastic flow matching training loss.
+
+        Args:
+            batch: Observation batch (must contain ground-truth actions).
+
+        Returns:
+            Tuple of (MSE loss tensor, loss dict).
+
+        Raises:
+            ValueError: If the model is not initialized.
+        """
+        if self.model is None or self._preprocessor is None:
+            msg = "Model is not initialized"
+            raise ValueError(msg)
+
+        processed_batch = self._preprocessor(batch.to_dict())
+        return self.model.compute_val_loss(processed_batch)
 
     @torch.no_grad()
     def predict_action_chunk(self, batch: Observation) -> torch.Tensor:
@@ -542,9 +601,11 @@ class Pi05(ExportablePolicyMixin, Policy):
             eps=self.config.optimizer_eps,
         )
 
+        num_training_steps = self.trainer.estimated_stepping_batches
+
         num_decay_steps = self.config.scheduler_decay_steps
         if num_decay_steps is None:
-            num_decay_steps = self.trainer.estimated_stepping_batches
+            num_decay_steps = num_training_steps
             msg = f"scheduler_decay_steps=None, using total training steps: {num_decay_steps}"
             logger.info(msg)
 
@@ -554,6 +615,7 @@ class Pi05(ExportablePolicyMixin, Policy):
             decay_lr=self.config.scheduler_decay_lr,
             num_warmup_steps=self.config.scheduler_warmup_steps,
             num_decay_steps=num_decay_steps,
+            num_training_steps=num_training_steps,
         )
 
         return {
@@ -589,4 +651,4 @@ class Pi05(ExportablePolicyMixin, Policy):
         Returns:
             list[str | ExportBackend]: A list of supported export backends.
         """
-        return [ExportBackend.TORCH]
+        return [ExportBackend.TORCH, ExportBackend.OPENVINO]

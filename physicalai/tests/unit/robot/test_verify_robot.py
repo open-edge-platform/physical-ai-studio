@@ -5,12 +5,25 @@
 
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pytest
 
+from physicalai.robot.interface import RobotObservation
 from physicalai.robot.verify import RobotVerificationError, verify_robot
+
+if TYPE_CHECKING:
+    from physicalai.capture.frame import Frame
+
+
+@dataclass
+class _Obs(RobotObservation):
+    joint_positions: np.ndarray
+    timestamp: float
+    sensor_data: dict[str, np.ndarray] | None = None
+    images: dict[str, Frame] | None = None
 
 
 class _ConformantRobot:
@@ -26,14 +39,18 @@ class _ConformantRobot:
     def disconnect(self) -> None:
         self._connected = False
 
-    def get_observation(self) -> dict[str, Any]:
-        return {
-            "state": self._state.copy(),
-            "timestamp": 123.456,
-        }
+    def get_observation(self) -> _Obs:
+        return _Obs(joint_positions=self._state.copy(), timestamp=123.456)
 
     def send_action(self, action: np.ndarray) -> None:
         pass
+
+    def is_connected(self) -> bool:
+        return self._connected
+
+    @property
+    def joint_names(self) -> list[str]:
+        return ["j0", "j1", "j2", "j3", "j4", "j5"]
 
 
 class _NonStationaryRobot(_ConformantRobot):
@@ -43,17 +60,24 @@ class _NonStationaryRobot(_ConformantRobot):
         super().__init__()
         self._call_count = 0
 
-    def get_observation(self) -> dict[str, Any]:
+    def get_observation(self) -> _Obs:
         self._call_count += 1
         drift = np.ones(6, dtype=np.float32) * self._call_count * 0.1
-        return {
-            "state": self._state + drift,
-            "timestamp": 123.456,
-        }
+        return _Obs(joint_positions=self._state + drift, timestamp=123.456)
 
 
-class _MissingStateRobot:
-    """A robot whose observation is missing the 'state' key."""
+@dataclass
+class _InvalidObs:
+    """Observation with invalid joint_positions type for negative tests."""
+
+    joint_positions: list[float]
+    timestamp: float
+    sensor_data: dict[str, np.ndarray] | None = None
+    images: dict[str, object] | None = None
+
+
+class _InvalidJointPositionsRobot:
+    """A robot whose observation has invalid joint_positions type."""
 
     def connect(self) -> None:
         pass
@@ -61,11 +85,18 @@ class _MissingStateRobot:
     def disconnect(self) -> None:
         pass
 
-    def get_observation(self) -> dict[str, Any]:
-        return {"timestamp": 0.0}
+    def get_observation(self) -> _InvalidObs:
+        return _InvalidObs(joint_positions=[0.0, 1.0], timestamp=0.0)
 
     def send_action(self, action: np.ndarray) -> None:
         pass
+
+    def is_connected(self) -> bool:
+        return True
+
+    @property
+    def joint_names(self) -> list[str]:
+        return ["j0", "j1", "j2", "j3", "j4", "j5"]
 
 
 class TestVerifyRobot:
@@ -76,11 +107,11 @@ class TestVerifyRobot:
         robot = _ConformantRobot()
         verify_robot(robot)
 
-    def test_missing_state_fails(self) -> None:
-        """A robot missing 'state' in observation fails."""
-        robot = _MissingStateRobot()
-        with pytest.raises(RobotVerificationError, match="observation must contain 'state'"):
-            verify_robot(robot)
+    def test_invalid_joint_positions_type_fails(self) -> None:
+        """A robot with non-array joint_positions fails."""
+        robot = _InvalidJointPositionsRobot()
+        with pytest.raises(RobotVerificationError, match="joint_positions must be np.ndarray"):
+            verify_robot(cast(Any, robot))
 
     def test_non_stationary_robot_fails(self) -> None:
         """A robot that drifts after disconnect fails stationarity check."""

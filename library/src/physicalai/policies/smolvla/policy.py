@@ -23,7 +23,6 @@ from .model import SmolVLAModel
 
 if TYPE_CHECKING:
     from physicalai.data import Observation
-    from physicalai.gyms import Gym
 
     from .preprocessor import SmolVLAPostprocessor, SmolVLAPreprocessor
 
@@ -210,7 +209,6 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         Called by both lazy (setup) and eager (checkpoint) paths.
 
         Args:
-            env_action_dim: Environment action dimension.
             dataset_stats: Dataset normalization statistics.
         """
         from .preprocessor import make_smolvla_preprocessors, reorder_stats  # noqa: PLC0415
@@ -247,6 +245,22 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             tokenizer_max_length=self.config.tokenizer_max_length,
         )
 
+        self._update_preprocessor_stats(dataset_stats)
+
+    def _update_preprocessor_stats(
+        self,
+        dataset_stats: dict[str, dict[str, list[float] | str | tuple]],
+    ) -> None:
+        """Rebuild pre- and postprocessors from dataset_stats.
+
+        Used on the fine-tuning path to replace pretrained normalization with
+        training-data statistics, and by _initialize_model on the lazy path.
+
+        Args:
+            dataset_stats: Dataset normalization statistics.
+        """
+        from .preprocessor import make_smolvla_preprocessors  # noqa: PLC0415
+
         self._preprocessor, self._postprocessor = make_smolvla_preprocessors(
             max_state_dim=self.config.max_state_dim,
             max_action_dim=self.config.max_action_dim,
@@ -272,9 +286,6 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         """
         del stage  # Unused argument
 
-        if self.model is not None:
-            return
-
         from physicalai.data.dataset import Dataset  # noqa: PLC0415
 
         datamodule = self.trainer.datamodule  # type: ignore[attr-defined]
@@ -285,6 +296,11 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             raise TypeError(msg)
 
         stats_dict = train_dataset.stats
+
+        if self.model is not None:
+            self._update_preprocessor_stats(stats_dict)
+            reformat_dataset_to_match_policy(self, datamodule)
+            return
 
         # Save to hparams for checkpoint
         self.hparams["dataset_stats"] = stats_dict
@@ -358,20 +374,26 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
         return loss
 
-    def validation_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:  # type: ignore[override]
-        """Lightning validation step.
+    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, float]]:
+        """Compute validation loss on a batch.
 
-        Runs gym-based validation via rollout evaluation. The DataModule's val_dataloader
-        returns Gym environment instances directly.
+        Delegates to the model's ``compute_val_loss`` without toggling
+        train mode.
 
         Args:
-            batch: Gym environment to evaluate.
-            batch_idx: Index of the batch (used as seed for reproducibility).
+            batch: Observation batch (must contain ground-truth actions).
 
         Returns:
-            Dictionary of metrics from the gym rollout evaluation.
+            Tuple of (loss tensor, loss dict).
+
+        Raises:
+            ValueError: If the model is not initialized.
         """
-        return self.evaluate_gym(batch, batch_idx, stage="val")
+        if self.model is None or self._preprocessor is None:
+            msg = "Model is not initialized"
+            raise ValueError(msg)
+        processed_batch = self._preprocessor(batch.to_dict())
+        return self.model.compute_val_loss(processed_batch)
 
     def configure_optimizers(self) -> dict[str, Any]:
         """Configure optimizer and scheduler.

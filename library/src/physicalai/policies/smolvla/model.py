@@ -183,32 +183,71 @@ class SmolVLAModel(ExportableModelMixin, Model):
             If inference: Output from predict_action_chunk (action predictions)
         """
         if self.training:
-            batch = self._preprocess_batch(batch)
-            images, img_masks = batch[IMAGES], batch[IMAGE_MASKS]
-            state = self._prepare_state(batch)
-            actions = self._prepare_action(batch)
-
-            lang_tokens = batch[TOKENIZED_PROMPT]
-            lang_masks = batch[TOKENIZED_PROMPT_MASK]
-            actions_is_pad = batch.get(EXTRA + ".actions_id_pad")
-            loss_dict = {}
-            losses = self._model.forward(images, img_masks, lang_tokens, lang_masks, state, actions)
-            loss_dict["losses_after_forward"] = losses.clone()
-
-            if actions_is_pad is not None:
-                in_episode_bound = ~actions_is_pad
-                losses *= in_episode_bound.unsqueeze(-1)
-                loss_dict["losses_after_in_ep_bound"] = losses.clone()
-
-            # Truncate losses to actual action dimensions to avoid dilution from padding
-            original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
-            losses = losses[:, :, :original_action_dim]
-            loss_dict["losses_after_rm_padding"] = losses.clone()
-
-            loss = losses.mean()
-            loss_dict["loss"] = loss.item()
-            return loss, loss_dict
+            return self.compute_loss(batch)
         return self.predict_action_chunk(batch)
+
+    def compute_loss(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]]:
+        """Compute training loss for action prediction.
+
+        Args:
+            batch: Raw batch dict.
+
+        Returns:
+            Tuple of (mean loss tensor, loss dict with intermediate values).
+        """
+        batch = self._preprocess_batch(batch)
+        images, img_masks = batch[IMAGES], batch[IMAGE_MASKS]
+        state = self._prepare_state(batch)
+        actions = self._prepare_action(batch)
+
+        lang_tokens = batch[TOKENIZED_PROMPT]
+        lang_masks = batch[TOKENIZED_PROMPT_MASK]
+        actions_is_pad = batch.get(EXTRA + ".actions_id_pad")
+        loss_dict: dict[str, float] = {}
+        losses = self._model.forward(images, img_masks, lang_tokens, lang_masks, state, actions)
+        loss_dict["losses_after_forward"] = losses.clone()
+
+        if actions_is_pad is not None:
+            in_episode_bound = ~actions_is_pad
+            losses *= in_episode_bound.unsqueeze(-1)
+            loss_dict["losses_after_in_ep_bound"] = losses.clone()
+
+        # Truncate losses to actual action dimensions to avoid dilution from padding
+        original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
+        losses = losses[:, :, :original_action_dim]
+        loss_dict["losses_after_rm_padding"] = losses.clone()
+
+        loss = losses.mean()
+        loss_dict["loss"] = loss.item()
+        return loss, loss_dict
+
+    @torch.no_grad()
+    def compute_val_loss(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]]:
+        """Compute validation loss: MSE between predicted and ground-truth actions.
+
+        Runs the full denoising loop and compares predicted actions with
+        ground truth.  Deterministic, unlike the stochastic flow-matching
+        training loss.
+
+        Args:
+            batch: Raw batch dict containing ground-truth ACTION.
+
+        Returns:
+            Tuple of (mean MSE loss tensor, loss dict with ``"loss"`` key).
+        """
+        processed = self._preprocess_batch(batch)
+        gt_actions = self._prepare_action(processed)
+
+        predicted = self.predict_action_chunk(batch)
+
+        # Compare in the original (unpadded) action space
+        original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
+        gt_trimmed = gt_actions[:, :, :original_action_dim]
+        pred_trimmed = predicted[:, :, :original_action_dim]
+
+        min_len = min(gt_trimmed.shape[1], pred_trimmed.shape[1])
+        loss = F.mse_loss(pred_trimmed[:, :min_len], gt_trimmed[:, :min_len])
+        return loss, {"loss": loss.item()}
 
     def predict_action_chunk(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """Predict a chunk of actions from input batch.
@@ -310,14 +349,13 @@ class SmolVLAModel(ExportableModelMixin, Model):
             {'output_names': ['action']}
         """
         extra_args: dict[str, ExportParameters] = {}
-        preproc_specs = [
+        base_preproc_specs = [
             ComponentSpec(type="smolvla_resize", image_resolution=self._resize_imgs_with_padding),
             ComponentSpec(type="new_line"),
             ComponentSpec(
-                type="hf_tokenizer",
-                tokenizer_name=self._vlm_model_name,
-                revision="7b375e1b73b11138ff12fe22c8f2822d8fe03467",
-                max_token_len=self._tokenizer_max_length,
+                type="normalize",
+                stats={STATE: self._dataset_stats[f"observation.{STATE}"]},
+                mode="mean_std",
             ),
         ]
         postproc_specs = [
@@ -329,18 +367,32 @@ class SmolVLAModel(ExportableModelMixin, Model):
         ]
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
-                "output_names": ["action"],
+                "output_names": [ACTION],
             },
-            preprocessors_specs=preproc_specs,
+            preprocessors_specs=[
+                *base_preproc_specs,
+                ComponentSpec(
+                    type="hf_tokenizer",
+                    tokenizer_name=self._vlm_model_name,
+                    revision="7b375e1b73b11138ff12fe22c8f2822d8fe03467",
+                    max_token_len=self._tokenizer_max_length,
+                ),
+            ],
             postprocessors_specs=postproc_specs,
             export_tokenizer=False,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
-            outputs=["action"],
+            outputs=[ACTION],
             compress_to_fp16=False,
-            export_tokenizer=False,
+            export_tokenizer=True,
             exporter_kwargs={},
-            preprocessors_specs=preproc_specs,
+            preprocessors_specs=[
+                *base_preproc_specs,
+                ComponentSpec(
+                    type="ov_tokenizer",
+                    artifact="tokenizer.xml",
+                ),
+            ],
             postprocessors_specs=postproc_specs,
         )
         extra_args["torch"] = TorchExportParameters()
@@ -822,7 +874,7 @@ class VLAFlowMatching(nn.Module):
             params.requires_grad = self._train_state_proj
 
     def _sample_noise(self, shape: tuple[int, ...], device: torch.device) -> torch.Tensor:
-        if not self._use_random_input_noise or torch.jit.is_tracing() or torch.onnx.is_in_onnx_export():
+        if not self._use_random_input_noise:
             return torch.zeros(shape, dtype=torch.float32, device=device)
 
         return torch.normal(
@@ -1318,15 +1370,16 @@ class _SmolVLMWithExpertModel(nn.Module):
         lm_expert_config.hidden_size = int(hidden_size * expert_width_multiplier)  # hidden_size // 2
         lm_expert_config.intermediate_size = _get_intermediate_size(int(hidden_size * expert_width_multiplier))
         lm_expert_config.num_hidden_layers = self.num_vlm_layers
-        if num_expert_layers > 0 and len(self.get_vlm_model().text_model.layers) % num_expert_layers == 0:
+        if num_expert_layers > 0:
+            if len(self.get_vlm_model().text_model.layers) % num_expert_layers != 0:
+                msg = (
+                    f"Number of layers in the VLM {len(self.get_vlm_model().text_model.layers)} are "
+                    f"not multiple of num_expert_layers {num_expert_layers}"
+                )
+                raise RuntimeError(msg)
             lm_expert_config.num_hidden_layers = num_expert_layers
-            msg = (
-                f"Number of layers in the VLM {len(self.get_vlm_model().text_model.layers)} are "
-                f"not multiple of num_expert_layers {num_expert_layers}"
-            )
-            raise RuntimeError(msg)
-        self.lm_expert = auto_model_cls.from_config(lm_expert_config)
 
+        self.lm_expert = auto_model_cls.from_config(lm_expert_config)
         self.num_expert_layers = len(self.lm_expert.layers)
         self.self_attn_every_n_layers = self_attn_every_n_layers
         if "cross" in attention_mode:

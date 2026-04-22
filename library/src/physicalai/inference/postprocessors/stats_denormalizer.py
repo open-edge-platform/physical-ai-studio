@@ -11,16 +11,16 @@ Supports two denormalization modes:
 
 - **mean_std**: ``x * std + mean``
 - **min_max**: ``(x + 1) / 2 * (max - min) + min``
+- **quantiles**: ``(x + 1) / 2 * (q99 - q01) + q01``
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, override
+from typing import override
+
+import numpy as np
 
 from physicalai.inference.postprocessors.base import Postprocessor
-
-if TYPE_CHECKING:
-    import numpy as np
 
 _EPS = 1e-8
 
@@ -90,7 +90,7 @@ class StatsDenormalizer(Postprocessor):
             ValueError: If *mode* is not a recognized normalization mode
                 or neither *stats_path* nor *artifact* is provided.
         """
-        valid_modes = {"mean_std", "min_max", "identity"}
+        valid_modes = {"mean_std", "min_max", "quantiles", "identity"}
         if mode not in valid_modes:
             msg = f"Unknown normalization mode {mode!r}. Expected one of {sorted(valid_modes)}"
             raise ValueError(msg)
@@ -178,5 +178,12 @@ def _denormalize(
         min_val = stats["min"]
         max_val = stats["max"]
         return (tensor + 1.0) / 2.0 * (max_val - min_val) + min_val
+
+    if mode == "quantiles":
+        q01 = stats["q01"]
+        q99 = stats["q99"]
+        denom = q99 - q01
+        denom = np.where(denom == 0, _EPS, denom)
+        return (tensor + 1.0) * denom / 2.0 + q01
 
     return tensor
