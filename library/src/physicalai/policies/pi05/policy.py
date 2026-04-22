@@ -671,7 +671,10 @@ class Pi05(ExportablePolicyMixin, Policy):
             ValueError: If dataset stats are not available for export.
         """
         if self._dataset_stats is None:
-            msg = "Dataset stats are required for export. Initialize the policy with dataset_stats or train for at least one epoch to populate them."
+            msg = (
+                "Dataset stats are required for export. Initialize the policy with dataset_stats"
+                " or train for at least one epoch to populate them."
+            )
             raise ValueError(msg)
 
         base_preproc_specs = [

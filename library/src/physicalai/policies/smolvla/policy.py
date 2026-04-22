@@ -470,7 +470,10 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         """
         extra_args: dict[str, ExportParameters] = {}
         if self._dataset_stats is None:
-            msg = "Dataset stats are required for export. Initialize the policy with dataset_stats or train for at least one epoch to populate them."
+            msg = (
+                "Dataset stats are required for export. Initialize the policy with dataset_stats"
+                " or train for at least one epoch to populate them."
+            )
             raise ValueError(msg)
 
         base_preproc_specs = [
