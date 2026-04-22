@@ -8,6 +8,8 @@ Fast, self-contained tests with no external dependencies (no HuggingFace model d
 
 from __future__ import annotations
 
+import unittest.mock
+
 import pytest
 import torch
 from physicalai.config import Config
@@ -388,3 +390,602 @@ class TestAttentionModes:
         """Test custom prefix length."""
         config = SmolVLAConfig(prefix_length=32)
         assert config.prefix_length == 32
+
+
+# ============================================================================ #
+# Camera Rename Tests                                                          #
+# ============================================================================ #
+
+
+class TestCameraRenameMap:
+    """Tests for camera rename_map functionality (reorder-based approach)."""
+
+    def test_config_rename_map_default_none(self) -> None:
+        config = SmolVLAConfig()
+        assert config.rename_map is None
+
+    def test_config_rename_map_tuple_format(self) -> None:
+        config = SmolVLAConfig(rename_map=(("top", "camera1"), ("wrist", "camera2")))
+        assert config.rename_map == (("top", "camera1"), ("wrist", "camera2"))
+
+    def test_config_rename_map_serialization(self) -> None:
+        config = SmolVLAConfig(rename_map=(("top", "camera1"),))
+        config_dict = config.to_dict()
+        assert config_dict["rename_map"] == [["top", "camera1"]]
+        restored = SmolVLAConfig.from_dict(config_dict)
+        assert restored.rename_map == (("top", "camera1"),)
+
+    def test_policy_rename_map_saved_in_hparams(self) -> None:
+        policy = SmolVLA(rename_map=(("top", "camera1"),))
+        assert policy.hparams["rename_map"] == (("top", "camera1"),)
+        assert policy.config.rename_map == (("top", "camera1"),)
+
+    def test_preprocessor_rename_map_default_none(self) -> None:
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor()
+        assert preprocessor.rename_map is None
+
+    def test_preprocessor_rename_map_stored(self) -> None:
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        rename_map = {"top": "camera1", "wrist": "camera2"}
+        preprocessor = SmolVLAPreprocessor(rename_map=rename_map)
+        assert preprocessor.rename_map == rename_map
+
+    def test_reorder_image_keys_sorts_by_mapped_target(self) -> None:
+        from physicalai.data.observation import IMAGES
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        rename_map = {"top": "camera1", "wrist": "camera2"}
+        preprocessor = SmolVLAPreprocessor(rename_map=rename_map)
+
+        # Input in reverse order — should be reordered by mapped target name
+        keys = [f"{IMAGES}.wrist", f"{IMAGES}.top"]
+        result = preprocessor._reorder_image_keys(keys)
+
+        assert result == [f"{IMAGES}.top", f"{IMAGES}.wrist"]
+
+    def test_reorder_image_keys_preserves_order_without_rename_map(self) -> None:
+        from physicalai.data.observation import IMAGES
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(rename_map=None)
+
+        keys = [f"{IMAGES}.wrist", f"{IMAGES}.top"]
+        result = preprocessor._reorder_image_keys(keys)
+
+        assert result == keys
+
+    def test_reorder_image_keys_unmapped_keys_sort_after_mapped(self) -> None:
+        from physicalai.data.observation import IMAGES
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        rename_map = {"top": "camera1"}
+        preprocessor = SmolVLAPreprocessor(rename_map=rename_map)
+
+        keys = [f"{IMAGES}.side", f"{IMAGES}.top"]
+        result = preprocessor._reorder_image_keys(keys)
+
+        # camera1 < side alphabetically, so top (mapped to camera1) comes first
+        assert result == [f"{IMAGES}.top", f"{IMAGES}.side"]
+
+    def test_reorder_image_keys_already_correct_order(self) -> None:
+        from physicalai.data.observation import IMAGES
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        rename_map = {"top": "camera1", "wrist": "camera2"}
+        preprocessor = SmolVLAPreprocessor(rename_map=rename_map)
+
+        keys = [f"{IMAGES}.top", f"{IMAGES}.wrist"]
+        result = preprocessor._reorder_image_keys(keys)
+
+        assert result == [f"{IMAGES}.top", f"{IMAGES}.wrist"]
+
+    def test_reorder_image_keys_deeply_nested_keys(self) -> None:
+        """rsplit extracts the last segment, so deeply nested keys like
+        'observation.images.wrist' correctly resolve to 'wrist'."""
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        rename_map = {"top": "camera1", "wrist": "camera2"}
+        preprocessor = SmolVLAPreprocessor(rename_map=rename_map)
+
+        keys = ["observation.images.wrist", "observation.images.top"]
+        result = preprocessor._reorder_image_keys(keys)
+
+        assert result == ["observation.images.top", "observation.images.wrist"]
+
+    def test_reorder_image_keys_bare_keys(self) -> None:
+        """Keys without any dots are used as-is for rename_map lookup."""
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        rename_map = {"top": "camera1", "wrist": "camera2"}
+        preprocessor = SmolVLAPreprocessor(rename_map=rename_map)
+
+        keys = ["wrist", "top"]
+        result = preprocessor._reorder_image_keys(keys)
+
+        assert result == ["top", "wrist"]
+
+    def test_reorder_does_not_mutate_batch_keys(self) -> None:
+        """Batch keys remain as original dataset names after forward()."""
+        from physicalai.data.observation import IMAGES
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        rename_map = {"top": "camera1", "wrist": "camera2"}
+        preprocessor = SmolVLAPreprocessor(
+            rename_map=rename_map,
+            image_resolution=(64, 64),
+        )
+
+        img_top = torch.rand(2, 3, 64, 64)
+        img_wrist = torch.rand(2, 3, 64, 64)
+        batch = {
+            f"{IMAGES}.top": img_top.clone(),
+            f"{IMAGES}.wrist": img_wrist.clone(),
+            f"_{IMAGES}_keys": [f"{IMAGES}.top", f"{IMAGES}.wrist"],
+        }
+
+        images, masks = preprocessor._preprocess_images(batch)
+
+        # Batch keys should NOT have been renamed
+        assert f"{IMAGES}.camera1" not in batch
+        assert f"{IMAGES}.camera2" not in batch
+        # Original keys were popped by _preprocess_images (normal behavior)
+        assert f"{IMAGES}.top" not in batch
+        assert f"{IMAGES}.wrist" not in batch
+        assert len(images) == 2
+
+    def test_reorder_produces_correct_tensor_order(self) -> None:
+        """Images are stacked in canonical camera order regardless of input dict order."""
+        from physicalai.data.observation import IMAGES
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        rename_map = {"wrist": "camera1", "top": "camera2"}
+        preprocessor = SmolVLAPreprocessor(
+            rename_map=rename_map,
+            image_resolution=(4, 4),
+        )
+
+        # Create identifiable images (different pixel values)
+        img_wrist = torch.ones(1, 3, 4, 4) * 0.1
+        img_top = torch.ones(1, 3, 4, 4) * 0.9
+
+        # Input order: top first, wrist second
+        batch = {
+            f"{IMAGES}.top": img_top,
+            f"{IMAGES}.wrist": img_wrist,
+            f"_{IMAGES}_keys": [f"{IMAGES}.top", f"{IMAGES}.wrist"],
+        }
+
+        images, _ = preprocessor._preprocess_images(batch)
+
+        # After reordering: wrist→camera1 should be first, top→camera2 second
+        # Values normalized to [-1,1]: 0.1*2-1 = -0.8, 0.9*2-1 = 0.8
+        assert len(images) == 2
+        assert torch.allclose(images[0], img_wrist * 2.0 - 1.0, atol=1e-5)
+        assert torch.allclose(images[1], img_top * 2.0 - 1.0, atol=1e-5)
+
+
+class TestReorderStats:
+    """Tests for reorder_stats helper function."""
+
+    def test_reorder_stats_preserves_keys(self) -> None:
+        from physicalai.policies.smolvla.preprocessor import reorder_stats
+
+        stats = {
+            "observation.images.wrist": {
+                "name": "observation.images.wrist",
+                "type": "VISUAL",
+                "mean": [0.5],
+                "std": [0.1],
+            },
+            "observation.images.top": {
+                "name": "observation.images.top",
+                "type": "VISUAL",
+                "mean": [0.3],
+                "std": [0.2],
+            },
+            "observation.state": {"name": "observation.state", "mean": [0.0], "std": [1.0]},
+            "action": {"name": "action", "mean": [0.0], "std": [1.0]},
+        }
+        rename_map = {"top": "camera1", "wrist": "camera2"}
+        result = reorder_stats(stats, rename_map)
+
+        assert set(result.keys()) == set(stats.keys())
+        assert list(result.keys()) == [
+            "observation.images.top",
+            "observation.images.wrist",
+            "observation.state",
+            "action",
+        ]
+
+    def test_reorder_stats_preserves_unmapped_keys(self) -> None:
+        from physicalai.policies.smolvla.preprocessor import reorder_stats
+
+        stats = {
+            "observation.state": {"name": "observation.state", "mean": [0.0], "std": [1.0]},
+            "action": {"name": "action", "mean": [0.0], "std": [1.0]},
+        }
+        rename_map = {"top": "camera1"}
+        result = reorder_stats(stats, rename_map)
+
+        assert "observation.state" in result
+        assert "action" in result
+
+    def test_reorder_stats_empty_stats(self) -> None:
+        from physicalai.policies.smolvla.preprocessor import reorder_stats
+
+        assert reorder_stats({}, {"top": "camera1"}) == {}
+
+    def test_reorder_stats_does_not_mutate_original(self) -> None:
+        from physicalai.policies.smolvla.preprocessor import reorder_stats
+
+        stats = {
+            "observation.images.top": {"name": "observation.images.top", "mean": [0.5], "std": [0.1]},
+        }
+        original_keys = list(stats.keys())
+        reorder_stats(stats, {"top": "camera1"})
+
+        assert list(stats.keys()) == original_keys
+        assert stats["observation.images.top"]["name"] == "observation.images.top"
+
+    def test_reorder_stats_does_not_rename_keys(self) -> None:
+        from physicalai.policies.smolvla.preprocessor import reorder_stats
+
+        stats = {
+            "observation.images.top": {"name": "observation.images.top", "mean": [0.5], "std": [0.1]},
+        }
+        rename_map = {"top": "camera1"}
+        result = reorder_stats(stats, rename_map)
+
+        assert "observation.images.top" in result
+        assert "observation.images.camera1" not in result
+        assert result["observation.images.top"]["name"] == "observation.images.top"
+
+
+class TestCameraNameValidation:
+    """Tests for camera name mismatch warning."""
+
+    def test_validate_warns_on_mismatch(self, caplog: pytest.LogCaptureFixture) -> None:
+        from physicalai.data.observation import IMAGES
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(
+            expected_camera_names={"camera1", "camera2"},
+        )
+
+        batch = {
+            f"{IMAGES}.top": torch.randn(2, 3, 64, 64),
+            f"_{IMAGES}_keys": [f"{IMAGES}.top"],
+        }
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            preprocessor._validate_camera_names(batch)
+
+        assert "Camera name mismatch detected" in caplog.text
+        assert "top" in caplog.text
+        assert "camera1" in caplog.text
+
+    def test_validate_no_warning_when_matching(self, caplog: pytest.LogCaptureFixture) -> None:
+        from physicalai.data.observation import IMAGES
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(
+            expected_camera_names={"top"},
+        )
+
+        batch = {
+            f"{IMAGES}.top": torch.randn(2, 3, 64, 64),
+            f"_{IMAGES}_keys": [f"{IMAGES}.top"],
+        }
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            preprocessor._validate_camera_names(batch)
+
+        assert "Camera name mismatch" not in caplog.text
+
+    def test_validate_no_warning_when_no_expected_names(self, caplog: pytest.LogCaptureFixture) -> None:
+        from physicalai.data.observation import IMAGES
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(expected_camera_names=None)
+
+        batch = {
+            f"{IMAGES}.top": torch.randn(2, 3, 64, 64),
+            f"_{IMAGES}_keys": [f"{IMAGES}.top"],
+        }
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            preprocessor._validate_camera_names(batch)
+
+        assert "Camera name mismatch" not in caplog.text
+
+    def test_validate_runs_only_once(self, caplog: pytest.LogCaptureFixture) -> None:
+        from physicalai.data.observation import IMAGES
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(
+            expected_camera_names={"camera1"},
+        )
+
+        batch = {
+            f"{IMAGES}.top": torch.randn(2, 3, 64, 64),
+            f"_{IMAGES}_keys": [f"{IMAGES}.top"],
+        }
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            preprocessor._validate_camera_names(batch)
+            caplog.clear()
+            preprocessor._validate_camera_names(batch)
+
+        assert "Camera name mismatch" not in caplog.text
+
+    def test_validate_warns_on_camera_count_mismatch(self, caplog: pytest.LogCaptureFixture) -> None:
+        from physicalai.data.observation import IMAGES
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(
+            expected_camera_names={"camera1", "camera2", "camera3"},
+            empty_cameras=0,
+        )
+
+        batch = {
+            f"{IMAGES}.camera1": torch.randn(2, 3, 64, 64),
+            f"{IMAGES}.camera2": torch.randn(2, 3, 64, 64),
+            f"_{IMAGES}_keys": [f"{IMAGES}.camera1", f"{IMAGES}.camera2"],
+        }
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            preprocessor._validate_camera_names(batch)
+
+        assert "Camera count mismatch" in caplog.text
+        assert "empty_cameras=1" in caplog.text
+
+    def test_validate_no_count_warning_when_padded(self, caplog: pytest.LogCaptureFixture) -> None:
+        from physicalai.data.observation import IMAGES
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(
+            expected_camera_names={"camera1", "camera2", "camera3"},
+            empty_cameras=1,
+        )
+
+        batch = {
+            f"{IMAGES}.camera1": torch.randn(2, 3, 64, 64),
+            f"{IMAGES}.camera2": torch.randn(2, 3, 64, 64),
+            f"_{IMAGES}_keys": [f"{IMAGES}.camera1", f"{IMAGES}.camera2"],
+        }
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            preprocessor._validate_camera_names(batch)
+
+        assert "Camera count mismatch" not in caplog.text
+
+    def test_validate_no_warning_when_rename_map_maps_to_expected(self, caplog: pytest.LogCaptureFixture) -> None:
+        """With rename_map active, validation uses mapped names — no mismatch warning."""
+        from physicalai.data.observation import IMAGES
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(
+            expected_camera_names={"camera1", "camera2"},
+            rename_map={"top": "camera1", "wrist": "camera2"},
+        )
+
+        batch = {
+            f"{IMAGES}.top": torch.randn(2, 3, 64, 64),
+            f"{IMAGES}.wrist": torch.randn(2, 3, 64, 64),
+            f"_{IMAGES}_keys": [f"{IMAGES}.top", f"{IMAGES}.wrist"],
+        }
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            preprocessor._validate_camera_names(batch)
+
+        assert "Camera name mismatch" not in caplog.text
+
+    def test_validate_deeply_nested_keys_extract_base_name(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Validation extracts the last segment via rsplit, so deeply nested
+        keys like 'observation.images.top' resolve to 'top' for matching."""
+        from physicalai.data.observation import IMAGES
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(
+            expected_camera_names={"camera1", "camera2"},
+            rename_map={"top": "camera1", "wrist": "camera2"},
+        )
+
+        batch = {
+            f"observation.{IMAGES}.top": torch.randn(2, 3, 64, 64),
+            f"observation.{IMAGES}.wrist": torch.randn(2, 3, 64, 64),
+            f"_{IMAGES}_keys": [f"observation.{IMAGES}.top", f"observation.{IMAGES}.wrist"],
+        }
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            preprocessor._validate_camera_names(batch)
+
+        assert "Camera name mismatch" not in caplog.text
+
+    """Tests for make_smolvla_preprocessors with rename_map."""
+
+    def test_factory_passes_rename_map(self) -> None:
+        from physicalai.policies.smolvla.preprocessor import make_smolvla_preprocessors
+
+        rename_map = {"top": "camera1"}
+        preprocessor, _ = make_smolvla_preprocessors(rename_map=rename_map)
+        assert preprocessor.rename_map == rename_map
+
+    def test_factory_reorders_stats(self) -> None:
+        from physicalai.policies.smolvla.preprocessor import make_smolvla_preprocessors
+
+        stats: dict[str, dict[str, list[float] | str | tuple]] = {
+            "observation.state": {
+                "name": "observation.state",
+                "shape": (10,),
+                "mean": [0.0] * 10,
+                "std": [1.0] * 10,
+            },
+            "action": {
+                "name": "action",
+                "shape": (7,),
+                "mean": [0.0] * 7,
+                "std": [1.0] * 7,
+            },
+        }
+
+        preprocessor, postprocessor = make_smolvla_preprocessors(
+            stats=stats,
+            rename_map={"top": "camera1"},
+        )
+        assert preprocessor is not None
+        assert postprocessor is not None
+
+    def test_factory_without_rename_map(self) -> None:
+        from physicalai.policies.smolvla.preprocessor import make_smolvla_preprocessors
+
+        preprocessor, _ = make_smolvla_preprocessors()
+        assert preprocessor.rename_map is None
+
+
+class TestEmptyCameras:
+    """Tests for empty_cameras padding behavior."""
+
+    def test_config_empty_cameras_default(self) -> None:
+        config = SmolVLAConfig()
+        assert config.empty_cameras == 0
+
+    def test_config_empty_cameras_custom(self) -> None:
+        config = SmolVLAConfig(empty_cameras=2)
+        assert config.empty_cameras == 2
+
+    def test_preprocessor_stores_empty_cameras(self) -> None:
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(empty_cameras=1)
+        assert preprocessor.empty_cameras == 1
+
+    def test_preprocess_images_returns_lists(self) -> None:
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(image_resolution=(64, 64))
+        batch = {
+            "state": torch.randn(2, 6),
+            "images.cam1": torch.rand(2, 3, 64, 64),
+        }
+        images, masks = preprocessor._preprocess_images(batch)
+        assert isinstance(images, list)
+        assert isinstance(masks, list)
+        assert len(images) == 1
+        assert len(masks) == 1
+
+    def test_empty_cameras_appends_placeholders(self) -> None:
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(image_resolution=(64, 64), empty_cameras=2)
+        batch = {
+            "state": torch.randn(2, 6),
+            "task": "pick up the cube\n",
+            "images.cam1": torch.rand(2, 3, 64, 64),
+            "_images_keys": ["images.cam1"],
+        }
+
+        with unittest.mock.patch.object(
+            preprocessor,
+            "_tokenize",
+            return_value=(torch.zeros(2, 10, dtype=torch.long), torch.ones(2, 10, dtype=torch.bool)),
+        ):
+            result = preprocessor(batch)
+
+        assert result["images"].shape[0] == 3  # 1 real + 2 empty
+        assert result["image_masks"].shape[0] == 3
+
+    def test_empty_cameras_placeholder_values(self) -> None:
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(image_resolution=(64, 64), empty_cameras=1)
+        batch = {
+            "state": torch.randn(2, 6),
+            "task": "pick up the cube\n",
+            "images.cam1": torch.rand(2, 3, 64, 64),
+            "_images_keys": ["images.cam1"],
+        }
+
+        with unittest.mock.patch.object(
+            preprocessor,
+            "_tokenize",
+            return_value=(torch.zeros(2, 10, dtype=torch.long), torch.ones(2, 10, dtype=torch.bool)),
+        ):
+            result = preprocessor(batch)
+
+        real_mask = result["image_masks"][0]
+        empty_mask = result["image_masks"][1]
+        assert real_mask.all()
+        assert not empty_mask.any()
+
+        empty_img = result["images"][1]
+        assert torch.allclose(empty_img, torch.ones_like(empty_img) * -1)
+
+    def test_empty_cameras_zero_noop(self) -> None:
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(image_resolution=(64, 64), empty_cameras=0)
+        batch = {
+            "state": torch.randn(2, 6),
+            "task": "pick up the cube\n",
+            "images.cam1": torch.rand(2, 3, 64, 64),
+            "_images_keys": ["images.cam1"],
+        }
+
+        with unittest.mock.patch.object(
+            preprocessor,
+            "_tokenize",
+            return_value=(torch.zeros(2, 10, dtype=torch.long), torch.ones(2, 10, dtype=torch.bool)),
+        ):
+            result = preprocessor(batch)
+
+        assert result["images"].shape[0] == 1
+
+    def test_empty_cameras_no_images_returns_empty(self) -> None:
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(image_resolution=(64, 64), empty_cameras=2)
+        batch = {
+            "state": torch.randn(2, 6),
+            "task": "pick up the cube\n",
+            "_images_keys": [],
+        }
+
+        with unittest.mock.patch.object(
+            preprocessor,
+            "_tokenize",
+            return_value=(torch.zeros(2, 10, dtype=torch.long), torch.ones(2, 10, dtype=torch.bool)),
+        ):
+            result = preprocessor(batch)
+
+        assert result["images"].shape[0] == 0
+
+    def test_factory_passes_empty_cameras(self) -> None:
+        from physicalai.policies.smolvla.preprocessor import make_smolvla_preprocessors
+
+        preprocessor, _ = make_smolvla_preprocessors(empty_cameras=2)
+        assert preprocessor.empty_cameras == 2
+
+    def test_policy_empty_cameras_in_hparams(self) -> None:
+        policy = SmolVLA(empty_cameras=1)
+        assert policy.config.empty_cameras == 1
+        assert policy.hparams["empty_cameras"] == 1

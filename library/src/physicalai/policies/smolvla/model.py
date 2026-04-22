@@ -73,6 +73,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
         max_action_dim: int = 32,
         resize_imgs_with_padding: tuple[int, int] | None = (512, 512),
         adapt_to_pi_aloha: bool = False,
+        empty_cameras: int = 0,
         num_steps: int = 10,
         use_cache: bool = True,
         freeze_vision_encoder: bool = True,
@@ -104,6 +105,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
             resize_imgs_with_padding: Target size (height, width) for image preprocessing with padding.
             adapt_to_pi_aloha: Whether to convert joint and gripper values from standard Aloha space
                 to pi internal runtime space.
+            empty_cameras: Number of empty camera slots to append as placeholder images.
             num_steps: Number of decoding steps for flow matching.
             use_cache: Whether to use attention caching for efficiency.
             freeze_vision_encoder: Whether to freeze the vision encoder during fine-tuning.
@@ -130,6 +132,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
         self._max_action_dim = max_action_dim
         self._resize_imgs_with_padding = resize_imgs_with_padding
         self._adapt_to_pi_aloha = adapt_to_pi_aloha
+        self._empty_cameras = empty_cameras
         self._tokenizer_max_length = tokenizer_max_length
         self._vlm_model_name = vlm_model_name
         self._model = VLAFlowMatching(
@@ -432,10 +435,14 @@ class SmolVLAModel(ExportableModelMixin, Model):
                 batch[ACTION] = self._pi_aloha_encode_actions_inv(batch[ACTION])
 
         all_keys = [key for key in self._dataset_stats if self._dataset_stats[key]["type"] == FeatureType.VISUAL.value]
+        expected_count = len(all_keys) + self._empty_cameras
 
-        if len(all_keys) != batch[IMAGES].shape[0]:
-            msg = f"Some of the image features are missing from the batch. \
-                    (batch: {batch.keys()}) (image_features:{all_keys})"
+        if expected_count != batch[IMAGES].shape[0]:
+            msg = (
+                f"Image count mismatch: expected {expected_count} "
+                f"({len(all_keys)} from stats + {self._empty_cameras} empty), "
+                f"got {batch[IMAGES].shape[0]}. (image_features:{all_keys})"
+            )
             raise ValueError(msg)
         return batch
 

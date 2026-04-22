@@ -66,6 +66,11 @@ class SmolVLAConfig(Config):
         expert_width_multiplier: Multiplier for action expert hidden size relative to VLM. Defaults to 0.75.
         min_period: Minimum period for sine-cosine positional encoding of timesteps. Defaults to 4e-3.
         max_period: Maximum period for sine-cosine positional encoding of timesteps. Defaults to 4.0.
+        rename_map: Optional mapping of camera base names to rename before preprocessing.
+            Maps source camera names to target names expected by the pretrained model.
+            Example: (("top", "camera1"), ("wrist", "camera2")) renames images.top → images.camera1.
+            Use this when your dataset camera names differ from the pretrained model's expected names.
+            Defaults to None (no renaming).
         use_random_input_noise: Whether to use random noise as the initial input for the denoising process
             during inference. If False, zeros are used instead. Defaults to True.
     """
@@ -123,6 +128,8 @@ class SmolVLAConfig(Config):
 
     min_period: float = 4e-3
     max_period: float = 4.0
+
+    rename_map: tuple[tuple[str, str], ...] | None = None
 
     use_random_input_noise: bool = True
 

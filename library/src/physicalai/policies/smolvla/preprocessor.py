@@ -14,12 +14,40 @@ Handles:
 - State/action normalization
 - State/action padding to max dimensions
 - Language tokenization
+- Camera name remapping and validation
 - Output denormalization
+
+Camera naming convention (lerobot/smolvla_base pretrained model):
+
+    The pretrained SmolVLA base model expects cameras with standardized names.
+    Each position maps to a specific physical camera view:
+
+    ========  ==================  ==========================================
+    Key       Physical view       Notes
+    ========  ==================  ==========================================
+    camera1   Top-down view       Required. Primary observation camera.
+    camera2   Wrist-mounted view  Required. Gripper/end-effector camera.
+    camera3   Side/additional     Optional. Extra viewpoint (e.g. side cam).
+    ========  ==================  ==========================================
+
+    Reference: https://huggingface.co/blog/smolvla#standardizing-camera-views
+    Reference: SmolVLA paper Section 3.2 (arxiv 2506.01844)
+
+    If your dataset uses different camera names (e.g. "top", "wrist"), use
+    ``rename_map`` to remap them::
+
+        SmolVLA(rename_map=(("top", "camera1"), ("wrist", "camera2")))
+
+    If your dataset has fewer cameras than the pretrained model expects, use
+    ``empty_cameras`` to pad with placeholder images the model will ignore::
+
+        SmolVLA(rename_map=..., empty_cameras=1)  # 2 real cameras + 1 empty
 """
 
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
 from typing import Any, cast
 
 import torch
@@ -31,12 +59,17 @@ from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, TASK, Obse
 from physicalai.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
 
 logger = logging.getLogger(__name__)
+if not logger.handlers and not logging.getLogger().handlers:
+    logger.addHandler(logging.StreamHandler())
+    logger.propagate = False
 
 
 NORM_MAP = {
     FeatureType.STATE: NormalizationType.MEAN_STD,
     FeatureType.ACTION: NormalizationType.MEAN_STD,
 }
+
+SMOLVLA_EXPECTED_CAMERA_NAMES: set[str] = {"camera1", "camera2", "camera3"}
 
 
 class SmolVLAPreprocessor(torch.nn.Module):
@@ -77,6 +110,9 @@ class SmolVLAPreprocessor(torch.nn.Module):
         max_token_len: int = 48,
         tokenizer_name: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
         padding: str = "max_length",
+        rename_map: dict[str, str] | None = None,
+        expected_camera_names: set[str] | None = SMOLVLA_EXPECTED_CAMERA_NAMES,
+        empty_cameras: int = 0,
     ) -> None:
         """Initialize the SmolVLA preprocessor.
 
@@ -91,6 +127,18 @@ class SmolVLAPreprocessor(torch.nn.Module):
             tokenizer_name: HuggingFace tokenizer identifier to use for text
                 processing. Defaults to "HuggingFaceTB/SmolVLM2-500M-Video-Instruct".
             padding: Padding strategy for tokenization. Defaults to "longest".
+            rename_map: Optional mapping of camera base names to target names.
+                Maps source camera names to the pretrained model's expected camera slots.
+                Example: {"top": "camera1", "wrist": "camera2"} ensures images from
+                the "top" camera are placed in the camera1 tensor slot position.
+                Keys not in the map pass through in their original order after mapped keys.
+                Defaults to None (no reordering).
+            expected_camera_names: Camera names the pretrained model expects. Used for
+                validation warnings when batch camera names don't match. Defaults to
+                SMOLVLA_EXPECTED_CAMERA_NAMES (camera1, camera2, camera3).
+            empty_cameras: Number of empty camera slots to add as -1-filled placeholder
+                images with zero masks. Used when the pretrained model expects more cameras
+                than the dataset provides. Defaults to 0.
         """
         super().__init__()
 
@@ -100,7 +148,11 @@ class SmolVLAPreprocessor(torch.nn.Module):
         self.max_token_len = max_token_len
         self.tokenizer_name = tokenizer_name
         self.padding = padding
+        self.rename_map = rename_map
+        self._expected_camera_names = expected_camera_names
+        self.empty_cameras = empty_cameras
         self._tokenizer = None
+        self._camera_names_validated = False
 
         if features is not None:
             self._state_action_normalizer = FeatureNormalizeTransform(features, NORM_MAP)
@@ -118,38 +170,87 @@ class SmolVLAPreprocessor(torch.nn.Module):
             A dictionary containing the processed batch with added 'tokenized_prompt'
             and 'tokenized_prompt_mask' tensors, after applying state-action normalization.
         """
+        self._validate_camera_names(batch)
+
         batch = self._newline_processor(batch)
 
         tokens, masks = self._tokenize(batch[TASK])
         batch[TOKENIZED_PROMPT] = tokens.to(batch[STATE].device)
         batch[TOKENIZED_PROMPT_MASK] = masks.to(batch[STATE].device)
 
-        batch = self._preprocess_images(batch)
+        images, img_masks = self._preprocess_images(batch)
+
+        # Append empty cameras as -1-filled placeholder images with zero masks.
+        # This allows training/inference with fewer cameras than the pretrained
+        # model expects (e.g. 2 cameras when the model was trained with 3).
+        if self.empty_cameras > 0 and len(images) > 0:
+            for _ in range(self.empty_cameras):
+                images.append(torch.ones_like(images[-1]) * -1)
+                img_masks.append(torch.zeros_like(img_masks[-1]))
+
+        if images:
+            batch[IMAGES] = torch.stack(images, dim=0)
+            batch[IMAGE_MASKS] = torch.stack(img_masks, dim=0)
+        else:
+            batch[IMAGES] = torch.empty(0, device=batch[STATE].device)
+            batch[IMAGE_MASKS] = torch.empty(0, device=batch[STATE].device)
 
         return self._state_action_normalizer(batch)
 
-    def _preprocess_images(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+    def _reorder_image_keys(self, batch_img_keys: list[str]) -> list[str]:
+        """Reorder image keys to match canonical camera slot order via rename_map.
+
+        Maps each raw batch key to its logical target name using rename_map,
+        then sorts by target name to ensure deterministic camera-to-tensor-slot
+        assignment matching the pretrained model's expectations.
+
+        Keys not in rename_map retain their original base name for sorting,
+        placing them after mapped keys in alphabetical order.
+
+        Args:
+            batch_img_keys: List of flattened image keys (e.g. ["images.top", "images.wrist"]).
+
+        Returns:
+            Reordered list of image keys sorted by their mapped target names.
+        """
+        if not self.rename_map:
+            return batch_img_keys
+        rename_map = self.rename_map
+
+        def _sort_key(key: str) -> str:
+            base_name = key.rsplit(".", 1)[-1]
+            return rename_map.get(base_name, base_name)
+
+        return sorted(batch_img_keys, key=_sort_key)
+
+    def _preprocess_images(self, batch: dict[str, torch.Tensor]) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
         """Apply SmolVLA preprocessing to the images.
 
         This method processes image tensors from a batch by:
-        1. Extracting the last frame if the input is a 5D tensor (video sequence)
-        2. Optionally resizing images with padding to maintain aspect ratio
-        3. Converting pixel values from [0.0, 1.0] range to [-1.0, 1.0] range as required by SigLIP
-        4. Extracting or creating padding masks for each image
+        1. Reordering image keys to match canonical camera slot order (via rename_map)
+        2. Extracting the last frame if the input is a 5D tensor (video sequence)
+        3. Optionally resizing images with padding to maintain aspect ratio
+        4. Converting pixel values from [0.0, 1.0] range to [-1.0, 1.0] range as required by SigLIP
+        5. Extracting or creating padding masks for each image
+
         Args:
             batch: A dictionary containing image tensors and optional padding masks.
                 Image tensors should be 4D (B, C, H, W) or 5D (B, T, C, H, W).
                 Optional padding masks are stored with keys prefixed by EXTRA.
 
         Returns:
-            A dictionary containing the processed batch with added 'images'
-            and 'image_masks' tensors, after applying image preprocessing.
+            A tuple containing:
+                - images: List of preprocessed image tensors, each with shape (B, C, H, W)
+                    and pixel values in range [-1.0, 1.0]
+                - img_masks: List of boolean mask tensors indicating valid (non-padded)
+                    images in each batch position
         """
-        images = []
-        img_masks = []
+        images: list[torch.Tensor] = []
+        img_masks: list[torch.Tensor] = []
 
         batch_img_keys = Observation.get_flattened_keys(batch, IMAGES)
         batch_img_keys = [key for key in batch_img_keys if "is_pad" not in key]
+        batch_img_keys = self._reorder_image_keys(batch_img_keys)
 
         max_image_dim = 5
         for key in batch_img_keys:
@@ -170,17 +271,60 @@ class SmolVLAPreprocessor(torch.nn.Module):
             images.append(img)
             img_masks.append(mask)
 
-        if images:
-            images = torch.stack(images, dim=0)
-            img_masks = torch.stack(img_masks, dim=0)
+        return images, img_masks
+
+    def _validate_camera_names(self, batch: dict[str, Any]) -> None:
+        """Check if batch camera names match expected normalization feature names.
+
+        When rename_map is active, validates the mapped logical names (not raw
+        batch names) against expected camera names. Only runs once per
+        preprocessor lifetime to avoid log spam.
+        """
+        if self._camera_names_validated:
+            return
+        self._camera_names_validated = True
+
+        if not self._expected_camera_names:
+            return
+
+        image_keys = Observation.get_flattened_keys(batch, IMAGES)
+        image_keys = [k for k in image_keys if "is_pad" not in k]
+        if not image_keys:
+            return
+
+        batch_camera_bases = {k.rsplit(".", 1)[-1] for k in image_keys}
+
+        # Map through rename_map to get logical names for validation
+        if self.rename_map:
+            mapped_bases = {self.rename_map.get(base, base) for base in batch_camera_bases}
         else:
-            images = torch.empty(0, device=batch[STATE].device)
-            img_masks = torch.empty(0, device=batch[STATE].device)
+            mapped_bases = batch_camera_bases
 
-        batch[IMAGES] = images
-        batch[IMAGE_MASKS] = img_masks
+        if not mapped_bases & self._expected_camera_names:
+            logger.warning(
+                "Camera name mismatch detected. Dataset cameras: %s, "
+                "but pretrained model expects: %s. "
+                "Consider using rename_map to map your camera names to the expected names. "
+                "Example: SmolVLA(rename_map=(('your_camera', 'expected_camera'),))",
+                sorted(batch_camera_bases),
+                sorted(self._expected_camera_names),
+            )
 
-        return batch
+        expected_count = len(self._expected_camera_names)
+        actual_count = len(batch_camera_bases) + self.empty_cameras
+        if actual_count < expected_count:
+            logger.warning(
+                "Camera count mismatch: dataset provides %d camera(s) + %d empty = %d total, "
+                "but pretrained model expects %d. "
+                "Consider setting empty_cameras=%d to pad missing slots. "
+                "Example: SmolVLA(empty_cameras=%d)",
+                len(batch_camera_bases),
+                self.empty_cameras,
+                actual_count,
+                expected_count,
+                expected_count - len(batch_camera_bases),
+                expected_count - len(batch_camera_bases),
+            )
 
     @staticmethod
     def _newline_processor(batch: dict[str, Any]) -> dict[str, torch.Tensor]:
@@ -336,6 +480,61 @@ class SmolVLAPostprocessor(torch.nn.Module):
         return batch
 
 
+def reorder_stats(
+    stats: dict[str, dict[str, Any]],
+    rename_map: dict[str, str],
+) -> dict[str, dict[str, Any]]:
+    """Reorder dataset statistics entries to match the canonical camera slot order.
+
+    SmolVLA base weights expect cameras in a specific positional order but don't
+    care about key names. This function reorders stats entries so that image
+    statistics appear in the order determined by rename_map target names, without
+    changing any keys. Non-image stats (state, action) are preserved in their
+    original relative order.
+
+    The rename_map uses the same short key format as SmolVLAPreprocessor: base camera
+    names only (e.g. {"top": "camera1"}). Stats keys like "observation.images.top"
+    are matched by extracting the last segment after ".".
+
+    Args:
+        stats: Dataset statistics dict with top-level keys like "observation.images.top",
+            "observation.state", "action".
+        rename_map: Mapping of source camera base names to target names.
+            Used only for determining sort order, not for renaming.
+
+    Returns:
+        New statistics dict with entries reordered by mapped target names.
+        Keys and values are unchanged; only insertion order differs.
+    """
+    if not stats:
+        return {}
+
+    def _sort_key(item: tuple[str, dict[str, Any]]) -> tuple[int, str]:
+        key = item[0]
+        base = key.rsplit(".", 1)[-1]
+        mapped = rename_map.get(base, base)
+        is_mapped = 0 if base in rename_map else 1
+        return (is_mapped, mapped)
+
+    image_items = []
+    other_items = []
+    for key, sub_stats in stats.items():
+        base = key.rsplit(".", 1)[-1]
+        if base in rename_map:
+            image_items.append((key, sub_stats))
+        else:
+            other_items.append((key, sub_stats))
+
+    image_items.sort(key=_sort_key)
+
+    reordered: dict[str, dict[str, Any]] = {}
+    for key, sub_stats in image_items:
+        reordered[key] = deepcopy(sub_stats) if sub_stats is not None else {}
+    for key, sub_stats in other_items:
+        reordered[key] = deepcopy(sub_stats) if sub_stats is not None else {}
+    return reordered
+
+
 def make_smolvla_preprocessors(
     max_state_dim: int = 32,
     max_action_dim: int = 32,
@@ -344,6 +543,8 @@ def make_smolvla_preprocessors(
     image_resolution: tuple[int, int] = (512, 512),
     max_token_len: int = 48,
     token_pad_type: str = "longest",  # noqa: S107
+    rename_map: dict[str, str] | None = None,
+    empty_cameras: int = 0,
     tokenizer_name: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
 ) -> tuple[SmolVLAPreprocessor, SmolVLAPostprocessor]:
     """Create preprocessor and postprocessor pair.
@@ -355,20 +556,31 @@ def make_smolvla_preprocessors(
         stats: Dataset statistics as nested dicts.
         image_resolution: Target image resolution.
         max_token_len: Maximum token length.
-        token_pad_type: Padding strategy for tokenization ("longest" or "max_length").\
+        token_pad_type: Padding strategy for tokenization ("longest" or "max_length").
+        rename_map: Optional mapping of camera base names to target names.
+        empty_cameras: Number of empty camera slots to add.
         tokenizer_name: HuggingFace tokenizer name.
 
     Returns:
         Tuple of (preprocessor, postprocessor).
     """
+    if rename_map and stats is not None:
+        stats = reorder_stats(stats, rename_map)
+
+    expected_camera_names: set[str] | None = SMOLVLA_EXPECTED_CAMERA_NAMES
     features: dict[str, Feature] = {}
     if stats is not None:
+        image_stat_names: set[str] = set()
         for key, stat in stats.items():
             if ACTION in key:
                 feature_type = FeatureType.ACTION
             elif STATE in key:
                 feature_type = FeatureType.STATE
             else:
+                stat_name = str(stat.get("name", key))
+                base = stat_name.rsplit(".", maxsplit=1)[-1] if "." in stat_name else stat_name
+                if str(stat.get("type", "")).upper() == FeatureType.VISUAL.value:
+                    image_stat_names.add(base)
                 continue
             features[str(stat["name"])] = Feature(
                 name=str(stat["name"]),
@@ -380,6 +592,9 @@ def make_smolvla_preprocessors(
                 ),
             )
 
+        if image_stat_names:
+            expected_camera_names = image_stat_names
+
     preprocessor = SmolVLAPreprocessor(
         max_state_dim=max_state_dim,
         max_action_dim=max_action_dim,
@@ -387,6 +602,9 @@ def make_smolvla_preprocessors(
         features=features,
         max_token_len=max_token_len,
         padding=token_pad_type,
+        rename_map=rename_map,
+        expected_camera_names=expected_camera_names,
+        empty_cameras=empty_cameras,
         tokenizer_name=tokenizer_name,
     )
 

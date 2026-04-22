@@ -132,6 +132,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         scheduler_warmup_steps: int = 1_000,
         scheduler_decay_steps: int = 30_000,
         scheduler_decay_lr: float = 2.5e-6,
+        rename_map: tuple[tuple[str, str], ...] | None = None,
+        empty_cameras: int = 0,
         # Eager initialization (for checkpoint loading)
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
     ) -> None:
@@ -176,6 +178,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             scheduler_warmup_steps=scheduler_warmup_steps,
             scheduler_decay_steps=scheduler_decay_steps,
             scheduler_decay_lr=scheduler_decay_lr,
+            rename_map=rename_map,
+            empty_cameras=empty_cameras,
         )
 
         # Save config as hyperparameters for checkpoint restoration
@@ -207,8 +211,15 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         Args:
             dataset_stats: Dataset normalization statistics.
         """
+        from .preprocessor import make_smolvla_preprocessors, reorder_stats  # noqa: PLC0415
+
+        rename_map = dict(self.config.rename_map) if self.config.rename_map else None
+        if rename_map and dataset_stats is not None:
+            dataset_stats = reorder_stats(dataset_stats, rename_map)
+
         self.model = SmolVLAModel(
             dataset_stats,
+            empty_cameras=self.config.empty_cameras,
             chunk_size=self.config.chunk_size,
             max_state_dim=self.config.max_state_dim,
             max_action_dim=self.config.max_action_dim,
@@ -257,6 +268,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             image_resolution=self.config.resize_imgs_with_padding,
             max_token_len=self.config.tokenizer_max_length,
             token_pad_type=self.config.pad_language_to,
+            rename_map=rename_map,
+            empty_cameras=self.config.empty_cameras,
             tokenizer_name=self.config.vlm_model_name,
         )
 
