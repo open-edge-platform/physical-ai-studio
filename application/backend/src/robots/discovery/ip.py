@@ -21,6 +21,6 @@ class IPDiscovery:
         return (await proc.wait()) == 0
 
     async def is_reachable(self, robot: Robot) -> bool:
-        if not robot.connection_string:
+        if not robot.payload.connection_string:
             return False
-        return await self.ping(robot.connection_string)
+        return await self.ping(robot.payload.connection_string)

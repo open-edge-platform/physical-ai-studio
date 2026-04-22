@@ -56,9 +56,11 @@ def test_environment():
                     "robot": {
                         "id": "c3f3f886-8813-4b3b-ba48-165cdaa39995",
                         "name": "Khaos",
-                        "connection_string": "",
-                        "serial_number": "5AA9017083",
                         "type": "SO101_Follower",
+                        "payload": {
+                            "connection_string": "",
+                            "serial_number": "5AA9017083",
+                        },
                     },
                     "tele_operator": {"type": "none"},
                 }

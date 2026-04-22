@@ -102,13 +102,16 @@ async def identify_so101_robot_visually(robot: Robot, joint: str | None = None) 
     if joint is None:
         joint = "gripper"
 
-    if robot.connection_string == "" and robot.serial_number != "":
-        robot.connection_string = find_port_for_serial(robot.serial_number)
+    connection_string = robot.payload.connection_string
+    serial_number = robot.payload.serial_number
 
-    if robot.connection_string == "":
-        raise ValueError(f"Could not find the serial port for serial number {robot.serial_number}")
+    if connection_string == "" and serial_number != "":
+        connection_string = find_port_for_serial(serial_number)
+
+    if connection_string == "":
+        raise ValueError(f"Could not find the serial port for serial number {serial_number}")
     # Assume follower since leader shares same FeetechMotorBus layout
-    connection = SOFollower(SOFollowerRobotConfig(port=robot.connection_string))
+    connection = SOFollower(SOFollowerRobotConfig(port=connection_string))
     connection.bus.connect()
 
     PRESENT_POSITION_KEY = "Present_Position"

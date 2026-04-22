@@ -15,7 +15,7 @@ async def identify_trossen_robot_visually(robot: Robot) -> None:
     driver.configure(
         trossen_arm.Model.wxai_v0,
         trossen_arm.StandardEndEffector.wxai_v0_leader,
-        robot.connection_string,
+        robot.payload.connection_string,
         True,
         timeout=5,
     )
