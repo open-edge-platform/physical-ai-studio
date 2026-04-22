@@ -564,7 +564,6 @@ class Pi05Model(ExportableModelMixin, Model):
         gradient_checkpointing: bool = False,
         compile_model: bool = False,
         use_random_input_noise: bool = False,
-        normalization_mode: str = "quantiles",
     ) -> None:
         """Initialize Pi05Model.
 
@@ -592,7 +591,6 @@ class Pi05Model(ExportableModelMixin, Model):
             compile_model: Whether to use torch.compile.
             use_random_input_noise: Whether to use random noise as the initial input for the denoising
                 process during inference. If False, zeros are used instead.
-            normalization_mode: Normalization mode for action/state features (e.g. "quantiles", "mean_std").
 
         Raises:
             ValueError: If image resolution is not square.
@@ -612,13 +610,12 @@ class Pi05Model(ExportableModelMixin, Model):
         self._image_resolution = image_resolution
         self._tokenizer_max_length = tokenizer_max_length
         self._use_random_input_noise = use_random_input_noise
-        self._normalization_mode = normalization_mode
 
         paligemma_config = get_gemma_config(paligemma_variant)
         action_expert_config = get_gemma_config(action_expert_variant)
 
-        if image_resolution[0] != image_resolution[1]:
-            msg = f"PaliGemma expects square image resolution, invalid: {image_resolution}"
+        if self._image_resolution[0] != self._image_resolution[1]:
+            msg = f"PaliGemma expects square image resolution, invalid: {self._image_resolution}"
             raise ValueError(msg)
 
         self.paligemma_with_expert = PaliGemmaWithExpertModel(
@@ -626,7 +623,7 @@ class Pi05Model(ExportableModelMixin, Model):
             action_expert_config,
             use_adarms=[False, True],
             precision=dtype,
-            image_size=image_resolution[0],
+            image_size=self._image_resolution[0],
             freeze_vision_encoder=freeze_vision_encoder,
             train_expert_only=train_expert_only,
         )

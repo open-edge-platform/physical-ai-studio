@@ -264,7 +264,6 @@ class Pi05(ExportablePolicyMixin, Policy):
             gradient_checkpointing=self.config.gradient_checkpointing,
             compile_model=self.config.compile_model,
             use_random_input_noise=self.config.use_random_input_noise,
-            normalization_mode=self.config.normalization_mode.lower(),
         )
         if weights_file is not None:
             # load raw state dict
@@ -686,14 +685,14 @@ class Pi05(ExportablePolicyMixin, Policy):
             ComponentSpec(
                 type="normalize",
                 stats={STATE: self._dataset_stats[f"observation.{STATE}"]},
-                mode=self.config.normalization_mode,
+                mode=self.config.normalization_mode.lower(),
             ),
         ]
         postproc_specs = [
             ComponentSpec(
                 type="denormalize",
                 stats={ACTION: self._dataset_stats[ACTION]},
-                mode=self.config.normalization_mode,
+                mode=self.config.normalization_mode.lower(),
             ),
         ]
         extra_args: dict[str, ExportParameters] = {}
