@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pyrealsense2 as rs
+from loguru import logger
 
 from physicalai.capture.camera import Camera, ColorMode
 from physicalai.capture.errors import CaptureError, CaptureTimeoutError, NotConnectedError
@@ -19,7 +20,7 @@ if TYPE_CHECKING:
 
 
 class RealSenseCamera(DepthMixin, Camera):
-    """Intel RealSense color and depth camera."""
+    """RealSense color and depth camera."""
 
     def __init__(
         self,
@@ -95,10 +96,14 @@ class RealSenseCamera(DepthMixin, Camera):
         self._connected = True
         self._sequence = 0
         self._depth_sequence = 0
+        logger.info(f"RealSense camera {self._serial_number} connected ({self._width}x{self._height} @ {self._fps}fps)")
 
     def _do_disconnect(self) -> None:
         if self._pipeline is not None:
-            self._pipeline.stop()
+            try:
+                self._pipeline.stop()
+            except Exception:  # noqa: BLE001
+                logger.debug(f"Error stopping RealSense pipeline {self._serial_number}")
         self._pipeline = None
         self._config = None
         self._align = None
@@ -279,7 +284,7 @@ class RealSenseCamera(DepthMixin, Camera):
 
     @classmethod
     def discover(cls) -> list[DeviceInfo]:
-        """Discover available Intel RealSense devices.
+        """Discover available RealSense devices.
 
         Returns:
             List of discovered RealSense devices.

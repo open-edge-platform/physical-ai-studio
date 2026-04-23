@@ -136,7 +136,7 @@ from physicalai.capture import create_camera, discover_all, read_cameras
 ```text
 Camera (ABC)                       # Base: connect/disconnect/read/read_latest/async_read
 ├── UVCCamera                      # USB webcams/UVC cameras
-├── RealSenseCamera                # Intel RealSense (+ DepthMixin)
+├── RealSenseCamera                # RealSense (+ DepthMixin)
 ├── BaslerCamera                   # Basler industrial cameras (pypylon)
 ├── GenicamCamera                  # Generic GenICam devices (harvesters)
 └── IPCamera                       # RTSP/HTTP network cameras
@@ -145,7 +145,7 @@ Camera (ABC)                       # Base: connect/disconnect/read/read_latest/a
 `Camera` is the single ABC for all live hardware.
 
 **Future extensibility:** When non-live sources (video file playback, image directories)
-are added, they should *not* inherit from `Camera`. The semantics diverge (e.g.,
+are added, they should _not_ inherit from `Camera`. The semantics diverge (e.g.,
 `read_latest()` is meaningless for recorded data). Instead, a lightweight `typing.Protocol`
 can be introduced at that point to define the shared surface (`read()`, `connect()`,
 `disconnect()`, context manager) without forcing a common base class.
@@ -177,7 +177,7 @@ OmniCamera is the required UVC dependency for non-Linux platforms (macOS/Windows
 
 ```bash
 pip install physicalai                    # Core + UVCCamera (UVC support)
-pip install physicalai[realsense]         # + Intel RealSense (pyrealsense2)
+pip install physicalai[realsense]         # + RealSense (pyrealsense2)
 pip install physicalai[basler]            # + Basler (pypylon)
 pip install physicalai[genicam]           # + GenICam (harvesters)
 pip install physicalai[capture]           # All camera dependencies
@@ -706,11 +706,11 @@ Valid backend strings are: `"v4l2"` (Linux), `"omnicamera"` (macOS/Windows).
 
 ### RealSenseCamera
 
-Intel RealSense with depth sensing.
+RealSense with depth sensing.
 
 ```python
 class RealSenseCamera(DepthMixin, Camera):
-    """Intel RealSense depth cameras.
+    """RealSense depth cameras.
 
     Provides RGB via read() and depth via read_depth() from DepthMixin.
     read_rgbd() returns (rgb_frame, depth_frame) tuple.
@@ -1006,12 +1006,12 @@ record_thread = Thread(target=record_loop, args=(cam,))
 Creating multiple `Camera` instances targeting the same physical device is **undefined
 behavior**. The outcome depends on the backend and OS:
 
-| Backend                    | Typical behavior with duplicate open                  |
-| -------------------------- |-------------------------------------------------------|
-| UVCCamera (V4L2/OmniCamera)| Second `connect()` fails or produces corrupt frames   |
-| RealSense                  | Both pipelines connect but compete for USB bandwidth  |
-| Basler / GenICam           | SDK rejects the second open with an access error      |
-| IP Camera                  | Both instances connect (read-only RTSP allows it)     |
+| Backend                     | Typical behavior with duplicate open                 |
+| --------------------------- | ---------------------------------------------------- |
+| UVCCamera (V4L2/OmniCamera) | Second `connect()` fails or produces corrupt frames  |
+| RealSense                   | Both pipelines connect but compete for USB bandwidth |
+| Basler / GenICam            | SDK rejects the second open with an access error     |
+| IP Camera                   | Both instances connect (read-only RTSP allows it)    |
 
 **Guidance:** Do not create multiple connected `Camera` instances for the same device.
 If you need multiple consumers, read from a single `Camera` and distribute frames in
@@ -1153,17 +1153,17 @@ The application backend currently uses FrameSource in 6 files. Migration swaps F
 
 ### Feature Parity Checklist
 
-| FrameSource API                               | physicalai.capture Equivalent                            | Status                                                |
-| --------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------------- |
-| `FrameSourceFactory.create(driver, **params)` | `UVCCamera(...)` or `create_camera(driver, ...)`         | Direct replacement                                    |
-| `.connect()`                                  | `.connect()`                                             | Same                                                  |
-| `.read()` → `(success, frame)`                | `.read()` → `Frame`                                      | Returns `Frame` (raises on failure)                   |
-| `.start_async()` + `.get_latest_frame()`      | `.read_latest()`                                         | Simplified to one call                                |
-| `.stop()`                                     | (not needed)                                             | No separate start/stop; managed by connect/disconnect |
-| `.disconnect()`                               | `.disconnect()`                                          | Same                                                  |
-| `FrameSourceFactory.discover_devices(driver)` | `discover_all()` or `Camera.discover()`                  | Direct replacement                                    |
-| `.get_supported_formats()`                    | `FormatDiscoveryMixin.get_supported_formats()`           | Via mixin                                             |
-| `.attach_processor()`                         | Removed                                                  | Was broken in production (commented out)              |
+| FrameSource API                               | physicalai.capture Equivalent                    | Status                                                |
+| --------------------------------------------- | ------------------------------------------------ | ----------------------------------------------------- |
+| `FrameSourceFactory.create(driver, **params)` | `UVCCamera(...)` or `create_camera(driver, ...)` | Direct replacement                                    |
+| `.connect()`                                  | `.connect()`                                     | Same                                                  |
+| `.read()` → `(success, frame)`                | `.read()` → `Frame`                              | Returns `Frame` (raises on failure)                   |
+| `.start_async()` + `.get_latest_frame()`      | `.read_latest()`                                 | Simplified to one call                                |
+| `.stop()`                                     | (not needed)                                     | No separate start/stop; managed by connect/disconnect |
+| `.disconnect()`                               | `.disconnect()`                                  | Same                                                  |
+| `FrameSourceFactory.discover_devices(driver)` | `discover_all()` or `Camera.discover()`          | Direct replacement                                    |
+| `.get_supported_formats()`                    | `FormatDiscoveryMixin.get_supported_formats()`   | Via mixin                                             |
+| `.attach_processor()`                         | Removed                                          | Was broken in production (commented out)              |
 
 ### API Migration Map
 
@@ -1238,21 +1238,21 @@ The application's existing retry logic (`CameraConnectionManager` with `tenacity
 
 ## Comparison with LeRobot
 
-| Aspect           | physicalai.capture                                          | LeRobot cameras                                   |
-| ---------------- |-------------------------------------------------------------| ------------------------------------------------- |
-| Base class       | `Camera` ABC (flat)                                         | `Camera` ABC                                      |
-| Read model       | 3-tier: `read()`, `read_latest()`, `async_read()`           | 3-tier: `read()`, `read_latest()`, `async_read()` |
-| Frame type       | `Frame(data, timestamp, sequence)`                          | Raw `ndarray` (no metadata)                       |
-| Lifecycle        | `connect(timeout)` / `disconnect()`                         | `connect()` / `disconnect()`                      |
-| Multi-camera     | `read_cameras()` / `async_read_cameras()`                   | Manual sequential reads                           |
-| Hardware support | UVCCamera (all platforms), RealSense, Basler, GenICam, IP   | OpenCV, RealSense, (fewer industrial)             |
-| Depth            | `DepthMixin` with `read_depth()` → `Frame(uint16)`          | Not built-in                                      |
-| PTZ              | `PTZMixin`                                                  | Not built-in                                      |
-| Config           | `from_config()` + dataclass configs                         | Pydantic `CameraConfig`                           |
-| Discovery        | `Camera.discover()` + `discover_all()`                      | Not built-in                                      |
-| Factory          | Optional `create_camera()` convenience                      | Not applicable                                    |
-| Sharing          | Explicit (pass instance)                                    | Explicit                                          |
-| Iterator         | Not implemented (explicit `read()` preferred)               | `__iter__` / `__next__`                           |
+| Aspect           | physicalai.capture                                        | LeRobot cameras                                   |
+| ---------------- | --------------------------------------------------------- | ------------------------------------------------- |
+| Base class       | `Camera` ABC (flat)                                       | `Camera` ABC                                      |
+| Read model       | 3-tier: `read()`, `read_latest()`, `async_read()`         | 3-tier: `read()`, `read_latest()`, `async_read()` |
+| Frame type       | `Frame(data, timestamp, sequence)`                        | Raw `ndarray` (no metadata)                       |
+| Lifecycle        | `connect(timeout)` / `disconnect()`                       | `connect()` / `disconnect()`                      |
+| Multi-camera     | `read_cameras()` / `async_read_cameras()`                 | Manual sequential reads                           |
+| Hardware support | UVCCamera (all platforms), RealSense, Basler, GenICam, IP | OpenCV, RealSense, (fewer industrial)             |
+| Depth            | `DepthMixin` with `read_depth()` → `Frame(uint16)`        | Not built-in                                      |
+| PTZ              | `PTZMixin`                                                | Not built-in                                      |
+| Config           | `from_config()` + dataclass configs                       | Pydantic `CameraConfig`                           |
+| Discovery        | `Camera.discover()` + `discover_all()`                    | Not built-in                                      |
+| Factory          | Optional `create_camera()` convenience                    | Not applicable                                    |
+| Sharing          | Explicit (pass instance)                                  | Explicit                                          |
+| Iterator         | Not implemented (explicit `read()` preferred)             | `__iter__` / `__next__`                           |
 
 We adopted LeRobot's three-tier read model and explicit `connect/disconnect` lifecycle. We add timestamped frames, depth/PTZ mixins, industrial camera support, device discovery, and multi-camera synchronization via `read_cameras()`.
 
