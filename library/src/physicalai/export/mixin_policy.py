@@ -50,6 +50,17 @@ class ExportablePolicyMixin:
     model: ExportableModelMixin
     _preprocessor: torch.nn.Module
 
+    @property
+    def extra_export_args(self) -> dict[str, ExportParameters]:
+        """Return extra arguments for the export process.
+
+        Override in subclasses to provide backend-specific export parameters.
+
+        Returns:
+            A dictionary mapping backend names to their export parameters.
+        """
+        return {}
+
     def _create_metadata(
         self,
         export_dir: Path,
@@ -631,8 +642,8 @@ class ExportablePolicyMixin:
             ExportParameters: Extra export arguments for the specified backend.
                 Returns an empty ExportParameters instance if no extra arguments are found.
         """
-        if backend in self.model.extra_export_args:
-            return self.model.extra_export_args[backend]
+        if backend in self.extra_export_args:
+            return self.extra_export_args[backend]
         return ExportBackend(backend).parameter_class()
 
     def _get_forward_arg_name(self) -> str:

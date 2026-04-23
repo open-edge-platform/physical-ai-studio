@@ -1,10 +1,12 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""End-to-end integration tests for LeRobot policies with explicit wrappers.
+"""End-to-end integration tests for LeRobot named policy aliases.
 
-This module validates the training pipeline for LeRobot policies that have
-explicit wrappers (ACT, Diffusion, Groot) - not the universal LeRobotPolicy.
+This module validates the training pipeline for the named
+:class:`~physicalai.policies.lerobot.policy.NamedLeRobotPolicy` aliases
+(``ACT``, ``Diffusion``, ``Groot``) -- the public class-per-policy API
+on top of :class:`~physicalai.policies.lerobot.policy.LeRobotPolicy`.
 
 Workflow:
     1. Train a policy using LeRobot ALOHA dataset
@@ -14,7 +16,7 @@ Note:
     LeRobot policies do not support export functionality.
     For export tests, see test_first_party_e2e.py.
 
-Tested Policies (have explicit wrappers):
+Tested Policies:
     Core (always run):
         - act: Action Chunking Transformer
         - diffusion: Diffusion Policy
@@ -31,10 +33,11 @@ from physicalai.policies import get_policy
 from physicalai.policies.base.policy import Policy
 from physicalai.train import Trainer
 
-# Core policies - fast, have explicit wrappers
+# Core policies — fast, named aliases of LeRobotPolicy
 CORE_POLICIES = ["act", "diffusion"]
 
-# VLA policies - large models requiring flash_attn + 24GB+ VRAM
+# VLA policies - large models requiring 24GB+ VRAM
+# groot additionally requires flash_attn (hardcoded in eagle2_hg_model)
 VLA_POLICIES = ["groot"]
 
 

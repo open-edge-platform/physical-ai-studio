@@ -179,7 +179,7 @@ class TestTorchAdapter:
         mock_model.return_value = torch.tensor([[1.0, 2.0]])
         mock_model.eval.return_value = mock_model
         mock_model.to.return_value = mock_model
-        mock_model.model.extra_export_args = {"torch": TorchExportParameters()}
+        mock_model.extra_export_args = {"torch": TorchExportParameters()}
 
         with patch("physicalai.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
             adapter = TorchAdapter(device="cpu")
@@ -210,7 +210,7 @@ class TestTorchAdapter:
         mock_model.eval.return_value = mock_model
         mock_model.to.return_value = mock_model
         mock_model.model.sample_input = {"state": torch.zeros(1, 2), "images": torch.zeros(1, 3, 96, 96)}
-        mock_model.model.extra_export_args = {"torch": TorchExportParameters()}
+        mock_model.extra_export_args = {"torch": TorchExportParameters()}
 
         with patch("physicalai.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
             adapter = TorchAdapter(device="cpu")
@@ -237,7 +237,7 @@ class TestTorchAdapter:
         mock_model.to.return_value = mock_model
         if hasattr(mock_model.model, "sample_input"):
             del mock_model.model.sample_input
-        mock_model.model.extra_export_args = {"torch": TorchExportParameters()}
+        mock_model.extra_export_args = {"torch": TorchExportParameters()}
 
         with patch("physicalai.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
             adapter = TorchAdapter(device="cpu")

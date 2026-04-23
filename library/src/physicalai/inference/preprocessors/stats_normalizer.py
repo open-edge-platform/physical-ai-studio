@@ -17,7 +17,7 @@ Supports two normalization modes:
 
 from __future__ import annotations
 
-from typing import override
+from typing import Any, override
 
 import numpy as np
 
@@ -101,7 +101,22 @@ class StatsNormalizer(Preprocessor):
         self._stats_path = resolved_path
         self._mode = mode
         self._features: set[str] = set(features) if features else set()
-        self._stats: dict[str, dict[str, np.ndarray]] | None = stats
+        self._stats: dict[str, dict[str, np.ndarray]] | None = self._enforce_numpy(stats) if stats else None
+
+    @staticmethod
+    def _enforce_numpy(stats: dict[str, dict[str, Any]]) -> dict[str, dict[str, np.ndarray]]:
+        """Convert every value in a nested stats dict to a numpy array.
+
+        Args:
+            stats: Nested dict mapping feature names to stat-name → value dicts.
+                Values may be lists, scalars, or already numpy arrays.
+
+        Returns:
+            A copy of the dict with all leaf values as ``np.ndarray``.
+        """
+        return {
+            feature: {stat: np.asarray(val) for stat, val in stat_dict.items()} for feature, stat_dict in stats.items()
+        }
 
     def load_stats(self) -> None:
         """Eagerly load stats from the safetensors file.
@@ -170,7 +185,7 @@ def _normalize(
     if mode == "mean_std":
         mean = stats["mean"]
         std = stats["std"]
-        return (tensor - mean) / (std + np.array(_EPS))
+        return (tensor - mean) / (std + _EPS)
 
     if mode == "min_max":
         min_val = stats["min"]
