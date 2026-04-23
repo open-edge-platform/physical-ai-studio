@@ -64,7 +64,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         time_sampling_offset: Offset for time sampling. Default: 0.001.
         min_period: Minimum period for sine-cosine positional encoding. Default: 4e-3.
         max_period: Maximum period for sine-cosine positional encoding. Default: 4.0.
-        use_random_input_noise: Use random noise as initial denoising input. Default: False.
+        use_random_input_noise: Use random noise as initial denoising input. Default: True.
         image_resolution: Target image resolution. Default: (224, 224).
         empty_cameras: Number of empty camera slots to add. Default: 0.
         tokenizer_max_length: Maximum tokenizer length. Default: 200.
@@ -72,7 +72,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         compile_model: Whether to use torch.compile. Default: False.
         compile_mode: Torch compile mode. Default: "max-autotune".
         freeze_vision_encoder: Freeze vision encoder. Default: False.
-        train_expert_only: Train only action expert. Default: True.
+        train_expert_only: Train only action expert. Default: False.
         normalization_mode: Normalization method for state/action features — ``"QUANTILES"``
             (percentile-based, robust to outliers) or ``"MEAN_STD"``. Default: ``"QUANTILES"``.
 
@@ -123,7 +123,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         time_sampling_offset: float = 0.001,
         min_period: float = 4e-3,
         max_period: float = 4.0,
-        use_random_input_noise: bool = False,
+        use_random_input_noise: bool = True,
         # Image preprocessing
         image_resolution: tuple[int, int] = (224, 224),
         empty_cameras: int = 0,
@@ -300,15 +300,15 @@ class Pi05(ExportablePolicyMixin, Policy):
         self,
         pretrained_name_or_path: str | Path,
         *,
-        dtype: Literal["bfloat16", "float32"] = "float32",
-        n_action_steps: int | None = 10,
+        dtype: Literal["bfloat16", "float32"] = "bfloat16",
+        n_action_steps: int | None = 50,
         max_state_dim: int | None = None,
         num_inference_steps: int | None = None,
-        gradient_checkpointing: bool = False,
+        gradient_checkpointing: bool = True,
         compile_model: bool = False,
         compile_mode: str | None = "max-autotune",
         freeze_vision_encoder: bool = False,
-        train_expert_only: bool = True,
+        train_expert_only: bool = False,
         optimizer_lr: float = 2.5e-5,
         optimizer_betas: tuple[float, float] = (0.9, 0.95),
         optimizer_eps: float = 1e-8,

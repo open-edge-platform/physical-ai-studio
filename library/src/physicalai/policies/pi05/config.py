@@ -29,7 +29,7 @@ class Pi05Config(Config):
     Attributes:
         paligemma_variant: Gemma variant for the VLM backbone. Defaults to "gemma_2b".
         action_expert_variant: Gemma variant for the action expert. Defaults to "gemma_300m".
-        dtype: Precision for model weights. Options: "bfloat16", "float32". Defaults to "float32".
+        dtype: Precision for model weights. Options: "bfloat16", "float32". Defaults to "bfloat16".
         n_obs_steps: Number of observation steps to use. Defaults to 1.
         chunk_size: Number of action steps to predict. Defaults to 50.
         n_action_steps: Number of action steps to execute. Defaults to 50.
@@ -45,7 +45,7 @@ class Pi05Config(Config):
         image_resolution: Target image resolution (height, width). Defaults to (224, 224).
         empty_cameras: Number of empty camera slots to add. Defaults to 0.
         tokenizer_max_length: Maximum length for tokenizer output. Defaults to 200.
-        gradient_checkpointing: Enable gradient checkpointing for memory optimization. Defaults to False.
+        gradient_checkpointing: Enable gradient checkpointing for memory optimization. Defaults to True.
         compile_model: Whether to use torch.compile. Defaults to False.
         compile_mode: Torch compile mode. Defaults to "max-autotune".
         freeze_vision_encoder: Whether to freeze vision encoder during training. Defaults to False.
@@ -72,7 +72,7 @@ class Pi05Config(Config):
 
     paligemma_variant: Literal["gemma_300m", "gemma_2b"] = "gemma_2b"
     action_expert_variant: Literal["gemma_300m", "gemma_2b"] = "gemma_300m"
-    dtype: Literal["bfloat16", "float32"] = "float32"
+    dtype: Literal["bfloat16", "float32"] = "bfloat16"
 
     n_obs_steps: int = 1
     chunk_size: int = 50
@@ -95,12 +95,12 @@ class Pi05Config(Config):
 
     tokenizer_max_length: int = 200
 
-    gradient_checkpointing: bool = False
+    gradient_checkpointing: bool = True
     compile_model: bool = False
-    compile_mode: str = "default"
+    compile_mode: str = "max-autotune"
 
     freeze_vision_encoder: bool = False
-    train_expert_only: bool = True
+    train_expert_only: bool = False
 
     normalization_mode: Literal["MEAN_STD", "QUANTILES"] = "QUANTILES"
 
