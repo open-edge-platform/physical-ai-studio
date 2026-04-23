@@ -33,7 +33,7 @@ class TestPi05Config:
         config = Pi05Config()
         assert config.paligemma_variant == "gemma_2b"
         assert config.action_expert_variant == "gemma_300m"
-        assert config.dtype == "float32"
+        assert config.dtype == "bfloat16"
         assert config.n_obs_steps == 1
         assert config.chunk_size == 50
         assert config.n_action_steps == 50
