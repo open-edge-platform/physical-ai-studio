@@ -1,0 +1,77 @@
+# PI0Fast Policy Training Configuration
+# Train Physical Intelligence PI0Fast (autoregressive action tokenizer) VLA using LeRobot's implementation.
+#
+# Usage:
+#   physicalai fit --config configs/lerobot/pi0fast.yaml
+#
+# Override parameters:
+#   physicalai fit --config configs/lerobot/pi0fast.yaml --model.chunk_size 50
+
+model:
+  class_path: physicalai.policies.lerobot.PI0Fast
+  init_args:
+    # Core architecture - chunk_size overridden from the LeRobot default of 50
+    # to keep the starter config compact; must match delta_timestamps length.
+    chunk_size: 10
+    n_action_steps: 10
+    n_obs_steps: 1
+
+    # PaliGemma VLM variants (PI0Fast does not use a separate action expert)
+    paligemma_variant: "gemma_2b" # Options: gemma_300m, gemma_2b
+    dtype: "float32" # Options: float32, bfloat16
+
+    # State / action dimensions - the policy pads to these values
+    max_state_dim: 32
+    max_action_dim: 32
+
+    # Action tokenizer - PI0Fast generates actions as discrete tokens.
+    # max_action_tokens caps the decoded sequence length; higher = finer-grained
+    # actions but slower inference.
+    max_action_tokens: 256
+    action_tokenizer_name: "lerobot/fast-action-tokenizer"
+    text_tokenizer_name: "google/paligemma-3b-pt-224"
+
+    # Vision preprocessing
+    image_resolution: [224, 224]
+    empty_cameras: 0
+
+    # Tokenizer
+    tokenizer_max_length: 200
+
+    # Decoding
+    temperature: 0.0 # 0.0 = greedy; >0 enables sampling
+    max_decoding_steps: 256
+    fast_skip_tokens: 128
+    validate_action_token_prefix: true
+    use_kv_cache: true
+
+    # Relative action prediction
+    use_relative_actions: false
+    relative_exclude_joints: ["gripper"]
+
+    # Optimization
+    optimizer_lr: 2.5e-5
+    optimizer_weight_decay: 0.01
+    optimizer_grad_clip_norm: 1.0
+    scheduler_warmup_steps: 1000
+    scheduler_decay_steps: 30000
+    scheduler_decay_lr: 2.5e-6
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: "lerobot/aloha_sim_transfer_cube_human"
+    train_batch_size: 8
+    data_format: "lerobot"
+    # PI0Fast uses action_delta_indices=range(chunk_size); n_obs_steps=1 means no
+    # observation offsets are needed. At 10 fps, 10 action offsets cover 1s.
+    delta_timestamps:
+      action: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+
+trainer:
+  max_epochs: 100
+  accelerator: gpu
+  devices: 1
+  precision: bf16-mixed
+  log_every_n_steps: 10
+  check_val_every_n_epoch: 10
