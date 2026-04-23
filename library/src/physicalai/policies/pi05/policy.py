@@ -135,7 +135,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         compile_mode: str = "max-autotune",
         # Finetuning
         freeze_vision_encoder: bool = False,
-        train_expert_only: bool = True,
+        train_expert_only: bool = False,
         # Normalization
         normalization_mode: Literal["MEAN_STD", "QUANTILES"] = "QUANTILES",
         # Optimizer
