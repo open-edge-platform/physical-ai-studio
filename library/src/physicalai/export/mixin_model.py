@@ -7,8 +7,6 @@ from abc import ABC, abstractmethod
 
 import torch
 
-from .backends import ExportParameters
-
 
 class ExportableModelMixin(torch.nn.Module, ABC):
     """Mixin class for exportable PyTorch models.
@@ -28,17 +26,4 @@ class ExportableModelMixin(torch.nn.Module, ABC):
 
         Returns:
             A dictionary mapping input names to example torch.Tensor objects.
-        """
-
-    @property
-    @abstractmethod
-    def extra_export_args(self) -> dict[str, ExportParameters]:
-        """Return extra arguments for the export process.
-
-        This method can be overridden to provide additional arguments that may be required by specific
-        export formats or tools. The returned dictionary can include any relevant information that
-        should be considered during export.
-
-        Returns:
-            A dictionary of extra arguments for the export process.
         """
