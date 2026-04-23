@@ -4,7 +4,7 @@ import { useMutation } from '@tanstack/react-query';
 import * as THREE from 'three';
 import URDFLoader, { URDFRobot } from 'urdf-loader';
 
-import { SchemaRobotType } from '../../api/openapi-spec';
+import { SchemaRobotType } from './robot-types';
 
 // ---------------------------------------------------------------------------
 // Path resolution

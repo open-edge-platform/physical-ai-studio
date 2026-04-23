@@ -72,6 +72,7 @@ _TrossenTypes = Literal[RobotType.TROSSEN_WIDOWXAI_LEADER, RobotType.TROSSEN_WID
 
 
 class BaseRobot(BaseIDModel):
+    id: Annotated[UUID, Field(description="Unique identifier")]
     created_at: datetime | None = Field(None)
     updated_at: datetime | None = Field(None)
 
