@@ -164,3 +164,84 @@ def test_declared_overrides_actually_differ_from_upstream(yaml_name: str) -> Non
         f"{yaml_name}: DELIBERATE_OVERRIDES contains fields that no longer "
         f"differ from upstream defaults; remove them: {sorted(no_op_overrides)}"
     )
+
+
+# Transformers ``PretrainedConfig`` injects framework metadata into every
+# ``to_dict()`` payload (commit hashes, attn implementation, dtype, etc.).
+# These are environment-derived, not Florence-2 schema, so they are dropped
+# before comparing the YAML-spelled subtree against upstream Florence-2
+# sub-config defaults.
+_TRANSFORMERS_RUNTIME_KEYS: frozenset[str] = frozenset(
+    {
+        "_attn_implementation_internal",
+        "_commit_hash",
+        "_experts_implementation_internal",
+        "_name_or_path",
+        "_output_attentions",
+        "architectures",
+        "chunk_size_feed_forward",
+        "dtype",
+        "id2label",
+        "is_encoder_decoder",
+        "label2id",
+        "model_type",
+        "output_attentions",
+        "output_hidden_states",
+        "problem_type",
+        "return_dict",
+        "torch_dtype",
+        "transformers_version",
+    },
+)
+
+
+def _strip_transformers_runtime(d: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in d.items() if k not in _TRANSFORMERS_RUNTIME_KEYS}
+
+
+def test_xvla_florence_subconfig_matches_upstream_defaults() -> None:
+    """The spelled-out florence_config subtree must match upstream Florence-2 defaults.
+
+    ``DELIBERATE_OVERRIDES['xvla.yaml']`` exempts ``florence_config`` from
+    the top-level dataclass comparison because upstream's ``{}`` default
+    is non-functional. Without this test, future drift in ``vision_config``
+    or ``text_config`` upstream defaults would be invisible. Here we
+    compare the YAML-spelled subtree against ``Florence2VisionConfig()`` /
+    ``Florence2LanguageConfig()`` defaults to keep the override honest.
+    """
+    from lerobot.policies.xvla.configuration_florence2 import (
+        Florence2LanguageConfig,
+        Florence2VisionConfig,
+    )
+
+    yaml_init_args = _load(CONFIGS_DIR / "xvla.yaml")["model"]["init_args"]
+    yaml_florence = yaml_init_args["florence_config"]
+    assert set(yaml_florence.keys()) == {"vision_config", "text_config"}, (
+        "xvla.yaml florence_config must declare exactly vision_config and text_config "
+        "(required by XVLAConfig.get_florence_config())"
+    )
+
+    for sub_name, sub_cls in [
+        ("vision_config", Florence2VisionConfig),
+        ("text_config", Florence2LanguageConfig),
+    ]:
+        upstream_defaults = _strip_transformers_runtime(sub_cls().to_dict())
+        yaml_subtree = _strip_transformers_runtime(yaml_florence[sub_name])
+
+        unknown_keys = set(yaml_subtree) - set(upstream_defaults)
+        assert not unknown_keys, (
+            f"xvla.yaml florence_config.{sub_name}: keys not present in "
+            f"{sub_cls.__name__} defaults (typo or upstream removal?): "
+            f"{sorted(unknown_keys)}"
+        )
+
+        drift = {
+            key: (upstream_defaults[key], yaml_subtree[key])
+            for key in yaml_subtree
+            if not _values_equivalent(yaml_subtree[key], upstream_defaults[key])
+        }
+        assert not drift, (
+            f"xvla.yaml florence_config.{sub_name}: spelled-out values drifted "
+            f"from {sub_cls.__name__} upstream defaults:\n"
+            + "\n".join(f"  {k}: upstream={u!r} yaml={y!r}" for k, (u, y) in sorted(drift.items()))
+        )
