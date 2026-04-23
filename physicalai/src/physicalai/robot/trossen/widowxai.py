@@ -211,9 +211,9 @@ class WidowXAI(Robot):
 
         if self._last_positions is not None:
             velocities = ((action - self._last_positions) / goal_time).tolist()
-            driver.set_all_positions(action.tolist(), goal_time, False, velocities)  # noqa: FBT003
+            driver.set_all_positions(action.tolist(), 3 * goal_time, False, velocities)  # noqa: FBT003
         else:
-            driver.set_all_positions(action.tolist(), goal_time, False)  # noqa: FBT003
+            driver.set_all_positions(action.tolist(), 3 * goal_time, False)  # noqa: FBT003
 
         self._last_positions = action.copy()
 
