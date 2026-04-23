@@ -58,9 +58,10 @@ data:
     train_batch_size: 8
     data_format: "lerobot"
     # PI0 uses action_delta_indices=range(chunk_size); n_obs_steps=1 means no
-    # observation offsets are needed. At 10 fps, 10 action offsets cover 1s.
+    # observation offsets are needed. The default repo_id is 50 fps -> step = 0.02 s,
+    # so 10 consecutive frames span [0.0, 0.18] s.
     delta_timestamps:
-      action: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+      action: [0.0, 0.02, 0.04, 0.06, 0.08, 0.10, 0.12, 0.14, 0.16, 0.18]
 
 trainer:
   max_epochs: 100
