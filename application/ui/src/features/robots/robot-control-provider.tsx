@@ -5,7 +5,6 @@ import { useMutation, UseMutationResult, useQueryClient } from '@tanstack/react-
 import { fetchClient } from '../../api/client';
 import { SchemaDatasetOutput, SchemaEnvironmentWithRelations, SchemaModel } from '../../api/openapi-spec';
 import useWebSocketWithResponse from '../../components/websockets/use-websocket-with-response';
-import { useDatasetId } from '../datasets/use-dataset';
 
 type FollowerSource = 'teleoperation' | 'model' | null;
 
@@ -82,11 +81,13 @@ type RobotControlContextValue = null | {
 
 const RobotControlContext = createContext<RobotControlContextValue>(null);
 
-const useRefreshEpisodes = () => {
+const useRefreshEpisodes = (dataset_id?: string) => {
     const queryClient = useQueryClient();
-    const { dataset_id } = useDatasetId();
 
     return () => {
+        if (dataset_id === undefined) {
+            return;
+        }
         queryClient.invalidateQueries({
             queryKey: [
                 'get',
@@ -119,7 +120,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         }
     };
 
-    const invalidateEpisodesQuery = useRefreshEpisodes();
+    const invalidateEpisodesQuery = useRefreshEpisodes(dataset?.id);
     const { sendJsonMessageAndWait, readyState } = useWebSocketWithResponse(
         fetchClient.PATH('/api/record/robot_control/ws'),
         {
