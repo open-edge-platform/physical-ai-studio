@@ -64,7 +64,25 @@ data:
     # exactly 16 action offsets. The default repo_id is 50 fps -> step = 0.02 s,
     # so 16 consecutive frames span [0.0, 0.30] s.
     delta_timestamps:
-      action: [0.0, 0.02, 0.04, 0.06, 0.08, 0.10, 0.12, 0.14, 0.16, 0.18, 0.20, 0.22, 0.24, 0.26, 0.28, 0.30]
+      action:
+        [
+          0.0,
+          0.02,
+          0.04,
+          0.06,
+          0.08,
+          0.10,
+          0.12,
+          0.14,
+          0.16,
+          0.18,
+          0.20,
+          0.22,
+          0.24,
+          0.26,
+          0.28,
+          0.30,
+        ]
 
 trainer:
   max_epochs: 100
