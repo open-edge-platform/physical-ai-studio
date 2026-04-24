@@ -29,13 +29,6 @@ from torchvision.ops.misc import FrozenBatchNorm2d
 from physicalai.data import Feature, FeatureType
 from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, Observation
 from physicalai.export import ExportableModelMixin
-from physicalai.export.backends import (
-    ExecuTorchExportParameters,
-    ExportParameters,
-    ONNXExportParameters,
-    OpenVINOExportParameters,
-    TorchExportParameters,
-)
 from physicalai.policies.base import Model
 from physicalai.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
 
@@ -244,41 +237,6 @@ class ACT(ExportableModelMixin, Model):
                 sample_input[IMAGES + "." + key] = torch.randn(1, *visual_feature.shape, device=device)
 
         return sample_input
-
-    @property
-    def extra_export_args(self) -> dict[str, ExportParameters]:
-        """Additional export arguments for model conversion.
-
-        This property provides extra configuration parameters needed when exporting
-        the model to different formats (ONNX, OpenVINO, and PyTorch).
-
-        Returns:
-            dict[str, ExportParameters]: A dictionary mapping format names to their export parameters.
-            Supported formats: 'onnx', 'openvino', 'executorch', 'torch'.
-
-        Example:
-            >>> model = ACT(input_features, output_features)
-            >>> export_args = model.extra_export_args
-            >>> onnx_args = export_args['onnx']
-            >>> print(onnx_args.exporter_kwargs)
-            {'output_names': ['action']}
-        """
-        extra_args: dict[str, ExportParameters] = {}
-        extra_args["onnx"] = ONNXExportParameters(
-            exporter_kwargs={
-                "output_names": ["action"],
-            },
-        )
-        extra_args["openvino"] = OpenVINOExportParameters(
-            outputs=["action"],
-            export_tokenizer=False,
-            compress_to_fp16=False,
-            exporter_kwargs={},
-        )
-        extra_args["executorch"] = ExecuTorchExportParameters()
-        extra_args["torch"] = TorchExportParameters()
-
-        return extra_args
 
     def forward(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]] | torch.Tensor:
         """Forward pass through the ACT model.

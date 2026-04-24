@@ -79,9 +79,8 @@ class TorchAdapter(RuntimeAdapter):
 
             self._policy = policy_class.load_from_checkpoint(model_path, map_location="cpu").to(self.device).eval()
 
-            policy_model: Any = self._policy.model
-            if hasattr(policy_model, "extra_export_args") and "torch" in policy_model.extra_export_args:
-                torch_export_args: TorchExportParameters = policy_model.extra_export_args["torch"]
+            if hasattr(self._policy, "extra_export_args") and "torch" in self._policy.extra_export_args:
+                torch_export_args: TorchExportParameters = self._policy.extra_export_args["torch"]
             else:
                 torch_export_args = TorchExportParameters()
 

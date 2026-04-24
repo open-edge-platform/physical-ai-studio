@@ -57,7 +57,7 @@ def get_policy(policy_name: str, *, source: str = "physicalai", **kwargs) -> Pol
     Args:
         policy_name: Name of the policy to create. Supported values depend on source:
             - physicalai: "act", "dummy", "groot", "pi0", "pi05", "smolvla"
-            - lerobot: "act", "diffusion", "vqbet", "tdmpc", "sac", etc.
+            - lerobot: "act", "diffusion", "smolvla", "pi0", "pi05", "pi0_fast", "groot", "xvla"
         source: Where the policy implementation comes from. Options:
             - "physicalai": First-party implementations (default)
             - "lerobot": LeRobot framework wrappers
@@ -85,11 +85,11 @@ def get_policy(policy_name: str, *, source: str = "physicalai", **kwargs) -> Pol
 
         Create LeRobot ACT policy explicitly:
 
-            >>> policy = get_policy("act", source="lerobot", learning_rate=1e-4)
+            >>> policy = get_policy("act", source="lerobot", optimizer_lr=1e-4)
 
         Create LeRobot-only policy (Diffusion):
 
-            >>> policy = get_policy("diffusion", source="lerobot", learning_rate=1e-4)
+            >>> policy = get_policy("diffusion", source="lerobot", optimizer_lr=1e-4)
 
         Use in parameterized tests:
 

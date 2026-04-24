@@ -20,13 +20,6 @@ from torch import nn
 from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, TASK, FeatureType
 from physicalai.export import ExportableModelMixin
-from physicalai.export.backends import (
-    ExportParameters,
-    ONNXExportParameters,
-    OpenVINOExportParameters,
-    TorchExportParameters,
-)
-from physicalai.inference.manifest import ComponentSpec
 from physicalai.policies.base import Model
 
 if TYPE_CHECKING:
@@ -71,7 +64,6 @@ class SmolVLAModel(ExportableModelMixin, Model):
         chunk_size: int = 50,
         max_state_dim: int = 32,
         max_action_dim: int = 32,
-        resize_imgs_with_padding: tuple[int, int] | None = (512, 512),
         adapt_to_pi_aloha: bool = False,
         num_steps: int = 10,
         use_cache: bool = True,
@@ -95,44 +87,41 @@ class SmolVLAModel(ExportableModelMixin, Model):
     ) -> None:
         """Initialize the SmolVLA model.
 
-        Args:
-            dataset_stats: Dictionary containing dataset statistics with keys mapping to
-                dictionaries that hold statistics values (lists of floats), string metadata,
-                or tuple information used for normalization and preprocessing.
-            chunk_size: Size of action chunks for prediction.
-            max_state_dim: Maximum dimension for state vectors; shorter vectors will be padded.
-            max_action_dim: Maximum dimension for action vectors; shorter vectors will be padded.
-            resize_imgs_with_padding: Target size (height, width) for image preprocessing with padding.
-            adapt_to_pi_aloha: Whether to convert joint and gripper values from standard Aloha space
-                to pi internal runtime space.
-            num_steps: Number of decoding steps for flow matching.
-            use_cache: Whether to use attention caching for efficiency.
-            freeze_vision_encoder: Whether to freeze the vision encoder during fine-tuning.
-            train_expert_only: Whether to train only the action expert during fine-tuning.
-            train_state_proj: Whether to train the state projection layer.
-            vlm_model_name: Name or path of the VLM backbone model to use.
-            load_vlm_weights: Whether to load pretrained VLM weights.
-            add_image_special_tokens: Whether to add special tokens around image features.
-            attention_mode: Type of attention mechanism to use.
-            prefix_length: Length of prefix for attention. Negative values indicate default behavior.
-            num_expert_layers: Number of layers in the action expert. Values <= 0 use same number as VLM.
-            num_vlm_layers: Number of VLM layers to use (first N layers).
-            self_attn_every_n_layers: Frequency of self-attention layer interleaving.
-            expert_width_multiplier: Multiplier for action expert hidden size relative to VLM.
-            min_period: Minimum period for sine-cosine positional encoding of timesteps.
-            max_period: Maximum period for sine-cosine positional encoding of timesteps.
-            use_random_input_noise: Whether to use random noise as the initial input for the
-                denoising process during inference. If False, zeros are used instead.
-            tokenizer_max_length: Maximum token length for the tokenizer. Default: 48.
-            compile_model: Whether to apply torch.compile to the model.
+            Args:
+                dataset_stats: Dictionary containing dataset statistics with keys mapping to
+                    dictionaries that hold statistics values (lists of floats), string metadata,
+                    or tuple information used for normalization and preprocessing.
+                chunk_size: Size of action chunks for prediction.
+                max_state_dim: Maximum dimension for state vectors; shorter vectors will be padded.
+                max_action_dim: Maximum dimension for action vectors; shorter vectors will be padded.
+                adapt_to_pi_aloha: Whether to convert joint and gripper values from standard Aloha space
+                    to pi internal runtime space.
+                num_steps: Number of decoding steps for flow matching.
+                use_cache: Whether to use attention caching for efficiency.
+                freeze_vision_encoder: Whether to freeze the vision encoder during fine-tuning.
+                train_expert_only: Whether to train only the action expert during fine-tuning.
+                train_state_proj: Whether to train the state projection layer.
+                vlm_model_name: Name or path of the VLM backbone model to use.
+                load_vlm_weights: Whether to load pretrained VLM weights.
+                add_image_special_tokens: Whether to add special tokens around image features.
+                attention_mode: Type of attention mechanism to use.
+                prefix_length: Length of prefix for attention. Negative values indicate default behavior.
+                num_expert_layers: Number of layers in the action expert. Values <= 0 use same number as VLM.
+                num_vlm_layers: Number of VLM layers to use (first N layers).
+                self_attn_every_n_layers: Frequency of self-attention layer interleaving.
+                expert_width_multiplier: Multiplier for action expert hidden size relative to VLM.
+                min_period: Minimum period for sine-cosine positional encoding of timesteps.
+                max_period: Maximum period for sine-cosine positional encoding of timesteps.
+                use_random_input_noise: Whether to use random noise as the initial input for the
+                    denoising process during inference. If False, zeros are used instead.
+        tokenizer_max_length: Maximum token length for the tokenizer. Default: 48.
+        compile_model: Whether to apply torch.compile to the model.
         """
         super().__init__()
         self._chunk_size = chunk_size
         self._max_state_dim = max_state_dim
         self._max_action_dim = max_action_dim
-        self._resize_imgs_with_padding = resize_imgs_with_padding
         self._adapt_to_pi_aloha = adapt_to_pi_aloha
-        self._tokenizer_max_length = tokenizer_max_length
         self._vlm_model_name = vlm_model_name
         self._model = VLAFlowMatching(
             chunk_size=chunk_size,
@@ -334,75 +323,6 @@ class SmolVLAModel(ExportableModelMixin, Model):
         sample_input[TASK] = ["sample_task"]
 
         return sample_input
-
-    @property
-    def extra_export_args(self) -> dict[str, ExportParameters]:
-        """Additional export arguments for model conversion.
-
-        This property provides extra configuration parameters needed when exporting
-        the model to different formats (ONNX, OpenVINO, and PyTorch).
-
-        Returns:
-            dict[str, ExportParameters]: A dictionary mapping format names to their export parameters.
-            Supported formats: 'onnx', 'openvino', 'torch'.
-
-        Example:
-            >>> model = SmolVLA(input_features, output_features)
-            >>> export_args = model.extra_export_args
-            >>> onnx_args = export_args['onnx']
-            >>> print(onnx_args.exporter_kwargs)
-            {'output_names': ['action']}
-        """
-        extra_args: dict[str, ExportParameters] = {}
-        base_preproc_specs = [
-            ComponentSpec(type="smolvla_resize", image_resolution=self._resize_imgs_with_padding),
-            ComponentSpec(type="new_line"),
-            ComponentSpec(
-                type="normalize",
-                stats={STATE: self._dataset_stats[f"observation.{STATE}"]},
-                mode="mean_std",
-            ),
-        ]
-        postproc_specs = [
-            ComponentSpec(
-                type="denormalize",
-                stats={ACTION: self._dataset_stats[ACTION]},
-                mode="mean_std",
-            ),
-        ]
-        extra_args["onnx"] = ONNXExportParameters(
-            exporter_kwargs={
-                "output_names": [ACTION],
-            },
-            preprocessors_specs=[
-                *base_preproc_specs,
-                ComponentSpec(
-                    type="hf_tokenizer",
-                    tokenizer_name=self._vlm_model_name,
-                    revision="7b375e1b73b11138ff12fe22c8f2822d8fe03467",
-                    max_token_len=self._tokenizer_max_length,
-                ),
-            ],
-            postprocessors_specs=postproc_specs,
-            export_tokenizer=False,
-        )
-        extra_args["openvino"] = OpenVINOExportParameters(
-            outputs=[ACTION],
-            compress_to_fp16=False,
-            export_tokenizer=True,
-            exporter_kwargs={},
-            preprocessors_specs=[
-                *base_preproc_specs,
-                ComponentSpec(
-                    type="ov_tokenizer",
-                    artifact="tokenizer.xml",
-                ),
-            ],
-            postprocessors_specs=postproc_specs,
-        )
-        extra_args["torch"] = TorchExportParameters()
-
-        return extra_args
 
     @property
     def reward_delta_indices(self) -> None:
@@ -932,7 +852,8 @@ class VLAFlowMatching(nn.Module):
         ) in enumerate(zip(images, img_masks, strict=False)):
             if self.add_image_special_tokens:
                 image_start_token = (
-                    self.vlm_with_expert.embed_language_tokens(
+                    self.vlm_with_expert
+                    .embed_language_tokens(
                         self.global_image_start_token.to(device=self.vlm_with_expert.vlm.device),
                     )
                     .unsqueeze(0)
@@ -962,7 +883,8 @@ class VLAFlowMatching(nn.Module):
             att_masks += [0] * (num_img_embs)
             if self.add_image_special_tokens:
                 image_end_token = (
-                    self.vlm_with_expert.embed_language_tokens(
+                    self.vlm_with_expert
+                    .embed_language_tokens(
                         self.image_end_token.to(device=self.vlm_with_expert.vlm.device),
                     )
                     .unsqueeze(0)
@@ -1455,7 +1377,8 @@ class _SmolVLMWithExpertModel(nn.Module):
         patch_attention_mask = None
         # Get sequence from the vision encoder
         image_hidden_states = (
-            self.get_vlm_model()
+            self
+            .get_vlm_model()
             .vision_model(
                 pixel_values=image.to(dtype=self.get_vlm_model().vision_model.dtype),
                 patch_attention_mask=patch_attention_mask,

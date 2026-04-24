@@ -139,11 +139,14 @@ class ExportWrapper(ExportablePolicyMixin):
     def __init__(self, model: torch.nn.Module):
         self.model = model
         self._preprocessor = IdentityPreprocessor()
-        if not hasattr(model, "extra_export_args"):
-            model.extra_export_args = {
-                ExportBackend.ONNX: ONNXExportParameters(),
-                ExportBackend.OPENVINO: OpenVINOExportParameters(),
-            }
+        self._extra_export_args = {
+            ExportBackend.ONNX: ONNXExportParameters(),
+            ExportBackend.OPENVINO: OpenVINOExportParameters(),
+        }
+
+    @property
+    def extra_export_args(self):
+        return self._extra_export_args
 
     def _get_default_export_input_sample(self) -> dict[str, torch.Tensor] | None:
         if not hasattr(self.model, "sample_input"):
@@ -307,8 +310,8 @@ class TestToOpenVINO:
         """Test that provided kwargs override model's extra_export_args."""
         model = ModelWithSampleInput(input_dim=10, output_dim=5)
 
-        model.extra_export_args = {}
         wrapper = ExportWrapper(model)
+        wrapper._extra_export_args = {}
         output_path = tmp_path / "model.xml"
         wrapper.to_openvino(output_path)
 
@@ -379,12 +382,12 @@ class TestToOpenVINO:
     def test_to_openvino_via_export_method(self, tmp_path, fp16):
         """Test OpenVINO export using the generic export method."""
         model = ModelWithSampleInput(input_dim=10, output_dim=5)
-        model.extra_export_args = {
+        wrapper = ExportWrapper(model)
+        wrapper._extra_export_args = {
             "openvino": OpenVINOExportParameters(
                 compress_to_fp16=fp16,
             ),
         }
-        wrapper = ExportWrapper(model)
 
         output_path = tmp_path / "model.xml"
         wrapper.export(backend="openvino", output_path=output_path)
@@ -395,12 +398,12 @@ class TestToOpenVINO:
     def test_to_openvino_via_onnx(self, tmp_path):
         """Test OpenVINO export via ONNX intermediate model."""
         model = ModelWithSampleInput(input_dim=10, output_dim=5)
-        model.extra_export_args = {
+        wrapper = ExportWrapper(model)
+        wrapper._extra_export_args = {
             ExportBackend.OPENVINO: OpenVINOExportParameters(
                 via_onnx=True,
             ),
         }
-        wrapper = ExportWrapper(model)
 
         output_path = tmp_path / "model.xml"
         wrapper.to_openvino(output_path)

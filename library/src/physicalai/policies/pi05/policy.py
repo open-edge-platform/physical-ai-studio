@@ -17,8 +17,15 @@ from huggingface_hub import hf_hub_download
 from safetensors.torch import load_file
 
 from physicalai.data.dataset import Dataset
-from physicalai.data.observation import ACTION
+from physicalai.data.observation import ACTION, STATE
 from physicalai.export import ExportablePolicyMixin, ExportBackend
+from physicalai.export.backends import (
+    ExportParameters,
+    ONNXExportParameters,
+    OpenVINOExportParameters,
+    TorchExportParameters,
+)
+from physicalai.inference.manifest import ComponentSpec
 from physicalai.policies.base import Policy
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
@@ -257,7 +264,6 @@ class Pi05(ExportablePolicyMixin, Policy):
             gradient_checkpointing=self.config.gradient_checkpointing,
             compile_model=self.config.compile_model,
             use_random_input_noise=self.config.use_random_input_noise,
-            normalization_mode=self.config.normalization_mode.lower(),
         )
         if weights_file is not None:
             # load raw state dict
@@ -652,3 +658,75 @@ class Pi05(ExportablePolicyMixin, Policy):
             list[str | ExportBackend]: A list of supported export backends.
         """
         return [ExportBackend.TORCH, ExportBackend.OPENVINO]
+
+    @property
+    def extra_export_args(self) -> dict[str, ExportParameters]:
+        """Additional export arguments for model conversion.
+
+        Returns:
+            dict[str, ExportParameters]: A dictionary mapping format names to their export parameters.
+
+        Raises:
+            ValueError: If dataset stats are not available for export.
+        """
+        if self._dataset_stats is None:
+            msg = (
+                "Dataset stats are required for export. Initialize the policy with dataset_stats"
+                " or train for at least one epoch to populate them."
+            )
+            raise ValueError(msg)
+
+        base_preproc_specs = [
+            ComponentSpec(
+                type="pi05",
+                image_resolution=self.config.image_resolution,
+                empty_cameras=self.config.empty_cameras,
+            ),
+            ComponentSpec(
+                type="normalize",
+                stats={STATE: self._dataset_stats[f"observation.{STATE}"]},
+                mode=self.config.normalization_mode.lower(),
+            ),
+        ]
+        postproc_specs = [
+            ComponentSpec(
+                type="denormalize",
+                stats={ACTION: self._dataset_stats[ACTION]},
+                mode=self.config.normalization_mode.lower(),
+            ),
+        ]
+        extra_args: dict[str, ExportParameters] = {}
+        extra_args["onnx"] = ONNXExportParameters(
+            exporter_kwargs={
+                "output_names": [ACTION],
+            },
+            export_tokenizer=False,
+            preprocessors_specs=[
+                *base_preproc_specs,
+                ComponentSpec(
+                    type="hf_tokenizer",
+                    tokenizer_name="google/paligemma-3b-pt-224",
+                    revision="35e4f46485b4d07967e7e9935bc3786aad50687c",
+                    max_token_len=self.config.tokenizer_max_length,
+                ),
+            ],
+            postprocessors_specs=postproc_specs,
+        )
+        extra_args["openvino"] = OpenVINOExportParameters(
+            outputs=[ACTION],
+            compress_to_fp16=True,
+            via_onnx=True,
+            export_tokenizer=True,
+            exporter_kwargs={},
+            preprocessors_specs=[
+                *base_preproc_specs,
+                ComponentSpec(
+                    type="ov_tokenizer",
+                    artifact="tokenizer.xml",
+                ),
+            ],
+            postprocessors_specs=postproc_specs,
+        )
+        extra_args["torch"] = TorchExportParameters()
+
+        return extra_args
