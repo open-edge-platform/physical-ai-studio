@@ -1,7 +1,7 @@
 from typing import Literal
 
 from physicalai.robot.so101 import SO101, SO101Calibration
-from physicalai.robot.trossen import WidowXAI
+from physicalai.robot.trossen import BimanualWidowXAI, WidowXAI
 
 from exceptions import ResourceNotFoundError, ResourceType
 from robots.robot_client import RobotClient
@@ -53,9 +53,8 @@ class RobotClientFactory:
     ) -> BimanualWidowXAIAdapter:
         left_driver = WidowXAI(ip=robot.payload.connection_string_left, role=mode)
         right_driver = WidowXAI(ip=robot.payload.connection_string_right, role=mode)
-        left_adapter = WidowXAIAdapter(robot=left_driver, mode=mode)
-        right_adapter = WidowXAIAdapter(robot=right_driver, mode=mode)
-        return BimanualWidowXAIAdapter(left=left_adapter, right=right_adapter, mode=mode)
+        bimanual_robot = BimanualWidowXAI(left=left_driver, right=right_driver)
+        return BimanualWidowXAIAdapter(robot=bimanual_robot, mode=mode)
 
     async def _build_so101(self, robot: SO101Robot) -> SO101Adapter:
         port = await self._find_robot_port(robot)

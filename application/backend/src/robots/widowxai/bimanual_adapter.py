@@ -3,32 +3,39 @@
 
 """Bimanual WidowXAI adapter.
 
-Composes two :class:`WidowXAIAdapter` instances (left + right) behind the
-backend's :class:`RobotClient` interface, prefixing all keys with
-``left_`` / ``right_`` respectively.
+Wraps a :class:`~physicalai.robot.trossen.BimanualWidowXAI` driver behind the
+backend's :class:`RobotClient` interface with joint/unit conversion and
+async-safe hardware access.
 """
 
+import asyncio
 from typing import Literal
 
+import numpy as np
+from loguru import logger
+from physicalai.robot.trossen import BimanualWidowXAI, BimanualWidowXAIObservation
+
 from robots.robot_client import RobotClient
-from robots.widowxai.adapter import WidowXAIAdapter
 from schemas.robot import RobotType
+
+HARDWARE_TIMEOUT_CONNECT = 10.0
+HARDWARE_TIMEOUT_COMMAND = 5.0
 
 
 class BimanualWidowXAIAdapter(RobotClient):
-    """Two-arm WidowXAI adapter that merges left/right state with prefixed keys."""
+    """Adapt a :class:`BimanualWidowXAI` to the backend's RobotClient API.
+
+    Read path converts radians to app-facing degrees (except gripper joints),
+    and write path converts app-facing degrees back to radians.
+    """
 
     name = "BimanualWidowXAI"
 
-    def __init__(
-        self,
-        left: WidowXAIAdapter,
-        right: WidowXAIAdapter,
-        mode: Literal["follower", "leader"],
-    ) -> None:
-        self._left = left
-        self._right = right
+    def __init__(self, robot: BimanualWidowXAI, mode: Literal["follower", "leader"]) -> None:
+        self._robot = robot
         self._mode = mode
+        self._bus_lock = asyncio.Lock()
+        self.is_controlled: bool = mode == "follower"
 
     # ------------------------------------------------------------------
     # RobotClient protocol
@@ -42,89 +49,144 @@ class BimanualWidowXAIAdapter(RobotClient):
 
     @property
     def is_connected(self) -> bool:
-        return self._left.is_connected and self._right.is_connected
+        return self._robot.is_connected()
 
     async def connect(self) -> None:
-        await self._left.connect()
-        await self._right.connect()
+        logger.info(f"Connecting BimanualWidowXAI {self._mode}")
+        try:
+            async with self._bus_lock, asyncio.timeout(HARDWARE_TIMEOUT_CONNECT):
+                await asyncio.to_thread(self._robot.connect)
+            self.is_controlled = self._mode == "follower"
+        except TimeoutError:
+            logger.error("Timeout connecting to bimanual robot")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to connect to bimanual robot: {e}")
+            raise
 
     async def disconnect(self) -> None:
-        await self._left.disconnect()
-        await self._right.disconnect()
+        logger.info(f"Disconnecting BimanualWidowXAI {self._mode}")
+        try:
+            async with self._bus_lock, asyncio.timeout(HARDWARE_TIMEOUT_COMMAND):
+                await asyncio.to_thread(self._robot.disconnect)
+            logger.info("Bimanual robot disconnected")
+        except TimeoutError:
+            logger.warning("Timeout during bimanual robot disconnect - forcing cleanup")
+        except Exception as e:
+            logger.error(f"Error during bimanual robot disconnect: {e}")
 
     async def ping(self) -> dict:
         return self._create_event("pong")
 
     # ------------------------------------------------------------------
+    # State read/write helpers
+    # ------------------------------------------------------------------
+
+    def _observation_to_state(self, obs: BimanualWidowXAIObservation) -> dict[str, float]:
+        result: dict[str, float] = {}
+        sensor_data = obs.sensor_data
+        if sensor_data is None:
+            raise RuntimeError("Bimanual robot observation is missing sensor data")
+
+        for i, name in enumerate(self._robot.joint_names):
+            # name is e.g. "left_gripper" or "right_shoulder_pan"
+            bare = name.split("_", 1)[1]  # strip left_/right_ prefix for gripper check
+            if bare == "gripper":
+                pos = float(obs.joint_positions[i])
+            else:
+                pos = float(np.rad2deg(obs.joint_positions[i]))
+
+            vel = float(sensor_data["velocities"][i])
+            result[f"{name}.pos"] = pos
+            result[f"{name}.vel"] = vel
+
+        return result
+
+    def _state_to_action(self, joints: dict) -> np.ndarray:
+        positions = np.zeros(len(self._robot.joint_names), dtype=np.float64)
+
+        for i, name in enumerate(self._robot.joint_names):
+            bare = name.split("_", 1)[1]
+            if bare == "gripper":
+                positions[i] = joints[f"{name}.pos"]
+            else:
+                positions[i] = np.deg2rad(joints[f"{name}.pos"])
+
+        return positions
+
+    # ------------------------------------------------------------------
     # State read/write
     # ------------------------------------------------------------------
 
-    async def read_state(self, *, normalize: bool = True) -> dict:
-        left_result = await self._left.read_state(normalize=normalize)
-        right_result = await self._right.read_state(normalize=normalize)
-
-        merged: dict[str, float] = {}
-        for k, v in left_result["state"].items():
-            merged[f"left_{k}"] = v
-        for k, v in right_result["state"].items():
-            merged[f"right_{k}"] = v
-
-        return self._create_event(
-            "state_was_updated",
-            state=merged,
-            is_controlled=left_result.get("is_controlled", False),
-        )
+    async def read_state(self, *, normalize: bool = True) -> dict:  # noqa: ARG002
+        try:
+            async with self._bus_lock, asyncio.timeout(HARDWARE_TIMEOUT_COMMAND):
+                obs = await asyncio.to_thread(self._robot.get_observation)
+            state = self._observation_to_state(obs)
+            return self._create_event(
+                "state_was_updated",
+                state=state,
+                is_controlled=self.is_controlled,
+            )
+        except Exception as e:
+            logger.error(f"Bimanual robot read error: {e}")
+            raise
 
     async def read_forces(self) -> dict | None:
-        left_result = await self._left.read_forces()
-        right_result = await self._right.read_forces()
-
-        if left_result is None and right_result is None:
+        if self._mode != "follower":
             return None
 
-        merged: dict[str, float] = {}
-        if left_result is not None:
-            for k, v in left_result["state"].items():
-                merged[f"left_{k}"] = v
-        if right_result is not None:
-            for k, v in right_result["state"].items():
-                merged[f"right_{k}"] = v
+        async with self._bus_lock, asyncio.timeout(HARDWARE_TIMEOUT_COMMAND):
+            obs = await asyncio.to_thread(self._robot.get_observation)
+
+        sensor_data = obs.sensor_data
+        if sensor_data is None:
+            raise RuntimeError("Bimanual robot observation is missing sensor data")
+
+        forces: dict[str, float] = {}
+        for i, name in enumerate(self._robot.joint_names):
+            forces[f"{name}.eff"] = float(sensor_data["efforts"][i])
 
         return self._create_event(
             "force_was_updated",
-            state=merged,
-            is_controlled=self._left.is_controlled if hasattr(self._left, "is_controlled") else False,
+            state=forces,
+            is_controlled=self.is_controlled,
         )
 
-    def _split_prefixed(self, data: dict, prefix: str) -> dict:
-        """Extract keys that start with *prefix* and strip the prefix."""
-        return {k[len(prefix) :]: v for k, v in data.items() if k.startswith(prefix)}
-
     async def set_joints_state(self, joints: dict, goal_time: float) -> dict:
-        left_joints = self._split_prefixed(joints, "left_")
-        right_joints = self._split_prefixed(joints, "right_")
-        await self._left.set_joints_state(left_joints, goal_time)
-        await self._right.set_joints_state(right_joints, goal_time)
+        if self._mode == "leader":
+            raise RuntimeError("Cannot send actions to a leader robot")
+
+        positions = self._state_to_action(joints)
+
+        async with self._bus_lock, asyncio.timeout(HARDWARE_TIMEOUT_COMMAND):
+            await asyncio.to_thread(self._robot.send_action, positions, goal_time=goal_time)
+
         return self._create_event("joints_state_was_set", joints=joints)
 
     async def set_forces(self, forces: dict) -> dict:
-        left_forces = self._split_prefixed(forces, "left_")
-        right_forces = self._split_prefixed(forces, "right_")
-        await self._left.set_forces(left_forces)
-        await self._right.set_forces(right_forces)
+        if self._mode == "follower":
+            logger.warning("Cannot send forces to a follower robot")
+            return forces
+
+        efforts = np.zeros(len(self._robot.joint_names), dtype=np.float64)
+        for i, name in enumerate(self._robot.joint_names):
+            efforts[i] = forces.get(f"{name}.eff", 0.0)
+
+        async with self._bus_lock, asyncio.timeout(HARDWARE_TIMEOUT_COMMAND):
+            await asyncio.to_thread(self._robot.set_external_efforts, efforts, 0.1)
+
         return forces
 
     async def enable_torque(self) -> dict:
-        await self._left.enable_torque()
-        await self._right.enable_torque()
+        self.is_controlled = True
         return self._create_event("torque_was_enabled")
 
     async def disable_torque(self) -> dict:
-        await self._left.disable_torque()
-        await self._right.disable_torque()
+        self.is_controlled = False
         return self._create_event("torque_was_disabled")
 
     def features(self) -> list[str]:
-        left_features = [f"left_{f}" for f in self._left.features()]
-        right_features = [f"right_{f}" for f in self._right.features()]
-        return left_features + right_features
+        positions: list[str] = [f"{name}.pos" for name in self._robot.joint_names]
+        velocities: list[str] = [f"{name}.vel" for name in self._robot.joint_names]
+        return positions + velocities

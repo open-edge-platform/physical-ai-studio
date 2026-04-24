@@ -4,12 +4,12 @@
 """Tests for BimanualWidowXAIAdapter."""
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, PropertyMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import numpy as np
 import pytest
 from physicalai.robot.trossen.constants import WIDOWXAI_JOINT_ORDER
 
-from robots.widowxai.adapter import WidowXAIAdapter
 from robots.widowxai.bimanual_adapter import BimanualWidowXAIAdapter
 from schemas.robot import RobotType
 
@@ -17,58 +17,33 @@ from schemas.robot import RobotType
 # Helpers
 # ---------------------------------------------------------------------------
 
-
-def _make_inner_adapter(mode="follower"):
-    """Return a fully-mocked WidowXAIAdapter."""
-    adapter = MagicMock(spec=WidowXAIAdapter)
-    adapter.is_controlled = mode == "follower"
-    type(adapter).is_connected = PropertyMock(return_value=True)
-    adapter.features.return_value = [f"{n}.pos" for n in WIDOWXAI_JOINT_ORDER] + [
-        f"{n}.vel" for n in WIDOWXAI_JOINT_ORDER
-    ]
-
-    # Async methods
-    adapter.connect = AsyncMock()
-    adapter.disconnect = AsyncMock()
-    adapter.enable_torque = AsyncMock(return_value={"event": "torque_was_enabled"})
-    adapter.disable_torque = AsyncMock(return_value={"event": "torque_was_disabled"})
-    adapter.set_joints_state = AsyncMock(return_value={"event": "joints_state_was_set", "joints": {}})
-    adapter.set_forces = AsyncMock(return_value={})
-
-    # read_state returns a realistic event dict
-    joint_names = list(WIDOWXAI_JOINT_ORDER)
-    state = {f"{n}.pos": 0.0 for n in joint_names}
-    state.update({f"{n}.vel": 0.0 for n in joint_names})
-    adapter.read_state = AsyncMock(
-        return_value={
-            "event": "state_was_updated",
-            "state": state,
-            "is_controlled": mode == "follower",
-            "timestamp": 1000.0,
-        }
-    )
-
-    forces = {f"{n}.eff": 0.0 for n in joint_names}
-    adapter.read_forces = AsyncMock(
-        return_value=(
-            None
-            if mode == "leader"
-            else {
-                "event": "force_was_updated",
-                "state": forces,
-                "is_controlled": True,
-                "timestamp": 1000.0,
-            }
-        )
-    )
-    return adapter
+NUM_JOINTS = len(WIDOWXAI_JOINT_ORDER)  # 7 per arm, 14 total
 
 
-def _make_bimanual(mode="follower"):
-    left = _make_inner_adapter(mode)
-    right = _make_inner_adapter(mode)
-    bimanual = BimanualWidowXAIAdapter(left=left, right=right, mode=mode)
-    return bimanual, left, right
+def _make_bimanual_robot(mode: str = "follower") -> MagicMock:
+    """Return a mocked BimanualWidowXAI robot."""
+    joint_names = [f"left_{n}" for n in WIDOWXAI_JOINT_ORDER] + [f"right_{n}" for n in WIDOWXAI_JOINT_ORDER]
+    robot = MagicMock()
+    robot.joint_names = joint_names
+    robot.is_connected.return_value = True
+    robot.role = mode
+
+    velocities = np.zeros(2 * NUM_JOINTS, dtype=np.float32)
+    efforts = np.zeros(2 * NUM_JOINTS, dtype=np.float32)
+    positions = np.zeros(2 * NUM_JOINTS, dtype=np.float32)
+
+    obs = MagicMock()
+    obs.joint_positions = positions
+    obs.timestamp = 1000.0
+    obs.sensor_data = {"velocities": velocities, "efforts": efforts}
+    robot.get_observation.return_value = obs
+
+    return robot
+
+
+def _make_adapter(mode: str = "follower") -> BimanualWidowXAIAdapter:
+    robot = _make_bimanual_robot(mode)
+    return BimanualWidowXAIAdapter(robot=robot, mode=mode)
 
 
 # ---------------------------------------------------------------------------
@@ -78,30 +53,28 @@ def _make_bimanual(mode="follower"):
 
 class TestProperties:
     def test_robot_type_follower(self):
-        bim, _, _ = _make_bimanual("follower")
-        assert bim.robot_type == RobotType.TROSSEN_BIMANUAL_WIDOWXAI_FOLLOWER
+        adapter = _make_adapter("follower")
+        assert adapter.robot_type == RobotType.TROSSEN_BIMANUAL_WIDOWXAI_FOLLOWER
 
     def test_robot_type_leader(self):
-        bim, _, _ = _make_bimanual("leader")
-        assert bim.robot_type == RobotType.TROSSEN_BIMANUAL_WIDOWXAI_LEADER
+        adapter = _make_adapter("leader")
+        assert adapter.robot_type == RobotType.TROSSEN_BIMANUAL_WIDOWXAI_LEADER
 
-    def test_is_connected_true_when_both_connected(self):
-        bim, left, right = _make_bimanual()
-        type(left).is_connected = PropertyMock(return_value=True)
-        type(right).is_connected = PropertyMock(return_value=True)
-        assert bim.is_connected is True
+    def test_is_connected(self):
+        adapter = _make_adapter()
+        assert adapter.is_connected is True
 
-    def test_is_connected_false_when_one_disconnected(self):
-        bim, left, right = _make_bimanual()
-        type(left).is_connected = PropertyMock(return_value=False)
-        type(right).is_connected = PropertyMock(return_value=True)
-        assert bim.is_connected is False
+    def test_is_connected_false_when_robot_not_connected(self):
+        robot = _make_bimanual_robot()
+        robot.is_connected.return_value = False
+        adapter = BimanualWidowXAIAdapter(robot=robot, mode="follower")
+        assert adapter.is_connected is False
 
     def test_features_prefixed(self):
-        bim, _, _ = _make_bimanual()
-        features = bim.features()
+        adapter = _make_adapter()
+        features = adapter.features()
         assert all(f.startswith(("left_", "right_")) for f in features)
-        # Total count = 2 arms x (7 pos + 7 vel) = 28
+        # 2 arms x 7 joints x (pos + vel) = 28
         assert len(features) == 28
 
 
@@ -111,17 +84,18 @@ class TestProperties:
 
 
 class TestConnectDisconnect:
-    def test_connect_delegates_to_both(self):
-        bim, left, right = _make_bimanual()
-        asyncio.run(bim.connect())
-        left.connect.assert_awaited_once()
-        right.connect.assert_awaited_once()
+    def test_connect_calls_robot(self):
+        robot = _make_bimanual_robot()
+        adapter = BimanualWidowXAIAdapter(robot=robot, mode="follower")
+        with patch("robots.widowxai.bimanual_adapter.asyncio.to_thread", new=AsyncMock()):
+            asyncio.run(adapter.connect())
+        assert adapter.is_controlled is True
 
-    def test_disconnect_delegates_to_both(self):
-        bim, left, right = _make_bimanual()
-        asyncio.run(bim.disconnect())
-        left.disconnect.assert_awaited_once()
-        right.disconnect.assert_awaited_once()
+    def test_disconnect_calls_robot(self):
+        robot = _make_bimanual_robot()
+        adapter = BimanualWidowXAIAdapter(robot=robot, mode="follower")
+        with patch("robots.widowxai.bimanual_adapter.asyncio.to_thread", new=AsyncMock()):
+            asyncio.run(adapter.disconnect())
 
 
 # ---------------------------------------------------------------------------
@@ -131,8 +105,8 @@ class TestConnectDisconnect:
 
 class TestPing:
     def test_returns_pong(self):
-        bim, _, _ = _make_bimanual()
-        result = asyncio.run(bim.ping())
+        adapter = _make_adapter()
+        result = asyncio.run(adapter.ping())
         assert result["event"] == "pong"
 
 
@@ -143,22 +117,20 @@ class TestPing:
 
 class TestReadState:
     def test_keys_are_prefixed(self):
-        bim, _, _ = _make_bimanual()
-        result = asyncio.run(bim.read_state())
+        adapter = _make_adapter()
+        obs = adapter._robot.get_observation()
+        with patch("robots.widowxai.bimanual_adapter.asyncio.to_thread", new=AsyncMock(return_value=obs)):
+            result = asyncio.run(adapter.read_state())
         assert result["event"] == "state_was_updated"
         for key in result["state"]:
             assert key.startswith(("left_", "right_")), key
 
-    def test_both_arms_queried(self):
-        bim, left, right = _make_bimanual()
-        asyncio.run(bim.read_state())
-        left.read_state.assert_awaited_once()
-        right.read_state.assert_awaited_once()
-
     def test_merged_key_count(self):
-        bim, _, _ = _make_bimanual()
-        result = asyncio.run(bim.read_state())
-        # 7 pos + 7 vel per arm x 2 arms = 28
+        adapter = _make_adapter()
+        obs = adapter._robot.get_observation()
+        with patch("robots.widowxai.bimanual_adapter.asyncio.to_thread", new=AsyncMock(return_value=obs)):
+            result = asyncio.run(adapter.read_state())
+        # 14 pos + 14 vel = 28
         assert len(result["state"]) == 28
 
 
@@ -169,15 +141,18 @@ class TestReadState:
 
 class TestReadForces:
     def test_follower_returns_prefixed_forces(self):
-        bim, _, _ = _make_bimanual("follower")
-        result = asyncio.run(bim.read_forces())
+        adapter = _make_adapter("follower")
+        obs = adapter._robot.get_observation()
+        with patch("robots.widowxai.bimanual_adapter.asyncio.to_thread", new=AsyncMock(return_value=obs)):
+            result = asyncio.run(adapter.read_forces())
         assert result is not None
+        assert result["event"] == "force_was_updated"
         for key in result["state"]:
             assert key.startswith(("left_", "right_")), key
 
     def test_leader_returns_none(self):
-        bim, _, _ = _make_bimanual("leader")
-        result = asyncio.run(bim.read_forces())
+        adapter = _make_adapter("leader")
+        result = asyncio.run(adapter.read_forces())
         assert result is None
 
 
@@ -187,33 +162,32 @@ class TestReadForces:
 
 
 class TestSetJointsState:
-    def test_splits_and_delegates(self):
-        bim, left, right = _make_bimanual()
+    def test_builds_action_and_calls_robot(self):
+        adapter = _make_adapter("follower")
         joints: dict[str, float] = {}
         for n in WIDOWXAI_JOINT_ORDER:
-            joints[f"left_{n}.pos"] = 1.0
-            joints[f"left_{n}.vel"] = 0.0
-            joints[f"right_{n}.pos"] = 2.0
-            joints[f"right_{n}.vel"] = 0.0
+            joints[f"left_{n}.pos"] = 45.0
+            joints[f"right_{n}.pos"] = 90.0
 
-        asyncio.run(bim.set_joints_state(joints, goal_time=0.1))
+        captured: list = []
 
-        left_call_joints = left.set_joints_state.call_args[0][0]
-        right_call_joints = right.set_joints_state.call_args[0][0]
+        async def fake_to_thread(fn, *args, **kwargs):
+            captured.append((fn, args, kwargs))
 
-        # Keys should be un-prefixed when handed to inner adapters
-        assert all(not k.startswith("left_") and not k.startswith("right_") for k in left_call_joints)
-        assert all(not k.startswith("left_") and not k.startswith("right_") for k in right_call_joints)
+        with patch("robots.widowxai.bimanual_adapter.asyncio.to_thread", side_effect=fake_to_thread):
+            asyncio.run(adapter.set_joints_state(joints, goal_time=0.1))
 
-    def test_goal_time_forwarded(self):
-        bim, left, right = _make_bimanual()
-        joints = {f"left_{n}.pos": 0.0 for n in WIDOWXAI_JOINT_ORDER}
-        joints.update({f"right_{n}.pos": 0.0 for n in WIDOWXAI_JOINT_ORDER})
+        assert len(captured) == 1
+        fn, args, kwargs = captured[0]
+        assert fn == adapter._robot.send_action
+        action = args[0]
+        assert action.shape == (14,)
+        assert kwargs["goal_time"] == pytest.approx(0.1)
 
-        asyncio.run(bim.set_joints_state(joints, goal_time=0.25))
-
-        assert left.set_joints_state.call_args[0][1] == pytest.approx(0.25)
-        assert right.set_joints_state.call_args[0][1] == pytest.approx(0.25)
+    def test_leader_raises(self):
+        adapter = _make_adapter("leader")
+        with pytest.raises(RuntimeError, match="Cannot send actions to a leader robot"):
+            asyncio.run(adapter.set_joints_state({}, goal_time=0.1))
 
 
 # ---------------------------------------------------------------------------
@@ -222,17 +196,32 @@ class TestSetJointsState:
 
 
 class TestSetForces:
-    def test_splits_and_delegates(self):
-        bim, left, right = _make_bimanual("leader")
-        forces = {f"left_{n}.eff": 0.1 for n in WIDOWXAI_JOINT_ORDER}
-        forces.update({f"right_{n}.eff": 0.2 for n in WIDOWXAI_JOINT_ORDER})
+    def test_leader_calls_robot(self):
+        adapter = _make_adapter("leader")
+        forces: dict[str, float] = {}
+        for n in WIDOWXAI_JOINT_ORDER:
+            forces[f"left_{n}.eff"] = 0.1
+            forces[f"right_{n}.eff"] = 0.2
 
-        asyncio.run(bim.set_forces(forces))
+        captured: list = []
 
-        left_forces = left.set_forces.call_args[0][0]
-        right_forces = right.set_forces.call_args[0][0]
-        assert all(not k.startswith("left_") and not k.startswith("right_") for k in left_forces)
-        assert all(not k.startswith("left_") and not k.startswith("right_") for k in right_forces)
+        async def fake_to_thread(fn, *args, **kwargs):
+            captured.append((fn, args, kwargs))
+
+        with patch("robots.widowxai.bimanual_adapter.asyncio.to_thread", side_effect=fake_to_thread):
+            asyncio.run(adapter.set_forces(forces))
+
+        assert len(captured) == 1
+        fn, args, _ = captured[0]
+        assert fn == adapter._robot.set_external_efforts
+        efforts = args[0]
+        assert efforts.shape == (14,)
+
+    def test_follower_skips_and_returns_forces(self):
+        adapter = _make_adapter("follower")
+        forces = {"left_gripper.eff": 1.0}
+        result = asyncio.run(adapter.set_forces(forces))
+        assert result == forces
 
 
 # ---------------------------------------------------------------------------
@@ -242,15 +231,13 @@ class TestSetForces:
 
 class TestTorque:
     def test_enable_torque(self):
-        bim, left, right = _make_bimanual()
-        result = asyncio.run(bim.enable_torque())
+        adapter = _make_adapter()
+        result = asyncio.run(adapter.enable_torque())
         assert result["event"] == "torque_was_enabled"
-        left.enable_torque.assert_awaited_once()
-        right.enable_torque.assert_awaited_once()
+        assert adapter.is_controlled is True
 
     def test_disable_torque(self):
-        bim, left, right = _make_bimanual()
-        result = asyncio.run(bim.disable_torque())
+        adapter = _make_adapter()
+        result = asyncio.run(adapter.disable_torque())
         assert result["event"] == "torque_was_disabled"
-        left.disable_torque.assert_awaited_once()
-        right.disable_torque.assert_awaited_once()
+        assert adapter.is_controlled is False
