@@ -1,6 +1,6 @@
 import { createContext, Dispatch, ReactNode, SetStateAction, useContext, useState } from 'react';
 
-import { SchemaRobot, SchemaRobotType } from '../../../api/openapi-spec';
+import { SchemaRobot, SchemaRobotInput, SchemaRobotType } from '../robot-types';
 
 type RobotForm = {
     name: string;
@@ -14,7 +14,7 @@ export type RobotFormState = RobotForm | null;
 export const RobotFormContext = createContext<RobotFormState>(null);
 export const SetRobotFormContext = createContext<Dispatch<SetStateAction<RobotForm>> | null>(null);
 
-export const useRobotFormBody = (robot_id: string): SchemaRobot | null => {
+export const useRobotFormBody = (robot_id: string): SchemaRobotInput | null => {
     const robotForm = useRobotForm();
 
     if (robotForm === undefined) {
@@ -33,17 +33,19 @@ export const useRobotFormBody = (robot_id: string): SchemaRobot | null => {
         id: robot_id,
         name: robotForm.name,
         type: robotForm.type,
-        connection_string: robotForm.connection_string ?? '',
-        serial_number: robotForm.serial_number ?? '',
-    };
+        payload: {
+            connection_string: robotForm.connection_string ?? '',
+            serial_number: robotForm.serial_number ?? '',
+        },
+    } as SchemaRobotInput;
 };
 
 export const RobotFormProvider = ({ children, robot }: { children: ReactNode; robot?: SchemaRobot }) => {
     const [value, setValue] = useState<RobotForm>({
         name: robot?.name ?? '',
         type: robot?.type ?? 'SO101_Follower',
-        connection_string: robot?.connection_string ?? '',
-        serial_number: robot?.serial_number ?? '',
+        connection_string: robot?.payload?.connection_string ?? '',
+        serial_number: robot?.payload?.serial_number ?? '',
     });
 
     return (

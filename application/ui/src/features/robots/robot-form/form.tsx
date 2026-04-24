@@ -17,9 +17,9 @@ import {
 import { ChevronLeft, Refresh } from '@geti-ui/ui/icons';
 
 import { $api } from '../../../api/client';
-import { SchemaRobot } from '../../../api/openapi-spec';
 import { useProjectId } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
+import { SchemaRobotInput } from '../robot-types';
 import { PermissionDeniedError } from '../setup-wizard/so101/diagnostics-step-error';
 import { useRobotForm, useSetRobotForm } from './provider';
 import { SubmitNewRobotButton } from './submit-new-robot-button';
@@ -97,14 +97,16 @@ const IdentifyRobot = ({ identifyMutation }: { identifyMutation: ReturnType<type
             return;
         }
 
-        const body: SchemaRobot = {
+        const body: SchemaRobotInput = {
             id: crypto.randomUUID(), // required by schema, not used by backend
             name: robotForm.name,
             type: robotForm.type,
-            connection_string: robotForm.connection_string ?? '',
-            serial_number: robotForm.serial_number ?? '',
+            payload: {
+                connection_string: robotForm.connection_string ?? '',
+                serial_number: robotForm.serial_number ?? '',
+            },
             active_calibration_id: null,
-        };
+        } as SchemaRobotInput;
 
         identifyMutation.mutate({ body });
     };

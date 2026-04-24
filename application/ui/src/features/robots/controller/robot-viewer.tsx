@@ -8,8 +8,8 @@ import * as THREE from 'three';
 import { degToRad } from 'three/src/math/MathUtils.js';
 import { URDFRobot } from 'urdf-loader';
 
-import { SchemaRobot, SchemaRobotType } from '../../../api/openapi-spec';
 import { useContainerSize } from '../../../components/zoom/use-container-size';
+import { SchemaRobot, SchemaRobotType } from '../robot-types';
 import { urdfPathForType, useLoadModelMutation, useRobotModels } from './../robot-models-context';
 
 /** Material name used by the dark parts in the Trossen URDF. */

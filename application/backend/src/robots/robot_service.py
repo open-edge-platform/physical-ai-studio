@@ -4,7 +4,7 @@ from db import get_async_db_session_ctx
 from exceptions import ResourceNotFoundError, ResourceType
 from repositories.project_robot_repo import ProjectRobotRepository
 from robots.discovery.manager import DiscoveryManager
-from schemas.robot import Robot, RobotType, RobotWithConnectionState
+from schemas.robot import Robot, RobotWithConnectionState, RobotWithConnectionStateAdapter
 
 
 class RobotService:
@@ -26,9 +26,11 @@ class RobotService:
             is_online = await discovery.is_robot_online(robot)
 
             results.append(
-                RobotWithConnectionState(
-                    **robot.model_dump(),
-                    connection_status="online" if is_online else "offline",
+                RobotWithConnectionStateAdapter.validate_python(
+                    {
+                        **robot.model_dump(),
+                        "connection_status": "online" if is_online else "offline",
+                    }
                 )
             )
 
@@ -49,20 +51,12 @@ class RobotService:
     async def create_robot(project_id: UUID, robot: Robot) -> Robot:
         async with get_async_db_session_ctx() as session:
             repo = ProjectRobotRepository(session, project_id)
-
-            if robot.type in {RobotType.SO101_LEADER, RobotType.SO101_FOLLOWER}:
-                robot.connection_string = ""
-
             return await repo.save(robot)
 
     @staticmethod
     async def update_robot(project_id: UUID, robot: Robot) -> Robot:
         async with get_async_db_session_ctx() as session:
             repo = ProjectRobotRepository(session, project_id)
-
-            if robot.type in {RobotType.SO101_LEADER, RobotType.SO101_FOLLOWER}:
-                robot.connection_string = ""
-
             return await repo.update(robot, partial_update=robot.model_dump(exclude={"id"}))
 
     @staticmethod

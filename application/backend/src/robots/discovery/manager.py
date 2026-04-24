@@ -16,7 +16,7 @@ class DiscoveryManager:
 
     async def is_robot_online(self, robot: Robot) -> bool:
         if robot.type in {RobotType.SO101_LEADER, RobotType.SO101_FOLLOWER}:
-            return robot.serial_number in [cs.serial_number for cs in self.serial_manager.robots]
+            return robot.payload.serial_number in [cs.serial_number for cs in self.serial_manager.robots]
         if robot.type in {RobotType.TROSSEN_WIDOWXAI_LEADER, RobotType.TROSSEN_WIDOWXAI_FOLLOWER}:
             return await self.ip.is_reachable(robot)
         return False

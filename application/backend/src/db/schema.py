@@ -56,9 +56,8 @@ class ProjectRobotDB(Base):
     id: Mapped[UUID] = mapped_column(Text, primary_key=True, default=uuid4)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String(255))
-    connection_string: Mapped[str] = mapped_column(String(255))
-    serial_number: Mapped[str] = mapped_column(String(255))
     type: Mapped[RobotType] = mapped_column(Enum(RobotType))
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
 

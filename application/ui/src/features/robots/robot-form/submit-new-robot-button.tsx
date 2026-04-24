@@ -38,8 +38,8 @@ export const SubmitNewRobotButton = () => {
                         body,
                     },
                     {
-                        onSuccess: ({}, { body: { id: robot_id } }) => {
-                            navigate(paths.project.robots.show({ project_id, robot_id }));
+                        onSuccess: (createdRobot) => {
+                            navigate(paths.project.robots.show({ project_id, robot_id: createdRobot.id }));
                         },
                     }
                 );
