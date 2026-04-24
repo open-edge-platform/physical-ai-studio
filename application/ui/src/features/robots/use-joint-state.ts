@@ -6,10 +6,11 @@ import { fetchClient } from '../../api/client';
 import { mapJointToURDFJoint, urdfPathForType, useRobotModels } from './robot-models-context';
 import { SchemaRobotType } from './robot-types';
 
-type JointsState = Array<{
+type Joint = {
     name: string;
     value: number;
-}>;
+};
+type JointsState = Array<Joint>;
 
 type StateWasUpdatedEvent = {
     name: 'state_was_updated';

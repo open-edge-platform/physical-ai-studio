@@ -43,6 +43,7 @@ const useSyncJointState = (jointState: Record<string, number> | null) => {
                 const name = key.endsWith('.pos') ? key.slice(0, -4) : key;
 
                 if (name === 'gripper' && model.robotName === 'wxai') {
+                    // HERE
                     model.setJointValue('left_carriage_joint', value);
                     continue;
                 }
