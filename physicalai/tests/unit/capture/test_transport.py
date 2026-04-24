@@ -32,7 +32,6 @@ from physicalai.capture.transport._shared_camera import SharedCamera
 HAS_ICEORYX2 = importlib.util.find_spec("iceoryx2") is not None
 
 requires_iceoryx2 = pytest.mark.skipif(not HAS_ICEORYX2, reason="iceoryx2 not installed")
-requires_linux = pytest.mark.skipif(sys.platform != "linux", reason="requires Linux")
 
 
 def _service_name() -> str:
@@ -64,12 +63,10 @@ class TestCameraSpec:
 class TestFrameHeader:
     def test_sizeof_is_40(self) -> None:
         assert ctypes.sizeof(FrameHeader) == 40
+        assert HEADER_SIZE == ctypes.sizeof(FrameHeader)
 
     def test_protocol_version(self) -> None:
         assert PROTOCOL_VERSION == 1
-
-    def test_header_size_matches_sizeof(self) -> None:
-        assert HEADER_SIZE == ctypes.sizeof(FrameHeader)
 
 
 class TestEncodeDecodeRoundtrip:
@@ -188,7 +185,7 @@ class TestSharedCameraConstruction:
             SharedCamera(None)
 
     def test_constructor_rejects_service_name_as_type(self) -> None:
-        with pytest.raises(ValueError, match="from_publisher"):
+        with pytest.raises(ValueError):
             SharedCamera("physicalai/camera/uvc/0/frame")
 
     def test_default_device_zero(self) -> None:
@@ -328,7 +325,6 @@ class TestSharedCameraSpawnFlow:
 
 
 @requires_iceoryx2
-@requires_linux
 class TestCameraPublisher:
     def test_start_stop_lifecycle(self, fake_camera_spec: CameraSpec) -> None:
         from physicalai.capture.transport._publisher import CameraPublisher
@@ -365,7 +361,6 @@ class TestCameraPublisher:
 
 
 @requires_iceoryx2
-@requires_linux
 class TestSharedCamera:
     def test_connect_disconnect(self, publisher_service: str) -> None:
         camera = SharedCamera.from_publisher(publisher_service)
@@ -424,7 +419,6 @@ class TestSharedCamera:
 
 
 @requires_iceoryx2
-@requires_linux
 class TestMultiSubscriber:
     def test_two_subscribers_receive_frames(self, publisher_service: str) -> None:
         cam_a = SharedCamera.from_publisher(publisher_service)

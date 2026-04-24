@@ -28,9 +28,6 @@ def fake_camera_spec() -> CameraSpec:
 
 @pytest.fixture
 def publisher_service(fake_camera_spec: CameraSpec) -> Generator[str, None, None]:
-    if not HAS_ICEORYX2 or sys.platform != "linux":
-        pytest.skip("requires iceoryx2 on Linux")
-
     from uuid import uuid4  # noqa: PLC0415
 
     from physicalai.capture.transport._publisher import CameraPublisher  # noqa: PLC0415

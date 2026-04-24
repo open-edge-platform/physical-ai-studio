@@ -37,7 +37,7 @@ class CameraPublisher:
         service_name: str,
         *,
         idle_timeout: float = 5,
-        max_subscribers: int = 32,
+        max_subscribers: int = 64,
         _factory_override: str | None = None,
     ) -> None:
         self._spec = spec

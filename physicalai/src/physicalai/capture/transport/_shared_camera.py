@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from loguru import logger
 
-from physicalai.capture.camera import Camera, ColorMode
+from physicalai.capture.camera import Camera, CameraType, ColorMode
 from physicalai.capture.errors import CaptureError, CaptureTimeoutError, NotConnectedError
 
 from ._header import decode_header, decode_rgb
@@ -57,6 +57,21 @@ def _probe_service(service_name: str) -> bool:
         return False
 
 
+def _probe_with_retry(service_name: str, timeout: float, interval: float = 0.1) -> bool:
+    """Poll ``_probe_service`` until it returns True or *timeout* elapses.
+
+    Returns:
+        ``True`` if a publisher is reachable within timeout, ``False`` otherwise.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        if _probe_service(service_name):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(interval)
+
+
 def _derive_service_name(camera_type: str, camera_kwargs: Mapping[str, object]) -> str:
     device_id = camera_kwargs.get("serial_number", camera_kwargs.get("device", 0))
     return f"physicalai/camera/{camera_type}/{device_id}/frame"
@@ -77,27 +92,34 @@ class SharedCamera(Camera):
 
     def __init__(
         self,
-        camera_type: str | None,
+        camera_type: CameraType | str | None,
         *,
         color_mode: ColorMode = ColorMode.RGB,
         zero_copy: bool = False,
         service_name: str | None = None,
         **camera_kwargs: object,
     ) -> None:
-        if camera_type is not None and "/" in camera_type:
-            msg = (
-                "camera_type looks like a service name — pass it as "
-                "service_name='...' or use SharedCamera.from_publisher(service_name='...')"
-            )
+        try:
+            camera_type = CameraType(camera_type) if camera_type is not None else None
+        except ValueError as exc:
+            valid = ", ".join(m.value for m in CameraType)
+            msg = f"unknown camera_type {camera_type!r}; expected one of: {valid}"
+            raise ValueError(msg) from exc
+
+        if camera_type is None and service_name is None:
+            msg = "must provide camera_type or service_name"
             raise ValueError(msg)
 
-        if camera_type is not None and service_name is None:
+        if camera_type is not None:
             service_name = _derive_service_name(camera_type, camera_kwargs)
+        elif service_name is None:
+            msg = "service_name must be provided if camera_type is None"
+            raise ValueError(msg)
 
         super().__init__(color_mode=color_mode)
         self._camera_type = camera_type
         self._camera_kwargs = camera_kwargs
-        self._service_name = service_name
+        self._service_name: str = service_name
         self._zero_copy = zero_copy
         self._publisher: CameraPublisher | None = None
         self._connected = False
@@ -121,12 +143,6 @@ class SharedCamera(Camera):
         if self._connected:
             return
 
-        if self._service_name is None:
-            if self._camera_type is None:
-                msg = "must provide camera_type or service_name before connect"
-                raise ValueError(msg)
-            self._service_name = _derive_service_name(self._camera_type, self._camera_kwargs)
-
         if self._camera_type is not None and not _probe_service(self._service_name):
             from ._publisher import CameraPublisher  # noqa: PLC0415
             from ._spec import CameraSpec  # noqa: PLC0415
@@ -136,7 +152,7 @@ class SharedCamera(Camera):
             try:
                 publisher.start()
             except Exception as exc:
-                if _probe_service(self._service_name):
+                if _probe_with_retry(self._service_name, timeout=3.0):
                     logger.debug(f"Lost publisher race for {self._service_name} — using existing")
                 else:
                     msg = f"failed to start camera publisher for {self._service_name}"
@@ -248,7 +264,15 @@ class SharedCamera(Camera):
             from ._header import decode_rgb_view  # noqa: PLC0415
 
             self._held_sample = sample
-            return decode_rgb_view(header, memoryview(buf))
+            # ``toreadonly()`` marks the buffer read-only at the buffer-protocol
+            # level. ``np.frombuffer`` then produces an array whose ``writeable``
+            # flag cannot be flipped back to True, so consumer writes — including
+            # accidental in-place ops like ``arr += 1`` or OpenCV drawing calls —
+            # fail fast instead of silently corrupting the iceoryx2 SHM segment
+            # (which would be seen by every other subscriber). Bounds metadata on
+            # the memoryview also prevents out-of-bounds indexing past the
+            # payload. Consumers that need to modify the frame must ``.copy()``.
+            return decode_rgb_view(header, memoryview(buf).toreadonly())
         return decode_rgb(header, bytes(buf))
 
     def _do_disconnect(self) -> None:
@@ -265,10 +289,12 @@ class SharedCamera(Camera):
         return self._connected
 
     @property
-    def device_id(self) -> str:
-        if self._service_name is None:
-            return ""
+    def service_name(self) -> str:
+        return self._service_name
 
+    @property
+    def device_id(self) -> str:
+        # service_name format: physicalai/camera/<type>/<device_id>/frame
         parts = self._service_name.split("/")
         if (
             len(parts) >= _SERVICE_NAME_EXPECTED_PARTS
@@ -276,5 +302,6 @@ class SharedCamera(Camera):
             and parts[1] == "camera"
             and parts[4] == "frame"
         ):
-            return f"{parts[2]}/{parts[3]}"
-        return self._service_name
+            return parts[3]
+        # Custom service_name (from_publisher) — no embedded device id.
+        return ""

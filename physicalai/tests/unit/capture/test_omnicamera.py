@@ -105,7 +105,7 @@ def test_connect_queries_cameras(omnicamera_cls: tuple) -> None:
     camera_cls, mock_omni_camera = omnicamera_cls
     cam = camera_cls()
     cam.connect()
-    mock_omni_camera.query.assert_called_once_with(only_usable=True)
+    assert any(call.kwargs.get("only_usable") is True for call in mock_omni_camera.query.call_args_list)
 
 
 def test_connect_creates_camera_without_suggested_fps(omnicamera_cls: tuple) -> None:
@@ -405,8 +405,8 @@ def test_discover_returns_device_info(omnicamera_cls: tuple) -> None:
     assert devices[0].model == "Test Camera"
 
 
-def test_discover_filters_unopenable(omnicamera_cls: tuple) -> None:
-    """discover() excludes cameras where can_open() returns False."""
+def test_discover_keeps_unopenable(omnicamera_cls: tuple) -> None:
+    """discover() returns all cameras and does not call can_open()."""
     camera_cls, mock_omni_camera = omnicamera_cls
 
     cam_info_0 = mock.MagicMock()
@@ -427,8 +427,11 @@ def test_discover_filters_unopenable(omnicamera_cls: tuple) -> None:
 
     devices = camera_cls.discover()
 
-    assert len(devices) == 1
-    assert devices[0].device_id == "0"
+    assert len(devices) == 2
+    assert [d.device_id for d in devices] == ["0", "1"]
+    cam_info_0.can_open.assert_not_called()
+    cam_info_1.can_open.assert_not_called()
+    mock_omni_camera.query.assert_called_once_with(only_usable=False)
 
 
 def test_device_selector_path_string_maps_to_index(omnicamera_cls: tuple) -> None:

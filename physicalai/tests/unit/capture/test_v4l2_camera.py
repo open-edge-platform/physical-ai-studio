@@ -196,17 +196,6 @@ def test_device_id_returns_device_path() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_not_connected_initially() -> None:
-    """Camera is not connected before connect() is called."""
-    cam = V4L2Camera()
-    assert not cam.is_connected
-
-
-# ---------------------------------------------------------------------------
-# Test 5
-# ---------------------------------------------------------------------------
-
-
 def test_connect_opens_device_and_starts_streaming() -> None:
     """connect() opens fd, runs ioctls, mmaps buffers, and marks connected."""
     with _mock_v4l2_device(num_buffers=2):

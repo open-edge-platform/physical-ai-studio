@@ -110,7 +110,7 @@ physical-ai/
         │   ├── genicam.py       # GenicamCamera
         │   └── ip.py            # IPCamera
         ├── transport/
-        │   ├── __init__.py      # Public: SharedCamera, create_shared_camera
+        │   ├── __init__.py      # Public: SharedCamera
         │   ├── _header.py       # FrameHeader, encode/decode helpers
         │   ├── _publisher.py    # CameraPublisher (internal background publisher)
         │   ├── _publisher_worker.py  # Subprocess entry point for publisher
@@ -1071,8 +1071,6 @@ Linux-only.
   via `CameraSpec.build()`, reads frames in a loop, encodes each frame with a packed
   binary header (`FrameHeader`), and publishes to an iceoryx2 service. It monitors
   subscriber counts and exits if idle for more than 5 seconds.
-- **create_shared_camera()**: Convenience factory function that creates a
-  `SharedCamera` instance.
 
 **Binary Protocol** (`_header.py`):
 
@@ -1084,7 +1082,7 @@ number, and depth offset. Helper functions `encode_frame()`, `decode_rgb()`,
 **Usage:**
 
 ```python
-from physicalai.capture.transport import SharedCamera, create_shared_camera
+from physicalai.capture.transport import SharedCamera
 
 # Auto-spawn mode: Spawns publisher for "realsense" if needed
 camera = SharedCamera("realsense", serial_number="12345678")

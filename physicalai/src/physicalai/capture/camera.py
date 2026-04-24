@@ -36,10 +36,6 @@ class CameraType(StrEnum):
     BASLER = "basler"
 
 
-# Backward-compat alias — will be removed in a future version.
-Driver = CameraType
-
-
 class Camera(ABC):
     """Abstract interface for live camera hardware.
 

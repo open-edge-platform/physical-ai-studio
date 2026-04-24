@@ -813,6 +813,7 @@ basler = [
     { name = "pypylon" },
 ]
 capture = [
+    { name = "iceoryx2" },
     { name = "opencv-python-headless" },
     { name = "pypylon" },
     { name = "pyrealsense2", marker = "sys_platform != 'darwin'" },
@@ -872,6 +873,7 @@ requires-dist = [
     { name = "physicalai", extras = ["genicam"], marker = "extra == 'capture'" },
     { name = "physicalai", extras = ["realsense"], marker = "extra == 'capture'" },
     { name = "physicalai", extras = ["so101"], marker = "extra == 'robots'" },
+    { name = "physicalai", extras = ["transport"], marker = "extra == 'capture'" },
     { name = "physicalai", extras = ["trossen"], marker = "extra == 'robots'" },
     { name = "physicalai", extras = ["ur"], marker = "extra == 'robots'" },
     { name = "pydantic", specifier = ">=2.5" },

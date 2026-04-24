@@ -37,6 +37,7 @@ capture = [
     "physicalai[realsense]",
     "physicalai[basler]",
     "physicalai[genicam]",
+    "physicalai[transport]",
 ]
 ur = []
 abb = []
