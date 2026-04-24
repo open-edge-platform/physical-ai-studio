@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 
-from schemas.job import Job, JobType
+from schemas.job import Job, TrainJob
 from services.log_service import LogService
 
 
@@ -42,10 +42,9 @@ async def test_discover_job_sources_includes_training_name_and_created_at(tmp_pa
     file_path = jobs_dir / f"{job_id}.log"
     file_path.write_text("hello")
 
-    job = Job(
+    job = TrainJob(
         id=job_id,
         project_id=uuid4(),
-        type=JobType.TRAINING,
         payload={
             "project_id": str(uuid4()),
             "dataset_id": str(uuid4()),
