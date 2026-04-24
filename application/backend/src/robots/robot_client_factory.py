@@ -1,12 +1,12 @@
 from physicalai.robot.so101 import SO101, SO101Calibration
+from physicalai.robot.trossen import WidowXAI
 
 from exceptions import ResourceNotFoundError, ResourceType
 from robots.robot_client import RobotClient
 from robots.so101.adapter import SO101Adapter
-from robots.widowxai.trossen_widowx_ai_follower import TrossenWidowXAIFollower
-from robots.widowxai.trossen_widowx_ai_leader import TrossenWidowXAILeader
+from robots.widowxai.adapter import WidowXAIAdapter
 from schemas.calibration import Calibration
-from schemas.robot import NetworkIpRobotConfig, Robot, RobotType
+from schemas.robot import Robot, RobotType
 from services.robot_calibration_service import RobotCalibrationService, find_robot_port
 from utils.serial_robot_tools import RobotConnectionManager
 
@@ -26,19 +26,11 @@ class RobotClientFactory:
     async def build(self, robot: Robot) -> RobotClient:
         match robot.type:
             case RobotType.TROSSEN_WIDOWXAI_FOLLOWER:
-                config = NetworkIpRobotConfig(
-                    type="follower",
-                    robot_type=RobotType.TROSSEN_WIDOWXAI_FOLLOWER,
-                    connection_string=robot.payload.connection_string,
-                )
-                return TrossenWidowXAIFollower(config=config)
+                robot_driver = WidowXAI(ip=robot.payload.connection_string, role="follower")
+                return WidowXAIAdapter(robot=robot_driver, mode="follower")
             case RobotType.TROSSEN_WIDOWXAI_LEADER:
-                config = NetworkIpRobotConfig(
-                    type="leader",
-                    robot_type=RobotType.TROSSEN_WIDOWXAI_LEADER,
-                    connection_string=robot.payload.connection_string,
-                )
-                return TrossenWidowXAILeader(config=config)
+                robot_driver = WidowXAI(ip=robot.payload.connection_string, role="leader")
+                return WidowXAIAdapter(robot=robot_driver, mode="leader")
             case RobotType.SO101_FOLLOWER:
                 return await self._build_so101(robot)
             case RobotType.SO101_LEADER:

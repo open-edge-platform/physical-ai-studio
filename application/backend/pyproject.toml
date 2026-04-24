@@ -10,7 +10,7 @@ dependencies = [
   'harvesters; sys_platform != "darwin"',
   "fastapi[standard]",
   "physicalai-train[pi0,smolvla]",
-  "physicalai[so101]",
+  "physicalai[so101, trossen]",
   "lerobot[feetech]==0.5.1",
   "numpy",
   "websockets",
@@ -29,7 +29,6 @@ dependencies = [
   "tenacity>=9.1.2",
   "aiofiles>=25.1.0",
   "types-aiofiles>=25.1.0.20251011",
-  "trossen-arm==1.9.0",
   "sse-starlette>=2.0.0",
 ]
 
