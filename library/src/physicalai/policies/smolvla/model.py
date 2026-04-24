@@ -87,35 +87,35 @@ class SmolVLAModel(ExportableModelMixin, Model):
     ) -> None:
         """Initialize the SmolVLA model.
 
-            Args:
-                dataset_stats: Dictionary containing dataset statistics with keys mapping to
-                    dictionaries that hold statistics values (lists of floats), string metadata,
-                    or tuple information used for normalization and preprocessing.
-                chunk_size: Size of action chunks for prediction.
-                max_state_dim: Maximum dimension for state vectors; shorter vectors will be padded.
-                max_action_dim: Maximum dimension for action vectors; shorter vectors will be padded.
-                adapt_to_pi_aloha: Whether to convert joint and gripper values from standard Aloha space
-                    to pi internal runtime space.
-                num_steps: Number of decoding steps for flow matching.
-                use_cache: Whether to use attention caching for efficiency.
-                freeze_vision_encoder: Whether to freeze the vision encoder during fine-tuning.
-                train_expert_only: Whether to train only the action expert during fine-tuning.
-                train_state_proj: Whether to train the state projection layer.
-                vlm_model_name: Name or path of the VLM backbone model to use.
-                load_vlm_weights: Whether to load pretrained VLM weights.
-                add_image_special_tokens: Whether to add special tokens around image features.
-                attention_mode: Type of attention mechanism to use.
-                prefix_length: Length of prefix for attention. Negative values indicate default behavior.
-                num_expert_layers: Number of layers in the action expert. Values <= 0 use same number as VLM.
-                num_vlm_layers: Number of VLM layers to use (first N layers).
-                self_attn_every_n_layers: Frequency of self-attention layer interleaving.
-                expert_width_multiplier: Multiplier for action expert hidden size relative to VLM.
-                min_period: Minimum period for sine-cosine positional encoding of timesteps.
-                max_period: Maximum period for sine-cosine positional encoding of timesteps.
-                use_random_input_noise: Whether to use random noise as the initial input for the
-                    denoising process during inference. If False, zeros are used instead.
-        tokenizer_max_length: Maximum token length for the tokenizer. Default: 48.
-        compile_model: Whether to apply torch.compile to the model.
+        Args:
+            dataset_stats: Dictionary containing dataset statistics with keys mapping to
+                dictionaries that hold statistics values (lists of floats), string metadata,
+                or tuple information used for normalization and preprocessing.
+            chunk_size: Size of action chunks for prediction.
+            max_state_dim: Maximum dimension for state vectors; shorter vectors will be padded.
+            max_action_dim: Maximum dimension for action vectors; shorter vectors will be padded.
+            adapt_to_pi_aloha: Whether to convert joint and gripper values from standard Aloha space
+                to pi internal runtime space.
+            num_steps: Number of decoding steps for flow matching.
+            use_cache: Whether to use attention caching for efficiency.
+            freeze_vision_encoder: Whether to freeze the vision encoder during fine-tuning.
+            train_expert_only: Whether to train only the action expert during fine-tuning.
+            train_state_proj: Whether to train the state projection layer.
+            vlm_model_name: Name or path of the VLM backbone model to use.
+            load_vlm_weights: Whether to load pretrained VLM weights.
+            add_image_special_tokens: Whether to add special tokens around image features.
+            attention_mode: Type of attention mechanism to use.
+            prefix_length: Length of prefix for attention. Negative values indicate default behavior.
+            num_expert_layers: Number of layers in the action expert. Values <= 0 use same number as VLM.
+            num_vlm_layers: Number of VLM layers to use (first N layers).
+            self_attn_every_n_layers: Frequency of self-attention layer interleaving.
+            expert_width_multiplier: Multiplier for action expert hidden size relative to VLM.
+            min_period: Minimum period for sine-cosine positional encoding of timesteps.
+            max_period: Maximum period for sine-cosine positional encoding of timesteps.
+            use_random_input_noise: Whether to use random noise as the initial input for the
+                denoising process during inference. If False, zeros are used instead.
+            tokenizer_max_length: Maximum token length for the tokenizer. Default: 48.
+            compile_model: Whether to apply torch.compile to the model.
         """
         super().__init__()
         self._chunk_size = chunk_size
@@ -123,6 +123,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
         self._max_action_dim = max_action_dim
         self._adapt_to_pi_aloha = adapt_to_pi_aloha
         self._vlm_model_name = vlm_model_name
+        self._tokenizer_max_length = tokenizer_max_length
         self._model = VLAFlowMatching(
             chunk_size=chunk_size,
             max_state_dim=max_state_dim,

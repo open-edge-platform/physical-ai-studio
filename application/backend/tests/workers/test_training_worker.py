@@ -112,7 +112,7 @@ def interrupt_event():
 @pytest.fixture
 def worker(stop_event, interrupt_event, event_queue):
     """Build a minimal TrainingWorker without triggering circular imports from scheduler."""
-    from workers.training_worker import TrainingWorker  # noqa: PLC0415
+    from workers.training_worker import TrainingWorker
 
     w = object.__new__(TrainingWorker)
     w._stop_event = stop_event
