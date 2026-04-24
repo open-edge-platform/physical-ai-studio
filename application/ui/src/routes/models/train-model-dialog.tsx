@@ -8,12 +8,12 @@ import {
     Content,
     ContextualHelp,
     Dialog,
-    Form,
     Disclosure,
     DisclosurePanel,
     DisclosureTitle,
     Divider,
     Flex,
+    Form,
     Heading,
     Item,
     Key,
@@ -348,12 +348,14 @@ const TrainingParameters = ({
 export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: TrainModelDialogProps) => {
     const bestDevice = useBestTrainingDevice();
 
+    const defaultName = baseModel?.name ?? '';
     const defaultDatasetId = baseModel?.dataset_id ?? null;
     const extraPayload = baseModel ? { base_model_id: baseModel.id! } : undefined;
 
     const [selectedPolicy, setSelectedPolicy] = useState<string>(baseModel?.policy ?? 'act');
     const { datasets, id: projectId } = useProject();
 
+    const [name, setName] = useState<string>(defaultName);
     const [selectedDataset, setSelectedDataset] = useState<Key | null>(defaultDatasetId);
     const [maxSteps, setMaxSteps] = useState<number>(defaultMaxSteps);
     const [batchSize, setBatchSize] = useState<number>(8);
@@ -375,8 +377,6 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
             return;
         }
 
-        const name = baseModel?.name ?? MODELS.find((policy) => policy.id === selectedPolicy)?.name ?? '';
-
         const payload: SchemaJob['payload'] = {
             dataset_id,
             project_id: projectId,
@@ -386,7 +386,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
             batch_size: batchSize,
             num_workers: numWorkers === 'auto' ? 'auto' : Number(numWorkers),
             auto_scale_batch_size: autoScaleBatchSize,
-            precision: precision?.toString() ?? 'default',
+            precision: (precision?.toString() ?? 'default') as SchemaJob['payload']['precision'],
             compile_model: compileModel,
             val_split: 0.1,
             ...extraPayload,
