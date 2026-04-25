@@ -111,3 +111,18 @@ class UploadTooLargeError(BaseException):
             error_code="upload_too_large",
             http_status=http.HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
         )
+
+
+class InvalidResourceError(BaseException):
+    """
+    Exception raised when a resource is not what was expected.
+
+    :param resource_name: Name of the resource that was not found
+    """
+
+    def __init__(self, resource_name: str, detail: str) -> None:
+        super().__init__(
+            message=f"{resource_name} invalid resource. {detail}",
+            error_code=f"{resource_name}_invalid_resource",
+            http_status=http.HTTPStatus.CONFLICT,
+        )

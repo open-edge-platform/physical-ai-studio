@@ -101,6 +101,12 @@ class JobService:
             return await repo.update(job, updates)
 
     @staticmethod
+    async def update_job(job: Job, update: dict) -> Job:
+        async with get_async_db_session_ctx() as session:
+            repo = JobRepository(session)
+            return await repo.update(job, update)
+
+    @staticmethod
     async def delete_job(job_id: UUID) -> None:
         async with get_async_db_session_ctx() as session:
             repo = JobRepository(session)

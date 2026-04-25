@@ -5,15 +5,22 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from fastapi.exceptions import HTTPException
 from fastapi.responses import FileResponse
+from sse_starlette import EventSourceResponse
 from starlette import status
 from starlette.background import BackgroundTask
 
-from api.dependencies import get_dataset_service, get_model_download_service, get_model_id, get_model_service
+from api.dependencies import (
+    get_dataset_service,
+    get_model_download_service,
+    get_model_id,
+    get_model_metrics_service,
+    get_model_service,
+)
 from api.utils import safe_archive_name
 from exceptions import ResourceNotFoundError, ResourceType
 from internal_datasets.utils import get_internal_dataset
 from schemas import Model
-from services import DatasetService, ModelDownloadService, ModelService
+from services import DatasetService, ModelDownloadService, ModelMetricsService, ModelService
 
 router = APIRouter(prefix="/api/models", tags=["Models"])
 
@@ -67,6 +74,20 @@ async def model_download_endpoint(
         filename=filename,
         background=BackgroundTask(archive_path.unlink, missing_ok=True),
     )
+
+
+@router.get("/{model_id}/metrics")
+async def stream_metrics(
+    model_id: Annotated[UUID, Depends(get_model_id)],
+    model_service: Annotated[ModelService, Depends(get_model_service)],
+    model_metrics_service: Annotated[ModelMetricsService, Depends(get_model_metrics_service)],
+) -> EventSourceResponse:
+    """Get an EventSourceResponse from the metrics of a model."""
+    model = await model_service.get_model_by_id(model_id)
+    metrics_path = await model_metrics_service.get_model_metrics_path(model)
+    if metrics_path.exists():
+        return EventSourceResponse(model_metrics_service.tail_csv_file(metrics_path))
+    return EventSourceResponse(model_metrics_service.empty_metrics_stream())
 
 
 @router.delete("/{model_id}")
