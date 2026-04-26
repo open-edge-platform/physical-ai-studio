@@ -734,11 +734,6 @@ wheels = [
 ]
 
 [[package]]
-name = "omni-camera"
-version = "0.6.3"
-source = { git = "https://github.com/ArendJanKramer/OmniCamera.git?rev=master#776a1fb9ba6357f18c4159d43babf795153ac483" }
-
-[[package]]
 name = "opencv-python-headless"
 version = "4.13.0.92"
 source = { registry = "https://pypi.org/simple" }
@@ -802,8 +797,8 @@ source = { editable = "." }
 dependencies = [
     { name = "loguru" },
     { name = "numpy" },
-    { name = "omni-camera" },
     { name = "pydantic" },
+    { name = "pynokhwa" },
     { name = "pyturbojpeg", marker = "sys_platform == 'linux'" },
 ]
 
@@ -865,7 +860,6 @@ requires-dist = [
     { name = "matplotlib-inline", marker = "extra == 'notebooks'" },
     { name = "mypy", marker = "extra == 'tests'" },
     { name = "numpy", specifier = ">=1.24" },
-    { name = "omni-camera", git = "https://github.com/ArendJanKramer/OmniCamera.git?rev=master" },
     { name = "opencv-python-headless", marker = "extra == 'basler'" },
     { name = "physicalai", extras = ["abb"], marker = "extra == 'robots'" },
     { name = "physicalai", extras = ["basler"], marker = "extra == 'capture'" },
@@ -877,6 +871,7 @@ requires-dist = [
     { name = "physicalai", extras = ["trossen"], marker = "extra == 'robots'" },
     { name = "physicalai", extras = ["ur"], marker = "extra == 'robots'" },
     { name = "pydantic", specifier = ">=2.5" },
+    { name = "pynokhwa", git = "https://github.com/maxxgx/pynokhwa?rev=4e83188c4b303f09e61ac7350fdcb6b25f8fac8f" },
     { name = "pypylon", marker = "extra == 'basler'" },
     { name = "pyrealsense2", marker = "sys_platform != 'darwin' and extra == 'realsense'" },
     { name = "pyrealsense2-macosx", marker = "sys_platform == 'darwin' and extra == 'realsense'" },
@@ -1171,6 +1166,11 @@ sdist = { url = "https://files.pythonhosted.org/packages/c3/b2/bc9c9196916376152
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f4/7e/a72dd26f3b0f4f2bf1dd8923c85f7ceb43172af56d63c7383eb62b332364/pygments-2.20.0-py3-none-any.whl", hash = "sha256:81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176", size = 1231151, upload-time = "2026-03-29T13:29:30.038Z" },
 ]
+
+[[package]]
+name = "pynokhwa"
+version = "0.6.3"
+source = { git = "https://github.com/maxxgx/pynokhwa?rev=4e83188c4b303f09e61ac7350fdcb6b25f8fac8f#4e83188c4b303f09e61ac7350fdcb6b25f8fac8f" }
 
 [[package]]
 name = "pyparsing"

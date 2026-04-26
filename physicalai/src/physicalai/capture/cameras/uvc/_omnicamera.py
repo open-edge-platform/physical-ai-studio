@@ -7,7 +7,7 @@ import time
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
-import omni_camera
+import pynokhwa as omni_camera  # rename omni_camera references
 
 from physicalai.capture.camera import Camera, ColorMode
 from physicalai.capture.cameras.uvc._camera_setting import CameraSetting  # noqa: PLC2701
@@ -163,10 +163,10 @@ class OmniCamera(Camera):
         deadline = time.monotonic() + timeout if timeout is not None else None
 
         while True:
-            frame_data = self._cam.poll_frame_np()
+            frame_data, seq = self._cam.poll_frame_np_with_seq()
             if frame_data is not None:
                 converted = self._convert_color(frame_data)
-                self._sequence += 1
+                self._sequence = seq
                 self._last_frame = frame_data
                 return Frame(data=converted, timestamp=time.monotonic(), sequence=self._sequence)
 
@@ -181,10 +181,10 @@ class OmniCamera(Camera):
             err = NotConnectedError()
             raise err
 
-        frame_data = self._cam.poll_frame_np()
+        frame_data, seq = self._cam.poll_frame_np_with_seq()
         if frame_data is not None:
             converted = self._convert_color(frame_data)
-            self._sequence += 1
+            self._sequence = seq
             self._last_frame = frame_data
             return Frame(data=converted, timestamp=time.monotonic(), sequence=self._sequence)
 
