@@ -122,7 +122,7 @@ class ExportE2ETests:
         initialized_policy.export(export_dir, backend)
 
         inference_model = InferenceModel.load(export_dir)
-        assert inference_model.backend.value == backend
+        assert inference_model.backend == backend
 
         sample_batch = next(iter(datamodule.train_dataloader()))
 
@@ -243,7 +243,7 @@ class TestE2ECore(CoreE2ETests):
         trained_policy.export(export_dir, backend)
 
         inference_model = InferenceModel.load(export_dir)
-        assert inference_model.backend.value == backend
+        assert inference_model.backend == backend
 
         sample_batch = next(iter(datamodule.train_dataloader()))
 

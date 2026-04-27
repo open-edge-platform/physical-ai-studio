@@ -12,8 +12,7 @@ from typing import TYPE_CHECKING, Any, Self
 
 import yaml
 
-from physicalai.export.backends import ExportBackend
-from physicalai.inference.adapters import get_adapter
+from physicalai.inference.adapters import backend_registry, get_adapter
 from physicalai.inference.component_factory import instantiate_component, resolve_artifact
 from physicalai.inference.constants import ACTION
 from physicalai.inference.manifest import ComponentSpec, Manifest
@@ -70,7 +69,7 @@ class InferenceModel:
         self,
         export_dir: str | Path,
         policy_name: str | None = None,
-        backend: str | ExportBackend = "auto",
+        backend: str = "auto",
         device: str = "auto",
         runner: InferenceRunner | None = None,
         preprocessors: list[Preprocessor] | None = None,
@@ -111,7 +110,7 @@ class InferenceModel:
 
         if backend == "auto":
             backend = self._detect_backend_from_manifest() or self._detect_backend()
-        self.backend = ExportBackend(backend) if isinstance(backend, str) else backend
+        self.backend: str = str(backend)
 
         if device == "auto":
             device = self._detect_device()
@@ -408,23 +407,22 @@ class InferenceModel:
     def _detect_backend(self) -> str:
         """Auto-detect backend from model files.
 
+        Iterates registered backends and returns the first whose extension
+        is present in :attr:`export_dir`.  Registration order in
+        :data:`~physicalai.inference.adapters.backend_registry` defines
+        priority when extensions overlap.
+
         Returns:
-            Backend name
+            Backend name.
 
         Raises:
-            ValueError: If backend cannot be determined
+            ValueError: If no registered extension matches a file in the
+                export directory.
         """
-        extension_map = {
-            ".xml": "openvino",
-            ".onnx": "onnx",
-            ".ckpt": "torch",
-            ".pt": "torch",
-            ".pte": "executorch",
-        }
-
-        for ext, backend in extension_map.items():
-            if list(self.export_dir.glob(f"*{ext}")):
-                return backend
+        for backend in backend_registry.names():
+            for ext in backend_registry.extensions_of(backend):
+                if any(self.export_dir.glob(f"*{ext}")):
+                    return backend
 
         msg = f"Cannot detect backend from files in {self.export_dir}"
         raise ValueError(msg)
@@ -441,20 +439,17 @@ class InferenceModel:
     def _get_model_path(self) -> Path:
         """Get path to model file based on backend.
 
+        Uses extensions registered in
+        :data:`~physicalai.inference.adapters.backend_registry` to locate
+        the artifact, in registration order.
+
         Returns:
-            Path to model file
+            Path to model file.
 
         Raises:
-            FileNotFoundError: If model file doesn't exist
+            FileNotFoundError: If no matching model file is found.
         """
-        extension_map = {
-            ExportBackend.OPENVINO: [".xml"],
-            ExportBackend.ONNX: [".onnx"],
-            ExportBackend.TORCH: [".ckpt", ".pt"],
-            ExportBackend.EXECUTORCH: [".pte"],
-        }
-
-        extensions = extension_map[self.backend]
+        extensions = backend_registry.extensions_of(self.backend)
 
         if self.policy_name:
             for ext in extensions:
@@ -476,7 +471,7 @@ class InferenceModel:
         return (
             f"{self.__class__.__name__}("
             f"policy={self.policy_name}, "
-            f"backend={self.backend.value}, "
+            f"backend={self.backend}, "
             f"device={self.device}, "
             f"runner={self.runner!r})"
         )

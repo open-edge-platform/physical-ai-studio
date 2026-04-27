@@ -117,6 +117,13 @@ all = [
 [project.scripts]
 physicalai = "physicalai.cli.cli:cli"
 
+# Contribute Torch and ExecuTorch as inference backends to the registry
+# in `physicalai.inference.adapters`.  The target callable performs only
+# lightweight lazy registration — torch/executorch are imported only on
+# first use.
+[project.entry-points."physicalai.inference.adapters"]
+physicalai-train = "physicalai.inference.adapters._register:register"
+
 [project.urls]
 Homepage = "https://github.com/open-edge-platform/physical-ai-studio"
 Documentation = "https://github.com/open-edge-platform/physical-ai-studio/blob/main/README.md"
