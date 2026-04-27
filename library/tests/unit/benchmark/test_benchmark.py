@@ -11,7 +11,6 @@ import pytest
 import torch
 
 from physicalai.benchmark import Benchmark, BenchmarkResults, LiberoBenchmark, TaskResult
-from physicalai.policies.base import PolicyLike
 
 
 @pytest.fixture
@@ -107,50 +106,8 @@ class TestLiberoBenchmark:
             assert "libero_10" in repr(LiberoBenchmark(task_suite="libero_10"))
 
 
-class TestPolicyLikeProtocol:
-    """Tests for PolicyLike protocol compatibility."""
-
-    def test_policy_like_protocol_with_mock(self):
-        """Test that mock objects satisfying PolicyLike work with benchmark."""
-
-        class MockInferenceModel:
-            """Mock class mimicking InferenceModel interface."""
-
-            def __init__(self):
-                self.policy_name = "mock_inference_model"
-
-            def select_action(self, observation):
-                """Return dummy action tensor."""
-                return torch.zeros(1, 7)
-
-            def reset(self):
-                """Reset internal state."""
-                pass
-
-        model = MockInferenceModel()
-        assert isinstance(model, PolicyLike), "Mock should satisfy PolicyLike protocol"
-
-    def test_benchmark_accepts_policy_like(self, mock_gym, eval_result):
-        """Test that Benchmark.evaluate accepts PolicyLike objects."""
-
-        class MockInferenceModel:
-            def __init__(self):
-                self.policy_name = "test_model"
-
-            def select_action(self, observation):
-                return torch.zeros(1, 7)
-
-            def reset(self):
-                pass
-
-        model = MockInferenceModel()
-        benchmark = Benchmark(gyms=[mock_gym], num_episodes=5, max_steps=100)
-
-        with patch("physicalai.benchmark.benchmark.evaluate_policy", return_value=eval_result):
-            results = benchmark.evaluate(model)
-
-        assert results.n_tasks == 1
-        assert results.overall_success_rate == 80.0
+class TestPolicyNameExtraction:
+    """Tests for policy name extraction."""
 
     def test_policy_name_extraction_from_inference_model(self):
         """Test that _get_policy_name extracts policy_name from InferenceModel-like objects."""

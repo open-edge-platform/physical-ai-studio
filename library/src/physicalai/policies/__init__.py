@@ -5,19 +5,14 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from . import lerobot
 from .act import ACT, ACTConfig, ACTModel
-from .base import PolicyLike
+from .base import Policy
 from .groot import Groot, GrootConfig, GrootModel
 from .lerobot import get_lerobot_policy
 from .pi0 import Pi0, Pi0Config, Pi0Model
 from .pi05 import Pi05, Pi05Config, Pi05Model
 from .smolvla import SmolVLA, SmolVLAConfig, SmolVLAModel
-
-if TYPE_CHECKING:
-    from .base import Policy
 
 __all__ = [
     # ACT
@@ -35,8 +30,8 @@ __all__ = [
     "Pi05",
     "Pi05Config",
     "Pi05Model",
-    # Protocol
-    "PolicyLike",
+    # Base
+    "Policy",
     # SmolVLA
     "SmolVLA",
     "SmolVLAConfig",

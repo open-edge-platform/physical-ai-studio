@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from physicalai.data import Observation
     from physicalai.eval.video import VideoRecorder
     from physicalai.gyms import Gym
-    from physicalai.policies.base import PolicyLike
+    from physicalai.policies.base import Policy
 
 
 @dataclass
@@ -230,7 +230,7 @@ def _collect_frame(
 
 def setup_rollout(
     env: Gym,
-    policy: PolicyLike,
+    policy: Policy,
     seed: int | None,
     max_steps: int | None,
 ) -> tuple[Observation, int]:
@@ -238,7 +238,7 @@ def setup_rollout(
 
     Args:
         env (Gym): environment to probe max_steps and init.
-        policy (PolicyLike): policy to reset if it has attribute.
+        policy (Policy): policy to reset if it has attribute.
         seed (int | None): seed to init reset.
         max_steps (int | None): maximum number of steps
 
@@ -259,7 +259,7 @@ def setup_rollout(
 
 def run_rollout_loop(  # noqa: PLR0914
     env: Gym,
-    policy: PolicyLike,
+    policy: Policy,
     initial_observation: Observation,
     max_steps: int,
     *,
@@ -412,7 +412,7 @@ def finalize_rollout(
 
 def rollout(
     env: Gym,
-    policy: PolicyLike,
+    policy: Policy,
     *,
     seed: int | None = None,
     max_steps: int | None = None,
@@ -436,9 +436,9 @@ def rollout(
 
     Args:
         env (Gym): Environment to interact with.
-        policy (PolicyLike): Policy or inference model used to select actions.
+        policy (Policy): Policy or inference model used to select actions.
             Accepts Policy (PyTorch), InferenceModel (exported), or any
-            object implementing the PolicyLike protocol (select_action, reset).
+            object implementing the Policy protocol (select_action, reset).
         seed (int | None, optional): RNG seed for the environment. Defaults to None.
         max_steps (int | None, optional): Maximum number of steps before termination.
             If None, runs until the episode ends. Defaults to None.
@@ -556,7 +556,7 @@ def _extract_episode_records(
 
 def evaluate_policy(
     env: Gym,
-    policy: PolicyLike,
+    policy: Policy,
     n_episodes: int,
     *,
     start_seed: int | None = None,
@@ -571,9 +571,9 @@ def evaluate_policy(
 
     Args:
         env (Gym): Environment used for evaluation.
-        policy (PolicyLike): Policy or inference model to evaluate.
+        policy (Policy): Policy or inference model to evaluate.
             Accepts Policy (PyTorch), InferenceModel (exported), or any
-            object implementing the PolicyLike protocol (select_action, reset).
+            object implementing the Policy protocol (select_action, reset).
         n_episodes (int): Number of episodes to run.
         start_seed (int | None, optional): Initial seed; incremented per episode
             if provided. Defaults to None.

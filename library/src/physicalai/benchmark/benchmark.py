@@ -48,7 +48,7 @@ from physicalai.eval.rollout import evaluate_policy
 if TYPE_CHECKING:
     from physicalai.eval.video import VideoRecorder
     from physicalai.gyms import Gym
-    from physicalai.policies.base import PolicyLike
+    from physicalai.policies.base import Policy
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +112,7 @@ class Benchmark:
 
     def evaluate(
         self,
-        policy: PolicyLike,
+        policy: Policy,
         *,
         continue_on_error: bool = True,
     ) -> BenchmarkResults:
@@ -124,7 +124,7 @@ class Benchmark:
         Args:
             policy: Policy or model to evaluate. Accepts Policy (PyTorch),
                 InferenceModel (exported), or any object implementing the
-                PolicyLike protocol (select_action, reset).
+                Policy protocol (select_action, reset).
             continue_on_error: Whether to continue if a task fails.
 
         Returns:
@@ -203,7 +203,7 @@ class Benchmark:
         gym: Gym,
         gym_idx: int,
         total_gyms: int,
-        policy: PolicyLike,
+        policy: Policy,
         failed_tasks: list[str],
         *,
         continue_on_error: bool,
@@ -271,7 +271,7 @@ class Benchmark:
 
     def _create_video_recorder(
         self,
-        policy: PolicyLike,
+        policy: Policy,
         task_id: str,
     ) -> VideoRecorder | None:
         """Create a VideoRecorder for the current task if video recording is enabled.
@@ -297,7 +297,7 @@ class Benchmark:
             record_mode=self.record_mode,  # type: ignore[arg-type]
         )
 
-    def _build_metadata(self, policy: PolicyLike) -> dict[str, Any]:
+    def _build_metadata(self, policy: Policy) -> dict[str, Any]:
         """Build metadata dict for results.
 
         Returns:
@@ -374,7 +374,7 @@ def _get_task_name(gym: Gym) -> str:
     return ""
 
 
-def _get_policy_name(policy: PolicyLike, _index: int = 0) -> str:
+def _get_policy_name(policy: Policy, _index: int = 0) -> str:
     """Extract policy name for results dict key.
 
     Handles both Policy objects and InferenceModel objects.
