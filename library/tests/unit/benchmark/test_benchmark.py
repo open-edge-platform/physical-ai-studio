@@ -11,7 +11,6 @@ import pytest
 import torch
 
 from physicalai.benchmark import Benchmark, BenchmarkResults, LiberoBenchmark, TaskResult
-from physicalai.policies.base import PolicyLike
 
 
 @pytest.fixture
@@ -107,50 +106,40 @@ class TestLiberoBenchmark:
             assert "libero_10" in repr(LiberoBenchmark(task_suite="libero_10"))
 
 
-class TestPolicyLikeProtocol:
-    """Tests for PolicyLike protocol compatibility."""
+class TestWrapPolicy:
+    """Tests for _wrap_policy with InferenceModel input."""
 
-    def test_policy_like_protocol_with_mock(self):
-        """Test that mock objects satisfying PolicyLike work with benchmark."""
+    def test_wraps_inference_model_into_policy(self):
+        """Test that _wrap_policy wraps an InferenceModel into a Policy-compatible object."""
+        import numpy as np
 
-        class MockInferenceModel:
-            """Mock class mimicking InferenceModel interface."""
+        from physicalai.benchmark.benchmark import _wrap_policy
+        from physicalai.inference.model import InferenceModel
+        from physicalai.policies.base import Policy
 
-            def __init__(self):
-                self.policy_name = "mock_inference_model"
+        mock_model = MagicMock(spec=InferenceModel)
+        mock_model.policy_name = "test_policy"
+        mock_model.select_action.return_value = np.array([1.0, 2.0, 3.0])
 
-            def select_action(self, observation):
-                """Return dummy action tensor."""
-                return torch.zeros(1, 7)
+        wrapped = _wrap_policy(mock_model)
 
-            def reset(self):
-                """Reset internal state."""
-                pass
+        assert isinstance(wrapped, Policy)
+        assert wrapped.name == "test_policy"
 
-        model = MockInferenceModel()
-        assert isinstance(model, PolicyLike), "Mock should satisfy PolicyLike protocol"
+        obs = MagicMock()
+        np_obs = MagicMock()
+        np_obs.to_dict.return_value = {"image": np.zeros((3, 224, 224))}
+        obs.to_numpy.return_value = np_obs
 
-    def test_benchmark_accepts_policy_like(self, mock_gym, eval_result):
-        """Test that Benchmark.evaluate accepts PolicyLike objects."""
+        action = wrapped.select_action(obs)
 
-        class MockInferenceModel:
-            def __init__(self):
-                self.policy_name = "test_model"
+        mock_model.select_action.assert_called_once()
+        assert isinstance(action, torch.Tensor)
+        assert torch.equal(action, torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64))
 
-            def select_action(self, observation):
-                return torch.zeros(1, 7)
 
-            def reset(self):
-                pass
-
-        model = MockInferenceModel()
-        benchmark = Benchmark(gyms=[mock_gym], num_episodes=5, max_steps=100)
-
-        with patch("physicalai.benchmark.benchmark.evaluate_policy", return_value=eval_result):
-            results = benchmark.evaluate(model)
-
-        assert results.n_tasks == 1
-        assert results.overall_success_rate == 80.0
+class TestPolicyNameExtraction:
+    """Tests for policy name extraction."""
 
     def test_policy_name_extraction_from_inference_model(self):
         """Test that _get_policy_name extracts policy_name from InferenceModel-like objects."""

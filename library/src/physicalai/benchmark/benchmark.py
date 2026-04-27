@@ -42,13 +42,17 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+import torch
+
 from physicalai.benchmark.results import BenchmarkResults, TaskResult
 from physicalai.eval.rollout import evaluate_policy
+from physicalai.inference.model import InferenceModel
+from physicalai.policies.base import Policy
 
 if TYPE_CHECKING:
+    from physicalai.data import Observation
     from physicalai.eval.video import VideoRecorder
     from physicalai.gyms import Gym
-    from physicalai.policies.base import PolicyLike
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +116,7 @@ class Benchmark:
 
     def evaluate(
         self,
-        policy: PolicyLike,
+        policy: Policy | InferenceModel,
         *,
         continue_on_error: bool = True,
     ) -> BenchmarkResults:
@@ -120,11 +124,12 @@ class Benchmark:
 
         Supports both PyTorch `Policy` objects and exported `InferenceModel`
         objects, enabling benchmarking of production inference performance.
+        Only select_action() is used during gym rollout, as it represents
+        the expected inference behavior.
 
         Args:
             policy: Policy or model to evaluate. Accepts Policy (PyTorch),
-                InferenceModel (exported), or any object implementing the
-                PolicyLike protocol (select_action, reset).
+                InferenceModel (exported).
             continue_on_error: Whether to continue if a task fails.
 
         Returns:
@@ -148,6 +153,7 @@ class Benchmark:
         Raises:
             RuntimeError: If all tasks fail during evaluation.
         """
+        policy = _wrap_policy(policy)
         metadata = self._build_metadata(policy)
         results = BenchmarkResults(metadata=metadata)
         failed_tasks: list[str] = []
@@ -203,7 +209,7 @@ class Benchmark:
         gym: Gym,
         gym_idx: int,
         total_gyms: int,
-        policy: PolicyLike,
+        policy: Policy,
         failed_tasks: list[str],
         *,
         continue_on_error: bool,
@@ -271,7 +277,7 @@ class Benchmark:
 
     def _create_video_recorder(
         self,
-        policy: PolicyLike,
+        policy: Policy | InferenceModel,
         task_id: str,
     ) -> VideoRecorder | None:
         """Create a VideoRecorder for the current task if video recording is enabled.
@@ -297,7 +303,7 @@ class Benchmark:
             record_mode=self.record_mode,  # type: ignore[arg-type]
         )
 
-    def _build_metadata(self, policy: PolicyLike) -> dict[str, Any]:
+    def _build_metadata(self, policy: Policy) -> dict[str, Any]:
         """Build metadata dict for results.
 
         Returns:
@@ -374,7 +380,7 @@ def _get_task_name(gym: Gym) -> str:
     return ""
 
 
-def _get_policy_name(policy: PolicyLike, _index: int = 0) -> str:
+def _get_policy_name(policy: Policy, _index: int = 0) -> str:
     """Extract policy name for results dict key.
 
     Handles both Policy objects and InferenceModel objects.
@@ -388,3 +394,45 @@ def _get_policy_name(policy: PolicyLike, _index: int = 0) -> str:
         # InferenceModel uses policy_name attribute
         return str(policy.policy_name)
     return type(policy).__name__
+
+
+def _wrap_policy(policy: Policy | InferenceModel) -> Policy:
+    """Wrap an InferenceModel in a Policy interface if needed.
+
+    This allows evaluate_policy to work with both Policy and InferenceModel
+    objects seamlessly.
+
+    Inference model interface doesn't match 1:1 with Policy,
+    so the wrapper uses select_action() everywhere.
+    That's not an issue for evaluation: only select_action()
+    is used during rollout.
+
+    Returns:
+        A Policy object that can be used for evaluation.
+    """
+
+    class InferenceModelPolicyWrapper(Policy):
+        def __init__(self, inf_model: InferenceModel) -> None:
+            super().__init__()
+            self._inf_model = inf_model
+            self.name = inf_model.policy_name
+
+        def forward(self, batch: Observation) -> torch.Tensor:
+            return self.select_action(batch)
+
+        def predict_action_chunk(self, batch: Observation) -> torch.Tensor:
+            return self.select_action(batch)
+
+        def select_action(self, observation: Observation) -> torch.Tensor:
+            np_inputs = observation.to_numpy().to_dict(flatten=False)
+            action = self._inf_model.select_action(np_inputs)
+            return torch.from_numpy(action)
+
+        def reset(self) -> None:
+            """Reset policy state for new episode."""
+            self._inf_model.reset()
+
+    if isinstance(policy, InferenceModel):
+        return InferenceModelPolicyWrapper(policy)
+
+    return policy
