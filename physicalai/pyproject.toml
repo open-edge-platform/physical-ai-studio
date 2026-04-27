@@ -26,6 +26,18 @@ dependencies = [
 [project.optional-dependencies]
 tests = ["pytest", "mypy"]
 notebooks = ["matplotlib", "matplotlib-inline", "ipykernel"]
+inference = [
+    "numpy>=1.24",
+    "pyyaml>=6.0",
+    "pydantic>=2.5",
+    "opencv-python-headless",
+    "transformers>=5.3.0,<5.4.0",
+    "num2words>=0.5.14,<0.6.0",
+    "safetensors>=0.4.3,<1.0.0",
+    "onnxruntime",
+    "openvino>=2026.0",
+    "openvino_tokenizers>=2026.0",
+]
 realsense = [
     "pyrealsense2; sys_platform != 'darwin'",
     "pyrealsense2-macosx; sys_platform == 'darwin'",

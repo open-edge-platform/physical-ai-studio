@@ -43,6 +43,7 @@ dependencies = [
     "openvino_tokenizers>=2026.0",
     "jsonargparse[signatures]>=4.27.0", # This could be extra
     "pydantic",                         # This could be extra
+    "physicalai[inference]",
 ]
 
 [project.optional-dependencies]
@@ -158,6 +159,7 @@ explicit = true
 
 # PyTorch sources configuration
 [tool.uv.sources]
+physicalai = { path = "../physicalai", editable = true }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },
