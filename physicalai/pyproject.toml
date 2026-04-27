@@ -19,7 +19,7 @@ dependencies = [
     "loguru>=0.7",
     # target PyTurboJPEG 1.x for libjpeg-turbo 2.x compatibility
     "PyTurboJPEG<2; sys_platform == 'linux'",
-    "pynokhwa @ git+https://github.com/maxxgx/pynokhwa@4e83188c4b303f09e61ac7350fdcb6b25f8fac8f",
+    "pynokhwa==0.1.0",
     "pydantic>=2.5",
 ]
 

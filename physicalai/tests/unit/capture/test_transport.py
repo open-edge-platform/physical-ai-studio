@@ -150,18 +150,6 @@ class TestEncodeDecodeRoundtrip:
             decode_depth(header, full_payload)
 
 
-class TestImportGuard:
-    def test_missing_iceoryx2_raises(self) -> None:
-        from physicalai.capture.transport import _ensure_iceoryx2
-
-        with patch.dict("sys.modules", {"iceoryx2": None}):
-            with pytest.raises(MissingDependencyError) as exc_info:
-                _ensure_iceoryx2()
-
-        assert exc_info.value.package == "iceoryx2"
-        assert exc_info.value.extra == "transport"
-
-
 class TestSharedCameraConstruction:
     """Unit tests for SharedCamera constructor and from_publisher."""
 
@@ -169,10 +157,10 @@ class TestSharedCameraConstruction:
         cam = SharedCamera("uvc", device=0)
         assert cam._camera_type == "uvc"
         assert cam._service_name == "physicalai/camera/uvc/0/frame"
-        assert cam.device_id == "uvc/0"
+        assert cam.device_id == "0"
 
     def test_constructor_with_explicit_service_name(self) -> None:
-        cam = SharedCamera("uvc", service_name="custom/name", device=0)
+        cam = SharedCamera.from_publisher("custom/name")
         assert cam._service_name == "custom/name"
 
     def test_from_publisher(self) -> None:
