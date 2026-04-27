@@ -106,6 +106,38 @@ class TestLiberoBenchmark:
             assert "libero_10" in repr(LiberoBenchmark(task_suite="libero_10"))
 
 
+class TestWrapPolicy:
+    """Tests for _wrap_policy with InferenceModel input."""
+
+    def test_wraps_inference_model_into_policy(self):
+        """Test that _wrap_policy wraps an InferenceModel into a Policy-compatible object."""
+        import numpy as np
+
+        from physicalai.benchmark.benchmark import _wrap_policy
+        from physicalai.inference.model import InferenceModel
+        from physicalai.policies.base import Policy
+
+        mock_model = MagicMock(spec=InferenceModel)
+        mock_model.policy_name = "test_policy"
+        mock_model.select_action.return_value = np.array([1.0, 2.0, 3.0])
+
+        wrapped = _wrap_policy(mock_model)
+
+        assert isinstance(wrapped, Policy)
+        assert wrapped.name == "test_policy"
+
+        obs = MagicMock()
+        np_obs = MagicMock()
+        np_obs.to_dict.return_value = {"image": np.zeros((3, 224, 224))}
+        obs.to_numpy.return_value = np_obs
+
+        action = wrapped.select_action(obs)
+
+        mock_model.select_action.assert_called_once()
+        assert isinstance(action, torch.Tensor)
+        assert torch.equal(action, torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64))
+
+
 class TestPolicyNameExtraction:
     """Tests for policy name extraction."""
 
