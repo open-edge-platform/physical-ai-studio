@@ -1,0 +1,84 @@
+# PI0.5 Policy Training Configuration
+# Train Physical Intelligence PI0.5 flow-matching VLA using LeRobot's implementation.
+#
+# Usage:
+#   physicalai fit --config configs/lerobot/pi05.yaml
+#
+# Override parameters:
+#   physicalai fit --config configs/lerobot/pi05.yaml --model.chunk_size 50
+
+model:
+  class_path: physicalai.policies.lerobot.PI05
+  init_args:
+    # Core architecture - chunk_size overridden from the LeRobot default of 50
+    # to keep the starter config compact; must match delta_timestamps length.
+    chunk_size: 10
+    n_action_steps: 10
+    n_obs_steps: 1
+
+    # PaliGemma VLM variants
+    paligemma_variant: "gemma_2b" # Options: gemma_300m, gemma_2b
+    action_expert_variant: "gemma_300m" # Options: gemma_300m, gemma_2b
+    dtype: "float32" # Options: float32, bfloat16
+
+    # State / action dimensions - the policy pads to these values
+    max_state_dim: 32
+    max_action_dim: 32
+
+    # Vision preprocessing
+    image_resolution: [224, 224]
+    empty_cameras: 0
+
+    # Tokenizer - PI0.5 uses a longer default context (200) than PI0 (48).
+    tokenizer_max_length: 200
+
+    # Fine-tuning control
+    freeze_vision_encoder: false
+    train_expert_only: false
+
+    # Flow-matching inference
+    num_inference_steps: 10
+
+    # Relative action prediction
+    use_relative_actions: false
+    relative_exclude_joints: ["gripper"]
+
+    # Normalization - PI0.5 uses QUANTILES for state/action (PI0 uses MEAN_STD).
+    # Dataset metadata must include quantile stats for this mode.
+    normalization_mapping:
+      VISUAL: IDENTITY
+      STATE: QUANTILES
+      ACTION: QUANTILES
+
+    # Optimization
+    optimizer_lr: 2.5e-5
+    optimizer_weight_decay: 0.01
+    optimizer_grad_clip_norm: 1.0
+    scheduler_warmup_steps: 1000
+    scheduler_decay_steps: 30000
+    scheduler_decay_lr: 2.5e-6
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: "lerobot/aloha_sim_transfer_cube_human"
+    train_batch_size: 8
+    # PI0.5 normalization uses QUANTILES for STATE/ACTION, but the default
+    # LeRobot dataset metadata only ships mean/std/min/max. The "physicalai"
+    # data_format path auto-synthesizes q01/q99 from min/max so training works
+    # out of the box; switching to "lerobot" here would crash in
+    # NormalizerProcessorStep with a missing-stat error.
+    data_format: "physicalai"
+    # PI0.5 uses action_delta_indices=range(chunk_size); n_obs_steps=1 means no
+    # observation offsets are needed. The default repo_id is 50 fps -> step = 0.02 s,
+    # so 10 consecutive frames span [0.0, 0.18] s.
+    delta_timestamps:
+      action: [0.0, 0.02, 0.04, 0.06, 0.08, 0.10, 0.12, 0.14, 0.16, 0.18]
+
+trainer:
+  max_epochs: 100
+  accelerator: gpu
+  devices: 1
+  precision: bf16-mixed
+  log_every_n_steps: 10
+  check_val_every_n_epoch: 10

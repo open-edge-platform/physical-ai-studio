@@ -47,7 +47,33 @@ data:
   init_args:
     repo_id: "lerobot/aloha_sim_transfer_cube_human"
     train_batch_size: 8
-    data_format: "lerobot"
+    data_format: "lerobot" # Output format: "lerobot" (flattened dict) or "physicalai" (Observation)
+    # Delta timestamps MUST match the policy's obs/action horizons AND the dataset's fps.
+    # The default repo_id (lerobot/aloha_sim_transfer_cube_human) is 50 fps -> step = 0.02 s.
+    # Observation: n_obs_steps=2 consecutive frames ending at t=0 -> offsets [-0.02, 0.0].
+    # Action:       horizon=16 consecutive frames starting at t=-0.02 -> 16 offsets in 0.02 s steps.
+    delta_timestamps:
+      observation.images.top: [-0.02, 0.0]
+      observation.state: [-0.02, 0.0]
+      action:
+        [
+          -0.02,
+          0.0,
+          0.02,
+          0.04,
+          0.06,
+          0.08,
+          0.10,
+          0.12,
+          0.14,
+          0.16,
+          0.18,
+          0.20,
+          0.22,
+          0.24,
+          0.26,
+          0.28,
+        ]
 
 trainer:
   max_epochs: 100
