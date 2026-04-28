@@ -273,6 +273,17 @@ wheels = [
 ]
 
 [[package]]
+name = "iceoryx2"
+version = "0.8.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f6/58/c0d8dfd3be8b70a674564f979e53e966f33c74e50ea69175ec35ab951d17/iceoryx2-0.8.1.tar.gz", hash = "sha256:2d2ae65e013d285ee087fda97ec45bddb26b3e344d501365eb83b8cead229445", size = 818783, upload-time = "2026-01-16T17:19:49.23Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/55/0e/4060ecaabbbf9a0b802569ea4370a0cfda119eab394c700c9e5f4f7a2339/iceoryx2-0.8.1-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:cd2727a30579e51e02e908df1f0543f926ba29a57c016b4bb2091cc06cbdf086", size = 1204777, upload-time = "2026-01-16T17:19:44.126Z" },
+    { url = "https://files.pythonhosted.org/packages/5f/42/e396d7422513c2b036f734fb0970e899b39d835ccdee5afeb034e70ea073/iceoryx2-0.8.1-cp38-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:5ddf6ae96da21c01a86c93ad3dc21dce5f4b8801b31c053395d2441df392648f", size = 1433570, upload-time = "2026-01-16T17:19:45.856Z" },
+    { url = "https://files.pythonhosted.org/packages/36/b1/7428087e014da39fb033f27bbf01f0cc86341f6ec7f0fc67ffe5b50774b8/iceoryx2-0.8.1-cp38-abi3-win_amd64.whl", hash = "sha256:0d8dd708d1c076dff822e158c3b34e3ee561c81b3f91fa89eef90f6c67ba31c9", size = 1299170, upload-time = "2026-01-16T17:19:47.591Z" },
+]
+
+[[package]]
 name = "iniconfig"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -728,11 +739,6 @@ wheels = [
 ]
 
 [[package]]
-name = "omni-camera"
-version = "0.6.3"
-source = { git = "https://github.com/ArendJanKramer/OmniCamera.git?rev=master#776a1fb9ba6357f18c4159d43babf795153ac483" }
-
-[[package]]
 name = "opencv-python-headless"
 version = "4.13.0.92"
 source = { registry = "https://pypi.org/simple" }
@@ -796,8 +802,8 @@ source = { editable = "." }
 dependencies = [
     { name = "loguru" },
     { name = "numpy" },
-    { name = "omni-camera" },
     { name = "pydantic" },
+    { name = "pynokhwa" },
     { name = "pyturbojpeg", marker = "sys_platform == 'linux'" },
 ]
 
@@ -807,6 +813,7 @@ basler = [
     { name = "pypylon" },
 ]
 capture = [
+    { name = "iceoryx2" },
     { name = "opencv-python-headless" },
     { name = "pypylon" },
     { name = "pyrealsense2", marker = "sys_platform != 'darwin'" },
@@ -832,6 +839,9 @@ tests = [
     { name = "mypy" },
     { name = "pytest" },
 ]
+transport = [
+    { name = "iceoryx2" },
+]
 trossen = [
     { name = "trossen-arm" },
 ]
@@ -848,13 +858,13 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "feetech-servo-sdk", marker = "extra == 'so101'" },
+    { name = "iceoryx2", marker = "extra == 'transport'", specifier = ">=0.8" },
     { name = "ipykernel", marker = "extra == 'notebooks'" },
     { name = "loguru", specifier = ">=0.7" },
     { name = "matplotlib", marker = "extra == 'notebooks'" },
     { name = "matplotlib-inline", marker = "extra == 'notebooks'" },
     { name = "mypy", marker = "extra == 'tests'" },
     { name = "numpy", specifier = ">=1.24" },
-    { name = "omni-camera", git = "https://github.com/ArendJanKramer/OmniCamera.git?rev=master" },
     { name = "opencv-python-headless", marker = "extra == 'basler'" },
     { name = "physicalai", extras = ["abb"], marker = "extra == 'robots'" },
     { name = "physicalai", extras = ["basler"], marker = "extra == 'capture'" },
@@ -862,9 +872,11 @@ requires-dist = [
     { name = "physicalai", extras = ["genicam"], marker = "extra == 'capture'" },
     { name = "physicalai", extras = ["realsense"], marker = "extra == 'capture'" },
     { name = "physicalai", extras = ["so101"], marker = "extra == 'robots'" },
+    { name = "physicalai", extras = ["transport"], marker = "extra == 'capture'" },
     { name = "physicalai", extras = ["trossen"], marker = "extra == 'robots'" },
     { name = "physicalai", extras = ["ur"], marker = "extra == 'robots'" },
     { name = "pydantic", specifier = ">=2.5" },
+    { name = "pynokhwa", specifier = "==0.1.0" },
     { name = "pypylon", marker = "extra == 'basler'" },
     { name = "pyrealsense2", marker = "sys_platform != 'darwin' and extra == 'realsense'" },
     { name = "pyrealsense2-macosx", marker = "sys_platform == 'darwin' and extra == 'realsense'" },
@@ -872,7 +884,7 @@ requires-dist = [
     { name = "pyturbojpeg", marker = "sys_platform == 'linux'", specifier = "<2" },
     { name = "trossen-arm", marker = "extra == 'trossen'", specifier = ">=1.9.0" },
 ]
-provides-extras = ["tests", "notebooks", "realsense", "basler", "genicam", "capture", "ur", "abb", "franka", "trossen", "so101", "robots"]
+provides-extras = ["tests", "notebooks", "realsense", "basler", "transport", "genicam", "capture", "ur", "abb", "franka", "trossen", "so101", "robots"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1158,6 +1170,24 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/c3/b2/bc9c9196916376152d655522fdcebac55e66de6603a76a02bca1b6414f6c/pygments-2.20.0.tar.gz", hash = "sha256:6757cd03768053ff99f3039c1a36d6c0aa0b263438fcab17520b30a303a82b5f", size = 4955991, upload-time = "2026-03-29T13:29:33.898Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f4/7e/a72dd26f3b0f4f2bf1dd8923c85f7ceb43172af56d63c7383eb62b332364/pygments-2.20.0-py3-none-any.whl", hash = "sha256:81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176", size = 1231151, upload-time = "2026-03-29T13:29:30.038Z" },
+]
+
+[[package]]
+name = "pynokhwa"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/07/d7/4f25ddcec18631f9d02a334911da4fffcb5f76be4f22938a111020abe87e/pynokhwa-0.1.0.tar.gz", hash = "sha256:33f024f101296a13d0c89c3f28f312ff5368cdeccf611b925519781d120bd276", size = 26391, upload-time = "2026-04-27T11:39:57.202Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/40/63/9f9cc1d8c4d92f5d7753d4858a64fdbe324a0daed230343e9bd8c4e5b2eb/pynokhwa-0.1.0-cp313-cp313t-macosx_10_12_x86_64.whl", hash = "sha256:7b317f2cff2b5c2ad01bcc74d073347d55ff4cf44935c514e0879f40c8d8a6e0", size = 548085, upload-time = "2026-04-27T11:39:40.243Z" },
+    { url = "https://files.pythonhosted.org/packages/65/b5/a6bb4f3727e22a2fa117495cddbe1d75792d799d266b86abdca8956b6569/pynokhwa-0.1.0-cp313-cp313t-macosx_11_0_arm64.whl", hash = "sha256:2c9fafb3b29c69eb012127aea5dd77af50e647e909d6e75b9aa8b42ae448728a", size = 538679, upload-time = "2026-04-27T11:39:42.207Z" },
+    { url = "https://files.pythonhosted.org/packages/3a/81/09ef33e10cad856d4e74e29a889e594e60b25359bfd4565f571b39a094eb/pynokhwa-0.1.0-cp313-cp313t-manylinux_2_34_x86_64.whl", hash = "sha256:bd055f05c33221a8f3ae7bd35adc5b8b5fceae9276612c69fc880a87970c2655", size = 560385, upload-time = "2026-04-27T11:39:44.196Z" },
+    { url = "https://files.pythonhosted.org/packages/66/22/bb48f0a2723f6bdca100e73e0507a8fedc029c4691e85f318425b97b4767/pynokhwa-0.1.0-cp313-cp313t-win32.whl", hash = "sha256:7141adf2951b7ccb02efbf62239a459d5c4a5ac96ba70498312bafa7a3ac2cbc", size = 345490, upload-time = "2026-04-27T11:39:45.955Z" },
+    { url = "https://files.pythonhosted.org/packages/ab/dd/0f7f051893292a82dcb456aeb8279c9e9c16405f89b1af669197d0af0c51/pynokhwa-0.1.0-cp313-cp313t-win_amd64.whl", hash = "sha256:94a76660e9e81424f195940ecd492e8877b223e50389582c0e940988103066b3", size = 366319, upload-time = "2026-04-27T11:39:47.735Z" },
+    { url = "https://files.pythonhosted.org/packages/15/db/dc7789201d36130802a1a33e87eb25faf9d39a31878491f8def5f07a8a1f/pynokhwa-0.1.0-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:cfad3530d5842c062839bb83e66be8415ac5e985f82fce67483d02a6290913a9", size = 556053, upload-time = "2026-04-27T11:39:49.227Z" },
+    { url = "https://files.pythonhosted.org/packages/6f/1d/08c746cf790fe5ffd1678133811618bf9e9d23e5f7ed8be60017d353257e/pynokhwa-0.1.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:f414d6911e547089ac506343866f4bbc700894d7219e770a34488b210843ee7c", size = 548285, upload-time = "2026-04-27T11:39:51.024Z" },
+    { url = "https://files.pythonhosted.org/packages/4d/25/8c4c8383774809dd783d8b9bb279c6f90ffba5ff66bf2aef36d5d3390921/pynokhwa-0.1.0-cp39-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:f08d3451f2d53e80153ed1056902926ac1a247e30153f53be1cf340f7466cc8c", size = 564348, upload-time = "2026-04-27T11:39:52.696Z" },
+    { url = "https://files.pythonhosted.org/packages/47/04/6f7f7ccfdd6febf3bb96d8f62b5cb1697fb87047f7dd419165dfdf085938/pynokhwa-0.1.0-cp39-abi3-win32.whl", hash = "sha256:a63cd3040868f3b1cc4b745a14d5ea10ea7eaafaebf1330b185754b86b032c35", size = 350015, upload-time = "2026-04-27T11:39:54.401Z" },
+    { url = "https://files.pythonhosted.org/packages/4c/29/6168eb39abacae77eb36e34a6883abab7662757b8579001470d4b4eaeae9/pynokhwa-0.1.0-cp39-abi3-win_amd64.whl", hash = "sha256:d9e57a80a9cc4a8a29a32a7ba70528ea1520df78f0a99d9d7a6df8bd5c6eeacf", size = 371360, upload-time = "2026-04-27T11:39:55.774Z" },
 ]
 
 [[package]]

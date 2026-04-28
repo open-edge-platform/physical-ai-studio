@@ -13,6 +13,8 @@ Public API::
     from physicalai.capture import IPCamera    # stub — not yet implemented
 """
 
+from typing import TYPE_CHECKING
+
 from physicalai.capture.camera import Camera, CameraType, ColorMode
 from physicalai.capture.discovery import DeviceInfo, discover_all
 from physicalai.capture.errors import (
@@ -26,7 +28,15 @@ from physicalai.capture.frame import Frame
 from physicalai.capture.mixins import DepthMixin
 from physicalai.capture.multi import SyncedFrames, async_read_cameras, read_cameras
 
-__all__ = [  # noqa: F822, RUF022
+if TYPE_CHECKING:
+    from physicalai.capture.cameras.ip import IPCamera
+
+    from physicalai.capture.cameras.basler import BaslerCamera
+    from physicalai.capture.cameras.realsense import RealSenseCamera
+    from physicalai.capture.cameras.uvc import UVCCamera
+    from physicalai.capture.transport import SharedCamera, create_shared_camera
+
+__all__ = [  # noqa: RUF022
     # ABC & types
     "Camera",
     "CameraType",
@@ -51,10 +61,12 @@ __all__ = [  # noqa: F822, RUF022
     "RealSenseCamera",
     "BaslerCamera",
     "UVCCamera",
+    "SharedCamera",
+    "create_shared_camera",
 ]
 
 
-def __getattr__(name: CameraType) -> object:
+def __getattr__(name: str) -> object:
     """Lazy-load concrete camera implementations.
 
     This avoids pulling in hardware SDKs (e.g. ``opencv-python``,
@@ -69,25 +81,35 @@ def __getattr__(name: CameraType) -> object:
     Raises:
         AttributeError: If *name* does not match a known lazy-loaded symbol.
     """
-    if name == CameraType.UVC:
+    if name == "UVCCamera":
         from physicalai.capture.cameras.uvc import UVCCamera  # noqa: PLC0415
 
         return UVCCamera
 
-    if name == CameraType.IP:
+    if name == "IPCamera":
         from physicalai.capture.cameras.ip import IPCamera  # noqa: PLC0415
 
         return IPCamera
 
-    if name == CameraType.REALSENSE:
+    if name == "RealSenseCamera":
         from physicalai.capture.cameras.realsense import RealSenseCamera  # noqa: PLC0415
 
         return RealSenseCamera
 
-    if name in {CameraType.BASLER, "BaslerCamera"}:
+    if name == "BaslerCamera":
         from physicalai.capture.cameras.basler import BaslerCamera  # noqa: PLC0415
 
         return BaslerCamera
+
+    if name == "SharedCamera":
+        from physicalai.capture.transport import SharedCamera  # noqa: PLC0415
+
+        return SharedCamera
+
+    if name == "create_shared_camera":
+        from physicalai.capture.transport import create_shared_camera  # noqa: PLC0415
+
+        return create_shared_camera
 
     msg = f"module {__name__!r} has no attribute {name!r}"
     raise AttributeError(msg)

@@ -36,10 +36,6 @@ class CameraType(StrEnum):
     BASLER = "basler"
 
 
-# Backward-compat alias — will be removed in a future version.
-Driver = CameraType
-
-
 class Camera(ABC):
     """Abstract interface for live camera hardware.
 
@@ -142,6 +138,11 @@ class Camera(ABC):
         by :meth:`discover` for the same device.
         """
         ...
+
+    @property
+    def color_mode(self) -> ColorMode:
+        """Pixel format for colour image reads."""
+        return self._color_mode
 
     @property
     def _executor(self) -> ThreadPoolExecutor:

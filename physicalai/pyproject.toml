@@ -19,7 +19,7 @@ dependencies = [
     "loguru>=0.7",
     # target PyTurboJPEG 1.x for libjpeg-turbo 2.x compatibility
     "PyTurboJPEG<2; sys_platform == 'linux'",
-    "omni_camera @ git+https://github.com/ArendJanKramer/OmniCamera.git@master",
+    "pynokhwa==0.1.0",
     "pydantic>=2.5",
 ]
 
@@ -31,11 +31,13 @@ realsense = [
     "pyrealsense2-macosx; sys_platform == 'darwin'",
 ]
 basler = ["pypylon", "opencv-python-headless"]
+transport = ["iceoryx2>=0.8"]
 genicam = []
 capture = [
     "physicalai[realsense]",
     "physicalai[basler]",
     "physicalai[genicam]",
+    "physicalai[transport]",
 ]
 ur = []
 abb = []
@@ -119,6 +121,10 @@ ignore = [
 fixable = ["ALL"]
 unfixable = []
 
+[tool.ruff.lint.per-file-ignores]
+"src/physicalai/capture/transport/_header.py" = ["RUF012"]
+"src/physicalai/capture/transport/_publisher.py" = ["S603"]
+
 [tool.ruff.lint.mccabe]
 max-complexity = 15
 
@@ -172,6 +178,7 @@ markers = [
     "requires_download: marks tests that require downloading external datasets",
     "integration: marks tests as integration tests",
     "v4l2: marks tests requiring V4L2 mocking (Linux only)",
+    "transport: marks tests requiring iceoryx2",
 ]
 
 [tool.coverage.report]

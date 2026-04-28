@@ -7,7 +7,8 @@ import time
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
-import omni_camera
+import pynokhwa as omni_camera  # rename omni_camera references
+from loguru import logger
 
 from physicalai.capture.camera import Camera, ColorMode
 from physicalai.capture.cameras.uvc._camera_setting import CameraSetting  # noqa: PLC2701
@@ -70,17 +71,23 @@ class OmniCamera(Camera):
         if info is None:
             msg = f"No camera found at index {normalized_device_id}"
             raise CaptureError(msg)
-        if not info.can_open():
-            msg = "Camera cannot be opened"
-            raise CaptureError(msg)
         return info
 
     def _resolve_format(self) -> omni_camera.CameraFormat:
         if self._cam is None:
             msg = "Camera cannot be opened"
             raise CaptureError(msg)
+
+        opts = self._cam.get_format_options()
+        if not opts:
+            msg = (
+                "Camera reports no supported formats. This typically means the device "
+                "only outputs formats unsupported by the nokhwa backend (e.g. BGRA from "
+                "a virtual camera like OBS Virtual Camera)."
+            )
+            raise CaptureError(msg)
+
         try:
-            opts = self._cam.get_format_options()
             # noqa: TD002, TD003, FIX002 # TODO: Switch back to keyword args when omni_camera type stubs support them.
             opts = opts.prefer_width_range(self._width, self._width)
             opts = opts.prefer_height_range(self._height, self._height)
@@ -100,21 +107,41 @@ class OmniCamera(Camera):
                     raise CaptureError(msg) from err
 
     def connect(self, timeout: float = 5.0) -> None:
-        infos = omni_camera.query(only_usable=True)
+        # On macOS, nokhwa_initialize() fires an async AVFoundation permission
+        # request at module import. If we query before that callback resolves,
+        # the camera list may be empty. Retry briefly to give the TCC
+        # callback time to deliver.
+        # We use only_usable=False so that hardware indices match those
+        # returned by discover(). Unsupported devices (e.g. BGRA-only
+        # virtual cameras) are caught later in _resolve_format().
+        query_deadline = time.monotonic() + 2.0
+        infos = omni_camera.query(only_usable=False)
+        while not infos and time.monotonic() < query_deadline:
+            time.sleep(0.1)
+            infos = omni_camera.query(only_usable=False)
         info = self._resolve_device_info(infos, self._device_id_raw)
 
-        self._cam = omni_camera.Camera(info)
-        fmt = self._resolve_format()
+        try:
+            self._cam = omni_camera.Camera(info)
+            fmt = self._resolve_format()
 
-        if fmt.width != self._width or fmt.height != self._height or fmt.frame_rate != self._fps:
-            from loguru import logger  # noqa: PLC0415
+            if fmt.width != self._width or fmt.height != self._height or fmt.frame_rate != self._fps:
+                logger.warning(
+                    f"Requested {self._width}x{self._height}@{self._fps}fps, "
+                    f"using {fmt.width}x{fmt.height}@{fmt.frame_rate}fps",
+                )
 
-            logger.warning(
-                f"Requested {self._width}x{self._height}@{self._fps}fps, "
-                f"using {fmt.width}x{fmt.height}@{fmt.frame_rate}fps",
-            )
-
-        self._cam.open(fmt)
+            self._cam.open(fmt)
+        except RuntimeError as exc:
+            if "FourCharCode" in str(exc):
+                msg = (
+                    f"Camera at index {self._device_id_raw} uses an unsupported pixel "
+                    "format. This typically indicates a virtual or utility camera "
+                    "(e.g. Nikon Webcam Utility, OBS Virtual Camera) that is not "
+                    "compatible with the nokhwa backend."
+                )
+                raise CaptureError(msg) from exc
+            raise
 
         frame_data = None
         deadline = time.monotonic() + timeout
@@ -155,10 +182,10 @@ class OmniCamera(Camera):
         deadline = time.monotonic() + timeout if timeout is not None else None
 
         while True:
-            frame_data = self._cam.poll_frame_np()
+            frame_data, seq = self._cam.poll_frame_np_with_seq()
             if frame_data is not None:
                 converted = self._convert_color(frame_data)
-                self._sequence += 1
+                self._sequence = seq
                 self._last_frame = frame_data
                 return Frame(data=converted, timestamp=time.monotonic(), sequence=self._sequence)
 
@@ -173,10 +200,10 @@ class OmniCamera(Camera):
             err = NotConnectedError()
             raise err
 
-        frame_data = self._cam.poll_frame_np()
+        frame_data, seq = self._cam.poll_frame_np_with_seq()
         if frame_data is not None:
             converted = self._convert_color(frame_data)
-            self._sequence += 1
+            self._sequence = seq
             self._last_frame = frame_data
             return Frame(data=converted, timestamp=time.monotonic(), sequence=self._sequence)
 
@@ -203,7 +230,12 @@ class OmniCamera(Camera):
     def discover(cls) -> list[DeviceInfo]:
         from physicalai.capture.discovery import DeviceInfo  # noqa: PLC0415
 
-        infos = omni_camera.query(only_usable=True)
+        # NOTE: We intentionally use ``only_usable=False`` and do NOT call
+        # ``info.can_open()`` here. On macOS those probes briefly open the
+        # camera through AVFoundation, which holds a process-wide lock that
+        # prevents any subprocess (e.g. the publisher worker) from opening
+        # the same device until the parent exits.
+        infos = omni_camera.query(only_usable=False)
         return [
             DeviceInfo(
                 device_id=str(info.index),
@@ -220,7 +252,6 @@ class OmniCamera(Camera):
                 },
             )
             for info in infos
-            if info.can_open()
         ]
 
     def get_settings(self) -> list[CameraSetting]:

@@ -44,6 +44,7 @@ class RealSenseCamera(DepthMixin, Camera):
         self._connected = False
         self._sequence = 0
         self._depth_sequence = 0
+        self._last_timestamp: float = 0.0
         self._pipeline: Any | None = None
         self._config: Any | None = None
         self._align: Any | None = None
@@ -154,7 +155,8 @@ class RealSenseCamera(DepthMixin, Camera):
         converted = self._convert_color(color_data)
         self._last_frameset = frameset
         self._sequence += 1
-        return Frame(data=converted, timestamp=time.monotonic(), sequence=self._sequence)
+        self._last_timestamp = time.monotonic()
+        return Frame(data=converted, timestamp=self._last_timestamp, sequence=self._sequence)
 
     def read_latest(self) -> Frame:
         """Read the freshest aligned color frame without blocking.
@@ -186,7 +188,8 @@ class RealSenseCamera(DepthMixin, Camera):
             converted = self._convert_color(color_data)
             self._last_frameset = latest_frameset
             self._sequence += 1
-            return Frame(data=converted, timestamp=time.monotonic(), sequence=self._sequence)
+            self._last_timestamp = time.monotonic()
+            return Frame(data=converted, timestamp=self._last_timestamp, sequence=self._sequence)
 
         if self._last_frameset is None:
             msg = "No frame available"
@@ -198,7 +201,7 @@ class RealSenseCamera(DepthMixin, Camera):
             raise CaptureError(msg)
         color_data = np.asanyarray(color_frame.get_data())
         converted = self._convert_color(color_data)
-        return Frame(data=converted, timestamp=time.monotonic(), sequence=self._sequence)
+        return Frame(data=converted, timestamp=self._last_timestamp, sequence=self._sequence)
 
     def read_depth(self) -> Frame:
         """Read the next aligned depth frame.
@@ -229,7 +232,8 @@ class RealSenseCamera(DepthMixin, Camera):
         depth_data = np.asanyarray(depth_frame.get_data())
         self._last_frameset = frameset
         self._depth_sequence += 1
-        return Frame(data=depth_data, timestamp=time.monotonic(), sequence=self._depth_sequence)
+        self._last_timestamp = time.monotonic()
+        return Frame(data=depth_data, timestamp=self._last_timestamp, sequence=self._depth_sequence)
 
     def read_rgbd(self) -> tuple[Frame, Frame]:
         """Read aligned RGB and depth frames from one capture.

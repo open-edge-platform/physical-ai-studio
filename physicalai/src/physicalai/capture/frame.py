@@ -25,6 +25,6 @@ class Frame:
             Gaps indicate dropped frames.
     """
 
-    data: NDArray[np.uint8]
+    data: NDArray[np.uint8] | NDArray[np.uint16]
     timestamp: float
     sequence: int
