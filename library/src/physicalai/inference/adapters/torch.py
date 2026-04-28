@@ -10,11 +10,11 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 import yaml
+from physicalai.inference.adapters.base import RuntimeAdapter
+from physicalai.inference.adapters.registry import backend_registry
 
 from physicalai.data.observation import Observation
 from physicalai.export.backends import TorchExportParameters
-from physicalai.inference.adapters.base import RuntimeAdapter
-from physicalai.inference.adapters.registry import backend_registry
 from physicalai.policies import get_physicalai_policy_class as get_policy_class
 
 if TYPE_CHECKING:
