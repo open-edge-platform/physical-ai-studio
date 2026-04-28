@@ -11,9 +11,8 @@ from typing import TYPE_CHECKING, Any
 import torch
 import yaml
 
+from physicalai.inference.adapters.base import RuntimeAdapter
 from physicalai.inference.adapters.registry import backend_registry
-
-from .base import RuntimeAdapter
 
 if TYPE_CHECKING:
     from pathlib import Path
