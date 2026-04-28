@@ -58,7 +58,7 @@ cd physical-ai-studio
 
 # Setup and run docker services
 cd application/docker
-cp .env.example .env
+./setup-devices.sh
 docker compose --profile xpu up # or use --profile cuda, --profile cpu
 ```
 
