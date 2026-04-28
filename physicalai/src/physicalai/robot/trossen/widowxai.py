@@ -224,7 +224,7 @@ class WidowXAI(Robot):
         present_positions = np.asarray(driver.get_all_positions(), dtype=np.float32)
         safe_action = self._ensure_safe_goal_position(action, present_positions, self.MAX_RELATIVE_TARGET)
 
-        driver.set_all_positions(safe_action.tolist(), 3 * goal_time, False)  # noqa: FBT003
+        driver.set_all_positions(safe_action.tolist(), goal_time, False)  # noqa: FBT003
 
     def is_connected(self) -> bool:
         """Return True when the SDK driver is configured."""
