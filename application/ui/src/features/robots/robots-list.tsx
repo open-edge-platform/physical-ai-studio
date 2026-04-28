@@ -170,12 +170,21 @@ export const RobotsList = () => {
                 return (
                     <NavLink key={robot.id} to={to}>
                         {({ isActive }) => {
+                            const payload = robot.payload;
+                            const connectionString =
+                                ('connection_string' in payload ? payload.connection_string : undefined) ??
+                                ('connection_string_left' in payload && 'connection_string_right' in payload
+                                    ? `${payload.connection_string_left} | ${payload.connection_string_right}`
+                                    : undefined);
+
                             return (
                                 <RobotListItem
                                     id={robot.id}
                                     name={robot.name}
-                                    connectionString={robot.payload.connection_string}
-                                    serialNumber={robot.payload.serial_number}
+                                    connectionString={connectionString}
+                                    serialNumber={
+                                        'serial_number' in robot.payload ? robot.payload.serial_number : undefined
+                                    }
                                     type={robot.type}
                                     status={onlineProjectRobots === undefined ? 'unknown' : status}
                                     isActive={isActive}

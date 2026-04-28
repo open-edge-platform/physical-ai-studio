@@ -110,6 +110,12 @@ class EnvironmentIntegration:
         if self.leader is not None:
             actions = (await self.leader.read_state())["state"]
             await self.set_joints_state(actions, goal_time)
+
+            if self.follower and self.leader:
+                forces = await self.follower.read_forces()
+                if forces and forces["state"] is not None:
+                    await self.leader.set_forces(forces["state"])
+
             return actions
         return None
 

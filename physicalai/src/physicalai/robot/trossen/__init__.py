@@ -6,8 +6,10 @@
 Public API::
 
     from physicalai.robot.trossen import WidowXAI, WidowXAIObservation
+    from physicalai.robot.trossen import BimanualWidowXAI, BimanualWidowXAIObservation
 """
 
+from .bimanual_widowxai import BimanualWidowXAI, BimanualWidowXAIObservation
 from .widowxai import WidowXAI, WidowXAIObservation
 
-__all__ = ["WidowXAI", "WidowXAIObservation"]
+__all__ = ["BimanualWidowXAI", "BimanualWidowXAIObservation", "WidowXAI", "WidowXAIObservation"]

@@ -6,7 +6,7 @@ from serial.tools import list_ports
 from serial.tools.list_ports_common import ListPortInfo
 
 from schemas import Robot, SerialPortInfo
-from schemas.robot import RobotType
+from schemas.robot import SO101Robot
 
 available_ports = list_ports.comports()
 
@@ -96,7 +96,7 @@ def find_port_for_serial(serial_number: str) -> str:
 
 async def identify_so101_robot_visually(robot: Robot, joint: str | None = None) -> None:
     """Identify the robot by moving the joint from current to min to max to initial position"""
-    if robot.type not in {RobotType.SO101_LEADER, RobotType.SO101_FOLLOWER}:
+    if not isinstance(robot, SO101Robot):
         raise ValueError(f"Trying to identify unsupported robot: {robot.type}")
 
     if joint is None:
