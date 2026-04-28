@@ -1,6 +1,10 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+# This module extends ``physicalai.inference.adapters`` module and corresponding
+# namespace according to PEP 420. ``__init__.py`` is missing intentionally.
+# ruff: noqa: INP001
+
 """Lazy registration of ``physicalai-train`` inference adapters.
 
 This module is discovered through the ``physicalai.inference.adapters``

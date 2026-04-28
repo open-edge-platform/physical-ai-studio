@@ -1,6 +1,10 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+# This module extends ``physicalai.inference.adapters`` module and corresponding
+# namespace according to PEP 420. ``__init__.py`` is missing intentionally.
+# ruff: noqa: INP001
+
 """Torch runtime adapter for inference."""
 
 from __future__ import annotations
