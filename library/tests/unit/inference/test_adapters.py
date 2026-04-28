@@ -22,7 +22,7 @@ from physicalai.export.backends import TorchExportParameters
 from physicalai.export.mixin_policy import ExportBackend
 from physicalai.inference.adapters import get_adapter
 from physicalai.inference.adapters.executorch import ExecuTorchAdapter
-from physicalai.inference.adapters.torch import TorchAdapter
+from physicalai.inference.adapters.pytorch import TorchAdapter
 
 
 class TestGetAdapter:

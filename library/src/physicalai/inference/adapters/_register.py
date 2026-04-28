@@ -30,7 +30,7 @@ def register(registry: InferenceAdapterRegistry) -> None:
     """
     registry.register_lazy_module(
         "torch",
-        "physicalai.inference.adapters.torch",
+        "physicalai.inference.adapters.pytorch",
         extensions=(".ckpt", ".pt"),
     )
     registry.register_lazy_module(
