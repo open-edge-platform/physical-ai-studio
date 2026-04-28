@@ -90,7 +90,8 @@ class TorchAdapter(RuntimeAdapter):
             # but ``nn.Module.__getattr__`` widens unknown attributes to
             # ``Module | Tensor``; narrow it explicitly for the type checker.
             extra_export_args = cast(
-                "dict[str, Any]", getattr(self._policy, "extra_export_args", {})
+                "dict[str, Any]",
+                getattr(self._policy, "extra_export_args", {}),
             )
             if "torch" in extra_export_args:
                 torch_export_args = cast("TorchExportParameters", extra_export_args["torch"])
