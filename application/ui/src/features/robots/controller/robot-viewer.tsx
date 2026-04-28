@@ -10,7 +10,7 @@ import { URDFRobot } from 'urdf-loader';
 
 import { useContainerSize } from '../../../components/zoom/use-container-size';
 import { SchemaRobot, SchemaRobotType } from '../robot-types';
-import { urdfPathForType, useLoadModelMutation, useRobotModels } from './../robot-models-context';
+import { mapJointToURDFJoint, urdfPathForType, useLoadModelMutation, useRobotModels } from './../robot-models-context';
 
 /** Material name used by the dark parts in the Trossen URDF. */
 const TROSSEN_DARK_MATERIAL = 'trossen_black';
@@ -127,19 +127,18 @@ export const RobotViewer = ({ robot = { type: 'SO101_Follower' }, featureValues,
 
     useEffect(() => {
         if (featureValues !== undefined && featureNames !== undefined && model !== undefined) {
-            featureNames.forEach((name, index) => {
-                if (index < featureValues.length && name.endsWith('.pos')) {
-                    const joint_name = name.replace('.pos', '');
-
-                    if (joint_name === 'gripper' && model.robotName == 'wxai') {
-                        model.setJointValue('left_carriage_joint', featureValues[index]); // meters
-                    } else if (model.joints[joint_name] != undefined) {
-                        model.joints[joint_name].setJointValue(degToRad(featureValues[index]));
-                    }
-                }
+            featureNames.forEach((_, index) => {
+                mapJointToURDFJoint(
+                    {
+                        name: featureNames[index],
+                        value: featureValues[index],
+                    },
+                    model,
+                    robot.type
+                );
             });
         }
-    }, [featureValues, featureNames, model]);
+    }, [featureValues, featureNames, model, robot.type]);
 
     return (
         <div ref={ref} style={{ width: '100%', height: '100%' }}>
