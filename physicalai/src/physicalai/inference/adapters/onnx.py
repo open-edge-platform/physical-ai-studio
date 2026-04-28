@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from physicalai.inference.adapters.base import RuntimeAdapter
+from physicalai.inference.adapters.registry import backend_registry
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
     import onnxruntime
 
 
+@backend_registry.register("onnx", extensions=(".onnx",))
 class ONNXAdapter(RuntimeAdapter):
     """ONNX Runtime inference adapter.
 

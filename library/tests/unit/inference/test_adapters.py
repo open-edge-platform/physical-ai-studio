@@ -14,13 +14,13 @@ from physicalai.data.observation import Observation
 from physicalai.export.backends import TorchExportParameters
 from physicalai.export.mixin_policy import ExportBackend
 from physicalai.inference.adapters import (
-    ExecuTorchAdapter,
     ONNXAdapter,
     OpenVINOAdapter,
     RuntimeAdapter,
-    TorchAdapter,
     get_adapter,
 )
+from physicalai.inference.adapters.executorch import ExecuTorchAdapter
+from physicalai.inference.adapters.torch import TorchAdapter
 
 
 class TestGetAdapter:
@@ -48,7 +48,7 @@ class TestGetAdapter:
 
     def test_invalid_backend(self) -> None:
         """Test invalid backend raises ValueError."""
-        with pytest.raises(ValueError, match="is not a valid ExportBackend"):
+        with pytest.raises(ValueError, match="No adapter registered for backend"):
             get_adapter("invalid_backend")
 
 

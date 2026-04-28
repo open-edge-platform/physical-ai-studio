@@ -13,14 +13,15 @@ import yaml
 
 from physicalai.data.observation import Observation
 from physicalai.export.backends import TorchExportParameters
+from physicalai.inference.adapters.base import RuntimeAdapter
+from physicalai.inference.adapters.registry import backend_registry
 from physicalai.policies import get_physicalai_policy_class as get_policy_class
-
-from .base import RuntimeAdapter
 
 if TYPE_CHECKING:
     import numpy as np
 
 
+@backend_registry.register("torch", extensions=(".ckpt", ".pt"))
 class TorchAdapter(RuntimeAdapter):
     """Runtime adapter for Torch models.
 

@@ -23,6 +23,13 @@ Examples:
     >>> action = policy.select_action(observation)
 """
 
+# Allow ``physicalai.inference`` to be extended by other distributions sharing
+# the ``physicalai`` namespace (e.g. the ``physicalai-train`` library, which
+# ships the torch and executorch adapters under ``physicalai.inference.adapters``).
+from pkgutil import extend_path
+
+__path__ = extend_path(__path__, __name__)
+
 from physicalai.inference.callbacks.base import Callback
 from physicalai.inference.model import InferenceModel
 

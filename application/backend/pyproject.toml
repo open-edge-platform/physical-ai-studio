@@ -10,7 +10,7 @@ dependencies = [
   'harvesters; sys_platform != "darwin"',
   "fastapi[standard]",
   "physicalai-train[pi0,smolvla]",
-  "physicalai[so101, trossen]",
+  "physicalai[inference,so101,trossen]",
   "lerobot[feetech]==0.5.1",
   "numpy",
   "websockets",

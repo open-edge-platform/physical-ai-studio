@@ -11,7 +11,8 @@ from typing import TYPE_CHECKING, Any
 import torch
 import yaml
 
-from .base import RuntimeAdapter
+from physicalai.inference.adapters.base import RuntimeAdapter
+from physicalai.inference.adapters.registry import backend_registry
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+@backend_registry.register("executorch", extensions=(".pte",))
 class ExecuTorchAdapter(RuntimeAdapter):
     """Runtime adapter for ExecuTorch .pte model inference.
 
