@@ -7,6 +7,10 @@ This module provides various transform utilities, including ONNX-compatible
 replacements for standard transforms.
 """
 
+from physicalai.transforms.image_transforms import (
+    RandomChoiceApply,
+    RandomSharpness,
+)
 from physicalai.transforms.onnx_transforms import (
     CenterCrop,
     center_crop_image,
@@ -15,6 +19,8 @@ from physicalai.transforms.onnx_transforms import (
 
 __all__ = [
     "CenterCrop",
+    "RandomChoiceApply",
+    "RandomSharpness",
     "center_crop_image",
     "replace_center_crop_with_onnx_compatible",
 ]
