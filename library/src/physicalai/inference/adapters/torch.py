@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 import yaml
 from physicalai.inference.adapters.base import RuntimeAdapter
-from physicalai.inference.adapters.registry import backend_registry
+from physicalai.inference.adapters.registry import adapter_registry
 
 from physicalai.data.observation import Observation
 from physicalai.export.backends import TorchExportParameters
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     import numpy as np
 
 
-@backend_registry.register("torch", extensions=(".ckpt", ".pt"))
+@adapter_registry.register("torch", extensions=(".ckpt", ".pt"))
 class TorchAdapter(RuntimeAdapter):
     """Runtime adapter for Torch models.
 

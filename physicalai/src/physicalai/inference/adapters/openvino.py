@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from physicalai.inference.adapters.base import RuntimeAdapter
-from physicalai.inference.adapters.registry import backend_registry
+from physicalai.inference.adapters.registry import adapter_registry
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     import openvino
 
 
-@backend_registry.register("openvino", extensions=(".xml",))
+@adapter_registry.register("openvino", extensions=(".xml",))
 class OpenVINOAdapter(RuntimeAdapter):
     """OpenVINO inference adapter.
 

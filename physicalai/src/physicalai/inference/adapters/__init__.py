@@ -32,8 +32,8 @@ __path__ = extend_path(__path__, __name__)
 
 from physicalai.inference.adapters.base import RuntimeAdapter
 from physicalai.inference.adapters.registry import (
-    InferenceBackendRegistry,
-    backend_registry,
+    InferenceAdapterRegistry,
+    adapter_registry,
 )
 
 # Eagerly import core adapters so they self-register.  Their runtime
@@ -68,7 +68,7 @@ def _load_external_adapters() -> None:
             logger.exception("Failed to load adapter provider entry point %r", ep.name)
             continue
         try:
-            register_fn(backend_registry)
+            register_fn(adapter_registry)
         except Exception:
             logger.exception("Adapter provider %r raised during registration", ep.name)
 
@@ -77,11 +77,11 @@ _load_external_adapters()
 
 
 __all__ = [
-    "InferenceBackendRegistry",
+    "InferenceAdapterRegistry",
     "ONNXAdapter",
     "OpenVINOAdapter",
     "RuntimeAdapter",
-    "backend_registry",
+    "adapter_registry",
     "get_adapter",
 ]
 
@@ -110,5 +110,5 @@ def get_adapter(backend: str, **kwargs: Any) -> RuntimeAdapter:  # noqa: ANN401
         >>> adapter = get_adapter("onnx")
     """
     name = str(backend)
-    adapter_cls = backend_registry.get_class(name)
+    adapter_cls = adapter_registry.get_class(name)
     return adapter_cls(**kwargs)

@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Self
 
 import yaml
 
-from physicalai.inference.adapters import backend_registry, get_adapter
+from physicalai.inference.adapters import adapter_registry, get_adapter
 from physicalai.inference.component_factory import instantiate_component, resolve_artifact
 from physicalai.inference.constants import ACTION
 from physicalai.inference.manifest import ComponentSpec, Manifest
@@ -419,8 +419,8 @@ class InferenceModel:
             ValueError: If no registered extension matches a file in the
                 export directory.
         """
-        for backend in backend_registry.names():
-            for ext in backend_registry.extensions_of(backend):
+        for backend in adapter_registry.names():
+            for ext in adapter_registry.extensions_of(backend):
                 if any(self.export_dir.glob(f"*{ext}")):
                     return backend
 
@@ -449,7 +449,7 @@ class InferenceModel:
         Raises:
             FileNotFoundError: If no matching model file is found.
         """
-        extensions = backend_registry.extensions_of(self.backend)
+        extensions = adapter_registry.extensions_of(self.backend)
 
         if self.policy_name:
             for ext in extensions:

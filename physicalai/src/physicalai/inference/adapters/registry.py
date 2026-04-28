@@ -1,24 +1,24 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Inference backend registry.
+"""Inference adapter registry.
 
-The :class:`InferenceBackendRegistry` is a process-wide map from a backend
+The :class:`InferenceAdapterRegistry` is a process-wide map from an adapter
 name (e.g. ``"onnx"``, ``"openvino"``) to the
 :class:`~physicalai.inference.adapters.base.RuntimeAdapter` subclass that
 implements it together with the file extensions that identify model
-artifacts produced for that backend.
+artifacts produced for that adapter.
 
 Adapters self-register on import via the
-:meth:`InferenceBackendRegistry.register` decorator so that adapters
+:meth:`InferenceAdapterRegistry.register` decorator so that adapters
 contributed by different distributions (e.g. core ``physicalai`` provides
 ONNX and OpenVINO) all end up in the same shared registry.
 
 To keep heavy dependencies opt-in, the registry also supports
-*lazy module registration*: a backend name plus its extensions can be
+*lazy module registration*: an adapter name plus its extensions can be
 associated with a module import path that, when imported, is expected to
 register a concrete adapter class.  The module is imported only when the
-backend is actually requested via :meth:`get_class`. Crucially, the
+adapter is actually requested via :meth:`get_class`. Crucially, the
 extensions are available immediately, so callers can probe export
 directories without paying the import cost.
 
@@ -28,13 +28,13 @@ Examples:
         from physicalai.inference.adapters.registry import backend_registry
         from physicalai.inference.adapters.base import RuntimeAdapter
 
-        @backend_registry.register("onnx", extensions=(".onnx",))
+        @adapter_registry.register("onnx", extensions=(".onnx",))
         class ONNXAdapter(RuntimeAdapter):
             ...
 
-    Pre-declaring a backend with lazy module registration::
+    Pre-declaring an adapter with lazy module registration::
 
-        backend_registry.register_lazy_module(
+        adapter_registry.register_lazy_module(
             "torch",
             "physicalai.inference.adapters.torch",
             extensions=(".ckpt", ".pt"),
@@ -54,7 +54,7 @@ if TYPE_CHECKING:
 AdapterT = TypeVar("AdapterT", bound="RuntimeAdapter")
 
 
-class InferenceBackendRegistry:
+class InferenceAdapterRegistry:
     """Registry of backend name → :class:`RuntimeAdapter` subclass + extensions.
 
     Each entry tracks the adapter class (eager or lazily resolvable) and the
@@ -260,4 +260,4 @@ class InferenceBackendRegistry:
 
 
 #: Process-wide singleton used by :func:`get_adapter` and adapter modules.
-backend_registry = InferenceBackendRegistry()
+adapter_registry = InferenceAdapterRegistry()

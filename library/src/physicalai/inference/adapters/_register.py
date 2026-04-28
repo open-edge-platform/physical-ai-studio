@@ -19,10 +19,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from physicalai.inference.adapters.registry import InferenceBackendRegistry
+    from physicalai.inference.adapters.registry import InferenceAdapterRegistry
 
 
-def register(registry: InferenceBackendRegistry) -> None:
+def register(registry: InferenceAdapterRegistry) -> None:
     """Register the Torch and ExecuTorch adapter modules as lazy backends.
 
     Args:
