@@ -290,6 +290,45 @@ class ACT(ExportableModelMixin, Model):
         return loss, loss_dict
 
     @torch.no_grad()
+    def compute_val_loss(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]]:
+        """Compute validation loss (L1 + optional KL divergence).
+
+        Temporarily sets the inner model to training mode so the VAE encoder
+        runs and produces latent distribution parameters (mu, log_sigma_x2).
+        The model is restored to eval mode afterwards.  Dropout and batch-norm
+        behaviour during this call will follow training-mode semantics, but
+        gradients are still disabled by the ``@torch.no_grad()`` decorator.
+
+        Args:
+            batch: Preprocessed batch dict.
+
+        Returns:
+            Tuple of (loss tensor, loss dict with ``"l1_loss"`` and optionally ``"kld_loss"``).
+        """
+        batch = self._input_normalizer(batch)
+
+        self._model.train()
+        try:
+            actions_hat, (mu_hat, log_sigma_x2_hat) = self._model(batch)
+        finally:
+            self._model.eval()
+
+        l1_loss = (
+            F.l1_loss(batch[ACTION], actions_hat, reduction="none") * ~batch[EXTRA + ".action_is_pad"].unsqueeze(-1)
+        ).mean()
+
+        loss_dict: dict[str, float] = {"l1_loss": l1_loss.item()}
+        if self._config.use_vae:
+            mean_kld = (-0.5 * (1 + log_sigma_x2_hat - mu_hat.pow(2) - (log_sigma_x2_hat).exp())).sum(-1).mean()
+            loss_dict["kld_loss"] = mean_kld.item()
+            loss = l1_loss + mean_kld * self._config.kl_weight
+        else:
+            loss = l1_loss
+
+        loss_dict["loss"] = loss.item()
+        return loss, loss_dict
+
+    @torch.no_grad()
     def predict_action_chunk(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """Predicts a chunk of actions from a batch of observations.
 
