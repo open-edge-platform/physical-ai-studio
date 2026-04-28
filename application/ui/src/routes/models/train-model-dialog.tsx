@@ -13,6 +13,7 @@ import {
     DisclosureTitle,
     Divider,
     Flex,
+    Form,
     Heading,
     Item,
     Key,
@@ -20,6 +21,7 @@ import {
     Picker,
     StatusLight,
     Text,
+    TextField,
     View,
 } from '@geti-ui/ui';
 
@@ -197,6 +199,10 @@ interface TrainingParametersProps {
     onNumWorkersChange: (value: Key | null) => void;
     autoScaleBatchSize: boolean;
     onAutoScaleBatchSizeChange: (value: boolean) => void;
+    precision: Key | null;
+    onPrecisionChange: (value: Key | null) => void;
+    compileModel: boolean;
+    onCompileModelChange: (value: boolean) => void;
     isAutoScaleBatchDisabled: boolean;
 }
 
@@ -209,102 +215,154 @@ const TrainingParameters = ({
     onNumWorkersChange,
     autoScaleBatchSize,
     onAutoScaleBatchSizeChange,
+    precision,
+    onPrecisionChange,
+    compileModel,
+    onCompileModelChange,
     isAutoScaleBatchDisabled,
 }: TrainingParametersProps) => (
-    <Flex direction='row' gap='size-150' width='100%'>
-        <Flex direction='column' gap='size-150' width='100%'>
+    <Flex direction='column' gap='size-150' width='100%'>
+        <Flex direction='row' gap='size-150' width='100%'>
+            <Flex direction='column' gap='size-150' width='100%'>
+                <NumberField
+                    label='Batch Size'
+                    value={batchSize}
+                    onChange={onBatchSizeChange}
+                    minValue={1}
+                    maxValue={256}
+                    step={1}
+                    width='100%'
+                    isDisabled={autoScaleBatchSize || isAutoScaleBatchDisabled}
+                    flex
+                />
+                <Flex direction='row' gap='size-100' alignItems='center'>
+                    <Checkbox
+                        isSelected={autoScaleBatchSize}
+                        onChange={onAutoScaleBatchSizeChange}
+                        isDisabled={isAutoScaleBatchDisabled}
+                    >
+                        Auto scale batch size
+                    </Checkbox>
+                    <ContextualHelp variant='info'>
+                        <Heading>Auto scale batch size</Heading>
+                        <Content>
+                            <Text>
+                                Automatically finds the largest batch size that fits in GPU memory before training
+                                starts. On XPU auto batch size is disabled.
+                            </Text>
+                        </Content>
+                    </ContextualHelp>
+                </Flex>
+            </Flex>
             <NumberField
-                label='Batch Size'
-                value={batchSize}
-                onChange={onBatchSizeChange}
-                minValue={1}
-                maxValue={256}
-                step={1}
+                label='Max Steps'
+                value={maxSteps}
+                onChange={onMaxStepsChange}
+                minValue={100}
+                maxValue={100000}
+                step={100}
                 width='100%'
-                isDisabled={autoScaleBatchSize}
-                flex
+                contextualHelp={
+                    <ContextualHelp variant='info'>
+                        <Heading>Max steps</Heading>
+                        <Content>
+                            <Text>
+                                Total number of gradient update steps. Training will stop after this many steps
+                                regardless of epochs.
+                            </Text>
+                        </Content>
+                    </ContextualHelp>
+                }
             />
-            <Flex direction='row' gap='size-100' alignItems='center'>
-                <Checkbox
-                    isSelected={autoScaleBatchSize}
-                    onChange={onAutoScaleBatchSizeChange}
-                    isDisabled={isAutoScaleBatchDisabled}
-                >
-                    Auto scale batch size
-                </Checkbox>
-                <ContextualHelp variant='info'>
-                    <Heading>Auto scale batch size</Heading>
-                    <Content>
-                        <Text>
-                            Automatically finds the largest batch size that fits in GPU memory before training starts.
-                            On XPU auto batch size is disabled.
-                        </Text>
-                    </Content>
-                </ContextualHelp>
+            <Picker
+                width='100%'
+                label='Data Workers'
+                selectedKey={numWorkers}
+                onSelectionChange={onNumWorkersChange}
+                contextualHelp={
+                    <ContextualHelp variant='info'>
+                        <Heading>Data workers</Heading>
+                        <Content>
+                            <Text>
+                                Number of parallel processes for loading training data. Auto selects a value based on
+                                available CPU cores. More workers can speed up training but use more memory.
+                            </Text>
+                        </Content>
+                    </ContextualHelp>
+                }
+            >
+                <Item key='auto'>Auto</Item>
+                <Item key='0'>0 (main process)</Item>
+                <Item key='1'>1</Item>
+                <Item key='2'>2</Item>
+                <Item key='4'>4</Item>
+                <Item key='8'>8</Item>
+                <Item key='16'>16</Item>
+            </Picker>
+        </Flex>
+        <Flex direction='row' gap='size-150' width='100%'>
+            <Picker
+                width='100%'
+                label='Precision'
+                selectedKey={precision}
+                onSelectionChange={onPrecisionChange}
+                contextualHelp={
+                    <ContextualHelp variant='info'>
+                        <Heading>Training precision</Heading>
+                        <Content>
+                            <Text>
+                                Controls numerical precision during training. Auto selects the optimal precision for
+                                your device (BF16 Mixed for CUDA, 32-bit for XPU). BF16 Mixed uses half-precision where
+                                safe for faster training and lower memory usage. 32-bit uses full precision for maximum
+                                numerical stability.
+                            </Text>
+                        </Content>
+                    </ContextualHelp>
+                }
+            >
+                <Item key='default'>Auto</Item>
+                <Item key='bf16-mixed'>BF16 Mixed</Item>
+                <Item key='32'>32-bit</Item>
+            </Picker>
+            <Flex direction='column' gap='size-150' width='100%' justifyContent='end'>
+                <Flex direction='row' gap='size-100' alignItems='center'>
+                    <Checkbox isSelected={compileModel} onChange={onCompileModelChange}>
+                        Compile model
+                    </Checkbox>
+                    <ContextualHelp variant='info'>
+                        <Heading>Compile model</Heading>
+                        <Content>
+                            <Text>
+                                Enables torch.compile for all policies. Can significantly speed up training after an
+                                initial compilation warmup, but increases startup time. If compilation fails, training
+                                automatically retries without compilation.
+                            </Text>
+                        </Content>
+                    </ContextualHelp>
+                </Flex>
             </Flex>
         </Flex>
-        <NumberField
-            label='Max Steps'
-            value={maxSteps}
-            onChange={onMaxStepsChange}
-            minValue={100}
-            maxValue={100000}
-            step={100}
-            width='100%'
-            contextualHelp={
-                <ContextualHelp variant='info'>
-                    <Heading>Max steps</Heading>
-                    <Content>
-                        <Text>
-                            Total number of gradient update steps. Training will stop after this many steps regardless
-                            of epochs.
-                        </Text>
-                    </Content>
-                </ContextualHelp>
-            }
-        />
-        <Picker
-            width='100%'
-            label='Data Workers'
-            selectedKey={numWorkers}
-            onSelectionChange={onNumWorkersChange}
-            contextualHelp={
-                <ContextualHelp variant='info'>
-                    <Heading>Data workers</Heading>
-                    <Content>
-                        <Text>
-                            Number of parallel processes for loading training data. Auto selects a value based on
-                            available CPU cores. More workers can speed up training but use more memory.
-                        </Text>
-                    </Content>
-                </ContextualHelp>
-            }
-        >
-            <Item key='auto'>Auto</Item>
-            <Item key='0'>0 (main process)</Item>
-            <Item key='1'>1</Item>
-            <Item key='2'>2</Item>
-            <Item key='4'>4</Item>
-            <Item key='8'>8</Item>
-            <Item key='16'>16</Item>
-        </Picker>
     </Flex>
 );
 
 export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: TrainModelDialogProps) => {
     const bestDevice = useBestTrainingDevice();
 
+    const defaultName = baseModel?.name ?? '';
     const defaultDatasetId = baseModel?.dataset_id ?? null;
     const extraPayload = baseModel ? { base_model_id: baseModel.id! } : undefined;
 
     const [selectedPolicy, setSelectedPolicy] = useState<string>(baseModel?.policy ?? 'act');
     const { datasets, id: projectId } = useProject();
 
+    const [name, setName] = useState<string>(defaultName);
     const [selectedDataset, setSelectedDataset] = useState<Key | null>(defaultDatasetId);
     const [maxSteps, setMaxSteps] = useState<number>(defaultMaxSteps);
     const [batchSize, setBatchSize] = useState<number>(8);
     const [numWorkers, setNumWorkers] = useState<Key | null>('auto');
     const [autoScaleBatchSize, setAutoScaleBatchSize] = useState<boolean>(bestDevice?.type === 'cuda');
+    const [precision, setPrecision] = useState<Key | null>('default');
+    const [compileModel, setCompileModel] = useState<boolean>(false);
 
     const trainMutation = $api.useMutation('post', '/api/jobs:train', {
         meta: {
@@ -319,8 +377,6 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
             return;
         }
 
-        const name = baseModel?.name ?? MODELS.find((policy) => policy.id === selectedPolicy)?.name ?? '';
-
         const payload: SchemaJob['payload'] = {
             dataset_id,
             project_id: projectId,
@@ -330,6 +386,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
             batch_size: batchSize,
             num_workers: numWorkers === 'auto' ? 'auto' : Number(numWorkers),
             auto_scale_batch_size: autoScaleBatchSize,
+            precision: (precision?.toString() ?? 'default') as SchemaJob['payload']['precision'],
+            compile_model: compileModel,
             val_split: 0.1,
             ...extraPayload,
         };
@@ -349,49 +407,63 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
             </Heading>
             <Divider />
             <Content width={'700px'}>
-                <Flex direction='column' gap='size-200' width='100%'>
-                    <Picker
-                        label='Dataset'
-                        selectedKey={selectedDataset}
-                        onSelectionChange={setSelectedDataset}
-                        width='100%'
-                    >
-                        {datasets.map((dataset) => (
-                            <Item key={dataset.id}>{dataset.name}</Item>
-                        ))}
-                    </Picker>
+                <Form
+                    onSubmit={(e) => {
+                        e.preventDefault();
+                        save();
+                    }}
+                    validationBehavior='native'
+                >
+                    <Flex direction='column' gap='size-200' width='100%'>
+                        <TextField label='Name' value={name} onChange={setName} width='100%' />
 
-                    <PolicySelection
-                        selectedPolicy={selectedPolicy}
-                        onSelectionChange={setSelectedPolicy}
-                        isDisabled={baseModel !== undefined}
-                        trainingDevice={bestDevice}
-                    />
+                        <Picker
+                            label='Dataset'
+                            selectedKey={selectedDataset}
+                            onSelectionChange={setSelectedDataset}
+                            width='100%'
+                        >
+                            {datasets.map((dataset) => (
+                                <Item key={dataset.id}>{dataset.name}</Item>
+                            ))}
+                        </Picker>
 
-                    <Disclosure
-                        isQuiet
-                        UNSAFE_style={{ padding: 0 }}
-                        UNSAFE_className={classes.advancedSettingsDisclosure}
-                        defaultExpanded={bestDevice?.type !== 'cuda'}
-                    >
-                        <DisclosureTitle UNSAFE_style={{ fontSize: 13, padding: '4px 0' }}>
-                            Advanced settings
-                        </DisclosureTitle>
-                        <DisclosurePanel UNSAFE_style={{ padding: 0 }}>
-                            <TrainingParameters
-                                maxSteps={maxSteps}
-                                onMaxStepsChange={setMaxSteps}
-                                batchSize={batchSize}
-                                onBatchSizeChange={setBatchSize}
-                                numWorkers={numWorkers}
-                                onNumWorkersChange={setNumWorkers}
-                                autoScaleBatchSize={autoScaleBatchSize}
-                                onAutoScaleBatchSizeChange={setAutoScaleBatchSize}
-                                isAutoScaleBatchDisabled={bestDevice?.type !== 'cuda'}
-                            />
-                        </DisclosurePanel>
-                    </Disclosure>
-                </Flex>
+                        <PolicySelection
+                            selectedPolicy={selectedPolicy}
+                            onSelectionChange={setSelectedPolicy}
+                            isDisabled={baseModel !== undefined}
+                            trainingDevice={bestDevice}
+                        />
+
+                        <Disclosure
+                            isQuiet
+                            UNSAFE_style={{ padding: 0 }}
+                            UNSAFE_className={classes.advancedSettingsDisclosure}
+                            defaultExpanded={bestDevice?.type !== 'cuda'}
+                        >
+                            <DisclosureTitle UNSAFE_style={{ fontSize: 13, padding: '4px 0' }}>
+                                Advanced settings
+                            </DisclosureTitle>
+                            <DisclosurePanel UNSAFE_style={{ padding: 0 }}>
+                                <TrainingParameters
+                                    maxSteps={maxSteps}
+                                    onMaxStepsChange={setMaxSteps}
+                                    batchSize={batchSize}
+                                    onBatchSizeChange={setBatchSize}
+                                    numWorkers={numWorkers}
+                                    onNumWorkersChange={setNumWorkers}
+                                    autoScaleBatchSize={autoScaleBatchSize}
+                                    onAutoScaleBatchSizeChange={setAutoScaleBatchSize}
+                                    precision={precision}
+                                    onPrecisionChange={setPrecision}
+                                    compileModel={compileModel}
+                                    onCompileModelChange={setCompileModel}
+                                    isAutoScaleBatchDisabled={bestDevice?.type !== 'cuda'}
+                                />
+                            </DisclosurePanel>
+                        </Disclosure>
+                    </Flex>
+                </Form>
             </Content>
             <ButtonGroup>
                 <Button variant='secondary' onPress={() => close(undefined)}>

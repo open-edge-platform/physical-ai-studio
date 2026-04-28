@@ -728,6 +728,12 @@ class Pi05Model(ExportableModelMixin, Model):
         self.paligemma_with_expert.paligemma.model.language_model.gradient_checkpointing = True
         self.paligemma_with_expert.paligemma.model.vision_tower.gradient_checkpointing = True
         self.paligemma_with_expert.gemma_expert.model.gradient_checkpointing = True
+        # Force eager attention on the vision tower so that SDPA/flash-attention
+        # ops do not appear inside checkpoint regions, which would otherwise
+        # cause a KeyError in the AOT autograd partitioner when torch.compile
+        # traces the backward graph (functionalize_rng_ops cannot map the
+        # _scaled_dot_product_flash_attention op between fwd/bwd graphs).
+        self.paligemma_with_expert.paligemma.model.vision_tower.config._attn_implementation = "eager"  # noqa: SLF001
         msg = "Enabled gradient checkpointing for Pi05Model"
         logger.info(msg)
 

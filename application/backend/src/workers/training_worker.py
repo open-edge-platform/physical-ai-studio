@@ -13,6 +13,7 @@ from lightning.pytorch.loggers import CSVLogger
 
 from core.logging.utils import job_logging_ctx
 from models.utils import load_policy, setup_policy
+from schemas.job import TrainingPrecision
 from services.snapshot_service import SnapshotService
 from settings import get_settings
 
@@ -38,7 +39,7 @@ from services.training_service import (
     TrainingTrackingCallback,
     TrainingTrackingDispatcher,
 )
-from utils.device import get_lightning_strategy, get_torch_device
+from utils.device import get_default_precision, get_lightning_strategy, get_torch_device
 from workers.base import BaseProcessWorker
 
 SCHEDULE_INTERVAL_SEC = 5
@@ -120,6 +121,8 @@ class TrainingWorker(BaseProcessWorker):
             device_type = payload.device.type if payload.device else None
             device_index = payload.device.index if payload.device else None
 
+            accelerator = get_torch_device(device_type)
+
             l_dm = LeRobotDataModule(
                 repo_id="snapshot",  # doesnt matter for loading the data.
                 root=snapshot.path,
@@ -129,9 +132,14 @@ class TrainingWorker(BaseProcessWorker):
             )
 
             if base_model is not None:
-                policy = load_policy(base_model)
+                policy = load_policy(base_model, compile_model=payload.compile_model)
             else:
-                policy = setup_policy(model)
+                policy = setup_policy(model, compile_model=payload.compile_model)
+
+            if payload.precision != TrainingPrecision.DEFAULT:
+                precision = str(payload.precision)
+            else:
+                precision = get_default_precision(accelerator)
 
             checkpoint_callback = ModelCheckpoint(
                 dirpath=path,
@@ -142,27 +150,47 @@ class TrainingWorker(BaseProcessWorker):
             )
             csv_logger = CSVLogger(path.parent, name=path.stem)
 
-            trainer = Trainer(
-                logger=csv_logger,
-                callbacks=[
-                    checkpoint_callback,
-                    TrainingTrackingCallback(
-                        shutdown_event=self._stop_event,
-                        interrupt_event=self.interrupt_event,
-                        dispatcher=dispatcher,
-                    ),
-                    TrainingLogCallback(),
-                ],
-                accelerator=get_torch_device(device_type),
-                strategy=get_lightning_strategy(device_type),
-                devices=[device_index] if device_index is not None else "auto",
-                max_steps=payload.max_steps,
-                auto_scale_batch_size=payload.auto_scale_batch_size,
-                check_val_every_n_epoch=1,
-            )
+            def _create_trainer() -> Trainer:
+                return Trainer(
+                    logger=csv_logger,
+                    callbacks=[
+                        checkpoint_callback,
+                        TrainingTrackingCallback(
+                            shutdown_event=self._stop_event,
+                            interrupt_event=self.interrupt_event,
+                            dispatcher=dispatcher,
+                        ),
+                        TrainingLogCallback(),
+                    ],
+                    accelerator=accelerator,
+                    strategy=get_lightning_strategy(device_type),
+                    devices=[device_index] if device_index is not None else "auto",
+                    max_steps=payload.max_steps,
+                    auto_scale_batch_size=payload.auto_scale_batch_size,
+                    precision=precision,
+                    check_val_every_n_epoch=1,
+                )
+
+            trainer = _create_trainer()
 
             dispatcher.start()
-            trainer.fit(model=policy, datamodule=l_dm)
+
+            try:
+                trainer.fit(model=policy, datamodule=l_dm)
+            except Exception as fit_exc:
+                if not payload.compile_model:
+                    raise
+
+                logger.exception(f"Training with compile failed: {fit_exc} — retrying without compilation")
+                compile_fallback_msg = "Model compilation failed, falling back to non-compiled training."
+                job = await JobService.update_job_status(
+                    job_id=job.id, status=JobStatus.RUNNING, message=compile_fallback_msg
+                )
+                self.queue.put((EventType.JOB_UPDATE, job))
+
+                policy = setup_policy(model, compile_model=False)
+                trainer = _create_trainer()
+                trainer.fit(model=policy, datamodule=l_dm)
 
             for backend in settings.supported_backends:
                 export_dir = path / "exports" / backend

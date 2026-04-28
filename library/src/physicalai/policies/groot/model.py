@@ -126,6 +126,7 @@ class GrootModel(Model):
         backbone_embedding_dim: int = 1536,
         diffusion_model_cfg: dict[str, Any] | None = None,
         vl_self_attention_cfg: dict[str, Any] | None = None,
+        compile_model: bool = False,
     ) -> None:
         """Initialize Groot model with all components.
 
@@ -143,6 +144,7 @@ class GrootModel(Model):
             backbone_embedding_dim: Backbone output dimension (from config).
             diffusion_model_cfg: DiT model config dict (from pretrained).
             vl_self_attention_cfg: VL self-attention config dict (from pretrained).
+            compile_model: Whether to torch.compile forward and get_action methods.
         """
         super().__init__()
 
@@ -175,6 +177,12 @@ class GrootModel(Model):
             tune_diffusion_model=tune_diffusion_model,
         )
 
+        if compile_model:
+            torch.set_float32_matmul_precision("high")
+            compile_mode = "default"
+            self.forward = torch.compile(self.forward, mode=compile_mode)  # type: ignore[method-assign]
+            self.get_action = torch.compile(self.get_action, mode=compile_mode)  # type: ignore[method-assign]
+
     @classmethod
     def from_pretrained(  # noqa: PLR0914
         cls,
@@ -195,6 +203,8 @@ class GrootModel(Model):
         max_action_dim: int = 32,
         # HuggingFace args
         revision: str | None = None,
+        # Compilation
+        compile_model: bool = False,
     ) -> GrootModel:
         """Load Groot model with pretrained weights.
 
@@ -214,6 +224,7 @@ class GrootModel(Model):
             chunk_size: Fallback action horizon if not in checkpoint.
             max_action_dim: Fallback action dimension if not in checkpoint.
             revision: Git revision (branch, tag, or commit hash) to download from.
+            compile_model: Whether to torch.compile forward and get_action methods.
 
         Returns:
             Initialized GrootModel with pretrained weights.
@@ -285,6 +296,7 @@ class GrootModel(Model):
             backbone_embedding_dim=backbone_embedding_dim,
             diffusion_model_cfg=diffusion_cfg or None,
             vl_self_attention_cfg=vl_cfg or None,
+            compile_model=compile_model,
         )
 
         # Load pretrained weights

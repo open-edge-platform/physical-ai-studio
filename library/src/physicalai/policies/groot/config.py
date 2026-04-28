@@ -104,6 +104,9 @@ class GrootConfig(Config):
     # Precision
     use_bf16: bool = True
 
+    # Compilation
+    compile_model: bool = False
+
     # HuggingFace args
     revision: str | None = field(default=None)
 

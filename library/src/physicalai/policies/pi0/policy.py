@@ -121,6 +121,7 @@ class Pi0(ExportablePolicyMixin, Policy, FromConfig):
         lora_target_modules: tuple[str, ...] = ("q_proj", "v_proj", "k_proj", "o_proj"),
         # Gradient checkpointing
         gradient_checkpointing: bool = False,  # noqa: FBT001, FBT002
+        compile_model: bool = False,  # noqa: FBT001, FBT002
         # Training presets
         learning_rate: float = 2.5e-5,
         weight_decay: float = 1e-10,
@@ -166,6 +167,7 @@ class Pi0(ExportablePolicyMixin, Policy, FromConfig):
             lora_dropout=lora_dropout,
             lora_target_modules=lora_target_modules,
             gradient_checkpointing=gradient_checkpointing,
+            compile_model=compile_model,
             learning_rate=learning_rate,
             weight_decay=weight_decay,
             warmup_steps=warmup_steps,
@@ -241,6 +243,7 @@ class Pi0(ExportablePolicyMixin, Policy, FromConfig):
             time_max_period=self.config.time_max_period,
             preprocessor=self._preprocessor,
             postprocessor=self._postprocessor,
+            compile_model=self.config.compile_model,
         )
 
         # Set trainable parameters

@@ -113,6 +113,7 @@ class Pi0Model(Model):
         time_max_period: float = 4.0,
         preprocessor: Pi0Preprocessor | None = None,
         postprocessor: Pi0Postprocessor | None = None,
+        compile_model: bool = False,
     ) -> None:
         """Initialize Pi0Model."""
         super().__init__()
@@ -155,6 +156,12 @@ class Pi0Model(Model):
             self.action_time_mlp_out = nn.Linear(action_expert_width, action_expert_width)
 
         self._gradient_checkpointing_enabled = False
+
+        if compile_model:
+            torch.set_float32_matmul_precision("high")
+            compile_mode = "default"
+            self.sample_actions = torch.compile(self.sample_actions, mode=compile_mode)  # type: ignore[method-assign]
+            self.forward = torch.compile(self.forward, mode=compile_mode)  # type: ignore[method-assign]
 
         self.preprocessor = preprocessor
         self.postprocessor = postprocessor
