@@ -226,3 +226,10 @@ The inference API is consistent across all export backends, making it easy to sw
 
 - [Main Repository](../README.md) - Project overview
 - [Application](../application/) - GUI for data collection and training
+
+## Development Type Checking
+
+```bash
+# From library/
+uv run pyrefly check -c pyproject.toml
+```
