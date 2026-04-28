@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import torch
 from huggingface_hub import hf_hub_download
+from physicalai.inference.manifest import ComponentSpec
 from safetensors.torch import load_file
 
 from physicalai.data.dataset import Dataset
@@ -25,7 +26,6 @@ from physicalai.export.backends import (
     OpenVINOExportParameters,
     TorchExportParameters,
 )
-from physicalai.inference.manifest import ComponentSpec
 from physicalai.policies.base import Policy
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
