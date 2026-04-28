@@ -3,6 +3,8 @@
 
 """Unit tests for InferenceModel and inference runners."""
 
+from __future__ import annotations
+
 import json
 from pathlib import Path
 from typing import override
@@ -10,7 +12,6 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-import torch
 import yaml
 
 from physicalai.inference.adapters import RuntimeAdapter
@@ -28,9 +29,8 @@ from physicalai.inference.runners import (
 
 
 class TestAdapter(RuntimeAdapter):
-    def __init__(self, device: torch.device | str = "cpu") -> None:
-        self.device = torch.device(device)
-        self._policy: torch.nn.Module | None = None
+    def __init__(self, device: str = "cpu") -> None:
+        self.device = device
         self._input_names: list[str] = []
         self._output_names: list[str] = []
 
@@ -387,9 +387,8 @@ class TestAutoDetection:
         expected_device = "CPU" if backend_type == "openvino" else ("cuda" if cuda_available else "cpu")
         mock_adapter.default_device.return_value = expected_device
 
-        with patch("torch.cuda.is_available", return_value=cuda_available):
-            with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
-                assert InferenceModel(export_dir, device="auto").device == expected_device
+        with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
+            assert InferenceModel(export_dir, device="auto").device == expected_device
 
     def test_device_setting(self, tmp_path: Path) -> None:
         export_dir = tmp_path / "exports"
