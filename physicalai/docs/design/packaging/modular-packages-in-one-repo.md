@@ -19,7 +19,7 @@ same time, creating separate repositories too early adds release and maintenance
 We want a structure that lets us:
 
 - keep development in one repository for now
-- publish reusable pieces as standalone packages
+- publish reusable pieces as standalone packages when justified
 - avoid duplicate implementations
 - make future extraction cheap if a separate repo becomes justified
 
@@ -27,7 +27,7 @@ We want a structure that lets us:
 
 ## Approach
 
-This document proposes to use a **multi-package monorepo** approach.
+This document proposes a **multi-package monorepo** as a possible packaging direction.
 
 We could keep `inferencekit`, `capturekit`, and `physicalai` in the same repository, but publish
 them as separate Python distributions.
@@ -54,6 +54,9 @@ This gives us one repo, one CI surface, and one development workflow, while stil
 - `pip install physicalai`
 
 The important point is that each distribution owns its own import path.
+
+This is not a claim that all of these packages should be published immediately. The intent is
+to define a structure that stays clean if and when publishing becomes worthwhile.
 
 ---
 
@@ -88,6 +91,9 @@ Separate distributions create a harder boundary:
 - `physicalai` depends on them, not the reverse
 
 That dependency direction is the main design goal.
+
+If we adopt this direction, we should enforce it in CI rather than rely on convention alone.
+`import-linter` or an equivalent import-boundary check would be a reasonable way to do that.
 
 ---
 
@@ -127,8 +133,8 @@ Owns the physical-AI runtime:
 - safety and lifecycle management
 - CLI and deployment workflows
 
-It depends on `inferencekit` and `capturekit` and may re-export selected APIs for user
-convenience.
+It depends on `inferencekit` and `capturekit` and may define domain-specific APIs on top of
+them.
 
 ---
 
@@ -158,11 +164,50 @@ packages/capturekit/src/capturekit/
 packages/physicalai/src/physicalai/
 ```
 
-Then `physicalai` can provide thin re-exports:
+One thing we should avoid is exposing the exact same public class from two different import
+paths. For example:
+
+```python
+from inferencekit import InferenceModel
+from physicalai.inference import InferenceModel
+```
+
+Even if this is technically workable, it makes ownership and serialization semantics less clear.
+
+If `physicalai` needs a user-facing API that goes beyond the generic inference contract, it
+should define a domain-specific subclass instead of re-exporting the same class unchanged.
+
+```python
+# physicalai/inference/model.py
+from inferencekit import InferenceModel as BaseInferenceModel
+
+
+class InferenceModel(BaseInferenceModel):
+    def select_action(self, observation):
+        outputs = self(observation)
+        return outputs["action"]
+
+    def predict_action_chunk(self, observation):
+        outputs = self(observation)
+        return outputs["action_chunk"]
+```
+
+This gives each layer a clear contract:
+
+- `inferencekit.InferenceModel` owns the generic inference API
+- `physicalai.InferenceModel` owns the physical-AI-specific inference API
+
+The same pattern would apply to other domains as well.
+
+In other words, we should prefer domain-specific subclasses over simple re-exports of core
+types.
+
+For convenience, `physicalai` can still expose these higher-level types from stable runtime
+entry points:
 
 ```python
 # physicalai/inference/__init__.py
-from inferencekit import InferenceModel
+from physicalai.inference.model import InferenceModel
 
 __all__ = ["InferenceModel"]
 ```
@@ -174,8 +219,7 @@ from capturekit import Camera, Frame, UVCCamera
 __all__ = ["Camera", "Frame", "UVCCamera"]
 ```
 
-This keeps the implementation single-sourced while preserving ergonomic imports for
-runtime users.
+This keeps ownership explicit while preserving ergonomic imports for runtime users.
 
 ---
 
@@ -233,6 +277,14 @@ get clearance. We would, of course, welcome better namings if you might have any
 
 We should not extract everything at once. The safer path is incremental.
 
+Publishing should happen only when we have enough evidence that it is worth the added overhead.
+Reasonable conditions would be:
+
+- at least one real consumer outside `physicalai`
+- an API that is stable enough to support independently
+- CI checks that enforce dependency boundaries
+- a clear release/versioning plan
+
 ### Phase 1
 
 Keep the code in `physical-ai`, but organize it as if extraction were already done:
@@ -246,7 +298,8 @@ Keep the code in `physical-ai`, but organize it as if extraction were already do
 
 Publish `inferencekit` and/or `capturekit` from the same repo.
 
-`physicalai` switches from local module ownership to dependency + re-export.
+`physicalai` switches from local module ownership to dependency + domain-specific wrappers or
+subclasses where needed.
 
 ### Phase 3 (Most Probably Not Needed)
 
@@ -266,12 +319,23 @@ can still be part of a physicalai repo.
 
 ---
 
+## Versioning
+
+This proposal does not lock us into either shared or independent versioning.
+
+- if the packages are always released together, a shared version is simpler
+- if they become separately consumed products, independent versioning is more natural
+
+We should decide this only when we actually choose to publish them.
+
+---
+
 ## Best Practices
 
 - Keep reusable packages domain-agnostic in both naming and dependencies
 - Enforce one-way dependency flow in CI
 - Use separate distributions, not duplicated code
-- Re-export from `physicalai` for convenience, but keep implementation in the generic package
+- Prefer domain-specific subclasses over re-exporting the same core class from multiple public paths
 - Treat lazy imports as a performance tool, not as the primary architecture boundary
 - Extract to a new repository only when there is a real consumer or release need
 
