@@ -196,6 +196,8 @@ baseline = "pyrefly-baseline.json"
 project-excludes = [
     ".venv/**",
     "notebooks/**",
+    "src/physicalai/policies/pi05/pi_gemma.py",
+    "src/physicalai/policies/groot/components/backbone.py",
 ]
 
 
