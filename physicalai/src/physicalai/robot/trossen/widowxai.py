@@ -64,6 +64,7 @@ class WidowXAI(Robot):
 
     JOINT_ORDER: ClassVar[list[str]] = list(WIDOWXAI_JOINT_ORDER)
     NUM_JOINTS: ClassVar[int] = len(JOINT_ORDER)
+    MAX_RELATIVE_TARGET: ClassVar[float] = 0.25
 
     def __init__(self, ip: str, role: Literal["leader", "follower"] = "follower") -> None:
         """Initialize the WidowXAI driver.
@@ -78,7 +79,6 @@ class WidowXAI(Robot):
         self._ip = ip
         self._role = role
         self._driver: TrossenArmDriver | None = None
-        self._last_positions: np.ndarray | None = None
 
     @property
     def joint_names(self) -> list[str]:
@@ -156,7 +156,19 @@ class WidowXAI(Robot):
             except Exception:  # noqa: BLE001
                 logger.warning("Error during WidowXAI cleanup; continuing.")
             self._driver = None
-            self._last_positions = None
+
+    @staticmethod
+    def _ensure_safe_goal_position(
+        goal_position: np.ndarray,
+        present_position: np.ndarray,
+        max_relative_target: float,
+    ) -> np.ndarray:
+        """Cap per-joint relative target magnitude for safety."""
+        delta = goal_position - present_position
+        capped_delta = np.clip(delta, -max_relative_target, max_relative_target)
+        if not np.array_equal(delta, capped_delta):
+            logger.warning("Capped widowxai goal delta to max_relative_target={}", max_relative_target)
+        return present_position + capped_delta
 
     def get_observation(self) -> WidowXAIObservation:
         """Read current joint state and auxiliary sensor data.
@@ -209,13 +221,10 @@ class WidowXAI(Robot):
 
         driver = self._require_driver()
 
-        if self._last_positions is not None:
-            velocities = ((action - self._last_positions) / goal_time).tolist()
-            driver.set_all_positions(action.tolist(), goal_time, False, velocities)  # noqa: FBT003
-        else:
-            driver.set_all_positions(action.tolist(), goal_time, False)  # noqa: FBT003
+        present_positions = np.asarray(driver.get_all_positions(), dtype=np.float32)
+        safe_action = self._ensure_safe_goal_position(action, present_positions, self.MAX_RELATIVE_TARGET)
 
-        self._last_positions = action.copy()
+        driver.set_all_positions(safe_action.tolist(), goal_time, False)  # noqa: FBT003
 
     def is_connected(self) -> bool:
         """Return True when the SDK driver is configured."""

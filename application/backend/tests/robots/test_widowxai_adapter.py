@@ -178,7 +178,8 @@ class TestSetJointsState:
         robot.send_action.assert_called_once()
         call_args = robot.send_action.call_args
         assert call_args[0][0].shape == (7,)
-        assert call_args[1]["goal_time"] == 0.1
+        # Goal time is set higher to prevent oscillations
+        assert call_args[1]["goal_time"] == 3 * 0.1
 
     def test_raises_for_leader(self):
         adapter, _ = _make_adapter(mode="leader")

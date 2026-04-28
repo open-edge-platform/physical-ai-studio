@@ -115,7 +115,9 @@ class WidowXAIAdapter(RobotClient):
             await asyncio.to_thread(
                 self._robot.send_action,
                 positions,
-                goal_time=goal_time,
+                # Increase default goal_time to reduce oscillations due to the application
+                # performing teleoperation at 30Hz
+                goal_time=3 * goal_time,
             )
 
         return self._create_event("joints_state_was_set", joints=joints)
