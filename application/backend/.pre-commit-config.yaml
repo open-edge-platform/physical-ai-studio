@@ -51,6 +51,15 @@ repos:
         pass_filenames: false
 
   # ========================================================================== #
+  # SECURITY - SECRET DETECTION                                                #
+  # ========================================================================== #
+  # gitleaks detects secrets (API keys, tokens, credentials) in code.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  # ========================================================================== #
   # ALEMBIC MIGRATION CHECKS                                                   #
   # ========================================================================== #
   - repo: local

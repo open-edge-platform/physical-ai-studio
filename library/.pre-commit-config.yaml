@@ -60,6 +60,12 @@ repos:
         # Uses [tool.bandit] from pyproject.toml
         args: ["--configfile=pyproject.toml", "-ll"]
 
+  # gitleaks detects secrets
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
   # ========================================================================== #
   # DOCUMENTATION & FORMATTING                                                 #
   # ========================================================================== #
