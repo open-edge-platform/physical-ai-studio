@@ -3,14 +3,14 @@
 
 """Inference adapter registry.
 
-The :class:`InferenceAdapterRegistry` is a process-wide map from an adapter
+The :class:`RuntimeAdapterRegistry` is a process-wide map from an adapter
 name (e.g. ``"onnx"``, ``"openvino"``) to the
 :class:`~physicalai.inference.adapters.base.RuntimeAdapter` subclass that
 implements it together with the file extensions that identify model
 artifacts produced for that adapter.
 
 Adapters self-register on import via the
-:meth:`InferenceAdapterRegistry.register` decorator so that adapters
+:meth:`RuntimeAdapterRegistry.register` decorator so that adapters
 contributed by different distributions (e.g. core ``physicalai`` provides
 ONNX and OpenVINO) all end up in the same shared registry.
 
@@ -54,7 +54,7 @@ if TYPE_CHECKING:
 AdapterT = TypeVar("AdapterT", bound="RuntimeAdapter")
 
 
-class InferenceAdapterRegistry:
+class RuntimeAdapterRegistry:
     """Registry of backend name → :class:`RuntimeAdapter` subclass + extensions.
 
     Each entry tracks the adapter class (eager or lazily resolvable) and the
@@ -260,4 +260,4 @@ class InferenceAdapterRegistry:
 
 
 #: Process-wide singleton used by :func:`get_adapter` and adapter modules.
-adapter_registry = InferenceAdapterRegistry()
+adapter_registry = RuntimeAdapterRegistry()

@@ -3,7 +3,7 @@
 
 """Inference adapters for different backend runtimes.
 
-Adapters are discovered through :class:`InferenceBackendRegistry`.  This
+Adapters are discovered through :class:`RuntimeAdapterRegistry`.  This
 package ships the ``onnx`` and ``openvino`` backends only — they
 self-register on import below.
 
@@ -32,7 +32,7 @@ __path__ = extend_path(__path__, __name__)
 
 from physicalai.inference.adapters.base import RuntimeAdapter
 from physicalai.inference.adapters.registry import (
-    InferenceAdapterRegistry,
+    RuntimeAdapterRegistry,
     adapter_registry,
 )
 
@@ -46,9 +46,9 @@ logger = logging.getLogger(__name__)
 #: Entry-point group used by other distributions to contribute adapters.
 #:
 #: Each entry point must point at a callable with the signature
-#: ``register(registry: InferenceBackendRegistry) -> None``.  The callable
+#: ``register(registry: RuntimeAdapterRegistry) -> None``.  The callable
 #: should populate *registry* (typically via
-#: :meth:`InferenceBackendRegistry.register_lazy_module`) without
+#: :meth:`RuntimeAdapterRegistry.register_lazy_module`) without
 #: triggering heavy imports.
 ENTRY_POINT_GROUP = "physicalai.inference.adapters"
 
@@ -77,7 +77,7 @@ _load_external_adapters()
 
 
 __all__ = [
-    "InferenceAdapterRegistry",
+    "RuntimeAdapterRegistry",
     "ONNXAdapter",
     "OpenVINOAdapter",
     "RuntimeAdapter",
