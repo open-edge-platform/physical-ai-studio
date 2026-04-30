@@ -1,22 +1,31 @@
 import { Item, Picker } from '@geti-ui/ui';
 
+interface BackendItem {
+    id: string;
+    name: string;
+}
+
 interface BackendSelectionProps {
     backend: string;
     setBackend: (backend: string) => void;
+    backends?: BackendItem[];
 }
 
-export const availableBackends = [
-    { id: 'torch', name: 'Torch' },
-    //{ id: 'openvino', name: 'OpenVINO' },
-    //{ id: 'onnx', name: 'ONNX' },
-];
+const backendLabels: Record<string, string> = {
+    torch: 'Torch',
+    openvino: 'OpenVINO',
+    onnx: 'ONNX',
+    executorch: 'ExecuTorch',
+};
 
-export const defaultBackend = availableBackends[0].id;
+export const defaultBackend = 'torch';
 
-export const BackendSelection = ({ backend, setBackend }: BackendSelectionProps) => {
+export const BackendSelection = ({ backend, setBackend, backends }: BackendSelectionProps) => {
+    const items = backends ?? [{ id: defaultBackend, name: backendLabels[defaultBackend] }];
+
     return (
         <Picker
-            items={availableBackends}
+            items={items}
             selectedKey={backend}
             label='Backend'
             onSelectionChange={(m) => setBackend(m!.toString())}

@@ -21,7 +21,7 @@ class Model(BaseIDModel):
     version: int = Field(1, description="Model version, incremented on each retrain")
     created_at: datetime | None = Field(None)
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def available_backends(self) -> list[str]:
         exports_dir = Path(self.path) / "exports"
