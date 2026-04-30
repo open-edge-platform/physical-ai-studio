@@ -742,6 +742,79 @@ class TestFeatureNormalization:
 
 
 # ============================================================================ #
+# Sample Input Tests                                                           #
+# ============================================================================ #
+
+
+class TestSampleInput:
+    """Tests for Pi05Model.sample_input visual-feature detection.
+
+    Uses a lightweight stub instead of constructing the full model to keep
+    these tests fast and free of HuggingFace downloads.
+    """
+
+    @staticmethod
+    def _call_sample_input(dataset_stats: dict) -> dict:
+        """Invoke the Pi05Model.sample_input property on a minimal stub."""
+
+        class _Stub:
+            def __init__(self, stats: dict) -> None:
+                self._dataset_stats = stats
+                # sample_input only reads device from this module's parameters.
+                self.paligemma_with_expert = torch.nn.Linear(1, 1)
+
+        return Pi05Model.sample_input.fget(_Stub(dataset_stats))  # type: ignore[attr-defined]
+
+    def test_sample_input_single_visual_feature_with_image_in_id(self) -> None:
+        """Single visual feature whose id contains 'image' produces IMAGES key."""
+        stats = {
+            "observation.state": {"name": "state", "shape": (8,), "type": "STATE"},
+            "observation.image": {"name": "image", "shape": (3, 224, 224), "type": "VISUAL"},
+        }
+        sample_input = self._call_sample_input(stats)
+        assert STATE in sample_input
+        assert IMAGES in sample_input
+        assert sample_input[STATE].shape == (1, 8)
+        assert sample_input[IMAGES].shape == (1, 3, 224, 224)
+
+    def test_sample_input_single_visual_feature_without_image_in_id(self) -> None:
+        """Visual feature without 'image' in id is still detected via the 'type' field."""
+        stats = {
+            "observation.state": {"name": "state", "shape": (8,), "type": "STATE"},
+            "observation.front_cam": {
+                "name": "front_cam",
+                "shape": (3, 224, 224),
+                "type": "VISUAL",
+            },
+        }
+        sample_input = self._call_sample_input(stats)
+        assert STATE in sample_input
+        assert IMAGES in sample_input
+        assert sample_input[IMAGES].shape == (1, 3, 224, 224)
+
+    def test_sample_input_multiple_visual_features_without_image_in_id(self) -> None:
+        """Multiple visual features without 'image' in id produce per-feature IMAGES.<name> keys."""
+        stats = {
+            "observation.state": {"name": "state", "shape": (8,), "type": "STATE"},
+            "observation.front_cam": {
+                "name": "front_cam",
+                "shape": (3, 224, 224),
+                "type": "VISUAL",
+            },
+            "observation.wrist_cam": {
+                "name": "wrist_cam",
+                "shape": (3, 224, 224),
+                "type": "VISUAL",
+            },
+        }
+        sample_input = self._call_sample_input(stats)
+        assert STATE in sample_input
+        assert f"{IMAGES}.front_cam" in sample_input
+        assert f"{IMAGES}.wrist_cam" in sample_input
+        assert IMAGES not in sample_input
+
+
+# ============================================================================ #
 # Policy Static Method Tests                                                   #
 # ============================================================================ #
 
