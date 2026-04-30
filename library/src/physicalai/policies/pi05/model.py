@@ -18,7 +18,7 @@ from torch import Tensor, nn
 from transformers.cache_utils import DynamicCache
 
 from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
-from physicalai.data.observation import ACTION, IMAGES, STATE, TASK
+from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, FeatureType
 from physicalai.export import ExportableModelMixin
 from physicalai.policies.base import Model
 
@@ -676,13 +676,15 @@ class Pi05Model(ExportableModelMixin, Model):
 
         sample_input = {}
 
-        num_image_features = sum(1 for key in self._dataset_stats if "image" in key)
+        num_image_features = sum(
+            1 for key in self._dataset_stats if str(FeatureType.VISUAL) in self._dataset_stats[key]["type"]
+        )
 
         for feature_id in self._dataset_stats:
             if STATE in feature_id:
                 state_feature = self._dataset_stats[feature_id]
                 sample_input[STATE] = torch.randn(1, *cast("tuple", state_feature["shape"]), device=device)
-            elif "image" in feature_id:
+            elif str(FeatureType.VISUAL) in self._dataset_stats[feature_id]["type"]:
                 image_feature = self._dataset_stats[feature_id]
                 if num_image_features == 1:
                     sample_input[IMAGES] = torch.randn(1, *cast("tuple", image_feature["shape"]), device=device)
