@@ -79,9 +79,7 @@ export const ModelRow = ({
             <View>
                 <DialogTrigger>
                     <Button variant='secondary'>Run model</Button>
-                    {(close) => (
-                        <StartInferenceDialog close={close} model={model} />
-                    )}
+                    {(close) => <StartInferenceDialog close={close} model={model} />}
                 </DialogTrigger>
             </View>
             <View justifySelf={'end'}>

@@ -1,19 +1,11 @@
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 
-import { Button, ButtonGroup, Content, Dialog, Divider, Heading } from '@geti-ui/ui';
+import { Button, ButtonGroup, Content, Dialog, Divider, Heading, ProgressCircle } from '@geti-ui/ui';
 import { useNavigate } from 'react-router';
 
 import { SchemaModel } from '../../api/openapi-spec';
-import { $api } from '../../api/client';
-import { BackendSelection, defaultBackend } from '../../features/configuration/shared/backend-selection';
+import { BackendSelection, defaultBackend } from '../../features/models/backend-selection';
 import { paths } from '../../router';
-
-const backendLabels: Record<string, string> = {
-    torch: 'Torch',
-    openvino: 'OpenVINO',
-    onnx: 'ONNX',
-    executorch: 'ExecuTorch',
-};
 
 interface StartInferenceDialogProps {
     close: () => void;
@@ -21,16 +13,7 @@ interface StartInferenceDialogProps {
 }
 
 export const StartInferenceDialog = ({ close, model }: StartInferenceDialogProps) => {
-    const { data: policyBackends } = $api.useQuery('get', '/api/policies/backends');
-
-    const availableBackends = (() => {
-        const policySupported = policyBackends?.[model.policy] ?? [];
-        const modelExported = model.available_backends;
-        const intersection = policySupported.filter((b) => modelExported.includes(b));
-        return intersection.map((id) => ({ id, name: backendLabels[id] ?? id }));
-    })();
-
-    const [backend, setBackend] = useState<string>(availableBackends[0]?.id ?? defaultBackend);
+    const [backend, setBackend] = useState<string>(defaultBackend);
 
     const navigate = useNavigate();
     const onStart = () => {
@@ -49,13 +32,15 @@ export const StartInferenceDialog = ({ close, model }: StartInferenceDialogProps
             <Heading>Run model</Heading>
             <Divider />
             <Content>
-                <BackendSelection backend={backend} setBackend={setBackend} backends={availableBackends} />
+                <Suspense fallback={<ProgressCircle aria-label='Loading backends' isIndeterminate size='S' />}>
+                    <BackendSelection model={model} backend={backend} setBackend={setBackend} />
+                </Suspense>
             </Content>
             <ButtonGroup>
                 <Button variant='secondary' onPress={close}>
                     Cancel
                 </Button>
-                <Button variant='accent' onPress={onStart} isDisabled={availableBackends.length === 0}>
+                <Button variant='accent' onPress={onStart}>
                     Start
                 </Button>
             </ButtonGroup>

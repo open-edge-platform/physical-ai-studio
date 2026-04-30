@@ -1,6 +1,6 @@
 import { useParams } from 'react-router';
 
-import { defaultBackend } from '../../../features/configuration/shared/backend-selection';
+import { defaultBackend } from '../../../features/models/backend-selection';
 
 export const useInferenceParams = () => {
     const { project_id, model_id, backend } = useParams();
