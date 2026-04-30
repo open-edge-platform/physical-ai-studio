@@ -3,6 +3,8 @@
 
 """Unit tests for InferenceModel and inference runners."""
 
+from __future__ import annotations
+
 import json
 from pathlib import Path
 from typing import override
@@ -10,10 +12,8 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-import torch
 import yaml
 
-from physicalai.export.mixin_policy import ExportBackend
 from physicalai.inference.adapters import RuntimeAdapter
 from physicalai.inference.manifest import ComponentSpec, Manifest, ModelSpec
 from physicalai.inference.model import InferenceModel
@@ -29,9 +29,8 @@ from physicalai.inference.runners import (
 
 
 class TestAdapter(RuntimeAdapter):
-    def __init__(self, device: torch.device | str = "cpu") -> None:
-        self.device = torch.device(device)
-        self._policy: torch.nn.Module | None = None
+    def __init__(self, device: str = "cpu") -> None:
+        self.device = device
         self._input_names: list[str] = []
         self._output_names: list[str] = []
 
@@ -154,7 +153,7 @@ class TestInferenceModelInit:
 
         assert model.export_dir == export_dir
         assert model.policy_name == "act"
-        assert model.backend == ExportBackend.OPENVINO
+        assert model.backend == "openvino"
         assert model.use_action_queue is True
         assert model.chunk_size == 10
         assert isinstance(model.runner, ActionChunking)
@@ -166,15 +165,15 @@ class TestInferenceModelInit:
     @pytest.mark.parametrize(
         ("backend_str", "expected", "file_ext"),
         [
-            ("openvino", ExportBackend.OPENVINO, ".xml"),
-            ("onnx", ExportBackend.ONNX, ".onnx"),
+            ("openvino", "openvino", ".xml"),
+            ("onnx", "onnx", ".onnx"),
         ],
     )
     def test_init_with_explicit_backend(
         self,
         tmp_path: Path,
         backend_str: str,
-        expected: ExportBackend,
+        expected: str,
         file_ext: str,
     ) -> None:
         export_dir = tmp_path / "exports"
@@ -211,7 +210,7 @@ class TestManifestModelInit:
         model = InferenceModel(_make_manifest_export_dir(tmp_path))
 
         assert model.policy_name == "act"
-        assert model.backend == ExportBackend.OPENVINO
+        assert model.backend == "openvino"
         assert model.use_action_queue is True
         assert model.chunk_size == 10
         assert isinstance(model.runner, ActionChunking)
@@ -223,7 +222,7 @@ class TestManifestModelInit:
             _make_manifest_export_dir(tmp_path, kind="single_pass", backend="onnx", artifact_file="act.onnx"),
         )
         assert model.policy_name == "act"
-        assert model.backend == ExportBackend.ONNX
+        assert model.backend == "onnx"
         assert model.use_action_queue is False
         assert isinstance(model.runner, SinglePass)
 
@@ -250,7 +249,7 @@ class TestManifestModelInit:
 
         model = InferenceModel(export_dir)
         assert model.policy_name == "new_policy"
-        assert model.backend == ExportBackend.OPENVINO
+        assert model.backend == "openvino"
 
     def test_select_action_with_manifest(
         self,
@@ -284,7 +283,7 @@ class TestManifestModelInit:
             json.dump(manifest, f)
         (export_dir / "act.onnx").touch()
 
-        assert InferenceModel(export_dir).backend == ExportBackend.ONNX
+        assert InferenceModel(export_dir).backend == "onnx"
 
 
 @pytest.mark.usefixtures("_patch_adapter")
@@ -349,14 +348,14 @@ class TestAutoDetection:
 
     @pytest.mark.parametrize(
         ("file_ext", "expected_backend"),
-        [(".xml", ExportBackend.OPENVINO), (".onnx", ExportBackend.ONNX)],
+        [(".xml", "openvino"), (".onnx", "onnx")],
     )
     def test_backend_detection(
         self,
         tmp_path: Path,
         mock_adapter: MagicMock,
         file_ext: str,
-        expected_backend: ExportBackend,
+        expected_backend: str,
     ) -> None:
         export_dir = tmp_path / "exports"
         export_dir.mkdir()
@@ -388,9 +387,8 @@ class TestAutoDetection:
         expected_device = "CPU" if backend_type == "openvino" else ("cuda" if cuda_available else "cpu")
         mock_adapter.default_device.return_value = expected_device
 
-        with patch("torch.cuda.is_available", return_value=cuda_available):
-            with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
-                assert InferenceModel(export_dir, device="auto").device == expected_device
+        with patch("physicalai.inference.model.get_adapter", return_value=mock_adapter):
+            assert InferenceModel(export_dir, device="auto").device == expected_device
 
     def test_device_setting(self, tmp_path: Path) -> None:
         export_dir = tmp_path / "exports"
@@ -561,11 +559,11 @@ class TestModelPathResolution:
     @pytest.mark.parametrize(
         ("backend", "file_ext"),
         [
-            (ExportBackend.OPENVINO, ".xml"),
-            (ExportBackend.ONNX, ".onnx"),
+            ("openvino", ".xml"),
+            ("onnx", ".onnx"),
         ],
     )
-    def test_get_model_path_with_policy_name(self, tmp_path: Path, backend: ExportBackend, file_ext: str) -> None:
+    def test_get_model_path_with_policy_name(self, tmp_path: Path, backend: str, file_ext: str) -> None:
         export_dir = tmp_path / "exports"
         export_dir.mkdir()
         model_file = export_dir / f"act{file_ext}"

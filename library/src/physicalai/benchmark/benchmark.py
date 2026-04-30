@@ -43,10 +43,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import torch
+from physicalai.inference.model import InferenceModel
 
 from physicalai.benchmark.results import BenchmarkResults, TaskResult
 from physicalai.eval.rollout import evaluate_policy
-from physicalai.inference.model import InferenceModel
 from physicalai.policies.base import Policy
 
 if TYPE_CHECKING:

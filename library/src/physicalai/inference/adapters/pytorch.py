@@ -1,26 +1,33 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+# This module extends ``physicalai.inference.adapters`` module and corresponding
+# namespace according to PEP 420. ``__init__.py`` is missing intentionally.
+# ruff: noqa: INP001
+
 """Torch runtime adapter for inference."""
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import torch
 import yaml
+from physicalai.inference.adapters.base import RuntimeAdapter
+from physicalai.inference.adapters.registry import adapter_registry
 
 from physicalai.data.observation import Observation
 from physicalai.export.backends import TorchExportParameters
 from physicalai.policies import get_physicalai_policy_class as get_policy_class
 
-from .base import RuntimeAdapter
-
 if TYPE_CHECKING:
     import numpy as np
 
+    from physicalai.policies import Policy
 
+
+@adapter_registry.register("torch", extensions=(".ckpt", ".pt"))
 class TorchAdapter(RuntimeAdapter):
     """Runtime adapter for Torch models.
 
@@ -39,8 +46,8 @@ class TorchAdapter(RuntimeAdapter):
         Args:
             device: Device for inference ('cpu', 'cuda', 'xpu', etc.)
         """
-        self.device = torch.device(device)
-        self._policy: torch.nn.Module | None = None
+        self.device = str(device)
+        self._policy: Policy | None = None
         self._input_names: list[str] = []
         self._output_names: list[str] = []
 
@@ -79,8 +86,15 @@ class TorchAdapter(RuntimeAdapter):
 
             self._policy = policy_class.load_from_checkpoint(model_path, map_location="cpu").to(self.device).eval()
 
-            if hasattr(self._policy, "extra_export_args") and "torch" in self._policy.extra_export_args:
-                torch_export_args: TorchExportParameters = self._policy.extra_export_args["torch"]
+            # ``extra_export_args`` is contributed by ``ExportablePolicyMixin``
+            # but ``nn.Module.__getattr__`` widens unknown attributes to
+            # ``Module | Tensor``; narrow it explicitly for the type checker.
+            extra_export_args = cast(
+                "dict[str, Any]",
+                getattr(self._policy, "extra_export_args", {}),
+            )
+            if "torch" in extra_export_args:
+                torch_export_args = cast("TorchExportParameters", extra_export_args["torch"])
             else:
                 torch_export_args = TorchExportParameters()
 
@@ -115,7 +129,6 @@ class TorchAdapter(RuntimeAdapter):
             # Build Observation from numpy dict and convert to torch tensors on device
             observation = Observation.from_dict(inputs).to_torch(self.device)
 
-            # Run policy forward pass
             torch_outputs = self._policy(observation)
             return self._convert_outputs_to_numpy(torch_outputs)
 

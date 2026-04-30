@@ -1,6 +1,10 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+# This module extends ``physicalai.inference.adapters`` module and corresponding
+# namespace according to PEP 420. ``__init__.py`` is missing intentionally.
+# ruff: noqa: INP001
+
 """ExecuTorch runtime adapter for inference."""
 
 from __future__ import annotations
@@ -10,8 +14,8 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 import yaml
-
-from .base import RuntimeAdapter
+from physicalai.inference.adapters.base import RuntimeAdapter
+from physicalai.inference.adapters.registry import adapter_registry
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -21,6 +25,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+@adapter_registry.register("executorch", extensions=(".pte",))
 class ExecuTorchAdapter(RuntimeAdapter):
     """Runtime adapter for ExecuTorch .pte model inference.
 

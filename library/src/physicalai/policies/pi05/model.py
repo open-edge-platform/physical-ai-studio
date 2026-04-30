@@ -343,8 +343,10 @@ class PaliGemmaWithExpertModel(nn.Module):
             adarms_cond_dim=action_expert_config.width if use_adarms[1] else None,
         )
 
-        self.paligemma = PaliGemmaForConditionalGenerationWithPiGemma(config=vlm_config_hf)
-        self.gemma_expert = PiGemmaForCausalLM(config=action_expert_config_hf)
+        self.paligemma = PaliGemmaForConditionalGenerationWithPiGemma(
+            config=vlm_config_hf,  # pyrefly: ignore[bad-argument-type]
+        )
+        self.gemma_expert = PiGemmaForCausalLM(config=action_expert_config_hf)  # pyrefly: ignore[bad-argument-type]
         self.gemma_expert.model.embed_tokens = None
 
         self.to_bfloat16_for_selected_params(precision)
@@ -411,7 +413,9 @@ class PaliGemmaWithExpertModel(nn.Module):
         image_outputs = self.paligemma.model.get_image_features(image)
         if not isinstance(image_outputs, torch.Tensor):
             image_outputs = image_outputs.pooler_output
-        features = image_outputs * self.paligemma.config.text_config.hidden_size**0.5
+        features = (
+            image_outputs * self.paligemma.config.text_config.hidden_size**0.5  # pyrefly: ignore[missing-attribute]
+        )
         if features.dtype != out_dtype:
             features = features.to(out_dtype)
         return features
@@ -472,7 +476,7 @@ class PaliGemmaWithExpertModel(nn.Module):
             prefix_past_key_values = None
         else:
             models = [self.paligemma.model.language_model, self.gemma_expert.model]
-            num_layers = self.paligemma.config.text_config.num_hidden_layers
+            num_layers = self.paligemma.config.text_config.num_hidden_layers  # pyrefly: ignore[missing-attribute]
 
             use_gradient_checkpointing = (
                 hasattr(self.gemma_expert.model, "gradient_checkpointing")
