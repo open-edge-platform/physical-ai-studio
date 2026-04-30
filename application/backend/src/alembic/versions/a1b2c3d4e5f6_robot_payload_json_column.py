@@ -38,7 +38,7 @@ def upgrade() -> None:
             {
                 "serial_number": serial_number or "",
             }
-            if robot_type in ("SO101_Follower", "SO101_LEADER")
+            if robot_type in ("SO101_FOLLOWER", "SO101_LEADER", "SO101_Leader", "SO101_Follower")
             else {
                 "connection_string": connection_string or "",
             }
