@@ -53,7 +53,7 @@
         "static-path": "^0.0.4",
         "three": "^0.180.0",
         "urdf-loader": "^0.12.6",
-        "uuid": "^11.1.0"
+        "uuid": "^14.0.0"
     },
     "devDependencies": {
         "@eslint/compat": "^1.2.8",
