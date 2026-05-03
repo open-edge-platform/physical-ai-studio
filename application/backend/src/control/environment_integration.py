@@ -132,7 +132,7 @@ class EnvironmentIntegration:
 
     def format_model_input_observation(self, raw_observation: dict, task: str | None = None) -> Observation:  # noqa: ARG002
         observation = self._remap_camera_observations(raw_observation)
-        state = np.array([[value for key, value in observation.items() if key in self.action_keys]], dtype=np.float32)
+        state = np.array([[observation[k] for k in self.action_keys]], dtype=np.float32)
         images: dict = {}
         for camera in self.environment.cameras:
             camera_name = camera.name.lower()
