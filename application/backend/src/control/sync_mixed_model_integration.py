@@ -10,6 +10,7 @@ class SyncMixedModelIntegration:
     queue_mixer: QueueMixer
     inference_poller: InferencePoller
     fps: int
+    use_synchronous: bool = True
 
     def __init__(self, model_worker: ModelWorker, fps: int):
         self.model_worker = model_worker
@@ -28,7 +29,9 @@ class SyncMixedModelIntegration:
             self.queue_mixer.add(inference_result.data, offset)
             self.queue_mixer.lerp_duration = max(offset, 1)
 
-        if not self.inference_poller.busy:
+        synchronous = self.queue_mixer.empty() if self.use_synchronous else True
+
+        if synchronous and not self.inference_poller.busy:
             self.inference_poller.run_inference(observation)
 
         if not self.queue_mixer.empty():
