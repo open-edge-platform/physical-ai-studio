@@ -29,6 +29,8 @@ class SyncMixedModelIntegration:
             self.queue_mixer.add(inference_result.data, offset)
             self.queue_mixer.lerp_duration = max(offset, 1)
 
+        # if self.use_synchronous we wait for the queue_mixer to empty first.
+        # else just send inference when its no longer busy.
         synchronous = self.queue_mixer.empty() if self.use_synchronous else True
 
         if synchronous and not self.inference_poller.busy:
