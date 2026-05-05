@@ -3,8 +3,10 @@
 
 """Export backends enumeration and parameters."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import Path
 from typing import Literal
 
 #: Supported ExecuTorch delegate backends.
@@ -53,9 +55,18 @@ class ExportParameters:
 
 @dataclass
 class ONNXExportParameters(ExportParameters):
-    """Parameters specific to ONNX export."""
+    """Parameters specific to ONNX export.
+
+    Attributes:
+        export_tokenizer: Whether to export the tokenizer alongside the model.
+        post_export_hook: Optional callable invoked after the ONNX model has been
+            written to disk. It receives the path to the exported ``.onnx`` file
+            and may modify the file in place (e.g. to patch the graph for a
+            specific runtime). Signature: ``(onnx_path: str | Path) -> None``.
+    """
 
     export_tokenizer: bool = False
+    post_export_hook: Callable[[str | Path], None] | None = None
 
 
 @dataclass

@@ -286,6 +286,9 @@ class ExportablePolicyMixin:
             **extra_export_kwargs,
         )
 
+        if extra_model_args.post_export_hook is not None:
+            extra_model_args.post_export_hook(model_path)
+
         if extra_model_args.export_tokenizer:
             onnx_tokenizer = gen_processing_models(
                 self._preprocessor.tokenizer,
