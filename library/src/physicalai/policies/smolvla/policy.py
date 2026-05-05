@@ -26,6 +26,7 @@ from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 from .config import SmolVLAConfig
+from .export_utils import patch_onnx_for_ort
 from .model import SmolVLAModel
 
 if TYPE_CHECKING:
@@ -456,7 +457,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         Returns:
             list[str | ExportBackend]: A list of supported export backends.
         """
-        return [ExportBackend.TORCH, ExportBackend.OPENVINO]
+        return [ExportBackend.TORCH, ExportBackend.OPENVINO, ExportBackend.ONNX]
 
     @property
     def extra_export_args(self) -> dict[str, ExportParameters]:
@@ -507,6 +508,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             ],
             postprocessors_specs=postproc_specs,
             export_tokenizer=False,
+            post_export_hook=patch_onnx_for_ort,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
             outputs=[ACTION],
