@@ -120,6 +120,8 @@ class TrainingWorker(BaseProcessWorker):
             device_type = payload.device.type if payload.device else None
             device_index = payload.device.index if payload.device else None
 
+            accelerator = get_torch_device(device_type)
+
             l_dm = LeRobotDataModule(
                 repo_id="snapshot",  # doesnt matter for loading the data.
                 root=snapshot.path,
@@ -129,9 +131,11 @@ class TrainingWorker(BaseProcessWorker):
             )
 
             if base_model is not None:
-                policy = load_policy(base_model)
+                policy = load_policy(base_model, compile_model=payload.compile_model)
             else:
-                policy = setup_policy(model)
+                policy = setup_policy(model, compile_model=payload.compile_model)
+
+            precision = str(payload.precision)
 
             checkpoint_callback = ModelCheckpoint(
                 dirpath=path,
@@ -142,24 +146,28 @@ class TrainingWorker(BaseProcessWorker):
             )
             csv_logger = CSVLogger(path.parent, name=path.stem)
 
-            trainer = Trainer(
-                logger=csv_logger,
-                callbacks=[
-                    checkpoint_callback,
-                    TrainingTrackingCallback(
-                        shutdown_event=self._stop_event,
-                        interrupt_event=self.interrupt_event,
-                        dispatcher=dispatcher,
-                    ),
-                    TrainingLogCallback(),
-                ],
-                accelerator=get_torch_device(device_type),
-                strategy=get_lightning_strategy(device_type),
-                devices=[device_index] if device_index is not None else "auto",
-                max_steps=payload.max_steps,
-                auto_scale_batch_size=payload.auto_scale_batch_size,
-                check_val_every_n_epoch=1,
-            )
+            def _create_trainer() -> Trainer:
+                return Trainer(
+                    logger=csv_logger,
+                    callbacks=[
+                        checkpoint_callback,
+                        TrainingTrackingCallback(
+                            shutdown_event=self._stop_event,
+                            interrupt_event=self.interrupt_event,
+                            dispatcher=dispatcher,
+                        ),
+                        TrainingLogCallback(),
+                    ],
+                    accelerator=accelerator,
+                    strategy=get_lightning_strategy(device_type),
+                    devices=[device_index] if device_index is not None else "auto",
+                    max_steps=payload.max_steps,
+                    auto_scale_batch_size=payload.auto_scale_batch_size,
+                    precision=precision,
+                    check_val_every_n_epoch=1,
+                )
+
+            trainer = _create_trainer()
 
             dispatcher.start()
             trainer.fit(model=policy, datamodule=l_dm)

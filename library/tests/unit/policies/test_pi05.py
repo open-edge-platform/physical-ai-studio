@@ -1058,3 +1058,56 @@ class TestPi05FineTuning:
         assert policy.config.scheduler_warmup_steps == 500
         assert policy.config.scheduler_decay_steps == 10_000
         assert policy.config.scheduler_decay_lr == 1e-5
+
+
+# ============================================================================ #
+# Export Args Tests                                                            #
+# ============================================================================ #
+
+
+class TestPi05ExtraExportArgs:
+    """Tests for Pi05.extra_export_args preprocessor ordering and contents."""
+
+    @staticmethod
+    def _mock_stats() -> dict[str, dict[str, list[float] | str | tuple]]:
+        return {
+            "observation.state": {
+                "name": "observation.state",
+                "shape": (8,),
+                "mean": [0.0] * 8,
+                "std": [1.0] * 8,
+                "q01": [-1.0] * 8,
+                "q99": [1.0] * 8,
+            },
+            "action": {
+                "name": "action",
+                "shape": (7,),
+                "mean": [0.0] * 7,
+                "std": [1.0] * 7,
+                "q01": [-1.0] * 7,
+                "q99": [1.0] * 7,
+            },
+        }
+
+    def test_raises_without_dataset_stats(self) -> None:
+        """extra_export_args should raise if dataset_stats are unavailable."""
+        policy = Pi05()
+        with pytest.raises(ValueError, match="Dataset stats are required"):
+            _ = policy.extra_export_args
+
+    def test_preprocessor_order_normalize_before_pi05(self) -> None:
+        """Normalize must run before the pi05 image transform for both onnx and openvino."""
+        policy = Pi05()
+        # Inject mock stats directly to avoid building the heavy model.
+        policy._dataset_stats = self._mock_stats()
+
+        args = policy.extra_export_args
+
+        for backend in ("onnx", "openvino"):
+            specs = args[backend].preprocessors_specs
+            types = [s.type for s in specs]
+            assert types[0] == "normalize", f"{backend}: expected normalize first, got {types}"
+            assert types[1] == "pi05", f"{backend}: expected pi05 second, got {types}"
+            assert types.index("normalize") < types.index("pi05"), (
+                f"{backend}: normalize must precede pi05, got {types}"
+            )

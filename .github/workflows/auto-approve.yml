@@ -56,7 +56,7 @@ jobs:
     runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
     steps:
       - *harden-runner
-    steps:
+
       - name: Debug
         env:
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}

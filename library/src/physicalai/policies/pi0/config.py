@@ -57,6 +57,8 @@ class Pi0Config(Config):
 
     gradient_checkpointing: bool = False
 
+    compile_model: bool = False
+
     learning_rate: float = 2.5e-5
     weight_decay: float = 1e-10
     warmup_steps: int = 1000

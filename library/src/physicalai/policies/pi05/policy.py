@@ -678,14 +678,14 @@ class Pi05(ExportablePolicyMixin, Policy):
 
         base_preproc_specs = [
             ComponentSpec(
-                type="pi05",
-                image_resolution=self.config.image_resolution,
-                empty_cameras=self.config.empty_cameras,
-            ),
-            ComponentSpec(
                 type="normalize",
                 stats={STATE: self._dataset_stats[f"observation.{STATE}"]},
                 mode=self.config.normalization_mode.lower(),
+            ),
+            ComponentSpec(
+                type="pi05",
+                image_resolution=self.config.image_resolution,
+                empty_cameras=self.config.empty_cameras,
             ),
         ]
         postproc_specs = [
