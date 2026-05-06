@@ -10,10 +10,33 @@
 >
 > This conflicts with §3 "Contract: shape-stable across runners". Both APIs should always work; `InferenceModel` should adapt via `ActionChunkCursor` (chunk → one action) and a 1-step wrap (single action → `(1, D)` chunk).
 >
-> Options to discuss:
+ > Options to discuss:
 >
 > 1. Land PR #564 as-is, then follow-up to add adaptation before `PolicyRuntime` / `Benchmark` / `PolicyServer` start consuming `predict_action_chunk()`.
-> 2. Adjust PR #564 to adapt instead of raise.
+>
+> 2. Adjust PR #564 to adapt instead of raise. Concretely, replace the two `RuntimeError` branches in `InferenceModel`:
+>
+>    ```python
+>    # select_action(): chunk-producing runner -> pop one via cursor
+>    def select_action(self, observation):
+>        if self.use_action_queue:
+>            if self._cursor.empty():
+>                self._cursor.push_chunk(self.predict_action_chunk(observation))
+>            return self._cursor.pop()
+>        outputs = self(observation)
+>        return outputs[ACTION]
+>
+>    # predict_action_chunk(): single-pass runner -> wrap as (1, D)
+>    def predict_action_chunk(self, observation):
+>        outputs = self(observation)
+>        actions = outputs[ACTION]
+>        if not self.use_action_queue:
+>            actions = actions[None, ...]  # (D,) -> (1, D)
+>        return {"actions": actions}
+>    ```
+>
+>    `_cursor` is a private `ActionChunkCursor` owned by `InferenceModel`. Tests update from `pytest.raises(RuntimeError)` to assert the adapted shape.
+>
 > 3. Change the design to runner-driven contract (not recommended — pushes runner-branching into every consumer).
 
 This is the concise design for running a trained PhysicalAI policy on a robot.
