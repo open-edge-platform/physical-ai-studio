@@ -46,7 +46,7 @@ physicalai run --config so101_act.yaml --duration-s 60
 | `Execution` | when and where inference runs: sync, thread, process, remote | queueing policy, robot IO |
 | `ActionQueue` | store chunks, merge chunks, smooth boundaries, pop one action per tick | model inference, robot IO |
 | `PolicyRuntime` | observe robot, call `Execution`, pop action, send action, callbacks, timing | policy math |
-| Benchmarking | measure latency, throughput, jitter | production runtime semantics |
+| `Benchmark` / `LiberoBenchmark` | evaluate policies across gyms/tasks, episodes, success rate, reward, episode length, FPS, videos, JSON/CSV export | production robot-loop semantics |
 
 ## 3. `select_action()` vs `predict_action_chunk()`
 
@@ -261,18 +261,52 @@ This keeps `physicalai run` usable on inference hosts without Torch or Lightning
 
 ## 10. Benchmarking vs Runtime
 
-Benchmarking can reuse runtime components, but it is not the runtime.
+`library/src/physicalai/benchmark/` is not just a latency/throughput microbenchmark package.
 
-| Benchmark | Uses `PolicyRuntime`? | Measures |
-|---|---:|---|
-| model benchmark | no | preprocess + backend + model latency |
-| `select_action` benchmark | no | direct-call API latency |
-| chunk benchmark | no | `predict_action_chunk()` latency |
-| execution benchmark | maybe | sync/thread/process/remote overhead |
-| runtime smoke benchmark | yes, with mock robot | loop FPS, queue behavior, callback timing |
-| hardware benchmark | yes, with real robot | end-to-end deployment behavior |
+Current shape:
 
-`PolicyRuntime` owns production robot-loop semantics. Benchmarking measures those semantics when needed.
+```python
+from physicalai.benchmark import LiberoBenchmark
+from physicalai.inference import InferenceModel
+
+benchmark = LiberoBenchmark(task_suite="libero_10", num_episodes=20)
+model = InferenceModel.load("./exports/act_policy")
+
+results = benchmark.evaluate(model)
+print(results.summary())
+```
+
+`Benchmark` / `LiberoBenchmark` own evaluation orchestration:
+
+- gyms and task suites
+- episodes and max steps
+- policy comparison
+- success rate
+- reward
+- episode length
+- average FPS
+- optional video recording
+- JSON/CSV result export
+
+Today, benchmark rollouts evaluate `Policy` or `InferenceModel` by calling `select_action()`. That is correct for direct policy evaluation.
+
+`PolicyRuntime` has a different job: production robot-loop semantics.
+
+| Concern | `Benchmark` | `PolicyRuntime` |
+|---|---|---|
+| Task suite / gym orchestration | yes | no |
+| Episode aggregation and success metrics | yes | no |
+| Video/result export | yes | no |
+| Robot/camera connection lifecycle | no | yes |
+| FPS-controlled robot loop | no, except measuring rollout FPS | yes |
+| Runtime-owned action queue | only if explicitly benchmarking runtime behavior | yes |
+| Async/process/remote inference scheduling | only if explicitly configured through runtime components | yes |
+
+Recommended split:
+
+1. Keep `Benchmark.evaluate(model)` using `select_action()` for standard policy/task evaluation.
+2. Add optional runtime benchmarks later only when we want to evaluate `PolicyRuntime` itself, e.g. mock robot loop FPS, queue behavior, async execution, or remote execution.
+3. Do not make `Benchmark` a second implementation of the production robot loop.
 
 ## 11. Phases
 

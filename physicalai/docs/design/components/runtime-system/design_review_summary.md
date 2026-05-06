@@ -38,7 +38,7 @@ physicalai run --config so101_act.yaml --duration-s 60
 | `Execution` | sync/thread/process/remote inference scheduling | action buffering, robot IO |
 | `ActionQueue` | chunk storage, merge, smoothing, pop-one-action-per-tick | model execution, robot IO |
 | `PolicyRuntime` | observation, timing, queue consumption, `robot.send_action()`, callbacks, shutdown | policy math |
-| Benchmarking | measurement | production runtime semantics |
+| `Benchmark` / `LiberoBenchmark` | task-suite evaluation over gyms, episodes, success rate, reward, episode length, FPS, video/export | production robot-loop semantics |
 
 ## `select_action()` vs `predict_action_chunk()`
 
@@ -100,4 +100,4 @@ Open discussion points:
 
 1. Should `select_action()` stay as direct-call convenience only?
 2. Should runtime-owned chunking be the recommended path for all robot loops?
-3. Which benchmark modes should use `PolicyRuntime` versus lower-level components directly?
+3. Should benchmark rollouts continue to call `select_action()` directly, or should some benchmark modes evaluate `PolicyRuntime` against gym-like robot adapters?
