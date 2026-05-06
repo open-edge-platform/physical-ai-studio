@@ -108,6 +108,17 @@ PolicyRuntime
   -> robot.send_action(action)
 ```
 
+### Contract: shape-stable across runners
+
+Both methods must work for any runner. `InferenceModel` adapts; callers do not branch on runner type.
+
+| Runner | `select_action()` | `predict_action_chunk()` |
+|---|---|---|
+| single-pass | runner output | wrap as `(1, D)` chunk |
+| chunk-producing | pop one via `ActionChunkCursor` | runner output |
+
+This is deliberate. If `predict_action_chunk()` raised on single-pass runners, `PolicyRuntime`, `ActionQueue`, `Benchmark`, and `PolicyServer` would each have to branch on runner type. The cursor and the 1-step wrap exist to keep that branching in one place.
+
 ## 4. Chunking and Queueing
 
 Three layers, one shared low-level helper.
