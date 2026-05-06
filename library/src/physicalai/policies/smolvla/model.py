@@ -82,7 +82,6 @@ class SmolVLAModel(ExportableModelMixin, Model):
         min_period: float = 4e-3,
         max_period: float = 4.0,
         use_random_input_noise: bool = True,
-        tokenizer_max_length: int = 48,
         compile_model: bool = False,
     ) -> None:
         """Initialize the SmolVLA model.
@@ -114,7 +113,6 @@ class SmolVLAModel(ExportableModelMixin, Model):
             max_period: Maximum period for sine-cosine positional encoding of timesteps.
             use_random_input_noise: Whether to use random noise as the initial input for the
                 denoising process during inference. If False, zeros are used instead.
-            tokenizer_max_length: Maximum token length for the tokenizer. Default: 48.
             compile_model: Whether to apply torch.compile to the model.
         """
         super().__init__()
@@ -123,7 +121,6 @@ class SmolVLAModel(ExportableModelMixin, Model):
         self._max_action_dim = max_action_dim
         self._adapt_to_pi_aloha = adapt_to_pi_aloha
         self._vlm_model_name = vlm_model_name
-        self._tokenizer_max_length = tokenizer_max_length
         self._model = VLAFlowMatching(
             chunk_size=chunk_size,
             max_state_dim=max_state_dim,
