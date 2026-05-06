@@ -16,9 +16,8 @@ PolicyRuntime    runs the robot loop
 For a design review:
 
 1. [design_review_summary.md](./design_review_summary.md)
-2. [design_review_deck.md](./design_review_deck.md)
-3. [policy_runtime_design.md](./policy_runtime_design.md), only for details
-4. [policy_server_design.md](./policy_server_design.md), only for remote inference
+2. [policy_runtime_design.md](./policy_runtime_design.md), only for details
+3. [policy_server_design.md](./policy_server_design.md), only for remote inference
 
 For implementation:
 
