@@ -1,5 +1,7 @@
 # Policy Runtime Design Summary
 
+> **Discuss tomorrow:** [PR #564](https://github.com/open-edge-platform/physical-ai-studio/pull/564) adds `predict_action_chunk()` but raises on incompatible runners. The design assumes both APIs are shape-stable across runners (adapt via `ActionChunkCursor` / 1-step wrap). See top of `policy_runtime_design.md`.
+
 We want a small runtime layer for running trained policies on robots.
 
 Today, model inference, action chunking, queueing, async execution, remote serving, benchmarking, and product workflows are easy to mix together. The proposal separates those responsibilities.

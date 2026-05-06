@@ -1,5 +1,21 @@
 # Policy Runtime Design
 
+> **Open discussion (temporary, remove after team sync):**
+> [PR #564](https://github.com/open-edge-platform/physical-ai-studio/pull/564) adds `predict_action_chunk()` to `InferenceModel` but raises if the runner is incompatible:
+>
+> ```python
+> select_action(obs)         # raises if runner is ActionChunking
+> predict_action_chunk(obs)  # raises if runner is SinglePass
+> ```
+>
+> This conflicts with §3 "Contract: shape-stable across runners". Both APIs should always work; `InferenceModel` should adapt via `ActionChunkCursor` (chunk → one action) and a 1-step wrap (single action → `(1, D)` chunk).
+>
+> Options to discuss:
+>
+> 1. Land PR #564 as-is, then follow-up to add adaptation before `PolicyRuntime` / `Benchmark` / `PolicyServer` start consuming `predict_action_chunk()`.
+> 2. Adjust PR #564 to adapt instead of raise.
+> 3. Change the design to runner-driven contract (not recommended — pushes runner-branching into every consumer).
+
 This is the concise design for running a trained PhysicalAI policy on a robot.
 
 The main boundary:
