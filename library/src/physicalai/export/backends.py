@@ -46,11 +46,22 @@ class ExportBackend(StrEnum):
 
 @dataclass
 class ExportParameters:
-    """Parameters for exporting a model."""
+    """Parameters for exporting a model.
+
+    Attributes:
+        exporter_kwargs: Keyword arguments for the export backend.
+        preprocessors_specs: Specifications for inference preprocessors.
+        postprocessors_specs: Specifications for inference postprocessors.
+        post_export_hooks: Callables invoked in order after the model has been
+            written to disk. Each hook receives the path to the exported file
+            and may modify the file in place (e.g. to patch the graph for a
+            specific runtime). Signature: ``(export_path: str | Path) -> None``.
+    """
 
     exporter_kwargs: dict = field(default_factory=dict)
     preprocessors_specs: list = field(default_factory=list)
     postprocessors_specs: list = field(default_factory=list)
+    post_export_hooks: list[Callable[[str | Path], None]] = field(default_factory=list)
 
 
 @dataclass
@@ -59,14 +70,9 @@ class ONNXExportParameters(ExportParameters):
 
     Attributes:
         export_tokenizer: Whether to export the tokenizer alongside the model.
-        post_export_hook: Optional callable invoked after the ONNX model has been
-            written to disk. It receives the path to the exported ``.onnx`` file
-            and may modify the file in place (e.g. to patch the graph for a
-            specific runtime). Signature: ``(onnx_path: str | Path) -> None``.
     """
 
     export_tokenizer: bool = False
-    post_export_hook: Callable[[str | Path], None] | None = None
 
 
 @dataclass

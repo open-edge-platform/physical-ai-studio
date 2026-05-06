@@ -501,6 +501,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
                 "output_names": [ACTION],
+                "opset_version": 23,
             },
             preprocessors_specs=[
                 *base_preproc_specs,
@@ -513,7 +514,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             ],
             postprocessors_specs=postproc_specs,
             export_tokenizer=False,
-            post_export_hook=patch_onnx_for_ort,
+            post_export_hooks=[patch_onnx_for_ort],
         )
         extra_args["openvino"] = OpenVINOExportParameters(
             outputs=[ACTION],

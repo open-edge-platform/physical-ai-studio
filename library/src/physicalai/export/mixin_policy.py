@@ -279,6 +279,7 @@ class ExportablePolicyMixin:
         arg_name = self._get_forward_arg_name()
 
         self.model.eval()
+        '''
         self._onnx_core_export_step(
             model_path=model_path,
             input_sample=input_sample,
@@ -286,10 +287,13 @@ class ExportablePolicyMixin:
             **extra_export_kwargs,
         )
 
-        if extra_model_args.post_export_hook is not None:
-            extra_model_args.post_export_hook(model_path)
+        if extra_model_args.post_export_hooks:
+            for hook in extra_model_args.post_export_hooks:
+                hook(model_path)
+        '''
 
         if extra_model_args.export_tokenizer:
+            print("Exporting tokenizer to ONNX format...")
             onnx_tokenizer = gen_processing_models(
                 self._preprocessor.tokenizer,
                 pre_kwargs={
@@ -400,6 +404,11 @@ class ExportablePolicyMixin:
                 input=input_shapes,
                 **extra_export_kwargs,
             )
+
+        if extra_model_args.post_export_hooks:
+            for hook in extra_model_args.post_export_hooks:
+                hook(model_path)
+
         _postprocess_openvino_model(ov_model, extra_model_args.outputs)
 
         openvino.save_model(ov_model, str(model_path), compress_to_fp16=extra_model_args.compress_to_fp16)
