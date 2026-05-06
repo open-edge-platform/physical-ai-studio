@@ -290,6 +290,30 @@ class TestToOnnx:
         onnx_model = onnx.load(str(output_path))
         onnx.checker.check_model(onnx_model)
 
+    def test_to_onnx_post_export_hooks_are_called(self, tmp_path):
+        """Test that post_export_hooks are called during ONNX export."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        # Create mock hooks
+        mock_hook1 = MagicMock()
+        mock_hook2 = MagicMock()
+
+        # Set up the extra_export_args with post_export_hooks
+        wrapper._extra_export_args = {
+            ExportBackend.ONNX: ONNXExportParameters(
+                post_export_hooks=[mock_hook1, mock_hook2],
+            ),
+        }
+
+        output_path = tmp_path / "model.onnx"
+        wrapper.to_onnx(output_path)
+
+        # Verify the hooks were called with the correct model path
+        mock_hook1.assert_called_once_with(output_path)
+        mock_hook2.assert_called_once_with(output_path)
+        assert output_path.exists()
+
 
 class TestToOpenVINO:
     """Tests for to_openvino method."""
@@ -408,6 +432,31 @@ class TestToOpenVINO:
         output_path = tmp_path / "model.xml"
         wrapper.to_openvino(output_path)
 
+        assert output_path.exists()
+        assert (tmp_path / "model.bin").exists()
+
+    def test_to_openvino_post_export_hooks_are_called(self, tmp_path):
+        """Test that post_export_hooks are called during OpenVINO export."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        # Create mock hooks
+        mock_hook1 = MagicMock()
+        mock_hook2 = MagicMock()
+
+        # Set up the extra_export_args with post_export_hooks
+        wrapper._extra_export_args = {
+            ExportBackend.OPENVINO: OpenVINOExportParameters(
+                post_export_hooks=[mock_hook1, mock_hook2],
+            ),
+        }
+
+        output_path = tmp_path / "model.xml"
+        wrapper.to_openvino(output_path)
+
+        # Verify the hooks were called with the correct model path
+        mock_hook1.assert_called_once_with(output_path)
+        mock_hook2.assert_called_once_with(output_path)
         assert output_path.exists()
         assert (tmp_path / "model.bin").exists()
 
