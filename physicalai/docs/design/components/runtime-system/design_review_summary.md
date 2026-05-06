@@ -48,12 +48,16 @@ action = model.select_action(obs)
 
 `select_action()` returns one action. It is the simple direct-call API for scripts, tests, and existing users.
 
+For chunk-producing policies, `select_action()` may use `ActionChunking`: a private model/runner buffer that pops one action from the current chunk. This buffer exists only to adapt chunk policies to the one-action API. It is not the runtime `ActionQueue`.
+
 ```python
 chunk = model.predict_action_chunk(obs)
 actions = chunk["actions"]  # shape: (H, action_dim)
 ```
 
 `predict_action_chunk()` returns a chunk without consuming it. `PolicyRuntime` uses this through `Execution` and stores the result in `ActionQueue`.
+
+`ActionQueue` is the explicit runtime buffer. It exists for refill thresholds, async/process/remote inference, smoothing, RTC merge behavior, and runtime telemetry.
 
 ## Why This Shape
 
