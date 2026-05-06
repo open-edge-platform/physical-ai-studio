@@ -64,7 +64,7 @@ chunk = model.predict_action_chunk(obs)
 actions = chunk["actions"]  # shape: (H, action_dim)
 ```
 
-`predict_action_chunk()` returns a chunk-shaped `Mapping[str, Any]` (no public `ActionChunk` class). `PolicyRuntime` consumes it through `Execution` and stores the result in `ActionQueue`.
+`predict_action_chunk()` returns a chunk-shaped `Mapping[str, Any]`. `PolicyRuntime` consumes it through `Execution` and stores the result in `ActionQueue`.
 
 `ActionQueue` is the runtime buffer. It may use `ActionChunkCursor` internally, but it adds refill thresholds, async/process/remote support, smoothing, RTC merge behavior, and telemetry.
 
