@@ -13,7 +13,7 @@ from onnx import TensorProto, helper, numpy_helper, shape_inference
 from onnx.external_data_helper import load_external_data_for_model
 
 
-def patch_onnx_for_ort(onnx_path: str | Path) -> None:
+def patch_onnx_for_ort(onnx_path: str | Path) -> None:  # noqa: PLR0912, PLR0914
     """Patch a SmolVLA ONNX export so onnxruntime (CPU EP) can load it.
 
     Three issues from the dynamo exporter are fixed:
@@ -80,8 +80,9 @@ def patch_onnx_for_ort(onnx_path: str | Path) -> None:
 
     new_nodes = []
     inserted = 0
+    num_node_inputs = 3
     for node in graph.node:
-        if node.op_type == "Where" and len(node.input) == 3:
+        if node.op_type == "Where" and len(node.input) == num_node_inputs:
             out_dt = name_to_dtype.get(node.output[0])
             for branch_idx in (1, 2):  # X, Y
                 in_name = node.input[branch_idx]

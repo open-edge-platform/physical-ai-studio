@@ -291,7 +291,6 @@ class ExportablePolicyMixin:
                 hook(model_path)
 
         if extra_model_args.export_tokenizer:
-            print("Exporting tokenizer to ONNX format...")
             onnx_tokenizer = gen_processing_models(
                 self._preprocessor.tokenizer,
                 pre_kwargs={
