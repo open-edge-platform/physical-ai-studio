@@ -112,6 +112,7 @@ class ACT(ExportablePolicyMixin, Policy):
         optimizer_lr: float = 1e-5,
         optimizer_weight_decay: float = 1e-4,
         optimizer_grad_clip_norm: float = 10.0,
+        compile_model: bool = False,
         # Eager initialization (for checkpoint loading)
         dataset_stats: dict[str, Any] | None = None,
     ) -> None:
@@ -148,6 +149,7 @@ class ACT(ExportablePolicyMixin, Policy):
             optimizer_lr=optimizer_lr,
             optimizer_weight_decay=optimizer_weight_decay,
             optimizer_grad_clip_norm=optimizer_grad_clip_norm,
+            compile_model=compile_model,
         )
 
         # Save config as hyperparameters for checkpoint restoration
@@ -219,6 +221,7 @@ class ACT(ExportablePolicyMixin, Policy):
             temporal_ensemble_coeff=self.config.temporal_ensemble_coeff,
             dropout=self.config.dropout,
             kl_weight=self.config.kl_weight,
+            compile_model=self.config.compile_model,
         )
 
     def setup(self, stage: str) -> None:

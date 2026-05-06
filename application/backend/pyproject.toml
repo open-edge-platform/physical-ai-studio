@@ -30,6 +30,7 @@ dependencies = [
   "aiofiles>=25.1.0",
   "types-aiofiles>=25.1.0.20251011",
   "sse-starlette>=2.0.0",
+  "executorch>=1.1.0",
 ]
 
 [project.optional-dependencies]
