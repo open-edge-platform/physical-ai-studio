@@ -69,7 +69,7 @@ physicalai run --config so101_act.yaml --duration-s 60
 3. Keep `select_action()` as the simple one-action API.
 4. Add `predict_action_chunk()` as the chunk-producing API used by the runtime.
 5. Keep runtime action buffering in `ActionQueue`, not inside `PolicyRuntime` or `InferenceModel`.
-6. Keep `ActionChunking` as a private compatibility buffer for direct `select_action()` calls; do not reuse `ActionQueue` inside it.
+6. Use an internal `ActionChunkCursor` for pop-one-action mechanics. `select_action()` and `ActionQueue` may both use it; they should not reuse each other.
 7. Keep benchmarking as an evaluation harness over tasks/gyms, not a second runtime.
 8. Put `physicalai run` and `physicalai serve` in the runtime distribution, without Torch or Lightning.
 

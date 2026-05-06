@@ -180,7 +180,8 @@ Async without RTC works. RTC without a custom engine class works. Each piece is 
 
 **`physicalai.inference`**
 - `InferenceModel`
-- runners (`SinglePass`, `ActionChunking`, `FlowMatching`, `TemporalEnsemble`)
+- runners (`SinglePass`, `FlowMatching`, `TemporalEnsemble`)
+- `ActionChunkCursor` (internal pop-from-chunk helper)
 - `Guidance` (`RTC`, …)
 - preprocessors
 
@@ -327,9 +328,9 @@ chunk["t0"]         # float | None — observation timestamp
 #   prev_chunk_left_over: dict
 ```
 
-Dict, not a dataclass. Unknown keys pass through. Matches existing PhysicalAI conventions.
+`predict_action_chunk()` returns `Mapping[str, Any]`, not a public `ActionChunk` class. Unknown keys pass through.
 
-`ActionChunking(SinglePass())` is **kept**, not deprecated. It and `PolicyRuntime + predict_action_chunk` are two valid ways to consume chunks.
+`select_action()` consumes chunks via an internal `ActionChunkCursor`. `ActionQueue` may use the same cursor internally but owns runtime concerns (refill, smoothing, RTC, telemetry).
 
 ---
 

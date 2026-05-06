@@ -13,7 +13,7 @@
 2. **PhysicalAI ships a deployment-time model wrapper, not a control loop.** `InferenceModel` loads exported policy packages (OpenVINO / ONNX / Torch / ExecuTorch) via a Pydantic `Manifest`, with pluggable runners, processors, and callbacks. Its scope ends at "produce one action for one observation." The control loop, FPS enforcement, async chunk production, and multi-strategy rollout are the caller's responsibility.
 3. **Three concrete root causes of the reported inference instability:**
    - **PhysicalAI lacks a control-loop runner.** The framework provides no FPS-tracked execution loop, deterministic sleep helper, loop-overrun detection, shutdown handling, or rate decoupling between the policy and the robot. Loops written on top of `InferenceModel` slip silently when inference latency approaches the control period.
-   - **PhysicalAI uses open-loop chunk consumption.** `ActionChunking` pops one action per call and refills synchronously when its queue empties. Without a background chunk producer, a delay-aware queue, or guided overlap (RTC), this produces a periodic latency spike every `chunk_size` ticks.
+   - **PhysicalAI uses open-loop chunk consumption.** The current chunking runner pops one action per call and refills synchronously when its buffer empties. Without a background chunk producer, a delay-aware queue, or guided overlap (RTC), this produces a periodic latency spike every `chunk_size` ticks.
    - **PhysicalAI lacks a shared image preprocessing primitive.** Pi0.5 and SmolVLA each implement their own resize / pad / scale logic rather than composing a single `ImagePreprocessor` with explicit fields. The result is silent geometry drift between policies, and between training and inference.
 
 ---
@@ -113,7 +113,7 @@ physicalai/src/physicalai/
 │   ├── manifest.py                # Pydantic Manifest schema + loader
 │   ├── component_factory.py       # DI / instantiate_component
 │   ├── adapters/                  # OpenVINO, ONNX, Torch, ExecuTorch backends
-│   ├── runners/                   # SinglePass, ActionChunking (Decorator)
+│   ├── runners/                   # SinglePass, chunked-select adapter via ActionChunkCursor
 │   ├── preprocessors/             # StatsNormalizer + Pi05, SmolVLA, tokenizers
 │   ├── postprocessors/            # StatsDenormalizer, ActionNormalizer
 │   └── callbacks/                 # Latency, Throughput
@@ -129,7 +129,7 @@ physicalai/src/physicalai/
 
 - **Multi-backend adapters.** `RuntimeAdapter` interface with implementations for OpenVINO, ONNX, PyTorch, and ExecuTorch. LeRobot covers PyTorch only at deployment time.
 - **Manifest-driven loading.** `manifest.json` (Pydantic-validated) declares artifacts, runner spec, processor pipelines, robot spec, and tensor shapes. Components resolve via `type` + flat params (LeRobot-compatible) or `class_path` + `init_args` (jsonargparse-style). Legacy `metadata.{yaml,json}` is loaded with a `DeprecationWarning`.
-- **Runner abstraction.** `SinglePass` invokes the adapter once. `ActionChunking` wraps any runner with a temporal action queue (Decorator pattern). LeRobot keeps equivalent buffering inside each policy class.
+- **Runner abstraction.** `SinglePass` invokes the adapter once. Chunk-producing runners predict an action chunk; `select_action()` consumes it through an internal `ActionChunkCursor`. LeRobot keeps equivalent buffering inside each policy class.
 - **Processor pipelines.** Preprocessor and postprocessor lists are instantiated from the manifest. `StatsNormalizer` / `StatsDenormalizer` load `safetensors` stats and support `mean_std`, `min_max`, `quantiles`, and `identity` modes — functional parity with LeRobot's `Normalize` / `Unnormalize`.
 - **Callback surface.** `Callback` exposes `on_load`, `on_predict_start`, `on_predict_end`, `on_reset`. `Latency` and `Throughput` callbacks are included. LeRobot has no equivalent at this layer.
 - **Robot Protocol.** `physicalai.robot.interface.Robot` is a `runtime_checkable` Protocol; concrete drivers exist for SO-101 and Trossen WidowX-AI.
@@ -164,7 +164,7 @@ PhysicalAI currently lacks a number of capabilities that LeRobot's rollout subsy
 | `precise_sleep` + overrun warning | yes | bare `time.sleep` in examples, no warn | Medium (silent slippage) |
 | torch.compile warmup gate | yes (`compile_warmup_inferences`) | absent | Low–Medium (Torch backend only) |
 | Robot wrapper for thread safety | `rollout/robot_wrapper.py` | absent | High (precondition for RTC) |
-| Action chunk queue mechanics | per-policy queue + RTC replace | `ActionChunking` decorator (open-loop pop); a runtime-owned queue is added alongside without removing the decorator path | High (stale actions under latency) — closed by adding `ActionQueue` with background refill; `ActionChunking` is kept permanently for direct `select_action` use |
+| Action chunk queue mechanics | per-policy queue + RTC replace | direct `select_action()` uses an internal `ActionChunkCursor`; runtime path uses `ActionQueue` with background refill | High (stale actions under latency) — closed by `ActionQueue`; cursor is the small shared helper for pop-from-chunk mechanics |
 | Relative-action reanchor in RTC | yes | absent | Medium (Pi0/Pi0.5 path) |
 | Pre/post processor pipeline | `DataProcessorPipeline` from checkpoint | `Preprocessor` / `Postprocessor` lists from manifest | Functional parity |
 | Stats normalization | `Normalize` / `Unnormalize` | `StatsNormalizer` / `StatsDenormalizer` (mean_std / min_max / quantiles) | Parity |
@@ -184,7 +184,7 @@ PhysicalAI currently lacks a number of capabilities that LeRobot's rollout subsy
 1. **Configuration validation.** `RolloutConfig.__post_init__` rejects illegal combinations (sync + relative-action policy, missing teleop for DAgger, etc.). PhysicalAI does not currently perform equivalent validation, because there is no runtime layer above `InferenceModel` to host it.
 2. **FPS enforcement.** `strategies/base.py` computes `dt`, sleeps the remainder via `precise_sleep`, and logs when the loop overruns. PhysicalAI does not yet provide a comparable timing helper, so loop slippage is undetected when inference latency rises.
 3. **Rate decoupling.** `ActionInterpolator` lets the robot tick at `fps × multiplier` while the policy fires only when `needs_new_action()`. PhysicalAI does not provide an equivalent, so control output is bound 1:1 to policy output.
-4. **Async chunk generation.** RTC's background thread and queue ensure the next chunk is populated before the current one is exhausted. `ActionChunking` re-runs the adapter synchronously when its queue empties, producing a periodic latency spike every `chunk_size` ticks.
+4. **Async chunk generation.** RTC's background thread and queue ensure the next chunk is populated before the current one is exhausted. The direct-call path re-runs the adapter synchronously when its `ActionChunkCursor` empties, producing a periodic latency spike every `chunk_size` ticks.
 5. **Relative-action reanchoring.** OpenPI-style Pi0/Pi0.5 produce deltas from a snapshot state. LeRobot caches that state and re-anchors RTC leftovers to it. Without this bookkeeping, naive chunking on relative-action checkpoints drifts.
 6. **Image preprocessing parity.** LeRobot has a single `VanillaObservationProcessorStep`, and policy-specific resize/pad lives next to the model definition. PhysicalAI's per-policy preprocessors handle dtype, scale, resize, and padding independently, so the same checkpoint can produce different geometry depending on which preprocessor wraps it.
 7. **First-compile latency.** `compile_warmup_inferences=2` and a warmup branch in the strategy together contain the first-compile cost. PhysicalAI does not currently provide a warmup gate, though this primarily affects the Torch adapter.

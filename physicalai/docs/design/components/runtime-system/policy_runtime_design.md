@@ -42,7 +42,8 @@ physicalai run --config so101_act.yaml --duration-s 60
 | Component | Owns | Does not own |
 |---|---|---|
 | `InferenceModel` | load model, preprocess input, run backend, return actions | robot timing, action queue, callbacks, shutdown |
-| `InferenceRunner` | policy computation strategy, e.g. single pass, flow matching, temporal ensemble; may keep a private chunk buffer for `select_action()` compatibility | robot loop, async scheduling, runtime queueing |
+| `InferenceRunner` | policy computation strategy, e.g. single pass, flow matching, temporal ensemble | robot loop, async scheduling, runtime queueing |
+| `ActionChunkCursor` | internal helper: hold one chunk, pop one action at a time | refill policy, smoothing, async, RTC |
 | `Execution` | when and where inference runs: sync, thread, process, remote | queueing policy, robot IO |
 | `ActionQueue` | store chunks, merge chunks, smooth boundaries, pop one action per tick | model inference, robot IO |
 | `PolicyRuntime` | observe robot, call `Execution`, pop action, send action, callbacks, timing | policy math |
@@ -65,9 +66,16 @@ Use it for:
 - demos
 - existing code that directly calls the model
 
-For chunk-producing policies, it may use the existing `ActionChunking` runner for compatibility. In that case, the runner keeps a small private chunk buffer, predicts a chunk when that buffer is empty, and returns one action per call.
+For chunk-producing policies, `select_action()` uses an internal `ActionChunkCursor`:
 
-That private buffer is not `ActionQueue`. It is hidden, synchronous, and only exists to adapt chunk-producing policies to the one-action API.
+```python
+if cursor.empty():
+    cursor.push_chunk(model.predict_action_chunk(obs))
+
+return cursor.pop()
+```
+
+The cursor only tracks position inside one chunk. It is not `ActionQueue`. It is hidden, synchronous, and only adapts chunk-producing policies to the one-action API.
 
 But `select_action()` should not own:
 
@@ -102,7 +110,13 @@ PolicyRuntime
 
 ## 4. Chunking and Queueing
 
-There are two chunking paths.
+Three layers, one shared low-level helper.
+
+```text
+action chunk        Mapping[str, Any] returned by predict_action_chunk()
+ActionChunkCursor   internal helper: pop one action from a chunk
+ActionQueue         runtime queue used by PolicyRuntime
+```
 
 ### Direct-call path
 
@@ -110,7 +124,16 @@ There are two chunking paths.
 action = model.select_action(obs)
 ```
 
-This can use `ActionChunking`, which keeps a private chunk buffer inside the model/runner. It is for code that does not use `PolicyRuntime`.
+Internally:
+
+```python
+if cursor.empty():
+    cursor.push_chunk(model.predict_action_chunk(obs))
+
+return cursor.pop()
+```
+
+For code that does not use `PolicyRuntime`.
 
 ### Runtime path
 
@@ -120,28 +143,15 @@ action_queue.push_chunk(chunk)
 action = action_queue.pop_or_none()
 ```
 
-This is the recommended path for robot control loops.
+Recommended for robot control loops. `ActionQueue` may use `ActionChunkCursor` internally, but it owns runtime concerns: background inference, process workers, remote inference, refill thresholds, cross-chunk smoothing, late results, RTC overlap state.
 
-Runtime-owned chunking is better for real robot loops because it can handle:
+`InferenceModel` / `InferenceRunner` must not import `ActionQueue`. If both layers need pop-from-chunk mechanics, they share `ActionChunkCursor`, not `ActionQueue`.
 
-- background inference
-- process workers
-- remote inference
-- refill thresholds
-- cross-chunk smoothing
-- late inference results
-- RTC overlap state
-
-Do not implement `ActionChunking` by reusing `ActionQueue`. That would couple `InferenceModel` / `InferenceRunner` to runtime-only behavior such as smoothing, refill thresholds, async state, callbacks, and RTC merge policy. If implementation duplication becomes a problem later, share a smaller helper for "pop from chunk" mechanics only, not the full runtime `ActionQueue`.
-
-| Question | `ActionChunking` private buffer | Runtime `ActionQueue` |
+| Thing | Scope | Owns |
 |---|---|---|
-| Owner | `InferenceRunner` / `InferenceModel` | `PolicyRuntime` |
-| Purpose | make `select_action()` return one action | drive the robot loop |
-| Visibility | hidden | explicit |
-| Refill | synchronous when empty | scheduled by `Execution`, can refill before empty |
-| Async/process/remote | no | yes |
-| Smoothing / RTC merge | no | yes |
+| `ActionChunkCursor` | internal helper | current chunk position |
+| `select_action()` | model convenience API | sync refill when cursor empty |
+| `ActionQueue` | runtime | refill policy, smoothing, RTC, telemetry |
 
 ## 5. Core Runtime API
 
