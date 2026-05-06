@@ -56,7 +56,6 @@ physicalai run --config so101_act.yaml --duration-s 60
 | File | Use it for |
 |---|---|
 | [design_review_summary.md](./design_review_summary.md) | One-page summary for colleagues |
-| [design_review_deck.md](./design_review_deck.md) | Presentation deck |
 | [policy_runtime_design.md](./policy_runtime_design.md) | API shape, code examples, ownership rules |
 | [policy_server_design.md](./policy_server_design.md) | Remote inference with `PolicyServer` and `RemoteExecution` |
 | [inference_comparison_report.md](./inference_comparison_report.md) | Background gap analysis |
