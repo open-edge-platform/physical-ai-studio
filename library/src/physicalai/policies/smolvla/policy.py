@@ -241,7 +241,6 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             min_period=self.config.min_period,
             max_period=self.config.max_period,
             use_random_input_noise=self.config.use_random_input_noise,
-            tokenizer_max_length=self.config.tokenizer_max_length,
             compile_model=self.config.compile_model,
         )
 

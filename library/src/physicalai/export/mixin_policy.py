@@ -279,7 +279,6 @@ class ExportablePolicyMixin:
         arg_name = self._get_forward_arg_name()
 
         self.model.eval()
-        '''
         self._onnx_core_export_step(
             model_path=model_path,
             input_sample=input_sample,
@@ -290,7 +289,6 @@ class ExportablePolicyMixin:
         if extra_model_args.post_export_hooks:
             for hook in extra_model_args.post_export_hooks:
                 hook(model_path)
-        '''
 
         if extra_model_args.export_tokenizer:
             print("Exporting tokenizer to ONNX format...")

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+
 import numpy as np
 import onnx
 from onnx import TensorProto, helper, numpy_helper, shape_inference
@@ -37,7 +38,6 @@ def patch_onnx_for_ort(onnx_path: str | Path) -> None:
     Args:
         onnx_path: Path to the ``.onnx`` file produced by SmolVLA's exporter.
     """
-
     onnx_path = Path(onnx_path)
     base_dir = str(Path(str(onnx_path)).parent)
     model = onnx.load(onnx_path, load_external_data=False)
