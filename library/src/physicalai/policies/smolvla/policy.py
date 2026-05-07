@@ -246,6 +246,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
         self._update_preprocessor_stats(dataset_stats)
 
+        self._dataset_stats = dataset_stats
+
     def _update_preprocessor_stats(
         self,
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]],
