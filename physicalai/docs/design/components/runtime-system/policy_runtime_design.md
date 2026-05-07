@@ -381,7 +381,65 @@ Recommended split:
 2. Add optional runtime benchmarks later only when we want to evaluate `PolicyRuntime` itself, e.g. mock robot loop FPS, queue behavior, async execution, or remote execution.
 3. Do not make `Benchmark` a second implementation of the production robot loop.
 
-## 11. Phases
+## 11. Product Workflows
+
+Strategy classes stay out of `physicalai` until a concrete consumer needs them. Product code can compose around `PolicyRuntime` with callbacks.
+
+### HIL
+
+```python
+class HILCallback(Callback):
+    def before_send_action(self, action, step):
+        if teleop.mode == "teleop":
+            return teleop.read_action()
+        if teleop.mode == "blend":
+            return blend(action, teleop.read_action())
+        return action
+
+
+runtime = PolicyRuntime(..., callbacks=[HILCallback()])
+runtime.run()
+```
+
+### Highlight
+
+```python
+class HighlightCallback(Callback):
+    def on_observation(self, obs, step):
+        buffer.append((step.t, obs))
+
+    def on_user_event(self, event, step):
+        if event.name == "highlight":
+            clips.save(buffer.last(seconds=10))
+
+
+runtime = PolicyRuntime(..., callbacks=[HighlightCallback()])
+runtime.run()
+```
+
+### DAgger
+
+```python
+class DAggerCallback(Callback):
+    def on_observation(self, obs, step):
+        self.obs = obs
+
+    def before_send_action(self, action, step):
+        expert = teleop.read_action()
+        dataset.write(policy_action=action, expert_action=expert, obs=self.obs)
+
+        if random.random() < beta_schedule(step):
+            return expert
+        return action
+
+
+runtime = PolicyRuntime(..., callbacks=[DAggerCallback()])
+runtime.run()
+```
+
+Promote a workflow into `physicalai` only after two or more consumers need the same reusable implementation.
+
+## 12. Phases
 
 1. Add `InferenceModel.predict_action_chunk()` and `close()`.
 2. Add `PolicyRuntime`, `Execution`, `ActionQueue`, callbacks, and validation.
@@ -390,7 +448,7 @@ Recommended split:
 5. Add `RemoteExecution`, `PolicyServer`, and `physicalai serve`.
 6. Add deferred extension points only when a concrete consumer needs them.
 
-## 12. Deferred Until Needed
+## 13. Deferred Until Needed
 
 Do not add these in the initial API unless a concrete consumer needs them:
 
@@ -400,4 +458,4 @@ Do not add these in the initial API unless a concrete consumer needs them:
 - `ActionInterpolator`
 - strategy classes such as sentry, HIL, highlight, DAgger
 
-For now, product workflows should compose around `PolicyRuntime` with callbacks and consumer-owned code.
+For now, product workflows compose around `PolicyRuntime` with callbacks and consumer-owned code.
