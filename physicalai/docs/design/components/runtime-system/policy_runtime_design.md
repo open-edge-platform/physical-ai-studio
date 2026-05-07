@@ -417,6 +417,34 @@ runtime = PolicyRuntime(..., callbacks=[HighlightCallback()])
 runtime.run()
 ```
 
+### Recording
+
+```python
+class RecordingCallback(Callback):
+    def on_episode_start(self, episode, step):
+        recorder.start_episode(episode_id=episode.id)
+
+    def on_observation(self, obs, step):
+        recorder.write_observation(t=step.t, observation=obs)
+
+    def before_send_action(self, action, step):
+        recorder.write_policy_action(t=step.t, action=action)
+        return action
+
+    def on_action_sent(self, action, step):
+        recorder.write_sent_action(t=step.t, action=action)
+
+    def on_episode_end(self, episode, step):
+        recorder.end_episode()
+
+    def on_stop(self):
+        recorder.close()
+
+
+runtime = PolicyRuntime(..., callbacks=[RecordingCallback()])
+runtime.run()
+```
+
 ### DAgger
 
 ```python
@@ -456,6 +484,6 @@ Do not add these in the initial API unless a concrete consumer needs them:
 - `ActionArbiter`
 - `ActionFilter` / `SafetyGate`
 - `ActionInterpolator`
-- strategy classes such as sentry, HIL, highlight, DAgger
+- strategy classes such as sentry, HIL, highlight, recording, DAgger
 
 For now, product workflows compose around `PolicyRuntime` with callbacks and consumer-owned code.
