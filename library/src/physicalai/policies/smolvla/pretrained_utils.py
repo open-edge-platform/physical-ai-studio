@@ -56,8 +56,10 @@ def parse_config_features(hf_config: dict[str, Any]) -> dict[str, dict[str, Any]
                 or "action" in feat_name.lower()
                 or f_type == "VISUAL"
             ):
+                feature_alias = feat_name
+                feature_alias = feature_alias.removeprefix("observation.")
                 stats[feat_name] = {
-                    "name": feat_name,
+                    "name": feature_alias,
                     "shape": shape,
                     "type": f_type,
                     "mean": [0.0] * dim,
