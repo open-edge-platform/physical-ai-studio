@@ -304,7 +304,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
             fixed_sd = fix_state_dict_keys(original_sd)
 
-            missing, unexpected = self.model.load_state_dict(fixed_sd, strict=False, assign=True)
+            missing, unexpected = self.model.load_state_dict(fixed_sd, strict=False, assign=False)
             if missing:
                 msg = f"Missing keys when loading pretrained weights: {len(missing)} keys"
                 logger.warning(msg)
@@ -318,7 +318,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
                     msg = f"  - {k}"
                     logger.warning(msg)
 
-            # Apply dtype/precision
+            # Apply requires_grad
             self.model._model.set_requires_grad()  # noqa: SLF001
             self.model._model.vlm_with_expert.set_requires_grad()  # noqa: SLF001
 
@@ -447,6 +447,10 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             token_pad_type=self.config.pad_language_to,
             tokenizer_name=self.config.vlm_model_name,
         )
+        self._dataset_stats = dataset_stats
+        self.hparams["dataset_stats"] = dataset_stats
+        if self.model is not None:
+            self.model.set_dataset_stats(dataset_stats)
 
     def setup(self, stage: str) -> None:
         """Set up model from datamodule (lazy initialization path).

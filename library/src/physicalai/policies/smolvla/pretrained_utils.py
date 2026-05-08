@@ -85,8 +85,6 @@ def extract_dataset_stats(
     Returns:
         Dataset stats dict mapping feature names to stat dicts.
     """
-    stats: dict[str, dict[str, Any]] = {}
-
     # this gives a skeleton of the input / output features, but w/o normalization data
     config_features = parse_config_features(hf_config)
 
@@ -105,4 +103,4 @@ def extract_dataset_stats(
                     config_features[f_name]["mean"] = processing_stats[proc_f_name]["mean"]
                     config_features[f_name]["std"] = processing_stats[proc_f_name]["std"]
 
-    return stats
+    return config_features
