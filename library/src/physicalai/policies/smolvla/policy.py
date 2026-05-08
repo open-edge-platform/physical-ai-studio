@@ -284,6 +284,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
         self._update_preprocessor_stats(dataset_stats)
 
+        self._dataset_stats = dataset_stats
+
     def _from_hf(  # noqa: PLR6301, PLR0913
         self,
         pretrained_name_or_path: str | Path,

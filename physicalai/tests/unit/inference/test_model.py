@@ -411,11 +411,10 @@ class TestSelectAction:
         mock_adapter.predict.return_value = {"actions": np.random.randn(1, 1, 2)}
         model.postprocessors = [ActionNormalizer()]
 
-        action = model.select_action(sample_observation)
+        with pytest.raises(RuntimeError, match="Action chunking is not enabled"):
+            model.select_action(sample_observation)
 
-        assert isinstance(action, np.ndarray)
-        assert action.shape == (1, 2)
-        mock_adapter.predict.assert_called_once()
+        mock_adapter.predict.assert_not_called()
 
     def test_select_action_with_queue(
         self,
@@ -498,7 +497,7 @@ class TestSelectAction:
         assert "action" in outputs
         assert outputs["action"].shape == (1, 2)
 
-    def test_call_and_select_action_consistent(
+    def test_call_and_prediction_consistent(
         self,
         tmp_path: Path,
         mock_adapter: MagicMock,
@@ -512,9 +511,29 @@ class TestSelectAction:
         outputs_call = model(sample_observation)
 
         mock_adapter.predict.return_value = {"actions": fixed_output.copy()}
-        action_select = model.select_action(sample_observation)
+        action_chunk = model.predict_action_chunk(sample_observation)
 
-        np.testing.assert_array_equal(outputs_call["action"], action_select)
+        np.testing.assert_array_equal(outputs_call["action"], action_chunk)
+
+    def test_select_action_raises_with_single_pass_runner(
+        self,
+        tmp_path: Path,
+        sample_observation: dict[str, np.ndarray],
+    ) -> None:
+        model = InferenceModel(_make_legacy_export_dir(tmp_path, use_action_queue=False, chunk_size=1))
+
+        with pytest.raises(RuntimeError, match="Action chunking is not enabled"):
+            model.select_action(sample_observation)
+
+    def test_predict_action_chunk_raises_with_action_chunking_runner(
+        self,
+        tmp_path: Path,
+        sample_observation: dict[str, np.ndarray],
+    ) -> None:
+        model = InferenceModel(_make_legacy_export_dir(tmp_path))
+
+        with pytest.raises(RuntimeError, match="Selected runner does not support action chunking"):
+            model.predict_action_chunk(sample_observation)
 
 
 @pytest.mark.usefixtures("_patch_adapter")
