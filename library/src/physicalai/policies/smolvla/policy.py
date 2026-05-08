@@ -31,6 +31,7 @@ from physicalai.train.utils import reformat_dataset_to_match_policy
 
 from .config import SmolVLAConfig
 from .model import SmolVLAModel
+from .pretrained_utils import extract_dataset_stats
 
 if TYPE_CHECKING:
     from physicalai.data import Observation
@@ -163,10 +164,29 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         if pretrained_name_or_path is not None:
             self.config, dataset_stats, weights_file = self._from_hf(
                 pretrained_name_or_path,
+                n_obs_steps=n_obs_steps,
+                chunk_size=chunk_size,
                 n_action_steps=n_action_steps,
                 max_state_dim=max_state_dim,
-                num_steps=num_steps,
+                max_action_dim=max_action_dim,
+                resize_imgs_with_padding=resize_imgs_with_padding,
+                tokenizer_max_length=tokenizer_max_length,
+                vlm_model_name=vlm_model_name,
+                load_vlm_weights=load_vlm_weights,
+                add_image_special_tokens=add_image_special_tokens,
+                attention_mode=attention_mode,
+                prefix_length=prefix_length,
+                pad_language_to=pad_language_to,
+                num_expert_layers=num_expert_layers,
+                num_vlm_layers=num_vlm_layers,
+                self_attn_every_n_layers=self_attn_every_n_layers,
+                expert_width_multiplier=expert_width_multiplier,
+                min_period=min_period,
+                max_period=max_period,
+                use_random_input_noise=use_random_input_noise,
                 compile_model=compile_model,
+                num_steps=num_steps,
+                use_cache=use_cache,
                 freeze_vision_encoder=freeze_vision_encoder,
                 train_expert_only=train_expert_only,
                 train_state_proj=train_state_proj,
@@ -290,10 +310,29 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         self,
         pretrained_name_or_path: str | Path,
         *,
-        n_action_steps: int | None = None,
-        max_state_dim: int | None = None,
-        num_steps: int | None = None,
-        compile_model: bool | None = None,
+        n_obs_steps: int = 1,
+        chunk_size: int = 50,
+        n_action_steps: int = 50,
+        max_state_dim: int = 32,
+        max_action_dim: int = 32,
+        resize_imgs_with_padding: tuple[int, int] = (512, 512),
+        tokenizer_max_length: int = 48,
+        vlm_model_name: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
+        load_vlm_weights: bool = False,
+        add_image_special_tokens: bool = False,
+        attention_mode: str = "cross_attn",
+        prefix_length: int = -1,
+        pad_language_to: str = "max_length",
+        num_expert_layers: int = -1,
+        num_vlm_layers: int = 16,
+        self_attn_every_n_layers: int = 2,
+        expert_width_multiplier: float = 0.75,
+        min_period: float = 4e-3,
+        max_period: float = 4.0,
+        use_random_input_noise: bool = False,
+        compile_model: bool = False,
+        num_steps: int = 10,
+        use_cache: bool = True,
         freeze_vision_encoder: bool = True,
         train_expert_only: bool = True,
         train_state_proj: bool = True,
@@ -319,6 +358,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         if is_local:
             config_file = path / "config.json"
             weights_file = path / "model.safetensors"
+            preprocessor_file = path / "policy_preprocessor.json"
+            preprocessor_dir = path
         else:
             hub_kwargs = {
                 k: v
@@ -336,19 +377,50 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             }
             config_file = Path(hf_hub_download(pretrained_name_or_path, "config.json", **hub_kwargs))  # nosec B615
             weights_file = Path(hf_hub_download(pretrained_name_or_path, "model.safetensors", **hub_kwargs))  # nosec B615
+            try:
+                preprocessor_file = Path(
+                    hf_hub_download(pretrained_name_or_path, "policy_preprocessor.json", **hub_kwargs),  # nosec B615
+                )
+                preprocessor_dir = preprocessor_file.parent
+
+                # Also download referenced state files
+                with Path(preprocessor_file).open(encoding="utf-8") as f:
+                    preproc_data = json.load(f)
+                for step in preproc_data.get("steps", []):
+                    sf = step.get("state_file")
+                    if sf:
+                        hf_hub_download(pretrained_name_or_path, sf, **hub_kwargs)  # nosec B615
+            except Exception:  # noqa: BLE001
+                preprocessor_file = None
+                preprocessor_dir = None
 
         with Path(config_file).open(encoding="utf-8") as f:
             hf_config = json.load(f)
 
         # Apply caller overrides before from_dict so coercion happens via type hints.
-        if n_action_steps is not None:
-            hf_config["n_action_steps"] = n_action_steps
-        if max_state_dim is not None:
-            hf_config["max_state_dim"] = max_state_dim
-        if num_steps is not None:
-            hf_config["num_steps"] = num_steps
-        if compile_model is not None:
-            hf_config["compile_model"] = compile_model
+        hf_config["n_obs_steps"] = n_obs_steps
+        hf_config["chunk_size"] = chunk_size
+        hf_config["n_action_steps"] = n_action_steps
+        hf_config["max_state_dim"] = max_state_dim
+        hf_config["max_action_dim"] = max_action_dim
+        hf_config["resize_imgs_with_padding"] = resize_imgs_with_padding
+        hf_config["tokenizer_max_length"] = tokenizer_max_length
+        hf_config["vlm_model_name"] = vlm_model_name
+        hf_config["load_vlm_weights"] = load_vlm_weights
+        hf_config["add_image_special_tokens"] = add_image_special_tokens
+        hf_config["attention_mode"] = attention_mode
+        hf_config["prefix_length"] = prefix_length
+        hf_config["pad_language_to"] = pad_language_to
+        hf_config["num_expert_layers"] = num_expert_layers
+        hf_config["num_vlm_layers"] = num_vlm_layers
+        hf_config["self_attn_every_n_layers"] = self_attn_every_n_layers
+        hf_config["expert_width_multiplier"] = expert_width_multiplier
+        hf_config["min_period"] = min_period
+        hf_config["max_period"] = max_period
+        hf_config["use_random_input_noise"] = use_random_input_noise
+        hf_config["compile_model"] = compile_model
+        hf_config["num_steps"] = num_steps
+        hf_config["use_cache"] = use_cache
         hf_config["freeze_vision_encoder"] = freeze_vision_encoder
         hf_config["train_expert_only"] = train_expert_only
         hf_config["train_state_proj"] = train_state_proj
@@ -363,12 +435,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
         config = SmolVLAConfig.from_dict(hf_config)
 
-        # TODO: Extract dataset stats from HF artifacts (e.g. policy_preprocessor.json).
-        dataset_stats = None
-        logger.info(
-            "SmolVLA _from_hf template used for %s. Dataset stats extraction and weights loading are pending.",
-            pretrained_name_or_path,
-        )
+        dataset_stats = extract_dataset_stats(hf_config, preprocessor_file, preprocessor_dir)
 
         return config, dataset_stats, weights_file
 
