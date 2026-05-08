@@ -158,8 +158,6 @@ class RuntimeAdapterRegistry:
 
         Raises:
             ValueError: If *name* is unknown.
-            ImportError: Re-raised from the lazy import if the module
-                cannot be imported (e.g. missing optional dependency).
             RuntimeError: If the lazy module imported successfully but
                 failed to register an adapter for *name*.
         """

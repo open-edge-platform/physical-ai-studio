@@ -8,11 +8,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from physicalai.inference.runners.action_chunking import ActionChunking
+from physicalai.inference.runners.base import InferenceRunner
 from physicalai.inference.runners.single_pass import SinglePass
 
 if TYPE_CHECKING:
     from physicalai.inference.manifest import Manifest
-    from physicalai.inference.runners.base import InferenceRunner
 
 
 def get_runner(source: Manifest | dict[str, Any]) -> InferenceRunner:
@@ -32,6 +32,9 @@ def get_runner(source: Manifest | dict[str, Any]) -> InferenceRunner:
 
     Returns:
         Configured runner instance.
+
+    Raises:
+        TypeError: If a configured component is not an :class:`InferenceRunner`.
     """
     from physicalai.inference.manifest import Manifest  # noqa: PLC0415
 
@@ -39,7 +42,11 @@ def get_runner(source: Manifest | dict[str, Any]) -> InferenceRunner:
         if source.model.runner is not None:
             from physicalai.inference.component_factory import instantiate_component  # noqa: PLC0415
 
-            return instantiate_component(source.model.runner)
+            runner = instantiate_component(source.model.runner)
+            if not isinstance(runner, InferenceRunner):
+                msg = f"Configured runner is not an InferenceRunner: {type(runner).__name__}"
+                raise TypeError(msg)
+            return runner
         return SinglePass()
 
     runner_spec = _extract_runner_spec(source)
@@ -47,7 +54,11 @@ def get_runner(source: Manifest | dict[str, Any]) -> InferenceRunner:
         from physicalai.inference.component_factory import instantiate_component  # noqa: PLC0415
         from physicalai.inference.manifest import ComponentSpec  # noqa: PLC0415
 
-        return instantiate_component(ComponentSpec.model_validate(runner_spec))
+        runner = instantiate_component(ComponentSpec.model_validate(runner_spec))
+        if not isinstance(runner, InferenceRunner):
+            msg = f"Configured runner is not an InferenceRunner: {type(runner).__name__}"
+            raise TypeError(msg)
+        return runner
 
     if source.get("use_action_queue"):
         chunk_size = source.get("chunk_size", 1)

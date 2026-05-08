@@ -99,12 +99,6 @@ def get_adapter(backend: str, **kwargs: Any) -> RuntimeAdapter:  # noqa: ANN401
     Returns:
         A ready-to-use :class:`RuntimeAdapter` instance.
 
-    Raises:
-        ValueError: If no adapter is registered for *backend*.
-        ImportError: If the adapter's optional runtime dependency is not
-            installed (raised by the lazy module import inside the
-            registry).
-
     Examples:
         >>> adapter = get_adapter("openvino", device="CPU")
         >>> adapter = get_adapter("onnx")

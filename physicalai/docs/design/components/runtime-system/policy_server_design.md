@@ -142,14 +142,14 @@ The client still owns `ActionQueue` and `RTCQueueMerger`. The server returns chu
 
 ## Failure Policy
 
-| Failure | Behavior |
-|---|---|
-| Cannot connect at startup | `start()` raises; runtime exits cleanly |
-| Connection lost with no request in flight | reconnect until `reconnect_budget_s` is exhausted |
-| Connection lost with request in flight | drop that request; next observation creates a new request |
-| Server error | surface error on next runtime call |
-| Deadline exceeded | drop request; continue with next tick/request |
-| Schema mismatch | fail during handshake |
+| Failure                                   | Behavior                                                  |
+| ----------------------------------------- | --------------------------------------------------------- |
+| Cannot connect at startup                 | `start()` raises; runtime exits cleanly                   |
+| Connection lost with no request in flight | reconnect until `reconnect_budget_s` is exhausted         |
+| Connection lost with request in flight    | drop that request; next observation creates a new request |
+| Server error                              | surface error on next runtime call                        |
+| Deadline exceeded                         | drop request; continue with next tick/request             |
+| Schema mismatch                           | fail during handshake                                     |
 
 Do not retry stale observations. In control loops, a late retry is usually worse than dropping the request.
 

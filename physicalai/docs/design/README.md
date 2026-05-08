@@ -15,13 +15,13 @@ Architecture and design documents for the physical‑AI runtime.
 
 ## Components
 
-| Component          | Document                                                         | Purpose                                        |
-| ------------------ | ---------------------------------------------------------------- | ---------------------------------------------- |
-| **Runtime System** | [Runtime System](./components/runtime-system/README.md)          | Policy runtime, execution, and CLI             |
-| Inference Core     | [Inference Core](./components/inferencekit.md)                   | Domain‑agnostic inference layer                |
-| Robot Interface    | [Robot Interface](./components/robot-interface.md)               | Robot Protocol and hardware integration        |
-| Camera Interface   | [Camera Interface](./components/camera-interface.md)             | Capture API and camera backends                |
-| Benchmarking       | [Benchmarking API](./components/benchmarking.md)                 | Benchmark protocols + runner                   |
+| Component          | Document                                                | Purpose                                 |
+| ------------------ | ------------------------------------------------------- | --------------------------------------- |
+| **Runtime System** | [Runtime System](./components/runtime-system/README.md) | Policy runtime, execution, and CLI      |
+| Inference Core     | [Inference Core](./components/inferencekit.md)          | Domain‑agnostic inference layer         |
+| Robot Interface    | [Robot Interface](./components/robot-interface.md)      | Robot Protocol and hardware integration |
+| Camera Interface   | [Camera Interface](./components/camera-interface.md)    | Capture API and camera backends         |
+| Benchmarking       | [Benchmarking API](./components/benchmarking.md)        | Benchmark protocols + runner            |
 
 ## Integrations
 

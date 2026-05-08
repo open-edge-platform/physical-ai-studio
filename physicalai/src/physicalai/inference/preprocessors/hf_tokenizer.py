@@ -5,10 +5,14 @@
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 
 from physicalai.inference.constants import TASK, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.inference.preprocessors.base import Preprocessor
+
+_COMMIT_HASH_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
 
 
 class HFTokenizer(Preprocessor):
@@ -16,11 +20,11 @@ class HFTokenizer(Preprocessor):
 
     Args:
         tokenizer_name: Name of the Hugging Face tokenizer to use.
-        revision: Revision of the tokenizer to use.
+        revision: Immutable Hugging Face commit hash (7-40 hex chars).
         max_token_len: Maximum token length for the tokenizer.
 
     Examples:
-        >>> prep = HFTokenizer("bert-base-uncased", "main", 512)
+        >>> prep = HFTokenizer("bert-base-uncased", "1dbc166cf8765166998eff31ade2eb64c8a40076", 512)
         >>> outputs = prep({"task": ["Here is a sample text."]})
     """
 
@@ -29,13 +33,18 @@ class HFTokenizer(Preprocessor):
 
         Args:
             tokenizer_name: Name of the Hugging Face tokenizer to use.
-            revision: Revision of the tokenizer to use.
+            revision: Immutable Hugging Face commit hash (7-40 hex chars).
             max_token_len: Maximum token length for the tokenizer.
 
         Raises:
             ImportError: If transformers library is not installed.
+            ValueError: If *revision* is not an immutable commit hash.
         """
         super().__init__()
+        if not _COMMIT_HASH_RE.fullmatch(revision):
+            msg = "revision must be an immutable Hugging Face commit hash (7-40 hex chars), not a branch or tag"
+            raise ValueError(msg)
+
         try:
             from transformers import AutoTokenizer  # noqa: PLC0415
 

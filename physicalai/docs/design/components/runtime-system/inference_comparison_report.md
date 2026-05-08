@@ -22,7 +22,7 @@
 
 ### 1.1 Entry point
 
-```
+```text
 pyproject.toml → lerobot-rollout = lerobot.scripts.lerobot_rollout:main
 ```
 
@@ -45,7 +45,7 @@ def rollout(cfg: RolloutConfig):
 
 ### 1.2 Layered architecture
 
-```
+```text
                 ┌─────────────────────────────────────┐
                 │            lerobot-rollout          │  CLI (draccus)
                 └─────────────────────────────────────┘
@@ -83,20 +83,29 @@ def rollout(cfg: RolloutConfig):
 
 ### 1.3 Components relevant to inference stability
 
-| Component | Where | Behavior |
-|---|---|---|
-| Strategy / Engine split | `rollout/strategies/*` + `rollout/inference/*` | Decouples per-tick behavior (record, dagger…) from policy execution mode (sync vs RTC). RTC can be swapped in without modifying the loop. |
-| `build_rollout_context` | `rollout/context.py` | Centralizes policy load, device/dtype selection, optional compile, PEFT wiring, processor build, and rejection of incompatible combinations (e.g. sync + relative-action). |
-| `ActionInterpolator` | `rollout/strategies/core.py` | Control loop ticks at `fps × multiplier`; policy fires only when `needs_new_action()`. Decouples policy rate from robot rate. |
-| `precise_sleep` + overrun warning | `strategies/base.py` | Computes `dt`, sleeps the remainder, logs when the loop overruns the period. |
-| torch.compile warmup gate | `strategies/base.py` + `RTCInferenceEngine` | Skips the first N inferences so first-compile latency does not exceed the loop budget. |
-| Robot wrapper for thread safety | `rollout/robot_wrapper.py` | Allows RTC's background thread to read observations without racing the main loop. |
-| `ActionQueue` with delay-aware replace | `policies/rtc/action_queue.py` | Merges new chunks with leftovers from the previous chunk; drops the inference-delay prefix. |
-| Relative-action reanchoring | `policies/rtc/relative.py` + `rollout/inference/rtc.py` | Re-anchors RTC leftovers against the snapshot state used for the previous chunk, for OpenPI-style relative-action policies. |
+| Component                              | Where                                                   | Behavior                                                                                                                                                                   |
+| -------------------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Strategy / Engine split                | `rollout/strategies/*` + `rollout/inference/*`          | Decouples per-tick behavior (record, dagger…) from policy execution mode (sync vs RTC). RTC can be swapped in without modifying the loop.                                  |
+| `build_rollout_context`                | `rollout/context.py`                                    | Centralizes policy load, device/dtype selection, optional compile, PEFT wiring, processor build, and rejection of incompatible combinations (e.g. sync + relative-action). |
+| `ActionInterpolator`                   | `rollout/strategies/core.py`                            | Control loop ticks at `fps × multiplier`; policy fires only when `needs_new_action()`. Decouples policy rate from robot rate.                                              |
+| `precise_sleep` + overrun warning      | `strategies/base.py`                                    | Computes `dt`, sleeps the remainder, logs when the loop overruns the period.                                                                                               |
+| torch.compile warmup gate              | `strategies/base.py` + `RTCInferenceEngine`             | Skips the first N inferences so first-compile latency does not exceed the loop budget.                                                                                     |
+| Robot wrapper for thread safety        | `rollout/robot_wrapper.py`                              | Allows RTC's background thread to read observations without racing the main loop.                                                                                          |
+| `ActionQueue` with delay-aware replace | `policies/rtc/action_queue.py`                          | Merges new chunks with leftovers from the previous chunk; drops the inference-delay prefix.                                                                                |
+| Relative-action reanchoring            | `policies/rtc/relative.py` + `rollout/inference/rtc.py` | Re-anchors RTC leftovers against the snapshot state used for the previous chunk, for OpenPI-style relative-action policies.                                                |
 
 ### 1.4 The RTC algorithm, in one paragraph
 
-RTC ([Black, Galliker, Levine, *Real-Time Execution of Action Chunking Flow Policies*, arXiv:2506.07339](https://arxiv.org/abs/2506.07339)) treats the next action chunk as an inpainting problem during diffusion/flow denoising. With prediction horizon `H`, execution horizon `s`, and inference delay `d` (in timesteps), the first `d` actions of the new chunk are frozen to match what will already have executed, the overlap region `d..H-s-1` is soft-masked (e.g. exponential schedule), and the tail is freely generated. At each denoising step the algorithm computes the predicted clean chunk `Â^1_t = A^τ_t + (1-τ) v_π(A^τ_t, o_t, τ)`, takes a weighted error against the previous chunk's tail `e = (A_prev - Â^1_t) ⊙ W`, backprops to get a guidance correction `g`, and updates `A^{τ+1/n} = A^τ + (1/n)(v_π + clamp(β) · g)`. Overlapping chunks are made consistent without averaging, while a background thread predicts the next chunk so execution does not block. Feasibility requires `d ≤ H - s`. Physical Intelligence reports stability up to >300 ms inference delays.
+RTC ([Black, Galliker, Levine, _Real-Time Execution of Action Chunking Flow Policies_, arXiv:2506.07339](https://arxiv.org/abs/2506.07339))
+treats the next action chunk as an inpainting problem during diffusion/flow denoising. With prediction horizon `H`,
+execution horizon `s`, and inference delay `d` (in timesteps), the first `d` actions of the new chunk are frozen
+to match what will already have executed, the overlap region `d..H-s-1` is soft-masked (e.g. exponential
+schedule), and the tail is freely generated. At each denoising step the algorithm computes the predicted clean
+chunk `Â^1_t = A^τ_t + (1-τ) v_π(A^τ_t, o_t, τ)`, takes a weighted error against the previous chunk's tail
+`e = (A_prev - Â^1_t) ⊙ W`, backprops to get a guidance correction `g`, and updates
+`A^{τ+1/n} = A^τ + (1/n)(v_π + clamp(β) · g)`. Overlapping chunks are made consistent without averaging, while a
+background thread predicts the next chunk so execution does not block. Feasibility requires `d ≤ H - s`. Physical
+Intelligence reports stability up to >300 ms inference delays.
 
 LeRobot's implementation: `policies/rtc/modeling_rtc.py`. Reference Pi/Kinetix implementation: [`Physical-Intelligence/real-time-chunking-kinetix`](https://github.com/Physical-Intelligence/real-time-chunking-kinetix).
 
@@ -106,7 +115,7 @@ LeRobot's implementation: `policies/rtc/modeling_rtc.py`. Reference Pi/Kinetix i
 
 `physicalai/src/physicalai/` contains three peer subsystems:
 
-```
+```text
 physicalai/src/physicalai/
 ├── inference/
 │   ├── model.py                   # InferenceModel — select_action / __call__
@@ -151,31 +160,31 @@ PhysicalAI currently lacks a number of capabilities that LeRobot's rollout subsy
 
 ## 3. Discrepancy matrix
 
-| Feature | LeRobot | PhysicalAI | Stability impact |
-|---|---|---|---|
-| Backend coverage | PyTorch only | OpenVINO, ONNX, Torch, ExecuTorch | PhysicalAI broader at deployment time |
-| Single deployment CLI | `lerobot-rollout` | none registered | High — loops are hand-rolled |
-| Manifest / artifact loader | implicit (multiple files) | Pydantic `Manifest` (single contract) | PhysicalAI stricter |
-| Strategy abstraction (record / dagger / highlight / sentry) | yes | none | Medium |
-| Sync inference engine | `rollout/inference/sync.py` | implicit in `InferenceModel.__call__` | Medium — no swappable engine boundary |
-| RTC inference engine | `rollout/inference/rtc.py` + `policies/rtc/*` | absent | **High** — chunk-boundary discontinuities on flow/diffusion policies |
-| Async gRPC server / client | `async_inference/policy_server.py` + `robot_client.py` | absent | Medium (relevant for remote GPU) |
-| `ActionInterpolator` (control-rate decoupling) | yes | absent | Medium |
-| `precise_sleep` + overrun warning | yes | bare `time.sleep` in examples, no warn | Medium (silent slippage) |
-| torch.compile warmup gate | yes (`compile_warmup_inferences`) | absent | Low–Medium (Torch backend only) |
-| Robot wrapper for thread safety | `rollout/robot_wrapper.py` | absent | High (precondition for RTC) |
-| Action chunk queue mechanics | per-policy queue + RTC replace | direct `select_action()` uses an internal `ActionChunkCursor`; runtime path uses `ActionQueue` with background refill | High (stale actions under latency) — closed by `ActionQueue`; cursor is the small shared helper for pop-from-chunk mechanics |
-| Relative-action reanchor in RTC | yes | absent | Medium (Pi0/Pi0.5 path) |
-| Pre/post processor pipeline | `DataProcessorPipeline` from checkpoint | `Preprocessor` / `Postprocessor` lists from manifest | Functional parity |
-| Stats normalization | `Normalize` / `Unnormalize` | `StatsNormalizer` / `StatsDenormalizer` (mean_std / min_max / quantiles) | Parity |
-| Image scale / channel order / resize / pad | single `VanillaObservationProcessorStep` with explicit fields | per-policy preprocessors (`pi05.py`, `smolvla.py`) | **High** — geometry drift across policies; cf. LeRobot [#3158](https://github.com/huggingface/lerobot/pull/3158) (0% vs 80–90% success on aspect-ratio-preserving resize) |
-| Preflight dtype/shape assertion | implicit | absent | Medium — mismatches surface inside the adapter |
-| Robot abstraction | concrete classes + base | `Protocol` (duck-typed) | Both functional |
-| Robot driver coverage | many (SO-100/101, Koch, ALOHA, Stretch, …) | SO-101, Trossen WidowX-AI | LeRobot wider |
-| Camera subsystem | within `lerobot/cameras/` | dedicated `physicalai/capture/` (Basler, RealSense, UVC, depth mixin) | Different packaging |
-| Episode termination + safe shutdown | strategy-level + return-to-initial-position | absent at framework level | Medium |
-| Rerun telemetry | yes | absent | Low (debuggability) |
-| Inference-time callback hooks | none at this layer | `on_load` / `on_predict_start/end` / `on_reset` | PhysicalAI exposes hooks |
+| Feature                                                     | LeRobot                                                       | PhysicalAI                                                                                                            | Stability impact                                                                                                                                                          |
+| ----------------------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Backend coverage                                            | PyTorch only                                                  | OpenVINO, ONNX, Torch, ExecuTorch                                                                                     | PhysicalAI broader at deployment time                                                                                                                                     |
+| Single deployment CLI                                       | `lerobot-rollout`                                             | none registered                                                                                                       | High — loops are hand-rolled                                                                                                                                              |
+| Manifest / artifact loader                                  | implicit (multiple files)                                     | Pydantic `Manifest` (single contract)                                                                                 | PhysicalAI stricter                                                                                                                                                       |
+| Strategy abstraction (record / dagger / highlight / sentry) | yes                                                           | none                                                                                                                  | Medium                                                                                                                                                                    |
+| Sync inference engine                                       | `rollout/inference/sync.py`                                   | implicit in `InferenceModel.__call__`                                                                                 | Medium — no swappable engine boundary                                                                                                                                     |
+| RTC inference engine                                        | `rollout/inference/rtc.py` + `policies/rtc/*`                 | absent                                                                                                                | **High** — chunk-boundary discontinuities on flow/diffusion policies                                                                                                      |
+| Async gRPC server / client                                  | `async_inference/policy_server.py` + `robot_client.py`        | absent                                                                                                                | Medium (relevant for remote GPU)                                                                                                                                          |
+| `ActionInterpolator` (control-rate decoupling)              | yes                                                           | absent                                                                                                                | Medium                                                                                                                                                                    |
+| `precise_sleep` + overrun warning                           | yes                                                           | bare `time.sleep` in examples, no warn                                                                                | Medium (silent slippage)                                                                                                                                                  |
+| torch.compile warmup gate                                   | yes (`compile_warmup_inferences`)                             | absent                                                                                                                | Low–Medium (Torch backend only)                                                                                                                                           |
+| Robot wrapper for thread safety                             | `rollout/robot_wrapper.py`                                    | absent                                                                                                                | High (precondition for RTC)                                                                                                                                               |
+| Action chunk queue mechanics                                | per-policy queue + RTC replace                                | direct `select_action()` uses an internal `ActionChunkCursor`; runtime path uses `ActionQueue` with background refill | High (stale actions under latency) — closed by `ActionQueue`; cursor is the small shared helper for pop-from-chunk mechanics                                              |
+| Relative-action reanchor in RTC                             | yes                                                           | absent                                                                                                                | Medium (Pi0/Pi0.5 path)                                                                                                                                                   |
+| Pre/post processor pipeline                                 | `DataProcessorPipeline` from checkpoint                       | `Preprocessor` / `Postprocessor` lists from manifest                                                                  | Functional parity                                                                                                                                                         |
+| Stats normalization                                         | `Normalize` / `Unnormalize`                                   | `StatsNormalizer` / `StatsDenormalizer` (mean_std / min_max / quantiles)                                              | Parity                                                                                                                                                                    |
+| Image scale / channel order / resize / pad                  | single `VanillaObservationProcessorStep` with explicit fields | per-policy preprocessors (`pi05.py`, `smolvla.py`)                                                                    | **High** — geometry drift across policies; cf. LeRobot [#3158](https://github.com/huggingface/lerobot/pull/3158) (0% vs 80–90% success on aspect-ratio-preserving resize) |
+| Preflight dtype/shape assertion                             | implicit                                                      | absent                                                                                                                | Medium — mismatches surface inside the adapter                                                                                                                            |
+| Robot abstraction                                           | concrete classes + base                                       | `Protocol` (duck-typed)                                                                                               | Both functional                                                                                                                                                           |
+| Robot driver coverage                                       | many (SO-100/101, Koch, ALOHA, Stretch, …)                    | SO-101, Trossen WidowX-AI                                                                                             | LeRobot wider                                                                                                                                                             |
+| Camera subsystem                                            | within `lerobot/cameras/`                                     | dedicated `physicalai/capture/` (Basler, RealSense, UVC, depth mixin)                                                 | Different packaging                                                                                                                                                       |
+| Episode termination + safe shutdown                         | strategy-level + return-to-initial-position                   | absent at framework level                                                                                             | Medium                                                                                                                                                                    |
+| Rerun telemetry                                             | yes                                                           | absent                                                                                                                | Low (debuggability)                                                                                                                                                       |
+| Inference-time callback hooks                               | none at this layer                                            | `on_load` / `on_predict_start/end` / `on_reset`                                                                       | PhysicalAI exposes hooks                                                                                                                                                  |
 
 ---
 
@@ -222,12 +231,12 @@ PhysicalAI currently lacks a number of capabilities that LeRobot's rollout subsy
 
 ### Papers / blogs
 
-- Black, Galliker, Levine. *Real-Time Execution of Action Chunking Flow Policies*. arXiv:2506.07339 (2025). https://arxiv.org/abs/2506.07339
-- Physical Intelligence. *Real-Time Action Chunking with Large Models* (blog, 2025-06-09). https://physicalintelligence.company/research/real_time_chunking
-- Physical Intelligence. *π0* (2024-10-31). https://physicalintelligence.company/blog/pi0
-- Physical Intelligence. *π0.5* (2025-04-22). https://physicalintelligence.company/blog/pi05
-- HuggingFace. *Asynchronous Robot Inference* (2025-07-10). https://huggingface.co/blog/async-robot-inference
-- HuggingFace. *SmolVLA* (2025-06-03). https://huggingface.co/blog/smolvla
+- Black, Galliker, Levine. _Real-Time Execution of Action Chunking Flow Policies_. arXiv:2506.07339 (2025). https://arxiv.org/abs/2506.07339
+- Physical Intelligence. _Real-Time Action Chunking with Large Models_ (blog, 2025-06-09). https://physicalintelligence.company/research/real_time_chunking
+- Physical Intelligence. _π0_ (2024-10-31). https://physicalintelligence.company/blog/pi0
+- Physical Intelligence. _π0.5_ (2025-04-22). https://physicalintelligence.company/blog/pi05
+- HuggingFace. _Asynchronous Robot Inference_ (2025-07-10). https://huggingface.co/blog/async-robot-inference
+- HuggingFace. _SmolVLA_ (2025-06-03). https://huggingface.co/blog/smolvla
 - LeRobot docs: https://huggingface.co/docs/lerobot/en/async, https://huggingface.co/docs/lerobot/main/en/smolvla
 
 ### Reference implementations

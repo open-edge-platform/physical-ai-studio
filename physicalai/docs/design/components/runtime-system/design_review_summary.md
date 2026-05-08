@@ -32,13 +32,13 @@ physicalai run --config so101_act.yaml --duration-s 60
 
 ## Responsibilities
 
-| Component | Owns | Does not own |
-|---|---|---|
-| `InferenceModel` | loading, preprocessing, backend inference, `select_action()`, `predict_action_chunk()` | robot loop, FPS, callbacks, action dispatch |
-| `Execution` | sync/thread/process/remote inference scheduling | action buffering, robot IO |
-| `ActionQueue` | chunk storage, merge, smoothing, pop-one-action-per-tick | model execution, robot IO |
-| `PolicyRuntime` | observation, timing, queue consumption, `robot.send_action()`, callbacks, shutdown | policy math |
-| `Benchmark` / `LiberoBenchmark` | task-suite evaluation over gyms, episodes, success rate, reward, episode length, FPS, video/export | production robot-loop semantics |
+| Component                       | Owns                                                                                               | Does not own                                |
+| ------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| `InferenceModel`                | loading, preprocessing, backend inference, `select_action()`, `predict_action_chunk()`             | robot loop, FPS, callbacks, action dispatch |
+| `Execution`                     | sync/thread/process/remote inference scheduling                                                    | action buffering, robot IO                  |
+| `ActionQueue`                   | chunk storage, merge, smoothing, pop-one-action-per-tick                                           | model execution, robot IO                   |
+| `PolicyRuntime`                 | observation, timing, queue consumption, `robot.send_action()`, callbacks, shutdown                 | policy math                                 |
+| `Benchmark` / `LiberoBenchmark` | task-suite evaluation over gyms, episodes, success rate, reward, episode length, FPS, video/export | production robot-loop semantics             |
 
 ## `select_action()` vs `predict_action_chunk()`
 

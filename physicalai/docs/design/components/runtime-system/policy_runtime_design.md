@@ -39,15 +39,15 @@ physicalai run --config so101_act.yaml --duration-s 60
 
 ## 2. Component Ownership
 
-| Component | Owns | Does not own |
-|---|---|---|
-| `InferenceModel` | load model, preprocess input, run backend, return actions | robot timing, action queue, callbacks, shutdown |
-| `InferenceRunner` | policy computation strategy, e.g. single pass, flow matching, temporal ensemble | robot loop, async scheduling, runtime queueing |
-| `ActionChunkCursor` | internal helper: hold one chunk, pop one action at a time | refill policy, smoothing, async, RTC |
-| `Execution` | when and where inference runs: sync, thread, process, remote | queueing policy, robot IO |
-| `ActionQueue` | store chunks, merge chunks, smooth boundaries, pop one action per tick | model inference, robot IO |
-| `PolicyRuntime` | observe robot, call `Execution`, pop action, send action, callbacks, timing | policy math |
-| `Benchmark` / `LiberoBenchmark` | evaluate policies across gyms/tasks, episodes, success rate, reward, episode length, FPS, videos, JSON/CSV export | production robot-loop semantics |
+| Component                       | Owns                                                                                                              | Does not own                                    |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `InferenceModel`                | load model, preprocess input, run backend, return actions                                                         | robot timing, action queue, callbacks, shutdown |
+| `InferenceRunner`               | policy computation strategy, e.g. single pass, flow matching, temporal ensemble                                   | robot loop, async scheduling, runtime queueing  |
+| `ActionChunkCursor`             | internal helper: hold one chunk, pop one action at a time                                                         | refill policy, smoothing, async, RTC            |
+| `Execution`                     | when and where inference runs: sync, thread, process, remote                                                      | queueing policy, robot IO                       |
+| `ActionQueue`                   | store chunks, merge chunks, smooth boundaries, pop one action per tick                                            | model inference, robot IO                       |
+| `PolicyRuntime`                 | observe robot, call `Execution`, pop action, send action, callbacks, timing                                       | policy math                                     |
+| `Benchmark` / `LiberoBenchmark` | evaluate policies across gyms/tasks, episodes, success rate, reward, episode length, FPS, videos, JSON/CSV export | production robot-loop semantics                 |
 
 ## 3. `select_action()` vs `predict_action_chunk()`
 
@@ -112,10 +112,10 @@ PolicyRuntime
 
 Both methods must work for any runner. `InferenceModel` adapts; callers do not branch on runner type.
 
-| Runner | `select_action()` | `predict_action_chunk()` |
-|---|---|---|
-| single-pass | runner output | wrap as `(1, D)` chunk |
-| chunk-producing | pop one via `ActionChunkCursor` | runner output |
+| Runner          | `select_action()`               | `predict_action_chunk()` |
+| --------------- | ------------------------------- | ------------------------ |
+| single-pass     | runner output                   | wrap as `(1, D)` chunk   |
+| chunk-producing | pop one via `ActionChunkCursor` | runner output            |
 
 This is deliberate. If `predict_action_chunk()` raised on single-pass runners, `PolicyRuntime`, `ActionQueue`, `Benchmark`, and `PolicyServer` would each have to branch on runner type. The cursor and the 1-step wrap exist to keep that branching in one place.
 
@@ -158,11 +158,11 @@ Recommended for robot control loops. `ActionQueue` may use `ActionChunkCursor` i
 
 `InferenceModel` / `InferenceRunner` must not import `ActionQueue`. If both layers need pop-from-chunk mechanics, they share `ActionChunkCursor`, not `ActionQueue`.
 
-| Thing | Scope | Owns |
-|---|---|---|
-| `ActionChunkCursor` | internal helper | current chunk position |
-| `select_action()` | model convenience API | sync refill when cursor empty |
-| `ActionQueue` | runtime | refill policy, smoothing, RTC, telemetry |
+| Thing               | Scope                 | Owns                                     |
+| ------------------- | --------------------- | ---------------------------------------- |
+| `ActionChunkCursor` | internal helper       | current chunk position                   |
+| `select_action()`   | model convenience API | sync refill when cursor empty            |
+| `ActionQueue`       | runtime               | refill policy, smoothing, RTC, telemetry |
 
 ## 5. Core Runtime API
 
@@ -216,13 +216,13 @@ class Execution:
     def stop(self) -> None: ...
 ```
 
-| Implementation | Where inference runs | Use case |
-|---|---|---|
-| `SyncExecution(mode="single_action")` | runtime thread | simple policies |
-| `SyncExecution(mode="chunk")` | runtime thread | chunk policies, no background worker |
-| `AsyncExecution(transport="thread")` | worker thread | avoid blocking the control loop |
-| `AsyncExecution(transport="process")` | worker process | Studio-style model worker |
-| `RemoteExecution` | remote server | robot host without policy weights/GPU |
+| Implementation                        | Where inference runs | Use case                              |
+| ------------------------------------- | -------------------- | ------------------------------------- |
+| `SyncExecution(mode="single_action")` | runtime thread       | simple policies                       |
+| `SyncExecution(mode="chunk")`         | runtime thread       | chunk policies, no background worker  |
+| `AsyncExecution(transport="thread")`  | worker thread        | avoid blocking the control loop       |
+| `AsyncExecution(transport="process")` | worker process       | Studio-style model worker             |
+| `RemoteExecution`                     | remote server        | robot host without policy weights/GPU |
 
 ## 7. ActionQueue
 
@@ -326,15 +326,15 @@ Today, benchmark rollouts evaluate `Policy` or `InferenceModel` by calling `sele
 
 `PolicyRuntime` has a different job: production robot-loop semantics.
 
-| Concern | `Benchmark` | `PolicyRuntime` |
-|---|---|---|
-| Task suite / gym orchestration | yes | no |
-| Episode aggregation and success metrics | yes | no |
-| Video/result export | yes | no |
-| Robot/camera connection lifecycle | no | yes |
-| FPS-controlled robot loop | no, except measuring rollout FPS | yes |
-| Runtime-owned action queue | only if explicitly benchmarking runtime behavior | yes |
-| Async/process/remote inference scheduling | only if explicitly configured through runtime components | yes |
+| Concern                                   | `Benchmark`                                              | `PolicyRuntime` |
+| ----------------------------------------- | -------------------------------------------------------- | --------------- |
+| Task suite / gym orchestration            | yes                                                      | no              |
+| Episode aggregation and success metrics   | yes                                                      | no              |
+| Video/result export                       | yes                                                      | no              |
+| Robot/camera connection lifecycle         | no                                                       | yes             |
+| FPS-controlled robot loop                 | no, except measuring rollout FPS                         | yes             |
+| Runtime-owned action queue                | only if explicitly benchmarking runtime behavior         | yes             |
+| Async/process/remote inference scheduling | only if explicitly configured through runtime components | yes             |
 
 Recommended split:
 
