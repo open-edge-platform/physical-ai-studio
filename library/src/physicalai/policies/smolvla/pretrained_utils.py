@@ -1,16 +1,28 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
+"""Utilities for loading pretrained SmolVLA weights and dataset stats."""
 
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from physicalai.policies.pi05.pretrained_utils import extract_dataset_stats as pi05_extract_dataset_stats
 from physicalai.data.observation import ACTION, STATE
-
+from physicalai.policies.pi05.pretrained_utils import extract_dataset_stats as pi05_extract_dataset_stats
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+def fix_state_dict_keys(state_dict: dict[str, Any]) -> dict[str, Any]:
+    """Fix state dict keys from pretrained SmolVLA to match model keys.
+
+    Returns:
+        State dict with ``model.`` prefix renamed to ``_model.``.
+    """
+    return {
+        key.replace("model.", "_model.", 1) if key.startswith("model.") else key: value
+        for key, value in state_dict.items()
+    }
 
 
 def parse_config_features(hf_config: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -38,7 +50,12 @@ def parse_config_features(hf_config: dict[str, Any]) -> dict[str, dict[str, Any]
             dim = shape[0] if shape else 1
             f_type = feat_info.get("type", "UNKNOWN")
 
-            if "state" in feat_name.lower() or feat_name == ACTION or "action" in feat_name.lower() or f_type == "VISUAL":
+            if (
+                "state" in feat_name.lower()
+                or feat_name == ACTION
+                or "action" in feat_name.lower()
+                or f_type == "VISUAL"
+            ):
                 stats[feat_name] = {
                     "name": feat_name,
                     "shape": shape,
@@ -76,18 +93,15 @@ def extract_dataset_stats(
     # extra info with normalization
     processing_stats = pi05_extract_dataset_stats(hf_config, preprocessor_file, preprocessor_dir)
 
-
     for f_name in config_features:
         if STATE in f_name.lower():
             for proc_f_name in processing_stats:
                 if STATE in proc_f_name.lower():
-                    print(processing_stats[proc_f_name]["mean"])
                     config_features[f_name]["mean"] = processing_stats[proc_f_name]["mean"]
                     config_features[f_name]["std"] = processing_stats[proc_f_name]["std"]
         elif ACTION in f_name.lower():
             for proc_f_name in processing_stats:
                 if ACTION in proc_f_name.lower():
-                    print(processing_stats[proc_f_name]["mean"])
                     config_features[f_name]["mean"] = processing_stats[proc_f_name]["mean"]
                     config_features[f_name]["std"] = processing_stats[proc_f_name]["std"]
 

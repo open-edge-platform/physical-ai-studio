@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 from huggingface_hub import hf_hub_download
 from physicalai.inference.manifest import ComponentSpec
+from safetensors.torch import load_file
 
 from physicalai.data.observation import ACTION, STATE
 from physicalai.export import ExportablePolicyMixin, ExportBackend
@@ -31,7 +32,7 @@ from physicalai.train.utils import reformat_dataset_to_match_policy
 
 from .config import SmolVLAConfig
 from .model import SmolVLAModel
-from .pretrained_utils import extract_dataset_stats
+from .pretrained_utils import extract_dataset_stats, fix_state_dict_keys
 
 if TYPE_CHECKING:
     from physicalai.data import Observation
@@ -240,7 +241,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
         # Save config as hyperparameters for checkpoint restoration
         self.save_hyperparameters(
-            ignore=["config", "pretrained_name_or_path"]
+            ignore=["config", "pretrained_name_or_path"],
         )  # Save individual args, not config object
         # Also save config dict for compatibility
         self.hparams["config"] = self.config.to_dict()
@@ -299,8 +300,27 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         )
 
         if weights_file is not None:
-            # Template hook: add safetensors loading and state-dict key remapping.
-            logger.info("Found pretrained weights at %s (template only, loading not implemented yet)", weights_file)
+            original_sd = load_file(str(weights_file))
+
+            fixed_sd = fix_state_dict_keys(original_sd)
+
+            missing, unexpected = self.model.load_state_dict(fixed_sd, strict=False, assign=True)
+            if missing:
+                msg = f"Missing keys when loading pretrained weights: {len(missing)} keys"
+                logger.warning(msg)
+                for k in missing[:10]:
+                    msg = f"  - {k}"
+                    logger.warning(msg)
+            if unexpected:
+                msg = f"Unexpected keys when loading pretrained weights: {len(unexpected)} keys"
+                logger.warning(msg)
+                for k in unexpected[:10]:
+                    msg = f"  - {k}"
+                    logger.warning(msg)
+
+            # Apply dtype/precision
+            self.model._model.set_requires_grad()  # noqa: SLF001
+            self.model._model.vlm_with_expert.set_requires_grad()  # noqa: SLF001
 
         self._update_preprocessor_stats(dataset_stats)
 
@@ -310,25 +330,6 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         self,
         pretrained_name_or_path: str | Path,
         *,
-        n_obs_steps: int = 1,
-        chunk_size: int = 50,
-        n_action_steps: int = 50,
-        max_state_dim: int = 32,
-        max_action_dim: int = 32,
-        resize_imgs_with_padding: tuple[int, int] = (512, 512),
-        tokenizer_max_length: int = 48,
-        vlm_model_name: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
-        load_vlm_weights: bool = False,
-        add_image_special_tokens: bool = False,
-        attention_mode: str = "cross_attn",
-        prefix_length: int = -1,
-        pad_language_to: str = "max_length",
-        num_expert_layers: int = -1,
-        num_vlm_layers: int = 16,
-        self_attn_every_n_layers: int = 2,
-        expert_width_multiplier: float = 0.75,
-        min_period: float = 4e-3,
-        max_period: float = 4.0,
         use_random_input_noise: bool = False,
         compile_model: bool = False,
         num_steps: int = 10,
@@ -351,6 +352,9 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         This mirrors Pi05's structure and is intentionally incomplete. It resolves
         files, applies caller overrides to config, and returns placeholders for
         dataset stats / weight-loading integration.
+
+        Returns:
+            Tuple of (config, dataset_stats, weights_file).
         """
         path = Path(pretrained_name_or_path)
         is_local = path.is_dir()
@@ -397,26 +401,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         with Path(config_file).open(encoding="utf-8") as f:
             hf_config = json.load(f)
 
-        # Apply caller overrides before from_dict so coercion happens via type hints.
-        hf_config["n_obs_steps"] = n_obs_steps
-        hf_config["chunk_size"] = chunk_size
-        hf_config["n_action_steps"] = n_action_steps
-        hf_config["max_state_dim"] = max_state_dim
-        hf_config["max_action_dim"] = max_action_dim
-        hf_config["resize_imgs_with_padding"] = resize_imgs_with_padding
-        hf_config["tokenizer_max_length"] = tokenizer_max_length
-        hf_config["vlm_model_name"] = vlm_model_name
-        hf_config["load_vlm_weights"] = load_vlm_weights
-        hf_config["add_image_special_tokens"] = add_image_special_tokens
-        hf_config["attention_mode"] = attention_mode
-        hf_config["prefix_length"] = prefix_length
-        hf_config["pad_language_to"] = pad_language_to
-        hf_config["num_expert_layers"] = num_expert_layers
-        hf_config["num_vlm_layers"] = num_vlm_layers
-        hf_config["self_attn_every_n_layers"] = self_attn_every_n_layers
-        hf_config["expert_width_multiplier"] = expert_width_multiplier
-        hf_config["min_period"] = min_period
-        hf_config["max_period"] = max_period
+        # Apply only safe overrides
         hf_config["use_random_input_noise"] = use_random_input_noise
         hf_config["compile_model"] = compile_model
         hf_config["num_steps"] = num_steps
