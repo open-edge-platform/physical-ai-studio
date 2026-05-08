@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from physicalai.data.observation import ACTION, STATE
+from physicalai.data.observation import ACTION, STATE, FeatureType
 from physicalai.policies.pi05.pretrained_utils import extract_dataset_stats as pi05_extract_dataset_stats
 
 if TYPE_CHECKING:
@@ -50,12 +50,7 @@ def parse_config_features(hf_config: dict[str, Any]) -> dict[str, dict[str, Any]
             dim = shape[0] if shape else 1
             f_type = feat_info.get("type", "UNKNOWN")
 
-            if (
-                "state" in feat_name.lower()
-                or feat_name == ACTION
-                or "action" in feat_name.lower()
-                or f_type == "VISUAL"
-            ):
+            if STATE in feat_name.lower() or ACTION in feat_name.lower() or f_type == FeatureType.VISUAL.value:
                 feature_alias = feat_name
                 feature_alias = feature_alias.removeprefix("observation.")
                 stats[feat_name] = {
