@@ -25,7 +25,7 @@ Example:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import gym_pusht  # noqa: F401
 
@@ -87,7 +87,7 @@ class PushTBenchmark(Benchmark):
         video_dir: str | Path | None = None,
         record_mode: str = "failures",
         *,
-        show_progress: bool | str = "auto",
+        show_progress: bool | Literal["auto"] = "auto",
     ) -> None:
         """Initialize PushT benchmark with paper-protocol defaults."""
         if num_envs > 1:

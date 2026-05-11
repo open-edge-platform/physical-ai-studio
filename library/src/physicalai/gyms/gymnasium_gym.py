@@ -49,7 +49,7 @@ class GymnasiumGym(Gym):
     def __init__(
         self,
         gym_id: str | None = None,
-        vector_env: gym.Env | None = None,
+        vector_env: gym.Env | AsyncVectorEnv | SyncVectorEnv | None = None,
         device: str | torch.device = "cpu",
         render_mode: str | None = "rgb_array",
         **gym_kwargs: Any,  # noqa: ANN401
