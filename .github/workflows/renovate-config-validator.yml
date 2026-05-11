@@ -31,6 +31,12 @@ jobs:
     permissions:
       contents: read
     steps:
+      - &harden-runner
+        name: Harden the runner (audit all outbound calls)
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
       - name: Checkout configuration
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -53,6 +59,8 @@ jobs:
     permissions:
       contents: read # to checkout code
     steps:
+      - *harden-runner
+
       - name: Checkout configuration
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -61,7 +69,7 @@ jobs:
       - name: Validate configuration
         run: |
           # renovate: datasource=docker
-          export RENOVATE_IMAGE=ghcr.io/renovatebot/renovate:43.122.0@sha256:b3ba6ebacd6fe5d3cb6c3a32350570e4e779d96121106ac54a086811190ab426
+          export RENOVATE_IMAGE=ghcr.io/renovatebot/renovate:43.160.2@sha256:e977df2dbd4b978cc301a0b4d8e0162ec4ce08bd205422c02c4cf55f52b67336
           docker run --rm --entrypoint "renovate-config-validator" \
           -v "${{ github.workspace }}/.github/renovate.json5":"/renovate.json5" \
           ${RENOVATE_IMAGE} "/renovate.json5"
@@ -76,6 +84,8 @@ jobs:
       CHECKS: ${{ join(needs.*.result, ' ') }}
     if: always() && !cancelled()
     steps:
+      - *harden-runner
+
       - name: Check jobs results
         run: |
           for check in ${CHECKS}; do

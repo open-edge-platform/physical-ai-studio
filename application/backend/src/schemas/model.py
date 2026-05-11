@@ -1,8 +1,9 @@
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, computed_field
 
 from schemas.base import BaseIDModel, Field
 
@@ -19,6 +20,14 @@ class Model(BaseIDModel):
     parent_model_id: UUID | None = Field(None, description="Parent model this was retrained from")
     version: int = Field(1, description="Model version, incremented on each retrain")
     created_at: datetime | None = Field(None)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def available_backends(self) -> list[str]:
+        exports_dir = Path(self.path) / "exports"
+        if not exports_dir.is_dir():
+            return []
+        return sorted(d.name for d in exports_dir.iterdir() if d.is_dir())
 
     model_config = ConfigDict(
         json_schema_extra={

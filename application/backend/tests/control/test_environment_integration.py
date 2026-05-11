@@ -60,6 +60,25 @@ class TestInferenceEnvironmentIntegration:
         assert "front" in phy_ai_obs.images
         assert "grabber" in phy_ai_obs.images
 
+    def test_state_values_follow_action_keys_order_not_dict_insertion_order(
+        self, inference_environment_integration: EnvironmentIntegration
+    ):
+        action_keys = inference_environment_integration.action_keys
+        unique_values = {key: float(i) for i, key in enumerate(action_keys)}
+
+        # Build observation with joint keys in reversed insertion order — differs from action_keys order.
+        # The old code (iterating observation.items()) would have produced reversed state values.
+        observation = {
+            **{key: unique_values[key] for key in reversed(action_keys)},
+            "3ed60255-04ae-407b-8e2c-c3281847a4e0": np.zeros([480, 640, 3], dtype=np.uint8),
+            "4629e172-2aa7-4fde-86b1-e19eb1d210ff": np.zeros([480, 640, 3], dtype=np.uint8),
+        }
+
+        result = inference_environment_integration.format_model_input_observation(observation)
+
+        expected = [unique_values[k] for k in action_keys]
+        np.testing.assert_array_equal(result.state[0], expected)
+
     def test_transform_observation_to_report_to_ui(
         self, inference_environment_integration: EnvironmentIntegration, event_loop
     ):

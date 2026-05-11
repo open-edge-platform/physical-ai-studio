@@ -33,8 +33,8 @@ Examples:
 """
 
 from physicalai.benchmark.benchmark import Benchmark
-from physicalai.benchmark.libero import LiberoBenchmark
 from physicalai.benchmark.pusht import PushTBenchmark
+from physicalai.benchmark.libero.libero import LiberoBenchmark
 from physicalai.benchmark.results import BenchmarkResults, TaskResult
 from physicalai.eval.video import RecordMode, VideoRecorder
 

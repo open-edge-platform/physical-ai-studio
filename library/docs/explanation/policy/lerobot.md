@@ -2,18 +2,22 @@
 
 ## Overview
 
-PhysicalAI provides seamless integration with LeRobot policies through:
+PhysicalAI integrates LeRobot policies through a single base class
+(`LeRobotPolicy`) and one thin alias per first-class supported policy
+(`act`, `diffusion`, `groot`, `pi0`, `pi05`, `pi0_fast`, `smolvla`,
+`xvla`), each binding a fixed `policy_name`. Configuration flows through
+LeRobot's own `PreTrainedConfig` dataclasses (`ACTConfig`,
+`DiffusionConfig`, …), so the upstream contract is the single source of
+truth for policy parameters. Other LeRobot-registered policies remain
+reachable through `LeRobotPolicy` directly as a best-effort escape hatch.
 
-1. **Explicit Wrappers** - Full parameter definitions with IDE support
-   (Recommended)
-2. **Universal Wrapper** - Flexible runtime policy selection (Advanced)
+All wrappers provide:
 
-Both approaches provide:
-
-- ✅ **Verified output equivalence** with native LeRobot
-- ✅ Full Lightning integration
-- ✅ Training, validation, and inference support
-- ✅ Seamless PyTorch Lightning Trainer compatibility
+- ✅ Verified output equivalence with native LeRobot for the validated subset
+  (see [Validation](#validation) for which policies are covered)
+- ✅ Full Lightning integration (training, validation, inference)
+- ✅ Lazy or eager initialization (features extracted from a `DataModule`
+  or supplied explicitly)
 - ✅ Automatic data format handling (see [Data Integration](../data/lerobot.md))
 
 ## Design Pattern
@@ -24,7 +28,7 @@ Both approaches provide:
 ┌───────────────────────────────────────────────┐
 │            PhysicalAI (Lightning)             │
 │   ┌───────────────────────────────────────┐   │
-│   │  PhysicalAI Policy (LightningModule)  │   │
+│   │  LeRobotPolicy (LightningModule)      │   │
 │   │  ┌─────────────────────────────────┐  │   │
 │   │  │   LeRobot Native Policy         │  │   │
 │   │  │   (Thin Delegation)             │  │   │
@@ -35,10 +39,13 @@ Both approaches provide:
 
 **Key Principles**:
 
-1. **No Reimplementation** - Delegate to native LeRobot
-2. **Thin Wrapper** - Only Lightning interface code
-3. **Transparent** - All LeRobot features preserved
-4. **Verified Equivalence** - Outputs match native LeRobot
+1. **No Reimplementation** — delegate to native LeRobot.
+2. **Thin Wrapper** — Lightning interface only.
+3. **Config as Source of Truth** — LeRobot's `PreTrainedConfig` carries every
+   tunable parameter; the wrapper does not re-declare them.
+4. **Verified Equivalence** — outputs match native LeRobot for the validated
+   subset (`act`, `diffusion`, `smolvla`, `pi0`, `pi05`, `pi0_fast`); see
+   [Validation](#validation).
 
 ## Architecture
 
@@ -47,444 +54,221 @@ Both approaches provide:
 ```text
 library/src/physicalai/
 └── policies/lerobot/
-    ├── __init__.py              # Conditional imports, availability checks
-    ├── mixin.py                 # LeRobotFromConfig mixin (configuration methods)
-    ├── act.py                   # Explicit ACT wrapper
-    ├── diffusion.py             # Explicit diffusion wrapper
-    ├── universal.py             # Universal wrapper
+    ├── __init__.py              # Public API, availability checks
+    ├── mixin.py                 # LeRobotFromConfig mixin (PreTrainedConfig flow)
+    ├── policy.py                # LeRobotPolicy + NamedLeRobotPolicy (bases)
+    ├── aliases.py               # Named aliases (one per registered policy)
     └── README.md                # Module documentation
 ```
 
-**Note**: For data module architecture and format conversion details, see
+Every named alias lives in `aliases.py` as a thin subclass of
+`NamedLeRobotPolicy` — three lines binding `POLICY_NAME`. The set of
+aliases is a curated subset of LeRobot's `PreTrainedConfig.get_known_choices()`
+registry; other registry entries remain reachable through
+`LeRobotPolicy(policy_name=...)` directly as a best-effort escape hatch.
+Adding a new named alias is a one-class addition. Keeping `LeRobotPolicy`
+and `NamedLeRobotPolicy` together in `policy.py` reflects that the latter
+is a tightly-coupled specialization of the former.
+
+For data module architecture and format conversion details, see
 [LeRobot Data Integration](../data/lerobot.md).
 
 ### Implementation Components
 
-#### 1. LeRobotFromConfig Mixin
-
-All LeRobot policies inherit from the `LeRobotFromConfig` mixin, which provides:
+#### 1. `LeRobotPolicy` — the dynamic base
 
 ```python
-class ACT(Policy, LeRobotFromConfig):
-    """ACT with full configuration flexibility."""
-    pass
-
-class Diffusion(Policy, LeRobotFromConfig):
-    """Diffusion with full configuration flexibility."""
-    pass
-```
-
-**Provided Methods**:
-
-- `from_config(config)` - Auto-detect and load any config format
-- `from_dict(config_dict)` - Load from dictionary
-- `from_yaml(yaml_path)` - Load from YAML file
-- `from_pydantic(model)` - Load from Pydantic model
-- `from_dataclass(config)` - Load from dataclass
-- `from_lerobot_config(config)` - Load from LeRobot's native config
-
-**Key Features**:
-
-- Type-safe configuration
-- Automatic format detection
-- LeRobot config compatibility
-- Extensible for new formats
-
-#### 2. Explicit Wrapper (ACT)
-
-```python
-class ACT(LightningModule):
-    """Explicit wrapper for LeRobot ACT policy.
-
-    Features:
-    - Full parameter definitions with type hints
-    - IDE autocomplete support
-    - Compile-time type checking
-    - Direct YAML configuration
-    - Automatic data format handling
-    """
-
-    def __init__(
-        self,
-        input_features: dict,
-        output_features: dict,
-        dim_model: int = 512,
-        chunk_size: int = 100,
-        # ... 16 total parameters with full typing
-    ):
-        super().__init__()
-        # Delegate to LeRobot
-        config = ACTConfig(...)
-        self.lerobot_policy = ACTPolicy(config, dataset_stats=stats)
-
-    def forward(self, batch: dict) -> dict:
-        """Delegate to LeRobot policy with automatic format conversion."""
-        batch = FormatConverter.to_lerobot_dict(batch)
-        return self.lerobot_policy.forward(batch)
-
-    def training_step(self, batch: dict, batch_idx: int) -> Tensor:
-        """Lightning training interface with format conversion."""
-        batch = FormatConverter.to_lerobot_dict(batch)
-        output = self.lerobot_policy.forward(batch)
-        loss = output["loss"]
-        self.log("train/loss", loss)
-        return loss
-```
-
-**Key Features**:
-
-- Thin delegation to native LeRobot policies
-- Automatic data format conversion (see [Data Integration](../data/lerobot.md))
-- All methods support both PhysicalAI and LeRobot data formats
-
-#### 2. Universal Wrapper
-
-```python
-class LeRobotPolicy(LightningModule):
-    """Universal wrapper supporting all LeRobot policies.
-
-    Supported Policies:
-    - act, diffusion, tdmpc, vqbet, sac, ppo, ddpg, dqn, ibc
-    """
+class LeRobotPolicy(Policy, LeRobotFromConfig):
+    """Single LightningModule that wraps any registered LeRobot policy."""
 
     def __init__(
         self,
         policy_name: str,
-        input_features: dict,
-        output_features: dict,
-        stats: dict | None = None,
-        **policy_kwargs,
-    ):
-        super().__init__()
-        # Dynamic policy creation
-        policy_cls = get_policy_class(policy_name)
-        config = get_policy_config_class(policy_name)(**policy_kwargs)
-        self.lerobot_policy = policy_cls(config, dataset_stats=stats)
+        *,
+        config: PreTrainedConfig | None = None,
+        input_features: dict[str, PolicyFeature] | None = None,
+        output_features: dict[str, PolicyFeature] | None = None,
+        dataset_stats: dict | None = None,
+        policy_config: dict[str, Any] | None = None,
+        **overrides: Any,
+    ) -> None: ...
 ```
 
-#### 3. Convenience Aliases
+`policy_name` selects the LeRobot policy class. `config` accepts a fully
+built `PreTrainedConfig` (`ACTConfig`, `DiffusionConfig`, …). When
+`input_features` / `output_features` are omitted, the wrapper extracts them
+lazily from the attached `DataModule` during `setup()`.
+
+#### 2. `NamedLeRobotPolicy` — base for thin aliases
 
 ```python
-# Create policy-specific classes dynamically
-VQBeT = lambda **kwargs: LeRobotPolicy(policy_name="vqbet", **kwargs)
-TDMPC = lambda **kwargs: LeRobotPolicy(policy_name="tdmpc", **kwargs)
+class ACT(NamedLeRobotPolicy):
+    POLICY_NAME = "act"
 ```
+
+Named aliases inherit the entire `LeRobotPolicy` lifecycle but pre-bind
+`policy_name` from the class-level `POLICY_NAME`. The base also enforces
+two invariants the bare `LeRobotPolicy` cannot:
+
+1. `Subclass.from_dataset(...)` returns an instance of `Subclass`, not a
+   bare `LeRobotPolicy`.
+2. `Subclass(policy_name=other)` is rejected, so a class named `ACT` can
+   never silently build a different policy.
+
+#### 3. `LeRobotFromConfig` mixin
+
+Provides the configuration entry points shared by every wrapper:
+
+- `from_config(config)` — auto-detects whether `config` is a
+  `PreTrainedConfig` instance, a dict, a YAML path, or a dataclass.
+- `from_pretrained(pretrained_path)` — loads weights and config from a
+  LeRobot-compatible saved directory or HuggingFace Hub repo. For
+  Lightning `.ckpt` files, use `LeRobotPolicy.load_from_checkpoint(...)`.
+
+LeRobot's own `PreTrainedConfig` dataclasses already enumerate every
+tunable parameter with defaults, validation, and serialization, so the
+wrapper does not re-declare them.
 
 ## Usage
 
-### Configuration Methods
-
-All LeRobot policies support multiple configuration
-approaches through the `LeRobotFromConfig` mixin:
-
-#### 1. Direct Instantiation (Recommended for Python)
+### Direct instantiation
 
 ```python
 from physicalai.policies.lerobot import ACT
+from lerobot.policies.act.configuration_act import ACTConfig
 
-# Full IDE support with autocomplete
+# Eager: provide features explicitly
 policy = ACT(
-    dim_model=512,
-    chunk_size=100,
-    n_action_steps=100,
-    use_vae=True,
-    learning_rate=1e-5,
-)
-```
-
-#### 2. From Dictionary
-
-```python
-config_dict = {
-    "dim_model": 512,
-    "chunk_size": 100,
-    "n_action_steps": 100,
-    "use_vae": True,
-    "learning_rate": 1e-5,
-}
-policy = ACT.from_dict(config_dict)
-```
-
-#### 3. From YAML File
-
-```python
-# configs/act_config.yaml
-# dim_model: 512
-# chunk_size: 100
-# ...
-
-policy = ACT.from_config("configs/act_config.yaml")
-```
-
-#### 4. From LeRobot Config (Advanced)
-
-```python
-from lerobot.policies.act.configuration_act import ACTConfig as LeRobotACTConfig
-
-# Create LeRobot's native config
-lerobot_config = LeRobotACTConfig(
-    dim_model=512,
-    chunk_size=100,
-    use_vae=True,
+    config=ACTConfig(dim_model=512, chunk_size=100, optimizer_lr=1e-5),
+    input_features={...},
+    output_features={...},
 )
 
-# Use it directly with our wrapper
-policy = ACT.from_lerobot_config(lerobot_config, learning_rate=1e-5)
-# or auto-detect:
-policy = ACT.from_config(lerobot_config, learning_rate=1e-5)
+# Lazy: features extracted from the DataModule in setup()
+policy = ACT(config=ACTConfig(dim_model=512))
 ```
 
-#### 5. From Pydantic Model
+### From a dataset
 
 ```python
-from pydantic import BaseModel
-
-class ACTConfigModel(BaseModel):
-    dim_model: int = 512
-    chunk_size: int = 100
-    learning_rate: float = 1e-5
-
-config_model = ACTConfigModel()
-policy = ACT.from_pydantic(config_model)
+policy = ACT.from_dataset("lerobot/pusht", dim_model=512)
 ```
 
-#### 6. Universal Wrapper with Config
+`ACT.from_dataset(...)` returns an `ACT` instance (not a bare
+`LeRobotPolicy`), preserving `isinstance` discrimination across the family.
+
+### From a pretrained directory or Hub repo
 
 ```python
-from physicalai.policies.lerobot import LeRobotPolicy
-
-# Method 1: With config_kwargs
-policy = LeRobotPolicy(
-    policy_name="diffusion",
-    config_kwargs={
-        "horizon": 16,
-        "n_action_steps": 8,
-    },
-    learning_rate=1e-4,
-)
-
-# Method 2: Direct kwargs (Python usage)
-policy = LeRobotPolicy(
-    policy_name="diffusion",
-    horizon=16,  # Passed as kwargs
-    n_action_steps=8,
-    learning_rate=1e-4,
-)
+policy = ACT.from_pretrained("path/to/saved_dir")
+# or, when the policy class is unknown ahead of time:
+policy = LeRobotPolicy.from_pretrained("path/to/saved_dir")
 ```
 
-### Approach 1: Explicit Wrapper (Recommended)
-
-#### CLI Interface
-
-```bash
-# Train with config
-physicalai fit --config configs/lerobot/act.yaml
-
-# Override parameters
-physicalai fit \
-  --config configs/lerobot/act.yaml \
-  --model.dim_model 1024 \
-  --trainer.max_epochs 200
-```
-
-#### Python Interface
+Lightning `.ckpt` files are loaded via the standard Lightning entry point:
 
 ```python
-from physicalai.policies.lerobot import ACT
-from physicalai.train import Trainer
-
-# Create policy (full IDE support!)
-policy = ACT(
-    dim_model=512,              # ← Autocomplete works!
-    chunk_size=100,
-    n_action_steps=100,
-)
-
-# Train with datamodule
-from physicalai.data.lerobot import LeRobotDataModule
-datamodule = LeRobotDataModule(
-    repo_id="lerobot/pusht",
-    train_batch_size=8,
-)
-
-trainer = Trainer(max_epochs=100)
-trainer.fit(policy, datamodule)
+policy = ACT.load_from_checkpoint("path/to/model.ckpt")
 ```
 
-### Approach 2: Universal Wrapper
-
-#### LightningCLI
+### LightningCLI / YAML
 
 ```yaml
-# configs/lerobot_diffusion.yaml
+# configs/lerobot/act.yaml
+model:
+  class_path: physicalai.policies.lerobot.ACT
+  init_args:
+    policy_config:
+      dim_model: 512
+      chunk_size: 100
+      optimizer_lr: 1.0e-5
+```
+
+```bash
+physicalai fit --config configs/lerobot/act.yaml
+physicalai fit --config configs/lerobot/act.yaml \
+  --model.policy_config.dim_model 1024
+```
+
+### Dynamic policy selection
+
+When the policy name is itself driven by configuration, instantiate the
+bare `LeRobotPolicy` and supply `policy_name`:
+
+```yaml
 model:
   class_path: physicalai.policies.lerobot.LeRobotPolicy
   init_args:
     policy_name: diffusion
-    config_kwargs:
-      input_features: ...
-      output_features: ...
-      # Policy-specific kwargs
-      down_dims: [512, 1024, 2048]
-      n_action_steps: 100
+    policy_config:
+      horizon: 16
+      n_action_steps: 8
 ```
 
-#### Python API
+## When to Use Which Class
 
-```python
-from physicalai.policies.lerobot import LeRobotPolicy, Diffusion
+| Use case                                                     | Class                               |
+| ------------------------------------------------------------ | ----------------------------------- |
+| Production code, fixed policy choice                         | Named alias (`ACT`, `Diffusion`, …) |
+| YAML configs targeting a stable class path                   | Named alias                         |
+| `isinstance(policy, ACT)` checks                             | Named alias                         |
+| Policy name driven by a CLI flag or runtime config           | `LeRobotPolicy`                     |
+| Loading a saved-directory or Hub repo of unknown policy type | `LeRobotPolicy.from_pretrained`     |
+| Loading a Lightning `.ckpt`                                  | `<Class>.load_from_checkpoint`      |
 
-# Method 1: Explicit policy_name
-policy = LeRobotPolicy(
-    policy_name="diffusion",
-    config_kwargs={
-        "horizon": 16,
-        "n_action_steps": 8,
-        "down_dims": [512, 1024, 2048],
-    },
-    learning_rate=1e-4,
-)
-
-# Method 2: Convenience alias (same as above)
-policy = Diffusion(
-    config_kwargs={
-        "horizon": 16,
-        "n_action_steps": 8,
-        "down_dims": [512, 1024, 2048],
-    },
-    learning_rate=1e-4,
-)
-```
-
-## Best Practices
-
-### Configuration Flexibility
-
-PhysicalAI policies support **all LeRobot parameters** through two mechanisms:
-
-#### 1. Explicit Parameters
-
-All commonly used parameters are explicitly defined in the `__init__` signature:
-
-```python
-policy = ACT(
-    dim_model=512,           # Explicit parameter
-    chunk_size=100,          # Explicit parameter
-    n_encoder_layers=4,      # Explicit parameter
-)
-```
-
-**Benefits**:
-
-- Full IDE autocomplete
-- Type hints and validation
-- Easy to discover parameters
-
-#### 2. Additional Parameters via kwargs
-
-Any LeRobot parameter not explicitly listed can be passed via `**kwargs`:
-
-```python
-policy = ACT(
-    dim_model=512,
-    chunk_size=100,
-    # These are not in the explicit parameter list but work via kwargs:
-    feedforward_activation="gelu",
-    pre_norm=True,
-    attention_dropout=0.2,
-)
-```
-
-**Benefits**:
-
-- Access to ALL LeRobot parameters
-- No need to update wrapper for new LeRobot features
-- Forward compatibility
-
-#### 3. Mixing Configuration Methods
-
-You can combine different approaches:
-
-```python
-# Start with YAML
-policy = ACT.from_config("base_config.yaml")
-
-# Or start with LeRobot config and override
-from lerobot.policies.act.configuration_act import ACTConfig
-lerobot_config = ACTConfig.from_pretrained("lerobot/act_default")
-policy = ACT.from_lerobot_config(
-    lerobot_config,
-    learning_rate=1e-4,  # Override/add parameters
-)
-```
-
-### When to Use Explicit Wrappers
-
-✅ **Use explicit wrappers when**:
-
-- You need IDE autocomplete and type hints
-- Working in a team (better code readability)
-- Building production systems
-- You primarily use 1-2 policies
-- You want compile-time type checking
-
-**Available**: ACT, Diffusion (more coming soon)
-
-### When to Use Universal Wrapper
-
-✅ **Use universal wrapper when**:
-
-- You need flexibility to switch policies
-- Experimenting with multiple policies
-- Building dynamic policy selection systems
-- You're comfortable with LeRobot documentation
-- You need all 9 policies immediately
-
-**Available**: All LeRobot policies
-
-### Configuration Tips
-
-1. **Start with simple configs**: Use `lerobot/act.yaml` for quick testing
-2. **Choose data format wisely**: See [Data Integration](../data/lerobot.md)
-   for format details
-3. **Copy from LeRobot examples**: Most configs can be adapted directly
-4. **Validate output equivalence**: Use test suite for new policies
-
-### Data Format Considerations
-
-For detailed information about data formats and conversion, see the dedicated
-[LeRobot Data Integration](../data/lerobot.md) documentation. The key points:
-
-- Policies automatically handle both PhysicalAI and LeRobot data formats
-- Format conversion is transparent and zero-overhead in production
-- No manual conversion needed - the wrappers handle this automatically
+Native physicalai policies (`physicalai.policies.act` etc.) keep their
+explicit signatures because physicalai owns those contracts. The
+config-first design described here applies only to LeRobot wrappers.
 
 ## Implementation Details
 
 ### Why This Works
 
-1. **Thin Delegation Pattern**:
+1. **Thin delegation** — the wrapper only adds Lightning hooks; all
+   computation runs in the underlying `lerobot_policy`. Zero overhead.
+2. **Weight preservation** — direct attribute access, state-dict
+   pass-through, transparent checkpointing.
+3. **Feature preservation** — all LeRobot methods (`reset`, `select_action`,
+   `forward`) remain accessible via `lerobot_policy`.
 
-   - Wrapper only adds Lightning interface
-   - All computation delegated to LeRobot
-   - Zero computational overhead
+### Where research code belongs
 
-2. **Weight Preservation**:
+Policy-specific research code (custom forward passes, explainability
+hooks, exportable variants, etc.) belongs in a first-party physicalai
+package such as `physicalai.policies.smolvla`, **not** in this LeRobot
+adapter layer. The adapter layer is reserved for thin aliases over
+upstream LeRobot policies.
 
-   - Direct attribute access to `lerobot_policy`
-   - State dict operations pass through
-   - Checkpointing works seamlessly
+## Validation
 
-3. **Feature Preservation**:
-   - All LeRobot methods accessible via `lerobot_policy`
-   - Environment reset, action selection preserved
-   - Statistics, normalization handled by LeRobot
+Two registries describe the wrapper's coverage:
 
-## References
+- `SUPPORTED_POLICIES` — first-class LeRobot policies exposed as named
+  `NamedLeRobotPolicy` subclasses (`act`, `diffusion`, `groot`, `pi0`,
+  `pi05`, `pi0_fast`, `smolvla`, `xvla`).
+- `VALIDATED_EQUIVALENCE_POLICIES` — subset with measured wrapper-vs-native
+  numerical equivalence under tier-appropriate tolerances: `rtol=atol=1e-6`
+  at the unit tier (CPU, fp32) and `rtol=1e-5` (loss) / `rtol=5e-5` (weights)
+  at the integration tier (Lightning Trainer, CUDA/XPU + bf16-mixed for VLAs).
+
+| Policy                        | Unit (CPU) | Integration (CUDA/XPU) | Notes                                   |
+| ----------------------------- | ---------- | ---------------------- | --------------------------------------- |
+| `act`, `diffusion`, `smolvla` | ✅         | ✅                     | Validated CPU + accelerator tiers       |
+| `pi0`, `pi05`, `pi0_fast`     | —          | ✅                     | VLA, accelerator + bf16-mixed only      |
+| `groot`                       | —          | xfail                  | Upstream hardcodes `flash_attention_2`  |
+| `xvla`                        | —          | xfail                  | Requires explicit `vision_config` kwarg |
+
+Tracked limitations register as pytest `xfail(reason=...)` rather than silent
+skips, so any future fix surfaces as `XPASS` and prompts moving the policy
+into `VALIDATED_EQUIVALENCE_POLICIES`.
+
+Other LeRobot-registered policies (`vqbet`, `tdmpc`, `sac`, `multi_task_dit`,
+`reward_classifier`, `sarm`, `wall_x`) remain reachable through
+`LeRobotPolicy(policy_name=...)` directly as a best-effort escape hatch — a
+one-time `UserWarning` is emitted, no equivalence is asserted.
 
 - [LeRobot GitHub](https://github.com/huggingface/lerobot)
 - [LeRobot Documentation](https://huggingface.co/lerobot)
-- [PhysicalAI Best Practices](../../BEST_PRACTICES_FRAMEWORK_INTEGRATION.md)
-- [LeRobot Data Module Documentation](../data/lerobot.md) - For data format details
+- [LeRobot Data Module Documentation](../data/lerobot.md)
 - Module: `library/src/physicalai/policies/lerobot/`
 - Data Module: `library/src/physicalai/data/lerobot/`

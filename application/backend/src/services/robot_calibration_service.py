@@ -18,7 +18,7 @@ from utils.serial_robot_tools import RobotConnectionManager
 async def find_robot_port(manager: RobotConnectionManager, robot: Robot) -> str | None:
     """Find the port associated with a robot."""
     for managed_robot in manager.robots:
-        if managed_robot.serial_number == robot.serial_number:
+        if managed_robot.serial_number == robot.payload.serial_number:
             return managed_robot.connection_string
 
     return None
@@ -98,7 +98,7 @@ class RobotCalibrationService:
         port = await find_robot_port(self.robot_manager, robot)
 
         if port is None:
-            raise ResourceNotFoundError(ResourceType.ROBOT, robot.serial_number)
+            raise ResourceNotFoundError(ResourceType.ROBOT, robot.payload.serial_number)
 
         # TODO: make this depend on the robot type
         # Assume follower since leader shares same FeetechMotorBus layout

@@ -20,7 +20,7 @@ const Datasets = ({ datasets }: DatasetsProps) => {
 
     if (datasets.length === 0) {
         return (
-            <Flex margin={'size-200'} direction={'column'} flex>
+            <Flex margin={'size-200'} direction={'column'} flex height='100%'>
                 <IllustratedMessage>
                     <EmptyIllustration />
                     <Content> Currently there are datasets available. </Content>

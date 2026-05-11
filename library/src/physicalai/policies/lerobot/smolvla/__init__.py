@@ -1,6 +1,0 @@
-# Copyright (C) 2025 Intel Corporation
-# SPDX-License-Identifier: Apache-2.0
-
-"""LeRobot SmolVLA package with xAI."""
-
-from .smolvla import SmolVLA as SmolVLA

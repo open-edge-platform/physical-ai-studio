@@ -54,6 +54,14 @@ class Camera(ABC):
     The base class provides :meth:`disconnect` (executor cleanup),
     :meth:`async_read`, context managers, and :meth:`discover` /
     :meth:`from_config` convenience hooks.
+
+    Thread Safety:
+        Camera instances are **not** thread-safe.  Concurrent calls to
+        ``read()`` or ``read_latest()`` on the same instance from multiple
+        threads may raise exceptions or produce undefined behaviour depending
+        on the underlying SDK.  Use one thread per camera instance, or add
+        external synchronisation.  The multi-camera helpers in
+        :mod:`physicalai.capture.multi` already respect this contract.
     """
 
     def __init__(

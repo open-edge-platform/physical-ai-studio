@@ -2,8 +2,8 @@ import { useMemo } from 'react';
 
 import { Divider, Grid, Heading, View } from '@geti-ui/ui';
 
-import { SchemaRobotType } from '../../../../api/openapi-spec';
 import { useRobotForm } from '../../robot-form/provider';
+import { SchemaRobotType } from '../../robot-types';
 import { SetupRobotViewer } from '../shared/setup-robot-viewer';
 import { Stepper } from '../shared/stepper';
 import { JointHighlight } from '../shared/use-joint-highlight';

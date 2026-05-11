@@ -115,3 +115,5 @@ class ACTConfig(Config):
     optimizer_lr: float = 1e-5
     optimizer_weight_decay: float = 1e-4
     optimizer_grad_clip_norm: float = 10
+
+    compile_model: bool = False

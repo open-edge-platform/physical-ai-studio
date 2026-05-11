@@ -17,9 +17,10 @@ import {
 import { ChevronLeft, Refresh } from '@geti-ui/ui/icons';
 
 import { $api } from '../../../api/client';
-import { SchemaRobot } from '../../../api/openapi-spec';
 import { useProjectId } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
+import { SchemaRobotInput } from '../robot-types';
+import { PermissionDeniedError } from '../setup-wizard/so101/diagnostics-step-error';
 import { useRobotForm, useSetRobotForm } from './provider';
 import { SubmitNewRobotButton } from './submit-new-robot-button';
 
@@ -80,11 +81,14 @@ const RefreshRobotsButton = () => {
     );
 };
 
-const IdentifyRobot = () => {
-    const robotForm = useRobotForm();
-    const identifyMutation = $api.useMutation('post', '/api/hardware/identify', {
+const useIdentifyMutation = () => {
+    return $api.useMutation('post', '/api/hardware/identify', {
         meta: { skipInvalidation: true },
     });
+};
+
+const IdentifyRobot = ({ identifyMutation }: { identifyMutation: ReturnType<typeof useIdentifyMutation> }) => {
+    const robotForm = useRobotForm();
 
     const isDisabled = identifyMutation.isPending || !robotForm.name || !robotForm.type || !robotForm.connection_string;
 
@@ -93,14 +97,16 @@ const IdentifyRobot = () => {
             return;
         }
 
-        const body: SchemaRobot = {
+        const body: SchemaRobotInput = {
             id: crypto.randomUUID(), // required by schema, not used by backend
             name: robotForm.name,
             type: robotForm.type,
-            connection_string: robotForm.connection_string ?? '',
-            serial_number: robotForm.serial_number ?? '',
+            payload: {
+                connection_string: robotForm.connection_string ?? '',
+                serial_number: robotForm.serial_number ?? '',
+            },
             active_calibration_id: null,
-        };
+        } as SchemaRobotInput;
 
         identifyMutation.mutate({ body });
     };
@@ -119,6 +125,8 @@ export const RobotForm = ({ heading = 'Add new robot', submitButton = <SubmitNew
 
     const robotForm = useRobotForm();
     const setRobotForm = useSetRobotForm();
+
+    const identifyMutation = useIdentifyMutation();
 
     // Since project won't save connection_string for Serial devices;
     // we need to populate this value; so the identify button works.
@@ -192,7 +200,7 @@ export const RobotForm = ({ heading = 'Add new robot', submitButton = <SubmitNew
                                         placeholder='192.168.1.2'
                                     />
                                     <Flex gap='size-100'>
-                                        <IdentifyRobot />
+                                        <IdentifyRobot identifyMutation={identifyMutation} />
                                     </Flex>
                                 </>
                             ) : null}
@@ -230,11 +238,14 @@ export const RobotForm = ({ heading = 'Add new robot', submitButton = <SubmitNew
 
                                     <Flex gap='size-100'>
                                         <RefreshRobotsButton />
-                                        <IdentifyRobot />
+                                        <IdentifyRobot identifyMutation={identifyMutation} />
                                     </Flex>
                                 </>
                             ) : null}
                         </Flex>
+                        {robotForm.type?.toLowerCase().startsWith('so101') && identifyMutation.isError && (
+                            <PermissionDeniedError port={robotForm.connection_string} />
+                        )}
                     </Flex>
                     <Divider orientation='horizontal' size='S' />
                     <View>{submitButton}</View>

@@ -1,6 +1,6 @@
 import { createContext, ReactNode, RefObject, useContext, useRef, useState } from 'react';
 
-import { useMutation, UseMutationResult } from '@tanstack/react-query';
+import { useMutation, UseMutationResult, useQueryClient } from '@tanstack/react-query';
 
 import { fetchClient } from '../../api/client';
 import { SchemaDatasetOutput, SchemaEnvironmentWithRelations, SchemaModel } from '../../api/openapi-spec';
@@ -81,6 +81,25 @@ type RobotControlContextValue = null | {
 
 const RobotControlContext = createContext<RobotControlContextValue>(null);
 
+const useRefreshEpisodes = (dataset_id?: string) => {
+    const queryClient = useQueryClient();
+
+    return () => {
+        if (dataset_id === undefined) {
+            return;
+        }
+        queryClient.invalidateQueries({
+            queryKey: [
+                'get',
+                '/api/dataset/{dataset_id}/episodes',
+                {
+                    params: { path: { dataset_id } },
+                },
+            ],
+        });
+    };
+};
+
 export const RobotControlProvider = (props: useRobotControlProps) => {
     const [state, setState] = useState<RobotControlState>(createRobotControlState());
     const observation = useRef<Observation | undefined>(undefined);
@@ -101,13 +120,18 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         }
     };
 
+    const invalidateEpisodesQuery = useRefreshEpisodes(dataset?.id);
     const { sendJsonMessageAndWait, readyState } = useWebSocketWithResponse(
         fetchClient.PATH('/api/record/robot_control/ws'),
         {
             shouldReconnect: () => true,
             onMessage: (event: WebSocketEventMap['message']) => onMessage(event),
             onError: console.error,
-            onClose: () => setState(createRobotControlState()),
+            onClose: () => {
+                invalidateEpisodesQuery();
+
+                setState(createRobotControlState());
+            },
             onOpen,
         }
     );

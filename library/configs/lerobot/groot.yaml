@@ -9,7 +9,7 @@
 #   - Significant GPU memory (>24GB recommended with bf16)
 #
 # Override parameters:
-#   physicalai fit --config configs/lerobot/groot.yaml --model.learning_rate 1e-5
+#   physicalai fit --config configs/lerobot/groot.yaml --model.optimizer_lr 1e-5
 
 model:
   class_path: physicalai.policies.lerobot.Groot

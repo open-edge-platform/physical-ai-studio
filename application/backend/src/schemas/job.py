@@ -1,3 +1,4 @@
+from enum import StrEnum
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -6,6 +7,18 @@ from pydantic import BaseModel, Field, field_serializer, model_validator
 
 from schemas.base_job import BaseJob, JobType
 from schemas.hardware import DeviceType
+
+
+class TrainingPrecision(StrEnum):
+    """Supported training precision modes.
+
+    Values align with Lightning's precision strings and can be passed
+    directly to ``Trainer(precision=...)``.
+    """
+
+    FP32 = "32-true"
+    BF16_MIXED = "bf16-mixed"
+    BF16_TRUE = "bf16-true"
 
 
 class JobList(BaseModel):
@@ -55,7 +68,8 @@ class TrainJobPayload(BaseModel):
     batch_size: int = Field(default=8, ge=1, le=256, description="Training batch size")
     num_workers: int | Literal["auto"] = Field(default="auto", description="DataLoader workers ('auto' or 0-16)")
     auto_scale_batch_size: bool = Field(
-        default=False, description="Run batch-size finder before training (power scaling)"
+        default=False,
+        description="Run batch-size finder before training (power scaling)",
     )
     base_model_id: UUID | None = Field(default=None, description="Model ID to resume training from")
     val_split: float = Field(
@@ -65,6 +79,11 @@ class TrainJobPayload(BaseModel):
         description="Fraction of episodes to hold out for eval-loss validation (0 = disabled)",
     )
     device: TrainingDevice | None = Field(default=None, description="Target training device (auto-detected if null)")
+    precision: TrainingPrecision = Field(
+        default=TrainingPrecision.BF16_MIXED,
+        description="Training precision ('32-true', 'bf16-mixed')",
+    )
+    compile_model: bool = Field(default=False, description="Enable torch.compile for supported policies")
 
     @field_serializer("project_id")
     def serialize_project_id(self, project_id: UUID, _info: Any) -> str:

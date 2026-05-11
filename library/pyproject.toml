@@ -36,22 +36,22 @@ dependencies = [
     "gym-pusht>=0.1.5",
     "pymunk>=6.6.0,<7.0.0",
     "onnx",
-    "onnxruntime",
-    "onnxscript",
     "onnxruntime_extensions",
     "openvino>=2026.0",
     "openvino_tokenizers>=2026.0",
+    "onnxscript",
     "jsonargparse[signatures]>=4.27.0", # This could be extra
     "pydantic",                         # This could be extra
+    "physicalai",
 ]
 
 [project.optional-dependencies]
 # PyTorch dependency groups
-cpu = ["torch<2.11", "torchvision<0.26.0"]
-cu128 = ["torch<2.11", "torchvision<0.26.0"]
+cpu = ["torch", "torchvision"]
+cu128 = ["torch", "torchvision"]
 xpu = [
-    "torch<2.11",
-    "torchvision<0.26.0",
+    "torch",
+    "torchvision",
     "pytorch-triton-xpu ; sys_platform == 'linux' or sys_platform == 'win32'",
 ]
 # Testing dependencies
@@ -74,6 +74,7 @@ pi0 = [
     "Pillow>=10.0.0,<13.0.0",
     "sentencepiece<=0.2.1",
 ]
+pi05 = ["physicalai-train[pi0]"]
 
 # NVIDIA GR00T-N1 foundation model
 # Requires ~24GB+ GPU memory for training, supports LoRA fine-tuning
@@ -107,12 +108,20 @@ all = [
     "physicalai-train[tests]",
     "physicalai-train[libero]",
     "physicalai-train[pi0]",
+    "physicalai-train[pi05]",
     "physicalai-train[groot]",
     "physicalai-train[smolvla]",
 ]
 
 [project.scripts]
 physicalai = "physicalai.cli.cli:cli"
+
+# Contribute Torch and ExecuTorch as inference backends to the registry
+# in `physicalai.inference.adapters`.  The target callable performs only
+# lightweight lazy registration — torch/executorch are imported only on
+# first use.
+[project.entry-points."physicalai.inference.adapters"]
+physicalai-train = "physicalai.inference.adapters._register:register"
 
 [project.urls]
 Homepage = "https://github.com/open-edge-platform/physical-ai-studio"
@@ -122,6 +131,7 @@ Repository = "https://github.com/open-edge-platform/physical-ai-studio.git"
 [dependency-groups]
 dev = [
     "mypy>=1.19.1",
+    "pyrefly>=0.18.0",
     "ruff>=0.14.14",
 ]
 
@@ -156,6 +166,7 @@ explicit = true
 
 # PyTorch sources configuration
 [tool.uv.sources]
+physicalai = { path = "../physicalai", editable = true }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },
@@ -177,6 +188,17 @@ pytorch-triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
 [tool.mypy]
 ignore_missing_imports = true
 show_error_codes = true
+
+[tool.pyrefly]
+search-path = ["src"]
+project-includes = ["src"]
+baseline = "pyrefly-baseline.json"
+project-excludes = [
+    ".venv/**",
+    "notebooks/**",
+    "src/physicalai/policies/pi05/pi_gemma.py",
+    "src/physicalai/policies/groot/components/backbone.py",
+]
 
 
 # ============================================================================ #

@@ -112,6 +112,8 @@ class SmolVLAConfig(Config):
 
     prefix_length: int = -1
 
+    # NOTE max_length is fixed for export compatibility (avoids dynamic input shapes).
+    # It should not impact performance since masking ignores unused tokens.
     pad_language_to: str = "max_length"  # "longest"
 
     num_expert_layers: int = -1
@@ -123,6 +125,8 @@ class SmolVLAConfig(Config):
     max_period: float = 4.0
 
     use_random_input_noise: bool = True
+
+    compile_model: bool = False
 
     def __post_init__(self) -> None:
         """Validate configuration parameters after initialization.

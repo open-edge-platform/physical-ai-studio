@@ -6,7 +6,7 @@ Docker container with support for CPU, Intel XPU, and NVIDIA CUDA hardware.
 
 ## Prerequisites
 
-- **Docker Engine** 24+ with **Docker Compose** v2
+- [**Docker Engine**](https://docs.docker.com/engine/install/ubuntu/) 24+ with **Docker Compose** v2
 - A supported hardware backend:
   - **CPU** — any x86_64 system (default)
   - **Intel XPU** — Intel discrete/integrated GPU with Level Zero drivers on the host
@@ -68,9 +68,15 @@ All configuration is done through the `.env` file. Copy `.env.example` to get st
 | `DIALOUT_GID`      | `dialout` (group name)        | Host GID for the `dialout` group (serial ports)          |
 | `PLUGDEV_GID`      | `plugdev` (group name)        | Host GID for the `plugdev` group (USB devices)           |
 | `RENDER_GID`       | `render` (group name)         | Host GID for the `render` group (Intel GPU, XPU only)    |
+| `HF_TOKEN`         | *(empty)*                     | Hugging Face access token for Hub-backed model downloads     |
 | `HTTP_PROXY`       | *(empty)*                     | HTTP proxy for builds and runtime                        |
 | `HTTPS_PROXY`      | *(empty)*                     | HTTPS proxy for builds and runtime                       |
 | `NO_PROXY`         | *(empty)*                     | Proxy exclusion list                                     |
+
+If you plan to train Hugging Face Hub-backed policies (for example, SmolVLA, Pi0,
+and others), set `HF_TOKEN` in `.env` to avoid unauthenticated Hub access warnings.
+See [Hugging Face Integration](../backend/docs/huggingface_integration.md) for token
+creation and setup details.
 
 ## Hardware Targets
 

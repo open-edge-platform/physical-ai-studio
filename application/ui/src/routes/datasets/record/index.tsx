@@ -1,6 +1,7 @@
 import { Suspense } from 'react';
 
 import {
+    Badge,
     Content,
     ContextualHelp,
     Flex,
@@ -42,7 +43,7 @@ const TotalRecordedEpisodes = () => {
     }
 
     return (
-        <Flex direction='column' justifyContent={'space-between'} gap='size-50'>
+        <Flex direction='row' justifyContent={'space-between'} gap='size-150'>
             <Flex alignItems={'center'} gap='size-50'>
                 <Text UNSAFE_className={classes.episodesText}>Total episodes recorded</Text>
                 <ContextualHelp variant='info'>
@@ -52,12 +53,14 @@ const TotalRecordedEpisodes = () => {
                     </Content>
                     <Footer>
                         <Link href='https://github.com/open-edge-platform/physical-ai-studio/issues/358'>
-                            Learn more about segments
+                            Learn more about recommended dataset sizes
                         </Link>
                     </Footer>
                 </ContextualHelp>
             </Flex>
-            <span className={classes.episodesCount}>{totalEpisodes}</span>
+            <div className={classes.episodesCount}>
+                <Badge variant='positive'>{totalEpisodes}</Badge>
+            </div>
         </Flex>
     );
 };

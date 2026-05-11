@@ -45,6 +45,10 @@ docker compose up
 Application runs at http://localhost:7860. See the [Docker README](./docker/README.md) for
 hardware configuration (Intel XPU, NVIDIA CUDA) and device setup.
 
+If you plan to train Hugging Face Hub-backed policies (for example, SmolVLA, Pi0,
+and others), configure `HF_TOKEN` to avoid unauthenticated Hub access warnings. See
+[Hugging Face Integration](./backend/docs/huggingface_integration.md).
+
 ### Native
 
 Or run the application natively in development mode.
@@ -60,6 +64,10 @@ uv sync --extra xpu # or `--extra cpu` or `--extra cuda`
 ```
 
 Backend runs at http://localhost:7860
+
+If you plan to train Hugging Face Hub-backed policies (for example, SmolVLA, Pi0,
+and others), configure `HF_TOKEN` in `backend/.env`. See
+[Hugging Face Integration](./backend/docs/huggingface_integration.md).
 
 #### Frontend
 

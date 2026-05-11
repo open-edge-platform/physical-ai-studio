@@ -25,7 +25,7 @@ Both distributions share the `physicalai` namespace via PEP 420 implicit namespa
 - Core APIs return plain `dict`/`np.ndarray` only
 - Studio is **not** a PyPI package — built via npm or Docker only
 - Training SDK **is** published to PyPI as `physicalai-train`
-- **Open-source constraint** — `physical-ai-studio` is public (Apache 2.0). Code cannot be *removed* from the OSS repo after community adoption. Modules needed in `physical-ai` must be **duplicated** (developed independently in both repos), not moved. The OSS repo must remain fully functional as a standalone training SDK.
+- **Open-source constraint** — `physical-ai-studio` is public (Apache 2.0). Code cannot be _removed_ from the OSS repo after community adoption. Modules needed in `physical-ai` must be **duplicated** (developed independently in both repos), not moved. The OSS repo must remain fully functional as a standalone training SDK.
 
 ---
 
@@ -347,4 +347,4 @@ pip install physical-ai-studio-sdk  # training
 
 ---
 
-*Last Updated: 2026-02-26*
+_Last Updated: 2026-02-26_

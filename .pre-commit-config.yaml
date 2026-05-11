@@ -27,6 +27,15 @@ repos:
       - id: check-case-conflict
 
   # ========================================================================== #
+  # SECURITY                                                                   #
+  # ========================================================================== #
+  # gitleaks detects secrets
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  # ========================================================================== #
   # DOCUMENTATION FORMATTING (root-level docs)                                 #
   # ========================================================================== #
   - repo: https://github.com/rbubley/mirrors-prettier

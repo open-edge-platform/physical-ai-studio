@@ -83,7 +83,7 @@ const useRobotJointsState = (): JointsState => {
 
     const { project_id, robot_id } = useRobotId();
     const { joints } = useJointState(project_id, robot_id);
-    useSynchronizeModelJoints(joints, urdfPathForType(robot.type));
+    useSynchronizeModelJoints(joints, robot.type);
 
     return joints.map((joint) => {
         const modelJoint = modelJoints.find(({ name }) => name === joint.name);

@@ -11,9 +11,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import torch
+from physicalai.inference.manifest import ComponentSpec
 
-from physicalai.data.observation import ACTION
+from physicalai.data.observation import ACTION, STATE
 from physicalai.export import ExportablePolicyMixin, ExportBackend
+from physicalai.export.backends import (
+    ExportParameters,
+    ONNXExportParameters,
+    OpenVINOExportParameters,
+    TorchExportParameters,
+)
 from physicalai.policies.base import Policy
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
@@ -115,6 +122,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         min_period: float = 4e-3,  # sensitivity range for the timestep used in sine-cosine positional encoding
         max_period: float = 4.0,
         use_random_input_noise: bool = False,
+        # Compilation
+        compile_model: bool = False,
         # Decoding
         num_steps: int = 10,
         # Attention utils
@@ -163,6 +172,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             min_period=min_period,
             max_period=max_period,
             use_random_input_noise=use_random_input_noise,
+            compile_model=compile_model,
             num_steps=num_steps,
             use_cache=use_cache,
             freeze_vision_encoder=freeze_vision_encoder,
@@ -205,17 +215,13 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         Called by both lazy (setup) and eager (checkpoint) paths.
 
         Args:
-            env_action_dim: Environment action dimension.
             dataset_stats: Dataset normalization statistics.
         """
-        from .preprocessor import make_smolvla_preprocessors  # noqa: PLC0415
-
         self.model = SmolVLAModel(
             dataset_stats,
             chunk_size=self.config.chunk_size,
             max_state_dim=self.config.max_state_dim,
             max_action_dim=self.config.max_action_dim,
-            resize_imgs_with_padding=self.config.resize_imgs_with_padding,
             adapt_to_pi_aloha=self.config.adapt_to_pi_aloha,
             num_steps=self.config.num_steps,
             use_cache=self.config.use_cache,
@@ -235,7 +241,26 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             max_period=self.config.max_period,
             use_random_input_noise=self.config.use_random_input_noise,
             tokenizer_max_length=self.config.tokenizer_max_length,
+            compile_model=self.config.compile_model,
         )
+
+        self._update_preprocessor_stats(dataset_stats)
+
+        self._dataset_stats = dataset_stats
+
+    def _update_preprocessor_stats(
+        self,
+        dataset_stats: dict[str, dict[str, list[float] | str | tuple]],
+    ) -> None:
+        """Rebuild pre- and postprocessors from dataset_stats.
+
+        Used on the fine-tuning path to replace pretrained normalization with
+        training-data statistics, and by _initialize_model on the lazy path.
+
+        Args:
+            dataset_stats: Dataset normalization statistics.
+        """
+        from .preprocessor import make_smolvla_preprocessors  # noqa: PLC0415
 
         self._preprocessor, self._postprocessor = make_smolvla_preprocessors(
             max_state_dim=self.config.max_state_dim,
@@ -260,9 +285,6 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         """
         del stage  # Unused argument
 
-        if self.model is not None:
-            return
-
         from physicalai.data.dataset import Dataset  # noqa: PLC0415
 
         datamodule = self.trainer.datamodule  # type: ignore[attr-defined]
@@ -273,6 +295,11 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             raise TypeError(msg)
 
         stats_dict = train_dataset.stats
+
+        if self.model is not None:
+            self._update_preprocessor_stats(stats_dict)
+            reformat_dataset_to_match_policy(self, datamodule)
+            return
 
         # Save to hparams for checkpoint
         self.hparams["dataset_stats"] = stats_dict
@@ -437,3 +464,71 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             list[str | ExportBackend]: A list of supported export backends.
         """
         return [ExportBackend.TORCH, ExportBackend.OPENVINO]
+
+    @property
+    def extra_export_args(self) -> dict[str, ExportParameters]:
+        """Additional export arguments for model conversion.
+
+        Returns:
+            dict[str, ExportParameters]: A dictionary mapping format names to their export parameters.
+
+        Raises:
+            ValueError: If dataset_stats is not available for export argument construction.
+        """
+        extra_args: dict[str, ExportParameters] = {}
+        if self._dataset_stats is None:
+            msg = (
+                "Dataset stats are required for export. Initialize the policy with dataset_stats"
+                " or train for at least one epoch to populate them."
+            )
+            raise ValueError(msg)
+
+        base_preproc_specs = [
+            ComponentSpec(type="smolvla_resize", image_resolution=self.config.resize_imgs_with_padding),
+            ComponentSpec(type="new_line"),
+            ComponentSpec(
+                type="normalize",
+                stats={STATE: self._dataset_stats[f"observation.{STATE}"]},
+                mode="mean_std",
+            ),
+        ]
+        postproc_specs = [
+            ComponentSpec(
+                type="denormalize",
+                stats={ACTION: self._dataset_stats[ACTION]},
+                mode="mean_std",
+            ),
+        ]
+        extra_args["onnx"] = ONNXExportParameters(
+            exporter_kwargs={
+                "output_names": [ACTION],
+            },
+            preprocessors_specs=[
+                *base_preproc_specs,
+                ComponentSpec(
+                    type="hf_tokenizer",
+                    tokenizer_name=self.config.vlm_model_name,
+                    revision="7b375e1b73b11138ff12fe22c8f2822d8fe03467",
+                    max_token_len=self.config.tokenizer_max_length,
+                ),
+            ],
+            postprocessors_specs=postproc_specs,
+            export_tokenizer=False,
+        )
+        extra_args["openvino"] = OpenVINOExportParameters(
+            outputs=[ACTION],
+            compress_to_fp16=False,
+            export_tokenizer=True,
+            exporter_kwargs={},
+            preprocessors_specs=[
+                *base_preproc_specs,
+                ComponentSpec(
+                    type="ov_tokenizer",
+                    artifact="tokenizer.xml",
+                ),
+            ],
+            postprocessors_specs=postproc_specs,
+        )
+        extra_args["torch"] = TorchExportParameters()
+
+        return extra_args

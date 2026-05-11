@@ -106,7 +106,6 @@ class TrainingWorker(BaseProcessWorker):
     async def _train_model(
         self, job: Job, model: Model, snapshot: Snapshot, payload: TrainJobPayload, base_model: Model | None = None
     ):
-        settings = get_settings()
         await JobService.update_job_status(job_id=job.id, status=JobStatus.RUNNING, message="Training started")
         dispatcher = TrainingTrackingDispatcher(
             job_id=job.id,
@@ -120,6 +119,8 @@ class TrainingWorker(BaseProcessWorker):
             device_type = payload.device.type if payload.device else None
             device_index = payload.device.index if payload.device else None
 
+            accelerator = get_torch_device(device_type)
+
             l_dm = LeRobotDataModule(
                 repo_id="snapshot",  # doesnt matter for loading the data.
                 root=snapshot.path,
@@ -129,9 +130,11 @@ class TrainingWorker(BaseProcessWorker):
             )
 
             if base_model is not None:
-                policy = load_policy(base_model)
+                policy = load_policy(base_model, compile_model=payload.compile_model)
             else:
-                policy = setup_policy(model)
+                policy = setup_policy(model, compile_model=payload.compile_model)
+
+            precision = str(payload.precision)
 
             checkpoint_callback = ModelCheckpoint(
                 dirpath=path,
@@ -142,32 +145,33 @@ class TrainingWorker(BaseProcessWorker):
             )
             csv_logger = CSVLogger(path.parent, name=path.stem)
 
-            trainer = Trainer(
-                logger=csv_logger,
-                callbacks=[
-                    checkpoint_callback,
-                    TrainingTrackingCallback(
-                        shutdown_event=self._stop_event,
-                        interrupt_event=self.interrupt_event,
-                        dispatcher=dispatcher,
-                    ),
-                    TrainingLogCallback(),
-                ],
-                accelerator=get_torch_device(device_type),
-                strategy=get_lightning_strategy(device_type),
-                devices=[device_index] if device_index is not None else "auto",
-                max_steps=payload.max_steps,
-                auto_scale_batch_size=payload.auto_scale_batch_size,
-                check_val_every_n_epoch=1,
-            )
+            def _create_trainer() -> Trainer:
+                return Trainer(
+                    logger=csv_logger,
+                    callbacks=[
+                        checkpoint_callback,
+                        TrainingTrackingCallback(
+                            shutdown_event=self._stop_event,
+                            interrupt_event=self.interrupt_event,
+                            dispatcher=dispatcher,
+                        ),
+                        TrainingLogCallback(),
+                    ],
+                    accelerator=accelerator,
+                    strategy=get_lightning_strategy(device_type),
+                    devices=[device_index] if device_index is not None else "auto",
+                    max_steps=payload.max_steps,
+                    auto_scale_batch_size=payload.auto_scale_batch_size,
+                    precision=precision,
+                    check_val_every_n_epoch=1,
+                )
+
+            trainer = _create_trainer()
 
             dispatcher.start()
             trainer.fit(model=policy, datamodule=l_dm)
 
-            for backend in settings.supported_backends:
-                export_dir = path / "exports" / backend
-                if isinstance(policy, ExportablePolicyMixin):
-                    policy.export(export_dir, backend=backend)
+            await self._export_policy(policy=policy, path=path, job=job)
 
             job = await JobService.update_job_status(
                 job_id=job.id, status=JobStatus.COMPLETED, message="Training finished"
@@ -183,3 +187,25 @@ class TrainingWorker(BaseProcessWorker):
         if dispatcher.is_alive():
             dispatcher.join(timeout=10)
         self.queue.put((EventType.JOB_UPDATE, job))
+
+    async def _export_policy(self, policy: object, path: Path, job: Job) -> None:
+        if not isinstance(policy, ExportablePolicyMixin):
+            logger.info("Skipping export: policy does not support export backends")
+            return
+
+        logger.info("Starting model export for trained policy")
+        for backend in policy.get_supported_export_backends():
+            backend_name = backend.value if hasattr(backend, "value") else str(backend)
+            try:
+                logger.info("Exporting model to {} format", backend_name)
+                await JobService.update_job_status(
+                    job_id=job.id,
+                    status=JobStatus.RUNNING,
+                    message=f"Exporting to {backend_name} format",
+                )
+                export_dir = path / "exports" / backend
+                policy.export(export_dir, backend=backend)
+                logger.info("Model export to {} completed", backend_name)
+            except Exception as e:
+                logger.error("Failed exporting model to {} format", backend_name)
+                logger.exception(e)

@@ -29,7 +29,7 @@ class Pi05Config(Config):
     Attributes:
         paligemma_variant: Gemma variant for the VLM backbone. Defaults to "gemma_2b".
         action_expert_variant: Gemma variant for the action expert. Defaults to "gemma_300m".
-        dtype: Precision for model weights. Options: "bfloat16", "float32". Defaults to "float32".
+        dtype: Precision for model weights. Options: "bfloat16", "float32". Defaults to "bfloat16".
         n_obs_steps: Number of observation steps to use. Defaults to 1.
         chunk_size: Number of action steps to predict. Defaults to 50.
         n_action_steps: Number of action steps to execute. Defaults to 50.
@@ -45,11 +45,16 @@ class Pi05Config(Config):
         image_resolution: Target image resolution (height, width). Defaults to (224, 224).
         empty_cameras: Number of empty camera slots to add. Defaults to 0.
         tokenizer_max_length: Maximum length for tokenizer output. Defaults to 200.
-        gradient_checkpointing: Enable gradient checkpointing for memory optimization. Defaults to False.
+        gradient_checkpointing: Enable gradient checkpointing for memory optimization. Defaults to True.
         compile_model: Whether to use torch.compile. Defaults to False.
         compile_mode: Torch compile mode. Defaults to "max-autotune".
         freeze_vision_encoder: Whether to freeze vision encoder during training. Defaults to False.
         train_expert_only: Whether to train only the action expert. Defaults to True.
+        normalization_mode: Normalization method for state/action features.
+            ``"QUANTILES"`` maps data to [-1, 1] using the 1st and 99th percentiles,
+            which is robust to outliers. ``"MEAN_STD"`` uses zero-mean unit-variance
+            normalization. Defaults to ``"QUANTILES"`` (matching lerobot pi0/pi05).
+
         optimizer_lr: Learning rate for the optimizer. Defaults to 2.5e-5.
         optimizer_betas: Beta coefficients for Adam optimizer. Defaults to (0.9, 0.95).
         optimizer_eps: Epsilon for optimizer numerical stability. Defaults to 1e-8.
@@ -58,7 +63,8 @@ class Pi05Config(Config):
         scheduler_warmup_steps: Number of warmup steps. Defaults to 1000.
         scheduler_decay_steps: Number of cosine decay steps. When ``None``,
             automatically set to the total training steps via
-            ``trainer.estimated_stepping_batches``. Defaults to None.
+            ``trainer.estimated_stepping_batches``. Defaults to 30000
+            (matching lerobot pi05).
         scheduler_decay_lr: Final learning rate after decay. Defaults to 2.5e-6.
         use_random_input_noise: Whether to use random noise as the initial input for the denoising process
             during inference. If False, zeros are used instead. Defaults to False.
@@ -66,7 +72,7 @@ class Pi05Config(Config):
 
     paligemma_variant: Literal["gemma_300m", "gemma_2b"] = "gemma_2b"
     action_expert_variant: Literal["gemma_300m", "gemma_2b"] = "gemma_300m"
-    dtype: Literal["bfloat16", "float32"] = "float32"
+    dtype: Literal["bfloat16", "float32"] = "bfloat16"
 
     n_obs_steps: int = 1
     chunk_size: int = 50
@@ -89,12 +95,14 @@ class Pi05Config(Config):
 
     tokenizer_max_length: int = 200
 
-    gradient_checkpointing: bool = False
+    gradient_checkpointing: bool = True
     compile_model: bool = False
-    compile_mode: str = "default"
+    compile_mode: str = "max-autotune"
 
     freeze_vision_encoder: bool = False
-    train_expert_only: bool = True
+    train_expert_only: bool = False
+
+    normalization_mode: Literal["MEAN_STD", "QUANTILES"] = "QUANTILES"
 
     optimizer_lr: float = 2.5e-5
     optimizer_betas: tuple[float, float] = (0.9, 0.95)
@@ -103,7 +111,7 @@ class Pi05Config(Config):
     optimizer_grad_clip_norm: float = 1.0
 
     scheduler_warmup_steps: int = 1_000
-    scheduler_decay_steps: int | None = None
+    scheduler_decay_steps: int | None = 30_000
     scheduler_decay_lr: float = 2.5e-6
 
     use_random_input_noise: bool = True

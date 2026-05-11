@@ -7,7 +7,7 @@ import classes from '../shared/setup-wizard.module.scss';
 
 const LEROBOT_DOCS_URL = 'https://huggingface.co/docs/lerobot/so101';
 
-const PermissionDeniedError = ({ port }: { port: string | null }) => {
+export const PermissionDeniedError = ({ port }: { port: string | null }) => {
     const portDisplay = port ?? '/dev/ttyACM*';
 
     return (

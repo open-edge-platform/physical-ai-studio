@@ -183,6 +183,8 @@ class _LeRobotDatasetAdapter(Dataset):
                         std=stats["std"].tolist(),
                         min=stats["min"].tolist(),
                         max=stats["max"].tolist(),
+                        q01=stats["q01"].tolist() if "q01" in stats else None,
+                        q99=stats["q99"].tolist() if "q99" in stats else None,
                     ),
                     shape=feature_shape,
                     name=feature_name,
@@ -207,6 +209,8 @@ class _LeRobotDatasetAdapter(Dataset):
                         std=stats["std"].tolist(),
                         min=stats["min"].tolist(),
                         max=stats["max"].tolist(),
+                        q01=stats["q01"].tolist() if "q01" in stats else None,
+                        q99=stats["q99"].tolist() if "q99" in stats else None,
                     ),
                     shape=dataset_meta.features[k]["shape"],
                     name=k,
@@ -226,14 +230,20 @@ class _LeRobotDatasetAdapter(Dataset):
 
     @property
     def delta_indices(self) -> dict[str, list[int]]:
-        """Expose delta_indices from the dataset."""
-        indices = self._lerobot_dataset.delta_indices
-        return indices if indices is not None else {}
+        """Expose delta_indices from the DatasetReader (lerobot >=0.5.1)."""
+        reader = getattr(self._lerobot_dataset, "reader", None)
+        if reader is not None:
+            return reader.delta_indices or {}
+        return getattr(self._lerobot_dataset, "delta_indices", None) or {}
 
     @delta_indices.setter
     def delta_indices(self, indices: dict[str, list[int]]) -> None:
-        """Allow setting delta_indices on the dataset."""
-        self._lerobot_dataset.delta_indices = indices
+        """Set delta_indices on DatasetReader so the training callback can inject them post-construction."""
+        reader = getattr(self._lerobot_dataset, "reader", None)
+        if reader is not None:
+            reader.delta_indices = indices
+        else:
+            self._lerobot_dataset.delta_indices = indices
 
 
 __all__ = ["_LeRobotDatasetAdapter"]

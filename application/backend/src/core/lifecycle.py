@@ -61,9 +61,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     robot_registry: RobotWorkerRegistry = app.state.robot_registry
     await robot_registry.shutdown_all()
 
-    model_registry: ModelWorkerRegistry = app.state.model_registry
-    await model_registry.shutdown_all()
-
     # We might want to shutdown the hardware manager too, though releasing workers should handle it.
     # But a global cleanup is safe.
     # Ideally RobotHardwareManager would have a shutdown_all method too.

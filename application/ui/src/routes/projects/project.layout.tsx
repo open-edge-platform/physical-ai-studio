@@ -1,8 +1,12 @@
 import { Suspense } from 'react';
 
-import { Flex, Grid, Item, Link, Loading, TabList, Tabs, View } from '@geti-ui/ui';
+import { Divider } from '@adobe/react-spectrum';
+import { ActionButton, DialogTrigger, Flex, Grid, Icon, Item, Link, Loading, TabList, Tabs, View } from '@geti-ui/ui';
+import { Manifest } from '@geti-ui/ui/icons';
 import { Outlet, useLocation } from 'react-router';
 
+import { JobStatus } from '../../features/jobs/footer/job-status';
+import { LogsDialog } from '../../features/logs/logs-dialog';
 import { ProjectsListPanel } from '../../features/projects/menu/projects-list-panel.component';
 import { useProjectId } from '../../features/projects/use-project';
 import { paths } from '../../router';
@@ -16,7 +20,7 @@ const Header = ({ project_id }: { project_id: string }) => {
             <Flex height='100%' alignItems={'center'} marginX='1rem' gap='size-200'>
                 <Link href='/' isQuiet variant='overBackground'>
                     <View marginEnd='size-200' maxWidth={'10ch'}>
-                        Physical AI Studio
+                        <span style={{ whiteSpace: 'nowrap' }}>Physical AI</span> <span>Studio</span>
                     </View>
                 </Link>
 
@@ -51,7 +55,7 @@ const Header = ({ project_id }: { project_id: string }) => {
                         </Flex>
                     </Item>
                 </TabList>
-                <Flex alignItems={'center'} height={'100%'} marginStart='auto'>
+                <Flex alignItems={'center'} height={'100%'} marginStart='auto' gap='size-100'>
                     <ProjectsListPanel />
                 </Flex>
             </Flex>
@@ -73,6 +77,41 @@ const getMainPageInProjectUrl = (pathname: string) => {
     }
 };
 
+const Footer = () => {
+    return (
+        <View
+            gridArea={'footer'}
+            borderTopColor={'gray-75'}
+            borderTopWidth={'thin'}
+            borderBottomColor={'gray-75'}
+            borderBottomWidth={'thin'}
+            paddingX='size-100'
+            paddingY='size-25'
+        >
+            <Flex alignItems={'center'} height='100%' gap='size-100'>
+                <View>
+                    <DialogTrigger type='fullscreen'>
+                        <ActionButton
+                            isQuiet
+                            UNSAFE_style={{
+                                paddingRight: 'var(--spectrum-global-dimension-size-100)',
+                            }}
+                        >
+                            <Icon>
+                                <Manifest />
+                            </Icon>
+                            Logs
+                        </ActionButton>
+                        {(close) => <LogsDialog close={close} />}
+                    </DialogTrigger>
+                </View>
+                <Divider orientation='vertical' size='S' />
+                <JobStatus />
+            </Flex>
+        </View>
+    );
+};
+
 export const ProjectLayout = () => {
     const { project_id } = useProjectId();
     const { pathname } = useLocation();
@@ -82,9 +121,11 @@ export const ProjectLayout = () => {
     return (
         <Tabs aria-label='Header navigation' selectedKey={pageName} UNSAFE_style={{ height: '100%', minHeight: 0 }}>
             <Grid
-                areas={['header', 'subheader', 'content']}
+                areas={['header', 'subheader', 'content', 'footer']}
                 UNSAFE_style={{
-                    gridTemplateRows: 'var(--spectrum-global-dimension-size-800, 4rem) min-content auto',
+                    gridTemplateRows:
+                        // eslint-disable-next-line max-len
+                        'var(--spectrum-global-dimension-size-800, 4rem) min-content auto var(--spectrum-global-dimension-size-400)',
                 }}
                 minHeight={0}
                 height={'100%'}
@@ -95,6 +136,7 @@ export const ProjectLayout = () => {
                         <Outlet />
                     </Suspense>
                 </View>
+                <Footer />
             </Grid>
         </Tabs>
     );

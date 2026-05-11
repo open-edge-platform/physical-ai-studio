@@ -1,12 +1,12 @@
 from physicalai.robot.so101 import SO101, SO101Calibration
+from physicalai.robot.trossen import WidowXAI
 
 from exceptions import ResourceNotFoundError, ResourceType
 from robots.robot_client import RobotClient
 from robots.so101.adapter import SO101Adapter
-from robots.widowxai.trossen_widowx_ai_follower import TrossenWidowXAIFollower
-from robots.widowxai.trossen_widowx_ai_leader import TrossenWidowXAILeader
+from robots.widowxai.adapter import WidowXAIAdapter
 from schemas.calibration import Calibration
-from schemas.robot import NetworkIpRobotConfig, Robot, RobotType
+from schemas.robot import Robot, RobotType
 from services.robot_calibration_service import RobotCalibrationService, find_robot_port
 from utils.serial_robot_tools import RobotConnectionManager
 
@@ -26,19 +26,11 @@ class RobotClientFactory:
     async def build(self, robot: Robot) -> RobotClient:
         match robot.type:
             case RobotType.TROSSEN_WIDOWXAI_FOLLOWER:
-                config = NetworkIpRobotConfig(
-                    type="follower",
-                    robot_type=RobotType.TROSSEN_WIDOWXAI_FOLLOWER,
-                    connection_string=robot.connection_string,
-                )
-                return TrossenWidowXAIFollower(config=config)
+                robot_driver = WidowXAI(ip=robot.payload.connection_string, role="follower")
+                return WidowXAIAdapter(robot=robot_driver, mode="follower")
             case RobotType.TROSSEN_WIDOWXAI_LEADER:
-                config = NetworkIpRobotConfig(
-                    type="leader",
-                    robot_type=RobotType.TROSSEN_WIDOWXAI_LEADER,
-                    connection_string=robot.connection_string,
-                )
-                return TrossenWidowXAILeader(config=config)
+                robot_driver = WidowXAI(ip=robot.payload.connection_string, role="leader")
+                return WidowXAIAdapter(robot=robot_driver, mode="leader")
             case RobotType.SO101_FOLLOWER:
                 return await self._build_so101(robot)
             case RobotType.SO101_LEADER:
@@ -51,9 +43,9 @@ class RobotClientFactory:
         calibration = await self._get_robot_calibration(robot)
 
         if calibration is None:
-            raise ResourceNotFoundError(ResourceType.ROBOT_CALIBRATION, robot.serial_number)
+            raise ResourceNotFoundError(ResourceType.ROBOT_CALIBRATION, robot.payload.serial_number)
         if port is None:
-            raise ResourceNotFoundError(ResourceType.ROBOT, robot.serial_number)
+            raise ResourceNotFoundError(ResourceType.ROBOT, robot.payload.serial_number)
 
         mode = "follower" if robot.type == RobotType.SO101_FOLLOWER else "teleoperator"
         role = "follower" if mode == "follower" else "leader"
@@ -77,7 +69,7 @@ class RobotClientFactory:
     async def _find_robot_port(self, robot: Robot) -> str:
         port = await find_robot_port(self.robot_manager, robot)
         if port is None:
-            raise ResourceNotFoundError(ResourceType.ROBOT, robot.serial_number)
+            raise ResourceNotFoundError(ResourceType.ROBOT, robot.payload.serial_number)
 
         return port
 

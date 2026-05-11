@@ -8,6 +8,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from loguru import logger
+from serial.serialutil import SerialException
 
 from exceptions import BaseException
 
@@ -130,6 +131,38 @@ async def pydantic_validation_exception_handler(_request: Request, exception: Ex
     )
 
 
+async def connection_error_exception_handler(_request: Request, exception: Exception) -> JSONResponse:
+    """Convert serial connection errors to a client-facing 4xx response."""
+    if not isinstance(exception, ConnectionError):
+        raise exception
+
+    cause = exception.__cause__ or exception.__context__
+    is_permission_denied = isinstance(cause, PermissionError) or (
+        isinstance(cause, SerialException) and getattr(cause, "errno", None) == 13
+    )
+
+    if is_permission_denied:
+        payload = {
+            "error_code": "serial_permission_denied",
+            "message": (
+                "Permission denied while opening the serial device. "
+                "Grant your user access to the serial port and try again."
+            ),
+            "http_status": http.HTTPStatus.FORBIDDEN.value,
+        }
+        status_code = status.HTTP_403_FORBIDDEN
+    else:
+        payload = {
+            "error_code": "serial_connection_error",
+            "message": "Could not connect to the robot on the requested serial port.",
+            "http_status": http.HTTPStatus.BAD_REQUEST.value,
+        }
+        status_code = status.HTTP_400_BAD_REQUEST
+
+    headers = {"Cache-Control": "no-cache"}
+    return JSONResponse(status_code=status_code, content=jsonable_encoder(payload), headers=headers)
+
+
 def register_application_exception_handlers(app: FastAPI) -> None:
     """
     Register application exception handlers
@@ -141,3 +174,4 @@ def register_application_exception_handlers(app: FastAPI) -> None:
 
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(pydantic.ValidationError, pydantic_validation_exception_handler)
+    app.add_exception_handler(ConnectionError, connection_error_exception_handler)

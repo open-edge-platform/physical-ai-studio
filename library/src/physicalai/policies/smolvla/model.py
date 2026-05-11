@@ -20,13 +20,6 @@ from torch import nn
 from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, TASK, FeatureType
 from physicalai.export import ExportableModelMixin
-from physicalai.export.backends import (
-    ExportParameters,
-    ONNXExportParameters,
-    OpenVINOExportParameters,
-    TorchExportParameters,
-)
-from physicalai.inference.manifest import ComponentSpec
 from physicalai.policies.base import Model
 
 if TYPE_CHECKING:
@@ -71,7 +64,6 @@ class SmolVLAModel(ExportableModelMixin, Model):
         chunk_size: int = 50,
         max_state_dim: int = 32,
         max_action_dim: int = 32,
-        resize_imgs_with_padding: tuple[int, int] | None = (512, 512),
         adapt_to_pi_aloha: bool = False,
         num_steps: int = 10,
         use_cache: bool = True,
@@ -91,6 +83,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
         max_period: float = 4.0,
         use_random_input_noise: bool = True,
         tokenizer_max_length: int = 48,
+        compile_model: bool = False,
     ) -> None:
         """Initialize the SmolVLA model.
 
@@ -101,7 +94,6 @@ class SmolVLAModel(ExportableModelMixin, Model):
             chunk_size: Size of action chunks for prediction.
             max_state_dim: Maximum dimension for state vectors; shorter vectors will be padded.
             max_action_dim: Maximum dimension for action vectors; shorter vectors will be padded.
-            resize_imgs_with_padding: Target size (height, width) for image preprocessing with padding.
             adapt_to_pi_aloha: Whether to convert joint and gripper values from standard Aloha space
                 to pi internal runtime space.
             num_steps: Number of decoding steps for flow matching.
@@ -123,15 +115,15 @@ class SmolVLAModel(ExportableModelMixin, Model):
             use_random_input_noise: Whether to use random noise as the initial input for the
                 denoising process during inference. If False, zeros are used instead.
             tokenizer_max_length: Maximum token length for the tokenizer. Default: 48.
+            compile_model: Whether to apply torch.compile to the model.
         """
         super().__init__()
         self._chunk_size = chunk_size
         self._max_state_dim = max_state_dim
         self._max_action_dim = max_action_dim
-        self._resize_imgs_with_padding = resize_imgs_with_padding
         self._adapt_to_pi_aloha = adapt_to_pi_aloha
-        self._tokenizer_max_length = tokenizer_max_length
         self._vlm_model_name = vlm_model_name
+        self._tokenizer_max_length = tokenizer_max_length
         self._model = VLAFlowMatching(
             chunk_size=chunk_size,
             max_state_dim=max_state_dim,
@@ -155,6 +147,12 @@ class SmolVLAModel(ExportableModelMixin, Model):
             use_random_input_noise=use_random_input_noise,
         )
         self._dataset_stats = dataset_stats
+
+        if compile_model:
+            torch.set_float32_matmul_precision("high")
+            compile_mode = "default"
+            self.predict_action_chunk = torch.compile(self.predict_action_chunk, mode=compile_mode)  # type: ignore[method-assign]
+            self.forward = torch.compile(self.forward, mode=compile_mode)  # type: ignore[method-assign]
 
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
         """Forward pass for the SmolVLA model.
@@ -306,13 +304,15 @@ class SmolVLAModel(ExportableModelMixin, Model):
 
         sample_input = {}
 
-        num_image_features = sum(1 for key in self._dataset_stats if "image" in key)
+        num_image_features = sum(
+            1 for key in self._dataset_stats if str(FeatureType.VISUAL) in self._dataset_stats[key]["type"]
+        )
 
         for feature_id in self._dataset_stats:
             if STATE in feature_id:
                 state_feature = self._dataset_stats[feature_id]
                 sample_input[STATE] = torch.randn(1, *cast("tuple", state_feature["shape"]), device=device)
-            elif "image" in feature_id:
+            elif str(FeatureType.VISUAL) in self._dataset_stats[feature_id]["type"]:
                 image_feature = self._dataset_stats[feature_id]
                 if num_image_features == 1:
                     sample_input[IMAGES] = torch.randn(1, *cast("tuple", image_feature["shape"]), device=device)
@@ -326,62 +326,6 @@ class SmolVLAModel(ExportableModelMixin, Model):
         sample_input[TASK] = ["sample_task"]
 
         return sample_input
-
-    @property
-    def extra_export_args(self) -> dict[str, ExportParameters]:
-        """Additional export arguments for model conversion.
-
-        This property provides extra configuration parameters needed when exporting
-        the model to different formats (ONNX, OpenVINO, and PyTorch).
-
-        Returns:
-            dict[str, ExportParameters]: A dictionary mapping format names to their export parameters.
-            Supported formats: 'onnx', 'openvino', 'torch'.
-
-        Example:
-            >>> model = SmolVLA(input_features, output_features)
-            >>> export_args = model.extra_export_args
-            >>> onnx_args = export_args['onnx']
-            >>> print(onnx_args.exporter_kwargs)
-            {'output_names': ['action']}
-        """
-        extra_args: dict[str, ExportParameters] = {}
-        preproc_specs = [
-            ComponentSpec(type="smolvla_resize", image_resolution=self._resize_imgs_with_padding),
-            ComponentSpec(type="new_line"),
-            ComponentSpec(
-                type="hf_tokenizer",
-                tokenizer_name=self._vlm_model_name,
-                revision="7b375e1b73b11138ff12fe22c8f2822d8fe03467",
-                max_token_len=self._tokenizer_max_length,
-            ),
-        ]
-        postproc_specs = [
-            ComponentSpec(
-                type="denormalize",
-                stats={ACTION: self._dataset_stats[ACTION]},
-                mode="mean_std",
-            ),
-        ]
-        extra_args["onnx"] = ONNXExportParameters(
-            exporter_kwargs={
-                "output_names": ["action"],
-            },
-            preprocessors_specs=preproc_specs,
-            postprocessors_specs=postproc_specs,
-            export_tokenizer=False,
-        )
-        extra_args["openvino"] = OpenVINOExportParameters(
-            outputs=["action"],
-            compress_to_fp16=False,
-            export_tokenizer=False,
-            exporter_kwargs={},
-            preprocessors_specs=preproc_specs,
-            postprocessors_specs=postproc_specs,
-        )
-        extra_args["torch"] = TorchExportParameters()
-
-        return extra_args
 
     @property
     def reward_delta_indices(self) -> None:
@@ -1350,15 +1294,16 @@ class _SmolVLMWithExpertModel(nn.Module):
         lm_expert_config.hidden_size = int(hidden_size * expert_width_multiplier)  # hidden_size // 2
         lm_expert_config.intermediate_size = _get_intermediate_size(int(hidden_size * expert_width_multiplier))
         lm_expert_config.num_hidden_layers = self.num_vlm_layers
-        if num_expert_layers > 0 and len(self.get_vlm_model().text_model.layers) % num_expert_layers == 0:
+        if num_expert_layers > 0:
+            if len(self.get_vlm_model().text_model.layers) % num_expert_layers != 0:
+                msg = (
+                    f"Number of layers in the VLM {len(self.get_vlm_model().text_model.layers)} are "
+                    f"not multiple of num_expert_layers {num_expert_layers}"
+                )
+                raise RuntimeError(msg)
             lm_expert_config.num_hidden_layers = num_expert_layers
-            msg = (
-                f"Number of layers in the VLM {len(self.get_vlm_model().text_model.layers)} are "
-                f"not multiple of num_expert_layers {num_expert_layers}"
-            )
-            raise RuntimeError(msg)
-        self.lm_expert = auto_model_cls.from_config(lm_expert_config)
 
+        self.lm_expert = auto_model_cls.from_config(lm_expert_config)
         self.num_expert_layers = len(self.lm_expert.layers)
         self.self_attn_every_n_layers = self_attn_every_n_layers
         if "cross" in attention_mode:

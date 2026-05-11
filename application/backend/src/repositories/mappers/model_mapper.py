@@ -6,7 +6,7 @@ from schemas import Model
 class ModelMapper(IBaseMapper):
     @staticmethod
     def to_schema(db_schema: Model) -> ModelDB:
-        return ModelDB(**db_schema.model_dump(mode="json"))
+        return ModelDB(**db_schema.model_dump(mode="json", exclude={"available_backends"}))
 
     @staticmethod
     def from_schema(model: ModelDB) -> Model:

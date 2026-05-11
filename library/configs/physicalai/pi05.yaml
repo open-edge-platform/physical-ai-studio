@@ -28,7 +28,7 @@ model:
 
     # Finetuning settings
     freeze_vision_encoder: false
-    train_expert_only: true
+    train_expert_only: false
 
     # Optimizer
     optimizer_lr: 2.5e-5
@@ -37,8 +37,7 @@ model:
 
     # Scheduler
     scheduler_warmup_steps: 1000
-    # null = auto (decay over entire training run)
-    scheduler_decay_steps: null
+    scheduler_decay_steps: 30000
     scheduler_decay_lr: 2.5e-6
 
 data:
