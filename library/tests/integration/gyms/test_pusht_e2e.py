@@ -84,9 +84,9 @@ class TestPushTGymEndToEnd:
 
         # Move to device and verify shapes/device
         obs = obs.to(device)
-        assert obs.images.shape == (1, 3, 96, 96)
+        assert obs.images["top"].shape == (1, 3, 96, 96)
         assert obs.state.shape == (1, 2)
-        assert str(obs.images.device).startswith(device)
+        assert str(obs.images["top"].device).startswith(device)
 
     def test_policy_inference_from_gym_observation(self, gym, device, act_policy):
         """Test that ACT policy can process gym observations and produce valid actions."""
@@ -120,7 +120,7 @@ class TestPushTGymEndToEnd:
                 action = act_policy.select_action(obs)
 
             # select_action returns single action [batch, action_dim]
-            action_to_execute = action.squeeze(0).cpu().numpy()
+            action_to_execute = action.squeeze(0)
 
             # Step environment
             obs, reward, terminated, truncated, info = gym.step(action_to_execute)
@@ -155,7 +155,7 @@ class TestPushTGymEndToEnd:
                 with torch.no_grad():
                     action = act_policy.select_action(obs)
                 # select_action returns single action [batch, action_dim]
-                action_to_execute = action.squeeze(0).cpu().numpy()
+                action_to_execute = action.squeeze(0)
                 obs, reward, terminated, truncated, info = gym.step(action_to_execute)
                 obs = obs.to(device)
 
