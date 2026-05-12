@@ -466,6 +466,8 @@ class NormalizationParameters:
     std: list[float] | float | None = None
     min: list[float] | float | None = None
     max: list[float] | float | None = None
+    q01: list[float] | float | None = None
+    q99: list[float] | float | None = None
 
 
 # Module-level constants for convenient dict access

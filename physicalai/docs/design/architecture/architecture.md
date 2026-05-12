@@ -95,17 +95,17 @@ pip install -e ./dreamzero/physicalai_plugin
   "version": "1.0",
   "robots": [
     {
-        "name": "main",
-        "type": "SO-100",
-        "state": { "shape": [6], "dtype": "float32" },
-        "action": { "shape": [6], "dtype": "float32" }
+      "name": "main",
+      "type": "SO-100",
+      "state": { "shape": [6], "dtype": "float32" },
+      "action": { "shape": [6], "dtype": "float32" }
     }
   ],
   "cameras": [
     {
-        "name": "wrist",
-        "shape": [3, 480, 640],
-        "dtype": "uint8"
+      "name": "wrist",
+      "shape": [3, 480, 640],
+      "dtype": "uint8"
     }
   ],
   "policy": {

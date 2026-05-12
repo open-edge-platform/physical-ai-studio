@@ -174,8 +174,8 @@ export const RobotsList = () => {
                                 <RobotListItem
                                     id={robot.id}
                                     name={robot.name}
-                                    connectionString={robot.connection_string}
-                                    serialNumber={robot.serial_number}
+                                    connectionString={robot.payload.connection_string}
+                                    serialNumber={robot.payload.serial_number}
                                     type={robot.type}
                                     status={onlineProjectRobots === undefined ? 'unknown' : status}
                                     isActive={isActive}

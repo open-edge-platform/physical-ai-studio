@@ -106,29 +106,3 @@ class TestModelWorkerRegistryGet:
         from uuid import uuid4
 
         assert registry.get(uuid4()) is None
-
-
-class TestModelWorkerRegistryShutdown:
-    def test_shutdown_all_terminates_workers(self, registry):
-        workers = list(registry._workers.values())
-        asyncio.run(registry.shutdown_all())
-        for worker in workers:
-            worker.terminate.assert_called_once()
-
-    def test_shutdown_all_clears_state(self, registry):
-        asyncio.run(registry.shutdown_all())
-        assert len(registry._workers) == 0
-        assert len(registry._idle) == 0
-        assert len(registry._busy) == 0
-
-    def test_context_manager_calls_shutdown_all(self, stop_event):
-        with patch("workers.model_worker_registry.ModelWorker", side_effect=lambda **_: _make_mock_worker()):
-
-            async def run():
-                async with ModelWorkerRegistry(max_workers=1, stop_event=stop_event) as reg:
-                    return list(reg._workers.values())
-
-            workers = asyncio.run(run())
-
-        for worker in workers:
-            worker.terminate.assert_called_once()

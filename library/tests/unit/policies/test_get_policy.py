@@ -55,9 +55,13 @@ class TestGetLeRobotPolicy:
             assert policy is not None
 
     def test_universal_wrapper(self):
-        """Test creating policies via universal wrapper."""
+        """Test creating policies via universal wrapper escape hatch (best-effort, warns)."""
         pytest.importorskip("lerobot")
-        policy = get_lerobot_policy("vqbet")
+        from physicalai.policies.lerobot import policy as policy_module  # noqa: PLC0415
+
+        policy_module._WARNED_UNSUPPORTED_NAMES.discard("vqbet")
+        with pytest.warns(UserWarning, match="not in physicalai's supported set"):
+            policy = get_lerobot_policy("vqbet")
         assert policy is not None
 
     def test_case_insensitive(self):
@@ -66,11 +70,17 @@ class TestGetLeRobotPolicy:
         policy = get_lerobot_policy("ACT")
         assert policy is not None
 
-    def test_unknown_policy_raises_error(self):
-        """Test unknown policy name raises ValueError."""
+    def test_unknown_policy_warns_and_defers_validation(self):
+        """Unknown policy names go through the escape hatch with a warning; LeRobot validates on eager construction."""
         pytest.importorskip("lerobot")
-        with pytest.raises(ValueError, match="Unknown LeRobot policy"):
-            get_lerobot_policy("nonexistent")
+        from physicalai.policies.lerobot import policy as policy_module  # noqa: PLC0415
+
+        policy_module._WARNED_UNSUPPORTED_NAMES.discard("nonexistent")
+        with pytest.warns(UserWarning, match="not in physicalai's supported set"):
+            policy = get_lerobot_policy("nonexistent")
+        assert policy is not None
+        assert policy.policy_name == "nonexistent"
+        assert policy._config is None
 
     def test_lerobot_not_installed(self, monkeypatch):
         """Test ImportError when lerobot not installed."""

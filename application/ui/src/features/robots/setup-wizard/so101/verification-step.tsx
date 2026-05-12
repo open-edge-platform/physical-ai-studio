@@ -6,11 +6,12 @@ import { degToRad } from 'three/src/math/MathUtils.js';
 import { v4 as uuidv4 } from 'uuid';
 
 import { $api } from '../../../../api/client';
-import { SchemaCalibration, SchemaRobot } from '../../../../api/openapi-spec';
+import { SchemaCalibration } from '../../../../api/openapi-spec';
 import { paths } from '../../../../router';
 import { useProjectId } from '../../../projects/use-project';
 import { useRobotForm } from '../../robot-form/provider';
 import { useRobotModels } from '../../robot-models-context';
+import { SchemaRobotInput } from '../../robot-types';
 import { InlineAlert } from '../shared/inline-alert';
 import { CalibrationResult } from './use-setup-websocket';
 import { useSetupActions, useSetupState } from './wizard-provider';
@@ -136,16 +137,18 @@ export const VerificationStep = () => {
         },
     });
 
-    const robotBody: SchemaRobot | null =
+    const robotBody: SchemaRobotInput | null =
         robotForm.type !== null && robotForm.name
-            ? {
+            ? ({
                   id: robotId,
                   name: robotForm.name,
                   type: robotForm.type,
-                  connection_string: robotForm.connection_string ?? '',
-                  serial_number: robotForm.serial_number ?? '',
+                  payload: {
+                      connection_string: robotForm.connection_string ?? '',
+                      serial_number: robotForm.serial_number ?? '',
+                  },
                   active_calibration_id: null,
-              }
+              } as SchemaRobotInput)
             : null;
 
     const hasCalibration = wsState.calibrationResult !== null;

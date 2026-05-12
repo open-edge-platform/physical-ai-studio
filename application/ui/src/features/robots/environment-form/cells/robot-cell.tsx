@@ -3,7 +3,7 @@ import { View } from '@geti-ui/ui';
 import { $api } from '../../../../api/client';
 import { useProjectId } from '../../../projects/use-project';
 import { RobotViewer } from '../../controller/robot-viewer';
-import { RobotModelsProvider, urdfPathForType } from '../../robot-models-context';
+import { RobotModelsProvider } from '../../robot-models-context';
 import { useJointState, useSynchronizeModelJoints } from '../../use-joint-state';
 
 const InnerCell = ({ robot_id }: { robot_id: string }) => {
@@ -14,7 +14,7 @@ const InnerCell = ({ robot_id }: { robot_id: string }) => {
     });
 
     const { joints } = useJointState(project_id, robot_id);
-    useSynchronizeModelJoints(joints, urdfPathForType(robot.type));
+    useSynchronizeModelJoints(joints, robot.type);
 
     return (
         <View minWidth='size-4000' minHeight='size-4000' width='100%' height='100%' backgroundColor={'gray-600'}>

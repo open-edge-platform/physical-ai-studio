@@ -48,17 +48,12 @@ class TestPushTGym(BaseTestGym):
         assert isinstance(obs, Observation)
         assert obs.images is not None
         assert obs.state is not None
-        # PushT uses single camera, so images should be a direct tensor
-        assert hasattr(obs.images, "shape")  # Should be tensor, not dict
-        assert obs.images.shape == (
-            1,
-            3,
-            480,
-            640,
-        )  # Batched, CHW  # type: ignore[attr-defined]
+        assert isinstance(obs.images, dict)
+        assert "top" in obs.images
+        assert obs.images["top"].shape == (1, 3, 480, 640)  # Batched, CHW
         assert obs.state.shape == (1, 2)  # Batched state  # type: ignore[attr-defined]
-        assert obs.images.dtype == torch.float32  # type: ignore[attr-defined]
-        assert torch.max(obs.images) <= 1.0  # type: ignore[attr-defined]
+        assert obs.images["top"].dtype == torch.float32
+        assert torch.max(obs.images["top"]) <= 1.0
 
     def test_to_observation_delegates_to_static_method(self):
         """Test that instance method delegates to static method."""
@@ -73,7 +68,7 @@ class TestPushTGym(BaseTestGym):
 
         assert isinstance(static_result, Observation)
         assert isinstance(instance_result, Observation)
-        assert static_result.images.shape == instance_result.images.shape  # type: ignore[attr-defined]
+        assert static_result.images["top"].shape == instance_result.images["top"].shape  # type: ignore[attr-defined]
         assert static_result.state.shape == instance_result.state.shape  # type: ignore[attr-defined]
 
 def test_state_only_obs():
@@ -89,5 +84,6 @@ def test_pixels_only_obs():
     raw_obs = {"pixels": np.random.rand(1,32,32,3).astype(np.float32)}
     obs = PushTGym.convert_raw_to_observation(raw_obs)
 
-    assert obs.images.shape == (1,3,32,32)
+    assert isinstance(obs.images, dict)
+    assert obs.images["top"].shape == (1, 3, 32, 32)
     assert obs.state is None

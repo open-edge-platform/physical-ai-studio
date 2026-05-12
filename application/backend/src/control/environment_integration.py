@@ -110,6 +110,12 @@ class EnvironmentIntegration:
         if self.leader is not None:
             actions = (await self.leader.read_state())["state"]
             await self.set_joints_state(actions, goal_time)
+
+            if self.follower and self.leader:
+                forces = await self.follower.read_forces()
+                if forces and forces["state"] is not None:
+                    await self.leader.set_forces(forces["state"])
+
             return actions
         return None
 
@@ -126,7 +132,7 @@ class EnvironmentIntegration:
 
     def format_model_input_observation(self, raw_observation: dict, task: str | None = None) -> Observation:  # noqa: ARG002
         observation = self._remap_camera_observations(raw_observation)
-        state = np.array([[value for key, value in observation.items() if key in self.action_keys]], dtype=np.float32)
+        state = np.array([[observation[k] for k in self.action_keys]], dtype=np.float32)
         images: dict = {}
         for camera in self.environment.cameras:
             camera_name = camera.name.lower()

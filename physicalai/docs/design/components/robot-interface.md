@@ -409,50 +409,36 @@ The policy manifest declares expected hardware in dedicated `robot` and `camera`
 
 ```json
 {
-    "format": "policy_package",
-    "version": "1.0",
-    "robots": [
-        {
-            "name": "main",
-            "type": "SO-100",
-            "state": {
-                "shape": [6],
-                "dtype": "float32",
-                "joint_order": [
-                    "shoulder_pan",
-                    "shoulder_lift",
-                    "elbow_flex",
-                    "wrist_flex",
-                    "wrist_roll",
-                    "gripper"
-                ]
-            },
-            "action": {
-                "shape": [6],
-                "dtype": "float32",
-                "joint_order": [
-                    "shoulder_pan",
-                    "shoulder_lift",
-                    "elbow_flex",
-                    "wrist_flex",
-                    "wrist_roll",
-                    "gripper"
-                ]
-            }
-        }
-    ],
-    "cameras": [
-        {
-            "name": "wrist",
-            "shape": [3, 480, 640],
-            "dtype": "uint8"
-        },
-        {
-            "name": "top",
-            "shape": [3, 480, 640],
-            "dtype": "uint8"
-        }
-    ]
+  "format": "policy_package",
+  "version": "1.0",
+  "robots": [
+    {
+      "name": "main",
+      "type": "SO-100",
+      "state": {
+        "shape": [6],
+        "dtype": "float32",
+        "joint_order": ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"]
+      },
+      "action": {
+        "shape": [6],
+        "dtype": "float32",
+        "joint_order": ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"]
+      }
+    }
+  ],
+  "cameras": [
+    {
+      "name": "wrist",
+      "shape": [3, 480, 640],
+      "dtype": "uint8"
+    },
+    {
+      "name": "top",
+      "shape": [3, 480, 640],
+      "dtype": "uint8"
+    }
+  ]
 }
 ```
 
@@ -701,13 +687,13 @@ pip install physicalai[robots]            # All supported robots
 
 | Component        | Library | Application |
 | ---------------- | :-----: | :---------: |
-| Robot Protocol   | ✓       | imports     |
-| Concrete robots  | ✓       | imports     |
-| Inference loop   | ✓       | uses        |
-| Teleoperation    |         | ✓           |
-| Recording/upload |         | ✓           |
-| Calibration      |         | ✓           |
-| GUI              |         | ✓           |
+| Robot Protocol   |    ✓    |   imports   |
+| Concrete robots  |    ✓    |   imports   |
+| Inference loop   |    ✓    |    uses     |
+| Teleoperation    |         |      ✓      |
+| Recording/upload |         |      ✓      |
+| Calibration      |         |      ✓      |
+| GUI              |         |      ✓      |
 
 The library provides building blocks. The application provides workflows. Both share the same robot interface.
 

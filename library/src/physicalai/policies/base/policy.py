@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections import deque
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any
 
 import lightning as L  # noqa: N812
 
@@ -20,34 +20,6 @@ if TYPE_CHECKING:
     from physicalai.gyms import Gym
 
     from .model import Model
-
-
-@runtime_checkable
-class PolicyLike(Protocol):
-    """Protocol for policy-like objects that can be used for inference.
-
-    This protocol defines the minimal interface required for evaluation
-    and benchmarking. Both `Policy` (PyTorch/Lightning) and `InferenceModel`
-    (exported models) satisfy this protocol.
-
-    The protocol enables using exported models for benchmarking production
-    performance without requiring the full PyTorch training infrastructure.
-    """
-
-    def select_action(self, observation: Observation) -> torch.Tensor:
-        """Select action for given observation.
-
-        Args:
-            observation: Robot observation (images, states, etc.)
-
-        Returns:
-            Action tensor to execute.
-        """
-        ...
-
-    def reset(self) -> None:
-        """Reset policy state for new episode."""
-        ...
 
 
 class Policy(L.LightningModule, ABC):

@@ -1,7 +1,7 @@
 import { useParams } from 'react-router';
 
 import { $api } from '../../api/client';
-import { SchemaRobot } from '../../api/openapi-spec';
+import { SchemaRobot } from './robot-types';
 
 export function useRobotId() {
     const { robot_id, project_id } = useParams<{ robot_id: string; project_id: string }>();

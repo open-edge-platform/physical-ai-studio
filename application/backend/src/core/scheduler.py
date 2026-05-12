@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import psutil
 from loguru import logger
 
+from workers.dataset_import_worker import DatasetImportWorker
 from workers.training_worker import TrainingWorker
 
 if TYPE_CHECKING:
@@ -33,7 +34,15 @@ class Scheduler:
         )
         training_proc.daemon = False
         training_proc.start()
-        self.processes.extend([training_proc])
+
+        dataset_import_proc = DatasetImportWorker(
+            stop_event=self.mp_stop_event,
+            event_queue=self.event_queue,
+        )
+        dataset_import_proc.daemon = False
+        dataset_import_proc.start()
+
+        self.processes.extend([training_proc, dataset_import_proc])
 
     def shutdown(self) -> None:
         """Shutdown all processes gracefully"""

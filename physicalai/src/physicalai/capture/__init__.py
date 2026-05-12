@@ -49,6 +49,7 @@ __all__ = [  # noqa: F822, RUF022
     # Concrete cameras (lazy-loaded)
     "IPCamera",
     "RealSenseCamera",
+    "BaslerCamera",
     "UVCCamera",
 ]
 
@@ -82,6 +83,11 @@ def __getattr__(name: CameraType) -> object:
         from physicalai.capture.cameras.realsense import RealSenseCamera  # noqa: PLC0415
 
         return RealSenseCamera
+
+    if name in {CameraType.BASLER, "BaslerCamera"}:
+        from physicalai.capture.cameras.basler import BaslerCamera  # noqa: PLC0415
+
+        return BaslerCamera
 
     msg = f"module {__name__!r} has no attribute {name!r}"
     raise AttributeError(msg)

@@ -155,6 +155,8 @@ class Groot(ExportablePolicyMixin, Policy):
         grad_clip_norm: float = 1.0,
         # Precision
         use_bf16: bool = True,
+        # Compilation
+        compile_model: bool = False,
         # Eager initialization (optional - for checkpoint loading and standalone use)
         env_action_dim: int | None = None,
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
@@ -190,6 +192,7 @@ class Groot(ExportablePolicyMixin, Policy):
             warmup_ratio=warmup_ratio,
             grad_clip_norm=grad_clip_norm,
             use_bf16=use_bf16,
+            compile_model=compile_model,
         )
 
         # Save config as hyperparameters for checkpoint restoration
@@ -243,6 +246,7 @@ class Groot(ExportablePolicyMixin, Policy):
             chunk_size=config.chunk_size,
             max_action_dim=config.max_action_dim,
             revision=config.revision,
+            compile_model=config.compile_model,
         )
 
         # Create first-party preprocessor/postprocessor

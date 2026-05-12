@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from api.dependencies import get_robot_calibration_service, get_robot_service
 from main import app
 from schemas.calibration import Calibration
-from schemas.robot import Robot
+from schemas.robot import Robot, SO101Robot, SO101RobotPayload
 
 # ---------------------------------------------------------------------------
 # Minimal service stubs
@@ -61,12 +61,11 @@ def test_set_active_calibration_id_returns_updated_robot() -> None:
     calibration_id = str(uuid4())
 
     robot_stub = _StubRobotService()
-    robot_stub._robots[robot_id] = Robot(
+    robot_stub._robots[robot_id] = SO101Robot(
         id=robot_id,
         name="Test Robot",
-        connection_string="",
-        serial_number="SN-TEST-001",
         type="SO101_Follower",
+        payload=SO101RobotPayload(connection_string="", serial_number="SN-TEST-001"),
         active_calibration_id=None,
     )
 
@@ -80,9 +79,11 @@ def test_set_active_calibration_id_returns_updated_robot() -> None:
             json={
                 "id": str(robot_id),
                 "name": "Test Robot",
-                "connection_string": "",
-                "serial_number": "SN-TEST-001",
                 "type": "SO101_Follower",
+                "payload": {
+                    "connection_string": "",
+                    "serial_number": "SN-TEST-001",
+                },
                 "active_calibration_id": calibration_id,
             },
         )
@@ -102,12 +103,11 @@ def test_update_robot_without_calibration_returns_null_active_calibration() -> N
     robot_id = uuid4()
 
     robot_stub = _StubRobotService()
-    robot_stub._robots[robot_id] = Robot(
+    robot_stub._robots[robot_id] = SO101Robot(
         id=robot_id,
         name="Robot Without Calibration",
-        connection_string="",
-        serial_number="SN-TEST-002",
         type="SO101_Follower",
+        payload=SO101RobotPayload(connection_string="", serial_number="SN-TEST-002"),
         active_calibration_id=None,
     )
 
@@ -121,9 +121,11 @@ def test_update_robot_without_calibration_returns_null_active_calibration() -> N
             json={
                 "id": str(robot_id),
                 "name": "Renamed Robot",
-                "connection_string": "",
-                "serial_number": "SN-TEST-002",
                 "type": "SO101_Follower",
+                "payload": {
+                    "connection_string": "",
+                    "serial_number": "SN-TEST-002",
+                },
                 "active_calibration_id": None,
             },
         )

@@ -3,8 +3,6 @@
 import asyncio
 import time
 from multiprocessing.synchronize import Event as EventClass
-from types import TracebackType
-from typing import Self
 from uuid import UUID, uuid4
 
 from loguru import logger
@@ -103,35 +101,3 @@ class ModelWorkerRegistry:
 
     def get(self, worker_id: UUID) -> ModelWorker | None:
         return self._workers.get(worker_id)
-
-    async def shutdown_all(self) -> None:
-        """Terminate all worker processes."""
-        logger.info(f"Shutting down {len(self._workers)} model workers...")
-
-        async with self._lock:
-            workers = list(self._workers.values())
-            self._workers.clear()
-            self._idle.clear()
-            self._busy.clear()
-
-        def _terminate_all() -> None:
-            for worker in workers:
-                try:
-                    worker.terminate()
-                    worker.join(timeout=self._shutdown_timeout_s)
-                except Exception as e:
-                    logger.error(f"Error terminating model worker: {e}")
-
-        await asyncio.to_thread(_terminate_all)
-        logger.info("All model workers shut down")
-
-    async def __aenter__(self) -> Self:
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
-    ) -> None:
-        await self.shutdown_all()

@@ -6,7 +6,7 @@ PyTorch Lightning wrappers for
 ## Installation
 
 ```bash
-# Base installation (ACT, Diffusion, VQBeT, TDMPC, SAC)
+# Base installation (ACT, Diffusion, SmolVLA, PI0/PI05/PI0Fast, XVLA)
 pip install physicalai-train
 
 # With Groot (NVIDIA GR00T-N1) support
@@ -32,40 +32,42 @@ trainer.fit(policy, datamodule)
 
 ## Available Policies
 
-### Explicit Wrappers (Full IDE Support)
+### Named Wrappers (Full IDE Support)
 
-- **ACT** - Action Chunking Transformer
-- **Diffusion** - Diffusion Policy
-- **Groot** - NVIDIA GR00T-N1 Foundation Model
+One-line factories for the curated set of LeRobot policies physicalai
+explicitly supports: `ACT`, `Diffusion`, `Groot`, `PI0`, `PI05`, `PI0Fast`,
+`SmolVLA`, `XVLA`. Wrapper-vs-native equivalence is verified end-to-end for
+the validated subset (see _Supported Policies_ below).
 
-### Universal Wrapper
+### Universal Wrapper (Escape Hatch)
 
-- **LeRobotPolicy** - All LeRobot policies via `policy_name` parameter
-- **Convenience Aliases**: `VQBeT()`, `TDMPC()`, `SAC()`, `PI0()`,
-  `PI05()`, `PI0Fast()`, `SmolVLA()`
+`LeRobotPolicy(policy_name=...)` accepts any LeRobot-registered policy name
+(e.g. `"vqbet"`, `"tdmpc"`, `"sac"`). Behavior is best-effort and not covered
+by the equivalence test suite; a one-time `UserWarning` is emitted for any
+name outside the named set.
 
 ### Supported Policies
 
-| Policy      | Type      | Description                          |
-| ----------- | --------- | ------------------------------------ |
-| `act`       | Explicit  | Action Chunking Transformer          |
-| `diffusion` | Explicit  | Diffusion Policy                     |
-| `groot`     | Explicit  | NVIDIA GR00T-N1 VLA Foundation Model |
-| `vqbet`     | Universal | VQ-BeT (VQ-VAE Behavior Transformer) |
-| `tdmpc`     | Universal | TD-MPC (Temporal Difference MPC)     |
-| `sac`       | Universal | Soft Actor-Critic                    |
-| `pi0`       | Universal | Vision-Language Policy               |
-| `pi05`      | Universal | PI0.5 (Improved PI0)                 |
-| `pi0fast`   | Universal | Fast Inference PI0                   |
-| `smolvla`   | Universal | Small Vision-Language-Action         |
+| Policy        | Equivalence             | Description                             |
+| ------------- | ----------------------- | --------------------------------------- |
+| `act`         | Validated               | Action Chunking Transformer             |
+| `diffusion`   | Validated               | Diffusion Policy                        |
+| `smolvla`     | Validated               | Small Vision-Language-Action            |
+| `pi0`         | Validated               | Vision-Language Policy                  |
+| `pi05`        | Validated               | PI0.5 (Improved PI0)                    |
+| `pi0_fast`    | Validated               | Fast Inference PI0                      |
+| `groot`       | Named, xfail (upstream) | NVIDIA GR00T-N1 VLA Foundation Model    |
+| `xvla`        | Named, xfail (upstream) | XVLA Vision-Language-Action             |
+| anything else | Best-effort (warns)     | Routed via `LeRobotPolicy` escape hatch |
 
 ## Features
 
-- ✅ Verified output equivalence with native LeRobot
+- ✅ Verified output equivalence with native LeRobot for the validated subset
 - ✅ Full PyTorch Lightning integration
 - ✅ Thin wrapper pattern (no reimplementation)
 - ✅ All LeRobot features accessible via `policy.lerobot_policy`
 - ✅ Support for VLA (Vision-Language-Action) models
+- ✅ Universal escape hatch for non-named LeRobot policies (best-effort)
 
 ## Examples
 
@@ -101,10 +103,13 @@ trainer.fit(policy, datamodule)
 ```python
 from physicalai.policies.lerobot import LeRobotPolicy
 
-# Use any LeRobot policy by name
+# Use any LeRobot policy by name. The equivalence guarantee applies only to
+# the validated subset (see Supported Policies above); all other names —
+# including named-but-unvalidated wrappers and arbitrary policies like
+# "vqbet" — are best-effort and emit a one-time UserWarning.
 policy = LeRobotPolicy(
     policy_name="vqbet",
-    learning_rate=1e-4,
+    optimizer_lr=1e-4,
 )
 ```
 

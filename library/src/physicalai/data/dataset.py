@@ -76,7 +76,7 @@ class Dataset(TorchDataset, ABC):
                 norm = feature.normalization_data
                 stats_dict[f"observation.{name}"] = {
                     stat: list(val) if hasattr(val, "__iter__") else [val]
-                    for stat in ("mean", "std", "min", "max")
+                    for stat in ("mean", "std", "min", "max", "q01", "q99")
                     if (val := getattr(norm, stat, None)) is not None
                 }
                 stats_dict[f"observation.{name}"].update(
@@ -92,7 +92,7 @@ class Dataset(TorchDataset, ABC):
                 norm = feature.normalization_data
                 stats_dict[name] = {
                     stat: list(val) if hasattr(val, "__iter__") else [val]
-                    for stat in ("mean", "std", "min", "max")
+                    for stat in ("mean", "std", "min", "max", "q01", "q99")
                     if (val := getattr(norm, stat, None)) is not None
                 }
                 stats_dict[name].update(

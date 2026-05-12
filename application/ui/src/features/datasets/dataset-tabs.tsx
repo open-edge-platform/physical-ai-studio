@@ -1,12 +1,13 @@
 import { Suspense, useState } from 'react';
 
 import { ManagedTab, type ManagedTabAction } from '@geti-ui/blocks';
-import { ActionButton, DialogContainer, Flex, Icon, Item, TabList } from '@geti-ui/ui';
+import { ActionButton, DialogContainer, Flex, Icon, Item, Menu, MenuTrigger, TabList } from '@geti-ui/ui';
 import { Add } from '@geti-ui/ui/icons';
 import { useNavigate } from 'react-router';
 
 import { SchemaDatasetOutput } from '../../api/openapi-spec';
 import { paths } from '../../router';
+import { ImportDatasetDialog } from '../../routes/datasets/import/dataset-import-button';
 import { NewDatasetForm } from '../../routes/datasets/new-dataset.component';
 import { useProjectId } from '../projects/use-project';
 import { DeleteDatasetDialog } from './delete-dataset-dialog';
@@ -30,7 +31,7 @@ export const DatasetTabs = ({
 }) => {
     const { project_id } = useProjectId();
 
-    const [action, setAction] = useState<null | 'rename' | 'delete' | 'export' | 'add'>(null);
+    const [action, setAction] = useState<null | 'rename' | 'delete' | 'export' | 'add' | 'import'>(null);
     const selectedDataset = datasets.find((dataset) => dataset.id === selectedDatasetId);
 
     const onItemAction = (itemAction: string) => {
@@ -97,17 +98,32 @@ export const DatasetTabs = ({
                     borderBottom: 'var(--spectrum-alias-border-size-thick) solid var(--spectrum-global-color-gray-300)',
                 }}
             >
-                <ActionButton
-                    isQuiet
-                    aria-label='Add dataset'
-                    onPress={() => {
-                        setAction('add');
-                    }}
-                >
-                    <Icon>
-                        <Add />
-                    </Icon>
-                </ActionButton>
+                <MenuTrigger>
+                    <ActionButton
+                        isQuiet
+                        aria-label='Add dataset'
+                        onPress={() => {
+                            setAction('add');
+                        }}
+                    >
+                        <Icon>
+                            <Add />
+                        </Icon>
+                    </ActionButton>
+                    <Menu
+                        onAction={(key) => {
+                            if (key === 'add') {
+                                setAction('add');
+                            }
+                            if (key === 'import') {
+                                setAction('import');
+                            }
+                        }}
+                    >
+                        <Item key='add'>Add</Item>
+                        <Item key='import'>Import</Item>
+                    </Menu>
+                </MenuTrigger>
             </div>
 
             <DialogContainer
@@ -115,6 +131,7 @@ export const DatasetTabs = ({
                     setAction(null);
                 }}
             >
+                {action === 'import' && <ImportDatasetDialog onClose={() => setAction(null)} />}
                 {action === 'add' && (
                     <Suspense>
                         <NewDatasetForm project_id={project_id} onDone={onAddDataset} />

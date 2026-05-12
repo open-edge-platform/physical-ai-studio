@@ -70,7 +70,6 @@ x-common: &common
     volumes:
       - physical-ai-studio-data:/app/data
       - physical-ai-studio-storage:/app/storage
-      - ${HOME}/.cache/huggingface/lerobot/calibration:/home/appuser/.cache/huggingface/lerobot/calibration:ro
 
     # --- Option 1: Privileged mode (active by default)
     # Grants full access to all host devices. Easiest setup, but the
@@ -134,6 +133,7 @@ services:
     environment:
       - SYCL_CACHE_PERSISTENT=${SYCL_CACHE_PERSISTENT:-1}
       - SYCL_CACHE_DIR=${SYCL_CACHE_DIR:-'/app/storage/.sycl-cache'}
+      - SYCL_UR_USE_LEVEL_ZERO_V2=${SYCL_UR_USE_LEVEL_ZERO_V2:-0}
     # --- Non-privileged XPU additions
     # When running in non-privileged mode, add these to grant
     # Intel GPU access via /dev/dri/renderD* nodes:

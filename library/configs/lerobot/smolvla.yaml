@@ -1,11 +1,11 @@
-# SmolVLAxAI Policy Training Configuration
+# SmolVLA Policy Training Configuration
 # Train SmolVLA using LeRobot's implementation
 #
 # Usage:
-#   physicalai fit --config configs/lerobot/smolvla_xai.yaml
+#   physicalai fit --config configs/lerobot/smolvla.yaml
 #
 # Override parameters:
-#   physicalai fit --config configs/lerobot/smolvla_xai.yaml --model.max_state_dim 64
+#   physicalai fit --config configs/lerobot/smolvla.yaml --model.max_state_dim 64
 
 model:
   class_path: physicalai.policies.lerobot.SmolVLA
@@ -62,10 +62,6 @@ model:
     # Positional encoding
     min_period: 4e-3
     max_period: 4.0
-
-    # XAI
-    layer_idx: -1 # Which layer to display (null means average from all layers)
-    head_idx: null # Which head to display (null means average from all heads, -1 takes the max)
 
 data:
   class_path: physicalai.data.lerobot.LeRobotDataModule
