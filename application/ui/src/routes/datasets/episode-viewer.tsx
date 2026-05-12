@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+
 import { Disclosure, DisclosurePanel, DisclosureTitle, Divider, Flex, Text } from '@geti-ui/ui';
 
 import { $api } from '../../api/client';
@@ -9,6 +11,7 @@ import {
     EpisodeViewerProvider,
     useEpisodeViewer,
 } from '../../features/datasets/episodes/episode-viewer-provider.component';
+import { Player } from '../../features/datasets/episodes/use-player';
 import { useProjectId } from '../../features/projects/use-project';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 import { TimelineControls } from './timeline-controls';
@@ -20,6 +23,42 @@ interface EpisodeViewerProps {
     dataset: SchemaDatasetOutput;
 }
 
+interface LiveEpisodeChartProps {
+    episode: SchemaEpisode;
+    player: Player;
+}
+const LiveEpisodeChart = ({ episode, player }: LiveEpisodeChartProps) => {
+    const [time, setTime] = useState<number>(player.timeRef.current);
+
+    useEffect(() => {
+        setTime(player.timeRef.current);
+        if (player.isPlaying) {
+            const interval = setInterval(() => {
+                setTime(player.timeRef.current);
+            }, 1000 / 60);
+            return () => clearInterval(interval);
+        }
+    }, [player.timeRef, player.state, player.isPlaying]);
+
+    const onSeek = (newTime: number) => {
+        player.seek(newTime);
+        setTime(newTime);
+    };
+
+    return (
+        <EpisodeChart
+            actions={episode.actions}
+            joints={episode.action_keys}
+            fps={episode.fps}
+            time={time}
+            seek={onSeek}
+            isPlaying={player.isPlaying}
+            play={player.play}
+            pause={player.pause}
+        />
+    );
+};
+
 const EpisodeTimelineComponent = () => {
     const { player, episode } = useEpisodeViewer();
 
@@ -28,16 +67,7 @@ const EpisodeTimelineComponent = () => {
             <Disclosure isQuiet>
                 <DisclosureTitle>Timeline</DisclosureTitle>
                 <DisclosurePanel>
-                    <EpisodeChart
-                        actions={episode.actions}
-                        joints={episode.action_keys}
-                        fps={episode.fps}
-                        time={player.time}
-                        seek={player.seek}
-                        isPlaying={player.isPlaying}
-                        play={player.play}
-                        pause={player.pause}
-                    />
+                    <LiveEpisodeChart episode={episode} player={player} />
                 </DisclosurePanel>
             </Disclosure>
             <TimelineControls player={player} />

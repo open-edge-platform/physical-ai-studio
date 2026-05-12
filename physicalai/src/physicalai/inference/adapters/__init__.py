@@ -31,15 +31,15 @@ from typing import Any
 __path__ = extend_path(__path__, __name__)
 
 from physicalai.inference.adapters.base import RuntimeAdapter
-from physicalai.inference.adapters.registry import (
-    RuntimeAdapterRegistry,
-    adapter_registry,
-)
+from physicalai.inference.adapters.onnx import ONNXAdapter
 
 # Eagerly import core adapters so they self-register.  Their runtime
 # dependencies (onnxruntime, openvino) are part of the `inference` extra.
 from physicalai.inference.adapters.openvino import OpenVINOAdapter
-from physicalai.inference.adapters.onnx import ONNXAdapter
+from physicalai.inference.adapters.registry import (
+    RuntimeAdapterRegistry,
+    adapter_registry,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,10 +77,10 @@ _load_external_adapters()
 
 
 __all__ = [
-    "RuntimeAdapterRegistry",
     "ONNXAdapter",
     "OpenVINOAdapter",
     "RuntimeAdapter",
+    "RuntimeAdapterRegistry",
     "adapter_registry",
     "get_adapter",
 ]
@@ -98,12 +98,6 @@ def get_adapter(backend: str, **kwargs: Any) -> RuntimeAdapter:  # noqa: ANN401
 
     Returns:
         A ready-to-use :class:`RuntimeAdapter` instance.
-
-    Raises:
-        ValueError: If no adapter is registered for *backend*.
-        ImportError: If the adapter's optional runtime dependency is not
-            installed (raised by the lazy module import inside the
-            registry).
 
     Examples:
         >>> adapter = get_adapter("openvino", device="CPU")

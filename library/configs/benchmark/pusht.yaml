@@ -1,0 +1,85 @@
+# =============================================================================
+# PushT Benchmark Evaluation Configuration
+# Diffusion Policy Paper Protocol: seed=100000, 50 episodes
+# =============================================================================
+#
+# Usage:
+#   physicalai benchmark --config configs/benchmark/pusht.yaml \
+#       --policy physicalai.policies.ACT \
+#       --ckpt_path ./checkpoints/model.ckpt
+#
+# Common overrides:
+#   # Quick test run
+#   physicalai benchmark --config configs/benchmark/pusht.yaml \
+#       --policy physicalai.policies.ACT \
+#       --ckpt_path ./checkpoints/model.ckpt \
+#       --benchmark.num_episodes 10
+#
+#   # Parallel evaluation (faster)
+#   physicalai benchmark --config configs/benchmark/pusht.yaml \
+#       --policy physicalai.policies.ACT \
+#       --ckpt_path ./checkpoints/model.ckpt \
+#       --benchmark.num_envs 8
+#
+# =============================================================================
+
+benchmark:
+  class_path: physicalai.benchmark.PushTBenchmark
+  init_args:
+    # -------------------------------------------------------------------------
+    # Evaluation Parameters
+    # -------------------------------------------------------------------------
+    # Number of episodes (paper protocol: 50)
+    num_episodes: 50
+
+    # Maximum steps per episode (paper protocol: 300)
+    max_steps: 300
+
+    # Base seed for environment resets (paper protocol: 100000)
+    # Episodes use seeds: seed, seed+1, ..., seed+num_episodes-1
+    seed: 100000
+
+    # -------------------------------------------------------------------------
+    # Environment Configuration
+    # -------------------------------------------------------------------------
+    # Number of parallel environment workers (1 = single process)
+    num_envs: 1
+
+    # Observation type for the underlying gym
+    obs_type: pixels_agent_pos
+
+    # -------------------------------------------------------------------------
+    # Video Recording
+    # -------------------------------------------------------------------------
+    # Directory for video output (null = no recording)
+    video_dir: ./results/benchmark/pusht/videos
+
+    # Recording mode:
+    #   - "all"       : Save all episodes
+    #   - "failures"  : Only save failed episodes (for debugging)
+    #   - "successes" : Only save successful episodes
+    #   - "none"      : Disable recording
+    record_mode: failures
+
+# -----------------------------------------------------------------------------
+# Policy Configuration
+# -----------------------------------------------------------------------------
+# Policy class to evaluate (must have load_from_checkpoint method)
+#
+# CLI: --policy physicalai.policies.ACT
+#
+# Uncomment and configure:
+# policy: physicalai.policies.ACT
+
+# Checkpoint or export path (required for evaluation)
+#
+# CLI: --ckpt_path ./checkpoints/model.ckpt
+#
+# Uncomment and configure:
+# ckpt_path: ./checkpoints/act_pusht.ckpt
+
+# -----------------------------------------------------------------------------
+# Output Configuration
+# -----------------------------------------------------------------------------
+# Directory for benchmark results (JSON, CSV exports)
+output_dir: ./results/benchmark/pusht

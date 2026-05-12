@@ -11,12 +11,14 @@ import pytest
 from physicalai.inference.constants import TASK, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.inference.preprocessors import Preprocessor
 
+PINNED_REVISION = "1dbc166cf8765166998eff31ade2eb64c8a40076"
+
 
 @pytest.fixture()
 def mock_tokenizer():
     tok = MagicMock()
     tok.name_or_path = "mock-tokenizer"
-    tok.config.revision = "main"
+    tok.config.revision = PINNED_REVISION
 
     def _encode(texts, **kwargs):
         max_length = kwargs.get("max_length", 512)
@@ -45,7 +47,7 @@ def hf_tokenizer(mock_transformers):
     with patch.dict("sys.modules", {"transformers": mock_transformers}):
         from physicalai.inference.preprocessors.hf_tokenizer import HFTokenizer
 
-        prep = HFTokenizer(tokenizer_name="mock-tokenizer", revision="main", max_token_len=64)
+        prep = HFTokenizer(tokenizer_name="mock-tokenizer", revision=PINNED_REVISION, max_token_len=64)
     return prep
 
 
@@ -60,7 +62,7 @@ class TestHFTokenizerInit:
         with patch.dict("sys.modules", {"transformers": mock_transformers}):
             from physicalai.inference.preprocessors.hf_tokenizer import HFTokenizer
 
-            prep = HFTokenizer(tokenizer_name="mock-tokenizer", revision="main")
+            prep = HFTokenizer(tokenizer_name="mock-tokenizer", revision=PINNED_REVISION)
         assert prep._max_token_len == 512
 
     def test_import_error_when_transformers_missing(self) -> None:
@@ -68,14 +70,21 @@ class TestHFTokenizerInit:
             with pytest.raises(ImportError, match="transformers"):
                 from physicalai.inference.preprocessors.hf_tokenizer import HFTokenizer
 
-                HFTokenizer(tokenizer_name="mock-tokenizer", revision="main")
+                HFTokenizer(tokenizer_name="mock-tokenizer", revision=PINNED_REVISION)
 
     def test_from_pretrained_called_with_args(self, mock_transformers) -> None:
         with patch.dict("sys.modules", {"transformers": mock_transformers}):
             from physicalai.inference.preprocessors.hf_tokenizer import HFTokenizer
 
-            HFTokenizer(tokenizer_name="my-model", revision="v2", max_token_len=128)
-            mock_transformers.AutoTokenizer.from_pretrained.assert_called_once_with("my-model", revision="v2", use_fast=True, padding_side="right")
+            HFTokenizer(tokenizer_name="my-model", revision=PINNED_REVISION, max_token_len=128)
+            mock_transformers.AutoTokenizer.from_pretrained.assert_called_once_with("my-model", revision=PINNED_REVISION, use_fast=True, padding_side="right")
+
+    def test_invalid_revision_raises_value_error(self, mock_transformers) -> None:
+        with patch.dict("sys.modules", {"transformers": mock_transformers}):
+            from physicalai.inference.preprocessors.hf_tokenizer import HFTokenizer
+
+            with pytest.raises(ValueError, match="immutable Hugging Face commit hash"):
+                HFTokenizer(tokenizer_name="mock-tokenizer", revision="main")
 
 
 class TestHFTokenizerCall:

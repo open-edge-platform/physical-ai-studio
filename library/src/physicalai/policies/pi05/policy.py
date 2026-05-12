@@ -169,6 +169,7 @@ class Pi05(ExportablePolicyMixin, Policy):
                 n_action_steps=n_action_steps,
                 max_state_dim=max_state_dim,
                 num_inference_steps=num_inference_steps,
+                use_random_input_noise=use_random_input_noise,
                 gradient_checkpointing=gradient_checkpointing,
                 compile_model=compile_model,
                 compile_mode=compile_mode,
@@ -310,6 +311,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         n_action_steps: int | None = 50,
         max_state_dim: int | None = None,
         num_inference_steps: int | None = None,
+        use_random_input_noise: bool = True,
         gradient_checkpointing: bool = True,
         compile_model: bool = False,
         compile_mode: str | None = "max-autotune",
@@ -343,6 +345,7 @@ class Pi05(ExportablePolicyMixin, Policy):
             n_action_steps: Override number of action steps to execute.
             max_state_dim: Override maximum state dimension.
             num_inference_steps: Override denoising steps for inference.
+            use_random_input_noise: Override whether to use random noise as initial denoising input.
             gradient_checkpointing: Override gradient checkpointing.
             compile_model: Override whether to use torch.compile.
             compile_mode: Override torch compile mode.
@@ -419,6 +422,7 @@ class Pi05(ExportablePolicyMixin, Policy):
             hf_config["max_state_dim"] = max_state_dim
         if num_inference_steps is not None:
             hf_config["num_inference_steps"] = num_inference_steps
+        hf_config["use_random_input_noise"] = use_random_input_noise
         hf_config["gradient_checkpointing"] = gradient_checkpointing
         hf_config["compile_model"] = compile_model
         if compile_mode is not None:
@@ -678,14 +682,14 @@ class Pi05(ExportablePolicyMixin, Policy):
 
         base_preproc_specs = [
             ComponentSpec(
-                type="pi05",
-                image_resolution=self.config.image_resolution,
-                empty_cameras=self.config.empty_cameras,
-            ),
-            ComponentSpec(
                 type="normalize",
                 stats={STATE: self._dataset_stats[f"observation.{STATE}"]},
                 mode=self.config.normalization_mode.lower(),
+            ),
+            ComponentSpec(
+                type="pi05",
+                image_resolution=self.config.image_resolution,
+                empty_cameras=self.config.empty_cameras,
             ),
         ]
         postproc_specs = [

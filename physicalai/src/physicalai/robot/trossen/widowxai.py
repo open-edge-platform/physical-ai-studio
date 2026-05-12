@@ -163,7 +163,13 @@ class WidowXAI(Robot):
         present_position: np.ndarray,
         max_relative_target: float,
     ) -> np.ndarray:
-        """Cap per-joint relative target magnitude for safety."""
+        """Cap per-joint relative target magnitude for safety.
+
+        Returns:
+            Goal position clipped so each joint delta is within
+            ``[-max_relative_target, max_relative_target]`` of
+            ``present_position``.
+        """
         delta = goal_position - present_position
         capped_delta = np.clip(delta, -max_relative_target, max_relative_target)
         if not np.array_equal(delta, capped_delta):

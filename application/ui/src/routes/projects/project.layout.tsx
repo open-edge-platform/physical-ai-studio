@@ -1,7 +1,19 @@
 import { Suspense } from 'react';
 
-import { Divider } from '@adobe/react-spectrum';
-import { ActionButton, DialogTrigger, Flex, Grid, Icon, Item, Link, Loading, TabList, Tabs, View } from '@geti-ui/ui';
+import {
+    ActionButton,
+    DialogTrigger,
+    Divider,
+    Flex,
+    Grid,
+    Icon,
+    Item,
+    Link,
+    Loading,
+    TabList,
+    Tabs,
+    View,
+} from '@geti-ui/ui';
 import { Manifest } from '@geti-ui/ui/icons';
 import { Outlet, useLocation } from 'react-router';
 

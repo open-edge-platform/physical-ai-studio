@@ -28,5 +28,6 @@ class LogConfig:
         "TrainingWorker": "training.log",
         "InferenceWorker": "inference.log",
         "TeleoperateWorker": "teleoperate.log",
+        "DatasetImportWorker": "dataset_import.log",
         None: "app.log",
     }

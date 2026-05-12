@@ -555,7 +555,7 @@ class LiberoGym(Gym):
 
         # Include task description so policies can build language prompts
         if hasattr(self, "task_description") and self.task_description:
-            obs_dict["task"] = self.task_description
+            obs_dict["task"] = [self.task_description]
 
         # Add state if present (with batch dimension)
         if "agent_pos" in raw_obs:

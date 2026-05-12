@@ -137,6 +137,9 @@ class InferenceModel:
     @property
     def use_action_queue(self) -> bool:
         """Whether action queuing is enabled (backward compat)."""
+        if self.runner.__class__.__name__ == "ActionChunking":
+            return True
+
         runner_spec = self.manifest.model.runner
         if runner_spec is not None:
             if runner_spec.type == "action_chunking":
@@ -227,11 +230,46 @@ class InferenceModel:
         Returns:
             Action array to execute.
 
+        Raises:
+            RuntimeError: If the runner does not support action chunking.
+
         Examples:
             >>> obs = env.reset()
             >>> action = policy.select_action(obs)
             >>> next_obs, reward, done = env.step(action)
         """
+        if not self.use_action_queue:
+            msg = (
+                "Action chunking is not enabled for this model. Check the runner configuration "
+                "or manifest or use predict_action_chunk() for predicting a chunk of actions."
+            )
+            raise RuntimeError(msg)
+
+        outputs = self(observation)
+        return outputs[ACTION]
+
+    def predict_action_chunk(self, observation: dict[str, np.ndarray]) -> np.ndarray:
+        """Predict a chunk of actions for the given observation.
+
+        Only applicable if the runner supports action chunking. Delegates to
+        ``__call__`` and extracts the ``"action_chunk"`` key.
+
+        Args:
+            observation: Observation dict mapping names to numpy arrays.
+
+        Returns:
+            Chunk of actions to execute.
+
+        Raises:
+            RuntimeError: If the runner does not support action chunking.
+        """
+        if self.use_action_queue:
+            msg = (
+                "Selected runner does not support action chunking. Check the runner configuration "
+                "or manifest or use select_action() for single action prediction."
+            )
+            raise RuntimeError(msg)
+
         outputs = self(observation)
         return outputs[ACTION]
 

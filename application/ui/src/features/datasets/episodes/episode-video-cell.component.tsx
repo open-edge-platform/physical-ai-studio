@@ -24,19 +24,28 @@ export const EpisodeVideoCell = ({
 
     const videoRef = useRef<HTMLVideoElement>(null);
 
-    const time = player.time;
-
-    // Make sure webpage renders when video doesn't load correctly
     useEffect(() => {
         const video = videoRef.current;
         const start = episodeVideo.start;
+        if (!video || !Number.isFinite(start)) return;
 
-        if (!video) return;
-        if (video.readyState < 1) return;
-        if (!Number.isFinite(time) || !Number.isFinite(start)) return;
+        video.currentTime = player.timeRef.current + start;
+        if (player.isPlaying) {
+            video.play();
+        } else {
+            video.pause();
+        }
+    }, [player, episodeVideo.start, videoRef]);
 
-        video.currentTime = time + start;
-    }, [time, episodeVideo?.start]);
+    useEffect(() => {
+        const video = videoRef.current;
+        if (video && player.isSeeking) {
+            const interval = setInterval(() => {
+                video.currentTime = player.timeRef.current;
+            }, 1000 / 60);
+            return () => clearInterval(interval);
+        }
+    }, [player, videoRef]);
 
     const { containerRef, width, height } = useFittedMediaSize(
         videoRef.current?.videoWidth,

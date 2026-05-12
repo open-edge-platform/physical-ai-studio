@@ -158,8 +158,6 @@ class RuntimeAdapterRegistry:
 
         Raises:
             ValueError: If *name* is unknown.
-            ImportError: Re-raised from the lazy import if the module
-                cannot be imported (e.g. missing optional dependency).
             RuntimeError: If the lazy module imported successfully but
                 failed to register an adapter for *name*.
         """
@@ -171,10 +169,7 @@ class RuntimeAdapterRegistry:
             importlib.import_module(module_path)
             if name in self._classes:
                 return self._classes[name]
-            msg = (
-                f"Module {module_path!r} was imported for backend {name!r} "
-                "but did not register an adapter."
-            )
+            msg = f"Module {module_path!r} was imported for backend {name!r} but did not register an adapter."
             raise RuntimeError(msg)
 
         available = ", ".join(self.names()) or "<none>"
@@ -232,10 +227,7 @@ class RuntimeAdapterRegistry:
 
     def __repr__(self) -> str:
         """Return a developer-friendly representation."""
-        return (
-            f"{type(self).__name__}("
-            f"eager={list(self._classes)!r}, lazy={list(self._lazy)!r})"
-        )
+        return f"{type(self).__name__}(eager={list(self._classes)!r}, lazy={list(self._lazy)!r})"
 
     @staticmethod
     def _normalize_extensions(extensions: Iterable[str]) -> tuple[str, ...]:

@@ -1,11 +1,20 @@
-import { useEffect, useState } from 'react';
+import { RefObject, useEffect, useRef, useState } from 'react';
 
 import { SchemaEpisode } from '../../../api/openapi-spec';
 
+export enum PlayState {
+    Paused,
+    Playing,
+    Seeking,
+}
+
 export interface Player {
-    time: number;
+    timeRef: RefObject<number>;
     duration: number;
+    state: PlayState;
     isPlaying: boolean;
+    isPaused: boolean;
+    isSeeking: boolean;
     play: () => void;
     pause: () => void;
     rewind: () => void;
@@ -13,54 +22,64 @@ export interface Player {
 }
 
 export const usePlayer = (episode: SchemaEpisode): Player => {
-    const [isPlaying, setIsPlaying] = useState(true);
-    const [time, setTime] = useState<number>(0);
+    const [state, setState] = useState<PlayState>(PlayState.Paused);
+    const timeRef = useRef(0);
     const duration = episode.length / episode.fps;
     const frameTime = 1 / episode.fps;
 
+    const setTimeSynced = (newTime: number) => {
+        timeRef.current = newTime;
+    };
+
     const play = () => {
-        if (time + frameTime > duration) {
-            setTime(0);
+        if (timeRef.current + frameTime > duration) {
+            setTimeSynced(0);
         }
-        setIsPlaying(true);
+        setState(PlayState.Playing);
     };
 
     const pause = () => {
-        setIsPlaying(false);
+        setState(PlayState.Paused);
     };
 
     const rewind = () => {
-        setTime(0);
+        setTimeSynced(0);
     };
+
     const seek = (newTime: number) => {
-        setTime(newTime);
+        setTimeSynced(newTime);
+        setState(PlayState.Seeking);
     };
 
     useEffect(() => {
-        setTime(0);
-        setIsPlaying(true);
+        setTimeSynced(0);
+        setState(PlayState.Paused);
     }, [episode]);
 
     useEffect(() => {
-        if (isPlaying) {
-            const timeAtStart = time;
+        if (state === PlayState.Playing) {
+            const timeAtStart = timeRef.current;
             const worldTimeAtStart = new Date().getTime() / 1000;
             const interval = setInterval(() => {
                 const now = new Date().getTime() / 1000;
                 const nextTime = timeAtStart + now - worldTimeAtStart;
                 if (nextTime > duration) {
-                    setIsPlaying(false);
+                    pause();
                 }
-                setTime(Math.min(nextTime, duration));
+
+                timeRef.current = Math.min(nextTime, duration);
             }, frameTime * 1000);
             return () => clearInterval(interval);
         }
-    }, [isPlaying, duration, frameTime, time]);
+    }, [state, duration, frameTime]);
 
     return {
-        time,
+        isPlaying: state === PlayState.Playing,
+        isSeeking: state === PlayState.Seeking,
+        isPaused: state === PlayState.Paused,
+        timeRef,
         duration,
-        isPlaying,
+        state,
         play,
         pause,
         rewind,

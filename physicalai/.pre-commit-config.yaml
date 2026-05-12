@@ -61,3 +61,12 @@ repos:
     rev: v8.30.1
     hooks:
       - id: gitleaks
+
+  # ========================================================================== #
+  # DOCUMENTATION FORMATTING (root-level docs)                                 #
+  # ========================================================================== #
+  - repo: https://github.com/rbubley/mirrors-prettier
+    rev: v3.5.3
+    hooks:
+      - id: prettier
+        types_or: [markdown, yaml, json]

@@ -1,6 +1,7 @@
 from robots.robot_service import RobotService
 
 from .dataset_download_service import DatasetDownloadService
+from .dataset_import.service import DatasetImportService
 from .dataset_service import DatasetService
 from .episode_thumbnail_service import EpisodeThumbnailService
 from .model_download_service import ModelDownloadService
@@ -11,6 +12,7 @@ from .system_service import SystemService
 
 __all__ = [
     "DatasetDownloadService",
+    "DatasetImportService",
     "DatasetService",
     "EpisodeThumbnailService",
     "ModelDownloadService",

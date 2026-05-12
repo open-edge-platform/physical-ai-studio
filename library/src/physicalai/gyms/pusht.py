@@ -94,7 +94,7 @@ class PushTGym(GymnasiumGym):
             if pixels.ndim == 4 and pixels.shape[-1] in {1, 3, 4}:  # noqa: PLR2004
                 pixels = pixels.permute(0, 3, 1, 2)
 
-            images = pixels if len(camera_keys) == 1 else {camera_keys[0]: pixels}
+            images = {camera_keys[0]: pixels}
 
         # State agent_pos[B,2]
         state_keys = ["agent_pos", "state"]

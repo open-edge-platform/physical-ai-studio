@@ -113,8 +113,8 @@ class TestWidowXAIConnect:
         # Call order: external_effort mode → zero efforts → position mode → home
         mode_calls = driver.set_all_modes.call_args_list
         assert len(mode_calls) == 2
-        assert mode_calls[0] == call(mock_trossen_arm.Mode.external_effort)
-        assert mode_calls[1] == call(mock_trossen_arm.Mode.position)
+        assert mode_calls[0] == call(mock_trossen_arm.Mode.position)
+        assert mode_calls[1] == call(mock_trossen_arm.Mode.external_effort)
 
         driver.set_all_external_efforts.assert_called_once_with(list(HOME_POSITION), 0.0, False)  # noqa: FBT003
         driver.set_all_positions.assert_called_once_with(list(HOME_POSITION), 2.0, True)  # noqa: FBT003

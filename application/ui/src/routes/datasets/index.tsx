@@ -1,4 +1,6 @@
-import { Content, Flex, Heading, IllustratedMessage, Item, TabPanels, Tabs, Text, View } from '@geti-ui/ui';
+import { Suspense } from 'react';
+
+import { Content, Flex, Heading, IllustratedMessage, Item, Loading, TabPanels, Tabs, Text } from '@geti-ui/ui';
 import { useParams } from 'react-router';
 
 import { SchemaDatasetOutput } from '../../api/openapi-spec';
@@ -7,6 +9,7 @@ import { useProject, useProjectId } from '../../features/projects/use-project';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
 import { DatasetProvider } from './dataset-provider';
 import { DatasetViewer } from './dataset-viewer';
+import { DatasetImportButton } from './import/dataset-import-button';
 import { NewDatasetLink } from './new-dataset.component';
 
 interface DatasetsProps {
@@ -26,9 +29,10 @@ const Datasets = ({ datasets }: DatasetsProps) => {
                     <Content> Currently there are datasets available. </Content>
                     <Text>It&apos;s time to begin recording a dataset. </Text>
                     <Heading>No datasets yet</Heading>
-                    <View margin={'size-100'}>
+                    <Flex gap='size-100' marginTop={'size-200'}>
                         <NewDatasetLink project_id={project_id} />
-                    </View>
+                        <DatasetImportButton />
+                    </Flex>
                 </IllustratedMessage>
             </Flex>
         );
@@ -52,9 +56,11 @@ const Datasets = ({ datasets }: DatasetsProps) => {
                             {dataset_id === undefined ? (
                                 <Text>No datasets yet...</Text>
                             ) : (
-                                <DatasetProvider dataset_id={dataset_id}>
-                                    <DatasetViewer />
-                                </DatasetProvider>
+                                <Suspense fallback={<Loading />}>
+                                    <DatasetProvider dataset_id={dataset_id}>
+                                        <DatasetViewer />
+                                    </DatasetProvider>
+                                </Suspense>
                             )}
                         </Flex>
                     </Item>

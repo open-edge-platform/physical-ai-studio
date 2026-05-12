@@ -155,9 +155,11 @@ def parse_preprocessor_stats(
         # the normalizer actually uses at runtime.
         for feat_name, feat_stats in grouped.items():
             shape = resolve_feature_shape(feat_name, hf_config, feat_stats)
+            ftype = "VISUAL" if "observation.image" in feat_name.lower() else "UNKNOWN"
             entry: dict[str, Any] = {
                 "name": feat_name,
                 "shape": shape,
+                "type": ftype,
             }
             for stat_key in ("mean", "std", "q01", "q99", "min", "max"):
                 if stat_key in feat_stats and isinstance(feat_stats[stat_key], list):

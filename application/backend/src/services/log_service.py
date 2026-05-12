@@ -15,6 +15,7 @@ from sse_starlette import ServerSentEvent
 
 from core.logging.utils import get_job_logs_path
 from schemas.base_job import JobType
+from schemas.dataset_import_job import DatasetImportJobPayload
 from schemas.job import TrainJobPayload
 from schemas.logs import LogSource
 from services.job_service import JobService
@@ -33,6 +34,7 @@ STATIC_SOURCES: dict[str, StaticLogSource] = {
     "training": StaticLogSource(name="Training", filename="training.log", type="worker"),
     "inference": StaticLogSource(name="Inference", filename="inference.log", type="worker"),
     "teleoperate": StaticLogSource(name="Teleoperate", filename="teleoperate.log", type="worker"),
+    "dataset-import": StaticLogSource(name="Dataset Import", filename="dataset_import.log", type="worker"),
 }
 
 
@@ -92,6 +94,17 @@ class LogService:
             if job.type == JobType.TRAINING:
                 payload = TrainJobPayload.model_validate(job.payload)
                 names[str(job.id)] = f"{payload.model_name} ({payload.policy})"
+            elif job.type == JobType.DATASET_IMPORT:
+                payload = DatasetImportJobPayload.model_validate(job.payload)
+                if payload.dataset_name:
+                    display_name = payload.dataset_name
+                elif payload.uploaded_archive_name:
+                    display_name = payload.uploaded_archive_name
+                elif payload.archive_staging_id:
+                    display_name = f"{str(payload.archive_staging_id)[:8]}.zip"
+                else:
+                    display_name = f"dataset-import-{self._short_id(str(job.id))}.zip"
+                names[str(job.id)] = f"Import: {display_name}"
 
         return names
 

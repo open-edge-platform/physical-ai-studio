@@ -102,6 +102,50 @@ class UnsupportedDeviceError(BaseException):
         )
 
 
+class InvalidJobStateError(BaseException):
+    """Raised when a job action is not valid in the current state."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(
+            message=message,
+            error_code="invalid_job_state",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class DuplicateImportSourceError(BaseException):
+    """Raised when importing an already imported source UUID."""
+
+    def __init__(self, resource_kind: str, source_uuid: str) -> None:
+        super().__init__(
+            message=f"{resource_kind} with original source UUID `{source_uuid}` was already imported.",
+            error_code="duplicate_import_source",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class ZipBombDetectedError(BaseException):
+    """Raised when an uploaded archive is considered unsafe."""
+
+    def __init__(self, message: str = "Uploaded archive was rejected by zip safety validation") -> None:
+        super().__init__(
+            message=message,
+            error_code="zip_bomb_detected",
+            http_status=http.HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+        )
+
+
+class InvalidArchiveError(BaseException):
+    """Raised when an uploaded archive is invalid or unreadable."""
+
+    def __init__(self, message: str = "Uploaded archive is invalid or unreadable") -> None:
+        super().__init__(
+            message=message,
+            error_code="invalid_archive",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
 class UploadTooLargeError(BaseException):
     """Raised when the HTTP upload exceeds the configured maximum size."""
 
@@ -110,4 +154,15 @@ class UploadTooLargeError(BaseException):
             message=message,
             error_code="upload_too_large",
             http_status=http.HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+        )
+
+
+class InsufficientDiskSpaceError(BaseException):
+    """Raised when there is not enough free disk space to safely store the upload or extraction."""
+
+    def __init__(self, message: str = "Insufficient disk space to process the upload") -> None:
+        super().__init__(
+            message=message,
+            error_code="insufficient_disk_space",
+            http_status=http.HTTPStatus.INSUFFICIENT_STORAGE,
         )
