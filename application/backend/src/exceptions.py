@@ -171,6 +171,7 @@ class InvalidResourceError(BaseException):
             http_status=http.HTTPStatus.CONFLICT,
         )
 
+
 class InsufficientDiskSpaceError(BaseException):
     """Raised when there is not enough free disk space to safely store the upload or extraction."""
 

@@ -84,6 +84,7 @@ def _make_job(payload: TrainJobPayload) -> MagicMock:
 def _make_settings(tmp_path: Path) -> MagicMock:
     settings = MagicMock()
     settings.models_dir = tmp_path / "models"
+    settings.cache_dir = tmp_path / "cache"
     settings.supported_backends = []
     return settings
 
@@ -208,6 +209,7 @@ class TestTraining:
             patch(f"{MODULE}.TrainingLogCallback"),
             patch(f"{MODULE}.get_torch_device", return_value="cpu"),
             patch(f"{MODULE}.get_lightning_strategy", return_value="auto"),
+            patch(f"{MODULE}.shutil.move", return_value=model.path),
         ):
             MockDispatcher.return_value = MagicMock()
             MockDispatcher.return_value.start = MagicMock()

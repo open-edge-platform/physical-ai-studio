@@ -183,8 +183,8 @@ export const Index = () => {
     const showIllustratedMessage = !hasModels && !hasJobs;
 
     return (
-        <View height='100%' UNSAFE_style={{ overflowY: 'scroll' }}>
-            <Flex padding={'size-200'} direction={'column'} flex>
+        <View height='100%' padding={'size-200'} UNSAFE_style={{ overflowY: 'scroll' }}>
+            <Flex direction={'column'} flex>
                 {showIllustratedMessage ? (
                     <Flex margin={'size-200'} direction={'column'} flex height='100%'>
                         <IllustratedMessage>
