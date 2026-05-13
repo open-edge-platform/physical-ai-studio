@@ -29,6 +29,7 @@ jobs:
           allowed-endpoints: >
             api.github.com:443
             auth.docker.io:443
+            deb.debian.org:80
             download.pytorch.org:443
             download-r2.pytorch.org:443
             files.pythonhosted.org:443
