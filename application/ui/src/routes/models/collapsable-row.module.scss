@@ -1,0 +1,13 @@
+.collapsableRow {
+    border-top: 1px solid var(--spectrum-global-color-gray-200);
+}
+
+.collapsableRowCollapsed {
+    background-color: var(--spectrum-global-color-gray-75);
+    cursor: pointer;
+}
+
+.collapseButton {
+    justify-content: center;
+    width: var(--spectrum-global-dimension-size-900);
+}

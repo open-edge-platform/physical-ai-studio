@@ -127,6 +127,13 @@ jobs:
         with:
           node-version-file: application/ui/.nvmrc
 
+      # `min-release-age` in application/ui/.npmrc requires npm >= 11.5.1.
+      # Ensure a compatible npm is available regardless of the default npm
+      # bundled with the pinned Node version.
+      - &setup-compatible-npm
+        name: Ensure npm supports min-release-age
+        run: npm i -g npm@11.14.0
+
       - &install-dependencies
         name: Install dependencies
         working-directory: "application/ui"
@@ -171,6 +178,8 @@ jobs:
 
       - *setup-node
 
+      - *setup-compatible-npm
+
       - *install-dependencies
 
       - *download-openapi-spec
@@ -207,6 +216,8 @@ jobs:
 
       - *setup-node
 
+      - *setup-compatible-npm
+
       - *install-dependencies
 
       - *download-openapi-spec
@@ -234,6 +245,8 @@ jobs:
       - *checkout
 
       - *setup-node
+
+      - *setup-compatible-npm
 
       - *install-dependencies
 

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -70,8 +71,7 @@ class TrainingWorker(BaseProcessWorker):
 
                     dataset = await DatasetService.get_dataset_by_id(payload.dataset_id)
                     model_dir = Path(str(settings.models_dir / str(id)))
-                    model_dir.mkdir(parents=True)
-                    snapshot_dir = model_dir / SnapshotService.generate_snapshot_folder_name()
+                    snapshot_dir = settings.snapshot_dir / SnapshotService.generate_snapshot_folder_name()
                     snapshot = await SnapshotService.create_snapshot_for_dataset(dataset, destination=snapshot_dir)
 
                     model = Model(
@@ -106,6 +106,7 @@ class TrainingWorker(BaseProcessWorker):
     async def _train_model(
         self, job: Job, model: Model, snapshot: Snapshot, payload: TrainJobPayload, base_model: Model | None = None
     ):
+        settings = get_settings()
         await JobService.update_job_status(job_id=job.id, status=JobStatus.RUNNING, message="Training started")
         dispatcher = TrainingTrackingDispatcher(
             job_id=job.id,
@@ -114,6 +115,7 @@ class TrainingWorker(BaseProcessWorker):
         )
         try:
             path = Path(model.path)
+            cache_path = settings.cache_dir / str(job.id)
 
             # Resolve training device -- explicit from payload or auto-detected
             device_type = payload.device.type if payload.device else None
@@ -137,13 +139,13 @@ class TrainingWorker(BaseProcessWorker):
             precision = str(payload.precision)
 
             checkpoint_callback = ModelCheckpoint(
-                dirpath=path,
+                dirpath=cache_path,
                 filename="model",  # filename without suffix
                 save_top_k=1,
                 monitor="val/loss",
                 mode="min",
             )
-            csv_logger = CSVLogger(path.parent, name=path.stem)
+            csv_logger = CSVLogger(cache_path.parent, name=cache_path.stem)
 
             def _create_trainer() -> Trainer:
                 return Trainer(
@@ -171,6 +173,8 @@ class TrainingWorker(BaseProcessWorker):
             dispatcher.start()
             trainer.fit(model=policy, datamodule=l_dm)
 
+            moved = shutil.move(cache_path, path.parent)
+            Path(moved).rename(path)
             await self._export_policy(policy=policy, path=path, job=job)
 
             job = await JobService.update_job_status(
