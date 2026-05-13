@@ -57,6 +57,7 @@ jobs:
           disable-telemetry: true
           egress-policy: block
           allowed-endpoints: >
+            api.github.com:443
             check.trivy.dev:443
             files.pythonhosted.org:443
             get.trivy.dev:443

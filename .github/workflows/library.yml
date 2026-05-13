@@ -30,7 +30,7 @@ jobs:
           disable-telemetry: true
           egress-policy: block
           allowed-endpoints: >
-            azure.archive.ubuntu.com:443
+            azure.archive.ubuntu.com:80
             cas-server.xethub.hf.co:443
             dl.google.com:443
             download.pytorch.org:443

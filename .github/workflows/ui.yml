@@ -29,7 +29,7 @@ jobs:
           disable-telemetry: true
           egress-policy: block
           allowed-endpoints: >
-            azure.archive.ubuntu.com:443
+            azure.archive.ubuntu.com:80
             dl.google.com:443
             download.pytorch.org:443
             download-r2.pytorch.org:443
@@ -37,6 +37,7 @@ jobs:
             files.pythonhosted.org:443
             github.com:443
             github-cloud.githubusercontent.com:443
+            nodejs.org:443
             packages.microsoft.com:443
             pypi.org:443
             raw.githubusercontent.com:443
