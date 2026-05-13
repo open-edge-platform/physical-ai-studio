@@ -169,7 +169,9 @@ RUN groupadd --gid "${APP_GID}" appuser \
     && useradd --uid "${APP_UID}" --gid "${APP_GID}" --create-home appuser
 
 # Common runtime system dependencies (OpenCV, USB access, video decoding)
+# Includes runtime toolchain/linker deps required by torch.compile (Inductor/Triton)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
         ffmpeg \
         libgl1 \
         libglib2.0-0 \
@@ -190,6 +192,8 @@ ENV PATH="/app/application/backend/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONFAULTHANDLER=1 \
+    CC=/usr/bin/gcc \
+    CXX=/usr/bin/g++ \
     UV_NO_SYNC=1 \
     STATIC_FILES_DIR="/app/application/ui/" \
     DATA_DIR="/app/data" \
@@ -310,7 +314,9 @@ RUN set -eux; \
     find /usr/local/cuda* /usr/lib/x86_64-linux-gnu/ \
         \( -path '*/include' -o -path '*/headers' \) -type d \
         -exec rm -rf {} + 2>/dev/null || true; \
-    find /usr/local/cuda* /usr/lib/x86_64-linux-gnu/ \
+    # Keep system static archives (e.g. libc_nonshared.a) required by
+    # torch.compile/Triton runtime linking; remove only CUDA static libs.
+    find /usr/local/cuda* \
         -name '*.a' -delete 2>/dev/null || true; \
     # Remove documentation and samples
     rm -rf /usr/local/cuda*/doc /usr/local/cuda*/samples \
