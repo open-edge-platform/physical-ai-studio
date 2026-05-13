@@ -6,6 +6,7 @@
 from typing import Any, cast
 
 import torch
+from physicalai.inference.manifest import ComponentSpec
 
 from physicalai.data import Dataset, Feature, FeatureType, NormalizationParameters, Observation
 from physicalai.export.backends import (
@@ -458,19 +459,34 @@ class ACT(ExportablePolicyMixin, Policy):
         Returns:
             dict[str, ExportParameters]: A dictionary mapping format names to their export parameters.
         """
+        postproc_specs = []
+        if self.config.chunk_size != self.config.n_action_steps:
+            postproc_specs.append(
+                ComponentSpec(
+                    type="action_chunk_trimmer",
+                    n_action_steps=self.config.n_action_steps,
+                ),
+            )
+
         extra_args: dict[str, ExportParameters] = {}
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
                 "output_names": ["action"],
             },
+            postprocessors_specs=postproc_specs,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
             outputs=["action"],
             export_tokenizer=False,
             compress_to_fp16=False,
             exporter_kwargs={},
+            postprocessors_specs=postproc_specs,
         )
-        extra_args["executorch"] = ExecuTorchExportParameters()
-        extra_args["torch"] = TorchExportParameters()
+        extra_args["executorch"] = ExecuTorchExportParameters(
+            postprocessors_specs=postproc_specs,
+        )
+        extra_args["torch"] = TorchExportParameters(
+            postprocessors_specs=postproc_specs,
+        )
 
         return extra_args

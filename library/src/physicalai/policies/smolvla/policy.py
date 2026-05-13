@@ -651,6 +651,14 @@ class SmolVLA(ExportablePolicyMixin, Policy):
                 mode="mean_std",
             ),
         ]
+        if self.config.chunk_size != self.config.n_action_steps:
+            postproc_specs.append(
+                ComponentSpec(
+                    type="action_chunk_trimmer",
+                    n_action_steps=self.config.n_action_steps,
+                ),
+            )
+
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
                 "output_names": [ACTION],
