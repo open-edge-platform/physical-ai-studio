@@ -148,7 +148,7 @@ class EnvironmentIntegration:
         return Observation(
             state=state,
             images=images,
-            # task=task, # TODO: Implement tasks.
+            task=task, # TODO: Implement tasks.
         )
 
     def format_observation_for_dataset(self, raw_observation: dict) -> dict:

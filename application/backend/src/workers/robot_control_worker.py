@@ -193,7 +193,7 @@ class RobotControlWorker(BaseThreadWorker):
                                     if action is not None:
                                         actions = dict(zip(self.environment_integration.action_keys, action))
                                         report_observation["actions"] = actions
-                                        await self.environment_integration.set_joints_state(actions, goal_time)
+                                        await self.environment_integration.set_joints_state(actions, goal_time * 3)
 
                         if (
                             self.state.is_recording
