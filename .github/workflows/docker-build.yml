@@ -29,14 +29,21 @@ jobs:
           allowed-endpoints: >
             api.github.com:443
             auth.docker.io:443
+            download.pytorch.org:443
+            download-r2.pytorch.org:443
+            files.pythonhosted.org:443
             ghcr.io:443
             ghcr1production.blob.core.windows.net:443
             github.com:443
+            index.crates.io:443
             pkg-containers.githubusercontent.com:443
             production.cloudflare.docker.com:443
             production.cloudfront.docker.com:443
+            pypi.org:443
             registry.npmjs.org:443
             registry-1.docker.io:443
+            static.crates.io:443
+            static.rust-lang.org:443
             www.google-analytics.com:443
 
       - &checkout
