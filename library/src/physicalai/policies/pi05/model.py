@@ -854,8 +854,9 @@ class Pi05Model(ExportableModelMixin, Model):
 
         for cam_idx in range(num_cameras):
             if use_batched:
-                img_emb = all_img_embs[cam_idx]
+                img_emb = all_img_embs[cam_idx]  # pyrefly: ignore[unbound-name]
             else:
+
                 def image_embed_func(img: Tensor) -> Tensor:
                     return self.paligemma_with_expert.embed_image(img)
 

@@ -1111,3 +1111,206 @@ class TestPi05ExtraExportArgs:
             assert types.index("normalize") < types.index("pi05"), (
                 f"{backend}: normalize must precede pi05, got {types}"
             )
+
+
+# ============================================================================ #
+# embed_prefix Tests                                                           #
+# ============================================================================ #
+
+
+class TestEmbedPrefix:
+    """Tests for Pi05Model.embed_prefix batched/per-camera behavior.
+
+    Uses a lightweight stub that replaces the heavy vision encoder and language
+    embedding with simple linear projections to verify control flow and shapes.
+    """
+
+    @staticmethod
+    def _make_stub_model(
+        hidden_dim: int = 32,
+        num_patches: int = 4,
+        training: bool = False,
+        gradient_checkpointing: bool = False,
+    ) -> Pi05Model:
+        """Create a minimal Pi05Model stub with mocked sub-modules."""
+        from unittest.mock import MagicMock, patch
+
+        # Bypass __init__ to avoid loading the full PaliGemma model
+        with patch.object(Pi05Model, "__init__", lambda self: None):
+            model = Pi05Model.__new__(Pi05Model)
+
+        # Set nn.Module internals manually
+        torch.nn.Module.__init__(model)
+
+        model.training = training
+        model.gradient_checkpointing_enabled = gradient_checkpointing
+
+        # Mock paligemma_with_expert with simple deterministic functions
+        mock_paligemma = MagicMock()
+
+        def _embed_image(imgs: torch.Tensor) -> torch.Tensor:
+            """Fake vision encoder: project flattened patches to hidden_dim."""
+            batch = imgs.shape[0]
+            return torch.randn(batch, num_patches, hidden_dim)
+
+        def _embed_language(tokens: torch.Tensor) -> torch.Tensor:
+            """Fake language embedding."""
+            batch, seq_len = tokens.shape
+            return torch.randn(batch, seq_len, hidden_dim)
+
+        mock_paligemma.embed_image = _embed_image
+        mock_paligemma.embed_language_tokens = _embed_language
+        model.paligemma_with_expert = mock_paligemma
+
+        return model
+
+    def test_output_shapes_eval_mode(self) -> None:
+        """Test embed_prefix returns correct shapes in eval mode (batched path)."""
+        model = self._make_stub_model(hidden_dim=32, num_patches=4, training=False)
+        num_cameras, bsize, c, h, w = 2, 3, 3, 224, 224
+        seq_len = 10
+
+        images = torch.randn(num_cameras, bsize, c, h, w)
+        img_masks = torch.ones(num_cameras, bsize, dtype=torch.bool)
+        tokens = torch.randint(0, 100, (bsize, seq_len))
+        masks = torch.ones(bsize, seq_len, dtype=torch.bool)
+
+        embs, pad_masks, att_masks = model.embed_prefix(images, img_masks, tokens, masks)
+
+        expected_seq = num_cameras * 4 + seq_len  # 4 patches per camera + lang tokens
+        assert embs.shape == (bsize, expected_seq, 32)
+        assert pad_masks.shape == (bsize, expected_seq)
+        assert att_masks.shape == (bsize, expected_seq)
+        assert att_masks.dtype == torch.bool
+
+    def test_output_shapes_train_mode(self) -> None:
+        """Test embed_prefix returns correct shapes in train mode (per-camera path)."""
+        model = self._make_stub_model(hidden_dim=32, num_patches=4, training=True)
+        num_cameras, bsize, c, h, w = 2, 3, 3, 224, 224
+        seq_len = 10
+
+        images = torch.randn(num_cameras, bsize, c, h, w)
+        img_masks = torch.ones(num_cameras, bsize, dtype=torch.bool)
+        tokens = torch.randint(0, 100, (bsize, seq_len))
+        masks = torch.ones(bsize, seq_len, dtype=torch.bool)
+
+        embs, pad_masks, att_masks = model.embed_prefix(images, img_masks, tokens, masks)
+
+        expected_seq = num_cameras * 4 + seq_len
+        assert embs.shape == (bsize, expected_seq, 32)
+        assert pad_masks.shape == (bsize, expected_seq)
+        assert att_masks.shape == (bsize, expected_seq)
+
+    def test_batched_path_calls_encoder_once(self) -> None:
+        """In eval mode, embed_image should be called once (batched) not per-camera."""
+        from unittest.mock import patch
+
+        model = self._make_stub_model(hidden_dim=32, num_patches=4, training=False)
+        num_cameras, bsize = 3, 2
+
+        images = torch.randn(num_cameras, bsize, 3, 224, 224)
+        img_masks = torch.ones(num_cameras, bsize, dtype=torch.bool)
+        tokens = torch.randint(0, 100, (bsize, 10))
+        masks = torch.ones(bsize, 10, dtype=torch.bool)
+
+        call_count = [0]
+        orig_embed = model.paligemma_with_expert.embed_image
+
+        def _counting_embed(imgs: torch.Tensor) -> torch.Tensor:
+            call_count[0] += 1
+            return orig_embed(imgs)
+
+        model.paligemma_with_expert.embed_image = _counting_embed
+
+        model.embed_prefix(images, img_masks, tokens, masks)
+
+        assert call_count[0] == 1, f"Expected 1 batched call, got {call_count[0]}"
+
+    def test_training_path_calls_encoder_per_camera(self) -> None:
+        """In train mode, embed_image should be called once per camera."""
+        model = self._make_stub_model(hidden_dim=32, num_patches=4, training=True)
+        num_cameras, bsize = 3, 2
+
+        images = torch.randn(num_cameras, bsize, 3, 224, 224)
+        img_masks = torch.ones(num_cameras, bsize, dtype=torch.bool)
+        tokens = torch.randint(0, 100, (bsize, 10))
+        masks = torch.ones(bsize, 10, dtype=torch.bool)
+
+        call_count = [0]
+        orig_embed = model.paligemma_with_expert.embed_image
+
+        def _counting_embed(imgs: torch.Tensor) -> torch.Tensor:
+            call_count[0] += 1
+            return orig_embed(imgs)
+
+        model.paligemma_with_expert.embed_image = _counting_embed
+
+        model.embed_prefix(images, img_masks, tokens, masks)
+
+        assert call_count[0] == num_cameras, f"Expected {num_cameras} calls, got {call_count[0]}"
+
+    def test_eval_and_train_produce_same_shapes(self) -> None:
+        """Both paths should produce identical output shapes for same input."""
+        num_cameras, bsize, seq_len = 2, 4, 8
+
+        images = torch.randn(num_cameras, bsize, 3, 64, 64)
+        img_masks = torch.ones(num_cameras, bsize, dtype=torch.bool)
+        tokens = torch.randint(0, 100, (bsize, seq_len))
+        masks = torch.ones(bsize, seq_len, dtype=torch.bool)
+
+        model_eval = self._make_stub_model(hidden_dim=16, num_patches=4, training=False)
+        model_train = self._make_stub_model(hidden_dim=16, num_patches=4, training=True)
+
+        embs_e, pm_e, am_e = model_eval.embed_prefix(images, img_masks, tokens, masks)
+        embs_t, pm_t, am_t = model_train.embed_prefix(images, img_masks, tokens, masks)
+
+        assert embs_e.shape == embs_t.shape
+        assert pm_e.shape == pm_t.shape
+        assert am_e.shape == am_t.shape
+
+    def test_single_camera(self) -> None:
+        """Test with a single camera produces correct sequence length."""
+        model = self._make_stub_model(hidden_dim=32, num_patches=4, training=False)
+        bsize, seq_len = 2, 5
+
+        images = torch.randn(1, bsize, 3, 224, 224)
+        img_masks = torch.ones(1, bsize, dtype=torch.bool)
+        tokens = torch.randint(0, 100, (bsize, seq_len))
+        masks = torch.ones(bsize, seq_len, dtype=torch.bool)
+
+        embs, pad_masks, att_masks = model.embed_prefix(images, img_masks, tokens, masks)
+
+        expected_seq = 4 + seq_len  # 1 camera * 4 patches + lang tokens
+        assert embs.shape == (bsize, expected_seq, 32)
+
+    def test_pad_masks_reflect_img_masks(self) -> None:
+        """Padding masks should reflect which cameras are masked out."""
+        model = self._make_stub_model(hidden_dim=16, num_patches=4, training=False)
+        num_cameras, bsize, seq_len = 2, 2, 5
+
+        images = torch.randn(num_cameras, bsize, 3, 64, 64)
+        # First camera active, second camera masked for first sample
+        img_masks = torch.ones(num_cameras, bsize, dtype=torch.bool)
+        img_masks[1, 0] = False
+        tokens = torch.randint(0, 100, (bsize, seq_len))
+        masks = torch.ones(bsize, seq_len, dtype=torch.bool)
+
+        _, pad_masks, _ = model.embed_prefix(images, img_masks, tokens, masks)
+
+        # Second camera's patches (indices 4:8) should be False for sample 0
+        assert pad_masks[0, 4:8].sum() == 0
+        # But True for sample 1
+        assert pad_masks[1, 4:8].sum() == 4
+
+    def test_att_masks_all_false(self) -> None:
+        """All attention mask values should be False (non-autoregressive prefix)."""
+        model = self._make_stub_model(hidden_dim=16, num_patches=4, training=False)
+
+        images = torch.randn(2, 3, 3, 64, 64)
+        img_masks = torch.ones(2, 3, dtype=torch.bool)
+        tokens = torch.randint(0, 100, (3, 5))
+        masks = torch.ones(3, 5, dtype=torch.bool)
+
+        _, _, att_masks = model.embed_prefix(images, img_masks, tokens, masks)
+
+        assert not att_masks.any(), "All prefix attention masks should be False"
