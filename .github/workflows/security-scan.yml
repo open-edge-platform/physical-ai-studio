@@ -63,11 +63,12 @@ jobs:
             get.trivy.dev:443
             github.com:443
             ghcr.io:443
+            ghcr1production.blob.core.windows.net:443
             mirror.gcr.io:443
             pkg-containers.githubusercontent.com:443
             pypi.org:443
             raw.githubusercontent.com:443
-            release-assets.githubusercontent.com
+            release-assets.githubusercontent.com:443
             releases.astral.sh:443
             semgrep.dev:443
 
