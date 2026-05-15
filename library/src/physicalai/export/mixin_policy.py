@@ -122,8 +122,6 @@ class ExportablePolicyMixin:
         policy_class = metadata.get("policy_class", "")
         policy_name = self.__class__.__name__.lower()
 
-        use_action_queue = metadata.get("use_action_queue", False)
-        chunk_size = metadata.get("chunk_size", 1)
         preprocessors_specs: list[ComponentSpec] = metadata.get("preprocessors", [])
         postprocessors_specs: list[ComponentSpec] = metadata.get("postprocessors", [])
 
