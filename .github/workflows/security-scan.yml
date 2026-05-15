@@ -184,7 +184,22 @@ jobs:
       matrix:
         ai-device: [cpu]
     steps:
-      - *harden-runner
+      - name: Harden the runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          disable-sudo: false
+          disable-telemetry: true
+          egress-policy: block
+          allowed-endpoints: >
+            check.trivy.dev:443
+            get.trivy.dev:443
+            github.com:443
+            ghcr.io:443
+            ghcr1production.blob.core.windows.net:443
+            mirror.gcr.io:443
+            pkg-containers.githubusercontent.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
 
       - name: Runner cleanup
         uses: open-edge-platform/geti-ci/actions/cleanup-runner@7e686c1248b3939f8ee8e04e2612da727e379d91
