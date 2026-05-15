@@ -22,10 +22,28 @@ jobs:
       contents: read
     steps:
       - &harden-runner
-        name: Harden the runner (audit all outbound calls)
+        name: Harden the runner
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
-          egress-policy: audit
+          disable-sudo: false
+          disable-telemetry: true
+          egress-policy: block
+          allowed-endpoints: >
+            azure.archive.ubuntu.com:80
+            dl.google.com:443
+            download.pytorch.org:443
+            download-r2.pytorch.org:443
+            esm.ubuntu.com:443
+            files.pythonhosted.org:443
+            github.com:443
+            github-cloud.githubusercontent.com:443
+            nodejs.org:443
+            packages.microsoft.com:443
+            pypi.org:443
+            raw.githubusercontent.com:443
+            registry.npmjs.org:443
+            release-assets.githubusercontent.com:443
+            releases.astral.sh:443
 
       - &checkout
         name: Checkout code

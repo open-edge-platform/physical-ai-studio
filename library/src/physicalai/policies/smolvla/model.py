@@ -1599,7 +1599,7 @@ class _SmolVLMWithExpertModel(nn.Module):
             )
             att_outputs.append(att_output)
         else:
-            expert_position_id = position_ids
+            expert_position_id = position_ids.clone()
 
         if use_cache:
             if past_key_values is None:
