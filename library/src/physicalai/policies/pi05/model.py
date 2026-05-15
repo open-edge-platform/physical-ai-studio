@@ -836,7 +836,7 @@ class Pi05Model(ExportableModelMixin, Model):
         Returns:
             Tuple of (embeddings, padding masks, attention masks).
         """
-        use_batched = not self.training or torch.jit.is_tracing() or torch.onnx.is_in_onnx_export()
+        use_batched = not self.training
 
         num_cameras = images.shape[0]
         bsize = images.shape[1]
