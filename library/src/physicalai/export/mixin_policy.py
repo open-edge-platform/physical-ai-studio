@@ -24,7 +24,6 @@ from physicalai.inference.manifest import (
     PolicySource,
     PolicySpec,
 )
-from physicalai.inference.runners.action_chunking import ActionChunking
 from physicalai.inference.runners.single_pass import SinglePass
 
 from physicalai.export.backends import (
@@ -128,14 +127,7 @@ class ExportablePolicyMixin:
         preprocessors_specs: list[ComponentSpec] = metadata.get("preprocessors", [])
         postprocessors_specs: list[ComponentSpec] = metadata.get("postprocessors", [])
 
-        if use_action_queue:
-            runner = ComponentSpec.from_class(
-                ActionChunking,
-                runner=ComponentSpec.from_class(SinglePass),
-                chunk_size=chunk_size,
-            )
-        else:
-            runner = ComponentSpec.from_class(SinglePass)
+        runner = ComponentSpec.from_class(SinglePass)
 
         artifact_filename = f"{policy_name}{backend.extension}"
 

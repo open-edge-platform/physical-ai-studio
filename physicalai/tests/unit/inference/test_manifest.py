@@ -30,7 +30,7 @@ from physicalai.inference.manifest import (
     TensorSpec,
     _policy_name_from_class_path,
 )
-from physicalai.inference.runners import ActionChunking, SinglePass
+from physicalai.inference.runners import SinglePass
 
 
 class TestTensorSpec:
@@ -178,20 +178,10 @@ class TestComponentSpec:
 
     def test_class_path_with_init_args(self) -> None:
         spec = ComponentSpec.model_validate({
-            "class_path": "physicalai.inference.runners.ActionChunking",
-            "init_args": {"chunk_size": 10},
+            "class_path": "physicalai.inference.runners.SinglePass",
+            "init_args": {"foo": "bar"},
         })
-        assert spec.init_args == {"chunk_size": 10}
-
-    def test_type_mode(self) -> None:
-        spec = ComponentSpec.model_validate({
-            "type": "action_chunking",
-            "chunk_size": 100,
-            "n_action_steps": 100,
-        })
-        assert spec.type == "action_chunking"
-        assert spec.class_path == ""
-        assert spec.flat_params == {"chunk_size": 100, "n_action_steps": 100}
+        assert spec.init_args == {"foo": "bar"}
 
     def test_type_mode_no_extra_params(self) -> None:
         spec = ComponentSpec.model_validate({"type": "single_pass"})
@@ -222,37 +212,10 @@ class TestInstantiateComponent:
         runner = instantiate_component(spec)
         assert isinstance(runner, SinglePass)
 
-    def test_instantiate_nested_class_path(self) -> None:
-        spec = ComponentSpec(
-            class_path="physicalai.inference.runners.ActionChunking",
-            init_args={
-                "runner": {
-                    "class_path": "physicalai.inference.runners.SinglePass",
-                    "init_args": {},
-                },
-                "chunk_size": 5,
-            },
-        )
-        runner = instantiate_component(spec)
-        assert isinstance(runner, ActionChunking)
-        assert runner.chunk_size == 5
-        assert isinstance(runner.runner, SinglePass)
-
     def test_instantiate_type_mode(self) -> None:
         spec = ComponentSpec.model_validate({"type": "single_pass"})
         runner = instantiate_component(spec)
         assert isinstance(runner, SinglePass)
-
-    def test_instantiate_type_mode_with_params(self) -> None:
-        spec = ComponentSpec.model_validate({
-            "type": "action_chunking",
-            "runner": {"type": "single_pass"},
-            "chunk_size": 7,
-        })
-        runner = instantiate_component(spec)
-        assert isinstance(runner, ActionChunking)
-        assert runner.chunk_size == 7
-        assert isinstance(runner.runner, SinglePass)
 
 
 class TestModelSpec:
@@ -267,7 +230,7 @@ class TestModelSpec:
     def test_from_dict_full(self) -> None:
         spec = ModelSpec.model_validate({
             "n_obs_steps": 2,
-            "runner": {"type": "action_chunking", "chunk_size": 100},
+            "runner": {"type": "single_pass"},
             "artifacts": {"model": "model.onnx"},
             "preprocessors": [
                 {"class_path": "myapp.transforms.Normalize", "init_args": {"mean": 0.5}},
@@ -278,7 +241,7 @@ class TestModelSpec:
         })
         assert spec.n_obs_steps == 2
         assert spec.runner is not None
-        assert spec.runner.type == "action_chunking"
+        assert spec.runner.type == "single_pass"
         assert spec.artifacts == {"model": "model.onnx"}
         assert len(spec.preprocessors) == 1
         assert len(spec.postprocessors) == 1
@@ -332,14 +295,8 @@ class TestManifestFromDict:
             "model": {
                 "n_obs_steps": 1,
                 "runner": {
-                    "class_path": "physicalai.inference.runners.ActionChunking",
-                    "init_args": {
-                        "runner": {
-                            "class_path": "physicalai.inference.runners.SinglePass",
-                            "init_args": {},
-                        },
-                        "chunk_size": 10,
-                    },
+                    "class_path": "physicalai.inference.runners.SinglePass",
+                    "init_args": {},
                 },
                 "artifacts": {"openvino": "act.xml"},
             },
@@ -367,7 +324,7 @@ class TestManifestFromDict:
         assert manifest.policy.source.class_path == "physicalai.policies.act.ACT"
         assert manifest.model.artifacts == {"openvino": "act.xml"}
         assert manifest.model.runner is not None
-        assert manifest.model.runner.class_path == "physicalai.inference.runners.ActionChunking"
+        assert manifest.model.runner.class_path == "physicalai.inference.runners.SinglePass"
         assert len(manifest.hardware.robots) == 1
         assert manifest.hardware.robots[0].name == "main"
         assert len(manifest.hardware.cameras) == 1
@@ -423,19 +380,7 @@ class TestManifestFromDict:
         manifest = Manifest.model_validate(full_manifest_data)
         assert manifest.model.runner is not None
         runner = instantiate_component(manifest.model.runner)
-        assert isinstance(runner, ActionChunking)
-        assert runner.chunk_size == 10
-        assert isinstance(runner.runner, SinglePass)
-
-    def test_type_based_runner_in_manifest(self) -> None:
-        manifest = Manifest.model_validate({
-            "model": {
-                "runner": {"type": "action_chunking", "chunk_size": 50},
-            },
-        })
-        assert manifest.model.runner is not None
-        assert manifest.model.runner.type == "action_chunking"
-        assert manifest.model.runner.flat_params == {"chunk_size": 50}
+        assert isinstance(runner, SinglePass)
 
 
 class TestManifestFromFile:
@@ -491,19 +436,6 @@ class TestManifestFromLegacyMetadata:
         assert manifest.policy.source.class_path == "physicalai.policies.act.policy.ACT"
         assert manifest.model.runner is not None
         assert "SinglePass" in manifest.model.runner.class_path
-
-    def test_action_chunking_policy(self) -> None:
-        metadata = {
-            "policy_class": "physicalai.policies.pi0.policy.Pi0",
-            "backend": "onnx",
-            "use_action_queue": True,
-            "chunk_size": 10,
-        }
-        manifest = Manifest.from_legacy_metadata(metadata)
-
-        assert manifest.model.runner is not None
-        assert "ActionChunking" in manifest.model.runner.class_path
-        assert manifest.model.runner.init_args["chunk_size"] == 10
 
     def test_legacy_extra_preserved(self) -> None:
         metadata = {
@@ -612,30 +544,13 @@ class TestComponentSpecFromClass:
         assert "SinglePass" in spec.class_path
         assert spec.init_args == {}
 
-    def test_action_chunking_with_overrides(self) -> None:
-        spec = ComponentSpec.from_class(
-            ActionChunking,
-            runner=ComponentSpec.from_class(SinglePass),
-            chunk_size=5,
-        )
-        assert "ActionChunking" in spec.class_path
-        assert spec.init_args["chunk_size"] == 5
-        inner = spec.init_args["runner"]
-        assert isinstance(inner, dict)
-        assert "SinglePass" in inner["class_path"]
-
-    def test_action_chunking_default_chunk_size(self) -> None:
-        spec = ComponentSpec.from_class(
-            ActionChunking,
-            runner=ComponentSpec.from_class(SinglePass),
-        )
-        assert "ActionChunking" in spec.class_path
-        assert spec.init_args["chunk_size"] == 1
-        assert isinstance(spec.init_args["runner"], dict)
-
     def test_missing_required_param_raises_type_error(self) -> None:
+        class _RequiresParam:
+            def __init__(self, required_arg: int) -> None:
+                self.required_arg = required_arg
+
         with pytest.raises(TypeError, match="Missing required parameters"):
-            ComponentSpec.from_class(ActionChunking)
+            ComponentSpec.from_class(_RequiresParam)
 
 
 class TestPolicyNameFromClassPath:
@@ -707,9 +622,7 @@ class TestComponentRegistry:
 
     def test_component_registry_has_runners(self) -> None:
         assert "single_pass" in component_registry
-        assert "action_chunking" in component_registry
         assert component_registry.resolve("single_pass") == "physicalai.inference.runners.SinglePass"
-        assert component_registry.resolve("action_chunking") == "physicalai.inference.runners.ActionChunking"
 
 
 class TestResolveArtifact:

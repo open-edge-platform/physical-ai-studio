@@ -21,7 +21,6 @@ from physicalai.inference.postprocessors.action_normalizer import ActionNormaliz
 from physicalai.inference.postprocessors.base import Postprocessor
 from physicalai.inference.preprocessors.base import Preprocessor
 from physicalai.inference.runners import (
-    ActionChunking,
     InferenceRunner,
     SinglePass,
     get_runner,
@@ -75,7 +74,7 @@ def _make_legacy_export_dir(
 def _make_manifest_export_dir(
     tmp_path: Path,
     *,
-    kind: str = "action_chunking",
+    kind: str = "single_pass",
     chunk_size: int = 10,
     backend: str = "openvino",
     artifact_file: str = "act.xml",
@@ -83,17 +82,7 @@ def _make_manifest_export_dir(
     export_dir = tmp_path / "exports_manifest"
     export_dir.mkdir(exist_ok=True)
 
-    runner_spec: dict = (
-        {
-            "class_path": "physicalai.inference.runners.ActionChunking",
-            "init_args": {
-                "runner": {"class_path": "physicalai.inference.runners.SinglePass", "init_args": {}},
-                "chunk_size": chunk_size,
-            },
-        }
-        if kind == "action_chunking"
-        else {"class_path": "physicalai.inference.runners.SinglePass", "init_args": {}}
-    )
+    runner_spec: dict = {"class_path": "physicalai.inference.runners.SinglePass", "init_args": {}}
 
     manifest = {
         "format": "policy_package",
@@ -154,9 +143,7 @@ class TestInferenceModelInit:
         assert model.export_dir == export_dir
         assert model.policy_name == "act"
         assert model.backend == "openvino"
-        assert model.use_action_queue is True
-        assert model.chunk_size == 10
-        assert isinstance(model.runner, ActionChunking)
+        assert isinstance(model.runner, SinglePass)
 
     def test_init_with_nonexistent_directory(self) -> None:
         with pytest.raises(FileNotFoundError, match="Export directory not found"):
@@ -193,11 +180,6 @@ class TestInferenceModelInit:
         export_dir = _make_legacy_export_dir(tmp_path, use_action_queue=False, chunk_size=1)
         assert isinstance(InferenceModel(export_dir).runner, SinglePass)
 
-    def test_init_auto_selects_action_chunking_runner(self, tmp_path: Path) -> None:
-        model = InferenceModel(_make_legacy_export_dir(tmp_path))
-        assert isinstance(model.runner, ActionChunking)
-        assert model.runner.chunk_size == 10
-
     def test_init_with_explicit_runner(self, tmp_path: Path) -> None:
         explicit_runner = SinglePass()
         model = InferenceModel(_make_legacy_export_dir(tmp_path), runner=explicit_runner)
@@ -211,11 +193,7 @@ class TestManifestModelInit:
 
         assert model.policy_name == "act"
         assert model.backend == "openvino"
-        assert model.use_action_queue is True
-        assert model.chunk_size == 10
-        assert isinstance(model.runner, ActionChunking)
-        assert model.runner.chunk_size == 10
-        assert isinstance(model.runner.runner, SinglePass)
+        assert isinstance(model.runner, SinglePass)
 
     def test_init_from_manifest_single_pass(self, tmp_path: Path) -> None:
         model = InferenceModel(
@@ -223,7 +201,6 @@ class TestManifestModelInit:
         )
         assert model.policy_name == "act"
         assert model.backend == "onnx"
-        assert model.use_action_queue is False
         assert isinstance(model.runner, SinglePass)
 
     def test_manifest_takes_priority_over_metadata_yaml(self, tmp_path: Path) -> None:
@@ -250,25 +227,6 @@ class TestManifestModelInit:
         model = InferenceModel(export_dir)
         assert model.policy_name == "new_policy"
         assert model.backend == "openvino"
-
-    def test_select_action_with_manifest(
-        self,
-        tmp_path: Path,
-        mock_adapter: MagicMock,
-        sample_observation: dict[str, np.ndarray],
-    ) -> None:
-        model = InferenceModel(_make_manifest_export_dir(tmp_path))
-        assert isinstance(model.runner, ActionChunking)
-        model.runner.action_key = "actions"
-        model.postprocessors = [ActionNormalizer()]
-
-        mock_adapter.predict.return_value = {"actions": np.random.randn(1, 10, 2)}
-        action1 = model.select_action(sample_observation)
-        action2 = model.select_action(sample_observation)
-
-        assert action1.shape == (1, 2)
-        assert action2.shape == (1, 2)
-        mock_adapter.predict.assert_called_once()
 
     def test_backend_detected_from_manifest_artifacts(self, tmp_path: Path) -> None:
         export_dir = tmp_path / "exports_artifacts"
@@ -401,72 +359,6 @@ class TestAutoDetection:
 
 @pytest.mark.usefixtures("_patch_adapter")
 class TestSelectAction:
-    def test_select_action_no_queue(
-        self,
-        tmp_path: Path,
-        mock_adapter: MagicMock,
-        sample_observation: dict[str, np.ndarray],
-    ) -> None:
-        model = InferenceModel(_make_legacy_export_dir(tmp_path, use_action_queue=False, chunk_size=1))
-        mock_adapter.predict.return_value = {"actions": np.random.randn(1, 1, 2)}
-        model.postprocessors = [ActionNormalizer()]
-
-        with pytest.raises(RuntimeError, match="Action chunking is not enabled"):
-            model.select_action(sample_observation)
-
-        mock_adapter.predict.assert_not_called()
-
-    def test_select_action_with_queue(
-        self,
-        tmp_path: Path,
-        mock_adapter: MagicMock,
-        sample_observation: dict[str, np.ndarray],
-    ) -> None:
-        model = InferenceModel(_make_legacy_export_dir(tmp_path))
-        assert isinstance(model.runner, ActionChunking)
-        model.runner.action_key = "actions"
-        model.postprocessors = [ActionNormalizer()]
-
-        mock_adapter.predict.return_value = {"actions": np.random.randn(1, 10, 2)}
-        action1 = model.select_action(sample_observation)
-        assert action1.shape == (1, 2)
-        assert len(model.runner._action_queue) == 9
-
-        action2 = model.select_action(sample_observation)
-        assert action2.shape == (1, 2)
-        assert len(model.runner._action_queue) == 8
-        mock_adapter.predict.assert_called_once()
-
-    def test_select_action_queue_refill(
-        self,
-        tmp_path: Path,
-        mock_adapter: MagicMock,
-        sample_observation: dict[str, np.ndarray],
-    ) -> None:
-        model = InferenceModel(_make_legacy_export_dir(tmp_path))
-        assert isinstance(model.runner, ActionChunking)
-        model.runner.action_key = "actions"
-        model.postprocessors = [ActionNormalizer()]
-
-        mock_adapter.predict.return_value = {"actions": np.random.randn(1, 10, 2)}
-        for _ in range(10):
-            model.select_action(sample_observation)
-
-        assert len(model.runner._action_queue) == 0
-        mock_adapter.predict.assert_called_once()
-
-        model.select_action(sample_observation)
-        assert len(model.runner._action_queue) == 9
-        assert mock_adapter.predict.call_count == 2
-
-    def test_reset_clears_queue(self, tmp_path: Path) -> None:
-        model = InferenceModel(_make_legacy_export_dir(tmp_path))
-        assert isinstance(model.runner, ActionChunking)
-        model.runner._action_queue.extend([np.random.randn(1, 2).astype(np.float32) for _ in range(5)])
-
-        model.reset()
-        assert len(model.runner._action_queue) == 0
-
     def test_call_returns_dict(
         self,
         tmp_path: Path,
@@ -514,26 +406,6 @@ class TestSelectAction:
         action_chunk = model.predict_action_chunk(sample_observation)
 
         np.testing.assert_array_equal(outputs_call["action"], action_chunk)
-
-    def test_select_action_raises_with_single_pass_runner(
-        self,
-        tmp_path: Path,
-        sample_observation: dict[str, np.ndarray],
-    ) -> None:
-        model = InferenceModel(_make_legacy_export_dir(tmp_path, use_action_queue=False, chunk_size=1))
-
-        with pytest.raises(RuntimeError, match="Action chunking is not enabled"):
-            model.select_action(sample_observation)
-
-    def test_predict_action_chunk_raises_with_action_chunking_runner(
-        self,
-        tmp_path: Path,
-        sample_observation: dict[str, np.ndarray],
-    ) -> None:
-        model = InferenceModel(_make_legacy_export_dir(tmp_path))
-
-        with pytest.raises(RuntimeError, match="Selected runner does not support action chunking"):
-            model.predict_action_chunk(sample_observation)
 
 
 @pytest.mark.usefixtures("_patch_adapter")
@@ -612,7 +484,7 @@ class TestModelPathResolution:
 class TestRepr:
     def test_repr(self, tmp_path: Path) -> None:
         repr_str = repr(InferenceModel(_make_legacy_export_dir(tmp_path)))
-        assert all(s in repr_str for s in ("InferenceModel", "act", "openvino", "ActionChunking"))
+        assert all(s in repr_str for s in ("InferenceModel", "act", "openvino", "SinglePass"))
 
 
 class TestGetRunnerFactory:
@@ -622,35 +494,13 @@ class TestGetRunnerFactory:
     def test_returns_single_pass_when_queue_disabled(self) -> None:
         assert isinstance(get_runner({"use_action_queue": False}), SinglePass)
 
-    def test_returns_action_chunking_when_queue_enabled(self) -> None:
-        runner = get_runner({"use_action_queue": True, "chunk_size": 5})
-        assert isinstance(runner, ActionChunking)
-        assert runner.chunk_size == 5
-        assert isinstance(runner.runner, SinglePass)
-
-    def test_returns_action_chunking_default_chunk_size(self) -> None:
-        runner = get_runner({"use_action_queue": True})
-        assert isinstance(runner, ActionChunking)
-        assert runner.chunk_size == 1
+    def test_returns_single_pass_when_queue_enabled(self) -> None:
+        assert isinstance(get_runner({"use_action_queue": True, "chunk_size": 5}), SinglePass)
 
     def test_manifest_runner_spec_single_pass(self) -> None:
         metadata = {"runner": {"class_path": "physicalai.inference.runners.SinglePass", "init_args": {}}}
         assert isinstance(get_runner(metadata), SinglePass)
 
-    def test_manifest_runner_spec_action_chunking(self) -> None:
-        metadata = {
-            "runner": {
-                "class_path": "physicalai.inference.runners.ActionChunking",
-                "init_args": {
-                    "runner": {"class_path": "physicalai.inference.runners.SinglePass", "init_args": {}},
-                    "chunk_size": 8,
-                },
-            },
-        }
-        runner = get_runner(metadata)
-        assert isinstance(runner, ActionChunking)
-        assert runner.chunk_size == 8
-        assert isinstance(runner.runner, SinglePass)
 
     def test_manifest_runner_spec_takes_priority_over_legacy(self) -> None:
         metadata = {
@@ -659,23 +509,6 @@ class TestGetRunnerFactory:
             "runner": {"class_path": "physicalai.inference.runners.SinglePass", "init_args": {}},
         }
         assert isinstance(get_runner(metadata), SinglePass)
-
-    def test_nested_model_runner_spec(self) -> None:
-        metadata = {
-            "model": {
-                "runner": {
-                    "class_path": "physicalai.inference.runners.ActionChunking",
-                    "init_args": {
-                        "runner": {"class_path": "physicalai.inference.runners.SinglePass", "init_args": {}},
-                        "chunk_size": 12,
-                    },
-                },
-            },
-        }
-        runner = get_runner(metadata)
-        assert isinstance(runner, ActionChunking)
-        assert runner.chunk_size == 12
-        assert isinstance(runner.runner, SinglePass)
 
     def test_nested_model_runner_takes_priority_over_flat(self) -> None:
         metadata = {
@@ -686,23 +519,6 @@ class TestGetRunnerFactory:
             },
         }
         assert isinstance(get_runner(metadata), SinglePass)
-
-    def test_manifest_object_with_runner(self) -> None:
-        manifest = Manifest.model_validate({
-            "model": {
-                "runner": {
-                    "class_path": "physicalai.inference.runners.ActionChunking",
-                    "init_args": {
-                        "runner": {"class_path": "physicalai.inference.runners.SinglePass", "init_args": {}},
-                        "chunk_size": 7,
-                    },
-                },
-            },
-        })
-        runner = get_runner(manifest)
-        assert isinstance(runner, ActionChunking)
-        assert runner.chunk_size == 7
-        assert isinstance(runner.runner, SinglePass)
 
     def test_manifest_object_without_runner(self) -> None:
         manifest = Manifest()
@@ -732,76 +548,6 @@ class TestSinglePass:
 
     def test_reset_is_noop(self) -> None:
         SinglePass().reset()
-
-
-class TestActionChunking:
-    def test_run_enqueues_and_returns_first(self) -> None:
-        adapter = MagicMock()
-        adapter.predict.return_value = {"action": np.random.randn(1, 5, 2)}
-
-        runner = ActionChunking(runner=SinglePass(), chunk_size=5)
-        outputs = runner.run(adapter, {"input": np.zeros(1)})
-
-        assert isinstance(outputs, dict)
-        assert outputs["action"].shape == (1, 2)
-        assert len(runner._action_queue) == 4
-
-    def test_run_returns_from_queue_without_inference(self) -> None:
-        adapter = MagicMock()
-        adapter.predict.return_value = {"action": np.random.randn(1, 3, 2)}
-
-        runner = ActionChunking(runner=SinglePass(), chunk_size=3)
-        runner.run(adapter, {"input": np.zeros(1)})
-        runner.run(adapter, {"input": np.zeros(1)})
-        adapter.predict.assert_called_once()
-
-    def test_run_refills_when_empty(self) -> None:
-        adapter = MagicMock()
-        adapter.predict.return_value = {"action": np.random.randn(1, 2, 2)}
-
-        runner = ActionChunking(runner=SinglePass(), chunk_size=2)
-        runner.run(adapter, {"input": np.zeros(1)})
-        runner.run(adapter, {"input": np.zeros(1)})
-        assert adapter.predict.call_count == 1
-
-        runner.run(adapter, {"input": np.zeros(1)})
-        assert adapter.predict.call_count == 2
-
-    def test_run_with_custom_action_key(self) -> None:
-        adapter = MagicMock()
-        adapter.predict.return_value = {"actions": np.random.randn(1, 3, 2)}
-
-        runner = ActionChunking(runner=SinglePass(), chunk_size=3, action_key="actions")
-        outputs = runner.run(adapter, {"input": np.zeros(1)})
-
-        assert "actions" in outputs
-        assert outputs["actions"].shape == (1, 2)
-
-    def test_reset_clears_queue(self) -> None:
-        adapter = MagicMock()
-        adapter.predict.return_value = {"action": np.random.randn(1, 5, 2)}
-
-        runner = ActionChunking(runner=SinglePass(), chunk_size=5)
-        runner.run(adapter, {"input": np.zeros(1)})
-        assert len(runner._action_queue) == 4
-
-        runner.reset()
-        assert len(runner._action_queue) == 0
-
-    def test_repr(self) -> None:
-        runner = ActionChunking(runner=SinglePass(), chunk_size=10)
-        assert "ActionChunking" in repr(runner)
-        assert "chunk_size=10" in repr(runner)
-
-    def test_reset_delegates_to_inner_runner(self) -> None:
-        inner = MagicMock(spec=InferenceRunner)
-        runner = ActionChunking(runner=inner, chunk_size=5)
-        runner._action_queue.extend([np.zeros((1, 2)) for _ in range(3)])
-
-        runner.reset()
-
-        assert len(runner._action_queue) == 0
-        inner.reset.assert_called_once()
 
 
 class TestActionNormalizer:

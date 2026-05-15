@@ -12,7 +12,7 @@ Universal physical‑AI runtime that runs policies from multiple frameworks (phy
 
 - Unified API (`InferenceModel`)
 - Unified manifest format (`manifest.json`) — no training framework imports needed
-- Built‑in runners (SinglePassRunner, IterativeRunner, ActionChunkingRunner) — covers common execution patterns
+- Built‑in runners (SinglePassRunner, IterativeRunner) — covers common execution patterns
 - External plugin support for exotic patterns only (user's own package)
 - Configuration-driven workflows
 - CLI for edge and server deployment
@@ -327,7 +327,7 @@ Use the **Backend Selection Guide** to choose values per hardware.
 
 The framework ships built‑in implementations for common patterns. External plugins extend this for exotic cases:
 
-- **Runners** (execution pattern) — built‑in: SinglePassRunner, IterativeRunner, ActionChunkingRunner; selected via `policy.kind` in manifest
+- **Runners** (execution pattern) — built‑in: SinglePassRunner, IterativeRunner; selected via `policy.kind` in manifest
 - **Preprocessors** (input shaping) — built‑in: ObservationNormalizer, TensorResize
 - **Postprocessors** (output shaping) — built‑in: ActionClamp
 - **Callbacks** (instrumentation, safety, logging)
@@ -921,7 +921,7 @@ pip install physicalai[tensorrt]
 pip install physicalai[all]
 ```
 
-**No `physicalai[train]` or `physicalai[lerobot]` needed.** The unified `manifest.json` format is parsed natively. Built‑in runners (SinglePassRunner, IterativeRunner, ActionChunkingRunner) handle common execution patterns. No training framework required at deployment time.
+**No `physicalai[train]` or `physicalai[lerobot]` needed.** The unified `manifest.json` format is parsed natively. Built‑in runners (SinglePassRunner, IterativeRunner) handle common execution patterns. No training framework required at deployment time.
 
 ---
 
