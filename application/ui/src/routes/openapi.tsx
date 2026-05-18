@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 
 import classes from './openapi.module.scss';
 
+import './openapi.css';
 import '@scalar/api-reference-react/style.css';
 
 const Header = () => {
@@ -29,6 +30,7 @@ export const OpenApi = () => {
                         hideModels: true,
                         hideClientButton: true,
                         hideDarkModeToggle: true,
+                        showDeveloperTools: 'never',
                         metaData: {
                             title: 'Physical AI Studio | REST API specification',
                         },

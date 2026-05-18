@@ -27,22 +27,34 @@ _VAR_TUPLE_ARG_COUNT = 2  # tuple[T, ...] has 2 type args: item type and ellipsi
 __all__ = ["dataclass_to_dict", "dict_to_dataclass"]
 
 
-def dataclass_to_dict(obj: object) -> object:
-    """Recursively convert a dataclass (or nested structure) to a plain dict.
+def dataclass_to_dict(obj: object, *, recursive: bool = True) -> object:  # noqa: PLR0911
+    """Convert a dataclass (or nested structure) to a plain dict.
 
     Args:
         obj: Object to convert (dataclass, dict, list, tuple, Enum, ndarray, or primitive).
+        recursive: If True (default), recursively convert nested dataclasses, enums,
+            and arrays to plain Python primitives (safe for ``torch.save`` with
+            ``weights_only=True`` and ``yaml.safe_dump``). If False, only convert the
+            top-level dataclass to a shallow ``{field: value}`` dict, preserving nested
+            dataclass instances and other objects as-is. Shallow mode is useful when
+            downstream code expects to receive nested dataclass instances directly
+            (e.g. constructor arguments typed as dataclasses).
 
     Returns:
         Plain dict if obj is a dataclass, otherwise appropriately converted value.
-        NumPy arrays are converted to nested lists.
+        In recursive mode NumPy arrays are converted to nested lists.
     """
     if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+        if not recursive:
+            return {field.name: getattr(obj, field.name) for field in dataclasses.fields(obj)}
         result = {}
         for field in dataclasses.fields(obj):
             value = getattr(obj, field.name)
             result[field.name] = dataclass_to_dict(value)
         return result
+
+    if not recursive:
+        return obj
 
     if isinstance(obj, dict):
         # Convert StrEnum keys to strings
