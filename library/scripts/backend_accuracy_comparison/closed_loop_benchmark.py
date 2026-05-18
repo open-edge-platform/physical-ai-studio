@@ -641,7 +641,7 @@ def main():
 
     # Determine max_steps if not provided
     if args.max_steps is None:
-        from physicalai.benchmark.libero import LiberoMaxSteps
+        from physicalai.benchmark.libero.libero import LiberoMaxSteps
 
         args.max_steps = getattr(
             LiberoMaxSteps, args.task_suite, LiberoMaxSteps.DEFAULT
