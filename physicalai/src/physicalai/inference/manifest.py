@@ -363,9 +363,6 @@ class Manifest(BaseModel):
         policy_class = metadata.get("policy_class", "")
         policy_name = _policy_name_from_class_path(policy_class)
 
-        use_action_queue = metadata.get("use_action_queue", False)
-        chunk_size = metadata.get("chunk_size", 1)
-
         from physicalai.inference.runners.single_pass import SinglePass  # noqa: PLC0415
 
         runner = ComponentSpec.from_class(SinglePass)

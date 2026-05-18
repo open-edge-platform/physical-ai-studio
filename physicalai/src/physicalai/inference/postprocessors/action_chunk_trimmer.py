@@ -12,11 +12,12 @@ following common `n_action_steps` notation from policies configs.
 
 from __future__ import annotations
 
-from typing import override
-
-import numpy as np
+from typing import TYPE_CHECKING, override
 
 from physicalai.inference.postprocessors.base import Postprocessor
+
+if TYPE_CHECKING:
+    import numpy as np
 
 _NDIM_WITH_TEMPORAL = 3
 
@@ -24,14 +25,12 @@ _NDIM_WITH_TEMPORAL = 3
 class ActionChunkTrimmer(Postprocessor):
     """Trim action chunk to a specified length.
 
-
     Args:
         action_key: Explicit adapter output key to treat as the action.
             When ``None`` (default), uses the first key if ``"action"``
             is not already present.
 
     Examples:
-
         >>> trimmer = ActionChunkTrimmer(n_action_steps=10)
         >>> trimmer({"actions": np.zeros((1, 50, 6))}).shape
         [1, 10, 6]
@@ -48,7 +47,7 @@ class ActionChunkTrimmer(Postprocessor):
     @override
     def __call__(self, actions: np.ndarray) -> np.ndarray:
         if actions.ndim == _NDIM_WITH_TEMPORAL and actions.shape[1] > self._n_action_steps:
-            actions = actions[:, :self._n_action_steps, :]
+            actions = actions[:, : self._n_action_steps, :]
         return actions
 
     def __repr__(self) -> str:
