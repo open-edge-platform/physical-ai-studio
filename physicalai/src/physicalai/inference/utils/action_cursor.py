@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Cursor: action-chunk buffer for temporal action dispensing."""
+"""ActionCursor: action-chunk buffer for temporal action dispensing."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from collections import deque
 import numpy as np
 
 
-class Cursor:
+class ActionCursor:
     """Buffer that queues an action chunk and dispenses one timestep per call.
 
     Call :meth:`push_chunk` with the full action output from the runner
@@ -20,7 +20,7 @@ class Cursor:
     chunk should be pushed.
 
     Examples:
-            >>> cursor = Cursor()
+            >>> cursor = ActionCursor()
             >>> cursor.empty
             True
             >>> chunk = np.random.randn(1, 10, 7)  # batch=1, T=10, action_dim=7
@@ -34,7 +34,7 @@ class Cursor:
     """
 
     def __init__(self) -> None:
-        """Initialize an empty Cursor with no buffered actions."""
+        """Initialize an empty ActionCursor with no buffered actions."""
         self._queue: deque[np.ndarray] = deque()
 
     @property
@@ -52,10 +52,10 @@ class Cursor:
         """
         min_batched_action_dim = 2
         if chunk.ndim == min_batched_action_dim:
-            # (T, action_dim) — no batch dimension
+            # (T, action_dim) - no batch dimension
             self._queue.extend(chunk)
         else:
-            # (batch, T, action_dim) — transpose to (T, batch, action_dim)
+            # (batch, T, action_dim) - transpose to (T, batch, action_dim)
             self._queue.extend(np.transpose(chunk, (1, 0, 2)))
 
     def pop(self) -> np.ndarray:
@@ -69,7 +69,7 @@ class Cursor:
                 IndexError: If the queue is empty.
         """
         if self.empty:
-            msg = "Cursor is empty; call push_chunk before pop."
+            msg = "ActionCursor is empty; call push_chunk before pop."
             raise IndexError(msg)
         return self._queue.popleft()
 
@@ -79,4 +79,4 @@ class Cursor:
 
     def __repr__(self) -> str:
         """Return string representation."""
-        return f"Cursor(buffered={len(self._queue)})"
+        return f"ActionCursor(buffered={len(self._queue)})"

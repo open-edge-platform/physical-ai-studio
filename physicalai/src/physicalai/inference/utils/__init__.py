@@ -3,6 +3,6 @@
 
 """Inference utilities."""
 
-from physicalai.inference.utils.cursor import Cursor
+from physicalai.inference.utils.action_cursor import ActionCursor
 
-__all__ = ["Cursor"]
+__all__ = ["ActionCursor"]

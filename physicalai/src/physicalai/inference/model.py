@@ -17,7 +17,7 @@ from physicalai.inference.component_factory import instantiate_component, resolv
 from physicalai.inference.constants import ACTION
 from physicalai.inference.manifest import ComponentSpec, Manifest
 from physicalai.inference.runners import get_runner
-from physicalai.inference.utils import Cursor
+from physicalai.inference.utils import ActionCursor
 
 if TYPE_CHECKING:
     import numpy as np
@@ -125,7 +125,7 @@ class InferenceModel:
         for callback in self.callbacks:
             callback.on_load(self)
 
-        self.cursor = Cursor()
+        self.cursor = ActionCursor()
 
     @property
     def chunk_size(self) -> int:
