@@ -774,7 +774,9 @@ class Pi05Model(ExportableModelMixin, Model):
         Returns:
             4D attention mask tensor.
         """
-        att_2d_masks_4d = att_2d_masks[:, None, :, :]
+        # .bool() is needed because JIT tracing promotes bool*bool → Long
+        # in _make_att_2d_masks, but torch.where requires a boolean condition.
+        att_2d_masks_4d = att_2d_masks[:, None, :, :].bool()
         return torch.where(att_2d_masks_4d, 0.0, OPENPI_ATTENTION_MASK_VALUE)
 
     def sample_noise(self, shape: tuple, device: torch.device) -> Tensor:
@@ -821,45 +823,66 @@ class Pi05Model(ExportableModelMixin, Model):
     ) -> tuple[Tensor, Tensor, Tensor]:
         """Embed images with SigLIP and language tokens with embedding layer.
 
+        During inference or tracing (ONNX/OV export), batches all camera images
+        into a single encoder call for efficiency. During training, uses per-image
+        calls with gradient checkpointing support.
+
+        Args:
+            images: ``(num_cameras, batch, C, H, W)`` stacked image tensor.
+            img_masks: ``(num_cameras, batch)`` boolean camera masks.
+            tokens: ``(batch, seq_len)`` tokenized prompt.
+            masks: ``(batch, seq_len)`` prompt attention mask.
+
         Returns:
             Tuple of (embeddings, padding masks, attention masks).
         """
+        use_batched = not self.training
+
+        num_cameras = images.shape[0]
+        bsize = images.shape[1]
+
         embs = []
         pad_masks = []
-        att_masks = []
+        att_masks: list[int] = []
 
-        for img, img_mask in zip(images, img_masks, strict=True):
+        if use_batched:
+            # Single batched encoder call: [N*B, C, H, W]
+            imgs_flat = images.reshape(num_cameras * bsize, *images.shape[2:])
+            all_img_embs = self.paligemma_with_expert.embed_image(imgs_flat)
+            num_img_embs = all_img_embs.shape[1]
+            all_img_embs = all_img_embs.reshape(num_cameras, bsize, num_img_embs, -1)
 
-            def image_embed_func(img: Tensor) -> Tensor:
-                return self.paligemma_with_expert.embed_image(img)
+        for cam_idx in range(num_cameras):
+            if use_batched:
+                img_emb = all_img_embs[cam_idx]  # pyrefly: ignore[unbound-name]
+            else:
 
-            img_emb = self._apply_checkpoint(image_embed_func, img)
-            bsize, num_img_embs = img_emb.shape[:2]
+                def image_embed_func(img: Tensor) -> Tensor:
+                    return self.paligemma_with_expert.embed_image(img)
 
+                img_emb = self._apply_checkpoint(image_embed_func, images[cam_idx])
+
+            num_img_embs = img_emb.shape[1]
             embs.append(img_emb)
-            pad_masks.append(img_mask[:, None].expand(bsize, num_img_embs))
+            pad_masks.append(img_masks[cam_idx][:, None].expand(bsize, num_img_embs))
             att_masks += [0] * num_img_embs
 
         def lang_embed_func(tokens: Tensor) -> Tensor:
             lang_emb = self.paligemma_with_expert.embed_language_tokens(tokens)
-            lang_emb_dim = lang_emb.shape[-1]
-            return lang_emb * math.sqrt(lang_emb_dim)
+            return lang_emb * math.sqrt(lang_emb.shape[-1])
 
-        lang_emb = self._apply_checkpoint(lang_embed_func, tokens)
+        lang_emb = lang_embed_func(tokens) if use_batched else self._apply_checkpoint(lang_embed_func, tokens)
+
         embs.append(lang_emb)
         pad_masks.append(masks)
+        att_masks += [0] * lang_emb.shape[1]
 
-        num_lang_embs = lang_emb.shape[1]
-        att_masks += [0] * num_lang_embs
+        embs_cat = torch.cat(embs, dim=1)
+        pad_masks_cat = torch.cat(pad_masks, dim=1)
+        att_masks_t = torch.tensor(att_masks, dtype=torch.bool, device=pad_masks_cat.device)
+        att_masks_t = att_masks_t[None, :].expand(bsize, len(att_masks))
 
-        embs = torch.cat(embs, dim=1)
-        pad_masks = torch.cat(pad_masks, dim=1)
-        att_masks = torch.tensor(att_masks, dtype=torch.bool, device=pad_masks.device)
-
-        bsize = pad_masks.shape[0]
-        att_masks = att_masks[None, :].expand(bsize, len(att_masks))
-
-        return embs, pad_masks, att_masks
+        return embs_cat, pad_masks_cat, att_masks_t
 
     def embed_suffix(
         self,
