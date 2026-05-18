@@ -109,6 +109,11 @@ class TestSmolVLAPolicy:
         assert "config" in policy.hparams
         assert policy.hparams["config"]["chunk_size"] == 100
 
+    def test_save_hyperparameters_ignores_compile_model(self) -> None:
+        """Test compile_model is excluded from saved hyperparameters."""
+        policy = SmolVLA(compile_model=True)
+        assert "compile_model" not in policy.hparams
+
     def test_config_attribute(self) -> None:
         """Test SmolVLA policy has config attribute."""
         policy = SmolVLA(chunk_size=100, optimizer_lr=2e-4)
