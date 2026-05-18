@@ -190,11 +190,19 @@ def run_single_episode(gym, policy, max_steps: int, seed: int) -> dict[str, Any]
         gym: LiberoGym instance.
         policy: Policy (PyTorch) or InferenceModel (any backend).
         max_steps: Maximum number of steps.
-        seed: Random seed.
+        seed: Random seed. Applied to torch/numpy RNG as well as the
+            simulator so the same (seed, episode) pair is reproducible
+            across backends — important for stochastic policies (Pi0.5
+            flow matching) so PyTorch and OpenVINO episodes see the
+            same noise prior.
 
     Returns:
         Dict with episode metrics.
     """
+    # Seed RNGs before each episode so backends see identical noise.
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+
     # Reset environment and policy.
     obs, info = gym.reset(seed=seed)
     policy.reset()

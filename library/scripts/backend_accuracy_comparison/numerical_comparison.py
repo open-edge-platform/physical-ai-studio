@@ -211,6 +211,7 @@ def compare_single_sample(
     pytorch_model,
     openvino_model,
     sample: dict,
+    seed: int | None = None,
 ) -> dict:
     """Compare predictions of both backends on a single sample.
 
@@ -218,6 +219,9 @@ def compare_single_sample(
         pytorch_model: InferenceModel (PyTorch backend).
         openvino_model: InferenceModel (OpenVINO backend).
         sample: Observation dict.
+        seed: If given, set torch/numpy RNG to this value before each
+            backend call so stochastic policies (e.g. Pi0.5 flow matching)
+            see an identical noise prior on both backends.
 
     Returns:
         Dict with per-sample diffs and both raw actions.
@@ -228,7 +232,15 @@ def compare_single_sample(
 
     # Compare full action chunks. Works for all policies after the
     # ActionCursor refactor (predict_action_chunk is universal).
+    # Re-seed before each call so both backends draw the same initial
+    # noise (Pi0.5 uses torch.randn for the flow-matching prior).
+    if seed is not None:
+        torch.manual_seed(seed)
+        np.random.seed(seed)
     pytorch_action = pytorch_model.predict_action_chunk(sample)
+    if seed is not None:
+        torch.manual_seed(seed)
+        np.random.seed(seed)
     openvino_action = openvino_model.predict_action_chunk(sample)
 
     # Convert to numpy and flatten.
@@ -258,6 +270,7 @@ def run_comparison(
     pytorch_model,
     openvino_model,
     samples: list[dict],
+    seed: int | None = None,
 ) -> dict:
     """Run the comparison across all samples.
 
@@ -265,6 +278,9 @@ def run_comparison(
         pytorch_model: PyTorch InferenceModel.
         openvino_model: OpenVINO InferenceModel.
         samples: Dataset samples.
+        seed: Base RNG seed. Each sample uses ``seed + i`` so that both
+            backends see identical noise on a given sample but different
+            samples get distinct noise.
 
     Returns:
         Dict with aggregated metrics and per-sample diffs.
@@ -279,7 +295,8 @@ def run_comparison(
 
     for i, sample in enumerate(samples):
         sample_start = time.perf_counter()
-        result = compare_single_sample(pytorch_model, openvino_model, sample)
+        sample_seed = seed + i if seed is not None else None
+        result = compare_single_sample(pytorch_model, openvino_model, sample, seed=sample_seed)
         sample_elapsed = time.perf_counter() - sample_start
 
         max_diffs.append(result["max_diff"])
@@ -530,7 +547,24 @@ def main():
         help="Re-export models even if cached artifacts exist in --export-dir",
     )
 
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help=(
+            "Seed for torch/numpy RNG. Re-applied before each backend call "
+            "so stochastic policies (e.g. Pi0.5) compare on identical noise. "
+            "Pass a negative value to disable seeding."
+        ),
+    )
+
     args = parser.parse_args()
+
+    # Seed globally for reproducibility (export pipelines, dataset shuffling).
+    seed = args.seed if args.seed >= 0 else None
+    if seed is not None:
+        torch.manual_seed(seed)
+        np.random.seed(seed)
 
     # Fail fast before any heavy work (model download / export / dataset load).
     _require_hf_token()
@@ -563,7 +597,7 @@ def main():
     samples = load_dataset_samples(args.dataset, args.num_samples)
 
     # 5. Run comparison
-    comparison_results = run_comparison(pytorch_model, openvino_model, samples)
+    comparison_results = run_comparison(pytorch_model, openvino_model, samples, seed=seed)
 
     # 6. Analyze results
     analysis = analyze_results(comparison_results)
