@@ -402,6 +402,12 @@ class LeRobotDataModule(DataModule):
         Creates a temporary ``LeRobotDataset`` with **all** episodes,
         computes quantile stats, then patches them into the train (and
         optionally val) adapter's underlying ``meta.stats``.
+
+        The computed stats are also persisted to the dataset's local cache
+        (``<dataset_root>/meta/stats.json``), so subsequent loads detect
+        the q01/q99 keys via :func:`has_quantile_stats` and skip this
+        expensive step entirely. First load is slow (minutes); later
+        loads are near-instant.
         """
         # Quick check using the train adapter's stats
         train_lerobot_ds = train_dataset._lerobot_dataset  # noqa: SLF001
