@@ -154,18 +154,18 @@ class ComponentSpec(BaseModel):
 
     1. **type + flat params** (LeRobot-compatible)::
 
-        {"type": "action_chunking", "chunk_size": 100, "n_action_steps": 100}
+        {"type": "single_pass"}
 
     2. **class_path + init_args** (full-power PhysicalAI)::
 
-        {"class_path": "physicalai.inference.runners.ActionChunking",
-         "init_args": {"chunk_size": 100}}
+        {"class_path": "physicalai.inference.runners.SinglePass",
+         "init_args": {}}
 
     When ``class_path`` is present it takes precedence.  When only
     ``type`` is present, the :class:`ComponentRegistry` resolves it.
 
     Attributes:
-        type: Registered short name (e.g. ``"action_chunking"``).
+        type: Registered short name (e.g. ``"single_pass"``).
         class_path: Fully-qualified class path for direct import.
         init_args: Keyword arguments forwarded to the constructor
             (used with ``class_path`` mode).
@@ -363,20 +363,9 @@ class Manifest(BaseModel):
         policy_class = metadata.get("policy_class", "")
         policy_name = _policy_name_from_class_path(policy_class)
 
-        use_action_queue = metadata.get("use_action_queue", False)
-        chunk_size = metadata.get("chunk_size", 1)
-
-        from physicalai.inference.runners.action_chunking import ActionChunking  # noqa: PLC0415
         from physicalai.inference.runners.single_pass import SinglePass  # noqa: PLC0415
 
-        if use_action_queue:
-            runner = ComponentSpec.from_class(
-                ActionChunking,
-                runner=ComponentSpec.from_class(SinglePass),
-                chunk_size=chunk_size,
-            )
-        else:
-            runner = ComponentSpec.from_class(SinglePass)
+        runner = ComponentSpec.from_class(SinglePass)
 
         backend = metadata.get("backend", "")
         artifacts: dict[str, str] = {backend: ""} if backend else {}

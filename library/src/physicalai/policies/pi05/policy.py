@@ -221,7 +221,7 @@ class Pi05(ExportablePolicyMixin, Policy):
                 scheduler_decay_lr=scheduler_decay_lr,
             )
 
-        self.save_hyperparameters(ignore=["config", "pretrained_name_or_path"])
+        self.save_hyperparameters(ignore=["config", "pretrained_name_or_path", "compile_model"])
         self.hparams["config"] = self.config.to_dict()
 
         self.model: Pi05Model | None = None
@@ -699,6 +699,14 @@ class Pi05(ExportablePolicyMixin, Policy):
                 mode=self.config.normalization_mode.lower(),
             ),
         ]
+        if self.config.chunk_size != self.config.n_action_steps:
+            postproc_specs.append(
+                ComponentSpec(
+                    type="action_chunk_trimmer",
+                    n_action_steps=self.config.n_action_steps,
+                ),
+            )
+
         extra_args: dict[str, ExportParameters] = {}
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={

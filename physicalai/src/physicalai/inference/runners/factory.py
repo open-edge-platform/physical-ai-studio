@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from physicalai.inference.runners.action_chunking import ActionChunking
 from physicalai.inference.runners.base import InferenceRunner
 from physicalai.inference.runners.single_pass import SinglePass
 
@@ -24,8 +23,7 @@ def get_runner(source: Manifest | dict[str, Any]) -> InferenceRunner:
        instantiates via :func:`instantiate_component`.
     2. **Dict with runner spec** — raw manifest dict containing a
        ``"model"`` section with a runner component spec.
-    3. **Legacy dict** — falls back to flat ``use_action_queue``
-       and ``chunk_size`` keys.
+    3. **Legacy dict** — falls back to a plain ``SinglePass`` runner.
 
     Args:
         source: A :class:`Manifest` instance or a raw metadata dict.
@@ -60,9 +58,6 @@ def get_runner(source: Manifest | dict[str, Any]) -> InferenceRunner:
             raise TypeError(msg)
         return runner
 
-    if source.get("use_action_queue"):
-        chunk_size = source.get("chunk_size", 1)
-        return ActionChunking(runner=SinglePass(), chunk_size=chunk_size)
     return SinglePass()
 
 

@@ -418,12 +418,26 @@ The policy manifest declares expected hardware in dedicated `robot` and `camera`
       "state": {
         "shape": [6],
         "dtype": "float32",
-        "joint_order": ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"]
+        "joint_order": [
+          "shoulder_pan",
+          "shoulder_lift",
+          "elbow_flex",
+          "wrist_flex",
+          "wrist_roll",
+          "gripper"
+        ]
       },
       "action": {
         "shape": [6],
         "dtype": "float32",
-        "joint_order": ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"]
+        "joint_order": [
+          "shoulder_pan",
+          "shoulder_lift",
+          "elbow_flex",
+          "wrist_flex",
+          "wrist_roll",
+          "gripper"
+        ]
       }
     }
   ],

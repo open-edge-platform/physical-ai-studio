@@ -17,6 +17,7 @@ from physicalai.inference.component_factory import instantiate_component, resolv
 from physicalai.inference.constants import ACTION
 from physicalai.inference.manifest import ComponentSpec, Manifest
 from physicalai.inference.runners import get_runner
+from physicalai.inference.utils import ActionCursor
 
 if TYPE_CHECKING:
     import numpy as np
@@ -44,6 +45,7 @@ class InferenceModel:
         >>> policy = InferenceModel.load("./exports/act_policy")
         >>> policy.reset()
         >>> action = policy.select_action(obs)
+        >>> action = policy.predict_action_chunk(obs)
 
         >>> # Explicit backend and device
         >>> policy = InferenceModel(
@@ -51,17 +53,6 @@ class InferenceModel:
         ...     policy_name="act",
         ...     backend="openvino",
         ...     device="CPU"
-        ... )
-
-        >>> # Override the runner to disable action chunking (e.g. for benchmarking):
-        >>> from physicalai.inference.runners import SinglePass
-        >>> policy = InferenceModel.load("./exports/act_policy", runner=SinglePass())
-
-        >>> # Force action chunking with a custom chunk size:
-        >>> from physicalai.inference.runners import ActionChunking, SinglePass
-        >>> policy = InferenceModel.load(
-        ...     "./exports/act_policy",
-        ...     runner=ActionChunking(SinglePass(), chunk_size=20),
         ... )
     """
 
@@ -134,19 +125,7 @@ class InferenceModel:
         for callback in self.callbacks:
             callback.on_load(self)
 
-    @property
-    def use_action_queue(self) -> bool:
-        """Whether action queuing is enabled (backward compat)."""
-        if self.runner.__class__.__name__ == "ActionChunking":
-            return True
-
-        runner_spec = self.manifest.model.runner
-        if runner_spec is not None:
-            if runner_spec.type == "action_chunking":
-                return True
-            if "ActionChunking" in runner_spec.class_path:
-                return True
-        return False
+        self.cursor = ActionCursor()
 
     @property
     def chunk_size(self) -> int:
@@ -230,46 +209,27 @@ class InferenceModel:
         Returns:
             Action array to execute.
 
-        Raises:
-            RuntimeError: If the runner does not support action chunking.
-
         Examples:
             >>> obs = env.reset()
             >>> action = policy.select_action(obs)
             >>> next_obs, reward, done = env.step(action)
         """
-        if not self.use_action_queue:
-            msg = (
-                "Action chunking is not enabled for this model. Check the runner configuration "
-                "or manifest or use predict_action_chunk() for predicting a chunk of actions."
-            )
-            raise RuntimeError(msg)
+        if self.cursor.empty:
+            self.cursor.push_chunk(self(observation)[ACTION])
 
-        outputs = self(observation)
-        return outputs[ACTION]
+        return self.cursor.pop()
 
     def predict_action_chunk(self, observation: dict[str, np.ndarray]) -> np.ndarray:
         """Predict a chunk of actions for the given observation.
 
-        Only applicable if the runner supports action chunking. Delegates to
-        ``__call__`` and extracts the ``"action_chunk"`` key.
+        Delegates to ``__call__`` and extracts the ``"action_chunk"`` key.
 
         Args:
             observation: Observation dict mapping names to numpy arrays.
 
         Returns:
             Chunk of actions to execute.
-
-        Raises:
-            RuntimeError: If the runner does not support action chunking.
         """
-        if self.use_action_queue:
-            msg = (
-                "Selected runner does not support action chunking. Check the runner configuration "
-                "or manifest or use select_action() for single action prediction."
-            )
-            raise RuntimeError(msg)
-
         outputs = self(observation)
         return outputs[ACTION]
 
@@ -290,6 +250,7 @@ class InferenceModel:
             ...         obs, reward, done = env.step(action)
         """
         self.runner.reset()
+        self.cursor.reset()
         for callback in self.callbacks:
             callback.on_reset()
 

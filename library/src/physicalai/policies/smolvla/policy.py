@@ -224,8 +224,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
         # Save config as hyperparameters for checkpoint restoration
         self.save_hyperparameters(
-            ignore=["config", "pretrained_name_or_path"],
-        )  # Save individual args, not config object
+            ignore=["config", "pretrained_name_or_path", "compile_model"],
+        )
         # Also save config dict for compatibility
         self.hparams["config"] = self.config.to_dict()
 
@@ -651,6 +651,14 @@ class SmolVLA(ExportablePolicyMixin, Policy):
                 mode="mean_std",
             ),
         ]
+        if self.config.chunk_size != self.config.n_action_steps:
+            postproc_specs.append(
+                ComponentSpec(
+                    type="action_chunk_trimmer",
+                    n_action_steps=self.config.n_action_steps,
+                ),
+            )
+
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
                 "output_names": [ACTION],

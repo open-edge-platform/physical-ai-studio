@@ -14,6 +14,11 @@ The driver supports two roles:
 
 * **follower** (default) — position control, used for inference / deployment.
 * **leader** — external effort mode, used for teleoperation.
+
+Unit contract at the driver boundary:
+
+* Non-gripper joints are exposed in **degrees** for both observations and actions.
+* The gripper is a **native scalar passthrough** (no degree/radian conversion).
 """
 
 from __future__ import annotations
@@ -41,7 +46,8 @@ class WidowXAIObservation:
     """Observation from the WidowX AI robot arm.
 
     Attributes:
-        joint_positions: Array of shape ``(7,)`` with joint positions in radians.
+        joint_positions: Array of shape ``(7,)`` with non-gripper joints in
+            degrees and gripper in native scalar units.
         timestamp: ``time.monotonic()`` at the moment of capture.
         sensor_data: Velocities and (for follower) external efforts.
         images: Always ``None`` — no built-in camera support.
@@ -60,6 +66,11 @@ class WidowXAI(Robot):
         ip: IP address of the robot arm (e.g. ``"192.168.1.2"``).
         role: ``"follower"`` (position control) or ``"leader"``
             (external effort mode for teleoperation).
+
+    Note:
+        Non-gripper joint positions are exposed in degrees for read/write at
+        this API boundary. Gripper values are passed through in native scalar
+        units without degree/radian conversion.
     """
 
     JOINT_ORDER: ClassVar[list[str]] = list(WIDOWXAI_JOINT_ORDER)
@@ -181,6 +192,8 @@ class WidowXAI(Robot):
 
         Returns:
             Observation containing joint positions, timestamp, and sensor data.
+            Non-gripper joint positions are returned in degrees, while gripper
+            remains in native scalar units.
         """
         driver = self._require_driver()
 
@@ -188,6 +201,11 @@ class WidowXAI(Robot):
         velocities = driver.get_all_velocities()
 
         positions_array = np.array(positions, dtype=np.float32)
+        # Backend/app-facing convention: non-gripper joints in degrees,
+        # gripper kept in native scalar units.
+        for i, name in enumerate(self.joint_names):
+            if name != "gripper":
+                positions_array[i] = np.rad2deg(positions_array[i])
         velocities_array = np.array(velocities, dtype=np.float32)
 
         sensor_data: dict[str, np.ndarray] = {"velocities": velocities_array}
@@ -206,11 +224,11 @@ class WidowXAI(Robot):
         """Send a 7-DOF joint position command to follower arms.
 
         Args:
-            action: Array of shape ``(7,)`` with target joint positions in radians.
+            action: Array of shape ``(7,)`` with target joint positions in degrees
+            for non-gripper joints, and native gripper scalar value.
             goal_time: Minimum time (seconds) for the arm to reach the target.
                 The backend control loop typically sets this to ``1 / fps``.
-                Not part of the :class:`~physicalai.robot.Robot` protocol — the
-                adapter passes it explicitly when it knows the concrete type.
+                Not part of the :class:`~physicalai.robot.Robot` protocol.
 
         Raises:
             RuntimeError: If called on a leader arm.
@@ -227,8 +245,13 @@ class WidowXAI(Robot):
 
         driver = self._require_driver()
 
+        target_radians = np.asarray(action, dtype=np.float32).copy()
+        for i, name in enumerate(self.joint_names):
+            if name != "gripper":
+                target_radians[i] = np.deg2rad(target_radians[i])
+
         present_positions = np.asarray(driver.get_all_positions(), dtype=np.float32)
-        safe_action = self._ensure_safe_goal_position(action, present_positions, self.MAX_RELATIVE_TARGET)
+        safe_action = self._ensure_safe_goal_position(target_radians, present_positions, self.MAX_RELATIVE_TARGET)
 
         driver.set_all_positions(safe_action.tolist(), goal_time, False)  # noqa: FBT003
 

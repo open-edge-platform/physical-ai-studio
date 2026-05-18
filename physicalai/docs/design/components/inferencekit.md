@@ -845,30 +845,13 @@ from inferencekit import InferenceModel
 from inferencekit.runners import InferenceRunner
 
 
-# Policy-specific runner with action chunking
-class ActionChunkingRunner(InferenceRunner):
-    """Runner that manages action chunk queues.
-
-    Policies output action chunks (multiple future actions).
-    This runner queues them and dispenses one action per call.
-    """
-
-    def __init__(self, chunk_size: int = 16, n_action_steps: int = 1):
-        self.chunk_size = chunk_size
-        self.n_action_steps = n_action_steps
-        self._action_queue = []
+# Policy-specific runner example
+class PolicyRunner(InferenceRunner):
+    """Runner that executes the policy adapter and returns one action."""
 
     def run(self, adapter, inputs):
-        if not self._action_queue:
-            outputs = adapter.predict(inputs)
-            chunk = outputs["action"]  # shape: (chunk_size, action_dim)
-            self._action_queue = list(chunk[:self.n_action_steps])
-
-        action = self._action_queue.pop(0)
-        return {"action": action}
-
-    def reset(self):
-        self._action_queue = []
+        outputs = adapter.predict(inputs)
+        return {"action": outputs["action"]}
 
 
 ```

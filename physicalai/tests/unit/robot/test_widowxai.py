@@ -208,6 +208,8 @@ class TestWidowXAIObservation:
 
     def test_get_observation_follower(self, mock_trossen_arm: MagicMock) -> None:
         """Follower observation has positions, timestamp, velocities and efforts."""
+        driver = mock_trossen_arm.TrossenArmDriver.return_value
+        driver.get_all_positions.return_value = [1.0, 0.5, -0.5, 1.5, -1.0, 0.3, 0.02]
         robot = _create_robot(mock_trossen_arm, role="follower")
         obs = robot.get_observation()  # type: ignore[union-attr]
 
@@ -218,6 +220,9 @@ class TestWidowXAIObservation:
         assert obs.sensor_data is not None
         assert "velocities" in obs.sensor_data
         assert "efforts" in obs.sensor_data
+        assert obs.joint_positions[0] == pytest.approx(57.2958, abs=0.01)
+        assert obs.joint_positions[5] == pytest.approx(17.1887, abs=0.01)
+        assert obs.joint_positions[6] == pytest.approx(0.02, abs=1e-6)
 
     def test_get_observation_leader(self, mock_trossen_arm: MagicMock) -> None:
         """Leader observation has velocities but NOT efforts."""
@@ -250,6 +255,25 @@ class TestWidowXAIAction:
 
         with pytest.raises(ValueError, match="Expected action shape"):
             robot.send_action(np.zeros(3, dtype=np.float32))  # type: ignore[union-attr]
+
+    def test_send_action_accepts_degrees_and_sends_radians(self, mock_trossen_arm: MagicMock) -> None:
+        """send_action expects degrees for non-gripper joints and converts to radians."""
+        driver = mock_trossen_arm.TrossenArmDriver.return_value
+        driver.get_all_positions.return_value = [0.0] * 7
+        robot = _create_robot(mock_trossen_arm, role="follower")
+
+        driver.set_all_positions.reset_mock()
+
+        action_deg = np.array([14.32395, 14.32395, -14.32395, 14.32395, -14.32395, 14.32395, 0.05], dtype=np.float32)
+        robot.send_action(action_deg, goal_time=0.1)  # type: ignore[union-attr]
+
+        call_args = driver.set_all_positions.call_args
+        assert call_args is not None
+        sent = call_args.args[0]
+        assert sent[0] == pytest.approx(0.25, abs=0.01)
+        assert sent[1] == pytest.approx(0.25, abs=0.01)
+        assert sent[6] == pytest.approx(0.05, abs=1e-6)
+        assert call_args.args[1] == pytest.approx(0.1, abs=1e-6)
 
 
 # ---------------------------------------------------------------------------

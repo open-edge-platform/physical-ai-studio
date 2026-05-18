@@ -112,6 +112,11 @@ class TestACTolicy:
         assert "state" in sample_input
         assert "images" in sample_input
 
+    def test_save_hyperparameters_ignores_compile_model(self):
+        """Test compile_model is excluded from saved hyperparameters."""
+        policy = ACT(compile_model=True)
+        assert "compile_model" not in policy.hparams
+
     @pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
     def test_dtype_change(self, policy, batch, dtype):
         """Test model behavior with different input dtypes."""

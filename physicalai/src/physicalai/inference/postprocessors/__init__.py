@@ -6,11 +6,13 @@
 Postprocessors transform inference outputs after the runner returns.
 """
 
+from physicalai.inference.postprocessors.action_chunk_trimmer import ActionChunkTrimmer
 from physicalai.inference.postprocessors.action_normalizer import ActionNormalizer
 from physicalai.inference.postprocessors.base import Postprocessor
 from physicalai.inference.postprocessors.stats_denormalizer import StatsDenormalizer
 
 __all__ = [
+    "ActionChunkTrimmer",
     "ActionNormalizer",
     "Postprocessor",
     "StatsDenormalizer",

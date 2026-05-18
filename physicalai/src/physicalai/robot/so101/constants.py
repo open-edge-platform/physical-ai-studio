@@ -26,6 +26,9 @@ RADIANS_PER_TICK: Final = 2.0 * np.pi / TICKS_PER_REVOLUTION
 MAX_SPEED_RAD_S: Final = 4.712389
 """Maximum angular velocity in rad/s (STS3215 @ 12V: 60 deg / 0.222 s ~ 270 deg/s)."""
 
+MAX_SPEED_DEG_S: Final = float(np.degrees(MAX_SPEED_RAD_S))
+"""Maximum angular velocity in deg/s."""
+
 # ---------------------------------------------------------------------------
 # Joint ordering
 # ---------------------------------------------------------------------------

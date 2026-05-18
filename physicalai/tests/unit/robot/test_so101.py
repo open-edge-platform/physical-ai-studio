@@ -10,6 +10,8 @@ without requiring a physical robot or the feetech-servo-sdk package.
 from __future__ import annotations
 
 import json
+import sys
+from importlib import import_module
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any, Literal
@@ -17,6 +19,8 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+
+sys.modules.setdefault("scservo_sdk", MagicMock())
 
 # ---------------------------------------------------------------------------
 # Fixtures: mock the feetech SDK
@@ -71,12 +75,10 @@ def _make_mock_sdk() -> MagicMock:
 def mock_sdk() -> Generator[MagicMock, None, None]:
     """Provide a mock scservo_sdk patched onto the SO101 module."""
     sdk = _make_mock_sdk()
-    with (
-        patch("physicalai.robot.so101.so101.PortHandler", sdk.PortHandler),
-        patch("physicalai.robot.so101.so101.PacketHandler", sdk.PacketHandler),
-        patch("physicalai.robot.so101.so101.GroupSyncRead", sdk.GroupSyncRead),
-        patch("physicalai.robot.so101.so101.GroupSyncWrite", sdk.GroupSyncWrite),
-    ):
+    sys.modules.pop("physicalai.robot.so101.so101", None)
+    sys.modules.pop("physicalai.robot.so101", None)
+    with patch.dict(sys.modules, {"scservo_sdk": sdk}):
+        import_module("physicalai.robot.so101.so101")
         yield sdk
 
 
@@ -91,7 +93,7 @@ def calibration_file(tmp_path: Path) -> Path:
 @pytest.fixture
 def calibration_obj() -> Any:
     """Build a typed SO-101 calibration object from in-memory sample data."""
-    from physicalai.robot.so101 import SO101Calibration
+    from physicalai.robot.so101.calibration import SO101Calibration
 
     return SO101Calibration.from_dict(SAMPLE_CALIBRATION)
 
@@ -144,7 +146,7 @@ class TestSO101Construction:
         bad_calibration = json.loads(json.dumps(SAMPLE_CALIBRATION))
         bad_calibration["gripper"]["id"] = 0
 
-        from physicalai.robot.so101 import SO101Calibration
+        from physicalai.robot.so101.calibration import SO101Calibration
 
         with pytest.raises(ValueError, match="positive integers"):
             SO101Calibration.from_dict(bad_calibration)
@@ -154,7 +156,7 @@ class TestSO101Construction:
         bad_calibration = json.loads(json.dumps(SAMPLE_CALIBRATION))
         bad_calibration["gripper"]["id"] = bad_calibration["wrist_roll"]["id"]
 
-        from physicalai.robot.so101 import SO101Calibration
+        from physicalai.robot.so101.calibration import SO101Calibration
 
         with pytest.raises(ValueError, match="unique"):
             SO101Calibration.from_dict(bad_calibration)
@@ -182,6 +184,33 @@ class TestSO101Construction:
             "wrist_roll": 5,
             "gripper": 6,
         }
+
+    def test_default_unit_is_normalized(self, mock_sdk: MagicMock) -> None:
+        """Calibrated SO101 defaults to normalized for observation/action units."""
+        robot = _create_robot(mock_sdk)
+        assert robot.unit == "normalized"
+
+    def test_normalized_unit_allowed_in_calibrated_mode(self, mock_sdk: MagicMock) -> None:
+        """calibrated mode accepts normalized unit."""
+        from physicalai.robot.so101 import SO101
+
+        robot = SO101(port="/dev/ttyUSB0", calibration=_create_robot(mock_sdk)._calibration, unit="normalized")
+        assert robot.unit == "normalized"
+
+    def test_uncalibrated_rejects_non_ticks_unit(self, mock_sdk: MagicMock) -> None:
+        """uncalibrated mode only accepts ticks as unit."""
+        from physicalai.robot.so101 import SO101
+
+        with pytest.raises(ValueError, match="only supports unit='ticks'"):
+            SO101.uncalibrated(port="/dev/ttyUSB0", unit="normalized")  # pyrefly: ignore[bad-argument-type]
+
+    def test_calibrated_rejects_ticks_unit(self, mock_sdk: MagicMock) -> None:
+        """calibrated mode does not accept ticks as unit."""
+        from physicalai.robot.so101 import SO101, SO101Calibration
+
+        calibration = SO101Calibration.from_dict(SAMPLE_CALIBRATION)
+        with pytest.raises(ValueError, match="does not support unit='ticks'"):
+            SO101(port="/dev/ttyUSB0", calibration=calibration, unit="ticks")
 
 
 # ---------------------------------------------------------------------------
@@ -262,6 +291,15 @@ class TestSO101Lifecycle:
 
         with pytest.raises(ConnectionError, match="did not respond"):
             robot.connect()
+
+    def test_set_torque_delegates_to_internal_impl(self, mock_sdk: MagicMock) -> None:
+        """Public set_torque forwards to internal torque implementation."""
+        robot = _create_robot(mock_sdk)
+        robot.connect()
+        robot._set_torque = MagicMock()  # noqa: SLF001
+
+        robot.set_torque(enabled=True)
+        robot._set_torque.assert_called_once_with(enabled=True)  # noqa: SLF001
 
 
 # ---------------------------------------------------------------------------
@@ -351,20 +389,18 @@ class TestSO101Observation:
         assert isinstance(obs.timestamp, float)
 
     def test_observation_calibrated(self, mock_sdk: MagicMock, calibration_obj: Any) -> None:
-        """Calibrated observation returns radians."""
+        """Calibrated observation returns normalized values by default."""
         robot = _create_robot(mock_sdk, calibration=calibration_obj)
         robot.connect()
         obs = robot.get_observation()
 
-        # All servos return 2048 ticks. For joints with homing_offset=2048,
-        # the result should be 0.0 radians.
+        # All servos return 2048 ticks.
         state = obs.joint_positions
         assert state.shape == (6,)
         assert state.dtype == np.float32
-        # shoulder_pan: (2048 - 2048) * 1 * radians_per_tick = 0.0
-        assert state[0] == pytest.approx(0.0, abs=1e-6)
-        # shoulder_lift: (2048 - 1024) * -1 * radians_per_tick ≈ -1.5708
-        assert state[1] == pytest.approx(-1024 * 2 * np.pi / 4096, abs=1e-4)
+        # shoulder_pan and shoulder_lift are mapped by calibration range.
+        assert state[0] == pytest.approx(-1.83, abs=0.1)
+        assert state[1] == pytest.approx(5.15, abs=0.1)
 
 
 class TestSO101Action:
@@ -399,7 +435,7 @@ class TestSO101Action:
         """Calibrated send_action clamps to joint range limits."""
         robot = _create_robot(mock_sdk, role="follower", calibration=calibration_obj)
         robot.connect()
-        # gripper range_max is 3074 ticks; sending 10.0 rad should be clamped internally
+        # Sending a large normalized value should be clamped internally.
         action = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 10.0], dtype=np.float32)
         robot.send_action(action)
 
@@ -433,7 +469,7 @@ class TestSO101Calibration:
         path = tmp_path / "bad_cal.json"
         path.write_text(json.dumps(bad_cal), encoding="utf-8")
 
-        from physicalai.robot.so101 import SO101Calibration
+        from physicalai.robot.so101.calibration import SO101Calibration
 
         with pytest.raises(ValueError, match="missing joints"):
             SO101Calibration.from_path(path)
@@ -443,7 +479,7 @@ class TestSO101Calibration:
         path = tmp_path / "bad_format.json"
         path.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
 
-        from physicalai.robot.so101 import SO101Calibration
+        from physicalai.robot.so101.calibration import SO101Calibration
 
         with pytest.raises(TypeError, match="JSON object"):
             SO101Calibration.from_path(path)
@@ -456,16 +492,17 @@ class TestSO101Calibration:
         path = tmp_path / "bad_drive_mode.json"
         path.write_text(json.dumps(bad_cal), encoding="utf-8")
 
-        from physicalai.robot.so101 import SO101Calibration
+        from physicalai.robot.so101.calibration import SO101Calibration
 
         with pytest.raises(ValueError, match="drive_mode must be 0 or 1"):
             SO101Calibration.from_path(path)
 
-    def test_tick_radian_roundtrip(self, mock_sdk: MagicMock, calibration_obj: Any) -> None:
-        """Converting ticks → radians → ticks should roundtrip."""
-        robot = _create_robot(mock_sdk, calibration=calibration_obj)
+    def test_tick_normalized_roundtrip(self, mock_sdk: MagicMock, calibration_obj: Any) -> None:
+        """Converting ticks → normalized → ticks should roundtrip."""
+        from physicalai.robot.so101 import SO101
 
-        original_ticks = np.array([2048, 1524, 2048, 2048, 2048, 2200], dtype=np.int32)
-        radians = robot._ticks_to_radians(original_ticks)  # noqa: SLF001
-        recovered_ticks = robot._radians_to_ticks(radians)  # noqa: SLF001
+        robot = SO101(port="/dev/ttyUSB0", role="follower", calibration=calibration_obj, unit="normalized")
+        original_ticks = np.array([2500, 1400, 2100, 1900, 2600, 2300], dtype=np.int32)
+        normalized = robot._ticks_to_unit(original_ticks)  # noqa: SLF001
+        recovered_ticks = robot._unit_to_ticks(normalized)  # noqa: SLF001
         np.testing.assert_array_almost_equal(original_ticks, recovered_ticks, decimal=0)

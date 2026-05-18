@@ -30,9 +30,7 @@ class InferenceRunner(ABC):
     post-processed.
 
     Runners are composable: a runner can wrap another runner to add
-    behavior without modifying the inner runner's logic. For example,
-    ``ActionChunking(SinglePass())`` adds temporal buffering around
-    a single forward pass.
+    behavior without modifying the inner runner's logic.
 
     Subclasses must implement:
     - ``run`` — execute inference given an adapter and prepared inputs

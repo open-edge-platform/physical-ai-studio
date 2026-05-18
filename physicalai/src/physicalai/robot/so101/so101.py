@@ -16,11 +16,12 @@ The driver supports two roles:
 * **leader** — torque disabled, used for teleoperation (read-only).
 
 Calibration data can be loaded from a JSON file so that joint positions are
-reported in radians rather than raw servo ticks.
+reported in calibrated normalized units rather than raw servo ticks.
 
-By default, this driver requires calibration and uses radians for both state
-and action. A dedicated :meth:`SO101.uncalibrated` factory exists for explicit
-raw-ticks bringup/debug mode.
+By default, this driver requires calibration and uses ``normalized`` for both
+state and action. Normalized values are degree-derived and range-based:
+body joints use ``[-100, 100]`` and gripper uses ``[0, 100]``. A dedicated
+:meth:`SO101.uncalibrated` factory exists for explicit raw-ticks bringup/debug mode.
 """
 
 import contextlib
@@ -42,15 +43,17 @@ from physicalai.capture.frame import Frame
 from physicalai.robot import Robot
 from physicalai.robot.so101.calibration import SO101Calibration
 from physicalai.robot.so101.constants import (
+    MAX_SPEED_DEG_S,
     POSITION_MODE,
     PROTOCOL_VERSION,
-    RADIANS_PER_TICK,
     SO101_JOINT_ORDER,
     TICKS_PER_REVOLUTION,
     VALID_ROLES,
     STS3215Addr,
     STS3215Len,
 )
+
+SO101Unit = Literal["ticks", "normalized"]
 
 
 @dataclass(frozen=True)
@@ -68,8 +71,8 @@ class SO101Observation:
     """Observation from the SO-101 robot arm.
 
     Attributes:
-        joint_positions: Array of shape ``(6,)`` with joint positions in radians by default,
-               or raw ticks in explicit uncalibrated mode.
+        joint_positions: Array of shape ``(6,)`` with joint positions in the
+               configured :attr:`SO101.unit`.
         timestamp: ``time.monotonic()`` at the moment of capture.
     """
 
@@ -88,8 +91,12 @@ class SO101(Robot):
         role: ``"follower"`` (torque enabled, full control) or ``"leader"``
             (torque disabled, read-only for teleoperation).
         calibration: SO-101 calibration object or calibration JSON path.
-            This is required for normal operation and defines the robot
-            coordinate frame (radians).
+            This is required for normal operation.
+        unit: Joint-space command/observation unit. Defaults to ``"normalized"``.
+            Allowed values in calibrated mode: ``"normalized"``.
+            In this mode values are degree-derived and mapped to body
+            ``[-100, 100]`` and gripper ``[0, 100]``. Uncalibrated mode only
+            supports ``"ticks"``.
     """
 
     JOINT_ORDER: ClassVar[list[str]] = list(SO101_JOINT_ORDER)
@@ -104,6 +111,7 @@ class SO101(Robot):
         calibration: SO101Calibration | str | Path | None,
         baudrate: int = 1_000_000,
         role: Literal["leader", "follower"] = "follower",
+        unit: SO101Unit = "normalized",
         *,
         _allow_uncalibrated: bool = False,  # must be passed by keyword
     ) -> None:
@@ -126,6 +134,7 @@ class SO101(Robot):
         self._port = port
         self._baudrate = baudrate
         self._role = role
+        self._unit: SO101Unit = unit
 
         # Calibration -------------------------------------------------------
         if calibration is None and not _allow_uncalibrated:
@@ -141,6 +150,7 @@ class SO101(Robot):
 
         self._calibration: SO101Calibration | None = calibration
         self._uncalibrated_mode = self._calibration is None
+        self._validate_unit()
         self._warned_uncalibrated = False
         if self._calibration is not None:
             self.servo_ids = {name: self._calibration.joints[name].id for name in self.JOINT_ORDER}
@@ -160,11 +170,12 @@ class SO101(Robot):
         port: str,
         baudrate: int = 1_000_000,
         role: Literal["leader", "follower"] = "follower",
+        unit: SO101Unit = "ticks",
     ) -> "SO101":
         """Create an SO-101 instance in explicit raw-ticks mode.
 
         This mode is intended for bringup/debug only. Observations and actions
-        use raw servo ticks (0-4095), not radians.
+        use raw servo ticks (0-4095).
 
         Warning:
             Uncalibrated mode is not suitable for policy inference/deployment.
@@ -177,6 +188,7 @@ class SO101(Robot):
             calibration=None,
             baudrate=baudrate,
             role=role,
+            unit=unit,
             _allow_uncalibrated=True,
         )
 
@@ -220,13 +232,64 @@ class SO101(Robot):
 
     @property
     def calibrated(self) -> bool:
-        """Whether this driver is running with calibration (radian mode)."""
+        """Whether this driver is running with calibration."""
         return self._calibration is not None
 
     @property
-    def unit(self) -> str:
-        """Current state/action unit: ``"radians"`` or ``"ticks"``."""
-        return "radians" if self.calibrated else "ticks"
+    def unit(self) -> SO101Unit:
+        """Current state/action unit."""
+        return self._unit
+
+    @unit.setter
+    def unit(self, value: SO101Unit) -> None:
+        self._unit = value
+        self._validate_unit()
+
+    @property
+    def max_speed(self) -> float:
+        """Maximum joint speed in the configured :attr:`unit`."""
+        if self.unit == "normalized":
+            calibration = self._require_calibration()
+            per_joint: list[float] = []
+            for name in self.JOINT_ORDER:
+                cal = calibration.joints[name]
+                rng = cal.range_max - cal.range_min
+                if rng <= 0:
+                    continue
+                normalized_per_tick = 100.0 / rng if name == "gripper" else 200.0 / rng
+                per_joint.append(MAX_SPEED_DEG_S * TICKS_PER_REVOLUTION / 360.0 * normalized_per_tick)
+            return max(per_joint) if per_joint else 0.0
+        # Ticks/s based on encoder resolution.
+        return float(MAX_SPEED_DEG_S * TICKS_PER_REVOLUTION / 360.0)
+
+    def _validate_unit(self) -> None:
+        valid_units = {"ticks", "normalized"}
+        if self._unit not in valid_units:
+            msg = f"Invalid unit {self._unit!r}. Must be one of {sorted(valid_units)}."
+            raise ValueError(msg)
+        if self._calibration is None and self._unit != "ticks":
+            msg = "Uncalibrated mode only supports unit='ticks'."
+            raise ValueError(msg)
+        if self._calibration is not None and self._unit == "ticks":
+            msg = "Calibrated mode does not support unit='ticks'. Use 'normalized'."
+            raise ValueError(msg)
+
+    @staticmethod
+    def _validate_conversion_unit(unit: SO101Unit) -> None:
+        if unit not in {"ticks", "normalized"}:
+            msg = f"Invalid unit {unit!r}."
+            raise ValueError(msg)
+
+    def _resolve_unit(self, unit: SO101Unit | None) -> SO101Unit:
+        resolved = self.unit if unit is None else unit
+        self._validate_conversion_unit(resolved)
+        if self._calibration is None and resolved != "ticks":
+            msg = "Uncalibrated mode only supports unit='ticks'."
+            raise ValueError(msg)
+        if self._calibration is not None and resolved == "ticks":
+            msg = "Calibrated mode does not support unit='ticks'. Use 'normalized'."
+            raise ValueError(msg)
+        return resolved
 
     def _require_connection(self) -> _SO101Connection:
         """Return the active connection, or raise if disconnected.
@@ -254,7 +317,7 @@ class SO101(Robot):
         """
         if self._calibration is None:
             msg = (
-                "Calibration is required for tick/radian conversion. "
+                "Calibration is required for tick/unit conversion. "
                 "Provide calibration or avoid conversion methods in uncalibrated mode."
             )
             raise RuntimeError(msg)
@@ -396,7 +459,7 @@ class SO101(Robot):
             :class:`SO101Observation` with:
 
             - ``joint_positions``: ``np.ndarray`` of shape ``(6,)`` with
-                joint positions in radians by default, or raw ticks in explicit
+                joint positions in the configured :attr:`unit`, or raw ticks in explicit
                 uncalibrated mode.
             - ``timestamp``: ``float`` from ``time.monotonic()``.
             - ``sensor_data``: always ``None`` because SO-101 exposes no
@@ -407,12 +470,12 @@ class SO101(Robot):
         raw_positions = self._read_joint_positions()
 
         if self._calibration is not None:
-            state = self._ticks_to_radians(raw_positions)
+            state = self._ticks_to_unit(raw_positions)
         else:
             if not self._warned_uncalibrated:
                 logger.warning(
                     "SO101 running in explicit uncalibrated mode. Joint "
-                    "positions/actions are raw servo ticks (0-4095), not radians. "
+                    "positions/actions are raw servo ticks (0-4095). "
                     "Do not use uncalibrated mode for policy inference/deployment.",
                 )
                 self._warned_uncalibrated = True
@@ -423,12 +486,14 @@ class SO101(Robot):
             timestamp=time.monotonic(),
         )
 
-    def send_action(self, action: np.ndarray) -> None:
+    def send_action(self, action: np.ndarray, *, goal_time: float = 0.1) -> None:  # noqa: ARG002
         """Send joint position commands to all servos.
 
         Args:
             action: Array of shape ``(6,)`` with target joint positions in
-                radians by default, or raw ticks in explicit uncalibrated mode.
+                the configured :attr:`unit`, or raw ticks in explicit uncalibrated mode.
+            goal_time: Optional minimum time (seconds) to reach target.
+                SO101 currently ignores this value.
 
         Raises:
             RuntimeError: If the robot is in ``"leader"`` role.
@@ -443,7 +508,7 @@ class SO101(Robot):
             msg = f"Expected action shape {expected_shape}, got {action.shape}"
             raise ValueError(msg)
 
-        ticks = self._radians_to_ticks(action) if self._calibration is not None else np.round(action).astype(np.int32)
+        ticks = self._unit_to_ticks(action) if self._calibration is not None else np.round(action).astype(np.int32)
         self._write_joint_positions(ticks)
 
     def is_connected(self) -> bool:
@@ -454,38 +519,53 @@ class SO101(Robot):
         """
         return self._connection is not None
 
-    def _ticks_to_radians(self, ticks: np.ndarray) -> np.ndarray:
-        """Convert raw servo ticks to radians using calibration data.
-
-        Args:
-            ticks: Integer tick values, shape ``(6,)``.
-
-        Returns:
-            Float32 array of joint positions in radians, shape ``(6,)``.
-        """
+    def _ticks_to_normalized(self, ticks: np.ndarray) -> np.ndarray:
         calibration = self._require_calibration()
         result = np.empty(self.NUM_JOINTS, dtype=np.float32)
         for i, name in enumerate(self.JOINT_ORDER):
             cal = calibration.joints[name]
-            result[i] = (ticks[i] - cal.homing_offset) * cal.direction * RADIANS_PER_TICK
+            rng = cal.range_max - cal.range_min
+            if rng <= 0:
+                result[i] = 0.0
+                continue
+            tick_value = int(np.clip(ticks[i], cal.range_min, cal.range_max))
+            if name == "gripper":
+                norm = ((tick_value - cal.range_min) / rng) * 100.0
+            else:
+                norm = ((tick_value - cal.range_min) / rng) * 200.0 - 100.0
+            result[i] = float(np.clip(norm, 0.0, 100.0)) if name == "gripper" else float(np.clip(norm, -100.0, 100.0))
         return result
 
-    def _radians_to_ticks(self, radians: np.ndarray) -> np.ndarray:
-        """Convert radians to raw servo ticks, clamping to calibration range.
+    def _ticks_to_unit(self, ticks: np.ndarray, *, unit: SO101Unit | None = None) -> np.ndarray:
+        resolved = self._resolve_unit(unit)
+        if resolved == "normalized":
+            return self._ticks_to_normalized(ticks)
+        return ticks.astype(np.float32)
 
-        Args:
-            radians: Float joint positions in radians, shape ``(6,)``.
-
-        Returns:
-            Int32 array of tick values, shape ``(6,)``.
-        """
+    def _normalized_to_ticks(self, values: np.ndarray) -> np.ndarray:
         calibration = self._require_calibration()
         result = np.empty(self.NUM_JOINTS, dtype=np.int32)
         for i, name in enumerate(self.JOINT_ORDER):
             cal = calibration.joints[name]
-            ticks_val = round(radians[i] / (cal.direction * RADIANS_PER_TICK) + cal.homing_offset)
+            rng = cal.range_max - cal.range_min
+            if rng <= 0:
+                result[i] = int(np.clip(cal.homing_offset, cal.range_min, cal.range_max))
+                continue
+            value = float(values[i])
+            if name == "gripper":
+                clamped = float(np.clip(value, 0.0, 100.0))
+                ticks_val = round(cal.range_min + (clamped / 100.0) * rng)
+            else:
+                clamped = float(np.clip(value, -100.0, 100.0))
+                ticks_val = round(cal.range_min + ((clamped + 100.0) / 200.0) * rng)
             result[i] = int(np.clip(ticks_val, cal.range_min, cal.range_max))
         return result
+
+    def _unit_to_ticks(self, values: np.ndarray, *, unit: SO101Unit | None = None) -> np.ndarray:
+        resolved = self._resolve_unit(unit)
+        if resolved == "normalized":
+            return self._normalized_to_ticks(values)
+        return np.round(values).astype(np.int32)
 
     def _configure_servos(self) -> None:
         """Write hardware configuration registers to all servos.
@@ -590,6 +670,13 @@ class SO101(Robot):
                 logger.warning(f"Failed to set torque on servo '{name}' (ID {servo_id}): comm={comm_result}")
             if error != 0:
                 logger.warning(f"Torque write error on servo '{name}' (ID {servo_id}): err={error}")
+
+    def set_torque(self, *, enabled: bool) -> None:
+        """Enable or disable torque on all servos.
+
+        Public wrapper for adapter-level torque control.
+        """
+        self._set_torque(enabled=enabled)
 
     def _hold_position(self) -> None:
         """Command all servos to hold their current position.
