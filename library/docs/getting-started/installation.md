@@ -163,6 +163,64 @@ pip install --user physicalai
 
 Or use a virtual environment (recommended).
 
+### LIBERO Installation Fails (CMake Error)
+
+**Problem:** When installing `hf-libero` (required for LIBERO benchmarks), you see:
+
+```
+CMake Error at CMakeLists.txt:1 (cmake_minimum_required):
+  Compatibility with CMake < 3.5 has been removed from CMake.
+```
+
+**Cause:** The `egl-probe` package (dependency of hf-libero) requests CMake 2.8.12, but modern CMake (3.5+) refuses to build projects requesting versions < 3.5.
+
+**Solution:**
+
+First, install system dependencies:
+
+```bash
+# Ubuntu/Debian
+sudo apt-get install -y cmake libclang-dev libegl1-mesa-dev \
+  libgl1-mesa-dev libgles2-mesa-dev libglew-dev libglfw3-dev \
+  libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
+
+# macOS
+brew install cmake llvm glew glfw
+```
+
+Then install egl-probe from patched source:
+
+```bash
+# Download and patch egl-probe
+cd /tmp
+pip download --no-binary :all: egl-probe
+tar xzf egl_probe-*.tar.gz
+cd egl_probe-*/
+
+# Patch CMakeLists.txt to use CMake 3.5+
+sed -i 's/cmake_minimum_required(VERSION 2\.8\.12)/cmake_minimum_required(VERSION 3.5)/g' \
+  egl_probe/CMakeLists.txt
+
+# Install from patched source
+pip install .
+
+# Clean up
+cd / && rm -rf /tmp/egl_probe*
+```
+
+Finally, install hf-libero:
+
+```bash
+pip install hf-libero
+```
+
+**Affected components:**
+- LIBERO benchmark notebooks
+- Backend accuracy comparison tools
+- Any workflow requiring `hf-libero`
+
+This is a known upstream issue and will be fixed when egl-probe updates its CMake requirements.
+
 ## Next Steps
 
 - [Quickstart](quickstart.md) - Train your first policy in 5 minutes

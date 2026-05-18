@@ -63,6 +63,8 @@ sudo apt-get install -y ffmpeg
 brew install ffmpeg
 ```
 
+**For LIBERO benchmarks:** Additional system dependencies and build steps are required due to a known CMake compatibility issue with the `egl-probe` package. See [Installation Guide](docs/getting-started/installation.md#libero-installation-fails-cmake-error) for detailed instructions.
+
 </details>
 
 <details>
