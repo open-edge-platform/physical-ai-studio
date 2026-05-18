@@ -153,7 +153,7 @@ class ACT(ExportablePolicyMixin, Policy):
         )
 
         # Save config as hyperparameters for checkpoint restoration
-        self.save_hyperparameters(ignore=["config"])  # Save individual args, not config object
+        self.save_hyperparameters(ignore=["config", "compile_model"])
         # Also save config dict for compatibility
         self.hparams["config"] = self.config.to_dict()
 

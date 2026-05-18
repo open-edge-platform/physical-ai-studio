@@ -221,7 +221,7 @@ class Pi05(ExportablePolicyMixin, Policy):
                 scheduler_decay_lr=scheduler_decay_lr,
             )
 
-        self.save_hyperparameters(ignore=["config", "pretrained_name_or_path"])
+        self.save_hyperparameters(ignore=["config", "pretrained_name_or_path", "compile_model"])
         self.hparams["config"] = self.config.to_dict()
 
         self.model: Pi05Model | None = None
