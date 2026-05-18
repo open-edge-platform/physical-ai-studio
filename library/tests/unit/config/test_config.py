@@ -1,20 +1,21 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
+# ruff: noqa: ANN001, ANN201, B903, D107, PLR2004, PLR6301, RUF069, S101
 
 """Unit tests for config module."""
 
 import dataclasses
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any, cast
 
 import numpy as np
 import pytest
 from pydantic import BaseModel
 
-from physicalai.config import Config
-from physicalai.config.instantiate import _import_class, instantiate_obj
+from physicalai.config import Config, from_config
+from physicalai.config.instantiate import _import_class, instantiate_obj  # noqa: PLC2701
 from physicalai.config.mixin import FromConfig
-
 
 # =============================================================================
 # Test Fixtures
@@ -24,7 +25,7 @@ from physicalai.config.mixin import FromConfig
 class SampleModel(FromConfig):
     """Sample model implementing FromConfig."""
 
-    def __init__(self, hidden_size: int, num_layers: int = 3, **kwargs):
+    def __init__(self, hidden_size: int, num_layers: int = 3, **kwargs: object) -> None:
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.kwargs = kwargs
@@ -35,6 +36,38 @@ class SampleModelConfig(BaseModel):
 
     hidden_size: int = 128
     num_layers: int = 3
+
+
+@dataclass
+class SampleModelDataclassConfig(Config):
+    """Dataclass Config for SampleModel constructor args."""
+
+    hidden_size: int = 128
+    num_layers: int = 3
+
+
+class NestedComponent:
+    """Nested component for recursive FromConfig tests."""
+
+    def __init__(self, value: int) -> None:
+        self.value = value
+
+
+class ParentModel(FromConfig):
+    """Model that receives nested instantiated components."""
+
+    def __init__(self, component: NestedComponent, components: list[NestedComponent] | None = None) -> None:
+        self.component = component
+        self.components = components or []
+
+
+@from_config
+class DecoratedModel:
+    """Sample model using the from_config decorator instead of the mixin."""
+
+    def __init__(self, hidden_size: int, num_layers: int = 3) -> None:
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
 
 
 @dataclasses.dataclass
@@ -159,6 +192,59 @@ class TestFromConfigMixin:
         assert SampleModel.from_config({"hidden_size": 128, "num_layers": 3}).hidden_size == 128
         assert SampleModel.from_config(SampleModelConfig()).hidden_size == 128
         assert SampleModel.from_config(SampleModelDataclass()).hidden_size == 128
+
+    def test_concrete_class_accepts_jsonargparse_config(self) -> None:
+        """Test concrete FromConfig classes accept class_path/init_args configs."""
+        config = {
+            "class_path": f"{SampleModel.__module__}.SampleModel",
+            "init_args": {"hidden_size": 256, "num_layers": 4},
+        }
+        model = SampleModel.from_config(config)
+        assert model.hidden_size == 256
+        assert model.num_layers == 4
+
+    def test_concrete_class_accepts_config_dataclass(self) -> None:
+        """Test Config dataclasses map to explicit constructor args."""
+        model = SampleModel.from_config(SampleModelDataclassConfig(hidden_size=384, num_layers=5))
+        assert model.hidden_size == 384
+        assert model.num_layers == 5
+
+    def test_nested_class_path_values_in_direct_args(self) -> None:
+        """Test direct constructor args can contain nested class_path configs."""
+        model = ParentModel.from_config(
+            {
+                "component": {
+                    "class_path": f"{NestedComponent.__module__}.NestedComponent",
+                    "init_args": {"value": 10},
+                },
+                "components": [
+                    {
+                        "class_path": f"{NestedComponent.__module__}.NestedComponent",
+                        "init_args": {"value": 20},
+                    },
+                ],
+            },
+        )
+        assert isinstance(model.component, NestedComponent)
+        assert model.component.value == 10
+        assert isinstance(model.components[0], NestedComponent)
+        assert model.components[0].value == 20
+
+    def test_from_config_decorator(self) -> None:
+        """Test @from_config adds the same helpers as the mixin."""
+        decorated_model_cls = cast("Any", DecoratedModel)
+        model = decorated_model_cls.from_config({"hidden_size": 512, "num_layers": 6})
+        assert model.hidden_size == 512
+        assert model.num_layers == 6
+
+    def test_from_config_decorator_with_yaml(self, tmp_path) -> None:
+        """Test decorated classes support YAML loading."""
+        decorated_model_cls = cast("Any", DecoratedModel)
+        path = tmp_path / "decorated.yaml"
+        path.write_text("hidden_size: 640\nnum_layers: 7")
+        model = decorated_model_cls.from_config(path)
+        assert model.hidden_size == 640
+        assert model.num_layers == 7
 
     def test_recursive_parameter(self) -> None:
         """Test recursive parameter for nested structures."""

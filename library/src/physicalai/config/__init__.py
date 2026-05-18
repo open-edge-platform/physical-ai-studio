@@ -5,6 +5,6 @@
 
 from physicalai.config.base import Config
 from physicalai.config.instantiate import instantiate_obj
-from physicalai.config.mixin import FromConfig
+from physicalai.config.mixin import FromConfig, from_config
 
-__all__ = ["Config", "FromConfig", "instantiate_obj"]
+__all__ = ["Config", "FromConfig", "from_config", "instantiate_obj"]

@@ -1,190 +1,122 @@
 # Configuration System
 
-Flexible configuration loading supporting dataclasses, Pydantic, and YAML.
+`physicalai.config` provides a small set of generic building blocks for turning config-like inputs into Python objects.
 
-## Components
+## Supported Inputs
 
-**instantiate.py** - Object instantiation from various sources:
+- `dict`
+- YAML or JSON file path
+- dataclass instance
+- Pydantic `BaseModel`
 
-```python test="skip" reason="interface overview, not executable"
-instantiate_obj(config)                # Universal
-instantiate_obj_from_dict(config)      # From dict/YAML
-instantiate_obj_from_pydantic(config)  # From Pydantic
-instantiate_obj_from_dataclass(config) # From dataclass
-instantiate_obj_from_file(path)        # From file
+## Supported Shapes
+
+### Direct kwargs
+
+```python
+MyClass.from_dict({"hidden_size": 256, "num_layers": 3})
 ```
 
-**mixin.py** - `FromConfig` mixin for classes:
+Equivalent to:
 
-```python test="skip" reason="interface overview, not executable"
-class MyModel(nn.Module, FromConfig):
-    pass
-
-model = MyModel.from_config(config)  # Auto-detects type
+```python
+MyClass(hidden_size=256, num_layers=3)
 ```
 
-## Architecture
-
-```mermaid
-graph TB
-    A[Config Sources] --> B[Instantiation]
-    B --> C[Objects]
-
-    A1[YAML/JSON] --> A
-    A2[Dataclasses] --> A
-    A3[Pydantic] --> A
-    A4[Dicts] --> A
-
-    B --> B1[Validation]
-    B --> B2[Import]
-    B --> B3[Resolution]
-
-    C --> C1[Policy]
-    C --> C2[Model]
-    C --> C3[Optimizer]
-```
-
-## Configuration Patterns
-
-### Pattern 1: Dataclass (Type-Safe)
-
-```python test="skip" reason="illustrative pattern, not runnable as-is"
-@dataclass
-class ModelConfig:
-    hidden_size: int = 128
-    num_layers: int = 3
-
-config = ModelConfig(hidden_size=256)
-model = Model.from_dataclass(config)
-```
-
-**Benefits:**
-
-- IDE autocomplete
-- Type checking at definition time
-- No external dependencies
-- Simple and clean
-
-### Pattern 2: Pydantic (Validated)
-
-```python test="skip" reason="illustrative pattern, not runnable as-is"
-class ModelConfig(BaseModel):
-    hidden_size: int = Field(ge=1, le=1024)
-    num_layers: int = Field(ge=1)
-
-    @field_validator("hidden_size")
-    @classmethod
-    def validate_power_of_2(cls, v):
-        if v & (v - 1) != 0:
-            raise ValueError("Must be power of 2")
-        return v
-
-config = ModelConfig(hidden_size=256)  # Validates
-model = Model.from_pydantic(config)
-```
-
-**Benefits:**
-
-- Runtime validation
-- Custom validators
-- Clear error messages
-- JSON schema generation
-
-### Pattern 3: class_path (Dynamic)
+### `class_path` / `init_args`
 
 ```yaml
-model:
-  class_path: physicalai.policies.dummy.policy.Dummy
-  init_args:
-    model:
-      class_path: physicalai.policies.dummy.model.Dummy
-      init_args:
-        hidden_size: 256
+class_path: mypkg.models.MyClass
+init_args:
+  hidden_size: 256
+  num_layers: 3
 ```
 
-**Benefits:**
+Equivalent to:
 
-- No code changes to swap components
-- Configuration-driven experiments
-- Works with any class
-- Standard in ML ecosystem (Lightning, Hydra, etc.)
+```python
+from mypkg.models import MyClass
+MyClass(hidden_size=256, num_layers=3)
+```
 
-## Usage Examples
+This is the same config shape used by `jsonargparse` and Lightning-style CLIs.
 
-### Basic Usage
+## Nested Instantiation
 
-```python test="skip" reason="requires physicalai install"
-# From dict with class_path
+Nested `class_path` blocks are instantiated recursively inside:
+
+- dicts
+- lists
+- tuples
+
+Example:
+
+```python
 config = {
-    "class_path": "physicalai.policies.dummy.policy.Dummy",
-    "init_args": {"hidden_size": 256}
+    "model": {
+        "class_path": "mypkg.models.Backbone",
+        "init_args": {"hidden_size": 256},
+    },
+    "optimizer": {
+        "class_path": "torch.optim.Adam",
+        "init_args": {"lr": 1e-3},
+    },
 }
-policy = instantiate_obj_from_dict(config)
 
-# From YAML file
-policy = instantiate_obj_from_file("configs/policy.yaml")
-
-# Using mixin
-class MyPolicy(Policy, FromConfig):
-    pass
-
-policy = MyPolicy.from_config(config)  # Works with any pattern
+policy = MyPolicy.from_dict(config)
 ```
 
-### Nested Configurations
+## Entry Points
 
-```yaml
-model:
-  class_path: physicalai.policies.dummy.policy.Dummy
-  init_args:
-    model:
-      class_path: physicalai.policies.dummy.model.Dummy
-      init_args:
-        action_shape: [7]
-    optimizer:
-      class_path: torch.optim.Adam
-      init_args:
-        lr: 0.001
+### `instantiate_obj(...)`
+
+Use this when you want the generic backend directly.
+
+```python
+obj = instantiate_obj(config)
+obj = instantiate_obj(config, target_cls=MyClass)
 ```
 
-The system handles nested instantiation automatically.
+### `FromConfig`
 
-### FromConfig Mixin
+Use this when you want class-level sugar:
 
-```python test="skip" reason="illustrative pattern, not runnable as-is"
-class Dummy(Policy, FromConfig):
-    def __init__(self, model: nn.Module, optimizer: Optimizer):
-        super().__init__()
-        self.model = model
-        self.optimizer = optimizer
+```python
+class MyClass(FromConfig):
+    ...
 
-# All work automatically:
-policy = Dummy.from_dict(dict_config)
-policy = Dummy.from_pydantic(pydantic_config)
-policy = Dummy.from_dataclass(dataclass_config)
-policy = Dummy.from_config(any_config)  # Auto-detects
+obj = MyClass.from_yaml("config.yaml")
+obj = MyClass.from_dataclass(cfg)
+obj = MyClass.from_config(any_supported_input)
 ```
 
-## Type Validation
+### `@from_config`
 
-Types are validated automatically from type hints:
+Use this when you want the same API without changing the class MRO.
 
-```python test="skip" reason="illustrative pattern, not runnable as-is"
-class Model:
-    def __init__(self, hidden_size: int, dropout: float = 0.1):
-        pass
-
-config = {"class_path": "Model", "init_args": {"hidden_size": 128}}
-model = instantiate_obj_from_dict(config)  # Valid
-
-config = {"class_path": "Model", "init_args": {"hidden_size": "128"}}
-model = instantiate_obj_from_dict(config)  # TypeError
+```python
+@from_config
+class MyClass:
+    ...
 ```
 
-## Best Practices
+## Dataclass and Pydantic Conversion
 
-- Use dataclasses for static configs
-- Use Pydantic for user-provided configs
-- Use `class_path` for experiments
-- Add type hints for validation
-- Provide defaults using `Field()` or dataclass defaults
+`from_dataclass(..., recursive=False)` and `from_pydantic(..., recursive=False)` preserve nested instances by default.
+
+Use `recursive=True` when you want nested objects flattened to plain dicts before instantiation.
+
+This matters when:
+
+- your constructor expects nested dataclass / Pydantic instances: use `recursive=False`
+- your constructor expects plain dictionaries: use `recursive=True`
+
+## Validation
+
+Validation happens in the source object or target class, not in the instantiator itself:
+
+- Pydantic validates before instantiation.
+- Dataclasses can validate in `__post_init__`.
+- Constructors can validate in `__init__`.
+
+`instantiate_obj(...)` does not perform its own schema validation beyond dispatch and import errors.
