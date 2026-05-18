@@ -23,6 +23,8 @@ jobs:
           disable-telemetry: true
           egress-policy: block
           allowed-endpoints: >
+            api.github.com:443
+            codeload.github.com:443
             github.com:443
             registry.npmjs.org:443
             release-assets.githubusercontent.com:443

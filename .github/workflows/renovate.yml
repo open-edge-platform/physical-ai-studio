@@ -62,6 +62,7 @@ jobs:
           disable-telemetry: true
           egress-policy: block
           allowed-endpoints: >
+            api.github.com:443
             auth.docker.io:443
             eastus.data.mcr.microsoft.com:443
             ghcr.io:443
