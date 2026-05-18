@@ -199,43 +199,22 @@ def run_single_episode(gym, policy, max_steps: int, seed: int) -> dict[str, Any]
     obs, info = gym.reset(seed=seed)
     policy.reset()
 
-    # Detect chunked vs. queued policies. Queued runners (use_action_queue=True)
-    # expose select_action() returning a single action; chunked runners (e.g.
-    # Pi0.5 raw) return N actions per call via predict_action_chunk() and we
-    # must execute them sequentially before re-predicting.
-    use_queue = getattr(policy, "use_action_queue", True)
-
-    def _to_numpy(a):
-        if isinstance(a, torch.Tensor):
-            a = a.cpu().numpy()
-        return a
-
-    def _next_action():
-        """Yield single actions, re-predicting at chunk boundaries."""
-        while True:
-            with torch.no_grad():
-                pred = policy.select_action(obs) if use_queue else policy.predict_action_chunk(obs)
-            pred = _to_numpy(pred)
-            # Drop leading batch dim if present.
-            if pred.ndim >= 2 and pred.shape[0] == 1:
-                pred = pred[0]
-            if use_queue:
-                # Single action returned (possibly 1D action vector).
-                yield pred
-            else:
-                # Chunk: iterate over the time axis (first axis).
-                for a in pred:
-                    yield a
-
     # Metrics
     total_reward = 0.0
     success = False
     step = 0
     start_time = time.perf_counter()
-    action_iter = _next_action()
 
     for step in range(max_steps):
-        action = next(action_iter)
+        # select_action() uses the internal ActionCursor to dispense one
+        # action per call, re-predicting at chunk boundaries automatically.
+        with torch.no_grad():
+            action = policy.select_action(obs)
+        if isinstance(action, torch.Tensor):
+            action = action.cpu().numpy()
+        # Drop leading batch dim if present.
+        if action.ndim >= 2 and action.shape[0] == 1:
+            action = action[0]
 
         # Step the simulator — the key part:
         # MuJoCo applies the action, updates the world state, renders new

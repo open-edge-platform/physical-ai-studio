@@ -226,16 +226,10 @@ def compare_single_sample(
     pytorch_model.reset()
     openvino_model.reset()
 
-    # Predictions: prefer chunked output when available (Pi0.5, ACT, Diffusion,
-    # ...). Falls back to single-step `select_action` for runners with an
-    # action queue.
-    def _predict(model, obs):
-        if getattr(model, "use_action_queue", True):
-            return model.select_action(obs)
-        return model.predict_action_chunk(obs)
-
-    pytorch_action = _predict(pytorch_model, sample)
-    openvino_action = _predict(openvino_model, sample)
+    # Compare full action chunks. Works for all policies after the
+    # ActionCursor refactor (predict_action_chunk is universal).
+    pytorch_action = pytorch_model.predict_action_chunk(sample)
+    openvino_action = openvino_model.predict_action_chunk(sample)
 
     # Convert to numpy and flatten.
     if isinstance(pytorch_action, torch.Tensor):
