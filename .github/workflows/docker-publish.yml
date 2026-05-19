@@ -96,6 +96,7 @@ jobs:
           push: "true"
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          use-cache: "false" # To ensure that the application container images remain buildable
 
       - name: Resolve primary image tag for signing
         id: primary-tag

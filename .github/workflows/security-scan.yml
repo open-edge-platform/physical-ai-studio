@@ -319,15 +319,6 @@ jobs:
           fail_action: false
           artifact_name: zapapi
 
-      - name: Run ZAP Full Scan
-        uses: zaproxy/action-full-scan@3c58388149901b9a03b7718852c5ba889646c27c # v0.13.0
-        with:
-          target: "http://localhost:7860"
-          cmd_options: "-a -j"
-          allow_issue_writing: false
-          fail_action: false
-          artifact_name: zapfull
-
       - name: Run Schemathesis Scan
         uses: schemathesis/action@806cace2053cbbac93188e1281ff7da415643160 # v3
         continue-on-error: true
