@@ -31,6 +31,7 @@ from physicalai.export.backends import (
     ExportParameters,
     ONNXExportParameters,
     OpenVINOExportParameters,
+    TorchExportParameters,
 )
 from physicalai.train import __version__
 
@@ -198,6 +199,11 @@ class ExportablePolicyMixin:
         model_path = self._prepare_export_path(checkpoint_path, ".pt")
         export_dir = model_path.parent
 
+        extra_model_args: TorchExportParameters = cast(
+            "TorchExportParameters",
+            self._get_export_extra_args(ExportBackend.TORCH),
+        )
+
         checkpoint = {}
         checkpoint["state_dict"] = self.state_dict() if hasattr(self, "state_dict") else {}
 
@@ -213,7 +219,12 @@ class ExportablePolicyMixin:
         torch.save(checkpoint, str(model_path))  # nosec B614
 
         # Create metadata files
-        self._create_metadata(export_dir, ExportBackend.TORCH)
+        self._create_metadata(
+            export_dir,
+            ExportBackend.TORCH,
+            preprocessors=extra_model_args.preprocessors_specs,
+            postprocessors=extra_model_args.postprocessors_specs,
+        )
 
     @torch.no_grad()
     def to_onnx(
