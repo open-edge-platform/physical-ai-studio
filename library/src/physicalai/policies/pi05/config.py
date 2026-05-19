@@ -43,7 +43,6 @@ class Pi05Config(Config):
         min_period: Minimum period for sine-cosine positional encoding. Defaults to 4e-3.
         max_period: Maximum period for sine-cosine positional encoding. Defaults to 4.0.
         image_resolution: Target image resolution (height, width). Defaults to (224, 224).
-        empty_cameras: Number of empty camera slots to add. Defaults to 0.
         tokenizer_max_length: Maximum length for tokenizer output. Defaults to 200.
         gradient_checkpointing: Enable gradient checkpointing for memory optimization. Defaults to True.
         compile_model: Whether to use torch.compile. Defaults to False.
@@ -90,8 +89,6 @@ class Pi05Config(Config):
     max_period: float = 4.0
 
     image_resolution: tuple[int, int] = (224, 224)
-
-    empty_cameras: int = 0
 
     tokenizer_max_length: int = 200
 

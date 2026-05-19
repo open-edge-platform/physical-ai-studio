@@ -676,20 +676,30 @@ class Pi05Model(ExportableModelMixin, Model):
 
         sample_input = {}
 
-        num_image_features = sum(
-            1 for key in self._dataset_stats if str(FeatureType.VISUAL) in self._dataset_stats[key]["type"]
-        )
+        def _is_image_feature(key: str, stats: dict[str, Any]) -> bool:
+            """Return True only for real image features (excludes empty cameras which lack norm stats)."""
+            has_visual_key = IMAGES in key
+            feat_type = stats.get("type")
+            is_visual_type = feat_type is not None and str(FeatureType.VISUAL) in str(feat_type)
+            if not (has_visual_key or is_visual_type):
+                return False
+            # Empty cameras have type=VISUAL but no normalization stats — exclude them.
+            return "mean" in stats
+
+        num_image_features = sum(1 for key in self._dataset_stats if _is_image_feature(key, self._dataset_stats[key]))
 
         for feature_id in self._dataset_stats:
             if STATE in feature_id:
                 state_feature = self._dataset_stats[feature_id]
                 sample_input[STATE] = torch.randn(1, *cast("tuple", state_feature["shape"]), device=device)
-            elif str(FeatureType.VISUAL) in self._dataset_stats[feature_id]["type"]:
+            elif _is_image_feature(feature_id, self._dataset_stats[feature_id]):
                 image_feature = self._dataset_stats[feature_id]
+                # name is already stripped to e.g. "images.image" by pretrained_utils
+                mapped_name = str(image_feature["name"])
                 if num_image_features == 1:
                     sample_input[IMAGES] = torch.randn(1, *cast("tuple", image_feature["shape"]), device=device)
                 else:
-                    sample_input[IMAGES + "." + str(image_feature["name"])] = torch.randn(
+                    sample_input[mapped_name] = torch.randn(
                         1,
                         *cast("tuple", image_feature["shape"]),
                         device=device,

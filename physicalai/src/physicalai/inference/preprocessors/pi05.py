@@ -27,26 +27,33 @@ class Pi05Preprocessor(Preprocessor):
 
     Args:
         image_resolution: Target (height, width) for images.
-        empty_cameras: Number of extra -1-filled camera slots to append.
+        image_features: Ordered list of image feature keys (e.g.
+            ``["images.image", "images.wrist"]``). Missing keys in the batch
+            are filled with -1-padded images and zero masks.
     """
 
     def __init__(
         self,
         image_resolution: tuple[int, int] = (224, 224),
-        empty_cameras: int = 0,
+        *,
+        image_features: list[str],
     ) -> None:
         """Initialize the Pi0.5 preprocessor."""
         super().__init__()
         self._image_resolution = image_resolution
-        self._empty_cameras = empty_cameras
+        # Normalise feature keys so they always carry the "images." prefix,
+        # regardless of how the manifest stored them.
+        self._image_features = [
+            k if k.startswith(IMAGES) else f"{IMAGES}.{k}" for k in image_features
+        ]
 
     def __call__(self, inputs: dict[str, np.ndarray | list[str]]) -> dict[str, np.ndarray | list[str]]:
         """Preprocess images and text for Pi0.5 inference.
 
         Args:
-            inputs: Dict with image keys (``images`` or ``images.*``),
-                a ``task`` key (list of strings), and a state key
-                (numpy array of shape ``(batch, state_dim)``).
+            inputs: Dict with image keys (``images.*``) as flat keys or a
+                nested ``{"images": {"cam": arr}}`` dict.  Nested dicts are
+                flattened to dot-separated keys before processing.
 
         Returns:
             Updated dict with:
@@ -54,11 +61,23 @@ class Pi05Preprocessor(Preprocessor):
             - ``image_masks``: stacked ``(n_cameras, batch)`` bool array
             - ``task``: list of formatted prompt strings
         """
+        # Flatten nested dicts: {"images": {"image": x}} → {"images.image": x}
+        flat: dict[str, np.ndarray | list[str]] = {}
+        for key, value in inputs.items():
+            if isinstance(value, dict):
+                for sub_key, sub_value in value.items():
+                    flat[f"{key}.{sub_key}"] = sub_value
+            else:
+                flat[key] = value
+        inputs = flat
+
         # --- images ---
         images, img_masks = self._preprocess_images(inputs)
 
-        if self._empty_cameras > 0 and images:
-            for _ in range(self._empty_cameras):
+        # Fill missing image features with -1-padded images and zero masks
+        if images:
+            missing = [k for k in self._image_features if k not in inputs]
+            for _ in missing:
                 images.append(np.full_like(images[-1], -1.0))
                 img_masks.append(np.zeros_like(img_masks[-1]))
 
@@ -96,14 +115,9 @@ class Pi05Preprocessor(Preprocessor):
 
     def _preprocess_images(
         self,
-        inputs: dict[str, np.ndarray | list[str] | dict[str, np.ndarray]],
+        inputs: dict[str, np.ndarray | list[str]],
     ) -> tuple[list[np.ndarray], list[np.ndarray]]:
-        """Resize, pad, and normalize all camera images found in *inputs*.
-
-        Iterates over all keys that start with ``images`` (excluding ``is_pad``
-        variants), extracts the latest timestep when a temporal dimension is
-        present, converts to float32, resizes to ``self._image_resolution`` with
-        centre-padding, and normalises from ``[0, 1]`` to ``[-1, 1]``.
+        """Resize, pad, and normalize present camera images in feature-list order.
 
         Args:
             inputs: Preprocessor input dict. Image arrays are expected to have
@@ -111,27 +125,18 @@ class Pi05Preprocessor(Preprocessor):
 
         Returns:
             Tuple of:
-            - ``images``: list of ``(B, C, H, W)`` float32 arrays, one per camera.
-            - ``masks``: list of ``(B,)`` bool arrays (all ``True`` for real cameras).
+            - ``images``: list of ``(B, C, H, W)`` float32 arrays, one per present camera.
+            - ``masks``: list of ``(B,)`` bool arrays (all ``True``).
         """
-        input_images: list[np.ndarray] = []
-        images_value = inputs.get(IMAGES)
-        if isinstance(images_value, np.ndarray):
-            input_images.append(images_value)
-        elif isinstance(images_value, dict):
-            input_images.extend(list(images_value.values()))
-        else:
-            img_keys = [key for key in inputs if key.startswith(IMAGES)]
-            input_images.extend(
-                [inputs[img_keys[0]]] if len(img_keys) == 1 else [inputs[key] for key in img_keys],
-            )
-
         images: list[np.ndarray] = []
         masks: list[np.ndarray] = []
 
         max_image_dim = 5
-        for image in input_images:
-            img = image
+        for key in self._image_features:
+            if key not in inputs:
+                continue
+
+            img = inputs[key]
             if img.ndim == max_image_dim:
                 img = img[:, -1, :, :, :]
 

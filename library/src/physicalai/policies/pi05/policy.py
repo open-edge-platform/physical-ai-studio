@@ -18,7 +18,7 @@ from physicalai.inference.manifest import ComponentSpec
 from safetensors.torch import load_file
 
 from physicalai.data.dataset import Dataset
-from physicalai.data.observation import ACTION, STATE
+from physicalai.data.observation import ACTION, IMAGES, STATE, FeatureType
 from physicalai.export import ExportablePolicyMixin, ExportBackend
 from physicalai.export.backends import (
     ExportParameters,
@@ -73,7 +73,6 @@ class Pi05(ExportablePolicyMixin, Policy):
         max_period: Maximum period for sine-cosine positional encoding. Default: 4.0.
         use_random_input_noise: Use random noise as initial denoising input. Default: True.
         image_resolution: Target image resolution. Default: (224, 224).
-        empty_cameras: Number of empty camera slots to add. Default: 0.
         tokenizer_max_length: Maximum tokenizer length. Default: 200.
         gradient_checkpointing: Enable gradient checkpointing. Default: True.
         compile_model: Whether to use torch.compile. Default: False.
@@ -133,7 +132,6 @@ class Pi05(ExportablePolicyMixin, Policy):
         use_random_input_noise: bool = True,
         # Image preprocessing
         image_resolution: tuple[int, int] = (224, 224),
-        empty_cameras: int = 0,
         # Tokenizer
         tokenizer_max_length: int = 200,
         # Optimization
@@ -202,7 +200,6 @@ class Pi05(ExportablePolicyMixin, Policy):
                 min_period=min_period,
                 max_period=max_period,
                 image_resolution=image_resolution,
-                empty_cameras=empty_cameras,
                 tokenizer_max_length=tokenizer_max_length,
                 use_random_input_noise=use_random_input_noise,
                 gradient_checkpointing=gradient_checkpointing,
@@ -297,7 +294,6 @@ class Pi05(ExportablePolicyMixin, Policy):
             stats=dataset_stats,
             image_resolution=self.config.image_resolution,
             max_token_len=self.config.tokenizer_max_length,
-            empty_cameras=self.config.empty_cameras,
             normalization_mode=self.config.normalization_mode,
         )
 
@@ -506,7 +502,6 @@ class Pi05(ExportablePolicyMixin, Policy):
             stats=dataset_stats,
             image_resolution=self.config.image_resolution,
             max_token_len=self.config.tokenizer_max_length,
-            empty_cameras=self.config.empty_cameras,
             normalization_mode=self.config.normalization_mode,
         )
         self._dataset_stats = dataset_stats
@@ -680,16 +675,27 @@ class Pi05(ExportablePolicyMixin, Policy):
             )
             raise ValueError(msg)
 
+        # Collect image feature keys from dataset stats (name field is already
+        # stripped of the "observation." prefix by pretrained_utils).
+        image_feature_keys = []
+        for key, stat in self._dataset_stats.items():
+            if stat.get("type") != FeatureType.VISUAL.value:
+                continue
+            name = str(stat.get("name", key))
+            if not name.startswith(IMAGES):
+                name = f"{IMAGES}.{name}"
+            image_feature_keys.append(name)
+
         base_preproc_specs = [
             ComponentSpec(
                 type="normalize",
-                stats={STATE: self._dataset_stats[f"observation.{STATE}"]},
+                stats={STATE: self._dataset_stats[STATE]},
                 mode=self.config.normalization_mode.lower(),
             ),
             ComponentSpec(
                 type="pi05",
                 image_resolution=self.config.image_resolution,
-                empty_cameras=self.config.empty_cameras,
+                image_features=image_feature_keys,
             ),
         ]
         postproc_specs = [

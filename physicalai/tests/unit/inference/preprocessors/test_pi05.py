@@ -15,7 +15,7 @@ from physicalai.inference.preprocessors.pi05 import Pi05Preprocessor
 
 @pytest.fixture()
 def preprocessor():
-    return Pi05Preprocessor(image_resolution=(64, 64))
+    return Pi05Preprocessor(image_resolution=(64, 64), image_features=[f"{IMAGES}.image"])
 
 
 def _make_inputs(
@@ -32,7 +32,7 @@ def _make_inputs(
         TASK: ["pick up the cup"] * batch,
     }
     if n_cameras == 1:
-        inputs[IMAGES] = np.random.rand(batch, channels, h, w).astype(np.float32)
+        inputs[f"{IMAGES}.image"] = np.random.rand(batch, channels, h, w).astype(np.float32)
     else:
         for i in range(n_cameras):
             inputs[f"{IMAGES}.{i}"] = np.random.rand(batch, channels, h, w).astype(np.float32)
@@ -44,7 +44,7 @@ class TestPi05PreprocessorInit:
         assert isinstance(preprocessor, Preprocessor)
 
     def test_default_resolution(self) -> None:
-        prep = Pi05Preprocessor()
+        prep = Pi05Preprocessor(image_features=[f"{IMAGES}.image"])
         assert prep._image_resolution == (224, 224)
 
     def test_custom_resolution(self, preprocessor) -> None:
@@ -66,13 +66,13 @@ class TestPi05PreprocessorImages:
 
     def test_pixel_range_ones(self, preprocessor) -> None:
         inputs = _make_inputs()
-        inputs[IMAGES] = np.ones((1, 3, 64, 64), dtype=np.float32)
+        inputs[f"{IMAGES}.image"] = np.ones((1, 3, 64, 64), dtype=np.float32)
         result = preprocessor(inputs)
         np.testing.assert_allclose(result[IMAGES].max(), 1.0, atol=1e-5)
 
     def test_pixel_range_zeros(self, preprocessor) -> None:
         inputs = _make_inputs()
-        inputs[IMAGES] = np.zeros((1, 3, 64, 64), dtype=np.float32)
+        inputs[f"{IMAGES}.image"] = np.zeros((1, 3, 64, 64), dtype=np.float32)
         result = preprocessor(inputs)
         np.testing.assert_allclose(result[IMAGES].min(), -1.0, atol=1e-5)
 
@@ -82,9 +82,13 @@ class TestPi05PreprocessorImages:
         assert result[IMAGE_MASKS].dtype == np.bool_
         assert result[IMAGE_MASKS].all()
 
-    def test_multiple_cameras_stacked(self, preprocessor) -> None:
+    def test_multiple_cameras_stacked(self) -> None:
+        prep = Pi05Preprocessor(
+            image_resolution=(64, 64),
+            image_features=[f"{IMAGES}.0", f"{IMAGES}.1"],
+        )
         inputs = _make_inputs(n_cameras=2)
-        result = preprocessor(inputs)
+        result = prep(inputs)
         assert result[IMAGES].shape[0] == 2
 
     def test_non_square_image_padded(self, preprocessor) -> None:
@@ -93,25 +97,39 @@ class TestPi05PreprocessorImages:
         assert result[IMAGES].shape[3] == 64
         assert result[IMAGES].shape[4] == 64
 
-    def test_dict_images_stacked(self, preprocessor) -> None:
+    def test_flat_key_images_stacked(self) -> None:
+        prep = Pi05Preprocessor(
+            image_resolution=(64, 64),
+            image_features=[f"{IMAGES}.top", f"{IMAGES}.wrist"],
+        )
         inputs = _make_inputs()
-        inputs[IMAGES] = {
-            "top": np.random.rand(1, 3, 48, 48).astype(np.float32),
-            "wrist": np.random.rand(1, 3, 32, 64).astype(np.float32),
-        }
-        result = preprocessor(inputs)
+        inputs.pop(f"{IMAGES}.image", None)
+        inputs[f"{IMAGES}.top"] = np.random.rand(1, 3, 48, 48).astype(np.float32)
+        inputs[f"{IMAGES}.wrist"] = np.random.rand(1, 3, 32, 64).astype(np.float32)
+        result = prep(inputs)
         assert result[IMAGES].shape == (2, 1, 3, 64, 64)
         assert result[IMAGE_MASKS].shape == (2, 1)
         assert result[IMAGE_MASKS].all()
 
-    def test_empty_cameras_appended(self) -> None:
-        prep = Pi05Preprocessor(image_resolution=(64, 64), empty_cameras=1)
+    def test_missing_image_features_filled(self) -> None:
+        prep = Pi05Preprocessor(
+            image_resolution=(64, 64),
+            image_features=[f"{IMAGES}.image", f"{IMAGES}.wrist"],
+        )
+        # Only provide "images.image", "images.wrist" is missing
         inputs = _make_inputs()
         result = prep(inputs)
-        # 1 real + 1 empty
+        # 1 real + 1 missing
         assert result[IMAGES].shape[0] == 2
-        # empty camera mask should be zeros
+        # missing camera mask should be zeros
+        assert result[IMAGE_MASKS][0].all()
         assert not result[IMAGE_MASKS][1].any()
+        # missing camera pixels should be -1
+        np.testing.assert_allclose(result[IMAGES][1], -1.0)
+
+    def test_no_image_features_raises(self) -> None:
+        with pytest.raises(TypeError):
+            Pi05Preprocessor(image_resolution=(64, 64))
 
     def test_vs_torch_reference(self, preprocessor) -> None:
         pytest.skip("Access to PaliGemma tokenizer is limited")
@@ -122,7 +140,7 @@ class TestPi05PreprocessorImages:
         from physicalai.policies.pi05.preprocessor import Pi05Preprocessor as Pi05PreprocessorTorch
         import torch
 
-        torch_resize = Pi05PreprocessorTorch(image_resolution=(64, 64), empty_cameras=0)
+        torch_resize = Pi05PreprocessorTorch(image_resolution=(64, 64))
 
         input_batch_torch = {k: torch.from_numpy(v) if isinstance(v, np.ndarray) else v for k, v in inputs.items()}
         torch_result = torch_resize(input_batch_torch)
@@ -225,8 +243,9 @@ class TestPi05ResizeWithPad:
         result = Pi05Preprocessor._resize_with_pad(img, 64, 64)
         assert result.shape == (1, 64, 64, 3)
 
-    def test_preserves_other_keys(self, preprocessor) -> None:
+    def test_preserves_other_keys(self) -> None:
+        prep = Pi05Preprocessor(image_resolution=(64, 64), image_features=[f"{IMAGES}.image"])
         inputs = _make_inputs()
         inputs["extra_key"] = "hello"
-        result = preprocessor(inputs)
+        result = prep(inputs)
         assert result["extra_key"] == "hello"

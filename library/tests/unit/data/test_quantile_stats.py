@@ -214,3 +214,50 @@ class TestAugmentDatasetQuantileStats:
 
             torch.testing.assert_close(ds_psa.meta.stats[key]["q01"], expected_q01)
             torch.testing.assert_close(ds_psa.meta.stats[key]["q99"], expected_q99)
+
+    def test_adds_stats_for_keys_missing_from_meta(self) -> None:
+        """Verify that keys computed by LeRobot but missing from meta.stats are added."""
+        ds = _FakeLeRobotDataset()
+
+        # Simulate an older dataset where image stats are absent from meta.stats
+        fake_image_stats = {
+            "mean": np.zeros((3, 1, 1), dtype=np.float32),
+            "std": np.ones((3, 1, 1), dtype=np.float32),
+            "min": np.zeros((3, 1, 1), dtype=np.float32),
+            "max": np.ones((3, 1, 1), dtype=np.float32),
+            "q01": np.full((3, 1, 1), 0.01, dtype=np.float32),
+            "q99": np.full((3, 1, 1), 0.99, dtype=np.float32),
+            "count": np.array([100]),
+        }
+
+        with patch(
+            "physicalai.data.lerobot.utils.quantile_stats.compute_quantile_stats_for_dataset"
+        ) as mock_compute:
+            mock_compute.return_value = {
+                "observation.state": {
+                    "q01": np.zeros(4, dtype=np.float32),
+                    "q99": np.ones(4, dtype=np.float32),
+                },
+                "action": {
+                    "q01": np.zeros(2, dtype=np.float32),
+                    "q99": np.ones(2, dtype=np.float32),
+                },
+                "observation.images.image": fake_image_stats,
+            }
+
+            assert "observation.images.image" not in ds.meta.stats
+
+            from physicalai.data.lerobot.utils.quantile_stats import augment_dataset_quantile_stats
+
+            augment_dataset_quantile_stats(ds)
+
+        # Image stats should now be present with all stat keys
+        assert "observation.images.image" in ds.meta.stats
+        img_stats = ds.meta.stats["observation.images.image"]
+        for stat_key in ("mean", "std", "min", "max", "q01", "q99", "count"):
+            assert stat_key in img_stats, f"{stat_key} missing for observation.images.image"
+            assert isinstance(img_stats[stat_key], torch.Tensor)
+
+        # Existing keys should still have q01/q99 injected
+        assert "q01" in ds.meta.stats["action"]
+        assert "q99" in ds.meta.stats["action"]
