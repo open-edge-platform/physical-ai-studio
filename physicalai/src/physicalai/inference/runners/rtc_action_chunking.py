@@ -63,18 +63,14 @@ class RTCActionChunking(InferenceRunner):
         chunk_size: Number of actions per chunk (model output dim).
         execution_horizon: How many fresh actions to execute per chunk.
         fps: Robot control frequency in Hz.
-        action_dim: Action space dimensionality (model internal dim,
-            used for noise and prev_chunk_left_over shapes).
-        output_action_dim: Actual action dimensionality to slice output
-            to before queueing.  When ``None``, no slicing is applied
-            (model output dim == real action dim).
+        max_action_dim: Model's internal latent action dimension
+            (used for noise and prev_chunk_left_over shapes). This is
+            NOT the robot output DOF — e.g. 32 for Pi05, even though
+            output is 6 for SO-101.
         queue_threshold: Re-infer when queue drops to this level.
-            Defaults to ``execution_horizon``.
+            Defaults to 30.
         action_key: Key for the action in the output dict returned to
             callers (e.g. ``"action"``).
-        model_output_key: Key for the action chunk in the adapter's raw
-            output dict.  Defaults to ``action_key``.  Use this when the
-            OV model uses a different output name (e.g. ``"actions_out"``).
         postprocessors: Optional postprocessor pipeline to apply inside
             the RTC thread (e.g. denormalization). These run in the
             background thread so the queue stores both raw and processed
@@ -87,11 +83,9 @@ class RTCActionChunking(InferenceRunner):
         chunk_size: int = 50,
         execution_horizon: int = 10,
         fps: float = 30.0,
-        action_dim: int = 14,
-        output_action_dim: int | None = None,
+        max_action_dim: int = 32,
         queue_threshold: int | None = None,
         action_key: str = ACTION,
-        model_output_key: str | None = None,
         postprocessors: list[Postprocessor] | None = None,
         max_guidance_weight: float = 10.0,
     ) -> None:
@@ -99,11 +93,9 @@ class RTCActionChunking(InferenceRunner):
         self._chunk_size = chunk_size
         self._execution_horizon = execution_horizon
         self._fps = fps
-        self._action_dim = action_dim
-        self._output_action_dim = output_action_dim
-        self._queue_threshold = queue_threshold if queue_threshold is not None else execution_horizon
+        self._max_action_dim = max_action_dim
+        self._queue_threshold = queue_threshold if queue_threshold is not None else 30
         self._action_key = action_key
-        self._model_output_key = model_output_key or action_key
         self._postprocessors: list[Postprocessor] = postprocessors or []
         self._max_guidance_weight = max_guidance_weight
 
@@ -157,7 +149,7 @@ class RTCActionChunking(InferenceRunner):
         action = self._queue.get()
         if action is None:
             # Queue drained between threshold check and here — return zeros
-            action = np.zeros(self._action_dim, dtype=np.float32)
+            action = np.zeros(self._max_action_dim, dtype=np.float32)
 
         return {self._action_key: action}
 
@@ -219,7 +211,7 @@ class RTCActionChunking(InferenceRunner):
             prev_chunk = self._queue.get_left_over()
             if prev_chunk is None:
                 prev_chunk = np.zeros(
-                    (1, self._chunk_size, self._action_dim),
+                    (1, self._chunk_size, self._max_action_dim),
                     dtype=np.float32,
                 )
             else:
@@ -228,14 +220,14 @@ class RTCActionChunking(InferenceRunner):
                 out_dim = prev_chunk.shape[-1]
 
                 # Pad action dim back to model's max_action_dim if output was trimmed
-                if out_dim < self._action_dim:
+                if out_dim < self._max_action_dim:
                     prev_chunk = np.pad(
                         prev_chunk,
-                        ((0, 0), (0, self._action_dim - out_dim)),
+                        ((0, 0), (0, self._max_action_dim - out_dim)),
                     )
 
                 # Reshape to (1, remaining, action_dim) and pad time to chunk_size
-                prev_chunk = prev_chunk.reshape(1, remaining, self._action_dim)
+                prev_chunk = prev_chunk.reshape(1, remaining, self._max_action_dim)
                 pad_len = self._chunk_size - remaining
                 if pad_len > 0:
                     prev_chunk = np.pad(prev_chunk, ((0, 0), (0, pad_len), (0, 0)))
@@ -249,9 +241,7 @@ class RTCActionChunking(InferenceRunner):
             # 4. Inject RTC-specific inputs
             inputs["prev_chunk_left_over"] = prev_chunk
             inputs["inference_delay"] = np.int64(delay)  # scalar, shape []
-            inputs["noise"] = np.random.randn(
-                1, self._chunk_size, self._action_dim,
-            ).astype(np.float32)
+            inputs["noise"] = np.random.randn(1, self._chunk_size, self._max_action_dim).astype(np.float32)
             inputs["max_guidance_weight"] = np.float32(self._max_guidance_weight)
             inputs["execution_horizon"] = np.int64(self._execution_horizon)
 
@@ -277,20 +267,14 @@ class RTCActionChunking(InferenceRunner):
                 continue
 
             # 6. Extract raw actions: (1, chunk_size, action_dim) → (chunk_size, action_dim)
-            raw_actions = outputs[self._model_output_key]
+            raw_actions = outputs[self._action_key]
             if raw_actions.ndim == 3:
                 raw_actions = raw_actions[0]
 
-            # 7. Slice to real action dim (model may pad to max_action_dim)
-            if self._output_action_dim is not None:
-                sliced_actions = raw_actions[:, :self._output_action_dim]
-            else:
-                sliced_actions = raw_actions
+            # 7. Postprocess (denormalize) for robot
+            processed_actions = self._postprocess(raw_actions)
 
-            # 8. Postprocess (denormalize) for robot
-            processed_actions = self._postprocess(sliced_actions)
-
-            # 9. Compute real delay and merge
+            # 8. Compute real delay and merge
             real_delay = int(np.ceil(elapsed * self._fps))
             real_delay = min(real_delay, max(0, len(raw_actions) - self._execution_horizon))
 

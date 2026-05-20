@@ -25,6 +25,7 @@ from physicalai.inference.manifest import (
     PolicySpec,
 )
 from physicalai.inference.runners.action_chunking import ActionChunking
+from physicalai.inference.runners.rtc_action_chunking import RTCActionChunking
 from physicalai.inference.runners.single_pass import SinglePass
 
 from physicalai.export.backends import (
@@ -125,10 +126,19 @@ class ExportablePolicyMixin:
 
         use_action_queue = metadata.get("use_action_queue", False)
         chunk_size = metadata.get("chunk_size", 1)
+        rtc_enabled = metadata.get("rtc_enabled", False)
         preprocessors_specs: list[ComponentSpec] = metadata.get("preprocessors", [])
         postprocessors_specs: list[ComponentSpec] = metadata.get("postprocessors", [])
 
-        if use_action_queue:
+        if rtc_enabled:
+            runner = ComponentSpec.from_class(
+                RTCActionChunking,
+                runner=ComponentSpec.from_class(SinglePass),
+                chunk_size=chunk_size,
+                execution_horizon=metadata.get("rtc_execution_horizon", 10),
+                max_guidance_weight=metadata.get("rtc_max_guidance_weight", 10.0),
+            )
+        elif use_action_queue:
             runner = ComponentSpec.from_class(
                 ActionChunking,
                 runner=ComponentSpec.from_class(SinglePass),

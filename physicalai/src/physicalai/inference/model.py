@@ -311,42 +311,56 @@ class InferenceModel:
         becomes ``{"obs.image": x}``), then filters to only the keys the adapter
         expects.
 
+        Keys declared in :attr:`runner.runner_provided_keys` are excluded from
+        validation — the runner injects them at call time (e.g. ``noise``,
+        ``prev_chunk_left_over``, ``inference_delay`` for RTC).
+
         Args:
             inputs: Input dict mapping names to arrays. Values
                 may be nested dicts, which are flattened with dot-separated keys.
 
         Returns:
-            Flat dict containing only the adapter's expected inputs. If the
-            adapter has no declared input names, returns ``inputs`` unchanged.
+            Flat dict containing only the observation-level adapter inputs
+            (runner-provided keys are excluded). If the adapter has no
+            declared input names, returns ``inputs`` unchanged.
 
         Raises:
-            KeyError: If an expected adapter input is not found in the
-                (flattened) inputs.
+            KeyError: If an expected adapter input (that is not runner-provided)
+                is not found in the (flattened) inputs.
         """
         expected = self.adapter.input_names
 
-        if expected:
-            flat_inputs: dict[str, np.ndarray] = {}
-            for key, value in inputs.items():
-                if isinstance(value, dict):
-                    for sub_key, sub_value in value.items():
-                        flat_inputs[f"{key}.{sub_key}"] = sub_value
-                else:
-                    flat_inputs[key] = value
+        if not expected:
+            return inputs
 
-            filtered: dict[str, np.ndarray] = {}
-            runner_keys = getattr(self.runner, "runner_provided_keys", set())
-            for k in expected:
-                if k in flat_inputs:
-                    filtered[k] = flat_inputs[k]
-                elif k in runner_keys:
-                    continue  # runner will inject this
-                else:
-                    msg = f"Expected input '{k}' not found in inputs.\nAvailable keys: {list(flat_inputs.keys())}"
-                    raise KeyError(msg)
+        # Flatten nested dicts using dot notation
+        flat_inputs: dict[str, np.ndarray] = {}
+        for key, value in inputs.items():
+            if isinstance(value, dict):
+                for sub_key, sub_value in value.items():
+                    flat_inputs[f"{key}.{sub_key}"] = sub_value
+            else:
+                flat_inputs[key] = value
 
-            return filtered
-        return inputs
+        # Determine which keys the runner will inject (not expected from caller)
+        runner_keys = getattr(self.runner, "runner_provided_keys", set())
+
+        filtered: dict[str, np.ndarray] = {}
+        for k in expected:
+            if k in runner_keys:
+                # Runner injects this at call time — skip
+                continue
+            if k in flat_inputs:
+                filtered[k] = flat_inputs[k]
+            else:
+                msg = (
+                    f"Expected input '{k}' not found in inputs.\n"
+                    f"Available keys: {list(flat_inputs.keys())}\n"
+                    f"Runner-provided (excluded): {sorted(runner_keys)}"
+                )
+                raise KeyError(msg)
+
+        return filtered
 
     def _load_manifest(self) -> Manifest:
         """Load export manifest from manifest.json, metadata.yaml, or metadata.json.

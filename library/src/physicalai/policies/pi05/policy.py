@@ -12,6 +12,14 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+
+import tempfile
+
+import openvino
+import openvino_tokenizers
+
+from physicalai.inference.constants import ACTION
+
 import torch
 from huggingface_hub import hf_hub_download
 from physicalai.inference.manifest import ComponentSpec
@@ -742,8 +750,8 @@ class Pi05(ExportablePolicyMixin, Policy):
         input_sample: dict[str, torch.Tensor] | None = None,
         *,
         enable_rtc: bool = False,
-        rtc_max_guidance_weight: float = 5.0,
-        rtc_prefix_attention_schedule: str = "exp",
+        rtc_max_guidance_weight: float = 10.0,
+        rtc_prefix_attention_schedule: str = "linear",
         rtc_execution_horizon: int = 10,
         compress_to_fp16: bool = True,
         **export_kwargs: Any,
@@ -786,15 +794,19 @@ class Pi05(ExportablePolicyMixin, Policy):
         output_path: str | Path,
         *,
         max_guidance_weight: float = 10.0,
-        prefix_attention_schedule: str = "exp",
+        prefix_attention_schedule: str = "linear",
         execution_horizon: int = 10,
         compress_to_fp16: bool = True,
     ) -> None:
-        """Export Pi05 as an OpenVINO IR with the RTC denoising loop baked in."""
-        import tempfile  # noqa: PLC0415
-
-        import openvino  # noqa: PLC0415
-        import openvino_tokenizers  # noqa: PLC0415
+        """Export Pi05 as an OpenVINO IR with the RTC denoising loop baked in.
+        
+        Args:
+            output_path: Directory where the OV model will be saved.
+            max_guidance_weight: Maximum guidance weight for RTC.
+            prefix_attention_schedule: Schedule for prefix attention weights. Either "exp" or "linear".
+            execution_horizon: Number of action steps in the execution horizon. Baked as a constant into the graph.
+            compress_to_fp16: Whether to compress weights to FP16 for smaller model size and faster inference.
+        """
 
         if self._dataset_stats is None:
             msg = (
@@ -829,7 +841,7 @@ class Pi05(ExportablePolicyMixin, Policy):
             args=tuple(sample.values()),
             f=onnx_path,
             input_names=list(sample.keys()),
-            output_names=["actions_out"],
+            output_names=[ACTION],
         )
 
         # Convert ONNX → OpenVINO
