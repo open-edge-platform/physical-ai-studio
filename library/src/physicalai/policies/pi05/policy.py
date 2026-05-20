@@ -12,10 +12,6 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-
-import tempfile
-
-import openvino
 import openvino_tokenizers
 
 from physicalai.inference.constants import ACTION
@@ -39,7 +35,7 @@ from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 from .config import Pi05Config
-from .model import Pi05Model 
+from .model import Pi05Model
 from .preprocessor import make_pi05_preprocessors
 from .pretrained_utils import detect_normalization_mode as _detect_normalization_mode
 from .pretrained_utils import extract_dataset_stats as _extract_dataset_stats
