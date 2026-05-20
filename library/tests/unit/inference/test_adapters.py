@@ -209,12 +209,12 @@ class TestExecuTorchAdapter:
         return mock_et_runtime, mock_runtime_instance, mock_program, mock_method
 
     def test_load_happy_path(self, tmp_path: Path) -> None:
-        """Test successful load with metadata."""
+        """Test successful load with manifest."""
         model_path = tmp_path / "model.pte"
         model_path.touch()
 
-        metadata_path = tmp_path / "metadata.yaml"
-        metadata_path.write_text("input_names: [state, action]\noutput_names: [prediction]\n")
+        manifest_path = tmp_path / "manifest.json"
+        manifest_path.write_text('{"input_names": ["state", "action"], "output_names": ["prediction"]}')
 
         mock_et_runtime, _, _, _ = self._build_executorch_mocks()
 
@@ -246,8 +246,8 @@ class TestExecuTorchAdapter:
         model_path = tmp_path / "model.pte"
         model_path.touch()
 
-        metadata_path = tmp_path / "metadata.yaml"
-        metadata_path.write_text("input_names: [state]\noutput_names: [action]\n")
+        manifest_path = tmp_path / "manifest.json"
+        manifest_path.write_text('{"input_names": ["state"], "output_names": ["action"]}')
 
         mock_et_runtime, _, _, mock_method = self._build_executorch_mocks()
         mock_method.execute.return_value = [torch.tensor([[1.0, 2.0]])]

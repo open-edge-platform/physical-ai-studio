@@ -4,7 +4,6 @@
 """Unit tests for mixin_export module."""
 
 from dataclasses import dataclass
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import onnx
@@ -158,10 +157,6 @@ class ExportWrapper(ExportablePolicyMixin):
         if not hasattr(self.model, "sample_input"):
             return None
         return super()._get_default_export_input_sample()
-
-    @property
-    def metadata_extra(self) -> dict[str, Any]:
-        return {"chunk_size": 10, "use_action_queue": True}
 
     @staticmethod
     def get_supported_export_backends() -> list[str | ExportBackend]:
@@ -473,18 +468,11 @@ class TestToExecutorch:
             # Assert write_to_file was called (writes .pte content)
             mocks["mock_exec_program"].write_to_file.assert_called_once()
 
-            # Assert metadata.yaml was created
-            assert (tmp_path / "metadata.yaml").exists()
+            # Assert manifest.json was created
+            assert (tmp_path / "manifest.json").exists()
 
             # Assert .pte file was created (open() creates it even with mocked write)
             assert (tmp_path / "model.pte").exists()
-
-            # Verify metadata contains input_names
-            import yaml
-
-            with open(tmp_path / "metadata.yaml") as f:
-                metadata = yaml.safe_load(f)
-            assert "input_names" in metadata
 
             assert result == tmp_path / "model.pte"
 

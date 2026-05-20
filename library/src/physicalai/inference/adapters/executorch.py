@@ -9,11 +9,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import TYPE_CHECKING, Any
 
 import torch
-import yaml
 from physicalai.inference.adapters.base import RuntimeAdapter
 from physicalai.inference.adapters.registry import adapter_registry
 
@@ -30,7 +30,7 @@ class ExecuTorchAdapter(RuntimeAdapter):
     """Runtime adapter for ExecuTorch .pte model inference.
 
     This adapter loads and runs models exported for ExecuTorch runtime using
-    the `.pte` format. Input and output names are read from `metadata.yaml`
+    the `.pte` format. Input and output names are read from `manifest.json`
     colocated with the model when available. Inference expects dictionary
     inputs and converts them to the ordered tensor list required by
     ExecuTorch's `method.execute(...)` API.
@@ -55,7 +55,7 @@ class ExecuTorchAdapter(RuntimeAdapter):
         self._output_names: list[str] = []
 
     def load(self, model_path: Path) -> None:
-        """Load .pte model and optional metadata.
+        """Load .pte model and optional manifest.
 
         Args:
             model_path: Path to the ExecuTorch `.pte` model file.
@@ -83,18 +83,18 @@ class ExecuTorchAdapter(RuntimeAdapter):
             msg = f"Failed to load ExecuTorch program from {model_path}: {exc}"
             raise RuntimeError(msg) from exc
 
-        metadata_path = model_path.parent / "metadata.yaml"
-        if metadata_path.exists():
+        manifest_path = model_path.parent / "manifest.json"
+        if manifest_path.exists():
             try:
-                with metadata_path.open("r", encoding="utf-8") as handle:
-                    metadata = yaml.safe_load(handle) or {}
+                with manifest_path.open("r", encoding="utf-8") as handle:
+                    manifest = json.load(handle) or {}
 
-                input_names = metadata.get("input_names", [])
-                output_names = metadata.get("output_names", [])
+                input_names = manifest.get("input_names", [])
+                output_names = manifest.get("output_names", [])
                 self._input_names = [str(name) for name in input_names]
                 self._output_names = [str(name) for name in output_names]
-            except (OSError, yaml.YAMLError, TypeError, ValueError) as exc:
-                logger.warning("Failed to read metadata from %s: %s", metadata_path, exc)
+            except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+                logger.warning("Failed to read manifest from %s: %s", manifest_path, exc)
                 self._input_names = []
                 self._output_names = []
 

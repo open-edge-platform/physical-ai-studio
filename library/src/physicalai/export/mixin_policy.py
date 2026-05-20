@@ -5,7 +5,6 @@
 
 import inspect
 import tempfile
-from collections.abc import Mapping
 from os import PathLike
 from pathlib import Path
 from typing import Any, cast
@@ -14,7 +13,6 @@ import lightning
 import openvino
 import openvino_tokenizers
 import torch
-import yaml
 from physicalai.inference.manifest import (
     ComponentSpec,
     Manifest,
@@ -33,7 +31,6 @@ from physicalai.export.backends import (
     OpenVINOExportParameters,
     TorchExportParameters,
 )
-from physicalai.train import __version__
 
 from .mixin_model import ExportableModelMixin
 
@@ -59,87 +56,49 @@ class ExportablePolicyMixin:
         """
         return {}
 
-    def _create_metadata(
+    def create_manifest(
         self,
         export_dir: Path,
         backend: ExportBackend,
-        **metadata_kwargs: dict,
+        preprocessors: list[ComponentSpec] | None = None,
+        postprocessors: list[ComponentSpec] | None = None,
+        input_names: list[str] | None = None,
+        output_names: list[str] | None = None,
     ) -> None:
-        """Create metadata files for exported model.
-
-        Writes both ``manifest.json`` (new structured format) and
-        ``metadata.yaml`` (legacy format) for backward compatibility.
+        """Create ``manifest.json`` for an exported model.
 
         Args:
-            export_dir: Directory containing exported model
-            backend: Export backend used
-            **metadata_kwargs: Additional metadata to include
-
-        Raises:
-            TypeError: If ``metadata_extra`` is present but not a mapping.
-            ValueError: If ``metadata_extra`` contains keys that collide with existing metadata.
+            export_dir: Directory containing the exported model.
+            backend: Export backend used.
+            preprocessors: Preprocessor component specs to include in the manifest.
+            postprocessors: Postprocessor component specs to include in the manifest.
+            input_names: Optional ordered list of model input names.
+            output_names: Optional ordered list of model output names.
         """
         policy_class = f"{self.__class__.__module__}.{self.__class__.__name__}"
-
-        metadata = {
-            "physicalai_train_version": __version__,
-            "policy_class": policy_class,
-            "backend": str(backend),
-            **metadata_kwargs,
-        }
-
-        metadata_extra = getattr(self, "metadata_extra", None)
-        if metadata_extra is not None:
-            if not isinstance(metadata_extra, Mapping):
-                msg = f"metadata_extra must be a mapping, got: {type(metadata_extra)!r}"
-                raise TypeError(msg)
-
-            collisions = set(metadata_extra) & set(metadata)
-            if collisions:
-                msg = f"metadata_extra collides with existing metadata keys: {sorted(collisions)}"
-                raise ValueError(msg)
-
-            metadata.update(metadata_extra)
-
-        yaml_path = export_dir / "metadata.yaml"
-        with yaml_path.open("w", encoding="utf-8") as f:
-            yaml.dump(metadata, f, default_flow_style=False)
-
-        manifest = self._build_manifest(metadata, backend)
-        manifest.save(export_dir / "manifest.json")
-
-    def _build_manifest(self, metadata: dict[str, Any], backend: ExportBackend) -> Manifest:
-        """Build a ``Manifest`` from the collected metadata.
-
-        Args:
-            metadata: Flat metadata dict (already includes metadata_extra).
-            backend: Export backend used.
-
-        Returns:
-            Structured manifest ready for serialisation.
-        """
-        policy_class = metadata.get("policy_class", "")
         policy_name = self.__class__.__name__.lower()
-
-        preprocessors_specs: list[ComponentSpec] = metadata.get("preprocessors", [])
-        postprocessors_specs: list[ComponentSpec] = metadata.get("postprocessors", [])
-
-        runner = ComponentSpec.from_class(SinglePass)
-
         artifact_filename = f"{policy_name}{backend.extension}"
 
-        return Manifest(
+        extras: dict[str, Any] = {}
+        if input_names is not None:
+            extras["input_names"] = list(input_names)
+        if output_names is not None:
+            extras["output_names"] = list(output_names)
+
+        manifest = Manifest(
             policy=PolicySpec(
                 name=policy_name,
                 source=PolicySource(class_path=policy_class),
             ),
             model=ModelSpec(
-                runner=runner,
+                runner=ComponentSpec.from_class(SinglePass),
                 artifacts={str(backend): artifact_filename},
-                preprocessors=preprocessors_specs,
-                postprocessors=postprocessors_specs,
+                preprocessors=preprocessors or [],
+                postprocessors=postprocessors or [],
             ),
+            **extras,
         )
+        manifest.save(export_dir / "manifest.json")
 
     def _prepare_export_path(self, output_path: PathLike | str, extension: str) -> Path:
         """Prepare export path, handling both directory and file paths.
@@ -218,8 +177,7 @@ class ExportablePolicyMixin:
         # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         torch.save(checkpoint, str(model_path))  # nosec B614
 
-        # Create metadata files
-        self._create_metadata(
+        self.create_manifest(
             export_dir,
             ExportBackend.TORCH,
             preprocessors=extra_model_args.preprocessors_specs,
@@ -289,7 +247,7 @@ class ExportablePolicyMixin:
             msg = "Tokenizer export is not supported for ONNX backend at this time."
             raise NotImplementedError(msg)
 
-        self._create_metadata(
+        self.create_manifest(
             export_dir,
             ExportBackend.ONNX,
             preprocessors=extra_model_args.preprocessors_specs,
@@ -401,7 +359,7 @@ class ExportablePolicyMixin:
                 )
                 raise RuntimeError(msg)
 
-        self._create_metadata(
+        self.create_manifest(
             export_dir,
             ExportBackend.OPENVINO,
             preprocessors=extra_model_args.preprocessors_specs,
@@ -525,7 +483,7 @@ class ExportablePolicyMixin:
         with model_path.open("wb") as f:
             exec_program.write_to_file(f)
 
-        self._create_metadata(
+        self.create_manifest(
             export_dir,
             ExportBackend.EXECUTORCH,
             input_names=list(input_sample.keys()),  # type: ignore[arg-type, union-attr]

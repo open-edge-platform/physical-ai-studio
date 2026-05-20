@@ -94,7 +94,7 @@ class ExportE2ETests:
         initialized_policy.export(export_dir, backend)
 
         assert export_dir.exists()
-        assert (export_dir / "metadata.yaml").exists()
+        assert (export_dir / "manifest.json").exists()
 
         if backend == "openvino":
             assert any(export_dir.glob("*.xml"))
@@ -228,7 +228,7 @@ class TestE2ECore(CoreE2ETests):
         trained_policy.export(export_dir, "torch")
 
         assert export_dir.exists()
-        assert (export_dir / "metadata.yaml").exists()
+        assert (export_dir / "manifest.json").exists()
         assert any(export_dir.glob("*.pt"))
 
     def test_inference_with_exported_model(

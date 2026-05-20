@@ -10,13 +10,12 @@ an actual ``executorch`` installation.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import torch
-import yaml
 
 from physicalai.export.mixin_policy import ExportablePolicyMixin, ExportBackend
 from physicalai.inference.adapters.executorch import ExecuTorchAdapter
@@ -44,10 +43,6 @@ class _ExportWrapper(ExportablePolicyMixin):
     def __init__(self, model: torch.nn.Module) -> None:
         self.model = model
 
-    @property
-    def metadata_extra(self) -> dict[str, Any]:
-        return {"chunk_size": 10, "use_action_queue": True}
-
     @staticmethod
     def get_supported_export_backends() -> list[str | ExportBackend]:
         return [ExportBackend.ONNX, ExportBackend.OPENVINO, ExportBackend.EXECUTORCH]
@@ -57,25 +52,22 @@ class TestExecuTorchIntegration:
     """Smoke tests for the ExecuTorch export ↔ inference metadata contract."""
 
     def test_metadata_contract_export_to_inference(self, tmp_path: Path) -> None:
-        """Metadata written by export is correctly consumed by the adapter.
+        """Manifest written by export is correctly consumed by the adapter.
 
-        Creates a metadata.yaml that mirrors what ``_create_metadata`` would
+        Creates a manifest.json that mirrors what ``create_manifest`` would
         produce and verifies that ``ExecuTorchAdapter.load()`` reads
         ``input_names`` from it.
         """
-        # -- arrange: create model.pte stub and metadata.yaml
+        # -- arrange: create model.pte stub and manifest.json
         model_path = tmp_path / "model.pte"
         model_path.write_bytes(b"\x00")  # stub binary
 
-        metadata = {
-            "backend": "executorch",
+        manifest = {
             "input_names": ["state", "action"],
-            "chunk_size": 10,
-            "use_action_queue": True,
         }
-        metadata_path = tmp_path / "metadata.yaml"
-        with metadata_path.open("w") as fh:
-            yaml.safe_dump(metadata, fh)
+        manifest_path = tmp_path / "manifest.json"
+        with manifest_path.open("w") as fh:
+            json.dump(manifest, fh)
 
         # -- mock executorch.runtime so load() doesn't import the real package
         mock_runtime_instance = MagicMock()
@@ -102,10 +94,10 @@ class TestExecuTorchIntegration:
         assert adapter.input_names == ["state", "action"]
 
     def test_export_creates_metadata_with_input_names(self, tmp_path: Path) -> None:
-        """``to_executorch()`` writes ``input_names`` to metadata.yaml.
+        """``to_executorch()`` writes ``input_names`` to manifest.json.
 
         All ``executorch`` internals are mocked so no real .pte file is
-        produced; we only verify the side-effect on metadata.yaml.
+        produced; we only verify the side-effect on manifest.json.
         """
         model = _ModelWithSampleInput()
         wrapper = _ExportWrapper(model)
@@ -137,16 +129,16 @@ class TestExecuTorchIntegration:
         ):
             wrapper.to_executorch(tmp_path / "model.pte")
 
-        # -- read metadata written by _create_metadata
-        metadata_path = tmp_path / "metadata.yaml"
-        assert metadata_path.exists(), "metadata.yaml was not created by to_executorch()"
+        # -- read manifest written by create_manifest
+        manifest_path = tmp_path / "manifest.json"
+        assert manifest_path.exists(), "manifest.json was not created by to_executorch()"
 
-        with metadata_path.open() as fh:
-            metadata = yaml.safe_load(fh)
+        with manifest_path.open() as fh:
+            manifest = json.load(fh)
 
-        assert metadata is not None
-        assert "input_names" in metadata
-        assert metadata["input_names"] == ["obs", "goal"]
+        assert manifest is not None
+        assert "input_names" in manifest
+        assert manifest["input_names"] == ["obs", "goal"]
 
     def test_pte_extension_detected_as_executorch(self, tmp_path: Path) -> None:
         """``InferenceModel._detect_backend()`` maps ``.pte`` → ``executorch``.

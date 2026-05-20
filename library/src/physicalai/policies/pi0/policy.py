@@ -435,14 +435,6 @@ class Pi0(ExportablePolicyMixin, Policy, FromConfig):
                 gradient_clip_algorithm=gradient_clip_algorithm or "norm",
             )
 
-    @property
-    def metadata_extra(self) -> dict[str, Any]:
-        """Return extra metadata for policy export."""
-        return {
-            "chunk_size": self.config.chunk_size,
-            "use_action_queue": True,
-        }
-
 
 class Pi05(Pi0):
     """Pi0.5 Policy - Physical Intelligence's improved flow matching VLA model.
