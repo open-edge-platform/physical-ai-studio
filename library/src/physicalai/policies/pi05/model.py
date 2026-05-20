@@ -700,6 +700,41 @@ class Pi05Model(ExportableModelMixin, Model):
         return sample_input
 
     @property
+    def sample_input_rtc(self) -> dict[str, torch.Tensor | str]:
+        """Generate a sample input dictionary for RTC with random tensors.
+
+        This method creates a dictionary containing sample input tensors that match the expected
+        input format of the model for real-time control (RTC). The tensors are randomly initialized
+        and have shapes derived from the model's configuration.
+
+        Returns:
+            dict[str, torch.Tensor | str]: A dictionary with two keys
+                - 'state': A tensor representing the robot state with shape (1, *state_feature.shape).
+                - 'images': Either a single tensor or a dictionary of tensors representing visual inputs,
+                    depending on the number of image features configured.
+
+        Note:
+            The batch dimension (first dimension) is set to 1 for all tensors.
+            The tensors are created on the same device as the model's parameters.
+        """
+        device = next(self.paligemma_with_expert.parameters()).device
+        max_action_dim = self._max_action_dim
+        chunk_size = self._chunk_size
+
+        original_sample_input = self.sample_input
+        rtc_input = {
+            "prev_chunk_left_over": torch.randn(
+                1, chunk_size, max_action_dim, device=device, dtype=torch.float32,
+            ),
+            "inference_delay": torch.tensor(8, device=device, dtype=torch.long),
+            "max_guidance_weight": torch.tensor(10.0, device=device, dtype=torch.float32),
+            "execution_horizon": torch.tensor(10, device=device, dtype=torch.long),
+        }
+
+        original_sample_input.update(rtc_input)
+        return original_sample_input
+
+    @property
     def reward_delta_indices(self) -> None:
         """Return reward indices.
 
@@ -1097,7 +1132,13 @@ class Pi05Model(ExportableModelMixin, Model):
         img_masks = batch[IMAGE_MASKS]
         tokens = batch[TOKENIZED_PROMPT]
         masks = batch[TOKENIZED_PROMPT_MASK]
-        actions = self.sample_actions(images, img_masks, tokens, masks)
+        actions = self.sample_actions(
+            images, img_masks, tokens, masks,
+            rtc_max_guidance=batch.get("max_guidance_weight", 0.0),
+            rtc_execution_horizon=batch.get("execution_horizon", 0),
+            rtc_latency=batch.get("inference_delay", 0.0),
+            rtc_prev_action_chunk=batch.get("prev_chunk_left_over", None),
+        )
 
         # Unpad actions to actual action dimension
         original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
@@ -1110,6 +1151,75 @@ class Pi05Model(ExportableModelMixin, Model):
 
         return actions
 
+    def _compute_prefix_weights(
+        self, 
+        inference_delay: Tensor, 
+        execution_horizon: Tensor,
+        prefix_attention_schedule: Literal["linear", "exp"] = "linear",
+    ) -> Tensor:
+        """Compute prefix attention weights inside the graph.
+
+        Args:
+            inference_delay: Scalar tensor — the dynamic latency estimate.
+            execution_horizon: Scalar tensor — number of fresh actions per chunk.
+            prefix_attention_schedule: Schedule type for prefix attention weights ("linear" or "exp").
+
+        Returns:
+            ``(1, chunk_size, 1)`` weight tensor.
+        """
+        chunk_size = self._chunk_size  # noqa: SLF001
+        end = execution_horizon.float()
+        start = torch.minimum(inference_delay.float(), end)
+
+        idx = torch.arange(chunk_size, dtype=torch.float32, device=inference_delay.device)
+        denom = end - start + 1.0
+        weights = (end - idx) / denom
+        weights = torch.clamp(weights, min=0.0, max=1.0)
+
+        if prefix_attention_schedule == "exp":
+            weights = weights * (torch.exp(weights) - 1.0) / (math.e - 1.0)
+        # "linear" → no-op
+
+        return weights.unsqueeze(0).unsqueeze(-1)  # (1, chunk_size, 1)
+
+    def _rtc_correct(
+        self,
+        x_t: Tensor,
+        v_t: Tensor,
+        prev_chunk_left_over: Tensor,
+        prefix_weights: Tensor,
+        time: float,
+        max_guidance_weight: Tensor,
+    ) -> Tensor:
+        """Apply RTC guidance correction to velocity prediction.
+
+        Uses direct error (not autograd.grad) for OV traceability.
+        """
+        tau = 1.0 - time
+
+        # Predicted clean actions at t=0
+        x1_t = x_t - time * v_t
+
+        # Weighted error between previous chunk and prediction
+        err = (prev_chunk_left_over - x1_t) * prefix_weights
+        correction = err
+
+        # Adaptive guidance weight
+        max_gw = max_guidance_weight.float()
+        tau_t = torch.as_tensor(tau)
+        squared_one_minus_tau = (1.0 - tau_t) ** 2
+        inv_r2 = (squared_one_minus_tau + tau_t**2) / squared_one_minus_tau
+
+        # Manual nan_to_num — torch.nan_to_num not supported by OV
+        c_raw = (1.0 - tau_t) / tau_t
+        c = torch.where(torch.isinf(c_raw), max_gw, c_raw)
+
+        guidance_weight_raw = c * inv_r2
+        guidance_weight = torch.where(torch.isinf(guidance_weight_raw), max_gw, guidance_weight_raw)
+        guidance_weight = torch.minimum(guidance_weight, max_gw)
+
+        return v_t - guidance_weight * correction
+
     @torch.no_grad()
     def sample_actions(  # noqa: PLR0914
         self,
@@ -1119,6 +1229,10 @@ class Pi05Model(ExportableModelMixin, Model):
         masks: Tensor,
         noise: Tensor | None = None,
         num_steps: int | None = None,
+        rtc_max_guidance: float = 0.0,
+        rtc_execution_horizon: int = 0,
+        rtc_latency: float = 0.0,
+        rtc_prev_action_chunk: Tensor | None = None,
     ) -> Tensor:
         """Inference forward pass: sample actions via iterative denoising.
 
@@ -1163,6 +1277,20 @@ class Pi05Model(ExportableModelMixin, Model):
                 x_t=x_t,
                 timestep=time_tensor,
             )
+
+            if rtc_prev_action_chunk is not None:
+                prefix_weights = self._compute_prefix_weights(
+                    inference_delay=torch.tensor(rtc_latency, device=device),
+                    execution_horizon=torch.tensor(rtc_execution_horizon, device=device),
+                )
+                v_t = self._rtc_correct(
+                    x_t,
+                    v_t,
+                    prev_chunk_left_over=rtc_prev_action_chunk,
+                    prefix_weights=prefix_weights,
+                    time=time,
+                    max_guidance_weight=torch.tensor(rtc_max_guidance, device=device),
+                )
 
             x_t += dt * v_t
 
@@ -1214,232 +1342,3 @@ class Pi05Model(ExportableModelMixin, Model):
         suffix_out = suffix_out[:, -self._chunk_size :]  # type: ignore[index]
         suffix_out = suffix_out.to(dtype=torch.float32)
         return self.action_out_proj(suffix_out)
-
-
-class Pi05RTCWrapper(nn.Module):
-    """Wrapper that bakes the RTC denoising loop into a single forward call.
-
-    This wrapper is used during OpenVINO export (``to_openvino(enable_rtc=True)``).
-    It replaces ``autograd.grad``-based guidance with a direct error correction
-    that is compatible with graph tracing, and avoids passing ``[embs, None]``
-    lists which cause OV conversion failures.
-
-    The wrapper is **not** used at training time or during PyTorch inference —
-    only for ``ov.convert_model`` tracing.
-    """
-
-    def __init__(
-        self,
-        model: Pi05Model,
-        prefix_attention_schedule: str = "linear",
-    ) -> None:
-        super().__init__()
-        self.model = model
-        self.prefix_attention_schedule = prefix_attention_schedule
-
-    def _compute_prefix_weights(self, inference_delay: Tensor, execution_horizon: Tensor) -> Tensor:
-        """Compute prefix attention weights inside the graph.
-
-        Args:
-            inference_delay: Scalar tensor — the dynamic latency estimate.
-            execution_horizon: Scalar tensor — number of fresh actions per chunk.
-
-        Returns:
-            ``(1, chunk_size, 1)`` weight tensor.
-        """
-        chunk_size = self.model._chunk_size  # noqa: SLF001
-        end = execution_horizon.float()
-        start = torch.minimum(inference_delay.float(), end)
-
-        idx = torch.arange(chunk_size, dtype=torch.float32, device=inference_delay.device)
-        denom = end - start + 1.0
-        weights = (end - idx) / denom
-        weights = torch.clamp(weights, min=0.0, max=1.0)
-
-        if self.prefix_attention_schedule == "exp":
-            weights = weights * (torch.exp(weights) - 1.0) / (math.e - 1.0)
-        # "linear" → no-op
-
-        return weights.unsqueeze(0).unsqueeze(-1)  # (1, chunk_size, 1)
-
-    def forward(
-        self,
-        images: Tensor,
-        image_masks: Tensor,
-        tokenized_prompt: Tensor,
-        tokenized_prompt_mask: Tensor,
-        noise: Tensor,
-        prev_chunk_left_over: Tensor,
-        inference_delay: Tensor,
-        max_guidance_weight: Tensor,
-        execution_horizon: Tensor,
-    ) -> Tensor:
-        """Full inference pass with RTC guidance, traceable by OV/ONNX.
-
-        Args:
-            images: ``(num_cameras, batch, C, H, W)`` image stack.
-            image_masks: ``(num_cameras, batch)`` boolean masks.
-            tokenized_prompt: ``(batch, seq_len)`` tokenized prompt.
-            tokenized_prompt_mask: ``(batch, seq_len)`` prompt attention mask.
-            noise: ``(batch, chunk_size, max_action_dim)`` initial noise.
-            prev_chunk_left_over: ``(batch, chunk_size, max_action_dim)``
-                unconsumed actions from the previous chunk.
-            inference_delay: Scalar tensor — estimated latency in action
-                steps (``ceil(latency / frame_time)``).
-            max_guidance_weight: Scalar tensor — clamp for RTC guidance
-                correction strength.
-            execution_horizon: Scalar tensor — number of fresh actions
-                to execute per chunk.
-
-        Returns:
-            Denoised actions ``(batch, chunk_size, original_action_dim)``.
-        """
-        images = images.float()
-        # OV prefers int for CumSum — convert bool masks
-        image_masks = image_masks.long()
-        tokenized_prompt_mask = tokenized_prompt_mask.long()
-
-        prefix_weights = self._compute_prefix_weights(inference_delay, execution_horizon)
-
-        actions = self._sample_actions_rtc(
-            images, image_masks, tokenized_prompt, tokenized_prompt_mask,
-            noise, prev_chunk_left_over, prefix_weights, max_guidance_weight,
-        )
-
-        # Trim padded dims to actual action dimension (same as non-RTC path)
-        original_action_dim = int(self.model._dataset_stats[ACTION]["shape"][-1])  # noqa: SLF001
-        return actions[:, :, :original_action_dim]
-
-    @torch.no_grad()
-    def _sample_actions_rtc(
-        self,
-        images: Tensor,
-        img_masks: Tensor,
-        tokens: Tensor,
-        masks: Tensor,
-        noise: Tensor,
-        prev_chunk_left_over: Tensor,
-        prefix_weights: Tensor,
-        max_guidance_weight: Tensor,
-    ) -> Tensor:
-        """Denoising loop with RTC prefix guidance."""
-        num_steps = self.model._num_inference_steps  # noqa: SLF001
-        bsize = tokens.shape[0]
-        device = tokens.device
-
-        # --- Prefix forward (compute KV cache once) ---
-        # Use batched SigLIP: single encoder call for all cameras instead of
-        # one per camera, halving/thirding the vision subgraph in exported IR.
-        prefix_embs, prefix_pad_masks, prefix_att_masks = self.model.embed_prefix(
-            images, img_masks, tokens, masks,
-        )
-        prefix_att_2d_masks = _make_att_2d_masks(prefix_pad_masks, prefix_att_masks)
-        prefix_position_ids = torch.cumsum(prefix_pad_masks, dim=1) - 1
-        prefix_att_2d_masks_4d = self.model._prepare_attention_masks_4d(prefix_att_2d_masks)  # noqa: SLF001
-
-        # Call language model directly — avoids [prefix_embs, None] which
-        # causes a "None constant" error during OV conversion.
-        self.model.paligemma_with_expert.paligemma.model.language_model.config._attn_implementation = "eager"  # noqa: SLF001
-        outputs = self.model.paligemma_with_expert.paligemma.model.language_model.forward(
-            attention_mask=prefix_att_2d_masks_4d,
-            position_ids=prefix_position_ids,
-            past_key_values=None,
-            inputs_embeds=prefix_embs,
-            use_cache=True,
-        )
-        past_key_values = outputs.past_key_values
-
-        # --- Denoising loop with RTC guidance ---
-        dt = -1.0 / num_steps
-        x_t = noise
-
-        for step in range(num_steps):
-            time = 1.0 + step * dt
-            time_tensor = torch.tensor(time, dtype=torch.float32, device=device).expand(bsize)
-
-            # Base velocity from the model's denoise_step
-            v_t = self.model.denoise_step(
-                prefix_pad_masks=prefix_pad_masks,
-                past_key_values=past_key_values,
-                x_t=x_t,
-                timestep=time_tensor,
-            )
-
-            # --- RTC guidance correction ---
-            v_t = self._rtc_correct(x_t, v_t, prev_chunk_left_over, prefix_weights, time, max_guidance_weight)
-
-            x_t = x_t + dt * v_t
-
-        return x_t
-
-    def _rtc_correct(
-        self,
-        x_t: Tensor,
-        v_t: Tensor,
-        prev_chunk_left_over: Tensor,
-        prefix_weights: Tensor,
-        time: float,
-        max_guidance_weight: Tensor,
-    ) -> Tensor:
-        """Apply RTC guidance correction to velocity prediction.
-
-        Uses direct error (not autograd.grad) for OV traceability.
-        """
-        tau = 1.0 - time
-
-        # Predicted clean actions at t=0
-        x1_t = x_t - time * v_t
-
-        # Weighted error between previous chunk and prediction
-        err = (prev_chunk_left_over - x1_t) * prefix_weights
-        correction = err
-
-        # Adaptive guidance weight
-        max_gw = max_guidance_weight.float()
-        tau_t = torch.as_tensor(tau)
-        squared_one_minus_tau = (1.0 - tau_t) ** 2
-        inv_r2 = (squared_one_minus_tau + tau_t**2) / squared_one_minus_tau
-
-        # Manual nan_to_num — torch.nan_to_num not supported by OV
-        c_raw = (1.0 - tau_t) / tau_t
-        c = torch.where(torch.isinf(c_raw), max_gw, c_raw)
-
-        guidance_weight_raw = c * inv_r2
-        guidance_weight = torch.where(torch.isinf(guidance_weight_raw), max_gw, guidance_weight_raw)
-        guidance_weight = torch.minimum(guidance_weight, max_gw)
-
-        return v_t - guidance_weight * correction
-
-    @property
-    def sample_input_rtc(self) -> dict[str, Tensor]:
-        """Generate sample inputs for RTC OV export tracing.
-
-        Returns:
-            Dict of dummy tensors with the right shapes/dtypes.
-        """
-        device = next(self.model.paligemma_with_expert.parameters()).device
-        chunk_size = self.model._chunk_size  # noqa: SLF001
-        max_action_dim = self.model._max_action_dim  # noqa: SLF001
-        tokenizer_max_length = self.model._tokenizer_max_length  # noqa: SLF001
-        h, w = self.model._image_resolution  # noqa: SLF001
-
-        # Count cameras from dataset_stats
-        num_cameras = sum(
-            1 for k in self.model._dataset_stats  # noqa: SLF001
-            if str(FeatureType.VISUAL) in self.model._dataset_stats[k]["type"]  # noqa: SLF001
-        )
-        num_cameras = max(num_cameras, 1)
-
-        return {
-            "images": torch.randn(num_cameras, 1, 3, h, w, device=device, dtype=torch.float32),
-            "image_masks": torch.ones(num_cameras, 1, dtype=torch.bool, device=device),
-            "tokenized_prompt": torch.randint(0, 256, (1, tokenizer_max_length), device=device, dtype=torch.long),
-            "tokenized_prompt_mask": torch.ones(1, tokenizer_max_length, dtype=torch.bool, device=device),
-            "noise": torch.randn(1, chunk_size, max_action_dim, device=device, dtype=torch.float32),
-            "prev_chunk_left_over": torch.randn(
-                1, chunk_size, max_action_dim, device=device, dtype=torch.float32,
-            ),
-            "inference_delay": torch.tensor(8, device=device, dtype=torch.long),
-            "max_guidance_weight": torch.tensor(10.0, device=device, dtype=torch.float32),
-            "execution_horizon": torch.tensor(10, device=device, dtype=torch.long),
-        }

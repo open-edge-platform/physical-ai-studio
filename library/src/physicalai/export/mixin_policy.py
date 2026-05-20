@@ -359,8 +359,10 @@ class ExportablePolicyMixin:
             )
             raise NotImplementedError(msg)
 
+        enable_rtc = True if export_kwargs.get("enable_rtc", False) else False
+
         if input_sample is None:
-            input_sample = self._get_default_export_input_sample()
+            input_sample = self._get_default_export_input_sample(enable_rtc=enable_rtc)
 
         if input_sample is None:
             msg = "An input sample must be provided for OpenVINO export, or the model must implement "
@@ -382,6 +384,9 @@ class ExportablePolicyMixin:
         if extra_model_args.via_onnx:
             onnx_model_args = cast("ONNXExportParameters", self._get_export_extra_args(ExportBackend.ONNX))
             extra_export_kwargs = onnx_model_args.exporter_kwargs
+
+        if enable_rtc:
+            export_kwargs.pop("enable_rtc")  # Remove custom arg before passing to export functions
 
         extra_export_kwargs.update(export_kwargs)
 
@@ -624,19 +629,25 @@ class ExportablePolicyMixin:
             **export_kwargs,
         )
 
-    def _get_default_export_input_sample(self) -> dict[str, torch.Tensor] | None:
+    def _get_default_export_input_sample(self, enable_rtc=False) -> dict[str, torch.Tensor] | None:
         """Retrieve a default export input sample for the model.
 
         This method attempts to obtain a sample input from the model if available,
         processes it through the preprocessor, and filters the result to return only
         torch.Tensor values.
 
+        Args:
+            enable_rtc (bool): Whether to enable real-time control (RTC) inputs.
+
         Returns:
             dict[str, torch.Tensor] | None: A dictionary containing string keys mapped to
                 torch.Tensor values extracted from the processed sample input. Returns None
                 if the model does not have a 'sample_input' attribute.
         """
-        processed_sample = self._preprocessor(self.model.sample_input)
+        if enable_rtc:
+            processed_sample = self._preprocessor(self.model.sample_input_rtc)
+        else:
+            processed_sample = self._preprocessor(self.model.sample_input)
         return {k: v for k, v in processed_sample.items() if isinstance(v, torch.Tensor)}
 
     def _get_export_extra_args(self, backend: ExportBackend | str) -> ExportParameters:

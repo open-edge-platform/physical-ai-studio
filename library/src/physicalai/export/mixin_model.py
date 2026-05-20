@@ -27,3 +27,17 @@ class ExportableModelMixin(torch.nn.Module, ABC):
         Returns:
             A dictionary mapping input names to example torch.Tensor objects.
         """
+
+    @property
+    @abstractmethod
+    def sample_input_rtc(self) -> dict[str, torch.Tensor]:
+        """Return a sample input dictionary for real-time control (RTC) export.
+
+        This sample input is used during the export process when RTC is enabled. It should contain
+        example tensors that include any additional inputs required for RTC functionality.
+
+        Returns:
+            A dictionary mapping input names to example torch.Tensor objects for RTC export.
+            By default, this returns the same sample input as `sample_input`, but can be overridden
+            by models that require different inputs for RTC.
+        """
