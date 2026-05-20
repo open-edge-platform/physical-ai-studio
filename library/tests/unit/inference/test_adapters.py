@@ -10,6 +10,7 @@ Tests for the core ``onnx`` and ``openvino`` adapters live in
 ``physicalai/tests/unit/inference/test_adapters.py``.
 """
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -42,10 +43,18 @@ class TestTorchAdapter:
     @staticmethod
     def _write_policy_metadata(tmp_path: Path) -> Path:
         model_path = tmp_path / "model.pt"
-        metadata_path = tmp_path / "metadata.yaml"
+        manifest_path = tmp_path / "manifest.json"
         model_path.touch()
-        with metadata_path.open("w") as f:
-            f.write("policy_class: physicalai.policies.act.ACT\n")
+        manifest = {
+            "format": "policy_package",
+            "version": "1.0",
+            "policy": {
+                "name": "act",
+                "source": {"class_path": "physicalai.policies.act.ACT"},
+            },
+        }
+        with manifest_path.open("w") as f:
+            json.dump(manifest, f)
         return model_path
 
     def test_lifecycle(self, tmp_path: Path) -> None:
