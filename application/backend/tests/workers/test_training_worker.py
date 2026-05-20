@@ -185,6 +185,7 @@ class TestTraining:
         job = _make_job(payload)
 
         policy = MagicMock()
+        export_policy = MagicMock()
         trainer = MagicMock()
         trainer.fit = MagicMock()  # succeeds
 
@@ -194,6 +195,7 @@ class TestTraining:
 
         with (
             patch(f"{MODULE}.setup_policy", return_value=policy) as mock_setup,
+            patch(f"{MODULE}.load_policy", return_value=export_policy) as mock_load,
             patch(f"{MODULE}.Trainer", return_value=trainer),
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
@@ -220,6 +222,7 @@ class TestTraining:
 
             assert mock_setup.call_count == 1
             assert mock_setup.call_args_list[0].kwargs["compile_model"] is True
+            mock_load.assert_called_once_with(model, compile_model=False)
 
             trainer.fit.assert_called_once()
 

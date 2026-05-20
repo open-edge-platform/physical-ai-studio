@@ -39,6 +39,8 @@ jobs:
             releases.astral.sh:443
             release-assets.githubusercontent.com:443
             static.crates.io:443
+            proxy.golang.org:443
+            storage.googleapis.com:443
 
       - &checkout
         name: Checkout repository
