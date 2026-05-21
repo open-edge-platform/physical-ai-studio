@@ -400,7 +400,7 @@ class TestSampleActionsRTC:
     behavior. Marked slow since they load a ~300M param model.
     """
 
-    @pytest.fixture()
+    @pytest.fixture(scope="class")
     def model(self) -> "Pi05Model":
         """Create a small Pi05Model for testing."""
         from physicalai.policies.pi05.model import Pi05Model
@@ -430,7 +430,7 @@ class TestSampleActionsRTC:
         }
         model = Pi05Model(
             dataset_stats=dataset_stats,
-            paligemma_variant="gemma_300m",
+            paligemma_variant="gemma_2b",
             action_expert_variant="gemma_300m",
             dtype="float32",
             chunk_size=50,
@@ -441,11 +441,12 @@ class TestSampleActionsRTC:
         return model
 
     @pytest.fixture()
-    def sample_batch(self, model) -> tuple[list[Tensor], list[Tensor], Tensor, Tensor]:
+    def sample_batch(self, model) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         """Create a minimal batch for sample_actions."""
         device = next(model.parameters()).device
-        images = [torch.randn(1, 3, 224, 224, device=device)]
-        img_masks = [torch.ones(1, dtype=torch.bool, device=device)]
+        # embed_prefix expects (num_cameras, batch, C, H, W) stacked tensor
+        images = torch.randn(1, 1, 3, 224, 224, device=device)
+        img_masks = torch.ones(1, 1, dtype=torch.bool, device=device)
         # Minimal token/mask setup
         tokens = torch.ones(1, 10, dtype=torch.long, device=device)
         masks = torch.ones(1, 10, dtype=torch.long, device=device)
@@ -607,7 +608,7 @@ class TestSampleActionsRTC:
 class TestPredictActionChunkRTC:
     """Tests for predict_action_chunk with RTC batch keys."""
 
-    @pytest.fixture()
+    @pytest.fixture(scope="class")
     def model(self) -> "Pi05Model":
         """Create a small Pi05Model for testing."""
         from physicalai.policies.pi05.model import Pi05Model
@@ -637,7 +638,7 @@ class TestPredictActionChunkRTC:
         }
         model = Pi05Model(
             dataset_stats=dataset_stats,
-            paligemma_variant="gemma_300m",
+            paligemma_variant="gemma_2b",
             action_expert_variant="gemma_300m",
             dtype="float32",
             chunk_size=50,
@@ -654,8 +655,9 @@ class TestPredictActionChunkRTC:
         from physicalai.data.observation import IMAGES
 
         return {
-            IMAGES: [torch.randn(1, 3, 224, 224, device=device)],
-            IMAGE_MASKS: [torch.ones(1, dtype=torch.bool, device=device)],
+            # Preprocessor stacks images into (num_cameras, batch, C, H, W)
+            IMAGES: torch.randn(1, 1, 3, 224, 224, device=device),
+            IMAGE_MASKS: torch.ones(1, 1, dtype=torch.bool, device=device),
             TOKENIZED_PROMPT: torch.ones(1, 10, dtype=torch.long, device=device),
             TOKENIZED_PROMPT_MASK: torch.ones(1, 10, dtype=torch.long, device=device),
         }
@@ -702,7 +704,7 @@ class TestPredictActionChunkRTC:
         batch_with_rtc = self._make_batch(model, device)
 
         # Ensure same images/tokens
-        batch_with_rtc[IMAGES] = [batch_no_rtc[IMAGES][0].clone()]
+        batch_with_rtc[IMAGES] = batch_no_rtc[IMAGES].clone()
         batch_with_rtc[TOKENIZED_PROMPT] = batch_no_rtc[TOKENIZED_PROMPT].clone()
         batch_with_rtc[TOKENIZED_PROMPT_MASK] = batch_no_rtc[TOKENIZED_PROMPT_MASK].clone()
 
