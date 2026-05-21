@@ -12,13 +12,11 @@ from __future__ import annotations
 from physicalai.inference.runners.action_chunking import ActionChunking
 from physicalai.inference.runners.base import InferenceRunner
 from physicalai.inference.runners.factory import get_runner
-from physicalai.inference.runners.rtc_action_chunking import RTCActionChunking
 from physicalai.inference.runners.single_pass import SinglePass
 
 __all__ = [
     "ActionChunking",
     "InferenceRunner",
-    "RTCActionChunking",
     "SinglePass",
     "get_runner",
 ]
