@@ -724,7 +724,11 @@ class Pi05Model(ExportableModelMixin, Model):
         original_sample_input = self.sample_input
         rtc_input = {
             "prev_chunk_left_over": torch.randn(
-                1, chunk_size, max_action_dim, device=device, dtype=torch.float32,
+                1,
+                chunk_size,
+                max_action_dim,
+                device=device,
+                dtype=torch.float32,
             ),
             "inference_delay": torch.tensor(8, device=device, dtype=torch.long),
             "max_guidance_weight": torch.tensor(10.0, device=device, dtype=torch.float32),
@@ -1133,11 +1137,14 @@ class Pi05Model(ExportableModelMixin, Model):
         tokens = batch[TOKENIZED_PROMPT]
         masks = batch[TOKENIZED_PROMPT_MASK]
         actions = self.sample_actions(
-            images, img_masks, tokens, masks,
+            images,
+            img_masks,
+            tokens,
+            masks,
             rtc_max_guidance=batch.get("max_guidance_weight", 0.0),
             rtc_execution_horizon=batch.get("execution_horizon", 0),
             rtc_latency=batch.get("inference_delay", 0.0),
-            rtc_prev_action_chunk=batch.get("prev_chunk_left_over", None),
+            rtc_prev_action_chunk=batch.get("prev_chunk_left_over"),
         )
 
         # Unpad actions to actual action dimension
@@ -1152,8 +1159,8 @@ class Pi05Model(ExportableModelMixin, Model):
         return actions
 
     def _compute_prefix_weights(
-        self, 
-        inference_delay: Tensor, 
+        self,
+        inference_delay: Tensor,
         execution_horizon: Tensor,
         prefix_attention_schedule: Literal["linear", "exp"] = "linear",
     ) -> Tensor:
@@ -1167,7 +1174,7 @@ class Pi05Model(ExportableModelMixin, Model):
         Returns:
             ``(1, chunk_size, 1)`` weight tensor.
         """
-        chunk_size = self._chunk_size  # noqa: SLF001
+        chunk_size = self._chunk_size
         end = execution_horizon.float()
         start = torch.minimum(inference_delay.float(), end)
 
@@ -1182,8 +1189,8 @@ class Pi05Model(ExportableModelMixin, Model):
 
         return weights.unsqueeze(0).unsqueeze(-1)  # (1, chunk_size, 1)
 
+    @staticmethod
     def _rtc_correct(
-        self,
         x_t: Tensor,
         v_t: Tensor,
         prev_chunk_left_over: Tensor,
@@ -1194,6 +1201,9 @@ class Pi05Model(ExportableModelMixin, Model):
         """Apply RTC guidance correction to velocity prediction.
 
         Uses direct error (not autograd.grad) for OV traceability.
+
+        Returns:
+            Corrected velocity tensor.
         """
         tau = 1.0 - time
 

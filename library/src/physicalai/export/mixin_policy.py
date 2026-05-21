@@ -25,7 +25,6 @@ from physicalai.inference.manifest import (
     PolicySpec,
 )
 from physicalai.inference.runners.action_chunking import ActionChunking
-from physicalai.inference.runners.rtc_action_chunking import RTCActionChunking
 from physicalai.inference.runners.single_pass import SinglePass
 
 from physicalai.export.backends import (
@@ -262,8 +261,9 @@ class ExportablePolicyMixin:
             )
             raise NotImplementedError(msg)
 
+        enable_rtc = bool(export_kwargs.pop("enable_rtc", False))
         if input_sample is None:
-            input_sample = self._get_default_export_input_sample()
+            input_sample = self._get_default_export_input_sample(enable_rtc=enable_rtc)
 
         if input_sample is None:
             msg = "An input sample must be provided for ONNX export, or the model must implement "
@@ -350,8 +350,7 @@ class ExportablePolicyMixin:
             )
             raise NotImplementedError(msg)
 
-        enable_rtc = True if export_kwargs.pop("enable_rtc", False) else False
-
+        enable_rtc = bool(export_kwargs.pop("enable_rtc", False))
         if input_sample is None:
             input_sample = self._get_default_export_input_sample(enable_rtc=enable_rtc)
 
@@ -617,7 +616,7 @@ class ExportablePolicyMixin:
             **export_kwargs,
         )
 
-    def _get_default_export_input_sample(self, enable_rtc=False) -> dict[str, torch.Tensor] | None:
+    def _get_default_export_input_sample(self, *, enable_rtc: bool = False) -> dict[str, torch.Tensor] | None:
         """Retrieve a default export input sample for the model.
 
         This method attempts to obtain a sample input from the model if available,
