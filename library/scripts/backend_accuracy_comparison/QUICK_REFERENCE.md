@@ -77,10 +77,10 @@ cd library/scripts/backend_accuracy_comparison
 # Verify environment (assumes library installed from root)
 make check
 
-# Quick test (2 minutes)
+# Quick test (minutes for small models, longer for VLA-scale policies)
 make test-numerical
 
-# Full test (30 minutes)
+# Full test (plan as a multi-hour run; launch in background or overnight)
 make test-closed-loop
 ```
 
@@ -95,8 +95,9 @@ make test-closed-loop
 
 | Scenario | Command | Time |
 |----------|---------|------|
-| Quick export validation | `python numerical_comparison.py ...` | ~2 min |
-| Production readiness | `python closed_loop_benchmark.py ...` | ~30 min |
+| Quick export validation | `python numerical_comparison.py ...` | Minutes (longer for VLA policies) |
+| Production readiness | `python closed_loop_benchmark.py ...` | Hours; plan as background/overnight run |
+| Faster closed-loop on Intel GPU | `python closed_loop_benchmark.py --ov-device GPU ...` | Typically much faster than CPU |
 | Compare multiple models | `python batch_comparison.py ...` | Variable |
 | Environment check | `python check_setup.py` | <1 min |
 

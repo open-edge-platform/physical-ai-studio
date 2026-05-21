@@ -1,5 +1,9 @@
 .PHONY: help setup check test-numerical test-closed-loop clean
 
+# Auto-detect the best OpenVINO device: prefer an Intel GPU when available,
+# fall back to CPU otherwise. Override with `make test-closed-loop OV_DEVICE=CPU`.
+OV_DEVICE ?= $(shell python -c "import openvino as ov; ds = ov.Core().available_devices; print(next((d for d in ds if d.startswith('GPU')), 'CPU'))" 2>/dev/null || echo CPU)
+
 help:
 	@echo "Backend Accuracy Comparison - Make Commands"
 	@echo ""
@@ -9,6 +13,10 @@ help:
 	@echo "  make test-numerical     - Run quick numerical comparison with PI05 on Libero Spatial dataset"
 	@echo "  make test-closed-loop   - Run quick closed-loop benchmark with PI05 on Libero 10 task suite"
 	@echo "  make clean              - Remove generated files"
+	@echo ""
+	@echo "Variables:"
+	@echo "  OV_DEVICE=$(OV_DEVICE)  - OpenVINO device passed to closed-loop benchmark"
+	@echo "                            (auto-detected; override with OV_DEVICE=CPU|GPU|GPU.0|AUTO|...)"
 	@echo ""
 	@echo "For full documentation see README.md"
 
@@ -47,7 +55,9 @@ test-numerical:
 
 test-closed-loop:
 	@echo "Running closed-loop benchmark (quick test)..."
-	@echo "This may take 5-10 minutes..."
+	@echo "Quick smoke tests take minutes; full libero sweeps take hours."
+	@echo "Plan full runs in the background (e.g. nohup ... &) or overnight."
+	@echo "Using OpenVINO device: $(OV_DEVICE) (override with OV_DEVICE=...)"
 	@echo ""
 	@mkdir -p results exports checkpoints
 	@if [ ! -f checkpoints/test_pi05.ckpt ]; then \
@@ -60,6 +70,7 @@ test-closed-loop:
 		--task-suite libero_10 \
 		--task-ids 0 1 \
 		--num-episodes 5 \
+		--ov-device $(OV_DEVICE) \
 		--output results/test_closed_loop.json
 	@echo ""
 	@echo "✓ Closed-loop test complete"

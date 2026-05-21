@@ -34,9 +34,26 @@ make check  # Verify environment
 # cd ../../ && uv sync --all-extras && cd scripts/backend_accuracy_comparison
 
 # Run quick tests
-make test-numerical      # ~2 minutes
-make test-closed-loop    # ~10 minutes
+make test-numerical      # minutes for small models; tens of minutes for VLA-scale policies
+make test-closed-loop    # minutes to hours depending on model size and task count
 ```
+
+> **Heads-up on runtime.** Previous estimates in this README were too
+> optimistic. Times scale roughly linearly with `num_samples` (numerical) and
+> `num_episodes x max_steps` (closed-loop), and large VLA policies (e.g. Pi0.5)
+> are substantially slower than smaller ones (e.g. ACT). For a quick sanity
+> check use `--task-ids 0 1 --num-episodes 2`. Plan **full `libero_10` sweeps
+> (10 tasks x 5+ episodes x 520 steps) as multi-hour runs** and launch them in
+> the background (e.g. `nohup ... &`) or overnight. Per-backend wall-clock
+> varies with hardware and OpenVINO device (`CPU`, `GPU`, `NPU`, `AUTO`);
+> on capable accelerators OpenVINO is expected to match or beat eager PyTorch,
+> but on a plain CPU either backend may dominate depending on the model.
+>
+> **Tip: run OpenVINO on an Intel GPU when available.** Passing
+> `--ov-device GPU` (or `GPU.0`, `AUTO`) to `closed_loop_benchmark.py` offloads
+> inference to an Intel integrated or discrete GPU and typically delivers
+> substantially higher throughput than CPU. List available devices with
+> `python -c "import openvino as ov; print(ov.Core().available_devices)"`.
 
 ## Two Complementary Approaches
 
@@ -114,7 +131,7 @@ P99 difference: 0.000123
 | **Predictions** | Single-step | Multi-step (up to 520) |
 | **Error Accumulation** | ❌ No | ✅ Yes |
 | **Metric** | Numerical diff | Success rate |
-| **Speed** | Fast (~2 min) | Slow (~30 min) |
+| **Speed** | Minutes | Hours (model & hardware dependent) |
 | **Use Case** | Export validation | Production accuracy |
 | **When to Use** | Debugging exports | Before deployment |
 
