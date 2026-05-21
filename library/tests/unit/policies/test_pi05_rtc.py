@@ -11,10 +11,14 @@ action chunk during the denoising loop.
 from __future__ import annotations
 
 import math
+from typing import TYPE_CHECKING
 
 import pytest
 import torch
 from torch import Tensor
+
+if TYPE_CHECKING:
+    from physicalai.policies.pi05.model import Pi05Model
 
 
 # ============================================================================ #
