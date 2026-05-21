@@ -226,8 +226,8 @@ class JobDB(Base):
     status: Mapped[str] = mapped_column(String(64), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
-    start_time: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
-    end_time: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    start_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    end_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     payload: Mapped[str] = mapped_column(JSON, nullable=False)
     extra_info: Mapped[str] = mapped_column(JSON, nullable=True)
 

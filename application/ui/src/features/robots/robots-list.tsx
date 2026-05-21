@@ -67,7 +67,11 @@ const RobotListItem = ({
     isActive: boolean;
 }) => {
     const payload = robot.payload;
-    const connectionString = 'connection_string' in payload ? payload.connection_string : undefined;
+    const connectionString =
+        ('connection_string' in payload ? payload.connection_string : undefined) ??
+        ('connection_string_left' in payload && 'connection_string_right' in payload
+            ? `${payload.connection_string_left} | ${payload.connection_string_right}`
+            : undefined);
     const serialNumber = 'serial_number' in robot.payload ? robot.payload.serial_number : undefined;
 
     return (

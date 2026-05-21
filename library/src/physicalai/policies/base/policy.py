@@ -171,11 +171,11 @@ class Policy(L.LightningModule, ABC):
         """
         # Handle (B, T, D) -> split along T dimension
         if actions.dim() == 3:  # noqa: PLR2004
-            # Transpose to (T, B, D), then extend queue
-            self._action_queue.extend(actions.transpose(0, 1))
+            # Transpose to (T, B, D), then truncate to _n_action_steps and extend queue
+            self._action_queue.extend(actions.transpose(0, 1)[: self._n_action_steps])
         else:
-            # Already (T, D), just extend
-            self._action_queue.extend(actions)
+            # Already (T, D), truncate to _n_action_steps and extend
+            self._action_queue.extend(actions[: self._n_action_steps])
         return self._action_queue.popleft()
 
     def _get_queued_action(self) -> torch.Tensor | None:

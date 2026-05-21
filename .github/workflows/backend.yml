@@ -28,6 +28,7 @@ jobs:
           disable-telemetry: true
           egress-policy: block
           allowed-endpoints: >
+            crates.io:443
             download.pytorch.org:443
             download-r2.pytorch.org:443
             files.pythonhosted.org:443
@@ -38,6 +39,8 @@ jobs:
             releases.astral.sh:443
             release-assets.githubusercontent.com:443
             static.crates.io:443
+            proxy.golang.org:443
+            storage.googleapis.com:443
 
       - &checkout
         name: Checkout repository

@@ -2561,7 +2561,7 @@ wheels = [
 [[package]]
 name = "omni-camera"
 version = "0.6.3"
-source = { git = "https://github.com/ArendJanKramer/OmniCamera.git?rev=master#776a1fb9ba6357f18c4159d43babf795153ac483" }
+source = { git = "https://github.com/ArendJanKramer/OmniCamera.git?rev=776a1fb9ba6357f18c4159d43babf795153ac483#776a1fb9ba6357f18c4159d43babf795153ac483" }
 
 [[package]]
 name = "oneccl"
@@ -3040,7 +3040,7 @@ requires-dist = [
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "numpy" },
     { name = "opencv-python" },
-    { name = "physicalai", extras = ["so101", "trossen"], editable = "../../physicalai" },
+    { name = "physicalai", extras = ["so101", "trossen"], git = "https://github.com/openvinotoolkit/physicalai.git?branch=main" },
     { name = "physicalai-train", extras = ["pi0", "smolvla"], editable = "../../library" },
     { name = "pydantic", specifier = ">=2.12,<2.13" },
     { name = "pydantic-settings", specifier = ">=2.10.1" },
@@ -3081,17 +3081,17 @@ lint = [
 [[package]]
 name = "physicalai"
 version = "0.1.0"
-source = { editable = "../../physicalai" }
+source = { git = "https://github.com/openvinotoolkit/physicalai.git?branch=main#2b3a4ba7d4ff06389c710a7c51843669b884f106" }
 dependencies = [
     { name = "loguru" },
     { name = "num2words" },
     { name = "numpy" },
-    { name = "omni-camera" },
     { name = "onnxruntime" },
     { name = "opencv-python-headless" },
     { name = "openvino" },
     { name = "openvino-tokenizers" },
     { name = "pydantic" },
+    { name = "pynokhwa" },
     { name = "pyturbojpeg", marker = "sys_platform == 'linux' or (extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-cuda') or (extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-xpu') or (extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu')" },
     { name = "pyyaml" },
     { name = "safetensors" },
@@ -3104,52 +3104,6 @@ so101 = [
 ]
 trossen = [
     { name = "trossen-arm" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "feetech-servo-sdk", marker = "extra == 'so101'" },
-    { name = "ipykernel", marker = "extra == 'notebooks'" },
-    { name = "loguru", specifier = ">=0.7" },
-    { name = "matplotlib", marker = "extra == 'notebooks'" },
-    { name = "matplotlib-inline", marker = "extra == 'notebooks'" },
-    { name = "mypy", marker = "extra == 'tests'" },
-    { name = "num2words", specifier = ">=0.5.14,<0.6.0" },
-    { name = "numpy", specifier = ">=1.24" },
-    { name = "omni-camera", git = "https://github.com/ArendJanKramer/OmniCamera.git?rev=master" },
-    { name = "onnxruntime" },
-    { name = "opencv-python-headless" },
-    { name = "opencv-python-headless", marker = "extra == 'basler'" },
-    { name = "openvino", specifier = ">=2026.0" },
-    { name = "openvino-tokenizers", specifier = ">=2026.0" },
-    { name = "physicalai", extras = ["abb"], marker = "extra == 'robots'" },
-    { name = "physicalai", extras = ["basler"], marker = "extra == 'capture'" },
-    { name = "physicalai", extras = ["franka"], marker = "extra == 'robots'" },
-    { name = "physicalai", extras = ["genicam"], marker = "extra == 'capture'" },
-    { name = "physicalai", extras = ["realsense"], marker = "extra == 'capture'" },
-    { name = "physicalai", extras = ["so101"], marker = "extra == 'robots'" },
-    { name = "physicalai", extras = ["trossen"], marker = "extra == 'robots'" },
-    { name = "physicalai", extras = ["ur"], marker = "extra == 'robots'" },
-    { name = "pydantic", specifier = ">=2.5" },
-    { name = "pypylon", marker = "extra == 'basler'" },
-    { name = "pyrealsense2", marker = "sys_platform != 'darwin' and extra == 'realsense'" },
-    { name = "pyrealsense2-macosx", marker = "sys_platform == 'darwin' and extra == 'realsense'" },
-    { name = "pytest", marker = "extra == 'tests'" },
-    { name = "pyturbojpeg", marker = "sys_platform == 'linux'", specifier = "<2" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "safetensors", specifier = ">=0.4.3,<1.0.0" },
-    { name = "transformers", specifier = ">=5.3.0,<5.4.0" },
-    { name = "trossen-arm", marker = "extra == 'trossen'", specifier = ">=1.9.0" },
-]
-provides-extras = ["tests", "notebooks", "realsense", "basler", "genicam", "capture", "ur", "abb", "franka", "trossen", "so101", "robots"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "mypy" },
-    { name = "prek" },
-    { name = "pyrefly" },
-    { name = "pytest" },
-    { name = "ruff" },
 ]
 
 [[package]]
@@ -3211,7 +3165,7 @@ requires-dist = [
     { name = "openvino-tokenizers", specifier = ">=2026.0" },
     { name = "peft", marker = "extra == 'groot'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'pi0'", specifier = ">=0.13.0,<1.0.0" },
-    { name = "physicalai", editable = "../../physicalai" },
+    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?branch=main" },
     { name = "physicalai-train", extras = ["groot"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["libero"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["pi0"], marker = "extra == 'all'" },
@@ -3757,6 +3711,24 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/6d/4e/91c0a5c2a8bfba37d799c4bd0d6ed0510667a81e209ee0d5ab6d50e60c26/pymunk-6.11.1-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:899340bbfdbd35a809a37714d6167ac7162dea07253c0126083d50be7e78db44", size = 1042130, upload-time = "2025-02-09T15:36:05.186Z" },
     { url = "https://files.pythonhosted.org/packages/8e/89/5ed0cccd2ffe3273dbaa25355e9fe7843e46c5b5342f900c28b406f406ad/pymunk-6.11.1-cp313-cp313-win32.whl", hash = "sha256:2ce2cbf50e9361c98b975d54db5b491b1910e91b391e9e9991de303ee4fbc07a", size = 315145, upload-time = "2025-02-09T15:36:07.742Z" },
     { url = "https://files.pythonhosted.org/packages/c8/83/efad72edfdf97435daace368cd75152affa6dd4d53f6e4e5c8d1742b9d29/pymunk-6.11.1-cp313-cp313-win_amd64.whl", hash = "sha256:7773ee2c5c9661e7a1160105eaa32791669654bdb7dfd049cea66a9a9b822ebd", size = 366521, upload-time = "2025-02-09T15:36:09.551Z" },
+]
+
+[[package]]
+name = "pynokhwa"
+version = "0.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/77/ea/0867e2865edfcfb853e719cc295169164e7bf38e42cde4b81dc4c07e9eb7/pynokhwa-0.1.2.tar.gz", hash = "sha256:37199a2bc3fa8f55439c4d812e8e81a135e8f2ea329aa332380dffda48ec4578", size = 27818, upload-time = "2026-04-30T12:07:45.79Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b8/1d/0331f266bcb1e8c4a3b2d83c241dbf700e86ba222618709a0e8bf3f4d444/pynokhwa-0.1.2-cp313-cp313t-macosx_10_12_x86_64.whl", hash = "sha256:182535f97d5a3d4a8b3651d7a82bb7764efb7b0858270964b442ce0ba60b848b", size = 550520, upload-time = "2026-04-30T12:07:30.809Z" },
+    { url = "https://files.pythonhosted.org/packages/af/ea/f7710d52c62605066c022551ac9925f054c68964fde1c5986885d54c7310/pynokhwa-0.1.2-cp313-cp313t-macosx_11_0_arm64.whl", hash = "sha256:735d9e06d2144c12b0558bd18ce7f50a154507d2418d0406529a3be7247b7bf2", size = 539635, upload-time = "2026-04-30T12:07:32.42Z" },
+    { url = "https://files.pythonhosted.org/packages/84/69/a47bd9d8b9203f1dde19c70b0c62535ba619f93925f5d4a3fe048d7a765c/pynokhwa-0.1.2-cp313-cp313t-manylinux_2_34_x86_64.whl", hash = "sha256:0929b3fcc033ee425038f69959c0954ccbadadfb36c14b6d4522254ea5343bd0", size = 560427, upload-time = "2026-04-30T12:07:34.24Z" },
+    { url = "https://files.pythonhosted.org/packages/ec/d9/b64f46e4d06dc384162bdce0256c6d36c6b31e5fbc84efcfb52bff2724dc/pynokhwa-0.1.2-cp313-cp313t-win32.whl", hash = "sha256:10cae3d2ada8921435dbb3cd9e40578044c33f067294b004cb228681f5adc8d7", size = 345641, upload-time = "2026-04-30T12:07:35.503Z" },
+    { url = "https://files.pythonhosted.org/packages/e3/ce/f353145bc0bda4935a7f4beaeb986f541d806d1337febcefde30fa26d397/pynokhwa-0.1.2-cp313-cp313t-win_amd64.whl", hash = "sha256:c238e3f3062a36fb44b94c2684b0dcd71f7ab8a5c5708c49c41e8fca9cd1fcb5", size = 366395, upload-time = "2026-04-30T12:07:36.963Z" },
+    { url = "https://files.pythonhosted.org/packages/c9/45/48e976301d4297e26e877068db473bb8cdce1c24e9875941cc6a767874d2/pynokhwa-0.1.2-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:fc00a5988b9f09e39a5ae759ac4af50e5aedeb70c2b0aea193fe95479904b9c6", size = 558548, upload-time = "2026-04-30T12:07:38.5Z" },
+    { url = "https://files.pythonhosted.org/packages/08/aa/aa01376c8367cb5da0e9736fe54dea1407b1a2b51194d2662187861695fc/pynokhwa-0.1.2-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:bdeb200a4dd5aca87510a3ff7600a298c98f86557ea6525093e0ae2576ea81e4", size = 551674, upload-time = "2026-04-30T12:07:40.16Z" },
+    { url = "https://files.pythonhosted.org/packages/ca/83/d896ee47a4f7c368e8125e1b1c68e7708f438e5b41bcb2ff8379b252305f/pynokhwa-0.1.2-cp39-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:751452ab0c9cbb4bec0435d2f19b07c4a0f2cbc86729064ca61b8082482dce1b", size = 564507, upload-time = "2026-04-30T12:07:41.409Z" },
+    { url = "https://files.pythonhosted.org/packages/c8/ea/c05eadb04dad027d5395f4b281a2dbf7b697313630852c0f8e76c70fd863/pynokhwa-0.1.2-cp39-abi3-win32.whl", hash = "sha256:35b12ea111ef66b2f5c0f4bb79ff985d97e3caa93374732547571dbb09d7358e", size = 350172, upload-time = "2026-04-30T12:07:42.884Z" },
+    { url = "https://files.pythonhosted.org/packages/9e/d8/e8a0740aa357ac67af1696006185dc113f2276dc3cccf8ff87abe195957b/pynokhwa-0.1.2-cp39-abi3-win_amd64.whl", hash = "sha256:cbb1c909d0f840f4201755f726861a835f50a3bf5f114bcb534f61239a01e5df", size = 371499, upload-time = "2026-04-30T12:07:44.135Z" },
 ]
 
 [[package]]

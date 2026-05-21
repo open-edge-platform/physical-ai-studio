@@ -18,7 +18,7 @@ packages = ["src/physicalai"]
 [project]
 name = "physicalai-train"
 version = "0.1.0"
-requires-python = ">=3.12"
+requires-python = ">=3.12, <3.15"
 description = "A package for training vision-action models"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -165,7 +165,8 @@ explicit = true
 
 # PyTorch sources configuration
 [tool.uv.sources]
-physicalai = { path = "../physicalai", editable = true }
+# TODO(#450): Replace with published package once physicalai is back in its own repo.
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", branch = "main" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },

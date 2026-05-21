@@ -38,6 +38,8 @@ class RobotType(StrEnum):
     SO101_LEADER = "SO101_Leader"
     TROSSEN_WIDOWXAI_LEADER = "Trossen_WidowXAI_Leader"
     TROSSEN_WIDOWXAI_FOLLOWER = "Trossen_WidowXAI_Follower"
+    TROSSEN_BIMANUAL_WIDOWXAI_LEADER = "Trossen_Bimanual_WidowXAI_Leader"
+    TROSSEN_BIMANUAL_WIDOWXAI_FOLLOWER = "Trossen_Bimanual_WidowXAI_Follower"
 
 
 # ============================================================================
@@ -62,6 +64,14 @@ class TrossenSingleArmPayload(BaseModel):
     serial_number: str = Field(default="", description="Serial number (unused for IP robots)")
 
 
+class TrossenBimanualPayload(BaseModel):
+    """Connection configuration for Trossen bimanual robots."""
+
+    connection_string_left: str = Field(..., description="IP address of the left arm")
+    connection_string_right: str = Field(..., description="IP address of the right arm")
+    serial_number: str = Field(default="", description="Serial number (unused for IP robots)")
+
+
 # ============================================================================
 # Concrete Robot Models
 # ============================================================================
@@ -69,6 +79,9 @@ class TrossenSingleArmPayload(BaseModel):
 
 _SO101Types = Literal[RobotType.SO101_FOLLOWER, RobotType.SO101_LEADER]
 _TrossenTypes = Literal[RobotType.TROSSEN_WIDOWXAI_LEADER, RobotType.TROSSEN_WIDOWXAI_FOLLOWER]
+_TrossenBimanualTypes = Literal[
+    RobotType.TROSSEN_BIMANUAL_WIDOWXAI_LEADER, RobotType.TROSSEN_BIMANUAL_WIDOWXAI_FOLLOWER
+]
 
 
 class BaseRobot(BaseIDModel):
@@ -128,9 +141,34 @@ class TrossenSingleArmRobot(BaseRobot):
     )
 
 
+class TrossenBimanualRobot(BaseRobot):
+    """Trossen Bimanual WidowX AI robot using two IP connections (left + right)."""
+
+    type: _TrossenBimanualTypes = Field(..., description="Type of robot configuration")
+    payload: TrossenBimanualPayload = Field(..., description="Trossen bimanual connection configuration")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "id": "a5e2cde6-936b-4a9e-a213-08dda0afa454",
+                "name": "WidowX AI Bimanual Robot 1",
+                "type": "Trossen_Bimanual_WidowXAI_Follower",
+                "payload": {
+                    "connection_string_left": "192.168.1.100",
+                    "connection_string_right": "192.168.1.101",
+                    "serial_number": "",
+                },
+                "active_calibration_id": None,
+                "created_at": "2024-01-15T10:30:00Z",
+                "updated_at": "2024-01-15T10:30:00Z",
+            },
+        },
+    )
+
+
 # Discriminated union of all robot types
 Robot = Annotated[
-    SO101Robot | TrossenSingleArmRobot,
+    SO101Robot | TrossenSingleArmRobot | TrossenBimanualRobot,
     Field(discriminator="type"),
 ]
 
@@ -152,8 +190,12 @@ class TrossenSingleArmRobotWithConnectionState(TrossenSingleArmRobot):
     connection_status: _ConnectionStatus = "unknown"
 
 
+class TrossenBimanualRobotWithConnectionState(TrossenBimanualRobot):
+    connection_status: _ConnectionStatus = "unknown"
+
+
 RobotWithConnectionState = Annotated[
-    SO101RobotWithConnectionState | TrossenSingleArmRobotWithConnectionState,
+    SO101RobotWithConnectionState | TrossenSingleArmRobotWithConnectionState | TrossenBimanualRobotWithConnectionState,
     Field(discriminator="type"),
 ]
 

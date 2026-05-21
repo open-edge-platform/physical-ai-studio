@@ -70,6 +70,62 @@ async def test_discover_job_sources_includes_training_name_and_created_at(tmp_pa
 
 
 @pytest.mark.anyio
+async def test_discover_job_sources_ignores_rotated_job_logs(tmp_path) -> None:
+    """Rotated logs should not appear as separate sources."""
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir(parents=True)
+
+    job_id = uuid4()
+    (jobs_dir / f"{job_id}.log").write_text("latest")
+    (jobs_dir / f"{job_id}.2026-05-20_17-21-37_551390.log").write_text("rotated")
+
+    job = TrainJob(
+        id=job_id,
+        project_id=uuid4(),
+        payload={
+            "type": "training",
+            "project_id": str(uuid4()),
+            "dataset_id": str(uuid4()),
+            "policy": "pi0",
+            "model_name": "Long Job",
+            "max_steps": 100,
+            "batch_size": 8,
+            "base_model_id": None,
+        },
+        created_at=datetime.now(tz=UTC),
+    )
+
+    service = _build_service(tmp_path, jobs=[job])
+
+    sources = await service.get_log_sources()
+    job_sources = [source for source in sources if source.type == "job"]
+
+    assert len(job_sources) == 1
+    assert job_sources[0].id == f"job-{job_id}"
+    assert job_sources[0].name == "Long Job (pi0)"
+
+
+def test_get_all_job_log_paths_returns_rotated_then_active(tmp_path) -> None:
+    """Rotated logs should be returned before the active log for streaming."""
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir(parents=True)
+
+    job_id = uuid4()
+    active = jobs_dir / f"{job_id}.log"
+    rotated1 = jobs_dir / f"{job_id}.2026-05-18_10-00-00_000000.log"
+    rotated2 = jobs_dir / f"{job_id}.2026-05-19_12-00-00_000000.log"
+
+    for f in [active, rotated1, rotated2]:
+        f.write_text("content")
+
+    service = _build_service(tmp_path)
+    paths = service._get_all_job_log_paths(active)
+
+    # Rotated files first (sorted chronologically), then active
+    assert paths == [rotated1, rotated2, active]
+
+
+@pytest.mark.anyio
 async def test_discover_job_sources_uses_staging_id_when_no_manifest(tmp_path) -> None:
     """New payload with archive_staging_id only -> display name derived from first 8 chars of staging id."""
     jobs_dir = tmp_path / "jobs"

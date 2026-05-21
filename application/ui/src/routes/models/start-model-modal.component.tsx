@@ -29,7 +29,7 @@ export const StartInferenceDialog = ({ close, model }: StartInferenceDialogProps
 
     return (
         <Dialog>
-            <Heading>Run model</Heading>
+            <Heading>Select your inference backend</Heading>
             <Divider />
             <Content>
                 <Suspense fallback={<ProgressCircle aria-label='Loading backends' isIndeterminate size='S' />}>

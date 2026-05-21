@@ -44,6 +44,7 @@ class PhysicalAIRobotAdapter(RobotClient):
         return self._robot_type in {
             RobotType.SO101_FOLLOWER,
             RobotType.TROSSEN_WIDOWXAI_FOLLOWER,
+            RobotType.TROSSEN_BIMANUAL_WIDOWXAI_FOLLOWER,
         }
 
     def _observation_to_state(self, observation: RobotObservation) -> dict[str, float]:

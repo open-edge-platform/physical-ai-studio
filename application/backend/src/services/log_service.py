@@ -118,7 +118,8 @@ class LogService:
         if not jobs_dir.is_dir():
             return sources
 
-        job_log_paths = sorted(jobs_dir.glob("*.log"))
+        # Match only <uuid>.log files (36-char UUID stem), excluding rotated <uuid>.<timestamp>.log
+        job_log_paths = sorted(p for p in jobs_dir.glob("*.log") if len(p.stem) == 36)
         job_ids = [file_path.stem for file_path in job_log_paths]
         source_name_map = await self._get_job_source_name_map(job_ids)
 
@@ -148,6 +149,23 @@ class LogService:
 
         return sources
 
+    def _get_all_job_log_paths(self, primary_path: Path) -> list[Path]:
+        """Return all log files for a job, including rotated files, sorted chronologically.
+
+        Given a primary path like `jobs/<uuid>.log`, finds all matching files
+        (e.g. `<uuid>.2026-05-20_17-21-37_551390.log`) and returns them sorted
+        with rotated (older) files first, then the primary (active) file last.
+        """
+        jobs_dir = primary_path.parent
+        job_id = primary_path.stem
+        if not jobs_dir.is_dir():
+            return [primary_path]
+
+        # Find rotated files: <uuid>.<timestamp>.log (sorted alphabetically = chronologically)
+        rotated = sorted(jobs_dir.glob(f"{job_id}.*.log"))
+        # Primary file is the active one, append last
+        return [*rotated, primary_path]
+
     async def source_exists(self, path: Path) -> bool:
         """Check whether a source path exists on disk and is non-empty."""
         source_path = anyio.Path(path)
@@ -156,9 +174,26 @@ class LogService:
         return (await source_path.stat()).st_size > 0
 
     async def tail_log_file(self, path: Path) -> AsyncGenerator[ServerSentEvent]:
-        """Async generator that live-tails a log file and yields SSE events."""
+        """Async generator that streams log file contents and yields SSE events.
+
+        For job logs, streams all rotated files first (in chronological order),
+        then live-tails the active log file.
+        """
+        # Determine all files to stream (for jobs this includes rotated logs)
+        is_job_log = path.parent.name == "jobs"
+        paths = self._get_all_job_log_paths(path) if is_job_log else [path]
+
         try:
-            async with await anyio.open_file(path, encoding="utf-8") as f:
+            # Stream completed (rotated) files fully
+            for log_path in paths[:-1]:
+                if log_path.exists():
+                    async with await anyio.open_file(log_path, encoding="utf-8") as f:
+                        async for line in f:
+                            yield ServerSentEvent(data=line.rstrip())
+
+            # Live-tail the active file
+            active_path = paths[-1]
+            async with await anyio.open_file(active_path, encoding="utf-8") as f:
                 while True:
                     line = await f.readline()
                     if not line:
