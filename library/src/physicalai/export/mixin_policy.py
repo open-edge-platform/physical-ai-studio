@@ -126,19 +126,10 @@ class ExportablePolicyMixin:
 
         use_action_queue = metadata.get("use_action_queue", False)
         chunk_size = metadata.get("chunk_size", 1)
-        rtc_enabled = metadata.get("rtc_enabled", False)
         preprocessors_specs: list[ComponentSpec] = metadata.get("preprocessors", [])
         postprocessors_specs: list[ComponentSpec] = metadata.get("postprocessors", [])
 
-        if rtc_enabled:
-            runner = ComponentSpec.from_class(
-                RTCActionChunking,
-                runner=ComponentSpec.from_class(SinglePass),
-                chunk_size=chunk_size,
-                execution_horizon=metadata.get("rtc_execution_horizon", 10),
-                max_guidance_weight=metadata.get("rtc_max_guidance_weight", 10.0),
-            )
-        elif use_action_queue:
+        if use_action_queue:
             runner = ComponentSpec.from_class(
                 ActionChunking,
                 runner=ComponentSpec.from_class(SinglePass),
