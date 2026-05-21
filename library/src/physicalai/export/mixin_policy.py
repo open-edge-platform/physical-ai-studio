@@ -359,7 +359,7 @@ class ExportablePolicyMixin:
             )
             raise NotImplementedError(msg)
 
-        enable_rtc = True if export_kwargs.get("enable_rtc", False) else False
+        enable_rtc = True if export_kwargs.pop("enable_rtc", False) else False
 
         if input_sample is None:
             input_sample = self._get_default_export_input_sample(enable_rtc=enable_rtc)
@@ -384,9 +384,6 @@ class ExportablePolicyMixin:
         if extra_model_args.via_onnx:
             onnx_model_args = cast("ONNXExportParameters", self._get_export_extra_args(ExportBackend.ONNX))
             extra_export_kwargs = onnx_model_args.exporter_kwargs
-
-        if enable_rtc:
-            export_kwargs.pop("enable_rtc")  # Remove custom arg before passing to export functions
 
         extra_export_kwargs.update(export_kwargs)
 
