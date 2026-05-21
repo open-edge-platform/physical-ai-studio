@@ -6,7 +6,6 @@
 from typing import Any, cast
 
 import torch
-from physicalai.inference.manifest import ComponentSpec
 
 from physicalai.data import Dataset, Feature, FeatureType, NormalizationParameters, Observation
 from physicalai.export.backends import (
@@ -459,6 +458,8 @@ class ACT(ExportablePolicyMixin, Policy):
         Returns:
             dict[str, ExportParameters]: A dictionary mapping format names to their export parameters.
         """
+        from physicalai.inference.manifest import ComponentSpec  # noqa: PLC0415
+
         postproc_specs = []
         if self.config.chunk_size != self.config.n_action_steps:
             postproc_specs.append(

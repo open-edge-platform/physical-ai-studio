@@ -3,26 +3,19 @@
 
 """Mixin classes for exporting Policies."""
 
+from __future__ import annotations
+
 import inspect
 import tempfile
 from collections.abc import Mapping
-from os import PathLike
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import lightning
 import openvino
 import openvino_tokenizers
 import torch
 import yaml
-from physicalai.inference.manifest import (
-    ComponentSpec,
-    Manifest,
-    ModelSpec,
-    PolicySource,
-    PolicySpec,
-)
-from physicalai.inference.runners.single_pass import SinglePass
 
 from physicalai.export.backends import (
     ExecuTorchDelegate,
@@ -35,7 +28,12 @@ from physicalai.export.backends import (
 )
 from physicalai.train import __version__
 
-from .mixin_model import ExportableModelMixin
+if TYPE_CHECKING:
+    from os import PathLike
+
+    from physicalai.inference.manifest import Manifest
+
+    from .mixin_model import ExportableModelMixin
 
 CONFIG_KEY = "model_config"
 POLICY_NAME_KEY = "policy_name"
@@ -118,6 +116,15 @@ class ExportablePolicyMixin:
         Returns:
             Structured manifest ready for serialisation.
         """
+        from physicalai.inference.manifest import (  # noqa: PLC0415
+            ComponentSpec,
+            Manifest,
+            ModelSpec,
+            PolicySource,
+            PolicySpec,
+        )
+        from physicalai.inference.runners.single_pass import SinglePass  # noqa: PLC0415
+
         policy_class = metadata.get("policy_class", "")
         policy_name = self.__class__.__name__.lower()
 

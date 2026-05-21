@@ -28,8 +28,7 @@ Tested Policies:
 import pytest
 
 from physicalai.data import LeRobotDataModule
-from physicalai.data.lerobot import get_delta_timestamps_from_policy
-from physicalai.policies import get_policy
+from physicalai.policies.lerobot import get_lerobot_policy
 from physicalai.policies.base.policy import Policy
 from physicalai.train import Trainer
 
@@ -61,15 +60,12 @@ class LeRobotE2ETestBase:
 
     @pytest.fixture(scope="class")
     def datamodule(self, policy_name: str) -> LeRobotDataModule:
-        """Create datamodule for LeRobot policies with delta timestamps derived from policy config."""
-        delta_timestamps = get_delta_timestamps_from_policy(policy_name)
-
+        """Create datamodule for LeRobot policies using callback-derived deltas."""
         return LeRobotDataModule(
             repo_id="lerobot/aloha_sim_insertion_human",
             train_batch_size=8,
             episodes=list(range(10)),
             data_format="lerobot",
-            delta_timestamps=delta_timestamps if delta_timestamps else None,
         )
 
     @pytest.fixture(scope="class")
@@ -84,7 +80,7 @@ class LeRobotE2ETestBase:
                 "num_inference_steps": 5,
             }
 
-        return get_policy(policy_name, source="lerobot", **policy_kwargs)
+        return get_lerobot_policy(policy_name, **policy_kwargs)
 
     @pytest.fixture(scope="class")
     def trained_policy(self, policy: Policy, datamodule: LeRobotDataModule, trainer: Trainer) -> Policy:
@@ -148,14 +144,11 @@ class TestLeRobotVLAPolicies(LeRobotE2ETestBase):
     @pytest.fixture(scope="class")
     def datamodule(self, policy_name: str) -> LeRobotDataModule:
         """Create datamodule for VLA policies with smaller batch size for memory."""
-        delta_timestamps = get_delta_timestamps_from_policy(policy_name)
-
         return LeRobotDataModule(
             repo_id="lerobot/aloha_sim_insertion_human",
             train_batch_size=1,  # Small batch for 24GB GPU memory
             episodes=list(range(2)),
             data_format="lerobot",
-            delta_timestamps=delta_timestamps if delta_timestamps else None,
         )
 
     @pytest.fixture(scope="class")
@@ -163,12 +156,11 @@ class TestLeRobotVLAPolicies(LeRobotE2ETestBase):
         """Create VLA policy with memory-efficient settings for 24GB GPUs."""
         if policy_name == "groot":
             # Memory-efficient settings: freeze backbone, only train projector
-            return get_policy(
+            return get_lerobot_policy(
                 policy_name,
-                source="lerobot",
                 tune_llm=False,
                 tune_visual=False,
                 tune_projector=True,
                 tune_diffusion_model=False,
             )
-        return get_policy(policy_name, source="lerobot")
+        return get_lerobot_policy(policy_name)

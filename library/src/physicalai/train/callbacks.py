@@ -53,6 +53,7 @@ class PolicyDatasetInteraction(Callback):
         if hasattr(trainer, "datamodule") and trainer.datamodule is not None:
             reformat_dataset_to_match_policy(policy=model, datamodule=trainer.datamodule)
 
-    def on_fit_start(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
-        """Called at the start of `trainer.fit()`."""
-        self._interact_policy_dataset(trainer, pl_module)
+    def setup(self, trainer: L.Trainer, pl_module: L.LightningModule, stage: str) -> None:
+        """Called before dataloaders are used for the current stage."""
+        if stage == "fit":
+            self._interact_policy_dataset(trainer, pl_module)

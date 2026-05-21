@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 from huggingface_hub import hf_hub_download
-from physicalai.inference.manifest import ComponentSpec
 from safetensors.torch import load_file
 
 from physicalai.data.observation import ACTION, STATE
@@ -627,6 +626,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         Raises:
             ValueError: If dataset_stats is not available for export argument construction.
         """
+        from physicalai.inference.manifest import ComponentSpec  # noqa: PLC0415
+
         extra_args: dict[str, ExportParameters] = {}
         if self._dataset_stats is None:
             msg = (

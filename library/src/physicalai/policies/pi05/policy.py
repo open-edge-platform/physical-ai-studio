@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import torch
 from huggingface_hub import hf_hub_download
-from physicalai.inference.manifest import ComponentSpec
 from safetensors.torch import load_file
 
 from physicalai.data.dataset import Dataset
@@ -673,6 +672,8 @@ class Pi05(ExportablePolicyMixin, Policy):
         Raises:
             ValueError: If dataset stats are not available for export.
         """
+        from physicalai.inference.manifest import ComponentSpec  # noqa: PLC0415
+
         if self._dataset_stats is None:
             msg = (
                 "Dataset stats are required for export. Initialize the policy with dataset_stats"
