@@ -30,6 +30,7 @@ Example output:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -214,10 +215,32 @@ def run_single_episode(gym, policy, max_steps: int, seed: int) -> dict[str, Any]
     start_time = time.perf_counter()
 
     for step in range(max_steps):
+        # InferenceModel preprocessors (e.g. StatsNormalizer for the OpenVINO
+        # export) call ``dict(inputs)``, which triggers Python's mapping
+        # protocol on ``Observation`` — ``obs.keys()`` returns string field
+        # names, but ``Observation.__getitem__`` only supports int/slice batch
+        # indexing and crashes on string keys. Convert to a plain dict (and
+        # drop ``None`` fields the policy doesn't use) before invoking the
+        # policy so both backends see the same input shape.
+
+        obs_dict = {k: v for k, v in obs.items() if v is not None}
+        # InferenceModel preprocessors (e.g. Pi05Preprocessor) expect numpy
+        # arrays — LiberoGym returns torch.Tensors (including nested dicts
+        # like ``images``: {camera: Tensor}), so convert recursively here
+        # so both backends see the same numpy inputs.
+        def _to_numpy(v):
+            if isinstance(v, torch.Tensor):
+                return v.detach().cpu().numpy()
+            if isinstance(v, dict):
+                return {k: _to_numpy(x) for k, x in v.items()}
+            return v
+
+        obs_dict = {k: _to_numpy(v) for k, v in obs_dict.items()}
+
         # select_action() uses the internal ActionCursor to dispense one
         # action per call, re-predicting at chunk boundaries automatically.
         with torch.no_grad():
-            action = policy.select_action(obs)
+            action = policy.select_action(obs_dict)
         if isinstance(action, torch.Tensor):
             action = action.cpu().numpy()
         # Drop leading batch dim if present.
@@ -415,6 +438,57 @@ def compare_results(pytorch_result: BenchmarkResult, openvino_result: BenchmarkR
         "conclusion": conclusion,
         "threshold": threshold,
     }
+
+
+def _eval_cache_key(backend: str, args: argparse.Namespace) -> str:
+    """Build a stable cache key from evaluation-determining args.
+
+    Includes only parameters that change rollout results: backend, checkpoint,
+    policy class, task suite/ids, episode count, max steps, and seed. For the
+    OpenVINO backend the device string is included too, since it affects the
+    timing metrics stored in the cached result.
+    """
+    payload = {
+        "backend": backend,
+        "checkpoint": str(args.checkpoint),
+        "policy_class": args.policy_class,
+        "task_suite": args.task_suite,
+        "task_ids": list(args.task_ids),
+        "num_episodes": args.num_episodes,
+        "max_steps": args.max_steps,
+        "seed": args.seed,
+    }
+    if backend.lower() == "openvino":
+        payload["ov_device"] = args.ov_device
+    blob = json.dumps(payload, sort_keys=True).encode()
+    return hashlib.sha1(blob, usedforsecurity=False).hexdigest()[:16]
+
+
+def _cache_path(cache_dir: Path, backend: str, args: argparse.Namespace) -> Path:
+    return cache_dir / f"{backend.lower()}_{_eval_cache_key(backend, args)}.json"
+
+
+def _load_cached_result(path: Path) -> BenchmarkResult | None:
+    """Load a cached BenchmarkResult from JSON, or return None if missing."""
+    if not path.exists():
+        return None
+    try:
+        with path.open() as f:
+            data = json.load(f)
+        task_results = [TaskResult(**tr) for tr in data["task_results"]]
+        data["task_results"] = task_results
+        return BenchmarkResult(**data)
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        logger.warning(f"Failed to load eval cache {path}: {e}")
+        return None
+
+
+def _save_cached_result(result: BenchmarkResult, path: Path) -> None:
+    """Persist a BenchmarkResult to JSON for later reuse."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w") as f:
+        json.dump(asdict(result), f, indent=2)
+    logger.info(f"✓ Cached {result.backend} eval results to {path}")
 
 
 def save_results(
@@ -619,6 +693,36 @@ def main():
         help="Re-export models even if cached artifacts exist in --export-dir",
     )
 
+    parser.add_argument(
+        "--eval-cache-dir",
+        type=Path,
+        default=Path("results/eval_cache"),
+        help="Directory for cached per-backend evaluation results",
+    )
+
+    parser.add_argument(
+        "--no-eval-cache",
+        action="store_true",
+        help="Disable evaluation result caching (always re-run rollouts)",
+    )
+
+    parser.add_argument(
+        "--skip-pytorch",
+        action="store_true",
+        help="Skip PyTorch rollouts and require a cached result (useful when iterating on OpenVINO)",
+    )
+
+    parser.add_argument(
+        "--ov-device",
+        type=str,
+        default="CPU",
+        help=(
+            "OpenVINO device string passed to ov.Core().compile_model(). "
+            "Examples: 'CPU', 'GPU', 'NPU', 'AUTO', 'AUTO:GPU,CPU', 'HETERO:GPU,CPU'. "
+            "See https://docs.openvino.ai/2025/openvino-workflow/running-inference/inference-devices-and-modes/auto-device-selection.html"
+        ),
+    )
+
     args = parser.parse_args()
 
     # Fail fast before any heavy work (model download / export / simulator init).
@@ -675,33 +779,55 @@ def main():
     # 3. Load exported models for inference
     from physicalai.inference import InferenceModel
 
-    logger.info("\nLoading exported models...")
-    pytorch_model = InferenceModel.load(pytorch_path)
-    openvino_model = InferenceModel.load(openvino_path)
+    use_cache = not args.no_eval_cache
+    pytorch_cache = _cache_path(args.eval_cache_dir, "PyTorch", args)
+    openvino_cache = _cache_path(args.eval_cache_dir, "OpenVINO", args)
 
-    # 4. Evaluate PyTorch backend
-    pytorch_result = evaluate_backend(
-        pytorch_model,
-        args.task_suite,
-        args.task_ids,
-        args.num_episodes,
-        args.max_steps,
-        args.seed,
-        "PyTorch",
-    )
-    pytorch_result.export_time = pytorch_export_time
+    # 4. Evaluate PyTorch backend (use cache when available)
+    pytorch_result = _load_cached_result(pytorch_cache) if use_cache else None
+    if pytorch_result is not None:
+        logger.info(f"\n✓ Reusing cached PyTorch results from {pytorch_cache}")
+    elif args.skip_pytorch:
+        msg = (
+            f"--skip-pytorch was set but no cached result was found at {pytorch_cache}. "
+            "Run once without --skip-pytorch to populate the cache."
+        )
+        raise SystemExit(msg)
+    else:
+        logger.info("\nLoading PyTorch exported model...")
+        pytorch_model = InferenceModel.load(pytorch_path)
+        pytorch_result = evaluate_backend(
+            pytorch_model,
+            args.task_suite,
+            args.task_ids,
+            args.num_episodes,
+            args.max_steps,
+            args.seed,
+            "PyTorch",
+        )
+        pytorch_result.export_time = pytorch_export_time
+        if use_cache:
+            _save_cached_result(pytorch_result, pytorch_cache)
 
-    # 5. Evaluate OpenVINO backend
-    openvino_result = evaluate_backend(
-        openvino_model,
-        args.task_suite,
-        args.task_ids,
-        args.num_episodes,
-        args.max_steps,
-        args.seed,
-        "OpenVINO",
-    )
-    openvino_result.export_time = openvino_export_time
+    # 5. Evaluate OpenVINO backend (use cache when available)
+    openvino_result = _load_cached_result(openvino_cache) if use_cache else None
+    if openvino_result is not None:
+        logger.info(f"\n✓ Reusing cached OpenVINO results from {openvino_cache}")
+    else:
+        logger.info(f"\nLoading OpenVINO exported model on device={args.ov_device}...")
+        openvino_model = InferenceModel.load(openvino_path, device=args.ov_device)
+        openvino_result = evaluate_backend(
+            openvino_model,
+            args.task_suite,
+            args.task_ids,
+            args.num_episodes,
+            args.max_steps,
+            args.seed,
+            "OpenVINO",
+        )
+        openvino_result.export_time = openvino_export_time
+        if use_cache:
+            _save_cached_result(openvino_result, openvino_cache)
 
     # 6. Compare results
     comparison = compare_results(pytorch_result, openvino_result)
