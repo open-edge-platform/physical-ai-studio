@@ -60,6 +60,7 @@ class ExportablePolicyMixin:
         self,
         export_dir: Path,
         backend: ExportBackend,
+        runner: ComponentSpec,
         preprocessors: list[ComponentSpec] | None = None,
         postprocessors: list[ComponentSpec] | None = None,
         input_names: list[str] | None = None,
@@ -70,6 +71,7 @@ class ExportablePolicyMixin:
         Args:
             export_dir: Directory containing the exported model.
             backend: Export backend used.
+            runner: Runner component spec to include in the manifest.
             preprocessors: Preprocessor component specs to include in the manifest.
             postprocessors: Postprocessor component specs to include in the manifest.
             input_names: Optional ordered list of model input names.
@@ -91,7 +93,7 @@ class ExportablePolicyMixin:
                 source=PolicySource(class_path=policy_class),
             ),
             model=ModelSpec(
-                runner=ComponentSpec.from_class(SinglePass),
+                runner=runner,
                 artifacts={str(backend): artifact_filename},
                 preprocessors=preprocessors or [],
                 postprocessors=postprocessors or [],
@@ -180,6 +182,7 @@ class ExportablePolicyMixin:
         self.create_manifest(
             export_dir,
             ExportBackend.TORCH,
+            runner=ComponentSpec.from_class(SinglePass),
             preprocessors=extra_model_args.preprocessors_specs,
             postprocessors=extra_model_args.postprocessors_specs,
         )
@@ -250,6 +253,7 @@ class ExportablePolicyMixin:
         self.create_manifest(
             export_dir,
             ExportBackend.ONNX,
+            runner=ComponentSpec.from_class(SinglePass),
             preprocessors=extra_model_args.preprocessors_specs,
             postprocessors=extra_model_args.postprocessors_specs,
         )
@@ -362,6 +366,7 @@ class ExportablePolicyMixin:
         self.create_manifest(
             export_dir,
             ExportBackend.OPENVINO,
+            runner=ComponentSpec.from_class(SinglePass),
             preprocessors=extra_model_args.preprocessors_specs,
             postprocessors=extra_model_args.postprocessors_specs,
         )
@@ -486,6 +491,7 @@ class ExportablePolicyMixin:
         self.create_manifest(
             export_dir,
             ExportBackend.EXECUTORCH,
+            runner=ComponentSpec.from_class(SinglePass),
             input_names=list(input_sample.keys()),  # type: ignore[arg-type, union-attr]
             output_names=extra_model_args.output_names,
         )
