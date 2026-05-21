@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 from typing import TYPE_CHECKING
+from unittest.mock import patch
 
 import pytest
 import torch
@@ -400,14 +401,30 @@ class TestSampleInputRtc:
 class TestSampleActionsRTC:
     """Integration tests for sample_actions with and without RTC.
 
-    These tests instantiate a real (small) Pi05Model to verify end-to-end
-    behavior. Marked slow since they load a ~300M param model.
+    Uses smallest model variants (gemma_300m) with patched projection_dim
+    to keep memory usage low in CI (~300M params instead of ~2.6B).
     """
 
     @pytest.fixture(scope="class")
     def model(self) -> "Pi05Model":
         """Create a small Pi05Model for testing."""
-        from physicalai.policies.pi05.model import Pi05Model
+        from physicalai.policies.pi05.model import PaliGemmaWithExpertModel, Pi05Model
+
+        original_init = PaliGemmaWithExpertModel.__init__
+
+        def _patched_init(self_inner, *args, **kwargs):
+            original_init(self_inner, *args, **kwargs)
+            # After construction, resize multi_modal_projector to match gemma_300m width (1024)
+            # The projector output must match text_config.hidden_size for embed_prefix concat
+            projector = self_inner.paligemma.model.multi_modal_projector
+            in_features = projector.linear.in_features if hasattr(projector, "linear") else projector.in_features
+            hidden_size = self_inner.paligemma.config.text_config.hidden_size
+            import torch.nn as nn
+
+            if hasattr(projector, "linear"):
+                projector.linear = nn.Linear(in_features, hidden_size)
+            else:
+                self_inner.paligemma.model.multi_modal_projector = nn.Linear(in_features, hidden_size)
 
         dataset_stats = {
             "observation.state": {
@@ -432,15 +449,16 @@ class TestSampleActionsRTC:
                 "type": "VISUAL",
             },
         }
-        model = Pi05Model(
-            dataset_stats=dataset_stats,
-            paligemma_variant="gemma_2b",
-            action_expert_variant="gemma_300m",
-            dtype="float32",
-            chunk_size=50,
-            max_action_dim=32,
-            num_inference_steps=2,  # Use few steps for faster tests
-        )
+        with patch.object(PaliGemmaWithExpertModel, "__init__", _patched_init):
+            model = Pi05Model(
+                dataset_stats=dataset_stats,
+                paligemma_variant="gemma_300m",
+                action_expert_variant="gemma_300m",
+                dtype="float32",
+                chunk_size=50,
+                max_action_dim=32,
+                num_inference_steps=2,  # Use few steps for faster tests
+            )
         model.eval()
         return model
 
@@ -456,7 +474,6 @@ class TestSampleActionsRTC:
         masks = torch.ones(1, 10, dtype=torch.long, device=device)
         return images, img_masks, tokens, masks
 
-    @pytest.mark.slow()
     def test_rtc_disabled_when_no_prev_chunk(self, model, sample_batch) -> None:
         """Without prev_chunk, sample_actions behaves identically regardless of RTC params."""
         images, img_masks, tokens, masks = sample_batch
@@ -479,7 +496,6 @@ class TestSampleActionsRTC:
 
         torch.testing.assert_close(actions_no_rtc, actions_with_rtc_params)
 
-    @pytest.mark.slow()
     def test_rtc_modifies_output_with_prev_chunk(self, model, sample_batch) -> None:
         """With prev_chunk provided, RTC modifies the denoised actions."""
         images, img_masks, tokens, masks = sample_batch
@@ -503,7 +519,6 @@ class TestSampleActionsRTC:
 
         assert not torch.allclose(actions_no_rtc, actions_with_rtc, atol=1e-4)
 
-    @pytest.mark.slow()
     def test_rtc_output_shape_unchanged(self, model, sample_batch) -> None:
         """RTC does not change the output shape."""
         images, img_masks, tokens, masks = sample_batch
@@ -523,7 +538,6 @@ class TestSampleActionsRTC:
 
         assert actions.shape == (1, 50, 32)
 
-    @pytest.mark.slow()
     def test_rtc_zero_guidance_weight_minimal_effect(self, model, sample_batch) -> None:
         """With max_guidance_weight=0, RTC correction should be zero."""
         images, img_masks, tokens, masks = sample_batch
@@ -548,7 +562,6 @@ class TestSampleActionsRTC:
         # With 0 max guidance weight, correction = v_t - 0 * correction = v_t
         torch.testing.assert_close(actions_no_rtc, actions_zero_gw)
 
-    @pytest.mark.slow()
     def test_rtc_stronger_guidance_larger_difference(self, model, sample_batch) -> None:
         """Larger max_guidance_weight produces larger deviation from unguided output."""
         images, img_masks, tokens, masks = sample_batch
@@ -582,7 +595,6 @@ class TestSampleActionsRTC:
         diff_strong = (actions_strong - actions_no_rtc).abs().sum()
         assert diff_strong > diff_weak
 
-    @pytest.mark.slow()
     def test_rtc_no_nan_inf(self, model, sample_batch) -> None:
         """RTC output contains no NaN or Inf values."""
         images, img_masks, tokens, masks = sample_batch
@@ -615,7 +627,21 @@ class TestPredictActionChunkRTC:
     @pytest.fixture(scope="class")
     def model(self) -> "Pi05Model":
         """Create a small Pi05Model for testing."""
-        from physicalai.policies.pi05.model import Pi05Model
+        from physicalai.policies.pi05.model import PaliGemmaWithExpertModel, Pi05Model
+
+        original_init = PaliGemmaWithExpertModel.__init__
+
+        def _patched_init(self_inner, *args, **kwargs):
+            original_init(self_inner, *args, **kwargs)
+            projector = self_inner.paligemma.model.multi_modal_projector
+            in_features = projector.linear.in_features if hasattr(projector, "linear") else projector.in_features
+            hidden_size = self_inner.paligemma.config.text_config.hidden_size
+            import torch.nn as nn
+
+            if hasattr(projector, "linear"):
+                projector.linear = nn.Linear(in_features, hidden_size)
+            else:
+                self_inner.paligemma.model.multi_modal_projector = nn.Linear(in_features, hidden_size)
 
         dataset_stats = {
             "observation.state": {
@@ -640,15 +666,16 @@ class TestPredictActionChunkRTC:
                 "type": "VISUAL",
             },
         }
-        model = Pi05Model(
-            dataset_stats=dataset_stats,
-            paligemma_variant="gemma_2b",
-            action_expert_variant="gemma_300m",
-            dtype="float32",
-            chunk_size=50,
-            max_action_dim=32,
-            num_inference_steps=2,
-        )
+        with patch.object(PaliGemmaWithExpertModel, "__init__", _patched_init):
+            model = Pi05Model(
+                dataset_stats=dataset_stats,
+                paligemma_variant="gemma_300m",
+                action_expert_variant="gemma_300m",
+                dtype="float32",
+                chunk_size=50,
+                max_action_dim=32,
+                num_inference_steps=2,
+            )
         model.eval()
         return model
 
@@ -666,7 +693,6 @@ class TestPredictActionChunkRTC:
             TOKENIZED_PROMPT_MASK: torch.ones(1, 10, dtype=torch.long, device=device),
         }
 
-    @pytest.mark.slow()
     def test_predict_action_chunk_without_rtc_keys(self, model) -> None:
         """predict_action_chunk works without RTC keys in batch."""
         device = next(model.parameters()).device
@@ -678,7 +704,6 @@ class TestPredictActionChunkRTC:
         assert actions.shape[0] == 1
         assert actions.shape[2] == 7  # Original action dim, unpadded
 
-    @pytest.mark.slow()
     def test_predict_action_chunk_with_rtc_keys(self, model) -> None:
         """predict_action_chunk uses RTC keys from batch when present."""
         device = next(model.parameters()).device
@@ -697,7 +722,6 @@ class TestPredictActionChunkRTC:
         assert actions.shape[2] == 7
         assert not torch.isnan(actions).any()
 
-    @pytest.mark.slow()
     def test_predict_action_chunk_rtc_vs_no_rtc(self, model) -> None:
         """predict_action_chunk produces different results with vs without RTC batch keys."""
         from physicalai.data.constants import TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
