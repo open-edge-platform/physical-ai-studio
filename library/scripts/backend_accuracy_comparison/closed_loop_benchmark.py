@@ -21,6 +21,7 @@ Usage:
         --seed 42
 
 Example output:
+
     PyTorch  Success Rate: 75.0% (45/60 episodes)
     OpenVINO Success Rate: 74.5% (44.7/60 episodes)
     Delta: 0.5% (within measurement noise)
@@ -778,6 +779,17 @@ def main():
 
     # 3. Load exported models for inference
     from physicalai.inference import InferenceModel
+    from physicalai.inference.runners import ActionChunking, SinglePass
+
+    # The default manifest exports declare a ``SinglePass`` runner, which
+    # makes ``InferenceModel.select_action()`` raise (it requires action
+    # chunking). Wrap the runner explicitly so both backends queue
+    # ``chunk_size`` predicted actions and dispense one per call — this
+    # also matches what ``Policy.select_action()`` does in eager PyTorch.
+    chunk_size = int(getattr(policy.config, "chunk_size", 1))
+
+    def _make_runner() -> ActionChunking:
+        return ActionChunking(SinglePass(), chunk_size=chunk_size)
 
     use_cache = not args.no_eval_cache
     pytorch_cache = _cache_path(args.eval_cache_dir, "PyTorch", args)
@@ -795,7 +807,7 @@ def main():
         raise SystemExit(msg)
     else:
         logger.info("\nLoading PyTorch exported model...")
-        pytorch_model = InferenceModel.load(pytorch_path)
+        pytorch_model = InferenceModel.load(pytorch_path, runner=_make_runner())
         pytorch_result = evaluate_backend(
             pytorch_model,
             args.task_suite,
@@ -815,7 +827,7 @@ def main():
         logger.info(f"\n✓ Reusing cached OpenVINO results from {openvino_cache}")
     else:
         logger.info(f"\nLoading OpenVINO exported model on device={args.ov_device}...")
-        openvino_model = InferenceModel.load(openvino_path, device=args.ov_device)
+        openvino_model = InferenceModel.load(openvino_path, device=args.ov_device, runner=_make_runner())
         openvino_result = evaluate_backend(
             openvino_model,
             args.task_suite,
