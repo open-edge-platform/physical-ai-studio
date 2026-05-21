@@ -12,10 +12,6 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-import openvino_tokenizers
-
-from physicalai.inference.constants import ACTION
-
 import torch
 from huggingface_hub import hf_hub_download
 from physicalai.inference.manifest import ComponentSpec
