@@ -69,16 +69,6 @@ class InferenceRunner(ABC):
         must clear it here. Stateless runners can no-op.
         """
 
-    @property
-    def runner_provided_keys(self) -> set[str]:
-        """Input keys the runner injects during ``run()``.
-
-        These keys are not expected in the observation dict — the
-        runner will supply them before calling the adapter.  Override
-        in subclasses that generate extra inputs (e.g. noise).
-        """
-        return set()
-
     def __repr__(self) -> str:
         """Return string representation of the runner."""
         return f"{self.__class__.__name__}()"
