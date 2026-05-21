@@ -177,12 +177,7 @@ class ExportablePolicyMixin:
         # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         torch.save(checkpoint, str(model_path))  # nosec B614
 
-<<<<<<< HEAD
         self.create_manifest(
-=======
-        # Create metadata files
-        self._create_metadata(
->>>>>>> origin/main
             export_dir,
             ExportBackend.TORCH,
             preprocessors=extra_model_args.preprocessors_specs,
