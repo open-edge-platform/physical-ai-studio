@@ -638,6 +638,8 @@ class Pi05Model(ExportableModelMixin, Model):
         self.time_mlp_in = nn.Linear(action_expert_config.width, action_expert_config.width)
         self.time_mlp_out = nn.Linear(action_expert_config.width, action_expert_config.width)
 
+        self.enable_rtc = False
+
         self.gradient_checkpointing_enabled = False
         if gradient_checkpointing:
             self.gradient_checkpointing_enable()
@@ -697,46 +699,21 @@ class Pi05Model(ExportableModelMixin, Model):
 
         sample_input[TASK] = "sample_task"
 
-        return sample_input
-
-    @property
-    def sample_input_rtc(self) -> dict[str, torch.Tensor | str]:
-        """Generate a sample input dictionary for RTC with random tensors.
-
-        This method creates a dictionary containing sample input tensors that match the expected
-        input format of the model for real-time control (RTC). The tensors are randomly initialized
-        and have shapes derived from the model's configuration.
-
-        Returns:
-            dict[str, torch.Tensor | str]: A dictionary with two keys
-                - 'state': A tensor representing the robot state with shape (1, *state_feature.shape).
-                - 'images': Either a single tensor or a dictionary of tensors representing visual inputs,
-                    depending on the number of image features configured.
-
-        Note:
-            The batch dimension (first dimension) is set to 1 for all tensors.
-            The tensors are created on the same device as the model's parameters.
-        """
-        device = next(self.paligemma_with_expert.parameters()).device
-        max_action_dim = self._max_action_dim
-        chunk_size = self._chunk_size
-
-        original_sample_input = self.sample_input
-        rtc_input = {
-            "prev_chunk_left_over": torch.randn(
+        if self.enable_rtc:
+            max_action_dim = self._max_action_dim
+            chunk_size = self._chunk_size
+            sample_input["prev_chunk_left_over"] = torch.randn(
                 1,
                 chunk_size,
                 max_action_dim,
                 device=device,
                 dtype=torch.float32,
-            ),
-            "inference_delay": torch.tensor(8, device=device, dtype=torch.long),
-            "max_guidance_weight": torch.tensor(10.0, device=device, dtype=torch.float32),
-            "execution_horizon": torch.tensor(10, device=device, dtype=torch.long),
-        }
+            )
+            sample_input["inference_delay"] = torch.tensor(8, device=device, dtype=torch.long)
+            sample_input["max_guidance_weight"] = torch.tensor(10.0, device=device, dtype=torch.float32)
+            sample_input["execution_horizon"] = torch.tensor(10, device=device, dtype=torch.long)
 
-        original_sample_input.update(rtc_input)
-        return original_sample_input
+        return sample_input
 
     @property
     def reward_delta_indices(self) -> None:

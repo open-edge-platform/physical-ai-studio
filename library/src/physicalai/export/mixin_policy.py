@@ -5,6 +5,8 @@
 
 import inspect
 import tempfile
+from collections.abc import Generator
+from contextlib import contextmanager
 from os import PathLike
 from pathlib import Path
 from typing import Any, cast
@@ -55,6 +57,16 @@ class ExportablePolicyMixin:
             A dictionary mapping backend names to their export parameters.
         """
         return {}
+
+    @contextmanager
+    def _scoped_rtc(self, *, enable: bool) -> Generator[None, None, None]:
+        """Temporarily set enable_rtc on the model, restoring the previous value on exit."""
+        prev = getattr(self.model, "enable_rtc", False)
+        setattr(self.model, "enable_rtc", enable)  # noqa: B010
+        try:
+            yield
+        finally:
+            setattr(self.model, "enable_rtc", prev)  # noqa: B010
 
     def create_manifest(
         self,
@@ -222,8 +234,9 @@ class ExportablePolicyMixin:
             raise NotImplementedError(msg)
 
         enable_rtc = bool(export_kwargs.pop("enable_rtc", False))
-        if input_sample is None:
-            input_sample = self._get_default_export_input_sample(enable_rtc=enable_rtc)
+        with self._scoped_rtc(enable=enable_rtc):
+            if input_sample is None:
+                input_sample = self._get_default_export_input_sample()
 
         if input_sample is None:
             msg = "An input sample must be provided for ONNX export, or the model must implement "
@@ -298,8 +311,9 @@ class ExportablePolicyMixin:
             raise NotImplementedError(msg)
 
         enable_rtc = bool(export_kwargs.pop("enable_rtc", False))
-        if input_sample is None:
-            input_sample = self._get_default_export_input_sample(enable_rtc=enable_rtc)
+        with self._scoped_rtc(enable=enable_rtc):
+            if input_sample is None:
+                input_sample = self._get_default_export_input_sample()
 
         if input_sample is None:
             msg = "An input sample must be provided for OpenVINO export, or the model must implement "
@@ -565,25 +579,19 @@ class ExportablePolicyMixin:
             **export_kwargs,
         )
 
-    def _get_default_export_input_sample(self, *, enable_rtc: bool = False) -> dict[str, torch.Tensor] | None:
+    def _get_default_export_input_sample(self) -> dict[str, torch.Tensor] | None:
         """Retrieve a default export input sample for the model.
 
         This method attempts to obtain a sample input from the model if available,
         processes it through the preprocessor, and filters the result to return only
         torch.Tensor values.
 
-        Args:
-            enable_rtc (bool): Whether to enable real-time control (RTC) inputs.
-
         Returns:
             dict[str, torch.Tensor] | None: A dictionary containing string keys mapped to
                 torch.Tensor values extracted from the processed sample input. Returns None
                 if the model does not have a 'sample_input' attribute.
         """
-        if enable_rtc:
-            processed_sample = self._preprocessor(self.model.sample_input_rtc)
-        else:
-            processed_sample = self._preprocessor(self.model.sample_input)
+        processed_sample = self._preprocessor(self.model.sample_input)
         return {k: v for k, v in processed_sample.items() if isinstance(v, torch.Tensor)}
 
     def _get_export_extra_args(self, backend: ExportBackend | str) -> ExportParameters:

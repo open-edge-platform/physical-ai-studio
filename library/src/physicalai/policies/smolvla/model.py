@@ -328,17 +328,6 @@ class SmolVLAModel(ExportableModelMixin, Model):
         return sample_input
 
     @property
-    def sample_input_rtc(self) -> dict[str, torch.Tensor | str]:
-        """Return sample input for RTC export.
-
-        SmolVLA does not support RTC, so this returns the same as `sample_input`.
-
-        Returns:
-            A dictionary mapping input names to example torch.Tensor objects.
-        """
-        return self.sample_input
-
-    @property
     def reward_delta_indices(self) -> None:
         """Return reward indices.
 

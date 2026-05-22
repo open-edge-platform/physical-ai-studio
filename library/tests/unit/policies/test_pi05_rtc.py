@@ -321,29 +321,26 @@ class TestRtcCorrect:
 
 
 # ============================================================================ #
-# sample_input_rtc Tests                                                       #
+# sample_input with enable_rtc Tests                                           #
 # ============================================================================ #
 
 
 class TestSampleInputRtc:
-    """Tests for Pi05Model.sample_input_rtc property."""
+    """Tests for Pi05Model.sample_input property with enable_rtc=True."""
 
     @staticmethod
     def _call_sample_input_rtc(dataset_stats: dict, chunk_size: int = 50, max_action_dim: int = 32) -> dict:
-        """Invoke the Pi05Model.sample_input_rtc property on a minimal stub."""
+        """Invoke the Pi05Model.sample_input property with enable_rtc=True on a minimal stub."""
         from physicalai.policies.pi05.model import Pi05Model
 
         class _Stub:
             _chunk_size = chunk_size
             _max_action_dim = max_action_dim
             _dataset_stats = dataset_stats
+            enable_rtc = True
             paligemma_with_expert = torch.nn.Linear(1, 1)
 
-            @property
-            def sample_input(self):
-                return Pi05Model.sample_input.fget(self)  # type: ignore[attr-defined]
-
-        return Pi05Model.sample_input_rtc.fget(_Stub())  # type: ignore[attr-defined]
+        return Pi05Model.sample_input.fget(_Stub())  # type: ignore[attr-defined]
 
     def test_contains_rtc_keys(self) -> None:
         """RTC sample input contains the four RTC-specific keys."""
