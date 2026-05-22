@@ -37,6 +37,7 @@ jobs:
             files.pythonhosted.org:443
             github.com:443
             github-cloud.githubusercontent.com:443
+            index.crates.io:443
             nodejs.org:443
             packages.microsoft.com:443
             pypi.org:443
@@ -44,6 +45,7 @@ jobs:
             registry.npmjs.org:443
             release-assets.githubusercontent.com:443
             releases.astral.sh:443
+            static.crates.io:443
 
       - &checkout
         name: Checkout code
@@ -238,7 +240,7 @@ jobs:
     timeout-minutes: 60
     runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
     container:
-      image: mcr.microsoft.com/playwright:v1.59.1-jammy@sha256:8a0360d39d1973be506dd59002904a774f6d697d4946c94063b3fd006461c8ff
+      image: mcr.microsoft.com/playwright:v1.60.0-jammy@sha256:e1529a04087193966ea15d4a1617345bdaa0791690a24ab2c42b65f9ce5b2cdc
     steps:
       - *harden-runner
 

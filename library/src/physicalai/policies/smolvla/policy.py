@@ -224,8 +224,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
         # Save config as hyperparameters for checkpoint restoration
         self.save_hyperparameters(
-            ignore=["config", "pretrained_name_or_path"],
-        )  # Save individual args, not config object
+            ignore=["config", "pretrained_name_or_path", "compile_model"],
+        )
         # Also save config dict for compatibility
         self.hparams["config"] = self.config.to_dict()
 
@@ -651,6 +651,15 @@ class SmolVLA(ExportablePolicyMixin, Policy):
                 mode="mean_std",
             ),
         ]
+        torch_postproc_specs = []
+        if self.config.chunk_size != self.config.n_action_steps:
+            chunk_trimmer = ComponentSpec(
+                type="action_chunk_trimmer",
+                n_action_steps=self.config.n_action_steps,
+            )
+            postproc_specs.append(chunk_trimmer)
+            torch_postproc_specs.append(chunk_trimmer)
+
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
                 "output_names": [ACTION],
@@ -681,6 +690,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             ],
             postprocessors_specs=postproc_specs,
         )
-        extra_args["torch"] = TorchExportParameters()
+        extra_args["torch"] = TorchExportParameters(
+            postprocessors_specs=torch_postproc_specs,
+        )
 
         return extra_args

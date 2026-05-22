@@ -221,7 +221,7 @@ class Pi05(ExportablePolicyMixin, Policy):
                 scheduler_decay_lr=scheduler_decay_lr,
             )
 
-        self.save_hyperparameters(ignore=["config", "pretrained_name_or_path"])
+        self.save_hyperparameters(ignore=["config", "pretrained_name_or_path", "compile_model"])
         self.hparams["config"] = self.config.to_dict()
 
         self.model: Pi05Model | None = None
@@ -699,6 +699,15 @@ class Pi05(ExportablePolicyMixin, Policy):
                 mode=self.config.normalization_mode.lower(),
             ),
         ]
+        torch_postproc_specs = []
+        if self.config.chunk_size != self.config.n_action_steps:
+            chunk_trimmer = ComponentSpec(
+                type="action_chunk_trimmer",
+                n_action_steps=self.config.n_action_steps,
+            )
+            postproc_specs.append(chunk_trimmer)
+            torch_postproc_specs.append(chunk_trimmer)
+
         extra_args: dict[str, ExportParameters] = {}
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
@@ -731,6 +740,8 @@ class Pi05(ExportablePolicyMixin, Policy):
             ],
             postprocessors_specs=postproc_specs,
         )
-        extra_args["torch"] = TorchExportParameters()
+        extra_args["torch"] = TorchExportParameters(
+            postprocessors_specs=torch_postproc_specs,
+        )
 
         return extra_args

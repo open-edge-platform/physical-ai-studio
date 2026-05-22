@@ -397,6 +397,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
 
     @staticmethod
     def _pi_aloha_encode_actions(actions: torch.Tensor) -> torch.Tensor:
+        actions = actions.clone()
         # Flip the joints.
         for motor_idx in [1, 2, 8, 9]:
             actions[:, :, motor_idx] *= -1
@@ -407,6 +408,7 @@ class SmolVLAModel(ExportableModelMixin, Model):
 
     @staticmethod
     def _pi_aloha_encode_actions_inv(actions: torch.Tensor) -> torch.Tensor:
+        actions = actions.clone()
         # Flip the joints again.
         for motor_idx in [1, 2, 8, 9]:
             actions[:, :, motor_idx] *= -1
@@ -864,6 +866,16 @@ class VLAFlowMatching(nn.Module):
         embs = []
         pad_masks = []
         att_masks = []
+
+        batched_embs = torch.empty(0)
+        if not self.add_image_special_tokens:
+            num_cameras = images.shape[0]
+            bsize = images.shape[1]
+            imgs_flat = images.reshape(num_cameras * bsize, *images.shape[2:])
+            batched_embs = self.vlm_with_expert.embed_image(imgs_flat)
+            num_img_embs = batched_embs.shape[1]
+            batched_embs = batched_embs.reshape(num_cameras, bsize, num_img_embs, -1)
+
         for _img_idx, (
             img,
             img_mask,
@@ -884,8 +896,9 @@ class VLAFlowMatching(nn.Module):
                 att_masks += [0] * (image_start_mask.shape[-1])
                 embs.append(image_start_token)
                 pad_masks.append(image_start_mask)
-
-            img_emb = self.vlm_with_expert.embed_image(img)
+                img_emb = self.vlm_with_expert.embed_image(img)
+            else:
+                img_emb = batched_embs[_img_idx]
 
             # Normalize image embeddings
             img_emb_dim = img_emb.shape[-1]
@@ -1148,7 +1161,7 @@ class VLAFlowMatching(nn.Module):
         num_steps = self._num_steps
         dt = -1.0 / num_steps
 
-        x_t = noise
+        x_t = noise.clone()
         for step in range(num_steps):
             time = 1.0 + step * dt
             time_tensor = torch.tensor(time, dtype=torch.float32, device=device).expand(bsize)

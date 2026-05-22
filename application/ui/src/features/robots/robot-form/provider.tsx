@@ -7,6 +7,8 @@ export type RobotForm = {
     type: SchemaRobotType;
     connection_string: string;
     serial_number: string;
+    connection_string_left: string;
+    connection_string_right: string;
 };
 
 export type RobotFormState = RobotForm | null;
@@ -50,6 +52,22 @@ export const buildRobotBodyFromForm = (robotForm: RobotForm, robot_id: string): 
                     serial_number: robotForm.serial_number ?? '',
                 },
             };
+        case 'Trossen_Bimanual_WidowXAI_Follower':
+        case 'Trossen_Bimanual_WidowXAI_Leader':
+            if (!robotForm.connection_string_left || !robotForm.connection_string_right) {
+                return null;
+            }
+
+            return {
+                id: robot_id,
+                name: robotForm.name,
+                type: robotForm.type,
+                payload: {
+                    connection_string_left: robotForm.connection_string_left,
+                    connection_string_right: robotForm.connection_string_right,
+                    serial_number: robotForm.serial_number ?? '',
+                },
+            };
         default:
             return null;
     }
@@ -69,12 +87,18 @@ export const RobotFormProvider = ({ children, robot }: { children: ReactNode; ro
     const initialConnectionString =
         robot !== undefined && 'connection_string' in robot.payload ? robot.payload.connection_string : '';
     const initialSerialNumber = robot?.payload.serial_number ?? '';
+    const initialLeftConnection =
+        robot !== undefined && 'connection_string_left' in robot.payload ? robot.payload.connection_string_left : '';
+    const initialRightConnection =
+        robot !== undefined && 'connection_string_right' in robot.payload ? robot.payload.connection_string_right : '';
 
     const [value, setValue] = useState<RobotForm>({
         name: robot?.name ?? '',
         type: robot?.type ?? 'SO101_Follower',
         connection_string: initialConnectionString,
         serial_number: initialSerialNumber,
+        connection_string_left: initialLeftConnection,
+        connection_string_right: initialRightConnection,
     });
 
     return (

@@ -4,15 +4,20 @@
 """Unit tests for mixin_export module."""
 
 from dataclasses import dataclass
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import onnx
 import pytest
 import torch
 
-from physicalai.export.backends import ExportParameters, ONNXExportParameters, OpenVINOExportParameters
+from physicalai.export.backends import (
+    ExportParameters,
+    ONNXExportParameters,
+    OpenVINOExportParameters,
+    TorchExportParameters,
+)
 from physicalai.export.mixin_policy import ExportablePolicyMixin, ExportBackend
+from physicalai.inference.manifest import ComponentSpec, Manifest
 
 
 # Test configurations
@@ -152,10 +157,6 @@ class ExportWrapper(ExportablePolicyMixin):
         if not hasattr(self.model, "sample_input"):
             return None
         return super()._get_default_export_input_sample(**kwargs)
-
-    @property
-    def metadata_extra(self) -> dict[str, Any]:
-        return {"chunk_size": 10, "use_action_queue": True}
 
     @staticmethod
     def get_supported_export_backends() -> list[str | ExportBackend]:
@@ -467,18 +468,11 @@ class TestToExecutorch:
             # Assert write_to_file was called (writes .pte content)
             mocks["mock_exec_program"].write_to_file.assert_called_once()
 
-            # Assert metadata.yaml was created
-            assert (tmp_path / "metadata.yaml").exists()
+            # Assert manifest.json was created
+            assert (tmp_path / "manifest.json").exists()
 
             # Assert .pte file was created (open() creates it even with mocked write)
             assert (tmp_path / "model.pte").exists()
-
-            # Verify metadata contains input_names
-            import yaml
-
-            with open(tmp_path / "metadata.yaml") as f:
-                metadata = yaml.safe_load(f)
-            assert "input_names" in metadata
 
             assert result == tmp_path / "model.pte"
 
@@ -553,3 +547,63 @@ class TestToExecutorch:
         with patch.object(wrapper, "to_executorch") as mock_to_executorch:
             wrapper.export(backend=ExportBackend.EXECUTORCH, output_path=tmp_path / "model.pte")
             mock_to_executorch.assert_called_once()
+
+
+class TorchExportWrapper(ExportablePolicyMixin):
+    """Policy-like wrapper that emulates chunk-aware torch export.
+
+    Mirrors how real policies build :class:`TorchExportParameters` based on
+    ``chunk_size`` vs ``n_action_steps``, appending an ``action_chunk_trimmer``
+    postprocessor when the two differ.
+    """
+
+    def __init__(self, model: torch.nn.Module, chunk_size: int, n_action_steps: int):
+        self.model = model
+        self._preprocessor = IdentityPreprocessor()
+        self.chunk_size = chunk_size
+        self.n_action_steps = n_action_steps
+
+    @property
+    def extra_export_args(self) -> dict[str, ExportParameters]:
+        postproc_specs: list[ComponentSpec] = []
+        if self.chunk_size != self.n_action_steps:
+            postproc_specs.append(
+                ComponentSpec(
+                    type="action_chunk_trimmer",
+                    n_action_steps=self.n_action_steps,
+                ),
+            )
+        return {ExportBackend.TORCH: TorchExportParameters(postprocessors_specs=postproc_specs)}
+
+    @staticmethod
+    def get_supported_export_backends() -> list[str | ExportBackend]:
+        return [ExportBackend.TORCH]
+
+
+class TestToTorch:
+    """Tests for to_torch method."""
+
+    def test_to_torch_adds_action_chunk_trimmer_when_chunk_differs(self, tmp_path):
+        """Trimmer postprocessor is recorded when chunk_size != n_action_steps."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = TorchExportWrapper(model, chunk_size=10, n_action_steps=5)
+
+        wrapper.to_torch(tmp_path)
+
+        manifest = Manifest.load(tmp_path / "manifest.json")
+        postproc_types = [spec.type for spec in manifest.model.postprocessors]
+        assert "action_chunk_trimmer" in postproc_types
+
+        trimmer = next(spec for spec in manifest.model.postprocessors if spec.type == "action_chunk_trimmer")
+        assert trimmer.model_dump()["n_action_steps"] == 5
+
+    def test_to_torch_no_trimmer_when_chunk_matches(self, tmp_path):
+        """No trimmer is added when chunk_size equals n_action_steps."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = TorchExportWrapper(model, chunk_size=5, n_action_steps=5)
+
+        wrapper.to_torch(tmp_path)
+
+        manifest = Manifest.load(tmp_path / "manifest.json")
+        postproc_types = [spec.type for spec in manifest.model.postprocessors]
+        assert "action_chunk_trimmer" not in postproc_types

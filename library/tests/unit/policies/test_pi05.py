@@ -936,6 +936,11 @@ class TestPi05FineTuning:
         policy = Pi05()
         assert "pretrained_name_or_path" not in policy.hparams
 
+    def test_save_hyperparameters_ignores_compile_model(self) -> None:
+        """Test compile_model is excluded from saved hyperparameters."""
+        policy = Pi05(compile_model=True)
+        assert "compile_model" not in policy.hparams
+
     def test_update_preprocessor_stats(self) -> None:
         """Test _update_preprocessor_stats rebuilds preprocessors with new stats."""
         stats = {

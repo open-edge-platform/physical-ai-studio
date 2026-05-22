@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -107,7 +108,14 @@ class TrainingWorker(BaseProcessWorker):
         self, job: Job, model: Model, snapshot: Snapshot, payload: TrainJobPayload, base_model: Model | None = None
     ):
         settings = get_settings()
-        await JobService.update_job_status(job_id=job.id, status=JobStatus.RUNNING, message="Training started")
+        await JobService.update_job(
+            job=job,
+            update={
+                "status": JobStatus.RUNNING,
+                "message": "Training started",
+                "start_time": datetime.datetime.now(tz=datetime.UTC),
+            },
+        )
         dispatcher = TrainingTrackingDispatcher(
             job_id=job.id,
             event_queue=self.queue,
@@ -173,9 +181,19 @@ class TrainingWorker(BaseProcessWorker):
             dispatcher.start()
             trainer.fit(model=policy, datamodule=l_dm)
 
-            moved = shutil.move(cache_path, path.parent)
-            Path(moved).rename(path)
-            await self._export_policy(policy=policy, path=path, job=job)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(cache_path, path)
+
+            export_policy = policy
+            if payload.compile_model and model.policy in ["act", "smolvla"]:
+                try:
+                    logger.info("Reloading non-compiled policy for export")
+                    export_policy = load_policy(model, compile_model=False)
+                except Exception as e:
+                    logger.warning("Failed to reload non-compiled policy for export; falling back to trained policy")
+                    logger.exception(e)
+
+            await self._export_policy(policy=export_policy, path=path, job=job)
 
             job = await JobService.update_job_status(
                 job_id=job.id, status=JobStatus.COMPLETED, message="Training finished"

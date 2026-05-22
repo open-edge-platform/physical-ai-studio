@@ -39,13 +39,19 @@ jobs:
             files.pythonhosted.org:443
             huggingface.co:443
             github.com:443
+            index.crates.io:443
             packages.microsoft.com:443
             pypi.org:443
             raw.githubusercontent.com:443
             release-assets.githubusercontent.com:443
             releases.astral.sh:443
+            static.crates.io:443
             transfer.xethub.hf.co:443
             us.aws.cdn.hf.co:443
+            proxy.golang.org:443
+            storage.googleapis.com:443
+            nodejs.org:443
+            registry.npmjs.org:443
 
       - &checkout
         name: Checkout repository
