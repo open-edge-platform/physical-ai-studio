@@ -1104,7 +1104,9 @@ class Pi05Model(ExportableModelMixin, Model):
 
         Args:
             batch: Preprocessed batch dict containing IMAGES, IMAGE_MASKS,
-                TOKENIZED_PROMPT, and TOKENIZED_PROMPT_MASK.
+                TOKENIZED_PROMPT, and TOKENIZED_PROMPT_MASK. When ``self.enable_rtc``
+                is True, also expects RTC keys: ``prev_chunk_left_over``,
+                ``inference_delay``, ``max_guidance_weight``, and ``execution_horizon``.
 
         Returns:
             Denoised action tensor, unpadded and clipped to n_action_steps.
@@ -1113,15 +1115,22 @@ class Pi05Model(ExportableModelMixin, Model):
         img_masks = batch[IMAGE_MASKS]
         tokens = batch[TOKENIZED_PROMPT]
         masks = batch[TOKENIZED_PROMPT_MASK]
+
+        rtc_kwargs: dict[str, Any] = {}
+        if self.enable_rtc:
+            rtc_kwargs = {
+                "rtc_max_guidance": batch.get("max_guidance_weight", 0.0),
+                "rtc_execution_horizon": batch.get("execution_horizon", 0),
+                "rtc_latency": batch.get("inference_delay", 0.0),
+                "rtc_prev_action_chunk": batch.get("prev_chunk_left_over"),
+            }
+
         actions = self.sample_actions(
             images,
             img_masks,
             tokens,
             masks,
-            rtc_max_guidance=batch.get("max_guidance_weight", 0.0),
-            rtc_execution_horizon=batch.get("execution_horizon", 0),
-            rtc_latency=batch.get("inference_delay", 0.0),
-            rtc_prev_action_chunk=batch.get("prev_chunk_left_over"),
+            **rtc_kwargs,
         )
 
         # Unpad actions to actual action dimension
