@@ -750,7 +750,9 @@ class TestPredictActionChunkRTC:
 
         with torch.no_grad():
             actions_no_rtc = model.predict_action_chunk(batch_no_rtc)
+            model.enable_rtc = True
             actions_with_rtc = model.predict_action_chunk(batch_with_rtc)
+            model.enable_rtc = False
 
         model.sample_noise = original_sample_noise  # type: ignore[method-assign]
 

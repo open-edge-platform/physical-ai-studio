@@ -760,6 +760,7 @@ class TestSampleInput:
         class _Stub:
             def __init__(self, stats: dict) -> None:
                 self._dataset_stats = stats
+                self.enable_rtc = False
                 # sample_input only reads device from this module's parameters.
                 self.paligemma_with_expert = torch.nn.Linear(1, 1)
 
