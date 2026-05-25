@@ -48,6 +48,7 @@ jobs:
             static.crates.io:443
             static.rust-lang.org:443
             www.google-analytics.com:443
+            dl-cdn.alpinelinux.org:443
 
       - &checkout
         name: Checkout repository
