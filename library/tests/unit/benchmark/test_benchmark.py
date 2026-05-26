@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import torch
 
-from physicalai.benchmark import Benchmark, BenchmarkResults, LiberoBenchmark, TaskResult
+from physicalai.benchmark.gyms import Benchmark, BenchmarkResults, LiberoBenchmark, TaskResult
 
 
 @pytest.fixture
@@ -85,7 +85,7 @@ class TestBenchmark:
 
     def test_evaluate(self, mock_gym, eval_result):
         benchmark = Benchmark(gyms=[mock_gym], num_episodes=5, max_steps=100)
-        with patch("physicalai.benchmark.benchmark.evaluate_policy", return_value=eval_result):
+        with patch("physicalai.benchmark.gyms.benchmark.evaluate_policy", return_value=eval_result):
             results = benchmark.evaluate(MagicMock())
         assert results.n_tasks == 1 and results.overall_success_rate == 80.0
 
@@ -113,7 +113,7 @@ class TestWrapPolicy:
         """Test that _wrap_policy wraps an InferenceModel into a Policy-compatible object."""
         import numpy as np
 
-        from physicalai.benchmark.benchmark import _wrap_policy
+        from physicalai.benchmark.gyms.benchmark import _wrap_policy
         from physicalai.inference.model import InferenceModel
         from physicalai.policies.base import Policy
 
@@ -143,7 +143,7 @@ class TestPolicyNameExtraction:
 
     def test_policy_name_extraction_from_inference_model(self):
         """Test that _get_policy_name extracts policy_name from InferenceModel-like objects."""
-        from physicalai.benchmark.benchmark import _get_policy_name
+        from physicalai.benchmark.gyms.benchmark import _get_policy_name
 
         class MockInferenceModel:
             def __init__(self):

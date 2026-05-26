@@ -9,7 +9,7 @@ for evaluating policies.
 Examples:
     Direct usage with explicit gyms:
 
-        >>> from physicalai.benchmark import Benchmark
+        >>> from physicalai.benchmark.gyms import Benchmark
         >>> from physicalai.gyms import LiberoGym
 
         >>> gyms = [LiberoGym(task_id=i) for i in range(10)]
@@ -19,7 +19,7 @@ Examples:
 
     Specialized LIBERO benchmark:
 
-        >>> from physicalai.benchmark import LiberoBenchmark
+        >>> from physicalai.benchmark.gyms import LiberoBenchmark
 
         >>> benchmark = LiberoBenchmark(task_suite="libero_10", num_episodes=20)
         >>> results = benchmark.evaluate(policy)
@@ -32,10 +32,10 @@ Examples:
         ...     print(f"{name}: {result.overall_success_rate:.1%}")
 """
 
-from physicalai.benchmark.benchmark import Benchmark
-from physicalai.benchmark.libero.libero import LiberoBenchmark
-from physicalai.benchmark.pusht import PushTBenchmark
-from physicalai.benchmark.results import BenchmarkResults, TaskResult
+from physicalai.benchmark.gyms.benchmark import Benchmark
+from physicalai.benchmark.gyms.libero import LiberoBenchmark
+from physicalai.benchmark.gyms.pusht import PushTBenchmark
+from physicalai.benchmark.gyms.results import BenchmarkResults, TaskResult
 from physicalai.eval.video import RecordMode, VideoRecorder
 
 __all__ = [

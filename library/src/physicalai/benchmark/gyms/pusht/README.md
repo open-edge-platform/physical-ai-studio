@@ -9,7 +9,7 @@ The imitation data can be found [at the columbia diffusion paper page](https://d
 ## Example
 
 ```python
-from physicalai.benchmark.pusht import PushTBenchmark
+from physicalai.benchmark.gyms.pusht import PushTBenchmark
 from physicalai.data import LeRobotDataModule
 from physicalai.policies import ACT
 from physicalai.train import Trainer
