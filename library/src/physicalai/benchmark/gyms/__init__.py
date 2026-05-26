@@ -32,10 +32,10 @@ Examples:
         ...     print(f"{name}: {result.overall_success_rate:.1%}")
 """
 
-from physicalai.benchmark.gyms.benchmark import Benchmark
-from physicalai.benchmark.gyms.libero import LiberoBenchmark
-from physicalai.benchmark.gyms.pusht import PushTBenchmark
-from physicalai.benchmark.gyms.results import BenchmarkResults, TaskResult
+from .benchmark import Benchmark
+from .libero import LiberoBenchmark
+from .pusht import PushTBenchmark
+from .results import BenchmarkResults, TaskResult
 from physicalai.eval.video import RecordMode, VideoRecorder
 
 __all__ = [
