@@ -195,6 +195,7 @@ triton-xpu = { index = "pytorch-xpu" }
 [tool.mypy]
 ignore_missing_imports = true
 show_error_codes = true
+explicit_package_bases = true
 
 [tool.pyrefly]
 search-path = ["src"]
