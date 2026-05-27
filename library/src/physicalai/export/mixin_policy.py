@@ -122,6 +122,7 @@ class ExportablePolicyMixin:
         postprocessors: list[ComponentSpec] | None = None,
         input_names: list[str] | None = None,
         output_names: list[str] | None = None,
+        **extras: Any,  # noqa: ANN401
     ) -> None:
         """Create ``manifest.json`` for an exported model.
 
@@ -133,12 +134,12 @@ class ExportablePolicyMixin:
             postprocessors: Postprocessor component specs to include in the manifest.
             input_names: Optional ordered list of model input names.
             output_names: Optional ordered list of model output names.
+            **extras: Additional keyword arguments to forward to the manifest.
         """
         policy_class = f"{self.__class__.__module__}.{self.__class__.__name__}"
         policy_name = self.__class__.__name__.lower()
         artifact_filename = f"{policy_name}{backend.extension}"
 
-        extras: dict[str, Any] = {}
         if input_names is not None:
             extras["input_names"] = list(input_names)
         if output_names is not None:
@@ -154,12 +155,40 @@ class ExportablePolicyMixin:
                 artifacts={str(backend): artifact_filename},
                 preprocessors=preprocessors or [],
                 postprocessors=postprocessors or [],
-                input_features=extras.get("input_names", []),
-                output_features=extras.get("output_names", []),
+                input_features=extras.pop("input_features", []),
+                output_features=extras.pop("output_features", []),
             ),
             **extras,
         )
         manifest.save(export_dir / "manifest.json")
+
+    @staticmethod
+    def _to_component_specs(items: list[Any]) -> list[ComponentSpec]:
+        """Convert items to ``ComponentSpec`` instances.
+
+        ``ComponentSpec`` instances pass through unchanged. Dataclass instances
+        (such as ``InferenceFeature``) are converted by introspecting their
+        fields and capturing the fully-qualified class path.
+
+        Args:
+            items: List of ``ComponentSpec`` or dataclass instances.
+
+        Returns:
+            List of ``ComponentSpec`` instances ready for manifest serialization.
+        """
+        specs: list[ComponentSpec] = []
+        for item in items:
+            if isinstance(item, ComponentSpec):
+                specs.append(item)
+                continue
+            cls = type(item)
+            class_path = f"{cls.__module__}.{cls.__qualname__}"
+            init_args = {
+                field: getattr(item, field)
+                for field in getattr(item, "__dataclass_fields__", {})
+            }
+            specs.append(ComponentSpec(class_path=class_path, init_args=init_args))
+        return specs
 
     def _prepare_export_path(self, output_path: PathLike | str, extension: str) -> Path:
         """Prepare export path, handling both directory and file paths.
@@ -244,6 +273,7 @@ class ExportablePolicyMixin:
             runner=ComponentSpec.from_class(SinglePass),
             preprocessors=extra_model_args.preprocessors_specs,
             postprocessors=extra_model_args.postprocessors_specs,
+            input_features=self._to_component_specs(self.inputs_schema or []),
         )
 
     @torch.no_grad()
@@ -317,6 +347,7 @@ class ExportablePolicyMixin:
                 runner=ComponentSpec.from_class(SinglePass),
                 preprocessors=extra_model_args.preprocessors_specs,
                 postprocessors=extra_model_args.postprocessors_specs,
+                input_features=self._to_component_specs(self.inputs_schema or []),
             )
 
     @torch.no_grad()
@@ -432,6 +463,7 @@ class ExportablePolicyMixin:
             runner=ComponentSpec.from_class(SinglePass),
             preprocessors=extra_model_args.preprocessors_specs,
             postprocessors=extra_model_args.postprocessors_specs,
+            input_features=self._to_component_specs(self.inputs_schema or []),
         )
 
     @torch.no_grad()
@@ -557,6 +589,7 @@ class ExportablePolicyMixin:
             runner=ComponentSpec.from_class(SinglePass),
             input_names=list(input_sample.keys()),  # type: ignore[arg-type, union-attr]
             output_names=extra_model_args.output_names,
+            input_features=self._to_component_specs(self.inputs_schema or []),
         )
 
         return model_path
