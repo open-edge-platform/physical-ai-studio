@@ -441,8 +441,8 @@ def compare_results(pytorch_result: BenchmarkResult, openvino_result: BenchmarkR
     }
 
 
-def _eval_cache_key(backend: str, args: argparse.Namespace) -> str:
-    """Build a stable cache key from evaluation-determining args.
+def _eval_cache_payload(backend: str, args: argparse.Namespace) -> dict:
+    """Build the cache-key payload from evaluation-determining args.
 
     Includes only parameters that change rollout results: backend, checkpoint,
     policy class, task suite/ids, episode count, max steps, and seed. For the
@@ -461,7 +461,12 @@ def _eval_cache_key(backend: str, args: argparse.Namespace) -> str:
     }
     if backend.lower() == "openvino":
         payload["ov_device"] = args.ov_device
-    blob = json.dumps(payload, sort_keys=True).encode()
+    return payload
+
+
+def _eval_cache_key(backend: str, args: argparse.Namespace) -> str:
+    """Stable 16-hex-char hash of the cache-key payload."""
+    blob = json.dumps(_eval_cache_payload(backend, args), sort_keys=True).encode()
     return hashlib.sha1(blob, usedforsecurity=False).hexdigest()[:16]
 
 
@@ -470,12 +475,16 @@ def _cache_path(cache_dir: Path, backend: str, args: argparse.Namespace) -> Path
 
 
 def _load_cached_result(path: Path) -> BenchmarkResult | None:
-    """Load a cached BenchmarkResult from JSON, or return None if missing."""
+    """Load a cached BenchmarkResult from JSON, or return None if missing.
+
+    Ignores the ``cache_key`` metadata block written by ``_save_cached_result``.
+    """
     if not path.exists():
         return None
     try:
         with path.open() as f:
             data = json.load(f)
+        data.pop("cache_key", None)
         task_results = [TaskResult(**tr) for tr in data["task_results"]]
         data["task_results"] = task_results
         return BenchmarkResult(**data)
@@ -484,11 +493,23 @@ def _load_cached_result(path: Path) -> BenchmarkResult | None:
         return None
 
 
-def _save_cached_result(result: BenchmarkResult, path: Path) -> None:
-    """Persist a BenchmarkResult to JSON for later reuse."""
+def _save_cached_result(
+    result: BenchmarkResult,
+    path: Path,
+    cache_key_payload: dict | None = None,
+) -> None:
+    """Persist a BenchmarkResult to JSON for later reuse.
+
+    When ``cache_key_payload`` is provided, embed it under a top-level
+    ``cache_key`` field so the originating CLI args can be recovered from the
+    cache file without brute-forcing the hash.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
+    data = asdict(result)
+    if cache_key_payload is not None:
+        data["cache_key"] = cache_key_payload
     with path.open("w") as f:
-        json.dump(asdict(result), f, indent=2)
+        json.dump(data, f, indent=2)
     logger.info(f"✓ Cached {result.backend} eval results to {path}")
 
 
@@ -779,17 +800,14 @@ def main():
 
     # 3. Load exported models for inference
     from physicalai.inference import InferenceModel
-    from physicalai.inference.runners import ActionChunking, SinglePass
+    from physicalai.inference.runners import SinglePass
 
-    # The default manifest exports declare a ``SinglePass`` runner, which
-    # makes ``InferenceModel.select_action()`` raise (it requires action
-    # chunking). Wrap the runner explicitly so both backends queue
-    # ``chunk_size`` predicted actions and dispense one per call — this
-    # also matches what ``Policy.select_action()`` does in eager PyTorch.
-    chunk_size = int(getattr(policy.config, "chunk_size", 1))
-
-    def _make_runner() -> ActionChunking:
-        return ActionChunking(SinglePass(), chunk_size=chunk_size)
+    # Action chunking is now handled inside ``InferenceModel`` itself
+    # (upstream physicalai PR #132 removed the standalone ``ActionChunking``
+    # runner). ``SinglePass`` is sufficient — ``InferenceModel.select_action()``
+    # buffers ``chunk_size`` predicted actions and dispenses one per call.
+    def _make_runner() -> SinglePass:
+        return SinglePass()
 
     use_cache = not args.no_eval_cache
     pytorch_cache = _cache_path(args.eval_cache_dir, "PyTorch", args)
@@ -819,7 +837,11 @@ def main():
         )
         pytorch_result.export_time = pytorch_export_time
         if use_cache:
-            _save_cached_result(pytorch_result, pytorch_cache)
+            _save_cached_result(
+                pytorch_result,
+                pytorch_cache,
+                cache_key_payload=_eval_cache_payload("PyTorch", args),
+            )
 
     # 5. Evaluate OpenVINO backend (use cache when available)
     openvino_result = _load_cached_result(openvino_cache) if use_cache else None
@@ -839,7 +861,11 @@ def main():
         )
         openvino_result.export_time = openvino_export_time
         if use_cache:
-            _save_cached_result(openvino_result, openvino_cache)
+            _save_cached_result(
+                openvino_result,
+                openvino_cache,
+                cache_key_payload=_eval_cache_payload("OpenVINO", args),
+            )
 
     # 6. Compare results
     comparison = compare_results(pytorch_result, openvino_result)
