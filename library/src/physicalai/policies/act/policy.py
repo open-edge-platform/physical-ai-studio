@@ -9,6 +9,7 @@ import torch
 from physicalai.inference.manifest import ComponentSpec
 
 from physicalai.data import Dataset, Feature, FeatureType, NormalizationParameters, Observation
+from physicalai.data.observation import IMAGES, STATE
 from physicalai.export.backends import (
     ExecuTorchExportParameters,
     ExportParameters,
@@ -451,6 +452,42 @@ class ACT(ExportablePolicyMixin, Policy):
             ExportBackend.ONNX,
             ExportBackend.EXECUTORCH,
         ]
+
+    @property
+    def sample_input(self) -> dict[str, torch.Tensor] | None:
+        """Generate a sample input dictionary for tracing the policy's model during export.
+
+        Returns:
+            A dictionary with a ``state`` tensor and one or more image tensors keyed by
+            ``images`` (single camera) or ``images.<name>`` (multi-camera). Returns ``None``
+            if the underlying model has not been initialized yet.
+
+        Raises:
+            RuntimeError: If the robot state feature is not defined.
+        """
+        if self.model is None:
+            return None
+
+        state_feature = self.model._config.robot_state_feature  # noqa: SLF001
+        if state_feature is None:
+            msg = "Robot state feature is not defined in the model configuration."
+            raise RuntimeError(msg)
+
+        device = next(self.model._model.parameters()).device  # noqa: SLF001
+
+        sample_input: dict[str, torch.Tensor] = {
+            STATE: torch.randn(1, *state_feature.shape, device=device),
+        }
+
+        image_features = self.model._config.image_features  # noqa: SLF001
+        if len(image_features) == 1:
+            visual_feature = next(iter(image_features.values()))
+            sample_input[IMAGES] = torch.randn(1, *visual_feature.shape, device=device)
+        else:
+            for key, visual_feature in image_features.items():
+                sample_input[f"{IMAGES}.{key}"] = torch.randn(1, *visual_feature.shape, device=device)
+
+        return sample_input
 
     @property
     def extra_export_args(self) -> dict[str, ExportParameters]:

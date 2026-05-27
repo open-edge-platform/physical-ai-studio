@@ -11,14 +11,14 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import torch
 from huggingface_hub import hf_hub_download
 from physicalai.inference.manifest import ComponentSpec
 from safetensors.torch import load_file
 
-from physicalai.data.observation import ACTION, STATE
+from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, FeatureType
 from physicalai.export import ExportablePolicyMixin, ExportBackend
 from physicalai.export.backends import (
     ExportParameters,
@@ -616,6 +616,42 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             list[str | ExportBackend]: A list of supported export backends.
         """
         return [ExportBackend.TORCH, ExportBackend.OPENVINO]
+
+    @property
+    def sample_input(self) -> dict[str, torch.Tensor | str | list[str]] | None:
+        """Generate a sample input dictionary for tracing the policy's model during export.
+
+        Returns:
+            A dictionary of example tensors and strings matching the model's expected input
+            format. Returns ``None`` if the underlying model or dataset stats have not been
+            initialized yet.
+        """
+        if self.model is None or self._dataset_stats is None:
+            return None
+
+        device = next(self.model._model.parameters()).device  # noqa: SLF001
+        dataset_stats = self._dataset_stats
+
+        sample_input: dict[str, torch.Tensor | str | list[str]] = {}
+
+        num_image_features = sum(1 for key in dataset_stats if str(FeatureType.VISUAL) in dataset_stats[key]["type"])
+
+        for feature_id, feature in dataset_stats.items():
+            if STATE in feature_id:
+                sample_input[STATE] = torch.randn(1, *cast("tuple", feature["shape"]), device=device)
+            elif str(FeatureType.VISUAL) in feature["type"]:
+                if num_image_features == 1:
+                    sample_input[IMAGES] = torch.randn(1, *cast("tuple", feature["shape"]), device=device)
+                else:
+                    sample_input[f"{IMAGES}.{feature['name']}"] = torch.randn(
+                        1,
+                        *cast("tuple", feature["shape"]),
+                        device=device,
+                    )
+
+        sample_input[TASK] = ["sample_task"]
+
+        return sample_input
 
     @property
     def extra_export_args(self) -> dict[str, ExportParameters]:
