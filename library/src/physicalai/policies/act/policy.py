@@ -469,7 +469,7 @@ class ACT(ExportablePolicyMixin, Policy):
             return None
 
         state_feature = self.model._config.robot_state_feature  # noqa: SLF001
-        if state_feature is None:
+        if state_feature is None or state_feature.shape is None:
             msg = "Robot state feature is not defined in the model configuration."
             raise RuntimeError(msg)
 
@@ -482,9 +482,15 @@ class ACT(ExportablePolicyMixin, Policy):
         image_features = self.model._config.image_features  # noqa: SLF001
         if len(image_features) == 1:
             visual_feature = next(iter(image_features.values()))
+            if visual_feature.shape is None:
+                msg = "Image feature shape is not defined in the model configuration."
+                raise RuntimeError(msg)
             sample_input[IMAGES] = torch.randn(1, *visual_feature.shape, device=device)
         else:
             for key, visual_feature in image_features.items():
+                if visual_feature.shape is None:
+                    msg = f"Image feature shape for '{key}' is not defined in the model configuration."
+                    raise RuntimeError(msg)
                 sample_input[f"{IMAGES}.{key}"] = torch.randn(1, *visual_feature.shape, device=device)
 
         return sample_input
