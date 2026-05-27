@@ -407,7 +407,7 @@ class ExportablePolicyMixin:
     def to_executorch(
         self,
         output_path: PathLike | str,
-        input_sample: dict[str, torch.Tensor | str] | None = None,
+        input_sample: dict[str, torch.Tensor] | None = None,
         *,
         delegate: ExecuTorchDelegate | None = None,
         delegate_config: dict[str, Any] | None = None,
@@ -451,7 +451,7 @@ class ExportablePolicyMixin:
             raise NotImplementedError(msg)
 
         if input_sample is None:
-            input_sample = self.sample_input
+            input_sample = self._get_default_export_input_sample()
         if input_sample is None:
             msg = (
                 "An input sample must be provided for ExecuTorch export, "
