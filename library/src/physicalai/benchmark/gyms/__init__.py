@@ -32,11 +32,12 @@ Examples:
         ...     print(f"{name}: {result.overall_success_rate:.1%}")
 """
 
-from .benchmark import Benchmark
-from .libero import LiberoBenchmark
-from .pusht import PushTBenchmark
-from .results import BenchmarkResults, TaskResult
 from physicalai.eval.video import RecordMode, VideoRecorder
+
+from .benchmark import Benchmark
+from .libero.libero import LiberoBenchmark
+from .pusht.pusht import PushTBenchmark
+from .results import BenchmarkResults, TaskResult
 
 __all__ = [
     "Benchmark",
