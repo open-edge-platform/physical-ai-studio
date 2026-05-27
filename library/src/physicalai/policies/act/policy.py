@@ -6,6 +6,7 @@
 from typing import Any, cast
 
 import torch
+from physicalai.inference.data import InferenceFeature, InferenceFeatureDtype, InferenceFeatureType
 from physicalai.inference.manifest import ComponentSpec
 
 from physicalai.data import Dataset, Feature, FeatureType, NormalizationParameters, Observation
@@ -454,16 +455,16 @@ class ACT(ExportablePolicyMixin, Policy):
         ]
 
     @property
-    def sample_input(self) -> dict[str, torch.Tensor] | None:
-        """Generate a sample input dictionary for tracing the policy's model during export.
+    def inputs_schema(self) -> list[InferenceFeature] | None:
+        """Describe the policy's expected model inputs for export tracing.
 
         Returns:
-            A dictionary with a ``state`` tensor and one or more image tensors keyed by
-            ``images`` (single camera) or ``images.<name>`` (multi-camera). Returns ``None``
-            if the underlying model has not been initialized yet.
+            A list with a ``state`` feature and one or more image features keyed by
+            ``images`` (single camera) or ``images.<name>`` (multi-camera). Returns
+            ``None`` if the underlying model has not been initialized yet.
 
         Raises:
-            RuntimeError: If the robot state feature is not defined.
+            RuntimeError: If the robot state or image feature shape is not defined.
         """
         if self.model is None:
             return None
@@ -473,11 +474,14 @@ class ACT(ExportablePolicyMixin, Policy):
             msg = "Robot state feature is not defined in the model configuration."
             raise RuntimeError(msg)
 
-        device = next(self.model._model.parameters()).device  # noqa: SLF001
-
-        sample_input: dict[str, torch.Tensor] = {
-            STATE: torch.randn(1, *state_feature.shape, device=device),
-        }
+        schema: list[InferenceFeature] = [
+            InferenceFeature(
+                ftype=InferenceFeatureType.STATE,
+                shape=tuple(state_feature.shape),
+                name=STATE,
+                dtype=InferenceFeatureDtype.FLOAT32,
+            ),
+        ]
 
         image_features = self.model._config.image_features  # noqa: SLF001
         if len(image_features) == 1:
@@ -485,15 +489,29 @@ class ACT(ExportablePolicyMixin, Policy):
             if visual_feature.shape is None:
                 msg = "Image feature shape is not defined in the model configuration."
                 raise RuntimeError(msg)
-            sample_input[IMAGES] = torch.randn(1, *visual_feature.shape, device=device)
+            schema.append(
+                InferenceFeature(
+                    ftype=InferenceFeatureType.VISUAL,
+                    shape=tuple(visual_feature.shape),
+                    name=IMAGES,
+                    dtype=InferenceFeatureDtype.FLOAT32,
+                ),
+            )
         else:
             for key, visual_feature in image_features.items():
                 if visual_feature.shape is None:
                     msg = f"Image feature shape for '{key}' is not defined in the model configuration."
                     raise RuntimeError(msg)
-                sample_input[f"{IMAGES}.{key}"] = torch.randn(1, *visual_feature.shape, device=device)
+                schema.append(
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.VISUAL,
+                        shape=tuple(visual_feature.shape),
+                        name=f"{IMAGES}.{key}",
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                )
 
-        return sample_input
+        return schema
 
     @property
     def extra_export_args(self) -> dict[str, ExportParameters]:

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 import torch
 from huggingface_hub import hf_hub_download
+from physicalai.inference.data import InferenceFeature, InferenceFeatureDtype, InferenceFeatureType
 from physicalai.inference.manifest import ComponentSpec
 from safetensors.torch import load_file
 
@@ -664,54 +665,86 @@ class Pi05(ExportablePolicyMixin, Policy):
         return [ExportBackend.TORCH, ExportBackend.OPENVINO]
 
     @property
-    def sample_input(self) -> dict[str, torch.Tensor | str] | None:
-        """Generate a sample input dictionary for tracing the policy's model during export.
+    def inputs_schema(self) -> list[InferenceFeature] | None:
+        """Describe the policy's expected model inputs for export tracing.
 
         Returns:
-            A dictionary of example tensors and strings matching the model's expected input
-            format. Returns ``None`` if the underlying model or dataset stats have not been
+            A list of feature descriptors matching the model's expected input format,
+            covering the robot state, image observations, language task, and any
+            real-time chunking control tensors when ``enable_rtc`` is set on the model.
+            Returns ``None`` if the underlying model or dataset stats have not been
             initialized yet.
         """
         if self.model is None or self._dataset_stats is None:
             return None
 
-        device = next(self.model.paligemma_with_expert.parameters()).device
         dataset_stats = self._dataset_stats
 
-        sample_input: dict[str, torch.Tensor | str] = {}
+        schema: list[InferenceFeature] = []
 
         num_image_features = sum(1 for key in dataset_stats if str(FeatureType.VISUAL) in dataset_stats[key]["type"])
 
         for feature_id, feature in dataset_stats.items():
             if STATE in feature_id:
-                sample_input[STATE] = torch.randn(1, *cast("tuple", feature["shape"]), device=device)
+                schema.append(
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.STATE,
+                        shape=cast("tuple", feature["shape"]),
+                        name=STATE,
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                )
             elif str(FeatureType.VISUAL) in feature["type"]:
-                if num_image_features == 1:
-                    sample_input[IMAGES] = torch.randn(1, *cast("tuple", feature["shape"]), device=device)
-                else:
-                    sample_input[f"{IMAGES}.{feature['name']}"] = torch.randn(
-                        1,
-                        *cast("tuple", feature["shape"]),
-                        device=device,
-                    )
+                name = IMAGES if num_image_features == 1 else f"{IMAGES}.{feature['name']}"
+                schema.append(
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.VISUAL,
+                        shape=cast("tuple", feature["shape"]),
+                        name=name,
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                )
 
-        sample_input[TASK] = "sample_task"
+        schema.append(
+            InferenceFeature(
+                ftype=InferenceFeatureType.LANGUAGE,
+                shape=(),
+                name=TASK,
+                dtype=InferenceFeatureDtype.STRING,
+            ),
+        )
 
         if self.model.enable_rtc:
-            chunk_size = self.config.chunk_size
-            max_action_dim = self.config.max_action_dim
-            sample_input["prev_chunk_left_over"] = torch.randn(
-                1,
-                chunk_size,
-                max_action_dim,
-                device=device,
-                dtype=torch.float32,
+            schema.extend(
+                [
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.COMMON,
+                        shape=(self.config.chunk_size, self.config.max_action_dim),
+                        name="prev_chunk_left_over",
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.COMMON,
+                        shape=(),
+                        name="inference_delay",
+                        dtype=InferenceFeatureDtype.INT64,
+                    ),
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.COMMON,
+                        shape=(),
+                        name="max_guidance_weight",
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.COMMON,
+                        shape=(),
+                        name="execution_horizon",
+                        dtype=InferenceFeatureDtype.INT64,
+                    ),
+                ],
             )
-            sample_input["inference_delay"] = torch.tensor(8, device=device, dtype=torch.long)
-            sample_input["max_guidance_weight"] = torch.tensor(10.0, device=device, dtype=torch.float32)
-            sample_input["execution_horizon"] = torch.tensor(10, device=device, dtype=torch.long)
 
-        return sample_input
+        return schema
 
     @property
     def extra_export_args(self) -> dict[str, ExportParameters]:
