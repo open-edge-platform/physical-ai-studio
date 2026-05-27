@@ -4,14 +4,14 @@
 """PushT benchmark for evaluating policies on the PushT task.
 
 Example:
-    >>> from physicalai.benchmark.pusht import PushTBenchmark
+    >>> from physicalai.benchmark.gyms.pusht import PushTBenchmark
 
     >>> benchmark = PushTBenchmark(num_envs=1)
     >>> results = benchmark.evaluate(policy)
     >>> print(results.overall_success_rate)
 """
 
-from physicalai.benchmark.pusht.pusht import PushTBenchmark
+from physicalai.benchmark.gyms.pusht.pusht import PushTBenchmark
 
 __all__ = [
     "PushTBenchmark",

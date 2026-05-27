@@ -58,7 +58,7 @@ from physicalai.policies.base import Policy
 from physicalai.train import Trainer
 
 if TYPE_CHECKING:
-    from physicalai.benchmark import Benchmark
+    from physicalai.benchmark.gyms import Benchmark
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ class CLI(LightningCLI):
 
             # Benchmark with CLI arguments
             physicalai benchmark \\
-                --benchmark physicalai.benchmark.LiberoBenchmark \\
+                --benchmark physicalai.benchmark.gyms.LiberoBenchmark \\
                 --benchmark.task_suite libero_10 \\
                 --policy physicalai.policies.ACT \\
                 --ckpt_path ./checkpoints/model.ckpt
@@ -92,7 +92,7 @@ class CLI(LightningCLI):
         YAML configuration for benchmark:
 
             benchmark:
-              class_path: physicalai.benchmark.LiberoBenchmark
+              class_path: physicalai.benchmark.gyms.LiberoBenchmark
               init_args:
                 task_suite: libero_10
                 num_episodes: 20
@@ -183,7 +183,7 @@ class CLI(LightningCLI):
         Returns:
             Parser configured with benchmark, policy class, checkpoint, and output arguments.
         """
-        from physicalai.benchmark import Benchmark  # noqa: PLC0415
+        from physicalai.benchmark.gyms import Benchmark  # noqa: PLC0415
 
         parser = LightningArgumentParser(**kwargs)
 

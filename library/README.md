@@ -126,7 +126,7 @@ Evaluate trained policies on standardized simulation environments.
 ## API
 
 ```python test="skip" reason="requires checkpoint and libero"
-from physicalai.benchmark import LiberoBenchmark
+from physicalai.benchmark.gyms import LiberoBenchmark
 from physicalai.policies import ACT
 
 # Load trained policy (path from training output)
@@ -147,14 +147,14 @@ results.to_json("results.json")
 ```bash
 # Basic benchmark
 physicalai benchmark \
-    --benchmark physicalai.benchmark.LiberoBenchmark \
+    --benchmark physicalai.benchmark.gyms.LiberoBenchmark \
     --benchmark.task_suite libero_10 \
     --policy physicalai.policies.ACT \
     --ckpt_path ./checkpoints/model.ckpt
 
 # With video recording
 physicalai benchmark \
-    --benchmark physicalai.benchmark.LiberoBenchmark \
+    --benchmark physicalai.benchmark.gyms.LiberoBenchmark \
     --benchmark.task_suite libero_10 \
     --benchmark.video_dir ./videos \
     --benchmark.record_mode failures \

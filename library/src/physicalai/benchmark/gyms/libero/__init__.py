@@ -16,7 +16,7 @@ Available task suites:
 Example:
     Run a full LIBERO-10 benchmark and print per-task results:
 
-        >>> from physicalai.benchmark.libero import LiberoBenchmark
+        >>> from physicalai.benchmark.gyms.libero import LiberoBenchmark
 
         >>> benchmark = LiberoBenchmark(task_suite="libero_10", num_episodes=20)
         >>> results = benchmark.evaluate(policy)
@@ -35,7 +35,7 @@ Example:
         >>> results.to_json("spatial_results.json")
 """
 
-from physicalai.benchmark.libero.libero import LiberoBenchmark
+from physicalai.benchmark.gyms.libero.libero import LiberoBenchmark
 
 __all__ = [
     "LiberoBenchmark",

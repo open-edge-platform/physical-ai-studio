@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import gym_pusht  # noqa: F401
 
-from physicalai.benchmark.benchmark import Benchmark
+from physicalai.benchmark.gyms.benchmark import Benchmark
 from physicalai.gyms.pusht import PushTGym
 
 if TYPE_CHECKING:
