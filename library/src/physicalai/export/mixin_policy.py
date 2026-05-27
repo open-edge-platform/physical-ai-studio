@@ -34,8 +34,6 @@ from physicalai.export.backends import (
     TorchExportParameters,
 )
 
-from .mixin_model import ExportableModelMixin
-
 CONFIG_KEY = "model_config"
 POLICY_NAME_KEY = "policy_name"
 DATASET_STATS_KEY = "dataset_stats"
@@ -44,8 +42,24 @@ DATASET_STATS_KEY = "dataset_stats"
 class ExportablePolicyMixin:
     """Mixin class for exporting torch model checkpoints."""
 
-    model: ExportableModelMixin
+    model: torch.nn.Module
     _preprocessor: torch.nn.Module
+
+    @property
+    def sample_input(self) -> dict[str, torch.Tensor | str] | None:
+        """Return a sample input dictionary used to trace the model during export.
+
+        Override in subclasses that support non-Torch export backends to provide
+        example tensors matching the model's expected input format. Returning
+        ``None`` (the default) means the policy does not provide a sample input,
+        and callers must supply one explicitly when invoking export methods that
+        require tracing.
+
+        Returns:
+            A dictionary mapping input names to example tensors (or strings, for
+            non-tensor inputs such as task descriptions), or ``None``.
+        """
+        return None
 
     @property
     def extra_export_args(self) -> dict[str, ExportParameters]:
@@ -109,6 +123,8 @@ class ExportablePolicyMixin:
                 artifacts={str(backend): artifact_filename},
                 preprocessors=preprocessors or [],
                 postprocessors=postprocessors or [],
+                input_features=extras.get("input_names", []),
+                output_features=extras.get("output_names", []),
             ),
             **extras,
         )
@@ -216,12 +232,12 @@ class ExportablePolicyMixin:
             output_path (PathLike | str): Directory or file path where the ONNX model will be saved.
                 If directory, creates {policy_name}.onnx. If file, uses as-is.
             input_sample (dict[str, torch.Tensor] | None): A sample input dictionary.
-                If `None`, the method will attempt to use the model's `sample_input`
+                If `None`, the method will attempt to use the policy's `sample_input`
                 property. This input is used to trace the model during export.
             **export_kwargs: Additional keyword arguments to pass to `torch.onnx.export`.
 
         Raises:
-            RuntimeError: If input sample is not provided and the model does not
+            RuntimeError: If input sample is not provided and the policy does not
                 implement `sample_input` property. Also if export is failed due to other issues
                 like wrong export options.
             NotImplementedError: If ONNX export is not supported by the model or ONNX tokenizer export is requested.
@@ -239,7 +255,7 @@ class ExportablePolicyMixin:
                 input_sample = self._get_default_export_input_sample()
 
             if input_sample is None:
-                msg = "An input sample must be provided for ONNX export, or the model must implement "
+                msg = "An input sample must be provided for ONNX export, or the policy must implement "
                 "`sample_input` property."
                 raise RuntimeError(msg)
 
@@ -285,11 +301,11 @@ class ExportablePolicyMixin:
             output_path (PathLike | str): Directory or file path where the OpenVINO model will be saved.
                 If directory, creates {policy_name}.xml. If file, uses as-is.
             input_sample (dict[str, torch.Tensor] | None, optional): Sample input tensor(s) for model tracing.
-                If None, attempts to use the model's `sample_input` property. Defaults to None.
+                If None, attempts to use the policy's `sample_input` property. Defaults to None.
             **export_kwargs (dict): Additional keyword arguments to pass to the OpenVINO conversion process.
 
         Raises:
-            RuntimeError: If input sample is not provided and the model does not
+            RuntimeError: If input sample is not provided and the policy does not
                 implement `sample_input` property. Also if export is failed due to other issues
                 like wrong export options.
 
@@ -298,7 +314,7 @@ class ExportablePolicyMixin:
             - Output names can be specified in export_kwargs using the "output" key.
 
         Raises:
-            RuntimeError: If input sample is not provided and the model does not
+            RuntimeError: If input sample is not provided and the policy does not
                 implement `sample_input` property. Also if export is failed due to other issues
                 like wrong export options.
             NotImplementedError: If OpenVINO export is not supported by the policy.
@@ -316,7 +332,7 @@ class ExportablePolicyMixin:
                 input_sample = self._get_default_export_input_sample()
 
             if input_sample is None:
-                msg = "An input sample must be provided for OpenVINO export, or the model must implement "
+                msg = "An input sample must be provided for OpenVINO export, or the policy must implement "
                 "`sample_input` property."
                 raise RuntimeError(msg)
 
@@ -391,7 +407,7 @@ class ExportablePolicyMixin:
     def to_executorch(
         self,
         output_path: PathLike | str,
-        input_sample: dict[str, torch.Tensor] | None = None,
+        input_sample: dict[str, torch.Tensor | str] | None = None,
         *,
         delegate: ExecuTorchDelegate | None = None,
         delegate_config: dict[str, Any] | None = None,
@@ -403,7 +419,7 @@ class ExportablePolicyMixin:
             output_path: Directory or file path where the ExecuTorch model will be saved.
                 If directory, creates ``{policy_name}.pte``. If file, uses as-is.
             input_sample: A sample input tensor dictionary used to trace/export the model.
-                If ``None``, attempts to use the model's ``sample_input`` property.
+                If ``None``, attempts to use the policy's ``sample_input`` property.
             delegate: ExecuTorch delegate backend to use. Defaults to ``None``
                 (uses value from ``ExecuTorchExportParameters``). Supported values:
 
@@ -421,7 +437,7 @@ class ExportablePolicyMixin:
 
         Raises:
             NotImplementedError: If ExecuTorch export is not supported by the policy.
-            RuntimeError: If input sample is not provided and the model does not
+            RuntimeError: If input sample is not provided and the policy does not
                 implement ``sample_input`` property.
             ImportError: If the required ``executorch`` package (or selected delegate
                 dependencies) is not installed.
@@ -434,12 +450,12 @@ class ExportablePolicyMixin:
             )
             raise NotImplementedError(msg)
 
-        if input_sample is None and hasattr(self.model, "sample_input"):
-            input_sample = self.model.sample_input
-        elif input_sample is None:
+        if input_sample is None:
+            input_sample = self.sample_input
+        if input_sample is None:
             msg = (
                 "An input sample must be provided for ExecuTorch export, "
-                "or the model must implement `sample_input` property."
+                "or the policy must implement the `sample_input` property."
             )
             raise RuntimeError(msg)
 
@@ -533,7 +549,7 @@ class ExportablePolicyMixin:
                 ("onnx", "openvino", "executorch", "torch").
             input_sample (dict[str, torch.Tensor] | None, optional): A sample
                 input tensor dictionary for model tracing.
-                If None, attempts to use the model's `sample_input` property.
+                If None, attempts to use the policy's `sample_input` property.
                 Defaults to None.
             **export_kwargs (dict): Additional keyword arguments to pass to the
                 backend-specific export method.
@@ -582,16 +598,19 @@ class ExportablePolicyMixin:
     def _get_default_export_input_sample(self) -> dict[str, torch.Tensor] | None:
         """Retrieve a default export input sample for the model.
 
-        This method attempts to obtain a sample input from the model if available,
+        This method attempts to obtain a sample input from the policy if available,
         processes it through the preprocessor, and filters the result to return only
         torch.Tensor values.
 
         Returns:
             dict[str, torch.Tensor] | None: A dictionary containing string keys mapped to
                 torch.Tensor values extracted from the processed sample input. Returns None
-                if the model does not have a 'sample_input' attribute.
+                if the policy does not provide a `sample_input`.
         """
-        processed_sample = self._preprocessor(self.model.sample_input)
+        sample = self.sample_input
+        if sample is None:
+            return None
+        processed_sample = self._preprocessor(sample)
         return {k: v for k, v in processed_sample.items() if isinstance(v, torch.Tensor)}
 
     def _get_export_extra_args(self, backend: ExportBackend | str) -> ExportParameters:
