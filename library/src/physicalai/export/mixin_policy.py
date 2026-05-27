@@ -15,6 +15,7 @@ import lightning
 import openvino
 import openvino_tokenizers
 import torch
+from physicalai.inference.data import InferenceFeature, InferenceFeatureDtype
 from physicalai.inference.manifest import (
     ComponentSpec,
     Manifest,
@@ -58,6 +59,36 @@ class ExportablePolicyMixin:
         Returns:
             A dictionary mapping input names to example tensors (or strings, for
             non-tensor inputs such as task descriptions), or ``None``.
+        """
+        if self.inputs_schema is None:
+            return None
+
+        input_sample: dict[str, torch.Tensor | str] = {}
+        for feature in self.inputs_schema:
+            if feature.dtype is InferenceFeatureDtype.STRING:
+                input_sample[feature.name] = "Example prompt string"
+                continue
+            # Scalar features (empty shape) are emitted as 0-d tensors, without
+            # a leading batch dimension; tensor-shaped features get a batch of 1.
+            shape = feature.shape if feature.shape == () else (1, *feature.shape)
+            if feature.dtype is InferenceFeatureDtype.INT64:
+                input_sample[feature.name] = torch.zeros(shape, dtype=torch.int64)
+            else:
+                input_sample[feature.name] = torch.randn(shape, dtype=torch.float32)
+
+        return input_sample
+
+    @property
+    def inputs_schema(self) -> list[InferenceFeature] | None:
+        """Provide a description of model's expected inputs.
+
+        Override in subclasses to return a list of InferenceFeature objects describing
+        the model's expected inputs. This information can be used by export methods to
+        generate appropriate input samples for tracing when a sample input is not explicitly provided.
+        The default implementation returns None, indicating that no input schema is provided.
+
+        Returns:
+            A list of InferenceFeature describing the model's expected inputs, or None if not provided.
         """
         return None
 
