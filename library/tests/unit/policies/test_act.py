@@ -106,7 +106,7 @@ class TestACTolicy:
 
     def test_sample_input(self, policy):
         """Test sample_input generation."""
-        sample_input = policy.model.sample_input
+        sample_input = policy.sample_input
 
         assert isinstance(sample_input, dict)
         assert "state" in sample_input

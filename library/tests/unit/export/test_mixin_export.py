@@ -150,13 +150,14 @@ class ExportWrapper(ExportablePolicyMixin):
         }
 
     @property
+    def sample_input(self) -> dict[str, torch.Tensor] | None:
+        # Delegate to the test model's ``sample_input`` if it exposes one.
+        model_sample = getattr(self.model, "sample_input", None)
+        return model_sample if isinstance(model_sample, dict) else None
+
+    @property
     def extra_export_args(self):
         return self._extra_export_args
-
-    def _get_default_export_input_sample(self, **kwargs) -> dict[str, torch.Tensor] | None:
-        if not hasattr(self.model, "sample_input"):
-            return None
-        return super()._get_default_export_input_sample(**kwargs)
 
     @staticmethod
     def get_supported_export_backends() -> list[str | ExportBackend]:

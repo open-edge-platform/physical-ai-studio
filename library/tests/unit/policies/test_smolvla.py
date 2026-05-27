@@ -401,7 +401,7 @@ class TestAttentionModes:
 
 
 class TestSampleInput:
-    """Tests for SmolVLAModel.sample_input visual-feature detection.
+    """Tests for SmolVLA.sample_input visual-feature detection.
 
     Uses a lightweight stub instead of constructing the full model to keep
     these tests fast and free of HuggingFace downloads.
@@ -409,16 +409,24 @@ class TestSampleInput:
 
     @staticmethod
     def _call_sample_input(dataset_stats: dict) -> dict:
-        """Invoke the SmolVLAModel.sample_input property on a minimal stub."""
-        from physicalai.policies.smolvla import SmolVLAModel
+        """Invoke the SmolVLA.sample_input property on a minimal stub."""
+        from physicalai.policies.smolvla import SmolVLA
+
+        class _InnerStub:
+            def __init__(self) -> None:
+                # sample_input only reads device from this module's parameters.
+                self._model = torch.nn.Linear(1, 1)
+
+        class _ModelStub:
+            def __init__(self) -> None:
+                self._model = _InnerStub()._model
 
         class _Stub:
             def __init__(self, stats: dict) -> None:
                 self._dataset_stats = stats
-                # sample_input only reads device from this module's parameters.
-                self._model = torch.nn.Linear(1, 1)
+                self.model = _ModelStub()
 
-        return SmolVLAModel.sample_input.fget(_Stub(dataset_stats))  # type: ignore[attr-defined]
+        return SmolVLA.sample_input.fget(_Stub(dataset_stats))  # type: ignore[attr-defined]
 
     def test_sample_input_single_visual_feature_with_image_in_id(self) -> None:
         """Single visual feature whose id contains 'image' produces IMAGES key."""
