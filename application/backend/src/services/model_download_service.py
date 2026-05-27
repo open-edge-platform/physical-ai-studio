@@ -30,7 +30,7 @@ class ModelDownloadService:
 
         temporary_archive_path = Path(tempfile.gettempdir()) / f"model-{uuid4()}.zip"
 
-        with zipfile.ZipFile(temporary_archive_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        with zipfile.ZipFile(temporary_archive_path, mode="w", compression=zipfile.ZIP_STORED) as archive:
             for path in model_path.rglob("*"):
                 if not path.is_file():
                     continue

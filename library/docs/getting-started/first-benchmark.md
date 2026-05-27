@@ -30,7 +30,7 @@ Evaluate your policy on the LIBERO-10 benchmark:
 
 ```bash
 physicalai benchmark \
-    --benchmark physicalai.benchmark.LiberoBenchmark \
+    --benchmark physicalai.benchmark.gyms.LiberoBenchmark \
     --benchmark.task_suite libero_10 \
     --benchmark.num_episodes 20 \
     --policy physicalai.policies.ACT \
@@ -44,7 +44,7 @@ This runs 20 episodes per task across 10 LIBERO tasks.
 For more control:
 
 ```python test="skip" reason="requires checkpoint and libero"
-from physicalai.benchmark import LiberoBenchmark
+from physicalai.benchmark.gyms import LiberoBenchmark
 from physicalai.policies import ACT
 
 # Load trained policy
@@ -120,7 +120,7 @@ Debug failures by recording episodes:
 
 ```bash
 physicalai benchmark \
-    --benchmark physicalai.benchmark.LiberoBenchmark \
+    --benchmark physicalai.benchmark.gyms.LiberoBenchmark \
     --benchmark.task_suite libero_10 \
     --benchmark.num_episodes 20 \
     --benchmark.video_dir ./videos \
@@ -155,7 +155,7 @@ Recording modes:
 2D pushing task (faster to run):
 
 ```python test="skip" reason="requires policy object"
-from physicalai.benchmark import PushTBenchmark
+from physicalai.benchmark.gyms import PushTBenchmark
 
 benchmark = PushTBenchmark(num_episodes=50)
 results = benchmark.evaluate(policy)
@@ -167,7 +167,7 @@ Test a single task before full evaluation:
 
 ```bash
 physicalai benchmark \
-    --benchmark physicalai.benchmark.LiberoBenchmark \
+    --benchmark physicalai.benchmark.gyms.LiberoBenchmark \
     --benchmark.task_suite libero_10 \
     --benchmark.task_ids "[0]" \
     --benchmark.num_episodes 1 \
@@ -182,7 +182,7 @@ For reproducible evaluations:
 ```yaml
 # configs/benchmark/my_eval.yaml
 benchmark:
-  class_path: physicalai.benchmark.LiberoBenchmark
+    class_path: physicalai.benchmark.gyms.LiberoBenchmark
   init_args:
     task_suite: libero_10
     num_episodes: 50

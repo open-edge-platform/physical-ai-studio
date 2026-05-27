@@ -1,45 +1,11 @@
-import { ReactNode } from 'react';
-
 import { Divider, Flex, Heading, Radio, RadioGroup, Text, View } from '@geti-ui/ui';
 import { Label } from 'react-aria-components';
 
 import { $api } from '../../api/client';
 import { SchemaModel } from '../../api/openapi-spec';
-import { ReactComponent as ExecuTorchLogo } from './../../assets/logos/executorch-logo-small.svg';
-import { ReactComponent as ONNXLogo } from './../../assets/logos/onnx-logo-small.svg';
-import { ReactComponent as OpenVINOLogo } from './../../assets/logos/OpenVINO-small.svg';
-import { ReactComponent as TorchLogo } from './../../assets/logos/pytorch-logo-small.svg';
+import { INFERENCE_BACKENDS } from './inference-backends';
 
-export const defaultBackend = 'torch';
-
-interface BackendConfig {
-    label: string;
-    description: string;
-    logo: ReactNode;
-}
-
-const backendConfigs: Record<string, BackendConfig> = {
-    torch: {
-        label: 'Torch',
-        description: 'Run inference using PyTorch framework.',
-        logo: <TorchLogo height={'50px'} />,
-    },
-    openvino: {
-        label: 'OpenVINO',
-        description: 'Run inference using OpenVINO.',
-        logo: <OpenVINOLogo height={'50px'} />,
-    },
-    onnx: {
-        label: 'ONNX',
-        description: 'Run inference using the ONNX Runtime.',
-        logo: <ONNXLogo height={'50px'} />,
-    },
-    executorch: {
-        label: 'ExecuTorch',
-        description: 'Run inference on edge devices using ExecuTorch.',
-        logo: <ExecuTorchLogo height={'50px'} />,
-    },
-};
+export const defaultBackend = 'openvino';
 
 interface BackendProps {
     id: string;
@@ -47,7 +13,8 @@ interface BackendProps {
     isDisabled?: boolean;
 }
 const Backend = ({ id, isSelected = false, isDisabled = false }: BackendProps) => {
-    const config = backendConfigs[id];
+    const backend = INFERENCE_BACKENDS[id];
+
     return (
         <Label htmlFor={id}>
             <View
@@ -65,17 +32,19 @@ const Backend = ({ id, isSelected = false, isDisabled = false }: BackendProps) =
 
                     <Divider orientation='vertical' size='S' />
                     <Flex height='100%' alignItems='center' justifyContent={'center'} width='size-1000'>
-                        <View padding='size-100'>{config.logo}</View>
+                        <View padding='size-100'>
+                            <backend.logo height={'50px'} />
+                        </View>
                     </Flex>
                     <View>
-                        <Heading level={4}>{config.label}</Heading>
+                        <Heading level={4}>{backend.label}</Heading>
                         <Text
                             UNSAFE_style={{
                                 fontSize: '12px',
                                 color: 'var(--spectrum-global-color-gray-700)',
                             }}
                         >
-                            {config.description}
+                            {backend.description}
                         </Text>
                     </View>
                 </Flex>

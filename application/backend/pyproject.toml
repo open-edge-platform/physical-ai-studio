@@ -31,6 +31,9 @@ dependencies = [
   "types-aiofiles>=25.1.0.20251011",
   "sse-starlette>=2.0.0",
   "executorch>=1.1.0",
+  # Executorch pulls in torchao transitively; use an exact public version so
+  # uv doesn't select XPU local-version wheels (e.g. 0.15.0+xpu) for CUDA runs.
+  "torchao===0.15.0",
 ]
 
 [project.optional-dependencies]
@@ -87,6 +90,11 @@ FrameSource = { git = "https://github.com/ArendJanKramer/FrameSource.git", rev =
 physicalai-train = { path = "../../library", editable = true }
 # TODO(#450): Replace with published package once physicalai is back in its own repo.
 physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", branch = "main" }
+# Keep torchao on PyPI for all extras.
+# The XPU index publishes `torchao` local-version wheels (e.g. `+xpu`) that can
+# be selected via unsafe-best-match even for non-XPU installs (like `--extra cuda`),
+# producing incompatible torch/torchao combinations at runtime.
+torchao = { index = "pypi" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cuda" },
@@ -117,11 +125,11 @@ all = [
 
 [tool.uv]
 default-groups = ["all"]
+exclude-newer = "7 days"
 # The pytorch-xpu index is non-explicit (explicit = false) because
 # transitive deps like pytorch-triton-xpu only exist on the XPU index.
-# unsafe-best-match is required because the XPU index also hosts stale
-# copies of common packages (e.g. cmake 3.25.0); with first-match uv
-# would stop at the XPU index and miss the newer PyPI version.
+# unsafe-best-match is required because PyTorch indexes can host stale
+# copies of common packages; best-match avoids index-order shadowing.
 #
 # To prevent the XPU index from providing incompatible wheels for
 # common packages (e.g. markupsafe cp314-only, see uv #9647), PyPI

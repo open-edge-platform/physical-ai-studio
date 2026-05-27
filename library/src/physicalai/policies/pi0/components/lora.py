@@ -49,4 +49,4 @@ def apply_lora(
         target_modules=list(target_modules),
         bias="none",
     )
-    return get_peft_model(model, lora_config)
+    return get_peft_model(model, lora_config)  # pyrefly: ignore[bad-argument-type]

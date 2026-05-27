@@ -153,10 +153,10 @@ class ExportWrapper(ExportablePolicyMixin):
     def extra_export_args(self):
         return self._extra_export_args
 
-    def _get_default_export_input_sample(self) -> dict[str, torch.Tensor] | None:
+    def _get_default_export_input_sample(self, **kwargs) -> dict[str, torch.Tensor] | None:
         if not hasattr(self.model, "sample_input"):
             return None
-        return super()._get_default_export_input_sample()
+        return super()._get_default_export_input_sample(**kwargs)
 
     @staticmethod
     def get_supported_export_backends() -> list[str | ExportBackend]:

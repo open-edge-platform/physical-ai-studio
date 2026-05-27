@@ -24,7 +24,7 @@
 # =============================================================================
 
 benchmark:
-  class_path: physicalai.benchmark.PushTBenchmark
+  class_path: physicalai.benchmark.gyms.PushTBenchmark
   init_args:
     # -------------------------------------------------------------------------
     # Evaluation Parameters

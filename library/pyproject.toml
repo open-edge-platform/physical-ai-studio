@@ -139,6 +139,8 @@ dev = [
 # UV CONFIGURATION                                                             #
 # ============================================================================ #
 [tool.uv]
+exclude-newer = "7 days"
+index-strategy = "unsafe-best-match"
 
 
 conflicts = [
@@ -148,6 +150,10 @@ conflicts = [
 ]
 
 # PyTorch index configuration
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
@@ -161,7 +167,7 @@ explicit = true
 [[tool.uv.index]]
 name = "pytorch-xpu"
 url = "https://download.pytorch.org/whl/xpu"
-explicit = true
+explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
@@ -179,6 +185,7 @@ torchvision = [
 ]
 
 pytorch-triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
+triton-xpu = { index = "pytorch-xpu" }
 
 
 # ============================================================================ #
@@ -188,6 +195,7 @@ pytorch-triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
 [tool.mypy]
 ignore_missing_imports = true
 show_error_codes = true
+explicit_package_bases = true
 
 [tool.pyrefly]
 search-path = ["src"]

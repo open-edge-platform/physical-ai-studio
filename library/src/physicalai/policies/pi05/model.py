@@ -638,6 +638,8 @@ class Pi05Model(ExportableModelMixin, Model):
         self.time_mlp_in = nn.Linear(action_expert_config.width, action_expert_config.width)
         self.time_mlp_out = nn.Linear(action_expert_config.width, action_expert_config.width)
 
+        self.enable_rtc = False
+
         self.gradient_checkpointing_enabled = False
         if gradient_checkpointing:
             self.gradient_checkpointing_enable()
@@ -696,6 +698,20 @@ class Pi05Model(ExportableModelMixin, Model):
                     )
 
         sample_input[TASK] = "sample_task"
+
+        if self.enable_rtc:
+            max_action_dim = self._max_action_dim
+            chunk_size = self._chunk_size
+            sample_input["prev_chunk_left_over"] = torch.randn(
+                1,
+                chunk_size,
+                max_action_dim,
+                device=device,
+                dtype=torch.float32,
+            )
+            sample_input["inference_delay"] = torch.tensor(8, device=device, dtype=torch.long)
+            sample_input["max_guidance_weight"] = torch.tensor(10.0, device=device, dtype=torch.float32)
+            sample_input["execution_horizon"] = torch.tensor(10, device=device, dtype=torch.long)
 
         return sample_input
 
@@ -1088,7 +1104,9 @@ class Pi05Model(ExportableModelMixin, Model):
 
         Args:
             batch: Preprocessed batch dict containing IMAGES, IMAGE_MASKS,
-                TOKENIZED_PROMPT, and TOKENIZED_PROMPT_MASK.
+                TOKENIZED_PROMPT, and TOKENIZED_PROMPT_MASK. When ``self.enable_rtc``
+                is True, also expects RTC keys: ``prev_chunk_left_over``,
+                ``inference_delay``, ``max_guidance_weight``, and ``execution_horizon``.
 
         Returns:
             Denoised action tensor, unpadded and clipped to n_action_steps.
@@ -1097,7 +1115,23 @@ class Pi05Model(ExportableModelMixin, Model):
         img_masks = batch[IMAGE_MASKS]
         tokens = batch[TOKENIZED_PROMPT]
         masks = batch[TOKENIZED_PROMPT_MASK]
-        actions = self.sample_actions(images, img_masks, tokens, masks)
+
+        rtc_kwargs: dict[str, Any] = {}
+        if self.enable_rtc:
+            rtc_kwargs = {
+                "rtc_max_guidance": batch.get("max_guidance_weight", 0.0),
+                "rtc_execution_horizon": batch.get("execution_horizon", 0),
+                "rtc_latency": batch.get("inference_delay", 0.0),
+                "rtc_prev_action_chunk": batch.get("prev_chunk_left_over"),
+            }
+
+        actions = self.sample_actions(
+            images,
+            img_masks,
+            tokens,
+            masks,
+            **rtc_kwargs,
+        )
 
         # Unpad actions to actual action dimension
         original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
@@ -1110,6 +1144,78 @@ class Pi05Model(ExportableModelMixin, Model):
 
         return actions
 
+    def _compute_prefix_weights(
+        self,
+        inference_delay: Tensor,
+        execution_horizon: Tensor,
+        prefix_attention_schedule: Literal["linear", "exp"] = "linear",
+    ) -> Tensor:
+        """Compute prefix attention weights inside the graph.
+
+        Args:
+            inference_delay: Scalar tensor — the dynamic latency estimate.
+            execution_horizon: Scalar tensor — number of fresh actions per chunk.
+            prefix_attention_schedule: Schedule type for prefix attention weights ("linear" or "exp").
+
+        Returns:
+            ``(1, chunk_size, 1)`` weight tensor.
+        """
+        chunk_size = self._chunk_size
+        end = execution_horizon.float()
+        start = torch.minimum(inference_delay.float(), end)
+
+        idx = torch.arange(chunk_size, dtype=torch.float32, device=inference_delay.device)
+        denom = end - start + 1.0
+        weights = (end - idx) / denom
+        weights = torch.clamp(weights, min=0.0, max=1.0)
+
+        if prefix_attention_schedule == "exp":
+            weights = weights * (torch.exp(weights) - 1.0) / (math.e - 1.0)
+        # "linear" → no-op
+
+        return weights.unsqueeze(0).unsqueeze(-1)  # (1, chunk_size, 1)
+
+    @staticmethod
+    def _rtc_correct(
+        x_t: Tensor,
+        v_t: Tensor,
+        prev_chunk_left_over: Tensor,
+        prefix_weights: Tensor,
+        time: float,
+        max_guidance_weight: Tensor,
+    ) -> Tensor:
+        """Apply RTC guidance correction to velocity prediction.
+
+        Uses direct error (not autograd.grad) for OV traceability.
+
+        Returns:
+            Corrected velocity tensor.
+        """
+        tau = 1.0 - time
+
+        # Predicted clean actions at t=0
+        x1_t = x_t - time * v_t
+
+        # Weighted error between previous chunk and prediction
+        err = (prev_chunk_left_over - x1_t) * prefix_weights
+        correction = err
+
+        # Adaptive guidance weight
+        max_gw = max_guidance_weight.float()
+        tau_t = torch.as_tensor(tau)
+        squared_one_minus_tau = (1.0 - tau_t) ** 2
+        inv_r2 = (squared_one_minus_tau + tau_t**2) / squared_one_minus_tau
+
+        # Manual nan_to_num — torch.nan_to_num not supported by OV
+        c_raw = (1.0 - tau_t) / tau_t
+        c = torch.where(torch.isinf(c_raw), max_gw, c_raw)
+
+        guidance_weight_raw = c * inv_r2
+        guidance_weight = torch.where(torch.isinf(guidance_weight_raw), max_gw, guidance_weight_raw)
+        guidance_weight = torch.minimum(guidance_weight, max_gw)
+
+        return v_t - guidance_weight * correction
+
     @torch.no_grad()
     def sample_actions(  # noqa: PLR0914
         self,
@@ -1119,6 +1225,10 @@ class Pi05Model(ExportableModelMixin, Model):
         masks: Tensor,
         noise: Tensor | None = None,
         num_steps: int | None = None,
+        rtc_max_guidance: float = 0.0,
+        rtc_execution_horizon: int = 0,
+        rtc_latency: float = 0.0,
+        rtc_prev_action_chunk: Tensor | None = None,
     ) -> Tensor:
         """Inference forward pass: sample actions via iterative denoising.
 
@@ -1163,6 +1273,20 @@ class Pi05Model(ExportableModelMixin, Model):
                 x_t=x_t,
                 timestep=time_tensor,
             )
+
+            if rtc_prev_action_chunk is not None:
+                prefix_weights = self._compute_prefix_weights(
+                    inference_delay=torch.tensor(rtc_latency, device=device),
+                    execution_horizon=torch.tensor(rtc_execution_horizon, device=device),
+                )
+                v_t = self._rtc_correct(
+                    x_t,
+                    v_t,
+                    prev_chunk_left_over=rtc_prev_action_chunk,
+                    prefix_weights=prefix_weights,
+                    time=time,
+                    max_guidance_weight=torch.tensor(rtc_max_guidance, device=device),
+                )
 
             x_t += dt * v_t
 

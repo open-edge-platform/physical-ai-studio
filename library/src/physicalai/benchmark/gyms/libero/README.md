@@ -35,7 +35,7 @@ uv sync --extra libero --extra pi0
 ## Code
 
 ```python
-from physicalai.benchmark import LiberoBenchmark
+from physicalai.benchmark.gyms import LiberoBenchmark
 from physicalai.data import LeRobotDataModule
 from physicalai.policies import Pi05
 from physicalai.train import Trainer
@@ -68,7 +68,7 @@ or from the lerobot pre-trained policy:
 ```python
 import torch
 from physicalai.policies.pi05 import Pi05
-from physicalai.benchmark import LiberoBenchmark
+from physicalai.benchmark.gyms import LiberoBenchmark
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -95,7 +95,7 @@ Use the `physicalai benchmark` subcommand for one-liner evaluation without writi
 
 ```bash
 physicalai benchmark \
-    --benchmark physicalai.benchmark.LiberoBenchmark \
+    --benchmark physicalai.benchmark.gyms.LiberoBenchmark \
     --benchmark.task_suite libero_10 \
     --benchmark.num_episodes 20 \
     --benchmark.video_dir ./results/videos \

@@ -3,6 +3,7 @@ import multiprocessing as mp
 import queue
 import time
 from multiprocessing.synchronize import Event as EventClass
+from typing import TYPE_CHECKING
 
 from loguru import logger
 from physicalai.inference import InferenceModel
@@ -10,6 +11,9 @@ from physicalai.inference import InferenceModel
 from control.inference_result import InferenceResult
 from models.utils import load_inference_model
 from schemas import Model
+
+if TYPE_CHECKING:
+    from physicalai.data import Observation
 
 from .base import BaseProcessWorker
 
@@ -71,9 +75,9 @@ class ModelWorker(BaseProcessWorker):
             # Inference loop until unload is requested
             while not self.should_stop() and not self.unload_event.is_set():
                 try:
-                    observation = self.observation_queue.get(timeout=1)
+                    observation: Observation = self.observation_queue.get(timeout=1)
                     start_time = time.perf_counter()
-                    output = self.inference_model.predict_action_chunk(observation)[0]
+                    output = self.inference_model.predict_action_chunk(observation.to_numpy().to_dict(flatten=False))[0]
                     elapsed_time = time.perf_counter() - start_time
                     logger.debug(f"Inference: ({elapsed_time}): {output.shape}")
                     self.output_queue.put(InferenceResult(time=elapsed_time, data=output))

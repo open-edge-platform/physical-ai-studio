@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID
@@ -66,7 +67,11 @@ async def model_download_endpoint(
     if not model_path.exists() or not model_path.is_dir():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model path not found.")
 
-    archive_path = model_download_service.create_model_archive(model_path, include_snapshot=include_snapshot)
+    archive_path = await asyncio.to_thread(
+        model_download_service.create_model_archive,
+        model_path,
+        include_snapshot=include_snapshot,
+    )
     filename = f"{safe_archive_name(model.name, fallback='model')}.zip"
     return FileResponse(
         archive_path,

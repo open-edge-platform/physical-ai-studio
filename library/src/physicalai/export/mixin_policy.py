@@ -5,6 +5,8 @@
 
 import inspect
 import tempfile
+from collections.abc import Generator
+from contextlib import contextmanager
 from os import PathLike
 from pathlib import Path
 from typing import Any, cast
@@ -55,6 +57,16 @@ class ExportablePolicyMixin:
             A dictionary mapping backend names to their export parameters.
         """
         return {}
+
+    @contextmanager
+    def _scoped_rtc(self, *, enable: bool) -> Generator[None, None, None]:
+        """Temporarily set enable_rtc on the model, restoring the previous value on exit."""
+        prev = getattr(self.model, "enable_rtc", False)
+        setattr(self.model, "enable_rtc", enable)  # noqa: B010
+        try:
+            yield
+        finally:
+            setattr(self.model, "enable_rtc", prev)  # noqa: B010
 
     def create_manifest(
         self,
@@ -221,42 +233,44 @@ class ExportablePolicyMixin:
             )
             raise NotImplementedError(msg)
 
-        if input_sample is None:
-            input_sample = self._get_default_export_input_sample()
+        enable_rtc = bool(export_kwargs.pop("enable_rtc", False))
+        with self._scoped_rtc(enable=enable_rtc):
+            if input_sample is None:
+                input_sample = self._get_default_export_input_sample()
 
-        if input_sample is None:
-            msg = "An input sample must be provided for ONNX export, or the model must implement "
-            "`sample_input` property."
-            raise RuntimeError(msg)
+            if input_sample is None:
+                msg = "An input sample must be provided for ONNX export, or the model must implement "
+                "`sample_input` property."
+                raise RuntimeError(msg)
 
-        model_path = self._prepare_export_path(output_path, ".onnx")
-        export_dir = model_path.parent
+            model_path = self._prepare_export_path(output_path, ".onnx")
+            export_dir = model_path.parent
 
-        extra_model_args = cast("ONNXExportParameters", self._get_export_extra_args(ExportBackend.ONNX))
-        extra_export_kwargs = extra_model_args.exporter_kwargs
-        extra_export_kwargs.update(export_kwargs)
+            extra_model_args = cast("ONNXExportParameters", self._get_export_extra_args(ExportBackend.ONNX))
+            extra_export_kwargs = extra_model_args.exporter_kwargs
+            extra_export_kwargs.update(export_kwargs)
 
-        arg_name = self._get_forward_arg_name()
+            arg_name = self._get_forward_arg_name()
 
-        self.model.eval()
-        self._onnx_core_export_step(
-            model_path=model_path,
-            input_sample=input_sample,
-            arg_name=arg_name,
-            **extra_export_kwargs,
-        )
+            self.model.eval()
+            self._onnx_core_export_step(
+                model_path=model_path,
+                input_sample=input_sample,
+                arg_name=arg_name,
+                **extra_export_kwargs,
+            )
 
-        if extra_model_args.export_tokenizer:
-            msg = "Tokenizer export is not supported for ONNX backend at this time."
-            raise NotImplementedError(msg)
+            if extra_model_args.export_tokenizer:
+                msg = "Tokenizer export is not supported for ONNX backend at this time."
+                raise NotImplementedError(msg)
 
-        self.create_manifest(
-            export_dir,
-            ExportBackend.ONNX,
-            runner=ComponentSpec.from_class(SinglePass),
-            preprocessors=extra_model_args.preprocessors_specs,
-            postprocessors=extra_model_args.postprocessors_specs,
-        )
+            self.create_manifest(
+                export_dir,
+                ExportBackend.ONNX,
+                runner=ComponentSpec.from_class(SinglePass),
+                preprocessors=extra_model_args.preprocessors_specs,
+                postprocessors=extra_model_args.postprocessors_specs,
+            )
 
     @torch.no_grad()
     def to_openvino(
@@ -296,55 +310,57 @@ class ExportablePolicyMixin:
             )
             raise NotImplementedError(msg)
 
-        if input_sample is None:
-            input_sample = self._get_default_export_input_sample()
+        enable_rtc = bool(export_kwargs.pop("enable_rtc", False))
+        with self._scoped_rtc(enable=enable_rtc):
+            if input_sample is None:
+                input_sample = self._get_default_export_input_sample()
 
-        if input_sample is None:
-            msg = "An input sample must be provided for OpenVINO export, or the model must implement "
-            "`sample_input` property."
-            raise RuntimeError(msg)
+            if input_sample is None:
+                msg = "An input sample must be provided for OpenVINO export, or the model must implement "
+                "`sample_input` property."
+                raise RuntimeError(msg)
 
-        model_path = self._prepare_export_path(output_path, ".xml")
-        export_dir = model_path.parent
+            model_path = self._prepare_export_path(output_path, ".xml")
+            export_dir = model_path.parent
 
-        arg_name = self._get_forward_arg_name()
-        input_shapes = [openvino.Shape(tuple(tensor.shape)) for tensor in input_sample.values()]
+            arg_name = self._get_forward_arg_name()
+            input_shapes = [openvino.Shape(tuple(tensor.shape)) for tensor in input_sample.values()]
 
-        extra_model_args: OpenVINOExportParameters = cast(
-            "OpenVINOExportParameters",
-            self._get_export_extra_args(ExportBackend.OPENVINO),
-        )
-        extra_export_kwargs = extra_model_args.exporter_kwargs
+            extra_model_args: OpenVINOExportParameters = cast(
+                "OpenVINOExportParameters",
+                self._get_export_extra_args(ExportBackend.OPENVINO),
+            )
+            extra_export_kwargs = extra_model_args.exporter_kwargs
 
-        if extra_model_args.via_onnx:
-            onnx_model_args = cast("ONNXExportParameters", self._get_export_extra_args(ExportBackend.ONNX))
-            extra_export_kwargs = onnx_model_args.exporter_kwargs
+            if extra_model_args.via_onnx:
+                onnx_model_args = cast("ONNXExportParameters", self._get_export_extra_args(ExportBackend.ONNX))
+                extra_export_kwargs = onnx_model_args.exporter_kwargs
 
-        extra_export_kwargs.update(export_kwargs)
+            extra_export_kwargs.update(export_kwargs)
 
-        self.model.eval()
+            self.model.eval()
 
-        if extra_model_args.via_onnx:
-            with tempfile.NamedTemporaryFile(suffix=".onnx") as tmp:
-                self._onnx_core_export_step(
-                    model_path=Path(tmp.name),
-                    input_sample=input_sample,
-                    arg_name=arg_name,
-                    **extra_export_kwargs,
-                )
+            if extra_model_args.via_onnx:
+                with tempfile.NamedTemporaryFile(suffix=".onnx") as tmp:
+                    self._onnx_core_export_step(
+                        model_path=Path(tmp.name),
+                        input_sample=input_sample,
+                        arg_name=arg_name,
+                        **extra_export_kwargs,
+                    )
+                    ov_model = openvino.convert_model(
+                        tmp.name,
+                        example_input={arg_name: input_sample},
+                        input=input_shapes,
+                    )
+            else:
                 ov_model = openvino.convert_model(
-                    tmp.name,
+                    self.model,
                     example_input={arg_name: input_sample},
                     input=input_shapes,
+                    **extra_export_kwargs,
                 )
-        else:
-            ov_model = openvino.convert_model(
-                self.model,
-                example_input={arg_name: input_sample},
-                input=input_shapes,
-                **extra_export_kwargs,
-            )
-        _postprocess_openvino_model(ov_model, extra_model_args.outputs)
+            _postprocess_openvino_model(ov_model, extra_model_args.outputs)
 
         openvino.save_model(ov_model, str(model_path), compress_to_fp16=extra_model_args.compress_to_fp16)
         if extra_model_args.export_tokenizer:

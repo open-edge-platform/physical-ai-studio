@@ -181,8 +181,8 @@ class TrainingWorker(BaseProcessWorker):
             dispatcher.start()
             trainer.fit(model=policy, datamodule=l_dm)
 
-            moved = shutil.move(cache_path, path.parent)
-            Path(moved).rename(path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(cache_path, path)
 
             export_policy = policy
             if payload.compile_model and model.policy in ["act", "smolvla"]:

@@ -23,10 +23,14 @@ class MigrationManager:
         self.__ensure_data_directory()
 
     def __ensure_data_directory(self) -> None:
-        """Ensure the data directory exists"""
+        """Ensure all required storage directories exist"""
         self.settings.data_dir.mkdir(parents=True, exist_ok=True)
-        if hasattr(self.settings, "models_dir"):
-            self.settings.models_dir.mkdir(parents=True, exist_ok=True)
+        self.settings.models_dir.mkdir(parents=True, exist_ok=True)
+        self.settings.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.settings.snapshot_dir.mkdir(parents=True, exist_ok=True)
+        self.settings.datasets_dir.mkdir(parents=True, exist_ok=True)
+        self.settings.robots_dir.mkdir(parents=True, exist_ok=True)
+        self.settings.log_dir.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
     def check_connection() -> bool:

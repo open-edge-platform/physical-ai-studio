@@ -9,6 +9,9 @@ on:
 
 permissions: {} # No permissions by default on workflow level
 
+env:
+  UV_EXCLUDE_NEWER: "7 days"
+
 concurrency:
   group: library-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
