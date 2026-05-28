@@ -286,11 +286,10 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "2026-05-21T10:09:54.170216132Z"
+exclude-newer = "2026-05-21T10:23:12.655855775Z"
 exclude-newer-span = "P7D"
 
 [manifest]
-constraints = [{ name = "idna", specifier = ">=3.15" }]
 overrides = [{ name = "pytest", specifier = ">=9.0.3" }]
 
 [[package]]

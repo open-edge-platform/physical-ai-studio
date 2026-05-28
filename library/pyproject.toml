@@ -141,9 +141,6 @@ dev = [
 [tool.uv]
 exclude-newer = "7 days"
 index-strategy = "unsafe-best-match"
-constraint-dependencies = [
-    "idna>=3.15",
-]
 override-dependencies = [
     # executorch>=1.1.0 requires pytest<9.0 (its own test-suite constraint),
     # Safe to override because executorch
