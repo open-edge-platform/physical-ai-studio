@@ -348,7 +348,9 @@ class TestSampleInputRtc:
                 self.model = _ModelStub()
                 self.config = _ConfigStub()
 
-        return Pi05.sample_input.fget(_Stub())  # type: ignore[attr-defined]
+        stub = _Stub()
+        stub.inputs_schema = Pi05.inputs_schema.fget(stub)  # type: ignore[attr-defined]
+        return Pi05.sample_input.fget(stub)  # type: ignore[attr-defined]
 
     def test_contains_rtc_keys(self) -> None:
         """RTC sample input contains the four RTC-specific keys."""

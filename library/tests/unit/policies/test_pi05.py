@@ -768,7 +768,9 @@ class TestSampleInput:
                 self._dataset_stats = stats
                 self.model = _ModelStub()
 
-        return Pi05.sample_input.fget(_Stub(dataset_stats))  # type: ignore[attr-defined]
+        stub = _Stub(dataset_stats)
+        stub.inputs_schema = Pi05.inputs_schema.fget(stub)  # type: ignore[attr-defined]
+        return Pi05.sample_input.fget(stub)  # type: ignore[attr-defined]
 
     def test_sample_input_single_visual_feature_with_image_in_id(self) -> None:
         """Single visual feature whose id contains 'image' produces IMAGES key."""
