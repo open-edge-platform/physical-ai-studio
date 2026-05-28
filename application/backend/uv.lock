@@ -120,7 +120,7 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "2026-05-21T11:18:35.08286638Z"
+exclude-newer = "2026-05-21T11:32:04.824930056Z"
 exclude-newer-span = "P7D"
 
 [manifest]
@@ -3089,16 +3089,16 @@ provides-extras = ["cpu", "cuda", "xpu", "tests"]
 [package.metadata.requires-dev]
 all = [
     { name = "mypy", specifier = "~=1.17" },
-    { name = "pyrefly", specifier = ">=0.64.1,<1.0.0" },
+    { name = "pyrefly", specifier = ">=0.18.0,<1.0.0" },
     { name = "ruff", specifier = "~=0.11.2" },
 ]
 dev = [
-    { name = "pyrefly", specifier = ">=0.64.1,<1.0.0" },
+    { name = "pyrefly", specifier = ">=0.18.0,<1.0.0" },
     { name = "ruff", specifier = "~=0.11.2" },
 ]
 lint = [
     { name = "mypy", specifier = "~=1.17" },
-    { name = "pyrefly", specifier = ">=0.64.1,<1.0.0" },
+    { name = "pyrefly", specifier = ">=0.18.0,<1.0.0" },
     { name = "ruff", specifier = "~=0.11.2" },
 ]
 
@@ -3225,9 +3225,9 @@ provides-extras = ["cpu", "cu128", "xpu", "tests", "libero", "pi0", "pi05", "gro
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "mypy", specifier = "~=1.17.1" },
-    { name = "pyrefly", specifier = ">=0.64.1,<1.0.0" },
-    { name = "ruff", specifier = "~=0.12.11" },
+    { name = "mypy", specifier = ">=1.19.1" },
+    { name = "pyrefly", specifier = ">=0.18.0,<1.0.0" },
+    { name = "ruff", specifier = ">=0.14.14" },
 ]
 
 [[package]]
