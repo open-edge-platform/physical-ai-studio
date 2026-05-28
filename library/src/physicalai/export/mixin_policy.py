@@ -183,10 +183,7 @@ class ExportablePolicyMixin:
                 continue
             cls = type(item)
             class_path = f"{cls.__module__}.{cls.__qualname__}"
-            init_args = {
-                field: getattr(item, field)
-                for field in getattr(item, "__dataclass_fields__", {})
-            }
+            init_args = {field: getattr(item, field) for field in getattr(item, "__dataclass_fields__", {})}
             specs.append(ComponentSpec(class_path=class_path, init_args=init_args))
         return specs
 
