@@ -42,6 +42,8 @@ class _ExportWrapper(ExportablePolicyMixin):
 
     def __init__(self, model: torch.nn.Module) -> None:
         self.model = model
+        # Identity preprocessor: returns the sample dict unchanged.
+        self._preprocessor = torch.nn.Identity()
 
     @property
     def sample_input(self) -> dict[str, torch.Tensor] | None:
