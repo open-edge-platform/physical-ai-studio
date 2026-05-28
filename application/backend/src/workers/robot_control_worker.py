@@ -59,7 +59,7 @@ class RobotControlWorker(BaseThreadWorker):
     dataset: DatasetClient | None = None
     recording_mutation: RecordingMutation | None = None
 
-    fps: int = 30
+    fps: int = 20
 
     action_keys: list[str] = []
     camera_keys: list[str] = []

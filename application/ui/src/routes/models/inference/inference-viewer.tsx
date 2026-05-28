@@ -62,7 +62,7 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
                         <Back fill='white' />
                     </Link>
                     <Heading>Model Run {model?.name}</Heading>
-                    <ComboBox flex isRequired allowsCustomValue={false} inputValue={task} onInputChange={setTask}>
+                    <ComboBox flex isRequired allowsCustomValue={true} inputValue={task} onInputChange={setTask}>
                         {tasks.map((taskText, index) => (
                             <Item key={index}>{taskText}</Item>
                         ))}

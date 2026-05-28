@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     logger.info(f"Starting {settings.app_name} application...")
     ensure_spawn_start_method()
     app_scheduler = Scheduler()
-    app_scheduler.start_workers()
+    #app_scheduler.start_workers()
 
     app.state.model_registry = ModelWorkerRegistry(
         max_workers=1,
