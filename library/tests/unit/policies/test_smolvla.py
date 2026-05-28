@@ -410,7 +410,7 @@ class TestSampleInput:
     @staticmethod
     def _call_sample_input(dataset_stats: dict) -> dict:
         """Invoke the SmolVLA.sample_input property on a minimal stub."""
-        from physicalai.policies.smolvla import SmolVLA
+        from physicalai.policies.smolvla import SmolVLA, SmolVLAConfig
 
         class _InnerStub:
             def __init__(self) -> None:
@@ -425,8 +425,12 @@ class TestSampleInput:
             def __init__(self, stats: dict) -> None:
                 self._dataset_stats = stats
                 self.model = _ModelStub()
+                self.config = SmolVLAConfig()
 
-        return SmolVLA.sample_input.fget(_Stub(dataset_stats))  # type: ignore[attr-defined]
+        stub = _Stub(dataset_stats)
+        # inputs_schema is consumed by the base sample_input property.
+        stub.inputs_schema = SmolVLA.inputs_schema.fget(stub)  # type: ignore[attr-defined]
+        return SmolVLA.sample_input.fget(stub)  # type: ignore[attr-defined]
 
     def test_sample_input_single_visual_feature_with_image_in_id(self) -> None:
         """Single visual feature whose id contains 'image' produces IMAGES key."""
