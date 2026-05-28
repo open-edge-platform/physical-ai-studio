@@ -262,7 +262,7 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "2026-05-14T06:28:08.849704514Z"
+exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
 exclude-newer-span = "P7D"
 
 [[package]]
@@ -3897,7 +3897,7 @@ wheels = [
 [[package]]
 name = "physicalai"
 version = "0.1.0"
-source = { git = "https://github.com/openvinotoolkit/physicalai.git?branch=main#2b3a4ba7d4ff06389c710a7c51843669b884f106" }
+source = { git = "https://github.com/openvinotoolkit/physicalai.git?branch=vs%2Ffeat%2Finf_bench#4482ccf662f175a2c08472c274dfc4e71ce6cf26" }
 dependencies = [
     { name = "loguru" },
     { name = "num2words" },
@@ -4051,7 +4051,7 @@ requires-dist = [
     { name = "openvino-tokenizers", specifier = ">=2026.0" },
     { name = "peft", marker = "extra == 'groot'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'pi0'", specifier = ">=0.13.0,<1.0.0" },
-    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?branch=main" },
+    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?branch=vs%2Ffeat%2Finf_bench" },
     { name = "physicalai-train", extras = ["groot"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["libero"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["pi0"], marker = "extra == 'all'" },
