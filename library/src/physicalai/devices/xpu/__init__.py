@@ -4,6 +4,6 @@
 """XPU device Lightning modules."""
 
 from .accelerator import XPUAccelerator
-from .strategy import SingleXPUStrategy
+from .strategy import SingleXPUStrategy, XPUDDPStrategy
 
-__all__ = ["SingleXPUStrategy", "XPUAccelerator"]
+__all__ = ["SingleXPUStrategy", "XPUDDPStrategy", "XPUAccelerator"]

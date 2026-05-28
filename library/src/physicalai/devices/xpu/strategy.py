@@ -1,14 +1,15 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Lightning strategy for single XPU device."""
+"""Lightning strategies for Intel XPU devices."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import torch
 from lightning.pytorch.strategies import StrategyRegistry
+from lightning.pytorch.strategies.ddp import DDPStrategy
 from lightning.pytorch.strategies.single_device import SingleDeviceStrategy
 from lightning.pytorch.utilities.exceptions import MisconfigurationException
 
@@ -61,4 +62,60 @@ StrategyRegistry.register(
     SingleXPUStrategy,
     override=True,
     description="Strategy that enables training on single Intel XPU device.",
+)
+
+
+class XPUDDPStrategy(DDPStrategy):
+    """Strategy for distributed training on multiple XPU devices."""
+
+    strategy_name = "xpu_ddp"
+
+    def __init__(
+        self,
+        *,
+        process_group_backend: str = "xccl",
+        find_unused_parameters: bool = True,
+        **kwargs: Any,
+    ) -> None:
+        """Initialize the XPUDDPStrategy.
+
+        Args:
+            process_group_backend (str): The process group backend to use. Defaults to "xccl"
+                which is required for multi-XPU communication via Intel oneCCL.
+            find_unused_parameters (bool): Whether to find unused parameters during backward pass.
+                Defaults to True as Embodied/VLA policies frequently freeze certain components.
+            **kwargs (Any): Additional options to pass to DDPStrategy.
+        """
+        super().__init__(
+            process_group_backend=process_group_backend,
+            find_unused_parameters=find_unused_parameters,
+            **kwargs,
+        )
+
+    @property
+    def root_device(self) -> torch.device:
+        """Return the root device for the current process."""
+        return torch.device("xpu", self.local_rank)
+
+    def _setup_model(self, model: torch.nn.Module) -> torch.nn.parallel.DistributedDataParallel:
+        """Wraps the model into a DistributedDataParallel module without forcing CUDA stream setups."""
+        from contextlib import nullcontext
+        device_ids = self.determine_ddp_device_ids()
+        # For Intel XPU, we bypass the hardcoded `torch.cuda.Stream` requirement in standard PyTorch Lightning.
+        # If xpu stream control is needed, we could use torch.xpu.stream(torch.xpu.Stream()),
+        # but nullcontext is standard for multi-device wrapping setups on non-CUDA.
+        ctx = torch.xpu.stream(torch.xpu.Stream()) if (device_ids is not None and hasattr(torch, "xpu")) else nullcontext()
+        with ctx:
+            return torch.nn.parallel.DistributedDataParallel(
+                module=model,
+                device_ids=device_ids,
+                **self._ddp_kwargs,
+            )
+
+
+StrategyRegistry.register(
+    XPUDDPStrategy.strategy_name,
+    XPUDDPStrategy,
+    override=True,
+    description="Strategy that enables distributed training on multiple Intel XPU devices.",
 )
