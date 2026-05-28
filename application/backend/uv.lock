@@ -120,7 +120,7 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "2026-05-21T10:25:42.136177072Z"
+exclude-newer = "2026-05-21T10:57:29.179424732Z"
 exclude-newer-span = "P7D"
 
 [manifest]
@@ -3105,7 +3105,7 @@ lint = [
 [[package]]
 name = "physicalai"
 version = "0.1.0"
-source = { git = "https://github.com/openvinotoolkit/physicalai.git?branch=main#76f129a920a0f7a62178b3b7873a30e67c068104" }
+source = { git = "https://github.com/openvinotoolkit/physicalai.git?branch=main#6ba5a840a54421594ed8bce97c7ed8c2bca3bb69" }
 dependencies = [
     { name = "loguru" },
     { name = "num2words" },
@@ -3225,9 +3225,9 @@ provides-extras = ["cpu", "cu128", "xpu", "tests", "libero", "pi0", "pi05", "gro
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "mypy", specifier = ">=1.19.1" },
+    { name = "mypy", specifier = "~=1.17.1" },
     { name = "pyrefly", specifier = ">=0.18.0" },
-    { name = "ruff", specifier = ">=0.14.14" },
+    { name = "ruff", specifier = "~=0.12.11" },
 ]
 
 [[package]]
