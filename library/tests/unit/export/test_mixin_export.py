@@ -17,6 +17,11 @@ from physicalai.export.backends import (
     TorchExportParameters,
 )
 from physicalai.export.mixin_policy import ExportablePolicyMixin, ExportBackend
+from physicalai.inference.data import (
+    InferenceFeature,
+    InferenceFeatureDtype,
+    InferenceFeatureType,
+)
 from physicalai.inference.manifest import ComponentSpec, Manifest
 
 
@@ -608,3 +613,59 @@ class TestToTorch:
         manifest = Manifest.load(tmp_path / "manifest.json")
         postproc_types = [spec.type for spec in manifest.model.postprocessors]
         assert "action_chunk_trimmer" not in postproc_types
+
+
+class TestSampleInputFromSchema:
+    """Tests for the default ``sample_input`` property derived from ``inputs_schema``."""
+
+    def test_sample_input_built_from_inputs_schema(self):
+        """``sample_input`` materializes a tensor/string per schema feature."""
+        schema = [
+            InferenceFeature(
+                ftype=InferenceFeatureType.VISUAL,
+                shape=(3, 4, 4),
+                name="image",
+                dtype=InferenceFeatureDtype.FLOAT32,
+            ),
+            InferenceFeature(
+                ftype=InferenceFeatureType.STATE,
+                shape=(7,),
+                name="state",
+                dtype=InferenceFeatureDtype.FLOAT32,
+            ),
+            InferenceFeature(
+                ftype=InferenceFeatureType.COMMON,
+                shape=(),
+                name="step",
+                dtype=InferenceFeatureDtype.INT64,
+            ),
+            InferenceFeature(
+                ftype=InferenceFeatureType.LANGUAGE,
+                shape=(),
+                name="task",
+                dtype=InferenceFeatureDtype.STRING,
+            ),
+        ]
+
+        policy = ExportablePolicyMixin()
+        with patch.object(
+            ExportablePolicyMixin, "inputs_schema", new_callable=lambda: property(lambda _self: schema)
+        ):
+            sample = policy.sample_input
+
+        assert sample is not None
+        assert set(sample.keys()) == {"image", "state", "step", "task"}
+
+        assert isinstance(sample["image"], torch.Tensor)
+        assert sample["image"].shape == (1, 3, 4, 4)
+        assert sample["image"].dtype == torch.float32
+
+        assert isinstance(sample["state"], torch.Tensor)
+        assert sample["state"].shape == (1, 7)
+        assert sample["state"].dtype == torch.float32
+
+        assert isinstance(sample["step"], torch.Tensor)
+        assert sample["step"].shape == ()
+        assert sample["step"].dtype == torch.int64
+
+        assert sample["task"] == "Example prompt string"
