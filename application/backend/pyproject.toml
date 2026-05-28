@@ -135,6 +135,12 @@ exclude-newer = "7 days"
 # common packages (e.g. markupsafe cp314-only, see uv #9647), PyPI
 # is listed as a named index with higher priority above.
 index-strategy = "unsafe-best-match"
+override-dependencies = [
+    # executorch>=1.1.0 requires pytest<9.0 (its own test-suite constraint),
+    # Safe to override because executorch
+    # production code does not import pytest at runtime.
+    "pytest>=9.0.3",
+]
 conflicts = [
     [
         { extra = "cpu" },
