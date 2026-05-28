@@ -10,7 +10,7 @@ class SyncMixedModelIntegration:
     queue_mixer: QueueMixer
     inference_poller: InferencePoller
     fps: int
-    use_synchronous: bool = False
+    use_synchronous: bool = True
 
     def __init__(self, model_worker: ModelWorker, fps: int):
         self.model_worker = model_worker
