@@ -93,6 +93,20 @@ class ExportablePolicyMixin:
         return None
 
     @property
+    def output_schema(self) -> list[InferenceFeature] | None:
+        """Provide a description of model's expected outputs.
+
+        Override in subclasses to return a list of InferenceFeature objects describing
+        the model's expected outputs. This information can be used by export methods to
+        generate appropriate output metadata in the manifest.
+        The default implementation returns None, indicating that no output schema is provided.
+
+        Returns:
+            A list of InferenceFeature describing the model's expected outputs, or None if not provided.
+        """
+        return None
+
+    @property
     def extra_export_args(self) -> dict[str, ExportParameters]:
         """Return extra arguments for the export process.
 
@@ -271,6 +285,7 @@ class ExportablePolicyMixin:
             preprocessors=extra_model_args.preprocessors_specs,
             postprocessors=extra_model_args.postprocessors_specs,
             input_features=self._to_component_specs(self.inputs_schema or []),
+            output_features=self._to_component_specs(self.output_schema or []),
         )
 
     @torch.no_grad()
@@ -345,6 +360,7 @@ class ExportablePolicyMixin:
                 preprocessors=extra_model_args.preprocessors_specs,
                 postprocessors=extra_model_args.postprocessors_specs,
                 input_features=self._to_component_specs(self.inputs_schema or []),
+                output_features=self._to_component_specs(self.output_schema or []),
             )
 
     @torch.no_grad()
@@ -461,6 +477,7 @@ class ExportablePolicyMixin:
             preprocessors=extra_model_args.preprocessors_specs,
             postprocessors=extra_model_args.postprocessors_specs,
             input_features=self._to_component_specs(self.inputs_schema or []),
+            output_features=self._to_component_specs(self.output_schema or []),
         )
 
     @torch.no_grad()
@@ -587,6 +604,7 @@ class ExportablePolicyMixin:
             input_names=list(input_sample.keys()),  # type: ignore[arg-type, union-attr]
             output_names=extra_model_args.output_names,
             input_features=self._to_component_specs(self.inputs_schema or []),
+            output_features=self._to_component_specs(self.output_schema or []),
         )
 
         return model_path
