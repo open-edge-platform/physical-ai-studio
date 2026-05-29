@@ -10,6 +10,7 @@ import {
 } from 'dockview-react';
 
 import { SchemaEnvironmentWithRelations } from '../../../api/openapi-spec';
+import { physicalAiTheme } from '../../dockview';
 import { useRobotControl } from '../robot-control-provider';
 import { CameraCell } from './camera-cell.component';
 import { RobotCell } from './robot-cell.component';
@@ -111,7 +112,7 @@ export const RobotControlView = () => {
         <View flex>
             <View backgroundColor={'gray-200'} height={'100%'} maxHeight='100vh' position={'relative'}>
                 <Suspense fallback={<CenteredLoading />}>
-                    <DockviewReact onReady={onReady} components={components} />
+                    <DockviewReact onReady={onReady} components={components} theme={physicalAiTheme} />
                 </Suspense>
             </View>
         </View>

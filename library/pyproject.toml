@@ -141,6 +141,12 @@ dev = [
 [tool.uv]
 exclude-newer = "7 days"
 index-strategy = "unsafe-best-match"
+override-dependencies = [
+    # executorch>=1.1.0 requires pytest<9.0 (its own test-suite constraint),
+    # Safe to override because executorch
+    # production code does not import pytest at runtime.
+    "pytest>=9.0.3",
+]
 
 
 conflicts = [
@@ -172,7 +178,7 @@ explicit = false
 # PyTorch sources configuration
 [tool.uv.sources]
 # TODO(#450): Replace with published package once physicalai is back in its own repo.
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", branch = "vs/feat/inf_bench" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "bc3f760ac3cc7aad75cda96a77cb74c31ef60b94" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },

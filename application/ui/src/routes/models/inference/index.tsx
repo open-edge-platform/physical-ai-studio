@@ -8,7 +8,9 @@ import { useInferenceParams } from './use-inference-params';
 export const Index = () => {
     const { project_id, model_id, backend } = useInferenceParams();
 
-    const { data: model } = $api.useSuspenseQuery('get', '/api/models/{model_id}', {
+    const {
+        data: { model },
+    } = $api.useSuspenseQuery('get', '/api/models/{model_id}', {
         params: { path: { model_id } },
     });
 

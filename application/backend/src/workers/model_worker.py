@@ -77,7 +77,7 @@ class ModelWorker(BaseProcessWorker):
                 try:
                     observation: Observation = self.observation_queue.get(timeout=1)
                     start_time = time.perf_counter()
-                    output = self.inference_model.predict_action_chunk(observation.to_numpy().to_dict(flatten=False))[0]
+                    output = self.inference_model.predict_action_chunk(observation.to_numpy().to_dict(flatten=False))
                     elapsed_time = time.perf_counter() - start_time
                     logger.debug(f"Inference: ({elapsed_time}): {output.shape}")
                     self.output_queue.put(InferenceResult(time=elapsed_time, data=output))

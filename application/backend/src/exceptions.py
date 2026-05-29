@@ -181,3 +181,14 @@ class InsufficientDiskSpaceError(BaseException):
             error_code="insufficient_disk_space",
             http_status=http.HTTPStatus.INSUFFICIENT_STORAGE,
         )
+
+
+class RecordingLockError(BaseException):
+    """Raised when a camera cannot be modified because it is locked by an active recording session."""
+
+    def __init__(self, message: str = "Camera is in use by an active recording session.") -> None:
+        super().__init__(
+            message=message,
+            error_code="recording_locked",
+            http_status=423,
+        )

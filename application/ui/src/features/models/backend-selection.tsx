@@ -62,7 +62,8 @@ interface BackendSelectionProps {
 export const BackendSelection = ({ model, backend, setBackend }: BackendSelectionProps) => {
     const { data: policyBackends } = $api.useSuspenseQuery('get', '/api/policies/backends');
 
-    const backends: Array<string> = policyBackends[model.policy] ?? [];
+    const backends: Array<string> =
+        policyBackends[model.policy].filter((modelBackend) => ['openvino', 'torch'].includes(modelBackend)) ?? [];
 
     return (
         <RadioGroup value={backend} onChange={(value) => setBackend(value)} isEmphasized width='100%'>

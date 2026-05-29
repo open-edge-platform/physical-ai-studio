@@ -1,6 +1,7 @@
 import { Heading, IllustratedMessage, Item, TabList, TabPanels, Tabs, View } from '@geti-ui/ui';
 
 import { SchemaModel } from '../../api/openapi-spec';
+import { ModelFormats } from '../../features/models/formats/model-formats';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
 import { MetricsContent } from './metrics';
 
@@ -24,18 +25,22 @@ export const ModelRowContent = ({ model }: ModelRowContentProps) => {
         <View UNSAFE_className={classes.modelRowContent}>
             <Tabs>
                 <TabList>
+                    <Item key='model_formats'>Model formats</Item>
                     <Item key='metrics'>Model Metrics</Item>
                     <Item key='datasets'>Training Datasets</Item>
-                    <Item key='export'>Export</Item>
+                    <Item key='training_details'>Training Details</Item>
                 </TabList>
                 <TabPanels>
+                    <Item key='model_formats'>
+                        <ModelFormats model={model} />
+                    </Item>
                     <Item key='metrics'>
                         <MetricsContent modelId={model.id!} />
                     </Item>
                     <Item key='datasets'>
                         <ComingSoon />
                     </Item>
-                    <Item key='export'>
+                    <Item key='training_details'>
                         <ComingSoon />
                     </Item>
                 </TabPanels>

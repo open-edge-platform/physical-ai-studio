@@ -4,6 +4,7 @@ import { Content, Flex, Heading, IllustratedMessage, Loading, Text, View } from 
 import { DockviewApi, IDockviewPanelProps } from 'dockview';
 import { DockviewReact, DockviewReadyEvent, IDockviewReactProps } from 'dockview-react';
 
+import { physicalAiTheme } from '../../dockview';
 import { ReactComponent as RobotIllustration } from './../../../assets/illustrations/INTEL_08_NO-TESTS.svg';
 import { CameraCell } from './cells/camera-cell';
 import { RobotCell } from './cells/robot-cell';
@@ -131,7 +132,7 @@ const ActualPreview = () => {
         buildDockviewPanels(api.current, environment);
     }, [environment]);
 
-    return <DockviewReact onReady={onReady} components={components} />;
+    return <DockviewReact onReady={onReady} components={components} theme={physicalAiTheme} />;
 };
 
 const CenteredLoading = () => {

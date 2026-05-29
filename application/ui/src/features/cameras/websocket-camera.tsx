@@ -73,6 +73,7 @@ const CameraCanvas = ({ camera, width, height }: { camera: SchemaProjectCamera; 
                 name: camera.hardware_name ?? '_',
             }),
         },
+        share: true,
         shouldReconnect: () => true,
         reconnectAttempts: 5,
         reconnectInterval: 3000,
