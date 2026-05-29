@@ -736,9 +736,10 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             postproc_specs.append(chunk_trimmer)
             torch_postproc_specs.append(chunk_trimmer)
 
+        output_names = [feature.name for feature in (self.output_schema or [])]
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
-                "output_names": [ACTION],
+                "output_names": output_names,
             },
             preprocessors_specs=[
                 *base_preproc_specs,
@@ -753,7 +754,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             export_tokenizer=False,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
-            outputs=[ACTION],
+            outputs=output_names,
             compress_to_fp16=False,
             export_tokenizer=True,
             exporter_kwargs={},

@@ -559,14 +559,15 @@ class ACT(ExportablePolicyMixin, Policy):
             )
 
         extra_args: dict[str, ExportParameters] = {}
+        output_names = [feature.name for feature in (self.output_schema or [])]
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
-                "output_names": ["action"],
+                "output_names": output_names,
             },
             postprocessors_specs=postproc_specs,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
-            outputs=["action"],
+            outputs=output_names,
             export_tokenizer=False,
             compress_to_fp16=False,
             exporter_kwargs={},

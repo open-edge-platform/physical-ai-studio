@@ -816,9 +816,10 @@ class Pi05(ExportablePolicyMixin, Policy):
             torch_postproc_specs.append(chunk_trimmer)
 
         extra_args: dict[str, ExportParameters] = {}
+        output_names = [feature.name for feature in (self.output_schema or [])]
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
-                "output_names": [ACTION],
+                "output_names": output_names,
             },
             export_tokenizer=False,
             preprocessors_specs=[
@@ -833,7 +834,7 @@ class Pi05(ExportablePolicyMixin, Policy):
             postprocessors_specs=postproc_specs,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
-            outputs=[ACTION],
+            outputs=output_names,
             compress_to_fp16=True,
             via_onnx=True,
             export_tokenizer=True,
