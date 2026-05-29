@@ -39,10 +39,32 @@ source library/scripts/intel_env_combo.sh
 
 ## 2. Using PyTorch Lightning Multi-XPU Strategy
 
-Inside physical-ai-studio, we provide the custom strategy [XPUDDPStrategy](library/src/physicalai/devices/xpu/strategy.py), which registers as `"xpu_ddp"`. This wraps PyTorch Lightning's standard `DDPStrategy` but overrides the backend communication layer to use Intel's `xccl` collective communication library.
+Inside physical-ai-studio, we provide the custom accelerator [XPUAccelerator](library/src/physicalai/devices/xpu/accelerator.py) (registered as `"xpu"`) and custom strategy [XPUDDPStrategy](library/src/physicalai/devices/xpu/strategy.py) (registered as `"xpu_ddp"`). This wraps PyTorch Lightning's standard `DDPStrategy` but overrides the backend communication layer to use Intel's `xccl` collective communication library.
+
+These components can be configured through direct Python code or YAML files.
+
+### Direct Python Setup
+
+To use XPU acceleration in a Python script, import the devices module to register the accelerator and strategy before initializing the trainer:
+
+```python
+import lightning.pytorch as pl
+# Importing registers "xpu" and "xpu_ddp" with Lightning
+from physicalai.devices.xpu import XPUAccelerator, XPUDDPStrategy
+
+# Set up the trainer with registered components
+trainer = pl.Trainer(
+    accelerator="xpu",
+    strategy="xpu_ddp",
+    devices=2,           # Use 2 cards
+    precision="bf16-mixed",
+    # ... other trainer flags
+)
+```
 
 ### Configuration (`yaml`)
-To utilize multiple XPUs in your training configuration files, configure the `trainer` block as follows:
+
+If using configuration files, configure the `trainer` block as follows:
 
 ```yaml
 trainer:
@@ -70,7 +92,6 @@ When training larger policy networks (like **Pi0.5** with 4.14B parameters), mem
        pretrained_name_or_path="lerobot/pi05_base",
        dtype="bfloat16",
        train_expert_only=True,      # Keep this True to stay under 32 GB VRAM!
-       use_relative_actions=True,
    )
    ```
 
@@ -81,7 +102,7 @@ When training larger policy networks (like **Pi0.5** with 4.14B parameters), mem
 
 ## 4. Run commands
 
-Launch multi-XPU training using `torchrun`. You must specify the number of processes (matching `--devices` in the script) and run it with the oneCCL environment setup:
+Launch multi-XPU training using `torchrun`. You must specify the number of processes (matching `--devices` in your script) and run it with the oneCCL environment setup:
 
 ```bash
 # 1. Activate your UV environment
@@ -95,10 +116,9 @@ export CCL_ZE_IPC_EXCHANGE=pidfd
 export CCL_ATL_TRANSPORT=ofi
 export CCL_ZE_SHARED_DEV_POOL=1
 
-# 3. Launch the fine-tuning script on 2 GPUs
-torchrun --nproc_per_node=2 tmp_scripts/pi05_so101_train.py \
-    --repo-id "eugene123tw/lerobot-so101-pick-and-place-potato" \
+# 3. Launch your training script on 2 Intel GPUs
+torchrun --nproc_per_node=2 path/to/your_training_script.py \
     --device xpu \
-    --max-epochs 30 \
-    --dataset-name so101-potato
+    --devices 2 \
+    [any other arguments...]
 ```
