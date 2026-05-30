@@ -11,15 +11,14 @@ from __future__ import annotations
 import copy
 import logging
 import math
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import nn
 
 from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
-from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, TASK, FeatureType
-from physicalai.export import ExportableModelMixin
+from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, FeatureType
 from physicalai.policies.base import Model
 
 if TYPE_CHECKING:
@@ -54,7 +53,7 @@ def _lazy_import_transformers() -> tuple:
 logger = logging.getLogger(__name__)
 
 
-class SmolVLAModel(ExportableModelMixin, Model):
+class SmolVLAModel(Model):
     """SmolVLA flow matching vision-language-action model."""
 
     def __init__(  # noqa: PLR0913
@@ -281,51 +280,6 @@ class SmolVLAModel(ExportableModelMixin, Model):
             actions = self._pi_aloha_encode_actions(actions)
 
         return actions
-
-    @property
-    def sample_input(self) -> dict[str, torch.Tensor | str]:
-        """Generate a sample input dictionary for the model with random tensors.
-
-        This method creates a dictionary containing sample input tensors that match the expected
-        input format of the model. The tensors are randomly initialized and have shapes derived
-        from the model's configuration.
-
-        Returns:
-            dict[str, torch.Tensor | dict[str, torch.Tensor]]: A dictionary with two keys
-                - 'state': A tensor representing the robot state with shape (1, *state_feature.shape).
-                - 'images': Either a single tensor or a dictionary of tensors representing visual inputs,
-                    depending on the number of image features configured.
-
-        Note:
-            The batch dimension (first dimension) is set to 1 for all tensors.
-            The tensors are created on the same device as the model's parameters.
-        """
-        device = next(self._model.parameters()).device
-
-        sample_input = {}
-
-        num_image_features = sum(
-            1 for key in self._dataset_stats if str(FeatureType.VISUAL) in self._dataset_stats[key]["type"]
-        )
-
-        for feature_id in self._dataset_stats:
-            if STATE in feature_id:
-                state_feature = self._dataset_stats[feature_id]
-                sample_input[STATE] = torch.randn(1, *cast("tuple", state_feature["shape"]), device=device)
-            elif str(FeatureType.VISUAL) in self._dataset_stats[feature_id]["type"]:
-                image_feature = self._dataset_stats[feature_id]
-                if num_image_features == 1:
-                    sample_input[IMAGES] = torch.randn(1, *cast("tuple", image_feature["shape"]), device=device)
-                else:
-                    sample_input[IMAGES + "." + str(image_feature["name"])] = torch.randn(
-                        1,
-                        *cast("tuple", image_feature["shape"]),
-                        device=device,
-                    )
-
-        sample_input[TASK] = ["sample_task"]
-
-        return sample_input
 
     @property
     def reward_delta_indices(self) -> None:

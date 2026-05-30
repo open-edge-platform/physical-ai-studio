@@ -89,3 +89,6 @@ notice-rgx = """
 [tool.bandit]
 skips = ["B101"]
 exclude_dirs = ["tests"]
+
+[tool.uv]
+exclude-newer = "7 days"

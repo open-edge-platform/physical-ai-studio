@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import ConfigDict, computed_field
+from pydantic import BaseModel, ConfigDict, computed_field
 
 from schemas.base import BaseIDModel, Field
 
@@ -47,3 +47,15 @@ class Model(BaseIDModel):
             }
         }
     )
+
+
+class BackendExportDetail(BaseModel):
+    type: str
+    size_bytes: int
+    file_count: int
+    exported_at: datetime | None = None
+
+
+class ModelDetailResponse(BaseModel):
+    model: Model
+    exports: list[BackendExportDetail]

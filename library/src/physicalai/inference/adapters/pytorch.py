@@ -13,9 +13,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import torch
-import yaml
 from physicalai.inference.adapters.base import RuntimeAdapter
 from physicalai.inference.adapters.registry import adapter_registry
+from physicalai.inference.manifest import Manifest
 
 from physicalai.data.observation import Observation
 from physicalai.export.backends import TorchExportParameters
@@ -60,25 +60,18 @@ class TorchAdapter(RuntimeAdapter):
         Raises:
             FileNotFoundError: If model file doesn't exist
             RuntimeError: If model loading fails
-            KeyError: If metadata is missing required entries
+            KeyError: If manifest is missing required entries
         """
         model_path = Path(model_path)
         if not model_path.exists():
             msg = f"Model file not found: {model_path}"
             raise FileNotFoundError(msg)
 
-        metadata_path = model_path.parent / "metadata.yaml"
-        if not metadata_path.exists():
-            msg = f"Metadata file not found: {metadata_path}"
-            raise FileNotFoundError(msg)
-
-        with metadata_path.open() as f:
-            metadata = yaml.safe_load(f)
-
-            policy_class_path = metadata.get("policy_class", None)
-            if policy_class_path is None:
-                msg = "Metadata missing 'policy_class' entry."
-                raise KeyError(msg)
+        manifest = Manifest.load(model_path.parent)
+        policy_class_path = manifest.policy.source.class_path
+        if not policy_class_path:
+            msg = "Manifest missing 'policy.source.class_path' entry."
+            raise KeyError(msg)
 
         try:
             _, class_name = policy_class_path.rsplit(".", 1)

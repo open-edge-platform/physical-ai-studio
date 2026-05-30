@@ -45,7 +45,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import torch
 from physicalai.inference.model import InferenceModel
 
-from physicalai.benchmark.results import BenchmarkResults, TaskResult
+from physicalai.benchmark.gyms.results import BenchmarkResults, TaskResult
 from physicalai.eval.rollout import evaluate_policy
 from physicalai.policies.base import Policy
 
@@ -77,7 +77,7 @@ class Benchmark:
         record_mode: Video recording mode - "all", "successes", "failures", "none".
 
     Example:
-        >>> from physicalai.benchmark import Benchmark
+        >>> from physicalai.benchmark.gyms import Benchmark
         >>> from physicalai.gyms import LiberoGym
 
         >>> gyms = [LiberoGym(task_suite="libero_10", task_id=i) for i in range(10)]

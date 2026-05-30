@@ -26,6 +26,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     settings = get_settings()
     app.state.settings = settings
 
+    # Camera fingerprints locked by an active recording/teleop session.
+    # Mutated by the robot_control WS handler; checked by camera CRUD and
+    # camera-stream WS endpoints. Keyed by fingerprint (not ProjectCamera ID)
+    # so aliased project rows for the same physical device share one lock.
+    app.state.recording_locked_camera_fingerprints = set()
+
     app.state.camera_registry = CameraWorkerRegistry(
         max_workers=10,
         shutdown_timeout_s=10.0,

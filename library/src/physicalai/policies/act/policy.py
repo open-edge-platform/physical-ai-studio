@@ -6,9 +6,11 @@
 from typing import Any, cast
 
 import torch
+from physicalai.inference.data import InferenceFeature, InferenceFeatureDtype, InferenceFeatureType
 from physicalai.inference.manifest import ComponentSpec
 
 from physicalai.data import Dataset, Feature, FeatureType, NormalizationParameters, Observation
+from physicalai.data.observation import IMAGES, STATE
 from physicalai.export.backends import (
     ExecuTorchExportParameters,
     ExportParameters,
@@ -451,6 +453,65 @@ class ACT(ExportablePolicyMixin, Policy):
             ExportBackend.ONNX,
             ExportBackend.EXECUTORCH,
         ]
+
+    @property
+    def inputs_schema(self) -> list[InferenceFeature] | None:
+        """Describe the policy's expected model inputs for export tracing.
+
+        Returns:
+            A list with a ``state`` feature and one or more image features keyed by
+            ``images`` (single camera) or ``images.<name>`` (multi-camera). Returns
+            ``None`` if the underlying model has not been initialized yet.
+
+        Raises:
+            RuntimeError: If the robot state or image feature shape is not defined.
+        """
+        if self.model is None:
+            return None
+
+        state_feature = self.model._config.robot_state_feature  # noqa: SLF001
+        if state_feature is None or state_feature.shape is None:
+            msg = "Robot state feature is not defined in the model configuration."
+            raise RuntimeError(msg)
+
+        schema: list[InferenceFeature] = [
+            InferenceFeature(
+                ftype=InferenceFeatureType.STATE,
+                shape=tuple(state_feature.shape),
+                name=STATE,
+                dtype=InferenceFeatureDtype.FLOAT32,
+            ),
+        ]
+
+        image_features = self.model._config.image_features  # noqa: SLF001
+        if len(image_features) == 1:
+            visual_feature = next(iter(image_features.values()))
+            if visual_feature.shape is None:
+                msg = "Image feature shape is not defined in the model configuration."
+                raise RuntimeError(msg)
+            schema.append(
+                InferenceFeature(
+                    ftype=InferenceFeatureType.VISUAL,
+                    shape=tuple(visual_feature.shape),
+                    name=IMAGES,
+                    dtype=InferenceFeatureDtype.FLOAT32,
+                ),
+            )
+        else:
+            for key, visual_feature in image_features.items():
+                if visual_feature.shape is None:
+                    msg = f"Image feature shape for '{key}' is not defined in the model configuration."
+                    raise RuntimeError(msg)
+                schema.append(
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.VISUAL,
+                        shape=tuple(visual_feature.shape),
+                        name=f"{IMAGES}.{key}",
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                )
+
+        return schema
 
     @property
     def extra_export_args(self) -> dict[str, ExportParameters]:

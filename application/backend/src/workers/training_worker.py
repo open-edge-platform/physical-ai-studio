@@ -145,6 +145,8 @@ class TrainingWorker(BaseProcessWorker):
                 policy = setup_policy(model, compile_model=payload.compile_model)
 
             precision = str(payload.precision)
+            strategy = get_lightning_strategy(device_type)
+            devices = [device_index] if device_index is not None else 1
 
             checkpoint_callback = ModelCheckpoint(
                 dirpath=cache_path,
@@ -168,8 +170,8 @@ class TrainingWorker(BaseProcessWorker):
                         TrainingLogCallback(),
                     ],
                     accelerator=accelerator,
-                    strategy=get_lightning_strategy(device_type),
-                    devices=[device_index] if device_index is not None else "auto",
+                    strategy=strategy,
+                    devices=devices,
                     max_steps=payload.max_steps,
                     auto_scale_batch_size=payload.auto_scale_batch_size,
                     precision=precision,
@@ -181,9 +183,19 @@ class TrainingWorker(BaseProcessWorker):
             dispatcher.start()
             trainer.fit(model=policy, datamodule=l_dm)
 
-            moved = shutil.move(cache_path, path.parent)
-            Path(moved).rename(path)
-            await self._export_policy(policy=policy, path=path, job=job)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(cache_path, path)
+
+            export_policy = policy
+            if payload.compile_model and model.policy in ["act", "smolvla"]:
+                try:
+                    logger.info("Reloading non-compiled policy for export")
+                    export_policy = load_policy(model, compile_model=False)
+                except Exception as e:
+                    logger.warning("Failed to reload non-compiled policy for export; falling back to trained policy")
+                    logger.exception(e)
+
+            await self._export_policy(policy=export_policy, path=path, job=job)
 
             job = await JobService.update_job_status(
                 job_id=job.id, status=JobStatus.COMPLETED, message="Training finished"

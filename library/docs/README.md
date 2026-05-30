@@ -23,7 +23,7 @@ physicalai fit --config configs/physicalai/act.yaml
 
 # Benchmark
 physicalai benchmark \
-    --benchmark physicalai.benchmark.LiberoBenchmark \
+    --benchmark physicalai.benchmark.gyms.LiberoBenchmark \
     --policy physicalai.policies.ACT \
     --ckpt_path ./checkpoints/model.ckpt
 

@@ -7,6 +7,9 @@ on:
 
 permissions: {} # No permissions by default on workflow level
 
+env:
+  UV_EXCLUDE_NEWER: "7 days"
+
 concurrency:
   group: backend-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -39,6 +42,8 @@ jobs:
             releases.astral.sh:443
             release-assets.githubusercontent.com:443
             static.crates.io:443
+            proxy.golang.org:443
+            storage.googleapis.com:443
 
       - &checkout
         name: Checkout repository

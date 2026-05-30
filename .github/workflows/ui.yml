@@ -1,6 +1,9 @@
 name: UI
 permissions: {} # No permissions by default on workflow level
 
+env:
+  UV_EXCLUDE_NEWER: "7 days"
+
 on:
   push:
     branches:

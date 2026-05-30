@@ -247,6 +247,17 @@ CameraRegistryDep = Annotated[CameraWorkerRegistry, Depends(get_camera_registry)
 RobotRegistryDep = Annotated[RobotWorkerRegistry, Depends(get_robot_registry)]
 
 
+def get_recording_locked_camera_fingerprints(request: HTTPConnection) -> set[str]:
+    """Set of camera fingerprints locked by an active recording session."""
+    locked = getattr(request.app.state, "recording_locked_camera_fingerprints", None)
+    if locked is None:
+        raise RuntimeError("Recording lock state not initialized")
+    return locked
+
+
+RecordingLockedCamerasDep = Annotated[set[str], Depends(get_recording_locked_camera_fingerprints)]
+
+
 def get_model_registry(request: HTTPConnection) -> ModelWorkerRegistry:
     """Dependency to get model worker registry."""
     registry = getattr(request.app.state, "model_registry", None)

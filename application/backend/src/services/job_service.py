@@ -21,6 +21,12 @@ from services.system_service import SystemService
 
 class JobService:
     @staticmethod
+    async def create_job(job: Job) -> Job:
+        async with get_async_db_session_ctx() as session:
+            repo = JobRepository(session)
+            return await repo.save(job)
+
+    @staticmethod
     async def get_job_list(extra_filters: dict | None = None) -> list[Job]:
         async with get_async_db_session_ctx() as session:
             repo = JobRepository(session)

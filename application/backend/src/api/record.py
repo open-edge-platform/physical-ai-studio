@@ -7,7 +7,13 @@ from fastapi import APIRouter, Depends, WebSocket
 from fastapi.responses import Response
 from loguru import logger
 
-from api.dependencies import ModelRegistryDep, RobotCalibrationServiceDep, RobotConnectionManagerDep, get_scheduler_ws
+from api.dependencies import (
+    ModelRegistryDep,
+    RecordingLockedCamerasDep,
+    RobotCalibrationServiceDep,
+    RobotConnectionManagerDep,
+    get_scheduler_ws,
+)
 from core.scheduler import Scheduler
 from robots.robot_client_factory import RobotClientFactory
 from schemas import Dataset, Model
@@ -23,7 +29,11 @@ async def robot_control_websocket_openapi() -> Response:
     return Response(status_code=426)
 
 
-async def handle_incoming(websocket: WebSocket, process: RobotControlWorker) -> None:
+async def handle_incoming(
+    websocket: WebSocket,
+    process: RobotControlWorker,
+    locked_camera_fingerprints: set[str],
+) -> None:
     """Handle incoming messages for robot control."""
     try:
         while True:
@@ -31,7 +41,10 @@ async def handle_incoming(websocket: WebSocket, process: RobotControlWorker) -> 
             payload = data.get("data", {})
             match data["event"]:
                 case "load_environment":
-                    process.load_environment(EnvironmentWithRelations.model_validate(payload["environment"]))
+                    environment = EnvironmentWithRelations.model_validate(payload["environment"])
+                    locked_camera_fingerprints.clear()
+                    locked_camera_fingerprints.update(camera.fingerprint for camera in environment.cameras)
+                    process.load_environment(environment)
                 case "load_model":
                     process.load_model(Model.model_validate(payload["model"]), payload["backend"])
                 case "load_dataset":
@@ -78,6 +91,7 @@ async def robot_control_websocket(
     calibration_service: RobotCalibrationServiceDep,
     scheduler: Annotated[Scheduler, Depends(get_scheduler_ws)],
     model_registry: ModelRegistryDep,
+    locked_camera_fingerprints: RecordingLockedCamerasDep,
 ) -> None:
     """Robot control websocket."""
     await websocket.accept()
@@ -93,20 +107,25 @@ async def robot_control_websocket(
     )
     process.start()
 
-    incoming_task = asyncio.create_task(handle_incoming(websocket, process))
+    incoming_task = asyncio.create_task(handle_incoming(websocket, process, locked_camera_fingerprints))
     outgoing_task = asyncio.create_task(handle_outgoing(websocket, queue))
 
-    _, pending = await asyncio.wait(
-        {incoming_task, outgoing_task},
-        return_when=asyncio.FIRST_COMPLETED,
-    )
+    try:
+        _, pending = await asyncio.wait(
+            {incoming_task, outgoing_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
 
-    for task in pending:
-        task.cancel()
+        for task in pending:
+            task.cancel()
 
-    if process is not None:
-        process.disconnect()
-        process.join(10)
-
-    queue.close()
+        if process is not None:
+            process.disconnect()
+            process.join(10)
+    finally:
+        queue.close()
+        # NOTE: this clears ALL locks, not just this session's. Safe today
+        # because only one recording websocket runs at a time. If concurrent
+        # sessions are added, scope locks per session instead.
+        locked_camera_fingerprints.clear()
     logger.info("websocket handling done...")

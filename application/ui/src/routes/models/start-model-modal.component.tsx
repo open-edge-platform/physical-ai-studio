@@ -7,13 +7,21 @@ import { SchemaModel } from '../../api/openapi-spec';
 import { BackendSelection, defaultBackend } from '../../features/models/backend-selection';
 import { paths } from '../../router';
 
+const getDefaultbackend = (model: SchemaModel) => {
+    if (model.available_backends.includes(defaultBackend)) {
+        return defaultBackend;
+    }
+
+    return model.available_backends.at(0) ?? defaultBackend;
+};
+
 interface StartInferenceDialogProps {
     close: () => void;
     model: SchemaModel;
 }
 
 export const StartInferenceDialog = ({ close, model }: StartInferenceDialogProps) => {
-    const [backend, setBackend] = useState<string>(defaultBackend);
+    const [backend, setBackend] = useState<string>(getDefaultbackend(model));
 
     const navigate = useNavigate();
     const onStart = () => {
@@ -29,7 +37,7 @@ export const StartInferenceDialog = ({ close, model }: StartInferenceDialogProps
 
     return (
         <Dialog>
-            <Heading>Run model</Heading>
+            <Heading>Select your inference backend</Heading>
             <Divider />
             <Content>
                 <Suspense fallback={<ProgressCircle aria-label='Loading backends' isIndeterminate size='S' />}>

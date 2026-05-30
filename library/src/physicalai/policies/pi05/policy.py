@@ -10,15 +10,16 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import torch
 from huggingface_hub import hf_hub_download
+from physicalai.inference.data import InferenceFeature, InferenceFeatureDtype, InferenceFeatureType
 from physicalai.inference.manifest import ComponentSpec
 from safetensors.torch import load_file
 
 from physicalai.data.dataset import Dataset
-from physicalai.data.observation import ACTION, STATE
+from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, FeatureType
 from physicalai.export import ExportablePolicyMixin, ExportBackend
 from physicalai.export.backends import (
     ExportParameters,
@@ -664,6 +665,88 @@ class Pi05(ExportablePolicyMixin, Policy):
         return [ExportBackend.TORCH, ExportBackend.OPENVINO]
 
     @property
+    def inputs_schema(self) -> list[InferenceFeature] | None:
+        """Describe the policy's expected model inputs for export tracing.
+
+        Returns:
+            A list of feature descriptors matching the model's expected input format,
+            covering the robot state, image observations, language task, and any
+            real-time chunking control tensors when ``enable_rtc`` is set on the model.
+            Returns ``None`` if the underlying model or dataset stats have not been
+            initialized yet.
+        """
+        if self.model is None or self._dataset_stats is None:
+            return None
+
+        dataset_stats = self._dataset_stats
+
+        schema: list[InferenceFeature] = []
+
+        num_image_features = sum(1 for key in dataset_stats if str(FeatureType.VISUAL) in dataset_stats[key]["type"])
+
+        for feature_id, feature in dataset_stats.items():
+            if STATE in feature_id:
+                schema.append(
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.STATE,
+                        shape=cast("tuple", feature["shape"]),
+                        name=STATE,
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                )
+            elif str(FeatureType.VISUAL) in feature["type"]:
+                name = IMAGES if num_image_features == 1 else f"{IMAGES}.{feature['name']}"
+                schema.append(
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.VISUAL,
+                        shape=cast("tuple", feature["shape"]),
+                        name=name,
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                )
+
+        schema.append(
+            InferenceFeature(
+                ftype=InferenceFeatureType.LANGUAGE,
+                shape=(),
+                name=TASK,
+                dtype=InferenceFeatureDtype.STRING,
+            ),
+        )
+
+        if self.model.enable_rtc:
+            schema.extend(
+                [
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.COMMON,
+                        shape=(self.config.chunk_size, self.config.max_action_dim),
+                        name="prev_chunk_left_over",
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.COMMON,
+                        shape=(),
+                        name="inference_delay",
+                        dtype=InferenceFeatureDtype.INT64,
+                    ),
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.COMMON,
+                        shape=(),
+                        name="max_guidance_weight",
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.COMMON,
+                        shape=(),
+                        name="execution_horizon",
+                        dtype=InferenceFeatureDtype.INT64,
+                    ),
+                ],
+            )
+
+        return schema
+
+    @property
     def extra_export_args(self) -> dict[str, ExportParameters]:
         """Additional export arguments for model conversion.
 
@@ -699,13 +782,14 @@ class Pi05(ExportablePolicyMixin, Policy):
                 mode=self.config.normalization_mode.lower(),
             ),
         ]
+        torch_postproc_specs = []
         if self.config.chunk_size != self.config.n_action_steps:
-            postproc_specs.append(
-                ComponentSpec(
-                    type="action_chunk_trimmer",
-                    n_action_steps=self.config.n_action_steps,
-                ),
+            chunk_trimmer = ComponentSpec(
+                type="action_chunk_trimmer",
+                n_action_steps=self.config.n_action_steps,
             )
+            postproc_specs.append(chunk_trimmer)
+            torch_postproc_specs.append(chunk_trimmer)
 
         extra_args: dict[str, ExportParameters] = {}
         extra_args["onnx"] = ONNXExportParameters(
@@ -739,6 +823,8 @@ class Pi05(ExportablePolicyMixin, Policy):
             ],
             postprocessors_specs=postproc_specs,
         )
-        extra_args["torch"] = TorchExportParameters()
+        extra_args["torch"] = TorchExportParameters(
+            postprocessors_specs=torch_postproc_specs,
+        )
 
         return extra_args

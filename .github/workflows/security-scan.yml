@@ -246,8 +246,6 @@ jobs:
           disable-telemetry: true
           egress-policy: block
           allowed-endpoints: >
-            check.trivy.dev:443
-            get.trivy.dev:443
             github.com:443
             ghcr.io:443
             ghcr1production.blob.core.windows.net:443
@@ -255,6 +253,9 @@ jobs:
             pkg-containers.githubusercontent.com:443
             raw.githubusercontent.com:443
             release-assets.githubusercontent.com:443
+            pypi.org:443
+            files.pythonhosted.org:443
+            releases.astral.sh:443
 
       - name: Runner cleanup
         uses: open-edge-platform/geti-ci/actions/cleanup-runner@7e686c1248b3939f8ee8e04e2612da727e379d91

@@ -30,7 +30,7 @@ class ModelDownloadService:
 
         temporary_archive_path = Path(tempfile.gettempdir()) / f"model-{uuid4()}.zip"
 
-        with zipfile.ZipFile(temporary_archive_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        with zipfile.ZipFile(temporary_archive_path, mode="w", compression=zipfile.ZIP_STORED) as archive:
             for path in model_path.rglob("*"):
                 if not path.is_file():
                     continue
@@ -43,3 +43,23 @@ class ModelDownloadService:
                 archive.write(path, arcname=relative)
 
         return temporary_archive_path
+
+    def create_backend_archive(self, export_dir: Path, backend: str) -> Path:
+        """Create a zip archive of a single backend export directory.
+
+        :param export_dir: Path to the backend export directory on disk.
+        :param backend: Backend name used in the archive filename.
+        :return: Path to the temporary zip archive.
+        """
+        if not export_dir.exists() or not export_dir.is_dir():
+            raise FileNotFoundError(f"Backend export path not found or not a directory: {export_dir}")
+
+        archive_path = Path(tempfile.gettempdir()) / f"model-export-{backend}-{uuid4()}.zip"
+
+        with zipfile.ZipFile(archive_path, mode="w", compression=zipfile.ZIP_STORED) as archive:
+            for path in export_dir.rglob("*"):
+                if not path.is_file():
+                    continue
+                archive.write(path, arcname=path.relative_to(export_dir))
+
+        return archive_path

@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID
@@ -147,7 +148,7 @@ async def dataset_download_endpoint(
     if not dataset_path.exists() or not dataset_path.is_dir():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset path not found.")
 
-    archive_path = dataset_download_service.create_dataset_archive(dataset_path)
+    archive_path = await asyncio.to_thread(dataset_download_service.create_dataset_archive, dataset_path)
     filename = f"{safe_archive_name(dataset.name, fallback='dataset')}.zip"
     return FileResponse(
         archive_path,

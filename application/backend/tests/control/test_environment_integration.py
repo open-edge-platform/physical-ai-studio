@@ -4,19 +4,24 @@ from unittest.mock import MagicMock, Mock, patch
 import numpy as np
 import pytest
 import torch
-from frame_source.video_capture_base import VideoCaptureBase
+from physicalai.capture import SharedCamera
 
 from control.environment_integration import EnvironmentIntegration
 
 
+def _make_mock_camera():
+    camera = MagicMock(spec=SharedCamera)
+    camera.connect = Mock()
+    camera.disconnect = Mock()
+    mock_frame = MagicMock()
+    mock_frame.data = np.zeros([480, 640, 3], dtype=np.uint8)
+    camera.read_latest = Mock(return_value=mock_frame)
+    return camera
+
+
 @pytest.fixture
 def mock_camera():
-    camera = MagicMock(spec=VideoCaptureBase)
-    camera.connect = Mock()
-    camera.start_async = Mock
-    camera.disconnect = Mock()
-    camera.read.return_value = (True, np.zeros([480, 640, 3], dtype=np.uint8))
-    return camera
+    return _make_mock_camera()
 
 
 @pytest.fixture
@@ -31,11 +36,14 @@ def inference_environment_integration(event_loop, mock_robot_client_factory, moc
     factory = mock_robot_client_factory
 
     with patch(
-        "control.environment_integration.create_frames_source_from_camera",
+        "control.environment_integration.build_shared_camera",
         return_value=mock_camera,
-    ):
+    ) as mock_build:
         subject = EnvironmentIntegration(test_environment, factory)
         event_loop.run_until_complete(subject.setup())
+        for call_args in mock_build.call_args_list:
+            assert call_args.kwargs.get("validate_on_connect") is True
+            assert call_args.kwargs.get("overwrite_settings") is True
         yield subject
         event_loop.run_until_complete(subject.teardown())
 

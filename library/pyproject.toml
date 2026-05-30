@@ -139,6 +139,14 @@ dev = [
 # UV CONFIGURATION                                                             #
 # ============================================================================ #
 [tool.uv]
+exclude-newer = "7 days"
+index-strategy = "unsafe-best-match"
+override-dependencies = [
+    # executorch>=1.1.0 requires pytest<9.0 (its own test-suite constraint),
+    # Safe to override because executorch
+    # production code does not import pytest at runtime.
+    "pytest>=9.0.3",
+]
 
 
 conflicts = [
@@ -148,6 +156,10 @@ conflicts = [
 ]
 
 # PyTorch index configuration
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
@@ -161,12 +173,12 @@ explicit = true
 [[tool.uv.index]]
 name = "pytorch-xpu"
 url = "https://download.pytorch.org/whl/xpu"
-explicit = true
+explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
 # TODO(#450): Replace with published package once physicalai is back in its own repo.
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", branch = "main" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "bc3f760ac3cc7aad75cda96a77cb74c31ef60b94" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },
@@ -179,6 +191,7 @@ torchvision = [
 ]
 
 pytorch-triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
+triton-xpu = { index = "pytorch-xpu" }
 
 
 # ============================================================================ #
@@ -188,6 +201,7 @@ pytorch-triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
 [tool.mypy]
 ignore_missing_imports = true
 show_error_codes = true
+explicit_package_bases = true
 
 [tool.pyrefly]
 search-path = ["src"]

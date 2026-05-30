@@ -37,9 +37,9 @@ echo "Running database migrations..."
 $UV_CMD src/cli.py migrate
 
 if [[ "$SEED_DB" == "true" ]]; then
-    echo "Seeding the database..."
-    $UV_CMD application/cli.py init-db
-    $UV_CMD application/cli.py seed --with-model=True
+	echo "Seeding the database..."
+	$UV_CMD application/cli.py init-db
+	$UV_CMD application/cli.py seed --with-model=True
 fi
 
 echo "Starting FastAPI server..."

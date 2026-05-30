@@ -9,6 +9,9 @@ on:
 
 permissions: {} # No permissions by default on workflow level
 
+env:
+  UV_EXCLUDE_NEWER: "7 days"
+
 concurrency:
   group: library-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -48,6 +51,10 @@ jobs:
             static.crates.io:443
             transfer.xethub.hf.co:443
             us.aws.cdn.hf.co:443
+            proxy.golang.org:443
+            storage.googleapis.com:443
+            nodejs.org:443
+            registry.npmjs.org:443
 
       - &checkout
         name: Checkout repository
