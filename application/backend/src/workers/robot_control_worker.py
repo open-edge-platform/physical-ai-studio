@@ -1,6 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import asyncio
+import math
 import time
 from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
@@ -59,7 +60,7 @@ class RobotControlWorker(BaseThreadWorker):
     dataset: DatasetClient | None = None
     recording_mutation: RecordingMutation | None = None
 
-    fps: int = 20
+    fps: int = 30
 
     action_keys: list[str] = []
     camera_keys: list[str] = []
@@ -190,6 +191,9 @@ class RobotControlWorker(BaseThreadWorker):
                                         observation, task=self.state.task
                                     )
                                     action = self.model_integration.select_action(dataset_observation)
+                                    goal_time = self._dynamic_goal_time(self.model_integration.queue_mixer.index, 30, goal_time)
+                                    #print(f"new goal time: {self.model_integration.queue_mixer.index} {new_goal_time}")
+
                                     if action is not None:
                                         actions = dict(zip(self.environment_integration.action_keys, action))
                                         report_observation["actions"] = actions
@@ -217,6 +221,17 @@ class RobotControlWorker(BaseThreadWorker):
         except Exception as e:
             logger.exception(f"RobotControl loop error: {e}")
             self._report_error(e)
+
+    @staticmethod
+    def _dynamic_goal_time(index: int, chunk_length: int, default_goal_time: float) -> float:
+        """
+        Dynamic goal time calculation based on which index of the chunk it is.
+        """
+        factor = 1.3
+        fn = math.cos(index / chunk_length * math.pi)
+        return (fn * fn * factor + 1) * default_goal_time
+        #factor = 2
+        #return (math.exp(-index / chunk_length / 0.1 ) * factor + 1) * default_goal_time
 
     async def _handle_new_model_load(self) -> None:
         if self._pending_model is not None and self.events.new_model.is_set():
