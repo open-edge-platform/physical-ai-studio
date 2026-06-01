@@ -558,12 +558,22 @@ class ACT(ExportablePolicyMixin, Policy):
                 ),
             )
 
+        preproc_specs = [
+            ComponentSpec(
+                type="resize",
+                image_resolution=self.config.image_size,
+                padding=True,
+                keep_aspect_ratio=True,
+            ),
+        ]
+
         extra_args: dict[str, ExportParameters] = {}
         output_names = [feature.name for feature in (self.outputs_schema or [])]
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
                 "output_names": output_names,
             },
+            preprocessors_specs=preproc_specs,
             postprocessors_specs=postproc_specs,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
@@ -571,9 +581,11 @@ class ACT(ExportablePolicyMixin, Policy):
             export_tokenizer=False,
             compress_to_fp16=False,
             exporter_kwargs={},
+            preprocessors_specs=preproc_specs,
             postprocessors_specs=postproc_specs,
         )
         extra_args["executorch"] = ExecuTorchExportParameters(
+            preprocessors_specs=preproc_specs,
             postprocessors_specs=postproc_specs,
         )
         extra_args["torch"] = TorchExportParameters(

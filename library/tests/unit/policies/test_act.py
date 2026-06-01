@@ -204,7 +204,6 @@ class TestACTolicy:
             os.unlink(export_path)
 
 
-@pytest.mark.skip(reason="Temporarily disabled")
 class TestACTPreprocessor:
     """Tests for ACTPreprocessor."""
 

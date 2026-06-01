@@ -97,8 +97,6 @@ class ACTPreprocessor(torch.nn.Module):
         Raises:
             ValueError: If the input tensor does not have 4 dimensions (batch, channels, height, width).
         """
-        return img
-
         img_dim = 4
         if img.ndim != img_dim:
             msg = f"(b,c,h,w) expected, but {img.shape}"
