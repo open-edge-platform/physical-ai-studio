@@ -98,7 +98,7 @@ class ACT(ExportablePolicyMixin, Policy):
         vision_backbone: str = "resnet18",
         pretrained_backbone_weights: str | None = "ResNet18_Weights.IMAGENET1K_V1",
         replace_final_stride_with_dilation: bool = False,
-        max_image_size: int = 768,
+        image_size: tuple[int, int] = (512, 512),
         pre_norm: bool = False,
         dim_model: int = 512,
         n_heads: int = 8,
@@ -135,7 +135,7 @@ class ACT(ExportablePolicyMixin, Policy):
             vision_backbone=vision_backbone,
             pretrained_backbone_weights=pretrained_backbone_weights,
             replace_final_stride_with_dilation=replace_final_stride_with_dilation,
-            max_image_size=max_image_size,
+            image_size=image_size,
             pre_norm=pre_norm,
             dim_model=dim_model,
             n_heads=n_heads,
@@ -163,7 +163,7 @@ class ACT(ExportablePolicyMixin, Policy):
         # Model will be built in setup() or immediately if env_action_dim provided
         self.model: ACTModel | None = None
 
-        self._preprocessor = ACTPreprocessor(image_resolution=(self.config.max_image_size, self.config.max_image_size))
+        self._preprocessor = ACTPreprocessor(image_resolution=self.config.image_size)
         self._postprocessor = None
 
         # Eager initialization if dataset_stats is provided
