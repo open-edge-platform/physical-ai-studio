@@ -5,6 +5,7 @@ from uuid import UUID
 
 import pytest
 
+from schemas import InferenceBackend, InferenceDevice
 from workers.model_worker_registry import ModelWorkerRegistry
 
 
@@ -13,6 +14,11 @@ def _make_mock_worker() -> MagicMock:
     worker = MagicMock()
     worker.model_loaded_event = mp.Event()
     return worker
+
+
+@pytest.fixture
+def inference_device():
+    return InferenceDevice(backend=InferenceBackend.TORCH, device="cpu")
 
 
 @pytest.fixture
@@ -47,48 +53,50 @@ class TestModelWorkerRegistryInit:
 
 
 class TestModelWorkerRegistryAcquire:
-    def test_acquire_returns_worker_id_and_worker(self, registry, test_model):
-        worker_id, worker = asyncio.run(registry.acquire(test_model, "torch"))
+    def test_acquire_returns_worker_id_and_worker(self, registry, test_model, inference_device):
+        worker_id, worker = asyncio.run(registry.acquire(test_model, inference_device))
         assert isinstance(worker_id, UUID)
         assert worker is registry._workers[worker_id]
 
-    def test_acquire_moves_worker_to_busy(self, registry, test_model):
-        worker_id, _ = asyncio.run(registry.acquire(test_model, "torch"))
+    def test_acquire_moves_worker_to_busy(self, registry, test_model, inference_device):
+        worker_id, _ = asyncio.run(registry.acquire(test_model, inference_device))
         assert worker_id in registry._busy
         assert worker_id not in registry._idle
 
-    def test_acquire_calls_load_model_on_worker(self, registry, test_model):
-        _, worker = asyncio.run(registry.acquire(test_model, "torch"))
-        worker.load_model.assert_called_once_with(test_model, "torch")
+    def test_acquire_calls_load_model_on_worker(self, registry, test_model, inference_device):
+        _, worker = asyncio.run(registry.acquire(test_model, inference_device))
+        worker.load_model.assert_called_once_with(test_model, inference_device)
 
-    def test_acquire_two_workers_exhausts_pool(self, registry, test_model):
-        asyncio.run(registry.acquire(test_model, "torch"))
-        asyncio.run(registry.acquire(test_model, "torch"))
+    def test_acquire_two_workers_exhausts_pool(self, registry, test_model, inference_device):
+        asyncio.run(registry.acquire(test_model, inference_device))
+        asyncio.run(registry.acquire(test_model, inference_device))
         assert len(registry._idle) == 0
         assert len(registry._busy) == 2
 
-    def test_acquire_raises_when_no_idle_workers(self, single_worker_registry, test_model):
-        asyncio.run(single_worker_registry.acquire(test_model, "torch"))
+    def test_acquire_raises_when_no_idle_workers(self, single_worker_registry, test_model, inference_device):
+        asyncio.run(single_worker_registry.acquire(test_model, inference_device))
         with pytest.raises(ValueError, match="No idle model workers available"):
-            asyncio.run(single_worker_registry.acquire(test_model, "torch"))
+            asyncio.run(single_worker_registry.acquire(test_model, inference_device))
 
 
 class TestModelWorkerRegistryRelease:
-    def test_release_returns_worker_to_idle(self, single_worker_registry, test_model):
-        worker_id, _ = asyncio.run(single_worker_registry.acquire(test_model, "torch"))
+    def test_release_returns_worker_to_idle(self, single_worker_registry, test_model, inference_device):
+        worker_id, _ = asyncio.run(single_worker_registry.acquire(test_model, inference_device))
         asyncio.run(single_worker_registry.release(worker_id))
         assert worker_id in single_worker_registry._idle
         assert worker_id not in single_worker_registry._busy
 
-    def test_release_calls_unload_model(self, single_worker_registry, test_model):
-        worker_id, worker = asyncio.run(single_worker_registry.acquire(test_model, "torch"))
+    def test_release_calls_unload_model(self, single_worker_registry, test_model, inference_device):
+        worker_id, worker = asyncio.run(single_worker_registry.acquire(test_model, inference_device))
         asyncio.run(single_worker_registry.release(worker_id))
         worker.unload_model.assert_called_once()
 
-    def test_released_worker_can_be_acquired_again(self, single_worker_registry, test_model):
-        worker_id, _ = asyncio.run(single_worker_registry.acquire(test_model, "torch"))
+    def test_released_worker_can_be_acquired_again(self, single_worker_registry, test_model, inference_device):
+        worker_id, _ = asyncio.run(single_worker_registry.acquire(test_model, inference_device))
         asyncio.run(single_worker_registry.release(worker_id))
-        new_id, _ = asyncio.run(single_worker_registry.acquire(test_model, "onnx"))
+        new_id, _ = asyncio.run(
+            single_worker_registry.acquire(test_model, InferenceDevice(backend=InferenceBackend.OPENVINO, device="GPU"))
+        )
         assert new_id == worker_id
 
     def test_release_unknown_id_is_noop(self, registry):

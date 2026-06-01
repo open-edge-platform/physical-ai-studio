@@ -7,8 +7,7 @@ from physicalai.inference import InferenceModel
 from physicalai.policies import ACT, Pi0, Pi05, SmolVLA
 from physicalai.policies.base import Policy
 
-from schemas import Model
-from utils.device import get_torch_device
+from schemas import InferenceDevice, Model
 
 
 def load_policy(model: Model, *, compile_model: bool = False) -> Policy:
@@ -33,14 +32,16 @@ def load_policy(model: Model, *, compile_model: bool = False) -> Policy:
     return policy
 
 
-def load_inference_model(model: Model, backend: str) -> InferenceModel:
+def load_inference_model(model: Model, inference_device: InferenceDevice) -> InferenceModel:
     """Loads inference model."""
-    inference_device = "auto"
-    if backend == "torch":
-        inference_device = get_torch_device()
-
+    backend = inference_device.backend.value
     export_dir = Path(model.path) / "exports" / backend
-    return InferenceModel(export_dir=export_dir, policy_name=model.policy, backend=backend, device=inference_device)
+    return InferenceModel(
+        export_dir=export_dir,
+        policy_name=model.policy,
+        backend=backend,
+        device=inference_device.device,
+    )
 
 
 def setup_policy(model: Model, *, compile_model: bool = False) -> Policy:

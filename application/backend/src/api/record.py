@@ -16,7 +16,7 @@ from api.dependencies import (
 )
 from core.scheduler import Scheduler
 from robots.robot_client_factory import RobotClientFactory
-from schemas import Dataset, Model
+from schemas import Dataset, InferenceDevice, Model
 from schemas.environment import EnvironmentWithRelations
 from workers.robot_control_worker import RobotControlWorker
 
@@ -46,7 +46,10 @@ async def handle_incoming(
                     locked_camera_fingerprints.update(camera.fingerprint for camera in environment.cameras)
                     process.load_environment(environment)
                 case "load_model":
-                    process.load_model(Model.model_validate(payload["model"]), payload["backend"])
+                    process.load_model(
+                        Model.model_validate(payload["model"]),
+                        InferenceDevice.model_validate(payload["inference_device"]),
+                    )
                 case "load_dataset":
                     process.load_dataset(Dataset.model_validate(payload["dataset"]))
                 case "set_follower_source":
