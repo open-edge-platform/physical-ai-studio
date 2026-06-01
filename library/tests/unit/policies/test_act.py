@@ -11,6 +11,7 @@ import lightning
 
 from physicalai.data import Observation
 from physicalai.data.observation import IMAGES
+from physicalai.inference.preprocessors.resize import ResizePreprocessor
 from physicalai.policies import ACT
 from physicalai.policies.act.model import ACT as ACTModel
 from physicalai.policies.act.preprocessor import ACTPreprocessor
@@ -343,3 +344,27 @@ class TestACTPreprocessor:
         out = pre(batch)
         # is_pad tensor should be identical (not passed through _resize_max)
         assert torch.equal(out["images.top_is_pad"], pad_tensor)
+
+    # ------------------------------------------------------------------
+    # cross-implementation consistency – torch vs numpy resize
+    # ------------------------------------------------------------------
+
+    def test_resize_matches_numpy_resize_preprocessor(self):
+        """Torch ACTPreprocessor resize matches the numpy ResizePreprocessor.
+
+        Both implementations resize while preserving aspect ratio and zero-pad to
+        the target resolution. The torch path uses ``F.interpolate`` (bilinear)
+        and the numpy path uses ``cv2.resize`` (bilinear), so a small tolerance
+        accounts for differences between the two interpolation backends.
+        """
+        resolution = (256, 256)
+        img = self._img(b=1, h=480, w=640)
+
+        torch_pre = ACTPreprocessor(image_resolution=resolution)
+        numpy_pre = ResizePreprocessor(image_resolution=resolution)
+
+        torch_out = torch_pre({IMAGES: img})[IMAGES]
+        numpy_out = numpy_pre({IMAGES: img.numpy()})[IMAGES]
+
+        assert torch_out.shape == numpy_out.shape
+        assert np.mean(np.abs(torch_out.numpy() - numpy_out)) < 1e-2
