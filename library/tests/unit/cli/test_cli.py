@@ -104,7 +104,11 @@ class TestDispatch:
         model = object()
         datamodule = object()
 
-        with patch.object(parser, "instantiate", return_value=MagicMock(trainer=trainer, model=model, data=datamodule)):
+        with patch.object(
+            parser,
+            "instantiate_classes",
+            return_value=MagicMock(trainer=trainer, model=model, data=datamodule),
+        ):
             exit_code = fit_module.run(cast(ArgumentParser, parser), cast(Namespace, cfg))
 
         assert exit_code == 0
