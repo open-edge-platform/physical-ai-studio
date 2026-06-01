@@ -213,7 +213,7 @@ All knobs are read from environment (or `.env` file) at startup via `Settings` i
 | `DATA_IMPORT_MAX_UPLOAD_BYTES` | 100 GiB | Maximum raw archive size accepted by data-import upload endpoints. Checked by `upload_size_guard_middleware` before the body is read, and again by `check_disk_headroom` before file write. |
 | `DATA_IMPORT_MIN_FREE_BYTES` | 1 GiB | Minimum free headroom that must remain on the target filesystem *after* a write (applies to both cache dir staging and extraction destination). |
 | `DATA_IMPORT_MAX_UNCOMPRESSED_BYTES` | 200 GiB | Maximum total uncompressed size permitted across all ZIP entries. |
-| `STORAGE_DIR` | `~/.cache/physicalai` | Root for `datasets/` (extraction destination) and `cache/imports/datasets/` (staging area). Both must live on a filesystem with adequate free space. |
+| `STORAGE_DIR` | Linux: `${XDG_DATA_HOME:-~/.local/share}/physicalai`; macOS: `~/Library/Application Support/physicalai`; Docker: `/app/storage` | Root for `datasets/` (extraction destination) and `cache/imports/datasets/` (staging area). Both must live on a filesystem with adequate free space. Existing users of the old default `~/.cache/physicalai` are prompted to migrate on interactive startup; non-interactive startup fails unless `AUTO_MIGRATE_STORAGE_DIR=true` is set. |
 
 ### Recommended values for large imports (≥ 50 GB)
 

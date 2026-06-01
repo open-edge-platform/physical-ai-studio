@@ -20,9 +20,9 @@ from db.schema import (
     SnapshotDB,
 )
 from settings import get_settings
+from storage_migration import StorageMigrationError, migrate_default_storage_dir
 
 settings = get_settings()
-migration_manager = MigrationManager(settings)
 
 
 @click.group()
@@ -51,6 +51,7 @@ def init_db() -> None:
     """Initialize database with migrations"""
     click.echo("Initializing database...")
 
+    migration_manager = MigrationManager(settings)
     if migration_manager.initialize_database():
         click.echo("✓ Database initialized successfully!")
         sys.exit(0)
@@ -80,6 +81,8 @@ def check_db() -> None:
     """Check database status"""
     click.echo("Checking database status...")
 
+    migration_manager = MigrationManager(settings)
+
     # Check connection
     if not migration_manager.check_connection():
         click.echo("✗ Cannot connect to database")
@@ -104,6 +107,13 @@ def migrate() -> None:
     """Run database migrations"""
     click.echo("Running database migrations...")
 
+    try:
+        migrate_default_storage_dir(settings)
+    except StorageMigrationError as e:
+        click.echo(f"✗ Storage migration failed: {e}", err=True)
+        sys.exit(1)
+
+    migration_manager = MigrationManager(settings)
     if migration_manager.run_migrations():
         click.echo("✓ Migrations completed successfully!")
         sys.exit(0)
