@@ -17,7 +17,7 @@ from internal_datasets.dataset_client import DatasetClient
 from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
 from internal_datasets.mutations.recording_mutation import RecordingMutation
 from robots.robot_client_factory import RobotClientFactory
-from schemas import Model
+from schemas import InferenceDevice, Model
 from schemas.dataset import Dataset, Episode
 from schemas.environment import EnvironmentWithRelations
 
@@ -80,7 +80,7 @@ class RobotControlWorker(BaseThreadWorker):
         self._model_worker_registry = model_worker_registry
         self._model_worker_id: UUID | None = None
         self._pending_model: Model | None = None
-        self._pending_backend: str | None = None
+        self._pending_inference_device: InferenceDevice | None = None
 
     def start_task(self, task: str) -> None:
         if self.state.model_loaded and self.state.environment_loaded:
@@ -118,9 +118,9 @@ class RobotControlWorker(BaseThreadWorker):
         self.state.follower_source = follower_source
         self._report_state()
 
-    def load_model(self, model: Model, backend: str) -> None:
+    def load_model(self, model: Model, inference_device: InferenceDevice) -> None:
         self._pending_model = model
-        self._pending_backend = backend
+        self._pending_inference_device = inference_device
         self.state.model_loaded = False
         self.events.new_model.set()
         self._report_state()
@@ -221,13 +221,16 @@ class RobotControlWorker(BaseThreadWorker):
         if self._pending_model is not None and self.events.new_model.is_set():
             self.events.new_model.clear()
             try:
+                if self._pending_inference_device is None:
+                    raise ValueError("Inference device must be provided before loading a model.")
+
                 # Release any previously held worker slot
                 if self._model_worker_id is not None:
                     await self._model_worker_registry.release(self._model_worker_id)
                     self._model_worker_id = None
 
                 worker_id, worker = await self._model_worker_registry.acquire(
-                    self._pending_model, self._pending_backend or "torch"
+                    self._pending_model, self._pending_inference_device
                 )
                 self._model_worker_id = worker_id
                 self.model_integration = SyncMixedModelIntegration(model_worker=worker, fps=self.fps)
@@ -239,7 +242,7 @@ class RobotControlWorker(BaseThreadWorker):
                 self._report_error(e)
             finally:
                 self._pending_model = None
-                self._pending_backend = None
+                self._pending_inference_device = None
 
     async def _handle_setup_environment(self) -> None:
         if self.environment_integration and self.events.new_environment.is_set():

@@ -1,12 +1,13 @@
 import { ToastQueue } from '@geti-ui/ui';
 
 import { $api } from '../../../api/client';
+import { getDefaultInferenceDevice, getSupportedInferenceDevices } from '../../../features/models/backend-selection';
 import { RobotControlProvider } from '../../../features/robots/robot-control-provider';
 import { InferenceViewer } from './inference-viewer';
 import { useInferenceParams } from './use-inference-params';
 
 export const Index = () => {
-    const { project_id, model_id, backend } = useInferenceParams();
+    const { project_id, model_id, backend, device } = useInferenceParams();
 
     const {
         data: { model },
@@ -30,11 +31,17 @@ export const Index = () => {
         params: { path: { model_id } },
     });
 
+    const { data: inferenceDevices } = $api.useSuspenseQuery('get', '/api/system/devices/inference');
+    const selectedDevice = getSupportedInferenceDevices(inferenceDevices, backend).find(
+        (inferenceDevice) => inferenceDevice.device === device
+    );
+    const inferenceDevice = selectedDevice ?? getDefaultInferenceDevice(inferenceDevices, backend);
+
     return (
         <RobotControlProvider
             environment={initialEnvironment}
             model={model}
-            backend={backend}
+            inferenceDevice={inferenceDevice}
             onError={ToastQueue.negative}
         >
             <InferenceViewer tasks={tasks} />

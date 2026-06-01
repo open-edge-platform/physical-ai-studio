@@ -71,6 +71,11 @@ class ModelService:
             if not backend_dir.is_dir():
                 continue
             files = [f for f in backend_dir.rglob("*") if f.is_file()]
+
+            # Backend exports folder may be empty if export failed
+            if len(files) == 0:
+                continue
+
             total_size = sum(f.stat().st_size for f in files)
             exported_at = datetime.fromtimestamp(backend_dir.stat().st_mtime)
             details.append(

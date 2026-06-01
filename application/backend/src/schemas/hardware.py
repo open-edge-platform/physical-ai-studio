@@ -17,6 +17,13 @@ class DeviceType(StrEnum):
     NPU = auto()
 
 
+class InferenceBackend(StrEnum):
+    """Enumeration of supported inference backends."""
+
+    OPENVINO = auto()
+    TORCH = auto()
+
+
 class DeviceInfo(BaseModel):
     """Information about a compute device available for training."""
 
@@ -24,3 +31,17 @@ class DeviceInfo(BaseModel):
     name: str = Field(..., description="Human-readable device name")
     memory: int | None = Field(None, description="Total device memory in bytes (null for CPU)")
     index: int | None = Field(None, description="Device index among those of the same type (null for CPU)")
+
+
+class InferenceDevice(BaseModel):
+    """Selected backend-specific inference device."""
+
+    backend: InferenceBackend = Field(..., description="Inference backend (openvino, torch)")
+    device: str = Field(..., description="Backend-specific device identifier")
+
+
+class InferenceDeviceInfo(DeviceInfo):
+    """Information about a backend-specific compute device available for inference."""
+
+    backend: InferenceBackend = Field(..., description="Inference backend (openvino, torch)")
+    device: str = Field(..., description="Backend-specific device identifier")

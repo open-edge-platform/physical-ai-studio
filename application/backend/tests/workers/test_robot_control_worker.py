@@ -11,6 +11,7 @@ from control.environment_integration import EnvironmentIntegration
 from control.sync_mixed_model_integration import SyncMixedModelIntegration
 from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
 from internal_datasets.mutations.recording_mutation import RecordingMutation
+from schemas import InferenceBackend, InferenceDevice
 from schemas.environment import EnvironmentWithRelations
 from workers.robot_control_worker import RobotControlWorker
 
@@ -82,6 +83,11 @@ def recording_mutation():
 
 
 @pytest.fixture
+def inference_device():
+    return InferenceDevice(backend=InferenceBackend.TORCH, device="cpu")
+
+
+@pytest.fixture
 def test_dataset_impl(recording_mutation):
     mock = MagicMock(spec=InternalLeRobotDataset)
     mock.start_recording_mutation = MagicMock(return_value=recording_mutation)
@@ -112,10 +118,10 @@ def robot_control_worker(mock_robot_client_factory):
 
 @pytest.fixture
 def loaded_inference_worker(
-    robot_control_worker, environment_integration, model_integration, test_model, test_environment
+    robot_control_worker, environment_integration, model_integration, test_model, test_environment, inference_device
 ):
     with patch("workers.robot_control_worker.SyncMixedModelIntegration", return_value=model_integration):
-        robot_control_worker.load_model(test_model, "torch")
+        robot_control_worker.load_model(test_model, inference_device)
         with patch("workers.robot_control_worker.EnvironmentIntegration", return_value=environment_integration):
             robot_control_worker.load_environment(test_environment)
         model_integration.allow_setup()
@@ -192,14 +198,20 @@ class TestRobotControlWorker:
         assert observation["event"] == "observations"
         assert observation["data"] == {"foo": "bar"}
 
-    def test_load_model(self, robot_control_worker: RobotControlWorker, model_integration, test_model):
+    def test_load_model(
+        self,
+        robot_control_worker: RobotControlWorker,
+        model_integration,
+        test_model,
+        inference_device,
+    ):
         report = wait_until_message_from_queue(robot_control_worker.queue, "state")
         assert report["event"] == "state"
 
         # Keep patch active until after allow_setup(): _handle_new_model_load creates
         # SyncMixedModelIntegration asynchronously, so the patch must outlive load_model().
         with patch("workers.robot_control_worker.SyncMixedModelIntegration", return_value=model_integration):
-            robot_control_worker.load_model(test_model, "torch")
+            robot_control_worker.load_model(test_model, inference_device)
             report = wait_until_message_from_queue(robot_control_worker.queue, "state")
             assert report["event"] == "state"
             assert not report["data"]["model_loaded"]

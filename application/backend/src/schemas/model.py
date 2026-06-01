@@ -27,7 +27,19 @@ class Model(BaseIDModel):
         exports_dir = Path(self.path) / "exports"
         if not exports_dir.is_dir():
             return []
-        return sorted(d.name for d in exports_dir.iterdir() if d.is_dir())
+
+        backends: list[str] = []
+        for backend_dir in exports_dir.iterdir():
+            if not backend_dir.is_dir():
+                continue
+
+            # Backend exports folder may be empty if export failed
+            if not any(backend_dir.iterdir()):
+                continue
+
+            backends.append(backend_dir.name)
+
+        return sorted(backends)
 
     model_config = ConfigDict(
         json_schema_extra={

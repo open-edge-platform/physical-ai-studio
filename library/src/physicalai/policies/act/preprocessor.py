@@ -71,7 +71,7 @@ class ACTPreprocessor(torch.nn.Module):
             is_flat = False
 
         for key in target_keys:
-            target_dict[key] = self._resize_max(target_dict[key], *self.image_resolution)
+            target_dict[key] = self._resize_with_ar_pad(target_dict[key], *self.image_resolution)
 
         if not is_flat:
             batch[IMAGES] = target_dict
@@ -79,20 +79,26 @@ class ACTPreprocessor(torch.nn.Module):
         return batch
 
     @staticmethod
-    def _resize_max(img: torch.Tensor, max_width: int, max_height: int) -> torch.Tensor:
-        """Resize an image tensor to fit within the specified maximum width and height while maintaining aspect ratio.
+    def _resize_with_ar_pad(img: torch.Tensor, target_width: int, target_height: int) -> torch.Tensor:
+        """Resize an image tensor to the target resolution while maintaining aspect ratio and padding the remainder.
+
+        The image is scaled so it fits within the target resolution, then zero-padded
+        symmetrically to exactly match (target_height, target_width).
 
         Args:
             img (torch.Tensor): Input image tensor with shape (batch, channels, height, width).
-            max_width (int): Maximum width for the resized image.
-            max_height (int): Maximum height for the resized image.
+            target_width (int): Target width for the resized image.
+            target_height (int): Target height for the resized image.
 
         Returns:
-            torch.Tensor: Resized image tensor maintaining the original aspect ratio and batch/channel dimensions.
+            torch.Tensor: Image tensor of shape (batch, channels, target_height, target_width),
+                preserving the original aspect ratio with zero padding.
 
         Raises:
             ValueError: If the input tensor does not have 4 dimensions (batch, channels, height, width).
         """
+        return img
+
         img_dim = 4
         if img.ndim != img_dim:
             msg = f"(b,c,h,w) expected, but {img.shape}"
@@ -100,15 +106,23 @@ class ACTPreprocessor(torch.nn.Module):
 
         cur_height, cur_width = img.shape[2:]
 
-        if cur_height <= max_height and cur_width <= max_width:
-            return img
+        ratio = max(cur_width / target_width, cur_height / target_height)
+        resized_height = min(int(cur_height / ratio), target_height)
+        resized_width = min(int(cur_width / ratio), target_width)
 
-        ratio = max(cur_width / max_width, cur_height / max_height)
-        resized_height = int(cur_height / ratio)
-        resized_width = int(cur_width / ratio)
-        return F.interpolate(
-            img,
-            size=(resized_height, resized_width),
-            mode="bilinear",
-            align_corners=False,
-        )
+        if (resized_height, resized_width) != (cur_height, cur_width):
+            img = F.interpolate(
+                img,
+                size=(resized_height, resized_width),
+                mode="bilinear",
+                align_corners=False,
+            )
+
+        pad_height = target_height - resized_height
+        pad_width = target_width - resized_width
+        pad_top = pad_height // 2
+        pad_bottom = pad_height - pad_top
+        pad_left = pad_width // 2
+        pad_right = pad_width - pad_left
+
+        return F.pad(img, (pad_left, pad_right, pad_top, pad_bottom))
