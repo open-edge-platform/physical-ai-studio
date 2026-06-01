@@ -2,6 +2,9 @@
 
 Evaluate your trained policy on standardized simulation environments.
 
+The `physicalai benchmark` command is loaded lazily from the studio package through
+the shared runtime CLI host.
+
 ## What You'll Do
 
 1. Load your trained checkpoint

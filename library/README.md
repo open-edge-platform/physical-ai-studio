@@ -179,8 +179,11 @@ policy.export("./exports", backend="openvino")
 ## CLI
 
 ```bash
-# CLI coming soon - use Python API for now
-# See API section above for export usage
+physicalai export \
+    --policy physicalai.policies.ACT \
+    --ckpt_path checkpoints/model.ckpt \
+    --backend openvino \
+    --output_dir ./exports
 ```
 
 ### Supported Backends

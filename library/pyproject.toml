@@ -41,7 +41,10 @@ dependencies = [
     "onnxscript",
     "jsonargparse[signatures]>=4.27.0", # This could be extra
     "pydantic",                         # This could be extra
-    "physicalai",
+    # Provides the `physicalai` CLI host and the `physicalai.cli._spec`
+    # SubcommandSpec contract that the studio subcommands plug into. Must be a
+    # release that ships the CLI host; older runtimes lack `physicalai.cli`.
+    "physicalai>=0.1.0",
 ]
 
 [project.optional-dependencies]
@@ -112,13 +115,18 @@ all = [
     "physicalai-train[smolvla]",
 ]
 
-[project.scripts]
-physicalai = "physicalai.cli.cli:cli"
-
 # Contribute Torch and ExecuTorch as inference backends to the registry
 # in `physicalai.inference.adapters`.  The target callable performs only
 # lightweight lazy registration — torch/executorch are imported only on
 # first use.
+[project.entry-points."physicalai.cli.subcommands"]
+fit = "physicalai.cli.fit:register"
+validate = "physicalai.cli.validate:register"
+test = "physicalai.cli.test:register"
+predict = "physicalai.cli.predict:register"
+benchmark = "physicalai.cli.benchmark:register"
+export = "physicalai.cli.export:register"
+
 [project.entry-points."physicalai.inference.adapters"]
 physicalai-train = "physicalai.inference.adapters._register:register"
 

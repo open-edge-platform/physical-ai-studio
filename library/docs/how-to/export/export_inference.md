@@ -36,6 +36,16 @@ policy = ACT.load_from_checkpoint("checkpoints/best.ckpt")
 policy.export("./exports", backend="openvino")
 ```
 
+The same export contract is available from the shared CLI host:
+
+```bash
+physicalai export \
+    --policy physicalai.policies.ACT \
+    --ckpt_path checkpoints/best.ckpt \
+    --backend openvino \
+    --output_dir ./exports
+```
+
 **Output structure:**
 
 ```text

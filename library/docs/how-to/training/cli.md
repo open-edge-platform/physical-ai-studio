@@ -1,6 +1,6 @@
 # CLI Guide
 
-Train policies using the command-line interface built on PyTorch Lightning CLI.
+Train policies using the shared `physicalai` command and studio's jsonargparse subcommands.
 
 ## Features
 
@@ -8,6 +8,9 @@ Train policies using the command-line interface built on PyTorch Lightning CLI.
 - Type-safe configuration (dataclasses, Pydantic)
 - Dynamic class loading (`class_path` pattern)
 - Full PyTorch Lightning features (callbacks, loggers, distributed training)
+
+The runtime package owns the top-level `physicalai` executable. Studio contributes
+the training subcommands through the `physicalai.cli.subcommands` entry-point group.
 
 ## Basic Usage
 

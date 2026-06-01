@@ -31,6 +31,10 @@ physicalai benchmark \
 policy.export("./exports", backend="openvino")
 ```
 
+`physicalai-train` depends on the runtime package, which owns the top-level
+`physicalai` executable. Studio contributes training and benchmark subcommands via
+entry points, so the user-facing commands stay the same.
+
 ## See Also
 
 - **[Library README](../README.md)** - Installation and overview

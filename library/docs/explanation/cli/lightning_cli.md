@@ -1,55 +1,49 @@
-# LightningCLI Integration
+# jsonargparse Subcommand Integration
 
-The PhysicalAI CLI is built on top of PyTorch Lightning's `LightningCLI`,
-which provides robust argument parsing and configuration management through
-`jsonargparse`.
+The PhysicalAI training CLI uses standalone `jsonargparse` parsers registered in
+the `physicalai.cli.subcommands` entry-point group. The runtime distribution owns
+the top-level `physicalai` executable and dispatches to these studio parsers on demand.
 
-## Class Structure
+## Registration Structure
 
 ```mermaid
 classDiagram
-    class LightningCLI {
-        +model_class: Type[LightningModule]
-        +datamodule_class: Type[LightningDataModule]
-        +subclass_mode_model: bool
-        +subclass_mode_data: bool
-        +save_config_callback: SaveConfigCallback|None
+    class SubcommandSpec {
+        +name: str
+        +parser: ArgumentParser
+        +dispatch(parser, cfg): int
     }
 
-    class CLI {
-        +cli()
+    class RegisterModule {
+        +build_parser()
+        +run(parser, cfg)
+        +register()
     }
 
-    LightningCLI <|-- CLI : uses
+    RegisterModule --> SubcommandSpec : returns
 ```
 
 ## Implementation
 
-The CLI implementation in `cli.py` is intentionally minimal:
+Each studio subcommand follows the same shape as the runtime `run` command:
 
 ```python
-from lightning.pytorch.cli import LightningCLI
-from physicalai.data import DataModule
-from physicalai.policies.base import Policy
+from jsonargparse import ArgumentParser
+from physicalai.cli._spec import SubcommandSpec
 
-def cli() -> None:
-    """Main CLI entry point."""
-    LightningCLI(
-        model_class=Policy,
-        datamodule_class=DataModule,
-        save_config_callback=None,
-        subclass_mode_model=True,  # Allow any Policy subclass
-        subclass_mode_data=True,   # Allow any DataModule subclass
-    )
+def build_parser() -> ArgumentParser: ...
+
+def run(parser: ArgumentParser, cfg) -> int: ...
+
+def register() -> SubcommandSpec:
+    return SubcommandSpec(name="fit", parser=build_parser(), dispatch=run, help="Train a model.")
 ```
 
 ## Key Features
 
-### 1. Subclass Mode
+### 1. Subclass Arguments
 
-Enabling `subclass_mode_model=True` and `subclass_mode_data=True` allows
-dynamic instantiation of any Policy or DataModule subclass via
-configuration:
+Studio parsers add subclass arguments directly for policies, datamodules, and benchmarks:
 
 ```yaml
 model:
@@ -70,13 +64,15 @@ model:
 
 ### 3. Command Support
 
-The CLI automatically provides standard Lightning commands:
+The shared host exposes these studio commands:
 
 ```bash
 physicalai fit          # Train model
 physicalai validate     # Run validation
 physicalai test         # Run testing
 physicalai predict      # Run predictions
+physicalai benchmark    # Run benchmark evaluation
+physicalai export       # Export policy artifacts
 ```
 
 ## Configuration Flow
@@ -86,25 +82,27 @@ sequenceDiagram
     participant User
     participant CLI
     participant jsonargparse
-    participant LightningCLI
+    participant Host
+    participant RegisterModule
     participant Trainer
 
-    User->>CLI: physicalai fit --config train.yaml
-    CLI->>jsonargparse: Parse config + args
+    User->>Host: physicalai fit --config train.yaml
+    Host->>RegisterModule: register()
+    RegisterModule->>jsonargparse: Build parser
+    Host->>jsonargparse: Parse config + args
     jsonargparse->>jsonargparse: Validate types
-    jsonargparse->>LightningCLI: Instantiate components
-    LightningCLI->>Trainer: trainer.fit(model, datamodule)
+    jsonargparse->>Trainer: Instantiate components
+    Trainer->>Trainer: trainer.fit(model, datamodule)
     Trainer-->>User: Training results
 ```
 
 ## Benefits
 
-1. **No Custom Parsing**: Lightning handles all argument parsing
+1. **Shared Host**: Runtime and studio coexist under one `physicalai` executable
 2. **Type Safety**: Automatic validation from type hints
 3. **Ecosystem Integration**: Works with all Lightning features (callbacks,
    loggers, plugins)
-4. **Maintainability**: Less code to maintain, battle-tested
-   implementation
+4. **Maintainability**: Each subcommand is a small module with explicit wiring
 5. **Extensibility**: Easy to add new commands and options
 
 ## Example Usage
@@ -145,7 +143,7 @@ The CLI integrates with:
 
 - **Policies** via `Policy` base class
 - **DataModules** via `DataModule` base class
-- **Trainers** via Lightning `Trainer` class
+- **Trainers** via physicalai `Trainer`
 - **Callbacks** via Lightning callback system
 - **Loggers** via Lightning logger system
 
