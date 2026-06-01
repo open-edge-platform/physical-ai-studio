@@ -670,7 +670,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         return schema
 
     @property
-    def output_schema(self) -> list[InferenceFeature] | None:
+    def outputs_schema(self) -> list[InferenceFeature] | None:
         """Describe the policy's model output for export.
 
         Returns:
@@ -736,7 +736,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             postproc_specs.append(chunk_trimmer)
             torch_postproc_specs.append(chunk_trimmer)
 
-        output_names = [feature.name for feature in (self.output_schema or [])]
+        output_names = [feature.name for feature in (self.outputs_schema or [])]
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
                 "output_names": output_names,

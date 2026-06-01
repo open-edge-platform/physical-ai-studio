@@ -93,7 +93,7 @@ class ExportablePolicyMixin:
         return None
 
     @property
-    def output_schema(self) -> list[InferenceFeature] | None:
+    def outputs_schema(self) -> list[InferenceFeature] | None:
         """Provide a description of model's expected outputs.
 
         Override in subclasses to return a list of InferenceFeature objects describing
@@ -285,7 +285,7 @@ class ExportablePolicyMixin:
             preprocessors=extra_model_args.preprocessors_specs,
             postprocessors=extra_model_args.postprocessors_specs,
             input_features=self._to_component_specs(self.inputs_schema or []),
-            output_features=self._to_component_specs(self.output_schema or []),
+            output_features=self._to_component_specs(self.outputs_schema or []),
         )
 
     @torch.no_grad()
@@ -360,7 +360,7 @@ class ExportablePolicyMixin:
                 preprocessors=extra_model_args.preprocessors_specs,
                 postprocessors=extra_model_args.postprocessors_specs,
                 input_features=self._to_component_specs(self.inputs_schema or []),
-                output_features=self._to_component_specs(self.output_schema or []),
+                output_features=self._to_component_specs(self.outputs_schema or []),
             )
 
     @torch.no_grad()
@@ -477,7 +477,7 @@ class ExportablePolicyMixin:
             preprocessors=extra_model_args.preprocessors_specs,
             postprocessors=extra_model_args.postprocessors_specs,
             input_features=self._to_component_specs(self.inputs_schema or []),
-            output_features=self._to_component_specs(self.output_schema or []),
+            output_features=self._to_component_specs(self.outputs_schema or []),
         )
 
     @torch.no_grad()
@@ -604,7 +604,7 @@ class ExportablePolicyMixin:
             input_names=list(input_sample.keys()),  # type: ignore[arg-type, union-attr]
             output_names=extra_model_args.output_names,
             input_features=self._to_component_specs(self.inputs_schema or []),
-            output_features=self._to_component_specs(self.output_schema or []),
+            output_features=self._to_component_specs(self.outputs_schema or []),
         )
 
         return model_path
