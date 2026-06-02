@@ -578,7 +578,7 @@ class ACT(ExportablePolicyMixin, Policy):
         extra_args["openvino"] = OpenVINOExportParameters(
             outputs=output_names,
             export_tokenizer=False,
-            compress_to_fp16=False,
+            compress_to_fp16=True,
             exporter_kwargs={},
             preprocessors_specs=preproc_specs,
             postprocessors_specs=postproc_specs,
