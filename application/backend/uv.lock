@@ -2556,7 +2556,7 @@ requires-dist = [
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "numpy" },
     { name = "opencv-python" },
-    { name = "physicalai", extras = ["robots", "capture"], specifier = ">=0.1.1" },
+    { name = "physicalai", extras = ["robots", "capture"] },
     { name = "physicalai-train", extras = ["pi0", "smolvla"], editable = "../../library" },
     { name = "pydantic", specifier = ">=2.12,<2.13" },
     { name = "pydantic-settings", specifier = ">=2.10.1" },
