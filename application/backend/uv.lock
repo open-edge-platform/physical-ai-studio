@@ -2953,7 +2953,7 @@ requires-dist = [
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "numpy" },
     { name = "opencv-python" },
-    { name = "physicalai", extras = ["robots", "capture"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=e0e9b2c6efe6c06c933d241e9dfa0705c03e6037" },
+    { name = "physicalai", extras = ["robots", "capture"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=b0663da3c027c0138823b1d5b6f0955912fc9895" },
     { name = "physicalai-train", extras = ["pi0", "smolvla"], editable = "../../library" },
     { name = "pydantic", specifier = ">=2.12,<2.13" },
     { name = "pydantic-settings", specifier = ">=2.10.1" },
@@ -2995,7 +2995,7 @@ lint = [
 [[package]]
 name = "physicalai"
 version = "0.2.0.dev0"
-source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=e0e9b2c6efe6c06c933d241e9dfa0705c03e6037#e0e9b2c6efe6c06c933d241e9dfa0705c03e6037" }
+source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=b0663da3c027c0138823b1d5b6f0955912fc9895#b0663da3c027c0138823b1d5b6f0955912fc9895" }
 dependencies = [
     { name = "jsonargparse", extra = ["shtab", "signatures"] },
     { name = "loguru" },
@@ -3011,6 +3011,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "safetensors" },
     { name = "transformers" },
+    { name = "typing-extensions" },
 ]
 
 [package.optional-dependencies]
@@ -3023,7 +3024,7 @@ capture = [
 ]
 robots = [
     { name = "feetech-servo-sdk" },
-    { name = "trossen-arm" },
+    { name = "trossen-arm", marker = "python_full_version < '3.14' or (extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-cuda') or (extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-xpu') or (extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu')" },
 ]
 
 [[package]]
@@ -3085,7 +3086,7 @@ requires-dist = [
     { name = "openvino-tokenizers", specifier = ">=2026.0" },
     { name = "peft", marker = "extra == 'groot'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'pi0'", specifier = ">=0.13.0,<1.0.0" },
-    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=e0e9b2c6efe6c06c933d241e9dfa0705c03e6037" },
+    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=b0663da3c027c0138823b1d5b6f0955912fc9895" },
     { name = "physicalai-train", extras = ["groot"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["libero"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["pi0"], marker = "extra == 'all'" },
@@ -5589,7 +5590,7 @@ name = "trossen-arm"
 version = "1.10.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy" },
+    { name = "numpy", marker = "python_full_version < '3.14' or (extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-cuda') or (extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-xpu') or (extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/bc/35/4b9e702dbe5a844171e76d9e20e57f7d2ebce539dc25866a7dc665e24277/trossen_arm-1.10.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:8c7653ebeb8a0240ba0f6de99cfb63ef470d8d2cff13844f9a994e48d4c68095", size = 698112, upload-time = "2026-05-05T21:13:31.316Z" },
