@@ -125,7 +125,12 @@ async def dataset_video_endpoint(
     """Get path to video of episode"""
     dataset = await dataset_service.get_dataset_by_id(dataset_id)
     dataset_base = Path(dataset.path).resolve()
-    requested_path = (dataset_base / video_path).resolve()
+
+    normalized_video_path = Path(video_path)
+    if normalized_video_path.is_absolute() or ".." in normalized_video_path.parts:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access to the requested file is forbidden.")
+
+    requested_path = (dataset_base / normalized_video_path).resolve()
 
     if not requested_path.is_relative_to(dataset_base):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access to the requested file is forbidden.")
