@@ -248,10 +248,10 @@ class LeRobotDataModule(DataModule):
             n_val = max(1, int(len(all_episodes) * val_split))
             # Use isolated RNG if seed given, otherwise global random (respects seed_everything)
             if val_split_seed is not None:
-                rng = random.Random(val_split_seed)  # noqa: S311
-                val_episodes = sorted(rng.sample(all_episodes, n_val))
+                rng = random.Random(val_split_seed)  # noqa: S311 # nosec B311 - non-cryptographic ML data split
+                val_episodes = sorted(rng.sample(all_episodes, n_val))  # nosec B311 - non-cryptographic ML data split
             else:
-                val_episodes = sorted(random.sample(all_episodes, n_val))
+                val_episodes = sorted(random.sample(all_episodes, n_val))  # nosec B311 - non-cryptographic ML data split
             train_episodes = sorted(ep for ep in all_episodes if ep not in set(val_episodes))
             logger.warning(
                 "Val split (%.0f%%): %d val episodes %s, %d train episodes (of %d total)",

@@ -133,7 +133,7 @@ class IPCamera(BaseCamera):
                 "payload": {
                     "stream_url": "rtsp://192.168.1.100:554/stream1",
                     "username": "admin",
-                    "password": "password123",
+                    "password": "<rtsp-password>",
                 },
             }
         }
