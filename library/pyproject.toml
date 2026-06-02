@@ -185,7 +185,6 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
-# TODO(#450): Replace with published package once physicalai is back in its own repo.
 physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "b0663da3c027c0138823b1d5b6f0955912fc9895" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
