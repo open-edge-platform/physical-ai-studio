@@ -562,8 +562,7 @@ class ACT(ExportablePolicyMixin, Policy):
             ComponentSpec(
                 type="resize",
                 image_resolution=self.config.image_size,
-                padding=True,
-                keep_aspect_ratio=True,
+                mode="letterbox",
             ),
         ]
 
