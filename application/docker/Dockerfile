@@ -112,6 +112,13 @@ WORKDIR /app/application/backend
 RUN --mount=type=cache,id=uv-base,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable --no-install-local
 
+# FIXME: Remove this block after upgrading lerobot to >=0.5.2.
+# lerobot==0.5.1 declares wandb <0.25.0 as an unconditional runtime dependency, which
+# pulls in wandb-core a Go binary with several CVEs.
+# Until the pin in application/backend/pyproject.toml is bumped to >=0.5.2,
+# we delete the binary here to keep it out of the runtime image.
+RUN find .venv -name "wandb-core" -delete
+
 # ===========================================================================
 # Stage 4a: CPU builder
 # ===========================================================================
@@ -120,6 +127,14 @@ FROM builder-base AS builder-cpu
 RUN --mount=type=cache,id=uv-cpu,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
     uv sync --frozen --no-dev --no-editable --extra cpu
+
+# Remove test-only packages that executorch ships as unconditional runtime dependencies.
+RUN uv pip uninstall --python .venv/bin/python \
+    pytest pluggy iniconfig \
+    pytest-xdist execnet \
+    pytest-json-report pytest-metadata \
+    pytest-rerunfailures \
+    expecttest hypothesis sortedcontainers kgb parameterized
 
 # ===========================================================================
 # Stage 4b: XPU builder
@@ -130,6 +145,25 @@ RUN --mount=type=cache,id=uv-xpu,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
     uv sync --frozen --no-dev --no-editable --extra xpu
 
+# Remove test-only packages that executorch ships as unconditional runtime dependencies.
+RUN uv pip uninstall --python .venv/bin/python \
+    pytest pluggy iniconfig \
+    pytest-xdist execnet \
+    pytest-json-report pytest-metadata \
+    pytest-rerunfailures \
+    expecttest hypothesis sortedcontainers kgb parameterized
+
+# Remove redundant for XPU container image Triton GPU backends (NVIDIA and AMD) 
+# that also contains non-redistributable files
+# Based on: https://docs.nvidia.com/cuda/eula/index.html
+RUN set -eu; \
+    CLEANUP_ROOT="$(.venv/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"; \
+    [ -n "$CLEANUP_ROOT" ] && [ -d "$CLEANUP_ROOT" ]; \
+    find "$CLEANUP_ROOT" -type d -path "*/triton/backends/nvidia" \
+        -exec rm -rf {} + 2>/dev/null || true; \
+    find "$CLEANUP_ROOT" -type d -path "*/triton/backends/amd" \
+        -exec rm -rf {} + 2>/dev/null || true
+
 # ===========================================================================
 # Stage 4c: CUDA builder
 # ===========================================================================
@@ -138,6 +172,14 @@ FROM builder-base AS builder-cuda
 RUN --mount=type=cache,id=uv-cuda,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
     uv sync --frozen --no-dev --no-editable --extra cuda
+
+# Remove test-only packages that executorch ships as unconditional runtime dependencies.
+RUN uv pip uninstall --python .venv/bin/python \
+    pytest pluggy iniconfig \
+    pytest-xdist execnet \
+    pytest-json-report pytest-metadata \
+    pytest-rerunfailures \
+    expecttest hypothesis sortedcontainers kgb parameterized
 
 # ===========================================================================
 # Stage 5: Runtime base — shared across all hardware targets
@@ -167,7 +209,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libgl1 \
         libglib2.0-0 \
         libusb-1.0-0 \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Strip packaging tools, uv manages the pre-built venv, pip is never used at runtime.
+RUN python -m pip uninstall -y setuptools pip \
+    && rm -rf /root/.cache/pip
 
 WORKDIR /app
 
@@ -292,7 +339,7 @@ RUN echo "deb [arch=amd64 trusted=yes] https://developer.download.nvidia.com/com
 SHELL ["/bin/sh", "-c"]
 
 # ---------------------------------------------------------------------------
-# EULA compliance cleanup — remove non-redistributable CUDA components.
+# EULA compliance cleanup — remove non-redistributable CUDA system components.
 # Keeps only the runtime shared libraries needed for inference.
 # Based on: https://docs.nvidia.com/cuda/eula/index.html
 # ---------------------------------------------------------------------------
