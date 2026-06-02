@@ -44,7 +44,7 @@ dependencies = [
     # Provides the `physicalai` CLI host and the `physicalai.cli._spec`
     # SubcommandSpec contract that the studio subcommands plug into. Must be a
     # release that ships the CLI host; older runtimes lack `physicalai.cli`.
-    "physicalai>=0.1.0",
+    "physicalai>=0.1.1",
 ]
 
 [project.optional-dependencies]
@@ -148,6 +148,7 @@ dev = [
 # ============================================================================ #
 [tool.uv]
 exclude-newer = "7 days"
+exclude-newer-package = { physicalai = false }
 index-strategy = "unsafe-best-match"
 override-dependencies = [
     # executorch>=1.1.0 requires pytest<9.0 (its own test-suite constraint),
@@ -185,7 +186,6 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "b0663da3c027c0138823b1d5b6f0955912fc9895" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },
