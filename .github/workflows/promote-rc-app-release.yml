@@ -227,8 +227,8 @@ jobs:
           FORCE: ${{ inputs.force }}
         run: |
           set -euo pipefail
-          SOURCE_IMAGE="ghcr.io/alexanderbarabanov/physical-ai-studio-${DEVICE}:${DOCKER_RC_TAG}"
-          TARGET_IMAGE="ghcr.io/alexanderbarabanov/physical-ai-studio-${DEVICE}:${DOCKER_PATCH_TAG}"
+          SOURCE_IMAGE="ghcr.io/open-edge-platform/physical-ai-studio-${DEVICE}:${DOCKER_RC_TAG}"
+          TARGET_IMAGE="ghcr.io/open-edge-platform/physical-ai-studio-${DEVICE}:${DOCKER_PATCH_TAG}"
 
           echo "Pulling ${SOURCE_IMAGE}"
           docker pull "${SOURCE_IMAGE}"
@@ -256,10 +256,10 @@ jobs:
           echo "Pushing ${TARGET_IMAGE}"
           docker push "${TARGET_IMAGE}"
 
-#      - name: Sign Docker image
-#        uses: open-edge-platform/geti-ci/actions/sign-image@7d25e47329bbfcde4ee51ab3581aea8613e245e2
-#        with:
-#          image-uri: ghcr.io/open-edge-platform/physical-ai-studio-${{ matrix.device }}:${{ needs.validate.outputs.docker_patch_tag }}
+      - name: Sign Docker image
+        uses: open-edge-platform/geti-ci/actions/sign-image@7d25e47329bbfcde4ee51ab3581aea8613e245e2
+        with:
+          image-uri: ghcr.io/open-edge-platform/physical-ai-studio-${{ matrix.device }}:${{ needs.validate.outputs.docker_patch_tag }}
 
       - name: Print summary
         env:

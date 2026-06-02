@@ -152,7 +152,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
         with:
-          images: ghcr.io/alexanderbarabanov/physical-ai-studio-${{ matrix.device }}
+          images: ghcr.io/open-edge-platform/physical-ai-studio-${{ matrix.device }}
           tags: |
             type=raw,value=${{ needs.validate.outputs.rc_version }}
 
@@ -165,10 +165,10 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           use-cache: "false" # Disable cache for RC builds (security and reproducibility)
 
-#      - name: Sign Docker image
-#        uses: open-edge-platform/geti-ci/actions/sign-image@7e686c1248b3939f8ee8e04e2612da727e379d91
-#        with:
-#          image-uri: ${{ steps.meta.outputs.tags }}
+      - name: Sign Docker image
+        uses: open-edge-platform/geti-ci/actions/sign-image@7e686c1248b3939f8ee8e04e2612da727e379d91
+        with:
+          image-uri: ${{ steps.meta.outputs.tags }}
 
       - name: Output summary
         env:
