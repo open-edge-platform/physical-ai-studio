@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../docs/assets/physical_ai.png" alt="PhysicalAI Library" width="100%">
+  <img src="https://github.com/open-edge-platform/physical-ai-studio/blob/main/docs/assets/physical_ai.png" alt="PhysicalAI Library" width="100%">
 </p>
 
 <div align="center">
@@ -221,14 +221,14 @@ The inference API is consistent across all export backends, making it easy to sw
 
 # Documentation
 
-- [Getting Started](docs/getting-started/README.md) - Installation, quickstart, first benchmark, first deployment
-- [How-To Guides](docs/how-to/README.md) - Goal-oriented guides for specific tasks
-- [Explanation](docs/explanation/README.md) - Architecture and design documentation
+- [Getting Started](https://github.com/open-edge-platform/physical-ai-studio/blob/main/library/docs/getting-started/README.md) - Installation, quickstart, first benchmark, first deployment
+- [How-To Guides](https://github.com/open-edge-platform/physical-ai-studio/blob/main/library/docs/how-to/README.md) - Goal-oriented guides for specific tasks
+- [Explanation](https://github.com/open-edge-platform/physical-ai-studio/blob/main/library/docs/explanation/README.md) - Architecture and design documentation
 
 # See Also
 
-- [Main Repository](../README.md) - Project overview
-- [Application](../application/) - GUI for data collection and training
+- [Main Repository](https://github.com/open-edge-platform/physical-ai-studio/blob/main/README.md) - Project overview
+- [Application](https://github.com/open-edge-platform/physical-ai-studio/tree/main/application) - GUI for data collection and training
 
 ## Development Type Checking
 
