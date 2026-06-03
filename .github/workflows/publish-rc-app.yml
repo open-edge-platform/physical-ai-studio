@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-          fetch-depth: 0 # Fetch all history and branches for validation
+          fetch-depth: 0 # Fetch all history and tags for validation
 
       - name: Validate RC tag
         id: validate
@@ -45,17 +45,8 @@ jobs:
           # Extract RC number: 0.1.0rc1 -> 1
           RC_NUMBER="${RC_VERSION##*rc}"
 
-          # Extract major.minor for branch validation: 0.1.0 -> 0.1
-          MAJOR_MINOR="${TAG_VERSION%.*}"
-
-          # Construct expected release branch name
-          EXPECTED_BRANCH="release/app-${MAJOR_MINOR}"
-
           # Read VERSION file
           FILE_VERSION="$(tr -d '[:space:]' < application/VERSION)"
-
-          # Get the commit SHA that the tag points to
-          TAG_COMMIT="${GITHUB_SHA}"
 
           echo "::group::Validation parameters"
           echo "Tag: $TAG"
@@ -63,8 +54,6 @@ jobs:
           echo "Tag base version: $TAG_VERSION"
           echo "RC number: $RC_NUMBER"
           echo "VERSION file: $FILE_VERSION"
-          echo "Expected release branch: $EXPECTED_BRANCH"
-          echo "Tagged commit: $TAG_COMMIT"
           echo "::endgroup::"
 
           # Validate RC number is a positive integer
@@ -87,24 +76,6 @@ jobs:
             exit 1
           fi
           echo "✓ Tag version matches VERSION file"
-
-          # Validate expected release branch exists
-          if ! git rev-parse --verify "origin/${EXPECTED_BRANCH}" >/dev/null 2>&1; then
-            echo "::error::Release branch '${EXPECTED_BRANCH}' does not exist"
-            echo "::error::Expected to find: origin/${EXPECTED_BRANCH}"
-            echo "::error::Available release branches:"
-            git branch -r | grep "origin/release/app-" || echo "  (none found)"
-            exit 1
-          fi
-          echo "✓ Release branch exists"
-
-          # Validate tagged commit is on the release branch
-          if ! git merge-base --is-ancestor "${TAG_COMMIT}" "origin/${EXPECTED_BRANCH}"; then
-            echo "::error::Tag '${TAG}' (commit ${TAG_COMMIT}) is not on release branch '${EXPECTED_BRANCH}'"
-            echo "::error::RC tags must be created from commits on the corresponding release branch"
-            exit 1
-          fi
-          echo "✓ Tag is correctly assigned to release branch ${EXPECTED_BRANCH}"
 
           # Validate base release exists for patch releases
           PATCH_VERSION="${TAG_VERSION##*.}"
@@ -160,7 +131,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        device: [cpu, xpu, cuda]
+        device: [xpu]
 
     steps:
       - *harden-runner

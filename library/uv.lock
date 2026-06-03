@@ -265,6 +265,9 @@ conflicts = [[
 exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
 exclude-newer-span = "P7D"
 
+[options.exclude-newer-package]
+physicalai = false
+
 [manifest]
 overrides = [{ name = "pytest", specifier = ">=9.0.3" }]
 
@@ -3901,8 +3904,8 @@ wheels = [
 
 [[package]]
 name = "physicalai"
-version = "0.2.0.dev0"
-source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=b0663da3c027c0138823b1d5b6f0955912fc9895#b0663da3c027c0138823b1d5b6f0955912fc9895" }
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jsonargparse", extra = ["shtab", "signatures"] },
     { name = "loguru" },
@@ -3919,6 +3922,10 @@ dependencies = [
     { name = "safetensors" },
     { name = "transformers" },
     { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/41/83/e0be9c7a3cd128aa453f9f668e289f8f77056e5cf59bef2b63fdc41d6e99/physicalai-0.1.1.tar.gz", hash = "sha256:91ceb08456337b09e71fe7a84ffdb5c5ed66e01d2e62cd1ffa106dcb64c93cd4", size = 42213171, upload-time = "2026-06-02T14:18:11.218Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d3/e8/1ad24c08d94941cdcaa4b817a7af3ccd2a30fa362a401a0a0248f136bfc7/physicalai-0.1.1-py3-none-any.whl", hash = "sha256:3d353c171afc6cb4469c11cd4550eec4ae37df92771bcd97f54bec6572b38ab4", size = 197403, upload-time = "2026-06-02T14:18:09.209Z" },
 ]
 
 [[package]]
@@ -4056,7 +4063,7 @@ requires-dist = [
     { name = "openvino-tokenizers", specifier = ">=2026.0" },
     { name = "peft", marker = "extra == 'groot'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'pi0'", specifier = ">=0.13.0,<1.0.0" },
-    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=b0663da3c027c0138823b1d5b6f0955912fc9895" },
+    { name = "physicalai", specifier = ">=0.1.1" },
     { name = "physicalai-train", extras = ["groot"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["libero"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["pi0"], marker = "extra == 'all'" },
