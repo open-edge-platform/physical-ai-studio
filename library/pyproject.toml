@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 
@@ -131,9 +131,10 @@ export = "physicalai.cli.export:register"
 physicalai-train = "physicalai.inference.adapters._register:register"
 
 [project.urls]
-Homepage = "https://github.com/open-edge-platform/physical-ai-studio"
-Documentation = "https://github.com/open-edge-platform/physical-ai-studio/blob/main/README.md"
+Homepage = "https://github.com/open-edge-platform/physical-ai-studio/tree/main/library"
+Documentation = "https://github.com/open-edge-platform/physical-ai-studio/blob/main/library/docs/index.md"
 Repository = "https://github.com/open-edge-platform/physical-ai-studio.git"
+Issues = "https://github.com/open-edge-platform/physical-ai-studio/issues"
 
 [dependency-groups]
 dev = [
