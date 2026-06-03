@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://github.com/open-edge-platform/physical-ai-studio/blob/main/docs/assets/physical_ai.png" alt="PhysicalAI Library" width="100%">
+  <img src="https://raw.githubusercontent.com/open-edge-platform/physical-ai-studio/main/docs/assets/physical_ai.png" alt="PhysicalAI Library" width="100%">
 </p>
 
 <div align="center">
