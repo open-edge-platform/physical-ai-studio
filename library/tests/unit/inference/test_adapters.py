@@ -166,6 +166,53 @@ class TestTorchAdapter:
             with pytest.raises(RuntimeError, match="Failed to load"):
                 adapter.load(model_path)
 
+    def test_load_rejects_non_policy_class(self, tmp_path: Path) -> None:
+        """Test adapter rejects manifest policy class without checkpoint-loading interface."""
+        model_path = tmp_path / "model.pt"
+        manifest_path = tmp_path / "manifest.json"
+        model_path.touch()
+        manifest = {
+            "format": "policy_package",
+            "version": "1.0",
+            "policy": {
+                "name": "dict",
+                "source": {"class_path": "builtins.dict"},
+            },
+        }
+        with manifest_path.open("w") as f:
+            json.dump(manifest, f)
+
+        adapter = TorchAdapter()
+        with pytest.raises(RuntimeError, match="does not define callable load_from_checkpoint"):
+            adapter.load(model_path)
+
+    def test_load_accepts_class_with_checkpoint_loader(self, tmp_path: Path) -> None:
+        """Test interface validation accepts classes with load_from_checkpoint."""
+        model_path = tmp_path / "model.pt"
+        manifest_path = tmp_path / "manifest.json"
+        model_path.touch()
+        manifest = {
+            "format": "policy_package",
+            "version": "1.0",
+            "policy": {
+                "name": "act",
+                "source": {"class_path": "physicalai.policies.act.ACT"},
+            },
+        }
+        with manifest_path.open("w") as f:
+            json.dump(manifest, f)
+
+        mock_model = MagicMock()
+        mock_model.return_value = torch.tensor([[1.0, 2.0]])
+        mock_model.eval.return_value = mock_model
+        mock_model.to.return_value = mock_model
+        mock_model.extra_export_args = {"torch": TorchExportParameters()}
+
+        with patch("physicalai.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
+            adapter = TorchAdapter()
+            adapter.load(model_path)
+            assert adapter.output_names == ["action"]
+
     def test_device_selection(self) -> None:
         """Test device selection for Torch adapter."""
         adapter_cpu = TorchAdapter(device="cpu")

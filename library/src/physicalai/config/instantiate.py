@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from typing import Any
 
 
-def _import_class(class_path: str) -> type:
+def import_class(class_path: str) -> type:
     """Import a class from a module path.
 
     Args:
@@ -103,7 +103,7 @@ def instantiate_obj_from_dict(
         config = config[key]
 
     if "class_path" in config:
-        cls = _import_class(config["class_path"])
+        cls = import_class(config["class_path"])
         init_args = config.get("init_args", {})
     elif target_cls is not None:
         cls = target_cls

@@ -267,6 +267,9 @@ class ExportablePolicyMixin:
         checkpoint = {}
         checkpoint["state_dict"] = self.state_dict() if hasattr(self, "state_dict") else {}
 
+        if hasattr(self, "on_save_checkpoint"):
+            self.on_save_checkpoint(checkpoint)
+
         if hasattr(self, "hparams"):
             checkpoint["epoch"] = 0
             checkpoint["global_step"] = 0

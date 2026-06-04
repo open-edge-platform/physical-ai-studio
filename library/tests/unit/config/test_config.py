@@ -14,7 +14,7 @@ import pytest
 from pydantic import BaseModel
 
 from physicalai.config import Config, from_config
-from physicalai.config.instantiate import _import_class, instantiate_obj  # noqa: PLC2701
+from physicalai.config.instantiate import import_class, instantiate_obj
 from physicalai.config.mixin import FromConfig
 
 # =============================================================================
@@ -149,7 +149,11 @@ class TestInstantiateObj:
     def test_invalid_import_raises(self):
         """Test invalid class_path raises ImportError."""
         with pytest.raises(ImportError):
-            _import_class("nonexistent.module.Class")
+            import_class("nonexistent.module.Class")
+
+    def test_import_class_imports_symbol(self):
+        """Test public import_class helper resolves a dotted class path."""
+        assert import_class("builtins.dict") is dict
 
 
 # =============================================================================

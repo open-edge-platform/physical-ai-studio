@@ -17,14 +17,16 @@ from physicalai.inference.adapters.base import RuntimeAdapter
 from physicalai.inference.adapters.registry import adapter_registry
 from physicalai.inference.manifest import Manifest
 
+from physicalai.config import import_class
 from physicalai.data.observation import Observation
 from physicalai.export.backends import TorchExportParameters
-from physicalai.policies import get_physicalai_policy_class as get_policy_class
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import numpy as np
 
-    from physicalai.policies import Policy
+    from physicalai.policies.base import Policy
 
 
 @adapter_registry.register("torch", extensions=(".ckpt", ".pt"))
@@ -60,7 +62,8 @@ class TorchAdapter(RuntimeAdapter):
         Raises:
             FileNotFoundError: If model file doesn't exist
             RuntimeError: If model loading fails
-            KeyError: If manifest is missing required entries
+            KeyError: If metadata is missing required entries
+            TypeError: If imported policy class is missing callable load_from_checkpoint()
         """
         model_path = Path(model_path)
         if not model_path.exists():
@@ -74,10 +77,20 @@ class TorchAdapter(RuntimeAdapter):
             raise KeyError(msg)
 
         try:
-            _, class_name = policy_class_path.rsplit(".", 1)
-            policy_class = get_policy_class(class_name)
+            policy_class = import_class(policy_class_path)
+            load_from_checkpoint = getattr(policy_class, "load_from_checkpoint", None)
+            if not callable(load_from_checkpoint):
+                msg = f"Imported class '{policy_class_path}' does not define callable load_from_checkpoint()."
+                raise TypeError(msg)  # noqa: TRY301
 
-            self._policy = policy_class.load_from_checkpoint(model_path, map_location="cpu").to(self.device).eval()
+            load_from_checkpoint = cast(
+                "Callable[..., Policy]",
+                load_from_checkpoint,
+            )
+
+            self._policy = (
+                load_from_checkpoint(model_path, map_location="cpu", weights_only=False).to(self.device).eval()
+            )
 
             # ``extra_export_args`` is contributed by ``ExportablePolicyMixin``
             # but ``nn.Module.__getattr__`` widens unknown attributes to

@@ -26,13 +26,17 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+import numpy as np
 import pytest
 import torch
 from lightning.pytorch.callbacks import Callback
 
 from physicalai.data import LeRobotDataModule
-from physicalai.data.lerobot import get_delta_timestamps_from_policy
+from physicalai.data.lerobot import FormatConverter, get_delta_timestamps_from_policy
 from physicalai.devices import get_available_device, get_device
+from physicalai.export import ExportBackend
+from physicalai.inference import InferenceModel
+from physicalai.inference.runners import SinglePass
 from physicalai.policies.lerobot import SUPPORTED_POLICIES, VALIDATED_EQUIVALENCE_POLICIES, LeRobotPolicy
 from physicalai.train import Trainer
 
@@ -461,6 +465,11 @@ def _assert_loss_decreases(losses: list[float], policy_name: str, label: str) ->
     )
 
 
+def _batch_to_inference_inputs(batch: dict[str, Any]) -> dict[str, Any]:
+    observation = FormatConverter.to_observation(batch)
+    return observation.to_numpy().to_dict(flatten=False)
+
+
 # ---------------------------------------------------------------------------- #
 # Tier 1: Fast-dev-run — single step, all policies, CI
 # ---------------------------------------------------------------------------- #
@@ -608,6 +617,87 @@ class TestWeightEquivalenceAfterTraining:
                 atol=5e-5,
                 msg=lambda m, n=name: f"Weight drift on {n} after {self.NUM_STEPS} steps: {m}",
             )
+
+
+# ---------------------------------------------------------------------------- #
+# Tier 2d: Torch InferenceModel equivalence after wrapper training.
+# ---------------------------------------------------------------------------- #
+class TestTorchInferenceEquivalence:
+    NUM_STEPS = 10
+    INFERENCE_SEED = 10_606
+    WRAPPER_TOL = 5e-5
+    NATIVE_TOL = 3e-3
+
+    @pytest.fixture(params=ALL_POLICIES_PARAMS)
+    def policy_name(self, request: pytest.FixtureRequest) -> str:
+        name = str(request.param)
+        _vla_cpu_skip(name)
+        return name
+
+    def test_torch_inference_matches_native_lerobot(
+        self,
+        policy_name: str,
+        aloha_dataset: Any,
+        tmp_path: Any,
+    ) -> None:
+        wrapper_losses, native_losses, wrapper, native = _run_trainer_capture_and_native_replay(
+            policy_name,
+            aloha_dataset,
+            base_seed=606,
+            max_steps=self.NUM_STEPS,
+        )
+        assert len(wrapper_losses) == self.NUM_STEPS
+        assert len(native_losses) == self.NUM_STEPS
+
+        dm = _make_datamodule(policy_name)
+        dm.setup("fit")
+        batch = next(iter(dm.train_dataloader()))
+        device = get_device()
+        batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+
+        wrapper = wrapper.to(device)
+        wrapper.eval()
+        wrapper.reset()
+        preprocessed = wrapper._preprocessor(_clone_batch(batch))
+        torch.manual_seed(self.INFERENCE_SEED)
+        with torch.no_grad():
+            lerobot_action = wrapper._postprocessor(
+                wrapper.lerobot_policy.select_action(preprocessed)
+            ).detach().cpu().numpy()
+
+        native = native.to(device)
+        native.eval()
+        native.reset()
+        native_preprocessed = wrapper._preprocessor(_clone_batch(batch))
+        torch.manual_seed(self.INFERENCE_SEED)
+        with torch.no_grad():
+            native_action = wrapper._postprocessor(native.select_action(native_preprocessed)).detach().cpu().numpy()
+
+        export_dir = tmp_path / f"{policy_name}_torch_export"
+        wrapper.reset()
+        wrapper.to_torch(export_dir)
+
+        inference_model = InferenceModel.load(
+            export_dir,
+            backend=ExportBackend.TORCH,
+            device=str(device),
+            runner=SinglePass(),
+        )
+        torch.manual_seed(self.INFERENCE_SEED)
+        inference_output = inference_model(_batch_to_inference_inputs(batch))["action"]
+
+        np.testing.assert_allclose(
+            inference_output,
+            lerobot_action,
+            rtol=self.WRAPPER_TOL,
+            atol=self.WRAPPER_TOL,
+        )
+        np.testing.assert_allclose(
+            inference_output,
+            native_action,
+            rtol=self.NATIVE_TOL,
+            atol=self.NATIVE_TOL,
+        )
 
 
 # ---------------------------------------------------------------------------- #

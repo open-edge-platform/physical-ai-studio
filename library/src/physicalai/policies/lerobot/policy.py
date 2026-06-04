@@ -22,7 +22,7 @@ import logging
 import warnings
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import IO, TYPE_CHECKING, Any, ClassVar
+from typing import IO, TYPE_CHECKING, Any, ClassVar, cast
 
 import torch
 from lightning_utilities import module_available
@@ -31,7 +31,7 @@ from physicalai.config.serializable import dataclass_to_dict, dict_to_dataclass
 from physicalai.data import Observation
 from physicalai.data.lerobot import FormatConverter
 from physicalai.data.lerobot.dataset import _LeRobotDatasetAdapter  # noqa: PLC2701
-from physicalai.export.mixin_policy import CONFIG_KEY, DATASET_STATS_KEY, POLICY_NAME_KEY
+from physicalai.export.mixin_policy import CONFIG_KEY, DATASET_STATS_KEY, POLICY_NAME_KEY, ExportablePolicyMixin
 from physicalai.policies.base import Policy
 from physicalai.policies.lerobot.mixin import LeRobotFromConfig
 
@@ -92,7 +92,7 @@ def _warn_if_unsupported_policy(policy_name: str) -> None:
     )
 
 
-class LeRobotPolicy(Policy, LeRobotFromConfig):
+class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
     """Dynamic Lightning wrapper around any registered LeRobot policy.
 
     Dispatches to the LeRobot policy identified by ``policy_name`` and
@@ -651,7 +651,9 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
         self.add_module("_lerobot_policy", policy)
 
         # Create preprocessor/postprocessor for normalization
-        self._preprocessor, self._postprocessor = make_pre_post_processors(config, dataset_stats=dataset_stats)
+        preprocessor, postprocessor = make_pre_post_processors(config, dataset_stats=dataset_stats)
+        self._preprocessor = cast("torch.nn.Module", preprocessor)
+        self._postprocessor = cast("torch.nn.Module", postprocessor)
 
         # Expose framework info
         self._framework = "lerobot"
