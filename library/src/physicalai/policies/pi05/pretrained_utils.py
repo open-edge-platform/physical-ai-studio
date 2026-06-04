@@ -194,11 +194,19 @@ def parse_config_features(hf_config: dict[str, Any]) -> dict[str, dict[str, Any]
                 continue
             shape = tuple(shape)
             dim = shape[0] if shape else 1
+            ftype = feat_info.get("type")
 
-            if "state" in feat_name.lower() or feat_name == ACTION or "action" in feat_name.lower():
+            if (
+                "state" in feat_name.lower()
+                or feat_name == ACTION
+                or "action" in feat_name.lower()
+                or ftype == "VISUAL"
+                or "image" in feat_name.lower()
+            ):
                 stats[feat_name] = {
                     "name": feat_name,
                     "shape": shape,
+                    "type": ftype,
                     "mean": [0.0] * dim,
                     "std": [1.0] * dim,
                     # Identity-equivalent quantile stats so QUANTILES mode works

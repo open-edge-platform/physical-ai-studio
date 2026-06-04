@@ -221,9 +221,10 @@ class Pi05(ExportablePolicyMixin, Policy):
                 scheduler_decay_steps=scheduler_decay_steps,
                 scheduler_decay_lr=scheduler_decay_lr,
             )
-
+        # captures raw init args
         self.save_hyperparameters(ignore=["config", "pretrained_name_or_path", "compile_model"])
-        self.hparams["config"] = self.config.to_dict()
+        # overwrites with resolved self.config values
+        self._set_hparam_keys()
 
         self.model: Pi05Model | None = None
 
@@ -234,6 +235,14 @@ class Pi05(ExportablePolicyMixin, Policy):
 
         if dataset_stats is not None:
             self._initialize_model(dataset_stats, weight_file)
+
+    def _set_hparam_keys(self) -> None:
+        """Sync top-level checkpoint hparams from the resolved policy config."""
+        for key, value in self.config.__dict__.items():
+            if key == "compile_model" or key not in self.hparams:
+                continue
+            self.hparams[key] = value
+        self.hparams["config"] = self.config.to_dict()
 
     def _initialize_model(
         self,
@@ -682,9 +691,12 @@ class Pi05(ExportablePolicyMixin, Policy):
 
         schema: list[InferenceFeature] = []
 
-        num_image_features = sum(1 for key in dataset_stats if str(FeatureType.VISUAL) in dataset_stats[key]["type"])
+        num_image_features = sum(
+            1 for feature in dataset_stats.values() if str(FeatureType.VISUAL) in str(feature.get("type", ""))
+        )
 
         for feature_id, feature in dataset_stats.items():
+            feature_type = str(feature.get("type", ""))
             if STATE in feature_id:
                 schema.append(
                     InferenceFeature(
@@ -694,8 +706,11 @@ class Pi05(ExportablePolicyMixin, Policy):
                         dtype=InferenceFeatureDtype.FLOAT32,
                     ),
                 )
-            elif str(FeatureType.VISUAL) in feature["type"]:
-                name = IMAGES if num_image_features == 1 else f"{IMAGES}.{feature['name']}"
+            elif str(FeatureType.VISUAL) in feature_type:
+                feature_name = (
+                    str(feature.get("name", feature_id)).removeprefix("observation.").removeprefix(f"{IMAGES}.")
+                )
+                name = IMAGES if num_image_features == 1 else f"{IMAGES}.{feature_name}"
                 schema.append(
                     InferenceFeature(
                         ftype=InferenceFeatureType.VISUAL,

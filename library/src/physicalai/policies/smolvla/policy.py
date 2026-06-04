@@ -227,8 +227,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         self.save_hyperparameters(
             ignore=["config", "pretrained_name_or_path", "compile_model"],
         )
-        # Also save config dict for compatibility
-        self.hparams["config"] = self.config.to_dict()
+        # overwrites with resolved self.config values
+        self._set_hparam_keys()
 
         # Model will be built in setup() or immediately if env_action_dim provided
         self.model: SmolVLAModel | None = None
@@ -242,6 +242,14 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             self._initialize_model(dataset_stats, weights_file)
 
         self._dataset_stats = dataset_stats
+
+    def _set_hparam_keys(self) -> None:
+        """Sync top-level checkpoint hparams from the resolved policy config."""
+        for key, value in self.config.__dict__.items():
+            if key == "compile_model" or key not in self.hparams:
+                continue
+            self.hparams[key] = value
+        self.hparams["config"] = self.config.to_dict()
 
     def _initialize_model(
         self,
