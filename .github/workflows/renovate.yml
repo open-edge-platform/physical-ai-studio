@@ -66,6 +66,7 @@ jobs:
             auth.docker.io:443
             centralus.data.mcr.microsoft.com:443
             eastus.data.mcr.microsoft.com:443
+            endoflife.date:443
             ghcr.io:443
             github.com:443
             hub.docker.com:443
@@ -74,6 +75,8 @@ jobs:
             pkg-containers.githubusercontent.com:443
             production.cloudflare.docker.com:443
             production.cloudfront.docker.com:443
+            download-r2.pytorch.org:443
+            download.pytorch.org:443
             files.pythonhosted.org:443
             pypi.org:443
             registry.npmjs.org:443
