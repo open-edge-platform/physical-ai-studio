@@ -33,6 +33,7 @@ jobs:
           egress-policy: block
           allowed-endpoints: >
             azure.archive.ubuntu.com:80
+            centralus.data.mcr.microsoft.com:443
             dl.google.com:443
             download.pytorch.org:443
             download-r2.pytorch.org:443
@@ -43,6 +44,7 @@ jobs:
             index.crates.io:443
             nodejs.org:443
             packages.microsoft.com:443
+            production.cloudfront.docker.com:443
             pypi.org:443
             raw.githubusercontent.com:443
             registry.npmjs.org:443

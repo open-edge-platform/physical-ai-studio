@@ -196,6 +196,7 @@ jobs:
           allowed-endpoints: >
             api.github.com:443
             auth.docker.io:443
+            centralus.data.mcr.microsoft.com:443
             check.trivy.dev:443
             deb.debian.org:80
             developer.download.nvidia.com:443
@@ -210,6 +211,7 @@ jobs:
             pkg-containers.githubusercontent.com:443
             ppa.launchpadcontent.net:443
             production.cloudflare.docker.com:443
+            production.cloudfront.docker.com:443
             raw.githubusercontent.com:443
             registry.npmjs.org:443
             registry-1.docker.io:443
@@ -246,15 +248,17 @@ jobs:
           disable-telemetry: true
           egress-policy: block
           allowed-endpoints: >
-            github.com:443
+            centralus.data.mcr.microsoft.com:443
+            files.pythonhosted.org:443
             ghcr.io:443
             ghcr1production.blob.core.windows.net:443
+            github.com:443
             mirror.gcr.io:443
             pkg-containers.githubusercontent.com:443
+            production.cloudfront.docker.com:443
+            pypi.org:443
             raw.githubusercontent.com:443
             release-assets.githubusercontent.com:443
-            pypi.org:443
-            files.pythonhosted.org:443
             releases.astral.sh:443
 
       - name: Runner cleanup
