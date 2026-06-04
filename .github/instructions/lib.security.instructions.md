@@ -45,4 +45,4 @@ description: Security constraints for `library/` (`physicalai-train` package). A
 
 16. Use `logging` not `print()`.
 
-17. Strip notebook outputs before committing — `jupyter nbconvert --clear-output`.
+17. Strip notebook outputs before committing — `jupyter nbconvert --clear-output --inplace <notebook.ipynb>`.
