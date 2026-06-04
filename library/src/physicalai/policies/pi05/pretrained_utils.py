@@ -195,6 +195,13 @@ def parse_config_features(hf_config: dict[str, Any]) -> dict[str, dict[str, Any]
             shape = tuple(shape)
             dim = shape[0] if shape else 1
             ftype = feat_info.get("type")
+            if ftype is None:
+                if "image" in feat_name.lower():
+                    ftype = "VISUAL"
+                elif "state" in feat_name.lower():
+                    ftype = "STATE"
+                elif feat_name == ACTION or "action" in feat_name.lower():
+                    ftype = "ACTION"
 
             if (
                 "state" in feat_name.lower()

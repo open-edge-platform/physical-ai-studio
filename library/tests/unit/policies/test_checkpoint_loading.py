@@ -10,9 +10,10 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
+import torch
 from physicalai.inference import InferenceModel
 from physicalai.policies.pi05 import Pi05, Pi05Config
 from physicalai.policies.smolvla import SmolVLA, SmolVLAConfig
@@ -91,6 +92,8 @@ def test_policy_export_successful(
         del self, args, kwargs
         return mock_config, None, None
 
+    assert isinstance(mock_config, config_cls)
+
     with patch.object(policy_cls, "_from_hf", _fake_from_hf):
         # Create and export policy
         policy = policy_cls(pretrained_name_or_path="stub-repo")
@@ -104,6 +107,14 @@ def test_policy_export_successful(
         export_file = export_dir / f"{policy_cls.__name__.lower()}.pt"
         assert export_file.exists(), f"Export file not found: {export_file}"
         assert export_file.stat().st_size > 0, f"Export file is empty: {export_file}"
+
+        # Verify resolved config values are persisted in checkpoint hyper_parameters
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        checkpoint = torch.load(export_file, weights_only=False)  # nosec B614
+        assert "hyper_parameters" in checkpoint, "Checkpoint missing hyper_parameters"
+        assert checkpoint["hyper_parameters"]["config"] == mock_config.to_dict(), (
+            "Checkpoint hyper_parameters['config'] does not match resolved config"
+        )
 
 
 @pytest.mark.parametrize(
@@ -141,6 +152,7 @@ def test_policy_export_import_roundtrip(
     backend: str,
 ) -> None:
     """Policy should export and re-import successfully."""
+    assert isinstance(mock_config, config_cls)
 
     def _fake_from_hf(self: Any, *args: object, **kwargs: object) -> tuple[Any, None, None]:
         del self, args, kwargs
