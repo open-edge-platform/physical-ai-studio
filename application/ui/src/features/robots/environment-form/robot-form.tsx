@@ -22,12 +22,9 @@ const RobotListItem = ({ robot, onRemove }: { robot: RobotConfiguration; onRemov
         return <li>{robot.robot_id} - unknown</li>;
     }
 
-    const leaderRobot = robotsQuery.data.find(
-        ({ id }) => robot.teleoperator.type === 'robot' && robot.teleoperator.robot_id === id
-    );
-    if (leaderRobot === undefined) {
-        return <li>Unknown leader robot</li>;
-    }
+    const teleoperator = robot.teleoperator;
+    const leaderRobot =
+        teleoperator.type === 'robot' ? robotsQuery.data.find(({ id }) => id === teleoperator.robot_id) : undefined;
 
     return (
         <li>
@@ -44,7 +41,9 @@ const RobotListItem = ({ robot, onRemove }: { robot: RobotConfiguration; onRemov
                         </Flex>
                         <Flex gap='size-200'>
                             <span>Tele operator</span>
-                            <span>{leaderRobot.name}</span>
+                            <span>
+                                {teleoperator.type === 'none' ? 'None' : (leaderRobot?.name ?? 'Unknown leader robot')}
+                            </span>
                         </Flex>
                     </Flex>
 
@@ -124,7 +123,7 @@ export const AddRobotForm = ({
             </Picker>
 
             <Picker
-                label='Robot (Leader)'
+                label='Robot (Leader, optional)'
                 width='100%'
                 selectedKey={selectedTeleoperatorRobotId}
                 onSelectionChange={(key) => {
@@ -147,13 +146,15 @@ export const AddRobotForm = ({
             <Flex gap='size-100'>
                 <Button
                     variant='secondary'
-                    isDisabled={!selectedRobotId || !selectedTeleoperatorRobotId || name.length === 0}
+                    isDisabled={!selectedRobotId || name.length === 0}
                     onPress={() => {
-                        if (selectedRobotId && selectedTeleoperatorRobotId && name.length > 0) {
+                        if (selectedRobotId && name.length > 0) {
                             onAddRobot({
                                 robot_id: selectedRobotId,
                                 name,
-                                teleoperator: { robot_id: selectedTeleoperatorRobotId, type: 'robot' },
+                                teleoperator: selectedTeleoperatorRobotId
+                                    ? { robot_id: selectedTeleoperatorRobotId, type: 'robot' }
+                                    : { type: 'none' },
                             });
                         }
                     }}
