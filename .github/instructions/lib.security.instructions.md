@@ -29,7 +29,7 @@ description: Security constraints for `library/` (`physicalai-train` package). A
 
 8. No `snapshot_download` without an explicit `allow_patterns` list. Use `allow_patterns=["*.safetensors", "*.json", "*.txt", "*.md"]`. Never use `ignore_patterns=` as a substitute — it is a denylist that silently allows new dangerous formats (`.pkl`, `.pt`, `.tar`, `.npy`, etc.).
 
-9. No floating revision in HuggingFace downloads. Try to pass a concrete commit SHA as `revision=` to `hf_hub_download()` and `snapshot_download()`. Both `revision=None` and branch names like `"main"` resolve to HEAD at download time and are equally unsafe.
+9. No floating revision in HuggingFace downloads. Pass a concrete commit SHA as `revision=` to `hf_hub_download()` and `snapshot_download()`. Both `revision=None` and branch names like `"main"` resolve to HEAD at download time and are equally unsafe.
 
 10. No `torch.load(weights_only=False)` without justification. Prefer `safetensors.torch.load_file()`. If unavoidable, add `# nosemgrep: <rule-id>  # reason: <justification>`.
 
