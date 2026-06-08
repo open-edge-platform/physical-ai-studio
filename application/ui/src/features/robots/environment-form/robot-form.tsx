@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { ActionButton, Button, Flex, Heading, Icon, Item, Picker, Text, View, Well } from '@geti-ui/ui';
+import { ActionButton, Button, Flex, Heading, Icon, Item, Picker, Text, TextField, View, Well } from '@geti-ui/ui';
 import { Add, Close } from '@geti-ui/ui/icons';
 
 import { $api } from '../../../api/client';
@@ -35,6 +35,10 @@ const RobotListItem = ({ robot, onRemove }: { robot: RobotConfiguration; onRemov
                 <Flex justifyContent='space-between' alignItems={'center'}>
                     <Flex direction='column' gap='size-100'>
                         <Flex gap='size-200'>
+                            <span>Name</span>
+                            <span>{robot.name}</span>
+                        </Flex>
+                        <Flex gap='size-200'>
                             <span>Robot</span>
                             <span>{followerRobot.name}</span>
                         </Flex>
@@ -66,6 +70,7 @@ export const AddRobotForm = ({
 }) => {
     const [selectedRobotId, setSelectedRobotId] = useState<string | null>(null);
     const [selectedTeleoperatorRobotId, setSelectedTeleoperatorRobotId] = useState<string | null>(null);
+    const [name, setName] = useState('');
 
     const { project_id } = useProjectId();
     const robotsQuery = $api.useSuspenseQuery('get', '/api/projects/{project_id}/robots', {
@@ -104,6 +109,8 @@ export const AddRobotForm = ({
                 onSelectionChange={(key) => {
                     if (key !== null && typeof key === 'string') {
                         setSelectedRobotId(key);
+                        // Default the per-environment name to the robot's own name.
+                        setName(availableRobots.find((robot) => robot.id === key)?.name ?? '');
                     }
                 }}
             >
@@ -135,13 +142,17 @@ export const AddRobotForm = ({
                 })}
             </Picker>
 
+            <TextField label='Name' width='100%' value={name} onChange={setName} />
+
             <Flex gap='size-100'>
                 <Button
                     variant='secondary'
+                    isDisabled={!selectedRobotId || !selectedTeleoperatorRobotId || name.length === 0}
                     onPress={() => {
-                        if (selectedRobotId && selectedTeleoperatorRobotId) {
+                        if (selectedRobotId && selectedTeleoperatorRobotId && name.length > 0) {
                             onAddRobot({
                                 robot_id: selectedRobotId,
+                                name,
                                 teleoperator: { robot_id: selectedTeleoperatorRobotId, type: 'robot' },
                             });
                         }

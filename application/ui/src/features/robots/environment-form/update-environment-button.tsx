@@ -27,7 +27,7 @@ export const UpdateEnvironmentButton = () => {
         }
     );
     const body = useEnvironmentFormBody(environment_id);
-    const isDisabled = body.name.length === 0 || body.robots.length === 0 || body.camera_ids.length === 0;
+    const isDisabled = body.name.length === 0 || body.robots.length === 0 || body.cameras.length === 0;
 
     return (
         <Button

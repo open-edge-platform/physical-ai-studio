@@ -4,13 +4,19 @@ import { SchemaEnvironmentInput } from '../../../api/openapi-spec';
 
 export type RobotConfiguration = {
     robot_id: string;
+    name: string;
     teleoperator: { type: 'robot'; robot_id: string } | { type: 'none' };
+};
+
+export type CameraConfiguration = {
+    camera_id: string;
+    name: string;
 };
 
 export type EnvironmentForm = {
     name: string;
     robots: Array<RobotConfiguration>;
-    camera_ids: Array<string>;
+    cameras: Array<CameraConfiguration>;
 };
 
 export type EnvironmentFormState = EnvironmentForm | null;
@@ -24,10 +30,16 @@ export const useEnvironmentFormBody = (environment_id: string) => {
     return {
         id: environment_id,
         name: environmentForm.name,
-        camera_ids: environmentForm.camera_ids,
+        cameras: environmentForm.cameras.map((camera) => {
+            return {
+                camera_id: camera.camera_id,
+                name: camera.name,
+            };
+        }),
         robots: environmentForm.robots.map((robot) => {
             return {
                 robot_id: robot.robot_id,
+                name: robot.name,
                 tele_operator:
                     robot.teleoperator.type === 'robot'
                         ? {
@@ -51,7 +63,7 @@ export const EnvironmentFormProvider = ({
         environment ?? {
             name: '',
             robots: [],
-            camera_ids: [],
+            cameras: [],
         }
     );
 

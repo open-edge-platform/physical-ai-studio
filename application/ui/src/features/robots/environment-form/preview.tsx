@@ -52,14 +52,14 @@ const buildDockviewPanels = (api: DockviewReadyEvent['api'], environment: Enviro
 
     const panels = new Set<string>();
 
-    environment.camera_ids.forEach((camera_id, idx) => {
+    environment.cameras.forEach(({ camera_id, name }, idx) => {
         panels.add(camera_id);
         if (!api.panels.some((panel) => panel.id === camera_id)) {
             api.addPanel({
                 id: camera_id,
                 component: 'camera',
                 params: {
-                    title: `Camera ${idx}`,
+                    title: name || `Camera ${idx}`,
                     camera_id,
                 },
                 position: {
@@ -147,7 +147,7 @@ export const Preview = () => {
     const environment = useEnvironmentForm();
 
     const hasRobots = environment.robots.length > 0;
-    const hasCameras = environment.camera_ids.length > 0;
+    const hasCameras = environment.cameras.length > 0;
 
     if (hasRobots || hasCameras) {
         return (
