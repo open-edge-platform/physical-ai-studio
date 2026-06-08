@@ -25,7 +25,7 @@ description: Security constraints for `library/` (`physicalai-train` package). A
 
 6. Avoid `trust_remote_code=True` in `from_pretrained`, `AutoTokenizer`, and `AutoModel` calls. It is only acceptable when all three conditions hold: (1) the repo ID is a hardcoded first-party constant (not user-supplied or read from remote JSON), (2) the need is documented with a comment explaining which model and why custom code is required, and (3) the call site uses a pinned `revision=` SHA.
 
-7. No unbounded recursion in config walkers. Every recursive config walker (e.g., `_instantiate_recursive` in `config/instantiate.py`) must enforce an explicit depth limit via a `depth: int` parameter with a hard cap (`MAX_INSTANTIATE_DEPTH = 10`). Do not rely on `sys.getrecursionlimit()`. Required pattern: `if depth > MAX_INSTANTIATE_DEPTH: raise ValueError(f"Config nesting exceeds maximum depth {MAX_INSTANTIATE_DEPTH}")`.
+7. No unbounded recursion in config walkers. Every recursive config walker (e.g., `_instantiate_recursive` in `config/instantiate.py`) must enforce an explicit depth limit via a `depth: int` parameter with a hard cap (`MAX_INSTANTIATE_DEPTH = 32`). Do not rely on `sys.getrecursionlimit()`. Required pattern: `if depth > MAX_INSTANTIATE_DEPTH: raise ValueError(f"Config nesting exceeds maximum depth {MAX_INSTANTIATE_DEPTH}")`.
 
 8. No `snapshot_download` without an explicit `allow_patterns` list. Use `allow_patterns=["*.safetensors", "*.json", "*.txt", "*.md"]`. Never use `ignore_patterns=` as a substitute — it is a denylist that silently allows new dangerous formats (`.pkl`, `.pt`, `.tar`, `.npy`, etc.).
 
@@ -39,7 +39,7 @@ description: Security constraints for `library/` (`physicalai-train` package). A
 
 13. No `yaml.load()`, `yaml.full_load()`, or `yaml.unsafe_load()`. Use `yaml.safe_load()` exclusively.
 
-14. No `os.system` or `subprocess` with `shell=True`. Use `subprocess.run()` with a list argument and request human review.
+14. No `os.system`, no `subprocess` with `shell=True`, no command strings built by concatenating variables - all enable shell injection. Use `subprocess.run(["cmd", arg1, arg2], ...)` with a list argument. Flag as a security finding: any `os.system()` call; any `subprocess.run/Popen/call` with `shell=True`; any `subprocess` call where the first argument is a string instead of a list.
 
 15. Prefer `.safetensors` over `.ckpt`/`.pt` for weights.
 
