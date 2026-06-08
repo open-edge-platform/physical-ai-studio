@@ -77,14 +77,14 @@ const CameraFormFields = () => {
             value: 'genicam' as const,
             icon: <CameraIcon type='genicam' width={'24px'} />,
             content: <GenicamFormFields />,
-            visible: hasDriver('genicam'),
+            visible: false, // Disable Genicam until driver is implemented
         },
         {
             label: 'IP Camera',
             value: 'ipcam' as const,
             icon: <CameraIcon type='ipcam' width={'24px'} />,
             content: <IpCamFormFields />,
-            visible: true, // Always allow IP cameras
+            visible: false, // Disable IP cameras until tested
         },
     ].filter((item) => item.visible);
 

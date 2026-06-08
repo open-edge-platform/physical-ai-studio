@@ -72,11 +72,11 @@ class Scheduler:
                 logger.debug(f"Joining process: {process.name}")
                 process.join(timeout=10)
                 if process.is_alive():
-                    logger.warning("Force terminating process: %s", process.name)
+                    logger.warning(f"Force terminating process: {process.name}")
                     process.terminate()
                     process.join(timeout=2)
                     if process.is_alive():
-                        logger.error("Force killing process %s", process.name)
+                        logger.error(f"Force killing process {process.name}")
                         process.kill()
 
         logger.info("All workers shut down gracefully")

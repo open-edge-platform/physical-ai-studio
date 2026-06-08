@@ -46,6 +46,24 @@ class TestTrainer:
         assert EarlyStopping in callback_types
         assert PolicyDatasetInteraction in callback_types
 
+    def test_callback_specs_from_config_are_instantiated(self):
+        """Verify callback dict specs are instantiated before Lightning receives them."""
+        from lightning.pytorch.callbacks import EarlyStopping
+
+        trainer = Trainer(
+            accelerator="cpu",
+            logger=False,
+            enable_checkpointing=False,
+            callbacks=[
+                {
+                    "class_path": "lightning.pytorch.callbacks.EarlyStopping",
+                    "init_args": {"monitor": "val/loss", "patience": 2},
+                }
+            ],
+        )
+
+        assert any(isinstance(cb, EarlyStopping) for cb in trainer.callbacks)
+
 
 class TestAutoScaleBatchSize:
     """Tests for the auto_scale_batch_size feature."""

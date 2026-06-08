@@ -1,11 +1,12 @@
 import shutil
+from datetime import datetime
 from pathlib import Path
 from uuid import UUID
 
 from db import get_async_db_session_ctx
 from exceptions import ResourceNotFoundError, ResourceType
 from repositories import ModelRepository, SnapshotRepository
-from schemas import Model
+from schemas.model import BackendExportDetail, Model
 
 
 class ModelService:
@@ -57,3 +58,32 @@ class ModelService:
         async with get_async_db_session_ctx() as session:
             repo = ModelRepository(session)
             return await repo.get_project_models(project_id)
+
+    @staticmethod
+    def get_backend_details(model: Model) -> list[BackendExportDetail]:
+        """Compute per-backend export details from the filesystem."""
+        exports_dir = Path(model.path) / "exports"
+        if not exports_dir.is_dir():
+            return []
+
+        details: list[BackendExportDetail] = []
+        for backend_dir in sorted(exports_dir.iterdir()):
+            if not backend_dir.is_dir():
+                continue
+            files = [f for f in backend_dir.rglob("*") if f.is_file()]
+
+            # Backend exports folder may be empty if export failed
+            if len(files) == 0:
+                continue
+
+            total_size = sum(f.stat().st_size for f in files)
+            exported_at = datetime.fromtimestamp(backend_dir.stat().st_mtime)
+            details.append(
+                BackendExportDetail(
+                    type=backend_dir.name,
+                    size_bytes=total_size,
+                    file_count=len(files),
+                    exported_at=exported_at,
+                )
+            )
+        return details

@@ -14,6 +14,7 @@ import torch
 from lightning.pytorch.callbacks import BatchSizeFinder
 from lightning.pytorch.strategies import DDPStrategy
 
+from physicalai.config.instantiate import instantiate_obj_from_dict
 from physicalai.train.callbacks import PolicyDatasetInteraction
 
 
@@ -161,7 +162,24 @@ class Trainer(lightning.Trainer):
                 default_hp_metric=False,
             )
 
-        callbacks = [PolicyDatasetInteraction()] if callbacks is None else [*callbacks, PolicyDatasetInteraction()]
+        user_callbacks: list[Any]
+        if callbacks is None:
+            user_callbacks = []
+        elif isinstance(callbacks, (list, tuple)):
+            user_callbacks = list(callbacks)
+        else:
+            user_callbacks = [callbacks]
+
+        # jsonargparse does not always instantiate callback list entries when the
+        # parameter type is broad (list | Any). Support callback specs in YAML.
+        normalized_callbacks: list[Any] = []
+        for callback in user_callbacks:
+            if isinstance(callback, dict) and "class_path" in callback:
+                normalized_callbacks.append(instantiate_obj_from_dict(callback))
+            else:
+                normalized_callbacks.append(callback)
+
+        callbacks = [*normalized_callbacks, PolicyDatasetInteraction()]
 
         if auto_scale_batch_size:
             callbacks.append(BatchSizeFinder(mode="power"))

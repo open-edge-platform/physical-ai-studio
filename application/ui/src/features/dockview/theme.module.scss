@@ -1,0 +1,69 @@
+// Physical AI Studio - DockView Theme
+// Integrates DockView with our Spectrum-based design system
+// This theme provides a consistent, compact layout with grayscale styling
+
+.dockviewThemePhysicalAi {
+    border: 1px solid var(--spectrum-global-color-gray-300);
+
+    // === Layout & Spacing ===
+    --dv-border-radius: var(--spectrum-alias-border-radius-regular);
+    --dv-tab-margin: 0;
+    --dv-tabs-and-actions-container-height: 40px;
+    --dv-tabs-and-actions-container-font-size: 13px;
+    --dv-tab-font-size: inherit;
+
+    // === Background Colors ===
+    --dv-group-view-background-color: var(--spectrum-global-color-gray-50);
+    --dv-tabs-and-actions-container-background-color: var(--spectrum-global-color-gray-100);
+
+    // === Active Group - Visible Panel (Active Tab) ===
+    --dv-activegroup-visiblepanel-tab-background-color: var(--spectrum-global-color-gray-200);
+    --dv-activegroup-visiblepanel-tab-color: var(--spectrum-global-color-gray-900);
+
+    // === Active Group - Hidden Panel (Inactive Tabs in Active Group) ===
+    --dv-activegroup-hiddenpanel-tab-background-color: var(--spectrum-global-color-gray-100);
+    --dv-activegroup-hiddenpanel-tab-color: var(--spectrum-global-color-gray-600);
+
+    // === Inactive Group - Visible Panel (Active Tab in Inactive Group) ===
+    // Match the focused group's style so visible tabs are always prominent
+    --dv-inactivegroup-visiblepanel-tab-background-color: var(--spectrum-global-color-gray-200);
+    --dv-inactivegroup-visiblepanel-tab-color: var(--spectrum-global-color-gray-900);
+
+    // === Inactive Group - Hidden Panel (Inactive Tabs in Inactive Group) ===
+    --dv-inactivegroup-hiddenpanel-tab-background-color: var(--spectrum-global-color-gray-75);
+    --dv-inactivegroup-hiddenpanel-tab-color: var(--spectrum-global-color-gray-500);
+
+    // === Separators & Borders ===
+    --dv-tab-divider-color: var(--spectrum-global-color-gray-100);
+    --dv-separator-border: var(--spectrum-global-color-gray-300);
+    --dv-paneview-header-border-color: var(--spectrum-global-color-gray-400);
+
+    // === Sash (Resizable Splitters) ===
+    // Transparent by default, becomes visible on hover for better UX
+    --dv-sash-color: transparent;
+    --dv-active-sash-color: var(--spectrum-global-color-gray-400);
+    --dv-active-sash-transition-duration: 0.15s;
+    --dv-active-sash-transition-delay: 0.3s;
+
+    // === Drag & Drop ===
+    // Uses energy-blue tint to indicate valid drop zones
+    --dv-drag-over-background-color: rgba(0, 199, 253, 0.15);
+    --dv-drag-over-border-color: transparent;
+
+    // === Interactive Elements ===
+    --dv-icon-hover-background-color: var(--spectrum-global-color-gray-200);
+    --dv-paneview-active-outline-color: var(--energy-blue);
+
+    // === Scrollbar ===
+    --dv-scrollbar-background-color: rgba(255, 255, 255, 0.15);
+    --dv-tabs-container-scrollbar-color: var(--spectrum-global-color-gray-500);
+
+    // === Effects ===
+    --dv-floating-box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3), 0 4px 8px rgba(0, 0, 0, 0.2);
+    --dv-overlay-z-index: 999;
+}
+
+// Overwrite z-index of separator so that it doesn't get placed on top of dialogs
+:global(.dv-separator-border) :global(.dv-view:not(:first-child):before) {
+    z-index: 2 !important;
+}

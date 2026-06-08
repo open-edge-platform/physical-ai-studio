@@ -21,13 +21,10 @@ All commands should be run from the `application/docker/` directory.
 # 1. Create your local environment file
 cp .env.example .env
 
-# 2. (Optional) Set your hardware profile in .env
-#    Edit COMPOSE_PROFILES to: cpu (default), xpu, or cuda
+# 2. Auto-detect host device GIDs for non-Debian systems and setup training hardware
+./setup-devices.sh --xpu # or use --cuda, --cpu
 
-# 3. (Optional) Auto-detect host device GIDs for non-Debian systems
-./setup-devices.sh
-
-# 4. Start Physical AI Studio
+# 3. Start Physical AI Studio
 docker compose up
 ```
 

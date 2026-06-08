@@ -6,7 +6,6 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from schemas.base import BaseIDModel
 
-# Supported camera drivers (subset of FrameSourceFactory.MediaSource)
 SupportedCameraDriver = Literal[
     "usb_camera",
     "ipcam",
@@ -23,7 +22,7 @@ class BaseCamera(BaseIDModel, ABC):
     updated_at: datetime | None = Field(None)
 
     name: str = Field(..., description="Human-readable camera name")
-    fingerprint: str = Field(..., description="Camera fingerprint/source identifier for FrameSourceFactory")
+    fingerprint: str = Field(..., description="Camera fingerprint/source identifier")
     hardware_name: str | None = Field(..., description="Camera hardware name from discovery")
 
 
@@ -134,7 +133,7 @@ class IPCamera(BaseCamera):
                 "payload": {
                     "stream_url": "rtsp://192.168.1.100:554/stream1",
                     "username": "admin",
-                    "password": "password123",
+                    "password": "<rtsp-password>",
                 },
             }
         }

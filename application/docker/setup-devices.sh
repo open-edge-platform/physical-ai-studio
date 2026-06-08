@@ -14,7 +14,11 @@
 # Usage:
 #   ./application/docker/setup-devices.sh          # auto-detect & write
 #   ./application/docker/setup-devices.sh --check   # check only, no writes
+#   ./application/docker/setup-devices.sh --cpu    # write COMPOSE_PROFILES=cpu
+#   ./application/docker/setup-devices.sh --xpu     # write COMPOSE_PROFILES=xpu
+#   ./application/docker/setup-devices.sh --cuda    # write COMPOSE_PROFILES=cuda
 # ---------------------------------------------------------------------------
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,10 +39,79 @@ info() { printf "${GREEN}[ok]${RESET}    %s\n" "$*"; }
 warn() { printf "${YELLOW}[warn]${RESET}  %s\n" "$*"; }
 error() { printf "${RED}[error]${RESET} %s\n" "$*"; }
 
+usage() {
+    cat <<EOF
+Usage: $0 [--check] [--cpu|--xpu|--cuda]
+
+Options:
+  --check   Check only, do not write .env
+  --cpu     Configure Docker Compose CPU profile
+  --xpu     Configure Docker Compose Intel XPU profile
+  --cuda    Configure Docker Compose NVIDIA CUDA profile
+  -h, --help
+            Show this help
+
+If no profile flag is provided, the existing COMPOSE_PROFILES value is kept.
+If .env does not exist or COMPOSE_PROFILES is unset, the profile defaults to cpu.
+EOF
+}
+
 CHECK_ONLY=false
-if [[ "${1:-}" == "--check" ]]; then
-    CHECK_ONLY=true
+COMPOSE_PROFILE=""
+profile_flags=0
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --check)
+        CHECK_ONLY=true
+        ;;
+    --cpu)
+        COMPOSE_PROFILE="cpu"
+        profile_flags=$((profile_flags + 1))
+        ;;
+    --xpu)
+        COMPOSE_PROFILE="xpu"
+        profile_flags=$((profile_flags + 1))
+        ;;
+    --cuda)
+        COMPOSE_PROFILE="cuda"
+        profile_flags=$((profile_flags + 1))
+        ;;
+    -h | --help)
+        usage
+        exit 0
+        ;;
+    *)
+        error "Unknown option: $1"
+        usage
+        exit 1
+        ;;
+    esac
+    shift
+done
+
+if [[ "$profile_flags" -gt 1 ]]; then
+    error "Choose only one hardware profile: --cpu, --xpu, or --cuda"
+    usage
+    exit 1
 fi
+
+if [[ -z "$COMPOSE_PROFILE" && -f "$ENV_FILE" ]]; then
+    COMPOSE_PROFILE=$(grep -E '^COMPOSE_PROFILES=' "$ENV_FILE" 2>/dev/null | tail -n 1 | cut -d= -f2- || true)
+fi
+
+if [[ -z "$COMPOSE_PROFILE" ]]; then
+    COMPOSE_PROFILE="cpu"
+fi
+
+case "$COMPOSE_PROFILE" in
+cpu | xpu | cuda) ;;
+*)
+    error "Invalid COMPOSE_PROFILES value: $COMPOSE_PROFILE"
+    error "Use one of: cpu, xpu, cuda"
+    exit 1
+    ;;
+esac
 
 # ---------------------------------------------------------------------------
 # Resolve a device group GID from one or more candidate group names.
@@ -119,6 +192,7 @@ fi
 # Summarise what was detected
 # ---------------------------------------------------------------------------
 printf "${BOLD}Detected configuration:${RESET}\n"
+echo "  COMPOSE_PROFILES=$COMPOSE_PROFILE"
 [[ -n "$VIDEO_GID" ]] && echo "  VIDEO_GID=$VIDEO_GID        # $VIDEO_GID_NAME"
 [[ -n "$DIALOUT_GID" ]] && echo "  DIALOUT_GID=$DIALOUT_GID      # $DIALOUT_GID_NAME"
 [[ -n "$PLUGDEV_GID" ]] && echo "  PLUGDEV_GID=$PLUGDEV_GID       # $PLUGDEV_GID_NAME"
@@ -189,6 +263,7 @@ fi
 
 set_env_var APP_UID "$APP_UID"
 set_env_var APP_GID "$APP_GID"
+set_env_var COMPOSE_PROFILES "$COMPOSE_PROFILE"
 set_env_var VIDEO_GID "$VIDEO_GID"
 set_env_var DIALOUT_GID "$DIALOUT_GID"
 set_env_var PLUGDEV_GID "$PLUGDEV_GID"

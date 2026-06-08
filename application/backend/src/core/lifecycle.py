@@ -26,6 +26,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     settings = get_settings()
     app.state.settings = settings
 
+    # Camera fingerprints locked by an active recording/teleop session.
+    # Mutated by the robot_control WS handler; checked by camera CRUD and
+    # camera-stream WS endpoints. Keyed by fingerprint (not ProjectCamera ID)
+    # so aliased project rows for the same physical device share one lock.
+    app.state.recording_locked_camera_fingerprints = set()
+
     app.state.camera_registry = CameraWorkerRegistry(
         max_workers=10,
         shutdown_timeout_s=10.0,
@@ -35,7 +41,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         shutdown_timeout_s=10.0,
     )
 
-    logger.info("Starting %s application...", settings.app_name)
+    logger.info(f"Starting {settings.app_name} application...")
     ensure_spawn_start_method()
     app_scheduler = Scheduler()
     app_scheduler.start_workers()
@@ -55,7 +61,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     yield
 
     # Shutdown
-    logger.info("Shutting down %s application...", settings.app_name)
+    logger.info(f"Shutting down {settings.app_name} application...")
 
     camera_registry: CameraWorkerRegistry = app.state.camera_registry
     await camera_registry.shutdown_all()

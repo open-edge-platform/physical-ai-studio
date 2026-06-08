@@ -15,6 +15,7 @@ import {
     SchemaEpisode,
     SchemaEpisodeVideo,
 } from '../../../api/openapi-spec';
+import { physicalAiTheme } from '../../dockview';
 import { EpisodeVideoCell } from './episode-video-cell.component';
 import { RobotCell } from './robot-cell.component';
 
@@ -121,7 +122,7 @@ export const EpisodeDockView = ({ episode, dataset, environment }: EpisodeViewer
         <View flex>
             <View backgroundColor={'gray-200'} height={'100%'} maxHeight='100vh' position={'relative'}>
                 <Suspense fallback={<CenteredLoading />}>
-                    <DockviewReact onReady={onReady} components={components} />
+                    <DockviewReact onReady={onReady} components={components} theme={physicalAiTheme} />
                 </Suspense>
             </View>
         </View>

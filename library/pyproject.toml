@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 
@@ -41,7 +41,10 @@ dependencies = [
     "onnxscript",
     "jsonargparse[signatures]>=4.27.0", # This could be extra
     "pydantic",                         # This could be extra
-    "physicalai",
+    # Provides the `physicalai` CLI host and the `physicalai.cli._spec`
+    # SubcommandSpec contract that the studio subcommands plug into. Must be a
+    # release that ships the CLI host; older runtimes lack `physicalai.cli`.
+    "physicalai>=0.1.1",
 ]
 
 [project.optional-dependencies]
@@ -112,20 +115,26 @@ all = [
     "physicalai-train[smolvla]",
 ]
 
-[project.scripts]
-physicalai = "physicalai.cli.cli:cli"
-
 # Contribute Torch and ExecuTorch as inference backends to the registry
 # in `physicalai.inference.adapters`.  The target callable performs only
 # lightweight lazy registration — torch/executorch are imported only on
 # first use.
+[project.entry-points."physicalai.cli.subcommands"]
+fit = "physicalai.cli.fit:register"
+validate = "physicalai.cli.validate:register"
+test = "physicalai.cli.test:register"
+predict = "physicalai.cli.predict:register"
+benchmark = "physicalai.cli.benchmark:register"
+export = "physicalai.cli.export:register"
+
 [project.entry-points."physicalai.inference.adapters"]
 physicalai-train = "physicalai.inference.adapters._register:register"
 
 [project.urls]
-Homepage = "https://github.com/open-edge-platform/physical-ai-studio"
-Documentation = "https://github.com/open-edge-platform/physical-ai-studio/blob/main/README.md"
+Homepage = "https://github.com/open-edge-platform/physical-ai-studio/tree/main/library"
+Documentation = "https://github.com/open-edge-platform/physical-ai-studio/blob/main/library/docs/index.md"
 Repository = "https://github.com/open-edge-platform/physical-ai-studio.git"
+Issues = "https://github.com/open-edge-platform/physical-ai-studio/issues"
 
 [dependency-groups]
 dev = [
@@ -140,7 +149,14 @@ dev = [
 # ============================================================================ #
 [tool.uv]
 exclude-newer = "7 days"
+exclude-newer-package = { physicalai = false }
 index-strategy = "unsafe-best-match"
+override-dependencies = [
+    # executorch>=1.1.0 requires pytest<9.0 (its own test-suite constraint),
+    # Safe to override because executorch
+    # production code does not import pytest at runtime.
+    "pytest>=9.0.3",
+]
 
 
 conflicts = [
@@ -171,8 +187,6 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
-# TODO(#450): Replace with published package once physicalai is back in its own repo.
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", branch = "main" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },

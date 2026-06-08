@@ -42,6 +42,13 @@ class _ExportWrapper(ExportablePolicyMixin):
 
     def __init__(self, model: torch.nn.Module) -> None:
         self.model = model
+        # Identity preprocessor: returns the sample dict unchanged.
+        self._preprocessor = torch.nn.Identity()
+
+    @property
+    def sample_input(self) -> dict[str, torch.Tensor] | None:
+        model_sample = getattr(self.model, "sample_input", None)
+        return model_sample if isinstance(model_sample, dict) else None
 
     @staticmethod
     def get_supported_export_backends() -> list[str | ExportBackend]:

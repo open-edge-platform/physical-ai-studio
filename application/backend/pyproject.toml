@@ -2,7 +2,7 @@
 name = "physical-ai-studio"
 version = "1.0.0"
 description = "Physical AI Studio server"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.14"
 
 dependencies = [
   "opencv-python",
@@ -10,7 +10,7 @@ dependencies = [
   'harvesters; sys_platform != "darwin"',
   "fastapi[standard]",
   "physicalai-train[pi0,smolvla]",
-  "physicalai[so101,trossen]",
+  "physicalai[robots, capture]",
   "lerobot[feetech]==0.5.1",
   "numpy",
   "websockets",
@@ -23,7 +23,6 @@ dependencies = [
   "aiosqlite~=0.21",
   "alembic>=1.16.5",
   "click>=8.3.0",
-  "FrameSource>=0.2.2",
   "loguru>=0.7.3",
   "greenlet>=3.2.4",
   "tenacity>=9.1.2",
@@ -86,10 +85,7 @@ url = "https://download.pytorch.org/whl/xpu"
 explicit = false
 
 [tool.uv.sources]
-FrameSource = { git = "https://github.com/ArendJanKramer/FrameSource.git", rev = "cb9a20895669ba7e413f245b8d620dbcdf550d0a" }
 physicalai-train = { path = "../../library", editable = true }
-# TODO(#450): Replace with published package once physicalai is back in its own repo.
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", branch = "main" }
 # Keep torchao on PyPI for all extras.
 # The XPU index publishes `torchao` local-version wheels (e.g. `+xpu`) that can
 # be selected via unsafe-best-match even for non-XPU installs (like `--extra cuda`),
@@ -126,6 +122,7 @@ all = [
 [tool.uv]
 default-groups = ["all"]
 exclude-newer = "7 days"
+exclude-newer-package = { physicalai = false }
 # The pytorch-xpu index is non-explicit (explicit = false) because
 # transitive deps like pytorch-triton-xpu only exist on the XPU index.
 # unsafe-best-match is required because PyTorch indexes can host stale
@@ -135,6 +132,12 @@ exclude-newer = "7 days"
 # common packages (e.g. markupsafe cp314-only, see uv #9647), PyPI
 # is listed as a named index with higher priority above.
 index-strategy = "unsafe-best-match"
+override-dependencies = [
+    # executorch>=1.1.0 requires pytest<9.0 (its own test-suite constraint),
+    # Safe to override because executorch
+    # production code does not import pytest at runtime.
+    "pytest>=9.0.3",
+]
 conflicts = [
     [
         { extra = "cpu" },
@@ -189,12 +192,12 @@ max-args = 7
 # MYPY CONFIGURATION                                                           #
 # ============================================================================ #
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 ignore_missing_imports = true
 show_error_codes = true
 
 [tool.pyrefly]
-python-version = "3.12"
+python-version = "3.13"
 search-path = ["src"]
 project-includes = ["src"]
 project-excludes = [

@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal
 
 import torch
 import torch.nn.functional as F  # noqa: N812
@@ -18,8 +18,7 @@ from torch import Tensor, nn
 from transformers.cache_utils import DynamicCache
 
 from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
-from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, FeatureType
-from physicalai.export import ExportableModelMixin
+from physicalai.data.observation import ACTION, IMAGES
 from physicalai.policies.base import Model
 
 from .pi_gemma import (
@@ -537,7 +536,7 @@ class PaliGemmaWithExpertModel(nn.Module):
         return [prefix_output, suffix_output], prefix_past_key_values
 
 
-class Pi05Model(ExportableModelMixin, Model):
+class Pi05Model(Model):
     """Core Pi05 PyTorch model for flow matching VLA.
 
     This is the nn.Module that contains the actual model logic,
@@ -655,65 +654,6 @@ class Pi05Model(ExportableModelMixin, Model):
     def set_dataset_stats(self, dataset_stats: dict) -> None:
         """Update dataset statistics used for normalization."""
         self._dataset_stats = dataset_stats
-
-    @property
-    def sample_input(self) -> dict[str, torch.Tensor | str]:
-        """Generate a sample input dictionary for the model with random tensors.
-
-        This method creates a dictionary containing sample input tensors that match the expected
-        input format of the model. The tensors are randomly initialized and have shapes derived
-        from the model's configuration.
-
-        Returns:
-            dict[str, torch.Tensor | dict[str, torch.Tensor]]: A dictionary with two keys
-                - 'state': A tensor representing the robot state with shape (1, *state_feature.shape).
-                - 'images': Either a single tensor or a dictionary of tensors representing visual inputs,
-                    depending on the number of image features configured.
-
-        Note:
-            The batch dimension (first dimension) is set to 1 for all tensors.
-            The tensors are created on the same device as the model's parameters.
-        """
-        device = next(self.paligemma_with_expert.parameters()).device
-
-        sample_input = {}
-
-        num_image_features = sum(
-            1 for key in self._dataset_stats if str(FeatureType.VISUAL) in self._dataset_stats[key]["type"]
-        )
-
-        for feature_id in self._dataset_stats:
-            if STATE in feature_id:
-                state_feature = self._dataset_stats[feature_id]
-                sample_input[STATE] = torch.randn(1, *cast("tuple", state_feature["shape"]), device=device)
-            elif str(FeatureType.VISUAL) in self._dataset_stats[feature_id]["type"]:
-                image_feature = self._dataset_stats[feature_id]
-                if num_image_features == 1:
-                    sample_input[IMAGES] = torch.randn(1, *cast("tuple", image_feature["shape"]), device=device)
-                else:
-                    sample_input[IMAGES + "." + str(image_feature["name"])] = torch.randn(
-                        1,
-                        *cast("tuple", image_feature["shape"]),
-                        device=device,
-                    )
-
-        sample_input[TASK] = "sample_task"
-
-        if self.enable_rtc:
-            max_action_dim = self._max_action_dim
-            chunk_size = self._chunk_size
-            sample_input["prev_chunk_left_over"] = torch.randn(
-                1,
-                chunk_size,
-                max_action_dim,
-                device=device,
-                dtype=torch.float32,
-            )
-            sample_input["inference_delay"] = torch.tensor(8, device=device, dtype=torch.long)
-            sample_input["max_guidance_weight"] = torch.tensor(10.0, device=device, dtype=torch.float32)
-            sample_input["execution_horizon"] = torch.tensor(10, device=device, dtype=torch.long)
-
-        return sample_input
 
     @property
     def reward_delta_indices(self) -> None:

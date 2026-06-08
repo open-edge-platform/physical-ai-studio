@@ -8,10 +8,18 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from api.dependencies import get_system_service
-from schemas.hardware import DeviceInfo
+from schemas.hardware import DeviceInfo, InferenceDeviceInfo
 from services.system_service import SystemService
 
 system_router = APIRouter(prefix="/api/system", tags=["System"])
+
+
+@system_router.get("/devices/inference")
+async def get_inference_devices(
+    system_service: Annotated[SystemService, Depends(get_system_service)],
+) -> list[InferenceDeviceInfo]:
+    """Returns the list of available inference devices for OpenVINO and Torch."""
+    return system_service.get_inference_devices()
 
 
 @system_router.get("/devices/training")

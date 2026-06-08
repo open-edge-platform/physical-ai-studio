@@ -6,9 +6,11 @@
 from typing import Any, cast
 
 import torch
+from physicalai.inference.data import InferenceFeature, InferenceFeatureDtype, InferenceFeatureType
 from physicalai.inference.manifest import ComponentSpec
 
 from physicalai.data import Dataset, Feature, FeatureType, NormalizationParameters, Observation
+from physicalai.data.observation import ACTION, IMAGES, STATE
 from physicalai.export.backends import (
     ExecuTorchExportParameters,
     ExportParameters,
@@ -96,7 +98,7 @@ class ACT(ExportablePolicyMixin, Policy):
         vision_backbone: str = "resnet18",
         pretrained_backbone_weights: str | None = "ResNet18_Weights.IMAGENET1K_V1",
         replace_final_stride_with_dilation: bool = False,
-        max_image_size: int = 768,
+        image_size: tuple[int, int] = (384, 384),
         pre_norm: bool = False,
         dim_model: int = 512,
         n_heads: int = 8,
@@ -133,7 +135,7 @@ class ACT(ExportablePolicyMixin, Policy):
             vision_backbone=vision_backbone,
             pretrained_backbone_weights=pretrained_backbone_weights,
             replace_final_stride_with_dilation=replace_final_stride_with_dilation,
-            max_image_size=max_image_size,
+            image_size=image_size,
             pre_norm=pre_norm,
             dim_model=dim_model,
             n_heads=n_heads,
@@ -161,7 +163,7 @@ class ACT(ExportablePolicyMixin, Policy):
         # Model will be built in setup() or immediately if env_action_dim provided
         self.model: ACTModel | None = None
 
-        self._preprocessor = ACTPreprocessor(image_resolution=(self.config.max_image_size, self.config.max_image_size))
+        self._preprocessor = ACTPreprocessor(image_resolution=self.config.image_size)
         self._postprocessor = None
 
         # Eager initialization if dataset_stats is provided
@@ -453,6 +455,94 @@ class ACT(ExportablePolicyMixin, Policy):
         ]
 
     @property
+    def inputs_schema(self) -> list[InferenceFeature] | None:
+        """Describe the policy's expected model inputs for export tracing.
+
+        Returns:
+            A list with a ``state`` feature and one or more image features keyed by
+            ``images`` (single camera) or ``images.<name>`` (multi-camera). Returns
+            ``None`` if the underlying model has not been initialized yet.
+
+        Raises:
+            RuntimeError: If the robot state or image feature shape is not defined.
+        """
+        if self.model is None:
+            return None
+
+        state_feature = self.model._config.robot_state_feature  # noqa: SLF001
+        if state_feature is None or state_feature.shape is None:
+            msg = "Robot state feature is not defined in the model configuration."
+            raise RuntimeError(msg)
+
+        schema: list[InferenceFeature] = [
+            InferenceFeature(
+                ftype=InferenceFeatureType.STATE,
+                shape=tuple(state_feature.shape),
+                name=STATE,
+                dtype=InferenceFeatureDtype.FLOAT32,
+            ),
+        ]
+
+        image_features = self.model._config.image_features  # noqa: SLF001
+        if len(image_features) == 1:
+            visual_feature = next(iter(image_features.values()))
+            if visual_feature.shape is None:
+                msg = "Image feature shape is not defined in the model configuration."
+                raise RuntimeError(msg)
+            schema.append(
+                InferenceFeature(
+                    ftype=InferenceFeatureType.VISUAL,
+                    shape=tuple(visual_feature.shape),
+                    name=IMAGES,
+                    dtype=InferenceFeatureDtype.FLOAT32,
+                ),
+            )
+        else:
+            for key, visual_feature in image_features.items():
+                if visual_feature.shape is None:
+                    msg = f"Image feature shape for '{key}' is not defined in the model configuration."
+                    raise RuntimeError(msg)
+                schema.append(
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.VISUAL,
+                        shape=tuple(visual_feature.shape),
+                        name=f"{IMAGES}.{key}",
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                )
+
+        return schema
+
+    @property
+    def outputs_schema(self) -> list[InferenceFeature] | None:
+        """Describe the policy's model output for export.
+
+        Returns:
+            A list with a single ``action`` feature of shape
+            ``(chunk_size, *action_feature.shape)``. Returns ``None`` if the
+            underlying model has not been initialized yet.
+
+        Raises:
+            RuntimeError: If the action feature shape is not defined.
+        """
+        if self.model is None:
+            return None
+
+        action_feature = self.model._config.action_feature  # noqa: SLF001
+        if action_feature is None or action_feature.shape is None:
+            msg = "Action feature is not defined in the model configuration."
+            raise RuntimeError(msg)
+
+        return [
+            InferenceFeature(
+                ftype=InferenceFeatureType.ACTION,
+                shape=(self.config.chunk_size, *tuple(action_feature.shape)),
+                name=ACTION,
+                dtype=InferenceFeatureDtype.FLOAT32,
+            ),
+        ]
+
+    @property
     def extra_export_args(self) -> dict[str, ExportParameters]:
         """Additional export arguments for model conversion.
 
@@ -468,21 +558,33 @@ class ACT(ExportablePolicyMixin, Policy):
                 ),
             )
 
+        preproc_specs = [
+            ComponentSpec(
+                type="resize",
+                image_resolution=self.config.image_size,
+                mode="letterbox",
+            ),
+        ]
+
         extra_args: dict[str, ExportParameters] = {}
+        output_names = [feature.name for feature in (self.outputs_schema or [])]
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
-                "output_names": ["action"],
+                "output_names": output_names,
             },
+            preprocessors_specs=preproc_specs,
             postprocessors_specs=postproc_specs,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
-            outputs=["action"],
+            outputs=output_names,
             export_tokenizer=False,
-            compress_to_fp16=False,
+            compress_to_fp16=True,
             exporter_kwargs={},
+            preprocessors_specs=preproc_specs,
             postprocessors_specs=postproc_specs,
         )
         extra_args["executorch"] = ExecuTorchExportParameters(
+            preprocessors_specs=preproc_specs,
             postprocessors_specs=postproc_specs,
         )
         extra_args["torch"] = TorchExportParameters(

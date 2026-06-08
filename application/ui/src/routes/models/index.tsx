@@ -53,7 +53,17 @@ const ModelList = ({
     };
 
     return (
-        <View marginBottom={'size-600'}>
+        <View
+            marginBottom={'size-600'}
+            borderWidth='thin'
+            borderColor={'gray-200'}
+            borderBottomWidth='thin'
+            borderBottomColor={'gray-200'}
+            borderStartWidth='thin'
+            borderStartColor={'gray-200'}
+            borderEndWidth='thin'
+            borderEndColor={'gray-200'}
+        >
             <ModelHeader />
             {sortedModels.map((model) => (
                 <ModelRow

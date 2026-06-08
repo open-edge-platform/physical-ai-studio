@@ -28,7 +28,6 @@ from torchvision.ops.misc import FrozenBatchNorm2d
 
 from physicalai.data import Feature, FeatureType
 from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, Observation
-from physicalai.export import ExportableModelMixin
 from physicalai.policies.base import Model
 from physicalai.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
 
@@ -40,7 +39,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-class ACT(ExportableModelMixin, Model):
+class ACT(Model):
     """Action Chunking Transformer (ACT) model.
 
     Supports training and inference modes.
@@ -197,46 +196,6 @@ class ACT(ExportableModelMixin, Model):
         filtered_config_dict = {k: v for k, v in config_dict.items() if k in {f.name for f in target_fields}}
 
         return ACTConfig(**filtered_config_dict)
-
-    @property
-    def sample_input(self) -> dict[str, torch.Tensor]:
-        """Generate a sample input dictionary for the model with random tensors.
-
-        This method creates a dictionary containing sample input tensors that match the expected
-        input format of the model. The tensors are randomly initialized and have shapes derived
-        from the model's configuration.
-
-        Returns:
-            dict[str, torch.Tensor | dict[str, torch.Tensor]]: A dictionary with two keys
-                - 'state': A tensor representing the robot state with shape (1, *state_feature.shape).
-                - 'images': Either a single tensor or a dictionary of tensors representing visual inputs,
-                    depending on the number of image features configured.
-
-        Note:
-            The batch dimension (first dimension) is set to 1 for all tensors.
-            The tensors are created on the same device as the model's parameters.
-
-        Raises:
-            RuntimeError: If input features are not configured.
-        """
-        state_feature = self._config.robot_state_feature
-
-        if state_feature is None:
-            msg = "Robot state feature is not defined in the model configuration."
-            raise RuntimeError(msg)
-
-        device = next(self._model.parameters()).device
-
-        sample_input = {STATE: torch.randn(1, *state_feature.shape, device=device)}
-
-        if len(self._config.image_features) == 1:
-            visual_feature = next(iter(self._config.image_features.values()))
-            sample_input[IMAGES] = torch.randn(1, *visual_feature.shape, device=device)
-        else:
-            for key, visual_feature in self._config.image_features.items():
-                sample_input[IMAGES + "." + key] = torch.randn(1, *visual_feature.shape, device=device)
-
-        return sample_input
 
     def forward(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]] | torch.Tensor:
         """Forward pass through the ACT model.

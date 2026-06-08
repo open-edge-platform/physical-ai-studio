@@ -326,21 +326,31 @@ class TestRtcCorrect:
 
 
 class TestSampleInputRtc:
-    """Tests for Pi05Model.sample_input property with enable_rtc=True."""
+    """Tests for Pi05.sample_input property with enable_rtc=True."""
 
     @staticmethod
     def _call_sample_input_rtc(dataset_stats: dict, chunk_size: int = 50, max_action_dim: int = 32) -> dict:
-        """Invoke the Pi05Model.sample_input property with enable_rtc=True on a minimal stub."""
-        from physicalai.policies.pi05.model import Pi05Model
+        """Invoke the Pi05.sample_input property with enable_rtc=True on a minimal stub."""
+        from physicalai.policies.pi05 import Pi05
 
-        class _Stub:
-            _chunk_size = chunk_size
-            _max_action_dim = max_action_dim
-            _dataset_stats = dataset_stats
+        class _ModelStub:
             enable_rtc = True
             paligemma_with_expert = torch.nn.Linear(1, 1)
 
-        return Pi05Model.sample_input.fget(_Stub())  # type: ignore[attr-defined]
+        class _ConfigStub:
+            def __init__(self) -> None:
+                self.chunk_size = chunk_size
+                self.max_action_dim = max_action_dim
+
+        class _Stub:
+            def __init__(self) -> None:
+                self._dataset_stats = dataset_stats
+                self.model = _ModelStub()
+                self.config = _ConfigStub()
+
+        stub = _Stub()
+        stub.inputs_schema = Pi05.inputs_schema.fget(stub)  # type: ignore[attr-defined]
+        return Pi05.sample_input.fget(stub)  # type: ignore[attr-defined]
 
     def test_contains_rtc_keys(self) -> None:
         """RTC sample input contains the four RTC-specific keys."""

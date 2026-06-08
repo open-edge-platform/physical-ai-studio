@@ -145,6 +145,8 @@ class TrainingWorker(BaseProcessWorker):
                 policy = setup_policy(model, compile_model=payload.compile_model)
 
             precision = str(payload.precision)
+            strategy = get_lightning_strategy(device_type)
+            devices = [device_index] if device_index is not None else 1
 
             checkpoint_callback = ModelCheckpoint(
                 dirpath=cache_path,
@@ -168,8 +170,8 @@ class TrainingWorker(BaseProcessWorker):
                         TrainingLogCallback(),
                     ],
                     accelerator=accelerator,
-                    strategy=get_lightning_strategy(device_type),
-                    devices=[device_index] if device_index is not None else "auto",
+                    strategy=strategy,
+                    devices=devices,
                     max_steps=payload.max_steps,
                     auto_scale_batch_size=payload.auto_scale_batch_size,
                     precision=precision,
@@ -180,6 +182,9 @@ class TrainingWorker(BaseProcessWorker):
 
             dispatcher.start()
             trainer.fit(model=policy, datamodule=l_dm)
+
+            final_checkpoint = cache_path / "model.ckpt"
+            trainer.save_checkpoint(final_checkpoint)
 
             path.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(cache_path, path)

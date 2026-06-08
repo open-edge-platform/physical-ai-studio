@@ -58,11 +58,11 @@ cd physical-ai-studio
 
 # Setup and run docker services
 cd application/docker
-./setup-devices.sh
-docker compose --profile xpu up # or use --profile cuda, --profile cpu
+./setup-devices.sh --xpu # or use --cuda, --cpu
+docker compose up -d
 ```
 
-Application runs at http://localhost:7860. See the [Docker README](./application/docker/README.md) for
+Application runs at <http://localhost:7860>. See the [Docker README](./application/docker/README.md) for
 hardware configuration (Intel XPU, NVIDIA CUDA) and device setup.
 
 If you plan to train Hugging Face Hub-backed policies (for example, SmolVLA, Pi0,
@@ -75,7 +75,7 @@ Run the application in development mode, using [uv package manager](https://docs
 
 Note: native setup requires additional OS-level libraries (OpenCV/video/USB and Python
 build dependencies). See the **Prerequisites** section in
-[Application Documentation](./application/README.md#prerequisites).
+[Application Installation](./application/docs/01-installation.md#prerequisites).
 
 ```bash
 # Clone the repository
@@ -98,7 +98,7 @@ npm install
 npm run start
 ```
 
-Open http://localhost:3000 in your browser.
+Open <http://localhost:3000> in your browser.
 
 If you plan to train Hugging Face Hub-backed policies (for example, SmolVLA, Pi0,
 and others), configure `HF_TOKEN` in your backend environment. See

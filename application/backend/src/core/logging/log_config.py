@@ -26,8 +26,8 @@ class LogConfig:
     # None key is used for application-level logs that don't belong to any specific worker.
     worker_log_info: ClassVar[dict[str | None, str]] = {
         "TrainingWorker": "training.log",
-        "InferenceWorker": "inference.log",
-        "TeleoperateWorker": "teleoperate.log",
+        "ModelWorker": "inference.log",
+        "RobotControlWorker": "robot_control.log",
         "DatasetImportWorker": "dataset_import.log",
         None: "app.log",
     }

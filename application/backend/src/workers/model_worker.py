@@ -10,7 +10,7 @@ from physicalai.inference import InferenceModel
 
 from control.inference_result import InferenceResult
 from models.utils import load_inference_model
-from schemas import Model
+from schemas import InferenceDevice, Model
 
 if TYPE_CHECKING:
     from physicalai.data import Observation
@@ -43,9 +43,9 @@ class ModelWorker(BaseProcessWorker):
     def is_loaded(self) -> bool:
         return self.model_loaded_event.is_set()
 
-    def load_model(self, model: Model, backend: str) -> None:
+    def load_model(self, model: Model, inference_device: InferenceDevice) -> None:
         """Send a load command to the worker process."""
-        self.command_queue.put(("load", model, backend))
+        self.command_queue.put(("load", model, inference_device))
 
     def unload_model(self) -> None:
         """Signal the worker to stop inference and return to idle."""
@@ -66,9 +66,14 @@ class ModelWorker(BaseProcessWorker):
             if cmd[0] != "load":
                 continue
 
-            _, model, backend = cmd
-            logger.info(f"Loading model: {model.name} ({backend})")
-            self.inference_model = load_inference_model(model, backend=backend)
+            _, model, inference_device = cmd
+            logger.info(
+                "Loading model: {} ({} on {})",
+                model.name,
+                inference_device.backend,
+                inference_device.device,
+            )
+            self.inference_model = load_inference_model(model, inference_device=inference_device)
             logger.info("Model loaded.")
             self.model_loaded_event.set()
 
@@ -77,7 +82,7 @@ class ModelWorker(BaseProcessWorker):
                 try:
                     observation: Observation = self.observation_queue.get(timeout=1)
                     start_time = time.perf_counter()
-                    output = self.inference_model.predict_action_chunk(observation.to_numpy().to_dict(flatten=False))[0]
+                    output = self.inference_model.predict_action_chunk(observation.to_numpy().to_dict(flatten=False))
                     elapsed_time = time.perf_counter() - start_time
                     logger.debug(f"Inference: ({elapsed_time}): {output.shape}")
                     self.output_queue.put(InferenceResult(time=elapsed_time, data=output))
