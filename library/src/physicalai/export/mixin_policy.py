@@ -41,10 +41,18 @@ DATASET_STATS_KEY = "dataset_stats"
 
 
 class ExportablePolicyMixin:
-    """Mixin class for exporting torch model checkpoints."""
+    """Mixin class for exporting torch model checkpoints.
+
+    Attributes:
+        model: Internal torch module to be exported.
+        _preprocessor: The torch module applied to raw inputs before they reach
+            the model during export tracing.
+        device: The torch device on which the model and sample inputs live.
+    """
 
     model: torch.nn.Module
     _preprocessor: torch.nn.Module
+    device: torch.device
 
     @property
     def sample_input(self) -> dict[str, torch.Tensor | str] | None:
@@ -689,6 +697,7 @@ class ExportablePolicyMixin:
         sample = self.sample_input
         if sample is None:
             return None
+        sample = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in sample.items()}
         processed_sample = self._preprocessor(sample)
         return {k: v for k, v in processed_sample.items() if isinstance(v, torch.Tensor)}
 

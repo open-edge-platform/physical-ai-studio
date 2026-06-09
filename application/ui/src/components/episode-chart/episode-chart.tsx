@@ -1,7 +1,16 @@
-import { useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
-import { CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from 'recharts';
-import { CategoricalChartState } from 'recharts/types/chart/types';
+import {
+    CartesianGrid,
+    Legend,
+    Line,
+    LineChart,
+    ReferenceLine,
+    ResponsiveContainer,
+    XAxis,
+    YAxis,
+    type MouseHandlerDataParam,
+} from 'recharts';
 
 function buildChartData(actions: number[][], joints: string[], fps: number) {
     return actions.map((row, idx) => ({
@@ -43,40 +52,51 @@ interface EpisodeChartProps {
 export default function EpisodeChart({ actions, joints, fps, time, seek, play, pause, isPlaying }: EpisodeChartProps) {
     const [hoverPosition, setHoverPosition] = useState<number | undefined>(undefined);
     const [mouseDown, setMouseDown] = useState<boolean>(false);
-    const posJoints = joints.filter(isPosJoint);
-    const chartData = buildChartData(actions, posJoints, fps);
-    const ticks = [...Array(Math.floor((actions.length / fps) * 2)).keys()].map((m) => m / 2);
+    const posJoints = useMemo(() => joints.filter(isPosJoint), [joints]);
+    const chartData = useMemo(() => {
+        return buildChartData(actions, posJoints, fps);
+    }, [actions, posJoints, fps]);
+    const ticks = useMemo(
+        () => [...Array(Math.floor((actions.length / fps) * 2)).keys()].map((m) => m / 2),
+        [actions.length, fps]
+    );
 
     const continuePlayingOnRelease = useRef<boolean>(false);
 
-    const handleMouseMove = (nextState: CategoricalChartState) => {
-        if (nextState.activeLabel === undefined) {
-            setHoverPosition(undefined);
-        } else {
-            const newTime = parseFloat(nextState.activeLabel ?? '0');
-            if (mouseDown) {
+    const handleMouseMove = useCallback(
+        (nextState: MouseHandlerDataParam) => {
+            if (nextState.activeLabel === undefined) {
+                setHoverPosition(undefined);
+            } else {
+                const newTime = parseFloat(String(nextState.activeLabel ?? '0'));
+                if (mouseDown) {
+                    seek(newTime);
+                }
+                setHoverPosition(newTime);
+            }
+        },
+        [mouseDown, seek]
+    );
+
+    const handleMouseUp = useCallback(
+        (nextState: MouseHandlerDataParam) => {
+            if (nextState.activeLabel !== undefined) {
+                const newTime = parseFloat(String(nextState.activeLabel ?? '0'));
                 seek(newTime);
             }
-            setHoverPosition(newTime);
-        }
-    };
+            setMouseDown(false);
+            if (continuePlayingOnRelease.current) {
+                play();
+            }
+        },
+        [seek, play]
+    );
 
-    const handleMouseUp = (nextState: CategoricalChartState) => {
-        if (nextState.activeLabel !== undefined) {
-            const newTime = parseFloat(nextState.activeLabel ?? '0');
-            seek(newTime);
-        }
-        setMouseDown(false);
-        if (continuePlayingOnRelease.current) {
-            play();
-        }
-    };
-
-    const handleMouseDown = () => {
+    const handleMouseDown = useCallback(() => {
         setMouseDown(true);
         continuePlayingOnRelease.current = isPlaying;
         pause();
-    };
+    }, [isPlaying, pause]);
 
     return (
         <ResponsiveContainer width='100%' height={300} style={{ userSelect: 'none' }}>
@@ -108,9 +128,10 @@ export default function EpisodeChart({ actions, joints, fps, time, seek, play, p
                         key={joint}
                         type='monotone'
                         dataKey={joint}
-                        stroke={lineColors[i]}
+                        stroke={lineColors.at(i % lineColors.length)}
                         name={toCapitalizedWords(stripPosSuffix(joint))}
                         dot={false}
+                        activeDot={false}
                         strokeWidth={2}
                     />
                 ))}

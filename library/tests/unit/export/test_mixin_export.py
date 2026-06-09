@@ -149,6 +149,7 @@ class ExportWrapper(ExportablePolicyMixin):
     def __init__(self, model: torch.nn.Module):
         self.model = model
         self._preprocessor = IdentityPreprocessor()
+        self.device = torch.device("cpu")
         self._extra_export_args = {
             ExportBackend.ONNX: ONNXExportParameters(),
             ExportBackend.OPENVINO: OpenVINOExportParameters(),
@@ -566,6 +567,7 @@ class TorchExportWrapper(ExportablePolicyMixin):
     def __init__(self, model: torch.nn.Module, chunk_size: int, n_action_steps: int):
         self.model = model
         self._preprocessor = IdentityPreprocessor()
+        self.device = torch.device("cpu")
         self.chunk_size = chunk_size
         self.n_action_steps = n_action_steps
 
@@ -669,3 +671,26 @@ class TestSampleInputFromSchema:
         assert sample["step"].dtype == torch.int64
 
         assert sample["task"] == "Example prompt string"
+
+
+class TestDefaultExportInputSample:
+    """Tests for ``_get_default_export_input_sample``."""
+
+    def test_tensors_moved_to_policy_device(self):
+        """Processed sample tensors are moved to the policy's ``device``."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+        # ``meta`` device works without GPU hardware and is easy to assert on.
+        wrapper.device = torch.device("meta")
+
+        sample = wrapper._get_default_export_input_sample()
+
+        assert sample is not None
+        assert all(tensor.device.type == "meta" for tensor in sample.values())
+
+    def test_returns_none_without_sample_input(self):
+        """``None`` is returned when the policy provides no ``sample_input``."""
+        model = SimpleModel(SimpleConfig())
+        wrapper = ExportWrapper(model)
+
+        assert wrapper._get_default_export_input_sample() is None
