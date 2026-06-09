@@ -129,10 +129,7 @@ def downgrade() -> None:
 
     robots_by_env: dict[str, list] = {}
     for env_id, robot_id, tele_type, tele_robot_id in conn.execute(
-        sa.text(
-            "SELECT environment_id, robot_id, tele_operator_type, tele_operator_robot_id "
-            "FROM environment_robots"
-        )
+        sa.text("SELECT environment_id, robot_id, tele_operator_type, tele_operator_robot_id FROM environment_robots")
     ).fetchall():
         robots_by_env.setdefault(str(env_id), []).append(
             {
