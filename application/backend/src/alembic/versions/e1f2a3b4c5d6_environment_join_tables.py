@@ -52,16 +52,17 @@ def upgrade() -> None:
         str(row[0]): row[1] for row in conn.execute(sa.text("SELECT id, name FROM project_cameras")).fetchall()
     }
 
+    conn.execute(sa.text("PRAGMA foreign_keys = OFF"))
     with op.batch_alter_table("project_environments", schema=None) as batch_op:
         batch_op.drop_column("robots")
         batch_op.drop_column("camera_ids")
+    conn.execute(sa.text("PRAGMA foreign_keys = ON"))
 
     op.create_table(
         "environment_robots",
         sa.Column("environment_id", sa.Text(), nullable=False),
         sa.Column("robot_id", sa.Text(), nullable=False),
         sa.Column("name", sa.String(length=255), nullable=False),
-        sa.Column("position", sa.Integer(), nullable=False),
         sa.Column("tele_operator_type", sa.String(length=16), nullable=False),
         sa.Column("tele_operator_robot_id", sa.Text(), nullable=True),
         sa.PrimaryKeyConstraint("environment_id", "robot_id"),
@@ -75,7 +76,6 @@ def upgrade() -> None:
         sa.Column("environment_id", sa.Text(), nullable=False),
         sa.Column("camera_id", sa.Text(), nullable=False),
         sa.Column("name", sa.String(length=255), nullable=False),
-        sa.Column("position", sa.Integer(), nullable=False),
         sa.PrimaryKeyConstraint("environment_id", "camera_id"),
         sa.ForeignKeyConstraint(["environment_id"], ["project_environments.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["camera_id"], ["project_cameras.id"], ondelete="CASCADE"),
@@ -84,7 +84,7 @@ def upgrade() -> None:
     for raw_env_id, robots_raw, camera_ids_raw in environments:
         env_id = str(raw_env_id)
 
-        for position, robot_cfg in enumerate(_load_json(robots_raw)):
+        for robot_cfg in _load_json(robots_raw):
             robot_id = str(robot_cfg.get("robot_id"))
             tele = robot_cfg.get("tele_operator") or {"type": "none"}
             tele_type = tele.get("type", "none")
@@ -92,31 +92,29 @@ def upgrade() -> None:
             conn.execute(
                 sa.text(
                     "INSERT INTO environment_robots "
-                    "(environment_id, robot_id, name, position, tele_operator_type, tele_operator_robot_id) "
-                    "VALUES (:env_id, :robot_id, :name, :position, :tele_type, :tele_robot_id)"
+                    "(environment_id, robot_id, name, tele_operator_type, tele_operator_robot_id) "
+                    "VALUES (:env_id, :robot_id, :name, :tele_type, :tele_robot_id)"
                 ),
                 {
                     "env_id": env_id,
                     "robot_id": robot_id,
                     "name": robot_names.get(robot_id, ""),
-                    "position": position,
                     "tele_type": tele_type,
                     "tele_robot_id": tele_robot_id,
                 },
             )
 
-        for position, raw_camera_id in enumerate(_load_json(camera_ids_raw)):
+        for raw_camera_id in _load_json(camera_ids_raw):
             camera_id = str(raw_camera_id)
             conn.execute(
                 sa.text(
-                    "INSERT INTO environment_cameras (environment_id, camera_id, name, position) "
-                    "VALUES (:env_id, :camera_id, :name, :position)"
+                    "INSERT INTO environment_cameras (environment_id, camera_id, name) "
+                    "VALUES (:env_id, :camera_id, :name)"
                 ),
                 {
                     "env_id": env_id,
                     "camera_id": camera_id,
                     "name": camera_names.get(camera_id, ""),
-                    "position": position,
                 },
             )
 
@@ -133,7 +131,7 @@ def downgrade() -> None:
     for env_id, robot_id, tele_type, tele_robot_id in conn.execute(
         sa.text(
             "SELECT environment_id, robot_id, tele_operator_type, tele_operator_robot_id "
-            "FROM environment_robots ORDER BY position"
+            "FROM environment_robots"
         )
     ).fetchall():
         robots_by_env.setdefault(str(env_id), []).append(
@@ -149,13 +147,20 @@ def downgrade() -> None:
 
     cameras_by_env: dict[str, list] = {}
     for env_id, camera_id in conn.execute(
-        sa.text("SELECT environment_id, camera_id FROM environment_cameras ORDER BY position")
+        sa.text("SELECT environment_id, camera_id FROM environment_cameras")
     ).fetchall():
         cameras_by_env.setdefault(str(env_id), []).append(str(camera_id))
 
+    # Drop join tables before batch_alter_table: SQLite's table rebuild internally
+    # DROPs project_environments, which would fail the FK constraints referencing it.
+    op.drop_table("environment_cameras")
+    op.drop_table("environment_robots")
+
+    conn.execute(sa.text("PRAGMA foreign_keys = OFF"))
     with op.batch_alter_table("project_environments", schema=None) as batch_op:
         batch_op.add_column(sa.Column("robots", sa.JSON(), nullable=True))
         batch_op.add_column(sa.Column("camera_ids", sa.JSON(), nullable=True))
+    conn.execute(sa.text("PRAGMA foreign_keys = ON"))
 
     for env_id in {*robots_by_env, *cameras_by_env}:
         conn.execute(
@@ -166,6 +171,3 @@ def downgrade() -> None:
                 "env_id": env_id,
             },
         )
-
-    op.drop_table("environment_cameras")
-    op.drop_table("environment_robots")

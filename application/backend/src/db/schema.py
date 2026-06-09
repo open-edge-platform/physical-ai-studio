@@ -145,14 +145,12 @@ class ProjectEnvironmentDB(Base):
         "EnvironmentRobotDB",
         back_populates="environment",
         cascade="all, delete-orphan",
-        order_by="EnvironmentRobotDB.position",
         lazy="selectin",
     )
     camera_links: Mapped[list["EnvironmentCameraDB"]] = relationship(
         "EnvironmentCameraDB",
         back_populates="environment",
         cascade="all, delete-orphan",
-        order_by="EnvironmentCameraDB.position",
         lazy="selectin",
     )
 
@@ -167,7 +165,6 @@ class EnvironmentRobotDB(Base):
     )
     robot_id: Mapped[str] = mapped_column(ForeignKey("project_robots.id", ondelete="CASCADE"), primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
-    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     tele_operator_type: Mapped[str] = mapped_column(String(16), nullable=False, default="none")
     tele_operator_robot_id: Mapped[str | None] = mapped_column(
         ForeignKey("project_robots.id", ondelete="CASCADE"), nullable=True
@@ -190,7 +187,6 @@ class EnvironmentCameraDB(Base):
     )
     camera_id: Mapped[str] = mapped_column(ForeignKey("project_cameras.id", ondelete="CASCADE"), primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
-    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     environment: Mapped["ProjectEnvironmentDB"] = relationship("ProjectEnvironmentDB", back_populates="camera_links")
     camera: Mapped["ProjectCameraDB"] = relationship("ProjectCameraDB", lazy="selectin")
