@@ -120,7 +120,7 @@ class BaseRepository(Generic[ModelType, SchemaType], metaclass=abc.ABCMeta):
         return obj_id
 
 
-class ProjectBaseRepository(BaseRepository, metaclass=abc.ABCMeta):
+class ProjectBaseRepository(BaseRepository[ModelType, SchemaType], metaclass=abc.ABCMeta):
     def __init__(self, db: AsyncSession, project_id: str | UUID, schema: type[SchemaType]):
         super().__init__(db, schema)
         self.project_id = self._id_to_str(project_id)

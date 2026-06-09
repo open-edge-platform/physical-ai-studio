@@ -16,7 +16,7 @@ from schemas.environment import (
 )
 
 
-class ProjectEnvironmentRepository(ProjectBaseRepository):
+class ProjectEnvironmentRepository(ProjectBaseRepository[Environment, ProjectEnvironmentDB]):
     def __init__(self, db: AsyncSession, project_id: UUID):
         super().__init__(db, project_id, ProjectEnvironmentDB)
 
