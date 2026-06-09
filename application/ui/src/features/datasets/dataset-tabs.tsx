@@ -5,13 +5,13 @@ import { ActionButton, DialogContainer, Flex, Icon, Item, Menu, MenuTrigger, Tab
 import { Add } from '@geti-ui/ui/icons';
 import { useNavigate } from 'react-router';
 
+import { fetchClient } from '../../api/client';
 import { SchemaDatasetOutput } from '../../api/openapi-spec';
 import { paths } from '../../router';
 import { ImportDatasetDialog } from '../../routes/datasets/import/dataset-import-button';
 import { NewDatasetForm } from '../../routes/datasets/new-dataset.component';
 import { useProjectId } from '../projects/use-project';
 import { DeleteDatasetDialog } from './delete-dataset-dialog';
-import { DatasetDownloadDialog } from './export-dataset-dialog';
 import { RenameDatasetDialog } from './rename-dataset-dialog';
 
 type Dataset = SchemaDatasetOutput;
@@ -31,14 +31,26 @@ export const DatasetTabs = ({
 }) => {
     const { project_id } = useProjectId();
 
-    const [action, setAction] = useState<null | 'rename' | 'delete' | 'export' | 'add' | 'import'>(null);
+    const [action, setAction] = useState<null | 'rename' | 'delete' | 'add' | 'import'>(null);
     const selectedDataset = datasets.find((dataset) => dataset.id === selectedDatasetId);
+
+    const openDatasetDownload = (datasetId: string) => {
+        const downloadUrl = fetchClient.PATH('/api/dataset/{dataset_id}/download', {
+            params: { path: { dataset_id: datasetId } },
+        });
+
+        window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+    };
 
     const onItemAction = (itemAction: string) => {
         switch (itemAction) {
+            case 'export':
+                if (selectedDatasetId !== undefined) {
+                    openDatasetDownload(selectedDatasetId);
+                }
+                return;
             case 'delete':
             case 'rename':
-            case 'export':
                 setAction(itemAction);
         }
     };
@@ -136,14 +148,6 @@ export const DatasetTabs = ({
                     <Suspense>
                         <NewDatasetForm project_id={project_id} onDone={onAddDataset} />
                     </Suspense>
-                )}
-                {action === 'export' && selectedDatasetId !== undefined && (
-                    <DatasetDownloadDialog
-                        datasetId={selectedDatasetId}
-                        onCloseDialog={() => {
-                            setAction(null);
-                        }}
-                    />
                 )}
                 {action === 'rename' && selectedDataset !== undefined && (
                     <RenameDatasetDialog

@@ -98,3 +98,7 @@ a {
     color: inherit;
     text-decoration: none;
 }
+
+.recharts-wrapper *:focus:not(:focus-visible) {
+    outline: none !important;
+}

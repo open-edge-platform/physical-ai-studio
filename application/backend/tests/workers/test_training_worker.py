@@ -188,6 +188,7 @@ class TestTraining:
         export_policy = MagicMock()
         trainer = MagicMock()
         trainer.fit = MagicMock()  # succeeds
+        trainer.save_checkpoint = MagicMock()
 
         completed_job = MagicMock()
         completed_job.id = job.id
@@ -225,6 +226,7 @@ class TestTraining:
             mock_load.assert_called_once_with(model, compile_model=False)
 
             trainer.fit.assert_called_once()
+            trainer.save_checkpoint.assert_called_once_with(tmp_path / "cache" / str(job.id) / "model.ckpt")
 
             MockJobService.update_job.assert_called_once()
             assert MockJobService.update_job_status.call_args_list[0].kwargs["status"] == JobStatus.COMPLETED

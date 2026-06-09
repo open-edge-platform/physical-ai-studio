@@ -18,9 +18,12 @@ import { useMutation } from '@tanstack/react-query';
 
 import { fetchClient } from '../../../api/client';
 import { SchemaDatasetImportJob } from '../../../api/openapi-spec';
-import { isAbortError } from '../../utils/download';
 
 type FormatHint = 'auto' | 'lerobot_v3';
+
+const isAbortError = (error: unknown): boolean => {
+    return error instanceof DOMException && error.name === 'AbortError';
+};
 
 interface UseDatasetUploadResult {
     upload: (file: File, formatHint: FormatHint, datasetName: string) => Promise<string | undefined>;

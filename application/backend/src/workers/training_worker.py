@@ -183,6 +183,9 @@ class TrainingWorker(BaseProcessWorker):
             dispatcher.start()
             trainer.fit(model=policy, datamodule=l_dm)
 
+            final_checkpoint = cache_path / "model.ckpt"
+            trainer.save_checkpoint(final_checkpoint)
+
             path.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(cache_path, path)
 
