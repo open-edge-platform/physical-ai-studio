@@ -148,7 +148,7 @@ dev = [
 # UV CONFIGURATION                                                             #
 # ============================================================================ #
 [tool.uv]
-exclude-newer = "7 days"
+# exclude-newer = "7 days" # FIXME
 exclude-newer-package = { physicalai = false }
 index-strategy = "unsafe-best-match"
 override-dependencies = [
@@ -156,6 +156,8 @@ override-dependencies = [
     # Safe to override because executorch
     # production code does not import pytest at runtime.
     "pytest>=9.0.3",
+    # lerobot==0.5.1 caps diffusers at <0.36.0, but 0.38.x is API-compatible.
+    "diffusers>=0.38.0",
 ]
 
 
