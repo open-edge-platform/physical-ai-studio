@@ -156,7 +156,7 @@ jobs:
       - name: Install system dependencies for headless rendering
         run: |
           sudo apt-get update
-          sudo apt-get install -y libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev cmake ffmpeg
+          sudo apt-get install -y libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev cmake ffmpeg xvfb gcc
 
       - *set-up-uv
 
