@@ -175,6 +175,10 @@ jobs:
           # Headless rendering for MuJoCo/OpenGL (must be set before any imports)
           MUJOCO_GL: egl
           PYOPENGL_PLATFORM: egl
+          # Force GLVND to dispatch EGL to the NVIDIA vendor driver. Mesa's EGL does
+          # not support EGL_EXT_platform_device, which MuJoCo's EGL backend needs for
+          # headless device rendering on the GPU runner.
+          __EGL_VENDOR_LIBRARY_FILENAMES: /usr/share/glvnd/egl_vendor.d/10_nvidia.json
         run: |
           uv run --no-sync pytest tests/integration -m "not slow"
 
