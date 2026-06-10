@@ -141,7 +141,7 @@ jobs:
           uv run --no-sync pytest tests/unit
 
   integration-tests:
-    runs-on: [self-hosted, linux, x64, dev, gpu, iapm-63534]
+    runs-on: [self-hosted, linux, x64, dev, gpu]
     needs: check-paths
     if: needs.check-paths.outputs.run_workflow == 'true'
     permissions:
