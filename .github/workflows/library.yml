@@ -140,12 +140,51 @@ jobs:
         run: |
           uv run --no-sync pytest tests/unit
 
+  integration-tests:
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'geti-nl-hp-03' || 'ubuntu-latest' }}
+    needs: check-paths
+    if: needs.check-paths.outputs.run_workflow == 'true'
+    permissions:
+      contents: read
+    steps:
+      - *harden-runner
+
+      - *checkout
+
+      - *set-up-python
+
+      - name: Install system dependencies for headless rendering
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev
+
+      - *set-up-uv
+
+      - name: Verify lock file
+        working-directory: library
+        run: uv lock --check
+
+      - name: Install dependencies
+        working-directory: library
+        run: |
+          uv sync --frozen --extra tests --extra pi05 --extra libero --extra smolvla --extra cu128
+
+      - name: Run python integration tests
+        working-directory: library
+        env:
+          # Headless rendering for MuJoCo/OpenGL (must be set before any imports)
+          MUJOCO_GL: egl
+          PYOPENGL_PLATFORM: egl
+        run: |
+          uv run --no-sync pytest tests/integration
+
   required-check:
     name: Required Check library
     needs:
       - check-paths
       - code-quality
       - unit-tests
+      - integration-tests
     runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
     env:
       CHECKS: ${{ join(needs.*.result, ' ') }}
