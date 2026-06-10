@@ -57,6 +57,9 @@ def _empty_accelerator_cache(device: torch.device) -> None:
 _EQUIVALENCE_XFAIL_REASONS: dict[str, str] = {
     "groot": "hardcodes flash_attention_2 in eagle2_hg_model (upstream lerobot)",
     "xvla": "requires explicit `vision_config` kwarg, not derivable from dataset",
+    "pi05": "model repo is gated",
+    "pi0_fast": "model repo is gated",
+    "pi0": "model repo is gated",
 }
 
 
