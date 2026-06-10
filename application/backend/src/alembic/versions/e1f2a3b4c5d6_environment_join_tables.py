@@ -28,7 +28,11 @@ def _load_json(value: object) -> list:
         return []
     if isinstance(value, str):
         try:
-            return json.loads(value) or []
+            parsed = json.loads(value)
+            # Handle double-encoded JSON (stored as a JSON string on main)
+            if isinstance(parsed, str):
+                parsed = json.loads(parsed)
+            return parsed if isinstance(parsed, list) else []
         except (ValueError, TypeError):
             return []
     return value if isinstance(value, list) else []
@@ -163,8 +167,8 @@ def downgrade() -> None:
         conn.execute(
             sa.text("UPDATE project_environments SET robots = :robots, camera_ids = :camera_ids WHERE id = :env_id"),
             {
-                "robots": json.dumps(robots_by_env.get(env_id, [])),
-                "camera_ids": json.dumps(cameras_by_env.get(env_id, [])),
+                "robots": json.dumps(json.dumps(robots_by_env.get(env_id, []))),
+                "camera_ids": json.dumps(json.dumps(cameras_by_env.get(env_id, []))),
                 "env_id": env_id,
             },
         )
