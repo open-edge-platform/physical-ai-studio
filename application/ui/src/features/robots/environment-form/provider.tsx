@@ -4,13 +4,11 @@ import { SchemaEnvironmentInput } from '../../../api/openapi-spec';
 
 export type RobotConfiguration = {
     robot_id: string;
-    name: string;
     teleoperator: { type: 'robot'; robot_id: string } | { type: 'none' };
 };
 
 export type CameraConfiguration = {
     camera_id: string;
-    name: string;
 };
 
 export type EnvironmentForm = {
@@ -33,13 +31,11 @@ export const useEnvironmentFormBody = (environment_id: string) => {
         cameras: environmentForm.cameras.map((camera) => {
             return {
                 camera_id: camera.camera_id,
-                name: camera.name,
             };
         }),
         robots: environmentForm.robots.map((robot) => {
             return {
                 robot_id: robot.robot_id,
-                name: robot.name,
                 tele_operator:
                     robot.teleoperator.type === 'robot'
                         ? {

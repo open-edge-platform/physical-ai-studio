@@ -52,15 +52,14 @@ const buildDockviewPanels = (api: DockviewReadyEvent['api'], environment: Enviro
 
     const panels = new Set<string>();
 
-    environment.cameras.forEach(({ camera_id, name }, idx) => {
+    environment.cameras.forEach(({ camera_id }, idx) => {
         panels.add(camera_id);
         if (!api.panels.some((panel) => panel.id === camera_id)) {
             api.addPanel({
                 id: camera_id,
-                title: name,
                 component: 'camera',
                 params: {
-                    title: name || `Camera ${idx}`,
+                    title: `Camera ${idx}`,
                     camera_id,
                 },
                 position: {

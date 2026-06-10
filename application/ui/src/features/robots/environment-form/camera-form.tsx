@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { ActionButton, Button, Flex, Heading, Icon, Item, Picker, Text, TextField, View, Well } from '@geti-ui/ui';
+import { ActionButton, Button, Flex, Heading, Icon, Item, Picker, Text, View, Well } from '@geti-ui/ui';
 import { Add, Close } from '@geti-ui/ui/icons';
 
 import { $api } from '../../../api/client';
@@ -26,12 +26,7 @@ export const CameraListItem = ({ camera, onRemove }: { camera: CameraConfigurati
         <li>
             <View backgroundColor={'gray-50'} padding='size-200' borderColor='gray-200' borderWidth='thick'>
                 <Flex justifyContent='space-between' alignItems={'center'}>
-                    <Flex direction='column'>
-                        <span>{camera.name}</span>
-                        <Text UNSAFE_style={{ color: 'var(--spectrum-global-color-gray-700)' }}>
-                            {projectCamera.name}
-                        </Text>
-                    </Flex>
+                    {projectCamera.name}
 
                     <ActionButton onPress={onRemove} UNSAFE_className={classes.actionButton}>
                         <Icon>
@@ -69,7 +64,6 @@ export const AddCameraForm = ({
     const availableCameras = getAvailableCameras(environment.cameras, camerasQuery.data);
 
     const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null);
-    const [name, setName] = useState('');
 
     if (availableCameras.length === 0) {
         return <span>No available cameras</span>;
@@ -86,8 +80,6 @@ export const AddCameraForm = ({
                 onSelectionChange={(key) => {
                     if (key !== null && typeof key === 'string') {
                         setSelectedCameraId(key);
-                        // Default the per-environment name to the camera's own name.
-                        setName(availableCameras.find((camera) => camera.id === key)?.name ?? '');
                     }
                 }}
             >
@@ -100,15 +92,12 @@ export const AddCameraForm = ({
                 })}
             </Picker>
 
-            <TextField label='Name' width='100%' value={name} onChange={setName} />
-
             <Flex gap='size-100'>
                 <Button
                     variant='secondary'
-                    isDisabled={!selectedCameraId || name.length === 0}
                     onPress={() => {
-                        if (selectedCameraId && name.length > 0) {
-                            onAddCamera({ camera_id: selectedCameraId, name });
+                        if (selectedCameraId) {
+                            onAddCamera({ camera_id: selectedCameraId });
                         }
                     }}
                 >

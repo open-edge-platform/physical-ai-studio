@@ -30,7 +30,6 @@ export const Edit = () => {
             environment.robots?.map((robot): RobotConfiguration => {
                 return {
                     robot_id: robot.robot.id,
-                    name: robot.robot.name,
                     teleoperator:
                         robot.tele_operator.type === 'robot'
                             ? {
