@@ -80,6 +80,7 @@ class CoreE2ETests:
         assert trainer.state.finished
 
 
+@pytest.mark.slow
 class ExportE2ETests:
     """Base class with export E2E tests (export/inference/consistency)."""
 

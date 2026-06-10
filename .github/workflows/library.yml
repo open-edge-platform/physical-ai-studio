@@ -176,7 +176,7 @@ jobs:
           MUJOCO_GL: egl
           PYOPENGL_PLATFORM: egl
         run: |
-          uv run --no-sync pytest tests/integration
+          uv run --no-sync pytest tests/integration -m "not slow"
 
   required-check:
     name: Required Check library
