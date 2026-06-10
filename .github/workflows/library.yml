@@ -141,7 +141,7 @@ jobs:
           uv run --no-sync pytest tests/unit
 
   integration-tests:
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'geti-nl-hp-03' || 'ubuntu-latest' }}
+    runs-on: [self-hosted, linux, x64, dev, dmount]
     needs: check-paths
     if: needs.check-paths.outputs.run_workflow == 'true'
     permissions:
