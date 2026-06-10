@@ -47,14 +47,8 @@ def upgrade() -> None:
     """
     conn = op.get_bind()
 
-    # Read existing JSON data and the names to backfill from, before touching any schema.
+    # Read existing JSON data before touching any schema.
     environments = conn.execute(sa.text("SELECT id, robots, camera_ids FROM project_environments")).fetchall()
-    robot_names = {
-        str(row[0]): row[1] for row in conn.execute(sa.text("SELECT id, name FROM project_robots")).fetchall()
-    }
-    camera_names = {
-        str(row[0]): row[1] for row in conn.execute(sa.text("SELECT id, name FROM project_cameras")).fetchall()
-    }
 
     conn.execute(sa.text("PRAGMA foreign_keys = OFF"))
     with op.batch_alter_table("project_environments", schema=None) as batch_op:
@@ -66,7 +60,6 @@ def upgrade() -> None:
         "environment_robots",
         sa.Column("environment_id", sa.Text(), nullable=False),
         sa.Column("robot_id", sa.Text(), nullable=False),
-        sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("tele_operator_type", sa.String(length=16), nullable=False),
         sa.Column("tele_operator_robot_id", sa.Text(), nullable=True),
         sa.PrimaryKeyConstraint("environment_id", "robot_id"),
@@ -79,7 +72,6 @@ def upgrade() -> None:
         "environment_cameras",
         sa.Column("environment_id", sa.Text(), nullable=False),
         sa.Column("camera_id", sa.Text(), nullable=False),
-        sa.Column("name", sa.String(length=255), nullable=False),
         sa.PrimaryKeyConstraint("environment_id", "camera_id"),
         sa.ForeignKeyConstraint(["environment_id"], ["project_environments.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["camera_id"], ["project_cameras.id"], ondelete="CASCADE"),
@@ -96,13 +88,12 @@ def upgrade() -> None:
             conn.execute(
                 sa.text(
                     "INSERT INTO environment_robots "
-                    "(environment_id, robot_id, name, tele_operator_type, tele_operator_robot_id) "
-                    "VALUES (:env_id, :robot_id, :name, :tele_type, :tele_robot_id)"
+                    "(environment_id, robot_id, tele_operator_type, tele_operator_robot_id) "
+                    "VALUES (:env_id, :robot_id, :tele_type, :tele_robot_id)"
                 ),
                 {
                     "env_id": env_id,
                     "robot_id": robot_id,
-                    "name": robot_names.get(robot_id, ""),
                     "tele_type": tele_type,
                     "tele_robot_id": tele_robot_id,
                 },
@@ -111,14 +102,10 @@ def upgrade() -> None:
         for raw_camera_id in _load_json(camera_ids_raw):
             camera_id = str(raw_camera_id)
             conn.execute(
-                sa.text(
-                    "INSERT INTO environment_cameras (environment_id, camera_id, name) "
-                    "VALUES (:env_id, :camera_id, :name)"
-                ),
+                sa.text("INSERT INTO environment_cameras (environment_id, camera_id) VALUES (:env_id, :camera_id)"),
                 {
                     "env_id": env_id,
                     "camera_id": camera_id,
-                    "name": camera_names.get(camera_id, ""),
                 },
             )
 

@@ -33,14 +33,12 @@ Teleoperator = Annotated[TeleoperatorRobot | TeleoperatorNone, Field(discriminat
 
 class RobotEnvironmentConfiguration(BaseModel):
     robot_id: UUID = Field(..., description="ID of the robot in this environment")
-    name: str = Field(..., description="Per-environment name for this robot")
     tele_operator: Teleoperator = Field(..., description="Teleoperator configuration for this robot")
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "robot_id": "a5e2cde6-936b-4a9e-a213-08dda0afa453",
-                "name": "follower",
                 "tele_operator": {
                     "type": "robot",
                     "robot_id": "b6f3def7-047c-5b0f-b324-19eeb1bgb564",
@@ -52,13 +50,11 @@ class RobotEnvironmentConfiguration(BaseModel):
 
 class CameraEnvironmentConfiguration(BaseModel):
     camera_id: UUID = Field(..., description="ID of the camera in this environment")
-    name: str = Field(..., description="Per-environment name for this camera")
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "camera_id": "c8g5dfh9-269e-7d2h-d546-31ggc3dic786",
-                "name": "front",
             }
         }
     )
@@ -87,7 +83,6 @@ class Environment(BaseModel):
                 "robots": [
                     {
                         "robot_id": "a5e2cde6-936b-4a9e-a213-08dda0afa453",
-                        "name": "follower",
                         "tele_operator": {
                             "type": "robot",
                             "robot_id": "b6f3def7-047c-5b0f-b324-19eeb1bgb564",
@@ -95,13 +90,12 @@ class Environment(BaseModel):
                     },
                     {
                         "robot_id": "b6f3def7-047c-5b0f-b324-19eeb1bgb564",
-                        "name": "leader",
                         "tele_operator": {"type": "none"},
                     },
                 ],
                 "cameras": [
-                    {"camera_id": "c8g5dfh9-269e-7d2h-d546-31ggc3dic786", "name": "front"},
-                    {"camera_id": "d9h6egi0-370f-8e3i-e657-42hhd4ejd897", "name": "wrist"},
+                    {"camera_id": "c8g5dfh9-269e-7d2h-d546-31ggc3dic786"},
+                    {"camera_id": "d9h6egi0-370f-8e3i-e657-42hhd4ejd897"},
                 ],
                 "created_at": "2024-01-15T10:30:00Z",
                 "updated_at": "2024-01-15T10:30:00Z",

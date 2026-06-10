@@ -156,7 +156,7 @@ class ProjectEnvironmentDB(Base):
 
 
 class EnvironmentRobotDB(Base):
-    """Join table linking an environment to a robot, with a per-environment name and teleoperator."""
+    """Join table linking an environment to a robot, with its teleoperator configuration."""
 
     __tablename__ = "environment_robots"
 
@@ -164,7 +164,6 @@ class EnvironmentRobotDB(Base):
         ForeignKey("project_environments.id", ondelete="CASCADE"), primary_key=True
     )
     robot_id: Mapped[str] = mapped_column(ForeignKey("project_robots.id", ondelete="CASCADE"), primary_key=True)
-    name: Mapped[str] = mapped_column(String(255))
     tele_operator_type: Mapped[str] = mapped_column(String(16), nullable=False, default="none")
     tele_operator_robot_id: Mapped[str | None] = mapped_column(
         ForeignKey("project_robots.id", ondelete="CASCADE"), nullable=True
@@ -178,7 +177,7 @@ class EnvironmentRobotDB(Base):
 
 
 class EnvironmentCameraDB(Base):
-    """Join table linking an environment to a camera, with a per-environment name."""
+    """Join table linking an environment to a camera."""
 
     __tablename__ = "environment_cameras"
 
@@ -186,7 +185,6 @@ class EnvironmentCameraDB(Base):
         ForeignKey("project_environments.id", ondelete="CASCADE"), primary_key=True
     )
     camera_id: Mapped[str] = mapped_column(ForeignKey("project_cameras.id", ondelete="CASCADE"), primary_key=True)
-    name: Mapped[str] = mapped_column(String(255))
 
     environment: Mapped["ProjectEnvironmentDB"] = relationship("ProjectEnvironmentDB", back_populates="camera_links")
     camera: Mapped["ProjectCameraDB"] = relationship("ProjectCameraDB", lazy="selectin")

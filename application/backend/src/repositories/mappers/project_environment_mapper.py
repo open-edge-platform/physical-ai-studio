@@ -21,14 +21,12 @@ class ProjectEnvironmentMapper(IBaseMapper):
             EnvironmentRobotDB(
                 environment_id=str(db_schema.id),
                 robot_id=str(robot.robot_id),
-                name=robot.name,
-                position=index,
                 tele_operator_type=robot.tele_operator.type,
                 tele_operator_robot_id=(
                     str(robot.tele_operator.robot_id) if isinstance(robot.tele_operator, TeleoperatorRobot) else None
                 ),
             )
-            for index, robot in enumerate(db_schema.robots)
+            for robot in db_schema.robots
         ]
 
     @staticmethod
@@ -38,10 +36,8 @@ class ProjectEnvironmentMapper(IBaseMapper):
             EnvironmentCameraDB(
                 environment_id=str(db_schema.id),
                 camera_id=str(camera.camera_id),
-                name=camera.name,
-                position=index,
             )
-            for index, camera in enumerate(db_schema.cameras)
+            for camera in db_schema.cameras
         ]
 
     @staticmethod
@@ -63,7 +59,6 @@ class ProjectEnvironmentMapper(IBaseMapper):
         robots = [
             RobotEnvironmentConfiguration(
                 robot_id=UUID(link.robot_id),
-                name=link.name,
                 tele_operator=(
                     TeleoperatorRobot(robot_id=UUID(link.tele_operator_robot_id))
                     if link.tele_operator_type == "robot" and link.tele_operator_robot_id is not None
@@ -73,10 +68,7 @@ class ProjectEnvironmentMapper(IBaseMapper):
             for link in model.robot_links
         ]
 
-        cameras = [
-            CameraEnvironmentConfiguration(camera_id=UUID(link.camera_id), name=link.name)
-            for link in model.camera_links
-        ]
+        cameras = [CameraEnvironmentConfiguration(camera_id=UUID(link.camera_id)) for link in model.camera_links]
 
         return Environment(
             id=model.id,

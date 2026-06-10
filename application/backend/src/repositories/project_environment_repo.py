@@ -60,11 +60,7 @@ class ProjectEnvironmentRepository(ProjectBaseRepository[Environment, ProjectEnv
         return updated
 
     async def get_by_id_with_relations(self, environment_id: UUID) -> EnvironmentWithRelations | None:
-        """Get an environment by ID with eager loaded robots and cameras.
-
-        The per-environment join name overrides the underlying robot/camera name so that downstream
-        consumers (e.g. dataset feature keys) use the name configured for this environment.
-        """
+        """Get an environment by ID with eager loaded robots and cameras."""
         stmt = select(ProjectEnvironmentDB).where(
             ProjectEnvironmentDB.id == str(environment_id),
             ProjectEnvironmentDB.project_id == self.project_id,
@@ -74,10 +70,7 @@ class ProjectEnvironmentRepository(ProjectBaseRepository[Environment, ProjectEnv
         if env is None:
             return None
 
-        cameras = [
-            ProjectCameraMapper.from_schema(link.camera).model_copy(update={"name": link.name})
-            for link in env.camera_links
-        ]
+        cameras = [ProjectCameraMapper.from_schema(link.camera) for link in env.camera_links]
 
         return EnvironmentWithRelations(
             id=env.id,
@@ -93,7 +86,7 @@ class ProjectEnvironmentRepository(ProjectBaseRepository[Environment, ProjectEnv
         """Construct the list of robots with their eager-loaded teleoperators."""
         robots_with_teleoperators = []
         for link in robot_links:
-            robot = ProjectRobotMapper.from_schema(link.robot).model_copy(update={"name": link.name})
+            robot = ProjectRobotMapper.from_schema(link.robot)
 
             if link.tele_operator_type == "robot" and link.tele_operator_robot is not None:
                 tele_operator = TeleoperatorRobotWithRobot(
