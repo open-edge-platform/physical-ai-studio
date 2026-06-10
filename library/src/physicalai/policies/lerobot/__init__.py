@@ -102,9 +102,6 @@ VALIDATED_EQUIVALENCE_POLICIES: tuple[str, ...] = (
     "act",
     "diffusion",
     "smolvla",
-    "pi0",
-    "pi05",
-    "pi0_fast",
 )
 """Subset of :data:`SUPPORTED_POLICIES` with measured wrapper-vs-native numerical equivalence.
 
