@@ -309,8 +309,11 @@ class TestNamedLeRobotPolicy:
         spec = importlib.util.spec_from_file_location("_lerobot_eq_module", integration_test)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        assert set(module.EQUIVALENCE_POLICY_PARAMS) == set(VALIDATED_EQUIVALENCE_POLICIES), (
-            "Integration equivalence suite must track VALIDATED_EQUIVALENCE_POLICIES exactly."
+        overlap = set(VALIDATED_EQUIVALENCE_POLICIES) & set(module._EQUIVALENCE_XFAIL_REASONS)
+        assert not overlap, (
+            f"Policies cannot be both VALIDATED and XFAIL: {sorted(overlap)}. "
+            "Either remove from _EQUIVALENCE_XFAIL_REASONS (fix the limitation) "
+            "or remove from VALIDATED_EQUIVALENCE_POLICIES (downgrade the guarantee)."
         )
 
     @pytest.mark.parametrize(
