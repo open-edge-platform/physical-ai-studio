@@ -163,21 +163,9 @@ class Observation:
             >>> data = {"action": torch.tensor([1.0, 2.0]), "state": torch.tensor([0.5])}
             >>> obs = Observation.from_dict(data)
         """
+        # Filter to only known fields
         field_names = {f.name for f in fields(cls)}
-        filtered_data: dict[str, Any] = {}
-        nested: dict[str, dict[str, Any]] = {}
-        for key, value in data.items():
-            if key in field_names:
-                filtered_data[key] = value
-                continue
-            if key.startswith("_") and key.endswith("_keys"):
-                continue
-            if "." in key:
-                head, sub = key.split(".", 1)
-                if head in field_names:
-                    nested.setdefault(head, {})[sub] = value
-        for head, sub_map in nested.items():
-            filtered_data.setdefault(head, sub_map)
+        filtered_data = {k: v for k, v in data.items() if k in field_names}
         return cls(**filtered_data)
 
     @classmethod
