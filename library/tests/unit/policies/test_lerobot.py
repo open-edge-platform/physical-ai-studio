@@ -283,7 +283,6 @@ class TestNamedLeRobotPolicy:
             XVLA,
             Diffusion,
             Groot,
-            MolmoAct2,
             PI0Fast,
             SmolVLA,
         )
@@ -292,7 +291,6 @@ class TestNamedLeRobotPolicy:
             ACT,
             Diffusion,
             Groot,
-            MolmoAct2,
             PI0,
             PI05,
             PI0Fast,
@@ -317,7 +315,7 @@ class TestNamedLeRobotPolicy:
 
     @pytest.mark.parametrize(
         "wrapper_name",
-        ["ACT", "Diffusion", "Groot", "MolmoAct2", "PI0", "PI05", "PI0Fast", "SmolVLA", "XVLA"],
+        ["ACT", "Diffusion", "Groot", "PI0", "PI05", "PI0Fast", "SmolVLA", "XVLA"],
     )
     def test_named_wrapper_rejects_mismatched_policy_name(self, wrapper_name):
         """``ACT(policy_name="diffusion")`` raises — POLICY_NAME is the source of truth.
@@ -334,53 +332,6 @@ class TestNamedLeRobotPolicy:
 
         with pytest.raises(ValueError, match="refusing to override"):
             wrapper_cls(policy_name=wrong_name)
-
-    def test_molmoact2_from_config_initializes_wrapper(self):
-        from dataclasses import dataclass, field
-        from unittest.mock import patch
-
-        from physicalai.policies.lerobot import MolmoAct2
-
-        @dataclass
-        class DummyMolmoAct2Config:
-            checkpoint_path: str = ""
-            norm_tag: str | None = None
-            input_features: dict = field(default_factory=dict)
-            output_features: dict = field(default_factory=dict)
-            type: str = "molmoact2"
-
-            def get_optimizer_preset(self):  # noqa: ANN201, PLR6301
-                class _Preset:
-                    lr = 1e-5
-
-                return _Preset()
-
-        class DummyMolmoAct2Policy(torch.nn.Module):
-            def __init__(self, config: DummyMolmoAct2Config) -> None:
-                super().__init__()
-                self.config = config
-
-        def _identity_processor(batch):  # noqa: ANN001, ANN202
-            return batch
-
-        with (
-            patch("physicalai.policies.lerobot.policy.get_policy_class", return_value=DummyMolmoAct2Policy),
-            patch(
-                "physicalai.policies.lerobot.policy.make_pre_post_processors",
-                return_value=(_identity_processor, _identity_processor),
-            ),
-            patch("physicalai.policies.lerobot.policy.LEROBOT_AVAILABLE", new=True),
-        ):
-            config = DummyMolmoAct2Config(
-                checkpoint_path="allenai/MolmoAct2-SO100_101",
-                norm_tag="so100_so101_molmoact2",
-            )
-            policy = MolmoAct2.from_config(config)
-
-        assert policy.policy_name == "molmoact2"
-        assert policy.config is config
-        assert isinstance(policy.lerobot_policy, DummyMolmoAct2Policy)
-
 
 class TestLeRobotPolicyCheckpoint:
     """Tests for checkpoint save and load functionality."""
@@ -1541,25 +1492,6 @@ class TestCoercePolicyConfigKwargs:
 
         coerced, cast = _coerce_policy_config_kwargs("pi0", {"dtype": "bfloat16", "chunk_size": 10})
         assert coerced == {"dtype": "bfloat16", "chunk_size": 10}
-        assert cast is None
-
-    def test_molmoact2_maps_dtype_to_model_dtype(self) -> None:
-        from physicalai.policies.lerobot.policy import _coerce_policy_config_kwargs
-
-        @dataclass
-        class DummyMolmoAct2Config:
-            model_dtype: str = "float32"
-
-        class DummyMolmoAct2Policy:
-            config_class = DummyMolmoAct2Config
-
-        with patch(
-            "physicalai.policies.lerobot.policy.get_policy_class",
-            return_value=DummyMolmoAct2Policy,
-        ):
-            coerced, cast = _coerce_policy_config_kwargs("molmoact2", {"dtype": "bfloat16"})
-
-        assert coerced == {"model_dtype": "bfloat16"}
         assert cast is None
 
     def test_smolvla_casts_dtype_to_module(self) -> None:

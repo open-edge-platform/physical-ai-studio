@@ -31,7 +31,6 @@ from physicalai.policies.lerobot import (
     SUPPORTED_POLICIES,
     Diffusion,
     Groot,
-    MolmoAct2,
     PI0Fast,
     SmolVLA,
     XVLA,
@@ -46,7 +45,6 @@ _NAMED_WRAPPER: dict[str, type[NamedLeRobotPolicy]] = {
     "act": ACT,
     "diffusion": Diffusion,
     "groot": Groot,
-    "molmoact2": MolmoAct2,
     "pi0": PI0,
     "pi0_fast": PI0Fast,
     "pi05": PI05,
@@ -54,7 +52,7 @@ _NAMED_WRAPPER: dict[str, type[NamedLeRobotPolicy]] = {
     "xvla": XVLA,
 }
 
-_VLA_POLICIES = {"pi0", "pi05", "pi0_fast", "groot", "smolvla", "molmoact2", "xvla"}
+_VLA_POLICIES = {"pi0", "pi05", "pi0_fast", "groot", "smolvla", "xvla"}
 
 _E2E_XFAIL_REASONS: dict[str, str] = {
     "groot": "hardcodes flash_attention_2 in eagle2_hg_model (upstream lerobot)",
@@ -83,12 +81,6 @@ def _get_policy_kwargs(policy_name: str) -> dict[str, Any]:
             "tune_visual": False,
             "tune_projector": True,
             "tune_diffusion_model": False,
-        }
-    if policy_name == "molmoact2":
-        return {
-            "dtype": "bfloat16",
-            "enable_inference_cuda_graph": False,
-            "inference_action_mode": "continuous",
         }
     if policy_name == "pi0_fast":
         return {

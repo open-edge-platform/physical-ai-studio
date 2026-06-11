@@ -90,8 +90,8 @@ def _coerce_policy_config_kwargs(
     """Map physical-ai conveniences (``dtype``) to LeRobot config field names.
 
     Training configs and integration tests often pass ``dtype="bfloat16"`` for
-    VLA policies. LeRobot configs name this field differently (``dtype`` on
-    pi0/pi05, ``model_dtype`` on MolmoAct2) or omit it entirely (SmolVLA).
+    VLA policies. LeRobot configs may name this field ``dtype`` or omit it
+    entirely (SmolVLA).
     When the target config has no matching field, the dtype is applied to the
     underlying ``nn.Module`` after construction instead.
 

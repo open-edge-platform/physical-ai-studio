@@ -19,10 +19,9 @@ best-effort escape hatch (no equivalence guarantee, see
 
 from __future__ import annotations
 
-from physicalai.policies.lerobot.molmoact2 import MolmoAct2
 from physicalai.policies.lerobot.policy import NamedLeRobotPolicy
 
-__all__ = ["ACT", "PI0", "PI05", "XVLA", "Diffusion", "Groot", "MolmoAct2", "PI0Fast", "SmolVLA"]
+__all__ = ["ACT", "PI0", "PI05", "XVLA", "Diffusion", "Groot", "PI0Fast", "SmolVLA"]
 
 
 class ACT(NamedLeRobotPolicy):

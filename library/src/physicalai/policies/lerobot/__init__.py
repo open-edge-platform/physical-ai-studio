@@ -24,13 +24,6 @@ Examples:
         >>> from physicalai.policies.lerobot import PI05
         >>> policy = PI05(dtype="bfloat16")
 
-    Build MolmoAct2 from an explicit LeRobot config::
-
-        >>> from lerobot.policies.molmoact2.configuration_molmoact2 import MolmoAct2Config
-        >>> from physicalai.policies.lerobot import MolmoAct2
-        >>> config = MolmoAct2Config(checkpoint_path="allenai/MolmoAct2-SO100_101")
-        >>> policy = MolmoAct2.from_config(config)
-
     Construct a wrapper from dataset metadata::
 
         >>> from physicalai.policies.lerobot import Diffusion
@@ -53,7 +46,6 @@ from physicalai.policies.lerobot.aliases import (
     XVLA,
     Diffusion,
     Groot,
-    MolmoAct2,
     PI0Fast,
     SmolVLA,
 )
@@ -66,7 +58,6 @@ SUPPORTED_POLICIES: tuple[str, ...] = (
     "act",
     "diffusion",
     "groot",
-    "molmoact2",
     "pi0",
     "pi05",
     "pi0_fast",
@@ -89,7 +80,6 @@ _NAMED_WRAPPERS: tuple[type[NamedLeRobotPolicy], ...] = (
     ACT,
     Diffusion,
     Groot,
-    MolmoAct2,
     PI0,
     PI05,
     PI0Fast,
@@ -110,7 +100,6 @@ __all__ = [
     "Diffusion",
     "Groot",
     "LeRobotPolicy",
-    "MolmoAct2",
     "NamedLeRobotPolicy",
     "PI0Fast",
     "SmolVLA",
