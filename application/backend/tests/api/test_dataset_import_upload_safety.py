@@ -11,6 +11,7 @@ from main import app
 from schemas.base_job import JobStatus, JobType
 from schemas.dataset_import_job import DatasetImportJobPayload, ImportStep
 from schemas.job import DatasetImportJob
+from settings import Settings
 
 _FIXED_STAGING_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 
@@ -94,7 +95,7 @@ def test_upload_rejects_nested_zip_and_does_not_attach_archive() -> None:
     # making the test deterministic regardless of available disk space.
     with patch("api.dataset_import.get_settings") as mock_get_settings:
         settings = mock_get_settings.return_value
-        settings.cache_dir = Path("~/.cache/physicalai").expanduser() / "cache"
+        settings.cache_dir = Settings().cache_dir
         settings.data_import_max_upload_bytes = 5 * 1024 * 1024  # 5 MB
         settings.data_import_min_free_bytes = 0
         settings.data_import_max_uncompressed_bytes = 10 * 1024 * 1024
@@ -134,7 +135,7 @@ def test_upload_rejects_archive_with_too_large_uncompressed_size_and_does_not_at
 
     with patch("api.dataset_import.get_settings") as mock_get_settings:
         settings = mock_get_settings.return_value
-        settings.cache_dir = Path("~/.cache/physicalai").expanduser() / "cache"
+        settings.cache_dir = Settings().cache_dir
         settings.data_import_max_upload_bytes = 5 * 1024 * 1024  # 5 MB - deterministic on CI
         settings.data_import_min_free_bytes = 0
         settings.data_import_max_uncompressed_bytes = 2_000
@@ -171,20 +172,15 @@ def test_upload_accepts_valid_zip_and_attaches_archive(tmp_path: Path) -> None:
         compression=zipfile.ZIP_STORED,
     )
 
-    def _make_settings(cache_dir: Path):
-        from unittest.mock import MagicMock
-
-        s = MagicMock()
-        s.cache_dir = cache_dir
-        s.data_import_max_upload_bytes = 5 * 1024 * 1024  # 5 MB - deterministic on CI
-        s.data_import_min_free_bytes = 0
-        s.data_import_max_uncompressed_bytes = 200 * 1024 * 1024 * 1024
-        return s
-
+    staged_path = tmp_path / "cache" / "imports" / "datasets" / f"{_FIXED_STAGING_ID}.zip"
     with (
-        patch("api.dataset_import.get_settings", return_value=_make_settings(tmp_path)),
-        patch("services.dataset_import.staging.get_settings", return_value=_make_settings(tmp_path)),
+        patch("api.dataset_import.check_disk_headroom"),
+        patch("api.dataset_import.resolve_payload_archive_path", return_value=staged_path),
+        patch("api.dataset_import.get_settings") as mock_get_settings,
     ):
+        settings = mock_get_settings.return_value
+        settings.data_import_max_uncompressed_bytes = 10 * 1024 * 1024
+
         try:
             client = TestClient(app)
             response = client.put(
@@ -193,12 +189,6 @@ def test_upload_accepts_valid_zip_and_attaches_archive(tmp_path: Path) -> None:
             )
         finally:
             app.dependency_overrides.clear()
-
-        # Resolve the staging path while patches are still active so get_settings
-        # returns the same tmp_path-based cache_dir used during the upload.
-        from services.dataset_import.staging import resolve_payload_archive_path
-
-        staged_path = resolve_payload_archive_path(job_stub._job.payload)
 
     assert response.status_code == 202
     assert len(stub.calls) == 1
@@ -229,7 +219,7 @@ def test_upload_rejects_archive_with_too_many_entries() -> None:
         patch("services.archive_safety.DEFAULT_MAX_FILE_COUNT", 100),
     ):
         settings = mock_get_settings.return_value
-        settings.cache_dir = Path("~/.cache/physicalai").expanduser() / "cache"
+        settings.cache_dir = Settings().cache_dir
         settings.data_import_max_upload_bytes = 5 * 1024 * 1024  # 5 MB - deterministic on CI
         settings.data_import_min_free_bytes = 0
         settings.data_import_max_uncompressed_bytes = 200 * 1024 * 1024 * 1024
@@ -317,8 +307,8 @@ def test_upload_rejects_when_cache_dir_has_insufficient_free_space() -> None:
         patch("services.archive_safety.shutil.disk_usage", return_value=_fake_usage),
     ):
         settings = mock_get_settings.return_value
-        settings.cache_dir = Path("~/.cache/physicalai").expanduser() / "cache"
-        settings.datasets_dir = Path("~/.cache/physicalai").expanduser() / "datasets"
+        settings.cache_dir = Settings().cache_dir
+        settings.datasets_dir = Settings().datasets_dir
         settings.data_import_max_upload_bytes = 10 * 1024 * 1024 * 1024  # huge - no header rejection
         settings.data_import_min_free_bytes = 1  # any positive headroom will be unmet
         settings.data_import_max_uncompressed_bytes = 5 * 1024 * 1024 * 1024

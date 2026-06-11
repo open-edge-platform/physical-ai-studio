@@ -133,8 +133,6 @@ class ProjectEnvironmentDB(Base):
     id: Mapped[UUID] = mapped_column(Text, primary_key=True, default=uuid4)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String(255))
-    robots: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    camera_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
 
@@ -143,6 +141,53 @@ class ProjectEnvironmentDB(Base):
         "DatasetDB",
         back_populates="environment",
     )
+    robot_links: Mapped[list["EnvironmentRobotDB"]] = relationship(
+        "EnvironmentRobotDB",
+        back_populates="environment",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    camera_links: Mapped[list["EnvironmentCameraDB"]] = relationship(
+        "EnvironmentCameraDB",
+        back_populates="environment",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
+class EnvironmentRobotDB(Base):
+    """Join table linking an environment to a robot, with its teleoperator configuration."""
+
+    __tablename__ = "environment_robots"
+
+    environment_id: Mapped[str] = mapped_column(
+        ForeignKey("project_environments.id", ondelete="CASCADE"), primary_key=True
+    )
+    robot_id: Mapped[str] = mapped_column(ForeignKey("project_robots.id", ondelete="CASCADE"), primary_key=True)
+    tele_operator_type: Mapped[str] = mapped_column(String(16), nullable=False, default="none")
+    tele_operator_robot_id: Mapped[str | None] = mapped_column(
+        ForeignKey("project_robots.id", ondelete="CASCADE"), nullable=True
+    )
+
+    environment: Mapped["ProjectEnvironmentDB"] = relationship("ProjectEnvironmentDB", back_populates="robot_links")
+    robot: Mapped["ProjectRobotDB"] = relationship("ProjectRobotDB", foreign_keys=[robot_id], lazy="selectin")
+    tele_operator_robot: Mapped["ProjectRobotDB | None"] = relationship(
+        "ProjectRobotDB", foreign_keys=[tele_operator_robot_id], lazy="selectin"
+    )
+
+
+class EnvironmentCameraDB(Base):
+    """Join table linking an environment to a camera."""
+
+    __tablename__ = "environment_cameras"
+
+    environment_id: Mapped[str] = mapped_column(
+        ForeignKey("project_environments.id", ondelete="CASCADE"), primary_key=True
+    )
+    camera_id: Mapped[str] = mapped_column(ForeignKey("project_cameras.id", ondelete="CASCADE"), primary_key=True)
+
+    environment: Mapped["ProjectEnvironmentDB"] = relationship("ProjectEnvironmentDB", back_populates="camera_links")
+    camera: Mapped["ProjectCameraDB"] = relationship("ProjectCameraDB", lazy="selectin")
 
 
 class DatasetDB(Base):

@@ -1,12 +1,14 @@
 import shutil
-from datetime import datetime
 from pathlib import Path
 from uuid import UUID
+
+import yaml
 
 from db import get_async_db_session_ctx
 from exceptions import ResourceNotFoundError, ResourceType
 from repositories import ModelRepository, SnapshotRepository
-from schemas.model import BackendExportDetail, Model
+from schemas.job import TrainJob
+from schemas.model import BackendExportDetail, Model, TrainingSummary
 
 
 class ModelService:
@@ -68,22 +70,44 @@ class ModelService:
 
         details: list[BackendExportDetail] = []
         for backend_dir in sorted(exports_dir.iterdir()):
-            if not backend_dir.is_dir():
-                continue
-            files = [f for f in backend_dir.rglob("*") if f.is_file()]
+            detail = BackendExportDetail.from_backend_dir(backend_dir)
+            if detail is not None:
+                details.append(detail)
 
-            # Backend exports folder may be empty if export failed
-            if len(files) == 0:
-                continue
-
-            total_size = sum(f.stat().st_size for f in files)
-            exported_at = datetime.fromtimestamp(backend_dir.stat().st_mtime)
-            details.append(
-                BackendExportDetail(
-                    type=backend_dir.name,
-                    size_bytes=total_size,
-                    file_count=len(files),
-                    exported_at=exported_at,
-                )
-            )
         return details
+
+    @staticmethod
+    def get_hparams(model: Model) -> dict | None:
+        """Read training hyperparameters from the model directory.
+
+        Looks for ``version_0/hparams.yaml`` (written by Lightning's CSVLogger).
+        """
+        hparams_path = Path(model.path) / "version_0" / "hparams.yaml"
+        if not hparams_path.is_file():
+            return None
+        with hparams_path.open() as f:
+            return yaml.safe_load(f)
+
+    @staticmethod
+    def get_training_summary(training_job: TrainJob | None) -> TrainingSummary | None:
+        """Extract a summary of training configuration from a training job.
+
+        This merges fields from the job's payload (batch size, precision, etc.)
+        with computed values like training duration.
+        """
+        if training_job is None:
+            return None
+
+        payload = training_job.payload
+        device_type = str(payload.device.type) if payload.device is not None else None
+
+        return TrainingSummary(
+            max_steps=payload.max_steps,
+            batch_size=payload.batch_size,
+            precision=str(payload.precision),
+            compile_model=payload.compile_model,
+            val_split=payload.val_split,
+            auto_scale_batch_size=payload.auto_scale_batch_size,
+            num_workers=payload.num_workers,
+            device_type=device_type,
+        )

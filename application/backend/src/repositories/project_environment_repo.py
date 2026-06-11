@@ -4,23 +4,19 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio.session import AsyncSession
 
-from db.schema import ProjectCameraDB, ProjectEnvironmentDB, ProjectRobotDB
+from db.schema import EnvironmentRobotDB, ProjectEnvironmentDB
 from repositories.base import ProjectBaseRepository
 from repositories.mappers import ProjectCameraMapper, ProjectEnvironmentMapper, ProjectRobotMapper
 from schemas.environment import (
     Environment,
     EnvironmentWithRelations,
-    RobotEnvironmentConfiguration,
     RobotWithTeleoperator,
     TeleoperatorNoneWithRobot,
-    TeleoperatorRobot,
     TeleoperatorRobotWithRobot,
 )
-from schemas.project_camera import Camera
-from schemas.robot import Robot
 
 
-class ProjectEnvironmentRepository(ProjectBaseRepository):
+class ProjectEnvironmentRepository(ProjectBaseRepository[Environment, ProjectEnvironmentDB]):
     def __init__(self, db: AsyncSession, project_id: UUID):
         super().__init__(db, project_id, ProjectEnvironmentDB)
 
@@ -32,70 +28,71 @@ class ProjectEnvironmentRepository(ProjectBaseRepository):
     def from_schema(self) -> Callable[[ProjectEnvironmentDB], Environment]:
         return ProjectEnvironmentMapper.from_schema
 
+    async def update(self, item: Environment, partial_update: dict) -> Environment:
+        """Update an environment, fully replacing its robot/camera join rows.
+
+        Reassigning the ``robot_links`` / ``camera_links`` collections lets the ``delete-orphan``
+        cascade remove the previous rows and insert the new ones on flush. This is more deterministic
+        than ``db.merge`` for the composite-primary-key join tables.
+        """
+        partial_update = {
+            k: v for k, v in partial_update.items() if v is not None and k not in {"created_at", "updated_at"}
+        }
+        to_update = item.model_copy(update=partial_update, deep=True)
+        to_update = item.__class__.model_validate(to_update.model_dump())
+
+        stmt = select(ProjectEnvironmentDB).where(
+            ProjectEnvironmentDB.id == str(item.id),
+            ProjectEnvironmentDB.project_id == self.project_id,
+        )
+        existing = (await self.db.execute(stmt)).scalars().first()
+        if existing is None:
+            raise ValueError(f"{item.__class__} with ID `{item.id}` doesn't exist")
+
+        existing.name = to_update.name
+        existing.robot_links = ProjectEnvironmentMapper.build_robot_links(to_update)
+        existing.camera_links = ProjectEnvironmentMapper.build_camera_links(to_update)
+        await self.db.commit()
+
+        updated = await self.get_by_id(item.id)
+        if updated is None:
+            raise ValueError(f"{item.__class__} with ID `{item.id}` doesn't exist")
+        return updated
+
     async def get_by_id_with_relations(self, environment_id: UUID) -> EnvironmentWithRelations | None:
         """Get an environment by ID with eager loaded robots and cameras."""
-        env = await self.get_by_id(environment_id)
+        stmt = select(ProjectEnvironmentDB).where(
+            ProjectEnvironmentDB.id == str(environment_id),
+            ProjectEnvironmentDB.project_id == self.project_id,
+        )
+        result = await self.db.execute(stmt)
+        env = result.scalars().first()
         if env is None:
             return None
 
-        robots_map = await self._fetch_robots_map(env.robots)
-        cameras = await self._fetch_cameras(env.camera_ids)
-        robots_with_teleoperators = self._build_robots_with_teleoperators(env.robots, robots_map)
+        cameras = [ProjectCameraMapper.from_schema(link.camera) for link in env.camera_links]
 
         return EnvironmentWithRelations(
             id=env.id,
             name=env.name,
-            robots=robots_with_teleoperators,
+            robots=self._build_robots_with_teleoperators(env.robot_links),
             cameras=cameras,
             created_at=env.created_at,
             updated_at=env.updated_at,
         )
 
-    async def _fetch_robots_map(self, robot_configs: list[RobotEnvironmentConfiguration]) -> dict[str, Robot]:
-        """Fetch all robots involved in the environment and return a map by ID."""
-        robot_ids: set[str] = set()
-        for config in robot_configs:
-            robot_ids.add(str(config.robot_id))
-            if isinstance(config.tele_operator, TeleoperatorRobot):
-                robot_ids.add(str(config.tele_operator.robot_id))
-
-        if not robot_ids:
-            return {}
-
-        stmt = select(ProjectRobotDB).where(
-            ProjectRobotDB.project_id == self.project_id,
-            ProjectRobotDB.id.in_(list(robot_ids)),
-        )
-        result = await self.db.execute(stmt)
-        return {str(db_robot.id): ProjectRobotMapper.from_schema(db_robot) for db_robot in result.scalars().all()}
-
-    async def _fetch_cameras(self, camera_ids: list[UUID]) -> list[Camera]:
-        """Fetch all cameras in the environment."""
-        if not camera_ids:
-            return []
-
-        stmt = select(ProjectCameraDB).where(
-            ProjectCameraDB.project_id == self.project_id,
-            ProjectCameraDB.id.in_([str(cid) for cid in camera_ids]),
-        )
-        result = await self.db.execute(stmt)
-        return [ProjectCameraMapper.from_schema(db_camera) for db_camera in result.scalars().all()]
-
-    def _build_robots_with_teleoperators(
-        self,
-        robot_configs: list[RobotEnvironmentConfiguration],
-        robots_map: dict[str, Robot],
-    ) -> list[RobotWithTeleoperator]:
+    @staticmethod
+    def _build_robots_with_teleoperators(robot_links: list[EnvironmentRobotDB]) -> list[RobotWithTeleoperator]:
         """Construct the list of robots with their eager-loaded teleoperators."""
         robots_with_teleoperators = []
-        for config in robot_configs:
-            robot = robots_map.get(str(config.robot_id))
-            if robot is None:
-                continue
+        for link in robot_links:
+            robot = ProjectRobotMapper.from_schema(link.robot)
 
-            if isinstance(config.tele_operator, TeleoperatorRobot):
-                tele_robot = robots_map.get(str(config.tele_operator.robot_id))
-                tele_operator = TeleoperatorRobotWithRobot(robot_id=config.tele_operator.robot_id, robot=tele_robot)
+            if link.tele_operator_type == "robot" and link.tele_operator_robot is not None:
+                tele_operator = TeleoperatorRobotWithRobot(
+                    robot_id=UUID(link.tele_operator_robot_id),
+                    robot=ProjectRobotMapper.from_schema(link.tele_operator_robot),
+                )
             else:
                 tele_operator = TeleoperatorNoneWithRobot()
 

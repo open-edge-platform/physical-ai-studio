@@ -140,12 +140,55 @@ jobs:
         run: |
           uv run --no-sync pytest tests/unit
 
+  integration-tests:
+    runs-on: [self-hosted, Linux, X64, gpu]
+    needs: check-paths
+    if: needs.check-paths.outputs.run_workflow == 'true'
+    permissions:
+      contents: read
+    steps:
+      - *harden-runner
+
+      - *checkout
+
+      - *set-up-python
+
+      - name: Install system dependencies for headless rendering
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev cmake ffmpeg xvfb gcc
+
+      - *set-up-uv
+
+      - name: Verify lock file
+        working-directory: library
+        run: uv lock --check
+
+      - name: Install dependencies
+        working-directory: library
+        run: |
+          uv sync --frozen --extra tests --extra pi05 --extra libero --extra smolvla --extra cu128
+
+      - name: Run python integration tests
+        working-directory: library
+        env:
+          # Headless rendering for MuJoCo/OpenGL (must be set before any imports)
+          MUJOCO_GL: egl
+          PYOPENGL_PLATFORM: egl
+          # Force GLVND to dispatch EGL to the NVIDIA vendor driver. Mesa's EGL does
+          # not support EGL_EXT_platform_device, which MuJoCo's EGL backend needs for
+          # headless device rendering on the GPU runner.
+          __EGL_VENDOR_LIBRARY_FILENAMES: /usr/share/glvnd/egl_vendor.d/10_nvidia.json
+        run: |
+          uv run --no-sync pytest tests/integration -m "not slow"
+
   required-check:
     name: Required Check library
     needs:
       - check-paths
       - code-quality
       - unit-tests
+      - integration-tests
     runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
     env:
       CHECKS: ${{ join(needs.*.result, ' ') }}

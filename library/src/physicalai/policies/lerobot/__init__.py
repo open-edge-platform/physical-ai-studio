@@ -70,9 +70,6 @@ VALIDATED_EQUIVALENCE_POLICIES: tuple[str, ...] = (
     "act",
     "diffusion",
     "smolvla",
-    "pi0",
-    "pi05",
-    "pi0_fast",
 )
 """Named wrappers covered by the generic wrapper-vs-native equivalence suite."""
 

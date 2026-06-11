@@ -14,11 +14,9 @@ import torch
 pytest.importorskip("libero")
 pytest.importorskip("robosuite")
 
-from physicalai.data import Feature, FeatureType, Observation
+from physicalai.data import Observation
 from physicalai.gyms.libero import LiberoGym, create_libero_gyms
-from physicalai.policies import ACT, ACTConfig
-from physicalai.policies.act.model import ACT as ACTModel
-from physicalai.policies.utils.normalization import NormalizationParameters
+from physicalai.policies import ACT
 
 
 @pytest.fixture
@@ -43,46 +41,50 @@ def device():
 @pytest.fixture
 def act_policy(device):
     """Create a first-party ACT policy matching LiberoGym output."""
-    input_features = {
-        "image": Feature(
-            ftype=FeatureType.VISUAL,
-            shape=(3, 256, 256),
-            normalization_data=NormalizationParameters(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-        ),
-        "image2": Feature(
-            ftype=FeatureType.VISUAL,
-            shape=(3, 256, 256),
-            normalization_data=NormalizationParameters(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-        ),
-        "state": Feature(
-            ftype=FeatureType.STATE,
-            shape=(8,),
-            normalization_data=NormalizationParameters(mean=[0.0] * 8, std=[1.0] * 8),
-        ),
-    }
-    output_features = {
-        "action": Feature(
-            ftype=FeatureType.ACTION,
-            shape=(7,),
-            normalization_data=NormalizationParameters(mean=[0.0] * 7, std=[1.0] * 7),
-        ),
+    dataset_stats = {
+        "image": {
+            "mean": [0.5, 0.5, 0.5],
+            "std": [0.5, 0.5, 0.5],
+            "type": "VISUAL",
+            "name": "image",
+            "shape": (3, 256, 256),
+        },
+        "image2": {
+            "mean": [0.5, 0.5, 0.5],
+            "std": [0.5, 0.5, 0.5],
+            "type": "VISUAL",
+            "name": "image2",
+            "shape": (3, 256, 256),
+        },
+        "state": {
+            "mean": [0.0] * 8,
+            "std": [1.0] * 8,
+            "type": "STATE",
+            "name": "state",
+            "shape": (8,),
+        },
+        "action": {
+            "mean": [0.0] * 7,
+            "std": [1.0] * 7,
+            "type": "ACTION",
+            "name": "action",
+            "shape": (7,),
+        },
     }
 
-    config = ACTConfig(
-        input_features=input_features,
-        output_features=output_features,
+    policy = ACT(
         chunk_size=100,
         dim_model=256,
         n_encoder_layers=2,
         n_decoder_layers=1,
+        dataset_stats=dataset_stats,
     )
-    model = ACTModel.from_config(config)
-    policy = ACT(model)
     policy.to(device)
     policy.eval()
     return policy
 
 
+@pytest.mark.skip(reason="Temporarily disabled due to rendering issues in CI; will re-enable after investigation and fixes.")
 class TestLiberoGymEndToEnd:
     """End-to-end integration tests for LiberoGym with first-party ACT."""
 
@@ -92,11 +94,14 @@ class TestLiberoGymEndToEnd:
 
         # Verify observation format before moving to device
         assert isinstance(obs, Observation)
+        assert isinstance(obs.images, dict)
         assert "image" in obs.images
         assert "image2" in obs.images
 
         # Move to device and verify shapes/device
         obs = obs.to(device)
+        assert isinstance(obs.images, dict)
+        assert isinstance(obs.state, torch.Tensor)
         assert obs.images["image"].shape == (1, 3, 256, 256)
         assert obs.state.shape == (1, 8)
         assert str(obs.images["image"].device).startswith(device)

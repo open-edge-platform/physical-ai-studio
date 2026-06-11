@@ -1,4 +1,4 @@
-"""Unit tests for ModelService focusing on the delete_model behaviour."""
+"""Unit tests for ModelService."""
 
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
@@ -22,6 +22,19 @@ def _make_model(snapshot_id=None) -> Model:
             "properties": {},
         }
     )
+
+
+def test_get_backend_details_delegates_to_backend_export_detail(tmp_path) -> None:
+    model = _make_model()
+    model.path = str(tmp_path)
+    backend_dir = tmp_path / "exports" / "torch"
+    backend_dir.mkdir(parents=True)
+    with patch(
+        "services.model_service.BackendExportDetail.from_backend_dir", return_value=None
+    ) as mock_from_backend_dir:
+        ModelService.get_backend_details(model)
+
+    mock_from_backend_dir.assert_called_once_with(backend_dir)
 
 
 @pytest.mark.anyio

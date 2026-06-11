@@ -35,11 +35,12 @@ export const EnvironmentShow = () => {
 
     const environmentForm: EnvironmentForm = {
         name: environment.name,
-        camera_ids: environment.cameras?.map(({ id }) => id!) ?? [],
+        cameras: environment.cameras?.map(({ id, name }) => ({ camera_id: id!, name: name! })) ?? [],
         robots:
             environment.robots?.map((robot) => {
                 return {
                     robot_id: robot.robot.id,
+                    name: robot.robot.name,
                     teleoperator:
                         robot.tele_operator.type === 'robot'
                             ? {

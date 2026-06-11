@@ -1,82 +1,80 @@
-import json
-from typing import Any
 from uuid import UUID
 
-from db.schema import ProjectEnvironmentDB
+from db.schema import EnvironmentCameraDB, EnvironmentRobotDB, ProjectEnvironmentDB
 from repositories.mappers.base_mapper_interface import IBaseMapper
-from schemas.environment import Environment, RobotEnvironmentConfiguration, TeleoperatorNone, TeleoperatorRobot
+from schemas.environment import (
+    CameraEnvironmentConfiguration,
+    Environment,
+    RobotEnvironmentConfiguration,
+    TeleoperatorNone,
+    TeleoperatorRobot,
+)
 
 
 class ProjectEnvironmentMapper(IBaseMapper):
     """Mapper for Environment schema entity <-> DB entity conversions."""
 
     @staticmethod
+    def build_robot_links(db_schema: Environment) -> list[EnvironmentRobotDB]:
+        """Build standalone robot join rows (not attached to a parent) from the schema."""
+        return [
+            EnvironmentRobotDB(
+                environment_id=str(db_schema.id),
+                robot_id=str(robot.robot_id),
+                tele_operator_type=robot.tele_operator.type,
+                tele_operator_robot_id=(
+                    str(robot.tele_operator.robot_id) if isinstance(robot.tele_operator, TeleoperatorRobot) else None
+                ),
+            )
+            for robot in db_schema.robots
+        ]
+
+    @staticmethod
+    def build_camera_links(db_schema: Environment) -> list[EnvironmentCameraDB]:
+        """Build standalone camera join rows (not attached to a parent) from the schema."""
+        return [
+            EnvironmentCameraDB(
+                environment_id=str(db_schema.id),
+                camera_id=str(camera.camera_id),
+            )
+            for camera in db_schema.cameras
+        ]
+
+    @staticmethod
     def to_schema(db_schema: Environment) -> ProjectEnvironmentDB:
         """Convert Environment schema to db model."""
-        robots_json = json.dumps(
-            [
-                {
-                    "robot_id": str(robot.robot_id),
-                    "tele_operator": (
-                        {"type": "robot", "robot_id": str(robot.tele_operator.robot_id)}
-                        if isinstance(robot.tele_operator, TeleoperatorRobot)
-                        else {"type": "none"}
-                    ),
-                }
-                for robot in db_schema.robots
-            ]
-        )
-
-        camera_ids_json = json.dumps([str(camera_id) for camera_id in db_schema.camera_ids])
-
         return ProjectEnvironmentDB(
             id=str(db_schema.id),
             project_id="",  # Will be set by repository
             name=db_schema.name,
-            robots=robots_json,
-            camera_ids=camera_ids_json,
             created_at=db_schema.created_at,
             updated_at=db_schema.updated_at,
+            robot_links=ProjectEnvironmentMapper.build_robot_links(db_schema),
+            camera_links=ProjectEnvironmentMapper.build_camera_links(db_schema),
         )
 
     @staticmethod
     def from_schema(model: ProjectEnvironmentDB) -> Environment:
         """Convert Environment db entity to schema."""
-        # Parse robots JSON
-        robots_data = ProjectEnvironmentMapper._parse_json(model.robots, [])
         robots = [
             RobotEnvironmentConfiguration(
-                robot_id=UUID(rc["robot_id"]),
+                robot_id=UUID(link.robot_id),
                 tele_operator=(
-                    TeleoperatorRobot(robot_id=UUID(rc["tele_operator"]["robot_id"]))
-                    if rc.get("tele_operator", {}).get("type") == "robot"
+                    TeleoperatorRobot(robot_id=UUID(link.tele_operator_robot_id))
+                    if link.tele_operator_type == "robot" and link.tele_operator_robot_id is not None
                     else TeleoperatorNone()
                 ),
             )
-            for rc in robots_data
+            for link in model.robot_links
         ]
 
-        # Parse camera_ids JSON
-        camera_ids_data = ProjectEnvironmentMapper._parse_json(model.camera_ids, [])
-        camera_ids = [UUID(cid) for cid in camera_ids_data]
+        cameras = [CameraEnvironmentConfiguration(camera_id=UUID(link.camera_id)) for link in model.camera_links]
 
         return Environment(
             id=model.id,
             name=model.name,
             robots=robots,
-            camera_ids=camera_ids,
+            cameras=cameras,
             created_at=model.created_at,
             updated_at=model.updated_at,
         )
-
-    @staticmethod
-    def _parse_json(value: Any, default: Any) -> Any:
-        """Safely parse JSON that might be a string or already parsed."""
-        if value is None:
-            return default
-        if isinstance(value, str):
-            try:
-                return json.loads(value)
-            except json.JSONDecodeError:
-                return default
-        return value

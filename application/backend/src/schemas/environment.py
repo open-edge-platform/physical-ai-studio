@@ -48,6 +48,18 @@ class RobotEnvironmentConfiguration(BaseModel):
     )
 
 
+class CameraEnvironmentConfiguration(BaseModel):
+    camera_id: UUID = Field(..., description="ID of the camera in this environment")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "camera_id": "c8g5dfh9-269e-7d2h-d546-31ggc3dic786",
+            }
+        }
+    )
+
+
 class Environment(BaseModel):
     id: Annotated[UUID, Field(description="Unique identifier")]
 
@@ -59,7 +71,9 @@ class Environment(BaseModel):
         default_factory=list,
         description="List of robot configurations in this environment",
     )
-    camera_ids: list[UUID] = Field(default_factory=list, description="List of camera IDs in this environment")
+    cameras: list[CameraEnvironmentConfiguration] = Field(
+        default_factory=list, description="List of camera configurations in this environment"
+    )
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -79,9 +93,9 @@ class Environment(BaseModel):
                         "tele_operator": {"type": "none"},
                     },
                 ],
-                "camera_ids": [
-                    "c8g5dfh9-269e-7d2h-d546-31ggc3dic786",
-                    "d9h6egi0-370f-8e3i-e657-42hhd4ejd897",
+                "cameras": [
+                    {"camera_id": "c8g5dfh9-269e-7d2h-d546-31ggc3dic786"},
+                    {"camera_id": "d9h6egi0-370f-8e3i-e657-42hhd4ejd897"},
                 ],
                 "created_at": "2024-01-15T10:30:00Z",
                 "updated_at": "2024-01-15T10:30:00Z",
