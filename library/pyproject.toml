@@ -45,7 +45,6 @@ dependencies = [
     # SubcommandSpec contract that the studio subcommands plug into. Must be a
     # release that ships the CLI host; older runtimes lack `physicalai.cli`.
     "physicalai>=0.1.1",
-    "hiyapyco==0.7.0", # test
 ]
 
 [project.optional-dependencies]
