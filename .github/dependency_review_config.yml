@@ -1,4 +1,5 @@
 fail-on-severity: "low"
+comment-summary-in-pr: always
 deny-licenses:
   - GPL-2.0
   - GPL-3.0
