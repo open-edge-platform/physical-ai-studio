@@ -90,7 +90,6 @@ async def camera_websocket(
     WebSocket endpoint for camera streaming.
 
     Query Parameters:
-        None
         camera: JSON serialized ProjectCamera
 
     Protocol:
