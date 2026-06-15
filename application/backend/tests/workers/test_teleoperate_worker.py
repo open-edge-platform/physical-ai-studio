@@ -1,6 +1,7 @@
 import asyncio
 import multiprocessing as mp
 from contextlib import asynccontextmanager
+from multiprocessing.synchronize import Event as EventClass
 from unittest.mock import MagicMock, patch
 
 from workers.teleoperate_worker import ActionWriteState, TeleoperateWorker
@@ -27,7 +28,7 @@ async def _noop_frequency(*args, **kwargs):
     yield
 
 
-def _stop_after(stop_event: mp.Event, n: int):
+def _stop_after(stop_event: EventClass, n: int):
     """Returns a read_state side effect that sets stop_event after n calls."""
     call_count = 0
 

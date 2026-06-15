@@ -7,6 +7,7 @@ from physicalai.robot.interface import Robot, RobotObservation
 from robots.robot_client import RobotClient
 from schemas.robot import RobotType
 
+
 @dataclass(frozen=True)
 class PhysicalAIRobotAdapterConfig:
     # Include ``<joint>.vel`` values from observation sensor data.
