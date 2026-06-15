@@ -130,8 +130,8 @@ describe('fetchClient.PATH', () => {
 
         it('resolves /api/projects/{project_id}/robots/{robot_id}/ws with params', () => {
             expect(
-                fetchClient.PATH('/api/projects/{project_id}/robots/{robot_id}/ws', {
-                    params: { path: { project_id: 'p1', robot_id: 'r1' } },
+                fetchClient.PATH('/api/projects/{project_id}/robots/ws', {
+                    params: { path: { project_id: 'p1' } },
                 })
             ).toBe('/api/projects/p1/robots/r1/ws');
         });
