@@ -29,6 +29,10 @@ def _make_frame(height: int = 480, width: int = 640):
     return mock_frame
 
 
+def _make_camera_worker(config, stop_event=None, **kwargs):
+    return CameraWorker(config, stop_event=stop_event or Event(), **kwargs)
+
+
 @asynccontextmanager
 async def _noop_frequency(*args, **kwargs):
     yield
@@ -39,7 +43,7 @@ class TestCameraWorker:
         config = _make_config()
         with patch("workers.camera_worker.build_shared_camera") as mock_build:
             mock_build.return_value = MagicMock()
-            worker = CameraWorker(config)
+            worker = _make_camera_worker(config)
             mock_build.assert_called_once_with(config=config, validate_on_connect=False, overwrite_settings=True)
             assert worker.camera is not None
 
@@ -47,14 +51,14 @@ class TestCameraWorker:
         config = _make_config()
         with patch("workers.camera_worker.build_shared_camera") as mock_build:
             mock_build.return_value = MagicMock()
-            CameraWorker(config, is_locked=True)
+            _make_camera_worker(config, is_locked=True)
             mock_build.assert_called_once_with(config=config, validate_on_connect=False, overwrite_settings=False)
 
     def test_get_frame_returns_zeros_initially(self):
         config = _make_config()
         with patch("workers.camera_worker.build_shared_camera") as mock_build:
             mock_build.return_value = MagicMock()
-            worker = CameraWorker(config)
+            worker = _make_camera_worker(config)
             frame = worker.get_frame()
             assert frame.shape == (480, 640, 3)
             assert frame.dtype == np.uint8
@@ -64,7 +68,7 @@ class TestCameraWorker:
         config = _make_config()
         with patch("workers.camera_worker.build_shared_camera") as mock_build:
             mock_build.return_value = MagicMock()
-            worker = CameraWorker(config)
+            worker = _make_camera_worker(config)
             data = np.ones((480, 640, 3), dtype=np.uint8) * 42
             worker._set_frame(data)
             np.testing.assert_array_equal(worker.get_frame(), data)
@@ -73,7 +77,7 @@ class TestCameraWorker:
         config = _make_config()
         with patch("workers.camera_worker.build_shared_camera") as mock_build:
             mock_build.return_value = MagicMock()
-            worker = CameraWorker(config)
+            worker = _make_camera_worker(config)
             worker._set_frame(np.zeros((240, 320, 3), dtype=np.uint8))
             assert worker.get_frame().shape == (480, 640, 3)
 
@@ -99,7 +103,7 @@ class TestCameraWorker:
         with patch("workers.camera_worker.build_shared_camera") as mock_build:
             mock_cam = MagicMock()
             mock_build.return_value = mock_cam
-            worker = CameraWorker(config)
+            worker = _make_camera_worker(config)
             worker.setup()
             mock_cam.connect.assert_called_once()
 
@@ -142,7 +146,7 @@ class TestCameraWorker:
             mock_cam.is_connected = True
             mock_build.return_value = mock_cam
 
-            worker = CameraWorker(config)
+            worker = _make_camera_worker(config)
             asyncio.run(worker.run_loop())
 
             mock_cam.disconnect.assert_called_once()
@@ -158,7 +162,7 @@ class TestCameraWorker:
             mock_cam.is_connected = False
             mock_build.return_value = mock_cam
 
-            worker = CameraWorker(config)
+            worker = _make_camera_worker(config)
             asyncio.run(worker.run_loop())
 
             mock_cam.disconnect.assert_not_called()

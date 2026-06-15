@@ -21,9 +21,9 @@ def mock_robot_client():
         "wrist_roll.pos",
         "gripper.pos",
     ]
-    client.connect = AsyncMock()
-    client.disconnect = AsyncMock()
-    client.read_state = AsyncMock(
+    client.connect = MagicMock()
+    client.disconnect = MagicMock()
+    client.read_state = MagicMock(
         return_value={
             "state": {
                 "shoulder_pan.pos": -8.705526116578355,

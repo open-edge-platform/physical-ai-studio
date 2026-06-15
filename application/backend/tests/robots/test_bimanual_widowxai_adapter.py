@@ -3,7 +3,6 @@
 
 """Tests for bimanual usage via PhysicalAIRobotAdapter."""
 
-import asyncio
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -73,7 +72,7 @@ class TestProperties:
 class TestStateAndActions:
     def test_read_state_includes_prefixed_pos_and_vel(self):
         adapter, _ = _make_adapter("follower")
-        result = asyncio.run(adapter.read_state())
+        result = adapter.read_state()
         assert result["event"] == "state_was_updated"
         assert len(result["state"]) == 28
         for key in result["state"]:
@@ -86,7 +85,7 @@ class TestStateAndActions:
             joints[f"left_{n}.pos"] = 1.0
             joints[f"right_{n}.pos"] = 2.0
 
-        result = asyncio.run(adapter.set_joints_state(joints, goal_time=0.1))
+        result = adapter.set_joints_state(joints, goal_time=0.1)
         assert result["event"] == "joints_state_was_set"
         robot.send_action.assert_called_once()
         call = robot.send_action.call_args
@@ -98,7 +97,7 @@ class TestStateAndActions:
 class TestForces:
     def test_read_forces_follower_returns_event(self):
         adapter, _ = _make_adapter("follower")
-        result = asyncio.run(adapter.read_forces())
+        result = adapter.read_forces()
         assert result is not None
         assert result["event"] == "force_was_updated"
         assert len(result["state"]) == 14
@@ -109,7 +108,7 @@ class TestForces:
         forces = {f"left_{n}.eff": 0.1 for n in WIDOWXAI_JOINT_ORDER}
         forces.update({f"right_{n}.eff": 0.2 for n in WIDOWXAI_JOINT_ORDER})
 
-        result = asyncio.run(adapter.set_forces(forces))
+        result = adapter.set_forces(forces)
         assert result == forces
         robot.set_external_efforts.assert_called_once()
 
@@ -117,6 +116,6 @@ class TestForces:
         adapter, robot = _make_adapter("follower")
         robot.set_external_efforts = MagicMock()
         forces = {"left_gripper.eff": 1.0}
-        result = asyncio.run(adapter.set_forces(forces))
+        result = adapter.set_forces(forces)
         assert result == forces
         robot.set_external_efforts.assert_not_called()

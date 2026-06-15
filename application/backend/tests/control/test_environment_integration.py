@@ -105,5 +105,5 @@ class TestInferenceEnvironmentIntegration:
         event_loop,
     ):
         event_loop.run_until_complete(inference_environment_integration.teardown())
-        mock_robot_client.disconnect.assert_awaited_once()
+        mock_robot_client.disconnect.assert_called_once()
         assert mock_camera.disconnect.call_count == 2  # one per camera
