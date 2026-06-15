@@ -7,10 +7,6 @@ from physicalai.robot.interface import Robot, RobotObservation
 from robots.robot_client import RobotClient
 from schemas.robot import RobotType
 
-HARDWARE_TIMEOUT_CONNECT = 10.0
-HARDWARE_TIMEOUT_COMMAND = 5.0
-
-
 @dataclass(frozen=True)
 class PhysicalAIRobotAdapterConfig:
     # Include ``<joint>.vel`` values from observation sensor data.

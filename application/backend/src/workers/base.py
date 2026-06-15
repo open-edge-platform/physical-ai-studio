@@ -108,7 +108,7 @@ class BaseProcessWorker(mp.Process, StoppableMixin, ABC):
     ) -> None:
         super().__init__()
         self._interrupt_event = stop_event
-        self._stop_event = stop_event
+        self._stop_event = Event()
         self._parent_pid = os.getpid()
         self._queues_to_cancel = list(queues_to_cancel or [])
 

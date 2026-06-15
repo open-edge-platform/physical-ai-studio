@@ -103,5 +103,3 @@ class TeleoperateWorker(BaseProcessWorker):
     async def teardown(self) -> None:
         await super().teardown()
 
-
-#!/usr/bin/env python3

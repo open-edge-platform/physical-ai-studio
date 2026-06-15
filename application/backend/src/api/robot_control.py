@@ -54,20 +54,20 @@ async def robot_websocket(
         fps: Target frequency for state updates.
     """
     await websocket.accept()
-    settings = await websocket.receive_json("text")
-    follower_id = get_robot_id(settings["follower_id"])
-    robot_client_factory = RobotClientFactory(robot_manager, calibration_service)
-    follower = await robot_service.get_robot_by_id(project_id, follower_id)
-    follower_client = await robot_client_factory.build(follower)
-
-    leader_client = None
-    if "leader_id" in settings:
-        leader_id = get_robot_id(settings["leader_id"])
-        leader = await robot_service.get_robot_by_id(project_id, leader_id)
-        leader_client = await robot_client_factory.build(leader)
-
     worker = None
     try:
+        settings = await websocket.receive_json("text")
+        follower_id = get_robot_id(settings["follower_id"])
+        robot_client_factory = RobotClientFactory(robot_manager, calibration_service)
+        follower = await robot_service.get_robot_by_id(project_id, follower_id)
+        follower_client = await robot_client_factory.build(follower)
+
+        leader_client = None
+        if "leader_id" in settings:
+            leader_id = get_robot_id(settings["leader_id"])
+            leader = await robot_service.get_robot_by_id(project_id, leader_id)
+            leader_client = await robot_client_factory.build(leader)
+
         # Create worker
         worker = TeleoperateWorker(
             follower=follower_client, leader=leader_client, frequency=fps, mp_stop_event=scheduler.mp_stop_event
@@ -75,21 +75,13 @@ async def robot_websocket(
         worker.start()
         worker.set_action_source(ActionWriteState.FROM_LEADER)
         while True:
+            action_keys = follower_client.features()
             async with run_at_frequency(fps):
-                action_keys = follower_client.features()
                 raw_state = worker.get_state()
                 observation: dict[str, Any] = {i: raw_state[k] for k, i in enumerate(action_keys)}
                 await websocket.send_json({"event": "state_was_updated", "state": observation, "is_controlled": True})
     except WebSocketDisconnect:
         pass
-    except ValueError as e:
-        logger.error(f"Failed to register worker: {e}")
-        try:
-            await websocket.send_json({"event": "error", "message": str(e)})
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        except Exception as close_err:
-            logger.error(f"Could not close websocket after ValueError: {close_err}")
-
     except Exception as e:
         logger.exception(f"Unexpected error in robot websocket: {e}")
         try:
