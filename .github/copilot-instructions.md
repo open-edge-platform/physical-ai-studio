@@ -1,29 +1,3 @@
-# GitHub Copilot Instructions for Physical AI Studio
-
-> **Note**: This file is synchronized with `.cursorrules`. Both Cursor and VS Code (GitHub Copilot) use these same standards.
-
-## Table of Contents
-
-- [GitHub Copilot Instructions for Physical AI Studio](#github-copilot-instructions-for-physical-ai-studio)
-  - [Table of Contents](#table-of-contents)
-  - [Project Overview](#project-overview)
-  - [Coding Standards](#coding-standards)
-    - [Python Environment Management](#python-environment-management)
-    - [Python Code](#python-code)
-    - [TypeScript/React Code](#typescriptreact-code)
-    - [General Principles](#general-principles)
-  - [Writing Style](#writing-style)
-  - [Documentation Standards](#documentation-standards)
-  - [Testing Guidelines](#testing-guidelines)
-  - [File Organization](#file-organization)
-  - [Git Commit Messages](#git-commit-messages)
-  - [Pull Request Guidelines](#pull-request-guidelines)
-  - [Performance Considerations](#performance-considerations)
-  - [Security Best Practices](#security-best-practices)
-  - [AI/ML Specific Guidelines](#aiml-specific-guidelines)
-  - [Questions to Consider Before Coding](#questions-to-consider-before-coding)
-  - [When Suggesting Code Changes](#when-suggesting-code-changes)
-
 ## Project Overview
 
 Full-stack application with:
@@ -41,7 +15,6 @@ Full-stack application with:
 - Install with `uv pip install` or `uv sync`
 - Create environments with `uv venv`
 - Never use `pip` directly
-- Ensure `.venv` is in `.gitignore`
 
 ### Python Code
 
@@ -50,38 +23,7 @@ Full-stack application with:
 - Prefer `pathlib.Path` over string paths
 - Use `ruff` for linting and formatting
 - Address all ruff warnings
-
-**Docstrings** - Google style format:
-
-```python
-def function_name(param1: str, param2: int) -> bool:
-    """Brief description of function.
-
-    Args:
-        param1: Description of param1
-        param2: Description of param2
-
-    Returns:
-        Description of return value
-
-    Raises:
-        ValueError: Description of when this is raised
-
-    Examples:
-        >>> result = function_name("test", 42)
-        >>> print(result)
-        True
-
-        Multi-line example without prompt:
-
-        from module import function_name
-
-        result = function_name("test", 42)
-        if result:
-            print("Success")
-    """
-```
-
+- Use Google style docstrings
 - Use `logging` instead of `print()`
 - Prefer dataclasses or Pydantic models
 - Use context managers for resource management
@@ -98,58 +40,19 @@ def function_name(param1: str, param2: int) -> bool:
 
 ### General Principles
 
-- **DRY**: Extract common logic
-- **Single Responsibility**: One clear purpose per function/class
-- **Error Handling**: Handle errors with informative messages
-- **Testing**: Write tests for new functionality
-- **Security**: Use environment variables for secrets
-- **Performance**: Consider implications, especially for ML operations
+DRY, single responsibility, informative error messages, and tests for new functionality. Store secrets in environment variables. Mind performance of ML operations.
 
 ## Writing Style
 
 Apply to code comments, documentation, commit messages, and PR descriptions:
 
-**Be Concise**
+- **Be concise**: cut unnecessary words, avoid repetition, prefer short sentences.
+- **Be direct**: state the point first, use active voice, drop hedging ("may", "might", "could potentially").
+- **Use simple language**: plain words over complex ones, explain domain-specific terms.
+- **Sound natural**: write as if explaining to a colleague. Avoid formulaic transitions ("Furthermore", "Moreover") and filler ("It is important to note that", "It is worth noting"). Vary sentence length.
+- **Clarity over impressive vocabulary.**
 
-- Remove unnecessary words
-- Avoid repeating ideas
-- Use 10 words instead of 20
-- Prefer short sentences
-
-**Be Direct**
-
-- State the point immediately
-- Use active voice
-- Remove hedging language ("may", "might", "could potentially")
-
-**Use Simple Language**
-
-- Choose simple words over complex ones
-- Avoid jargon unless necessary
-- Break complex sentences into shorter ones
-
-**Sound Natural**
-
-- Write as if explaining to a colleague
-- Avoid formulaic transitions ("Furthermore", "Moreover", "Additionally")
-- Don't use numbered lists when a paragraph works
-- Avoid: "It is important to note that", "It should be mentioned", "It is worth noting"
-- Vary sentence length naturally
-
-**Academic But Accessible**
-
-- Use technical terms when needed, explain domain-specific ones
-- Prefer clarity over impressive vocabulary
-
-**Examples:**
-
-❌ "It is important to note that the workshop aims to establish a comprehensive platform that serves to bring together researchers from diverse backgrounds in order to facilitate meaningful collaboration."
-
-✅ "The workshop brings together researchers from diverse backgrounds to facilitate collaboration."
-
-❌ "The methodology demonstrates significant improvements in terms of performance metrics."
-
-✅ "The method improves performance."
+Example — ❌ "The methodology demonstrates significant improvements in terms of performance metrics." ✅ "The method improves performance."
 
 ## Documentation Standards
 
@@ -204,12 +107,18 @@ Apply to code comments, documentation, commit messages, and PR descriptions:
 ```
 application/backend/src/
 ├── api/          # API routes and endpoints
+├── control/      # Robot control logic
 ├── core/         # Core business logic
 ├── db/           # Database models and migrations
+├── internal_datasets/ # Built-in datasets
+├── middleware/   # Request/response middleware
+├── models/       # Domain models
 ├── repositories/ # Data access layer
+├── robots/       # Robot integrations
 ├── schemas/      # Pydantic schemas
 ├── services/     # Business logic services
-└── utils/        # Utility functions
+├── utils/        # Utility functions
+└── workers/      # Background workers
 ```
 
 **Frontend**
@@ -223,15 +132,22 @@ application/ui/src/
 └── assets/       # Static assets
 ```
 
-**Library**
+**Library** (`physicalai-train` distribution, `physicalai` import package)
 
 ```
 library/src/physicalai/
-├── configs/      # Configuration management
+├── benchmark/    # Benchmarking
+├── cli/          # Studio CLI subcommands
+├── config/       # Configuration management
 ├── data/         # Data loading and processing
+├── devices/      # Device handling
+├── eval/         # Evaluation
+├── export/       # Artifact export
+├── gyms/         # Environments
 ├── inference/    # Inference engine
-├── policy/       # Policy implementations
-└── trainer/      # Training logic
+├── policies/     # Policy implementations
+├── train/        # Training logic
+└── transforms/   # Data transforms
 ```
 
 ## Git Commit Messages
@@ -258,39 +174,18 @@ Write clear, concise messages. Reference issue numbers.
 ## Performance Considerations
 
 - Lazy load heavy dependencies
-- Use async/await for I/O
-- Implement caching
-- Optimize database queries (indexes, avoid N+1)
-- Profile before optimizing
-- Consider memory usage for ML models
+- Consider memory usage, inference latency, and throughput for ML models
 
 ## Security Best Practices
 
-- Validate and sanitize inputs
-- Use parameterized queries
-- Implement authentication and authorization
-- Store secrets in environment variables
-- Keep dependencies updated
-- Follow OWASP guidelines
+- For `library/` code, follow `.github/instructions/lib.security.instructions.md`
+- Validate inputs; use parameterized queries
 
 ## AI/ML Specific Guidelines
 
-- Document model architectures and hyperparameters
-- Version control training configurations
-- Log training metrics and artifacts
-- Handle model inference errors
-- Consider inference latency and throughput
-- Document model limitations and assumptions
+- Version-control training configurations; log training metrics and artifacts
+- Document model architectures, hyperparameters, limitations, and assumptions
 
-## Questions to Consider Before Coding
-
-1. Does this align with project architecture?
-2. Can I reuse existing utilities/components?
-3. How will this be tested?
-4. What error cases need handling?
-5. Are there performance implications?
-6. Does this need documentation?
-7. Security considerations?
 
 ## When Suggesting Code Changes
 
