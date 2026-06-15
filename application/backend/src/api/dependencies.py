@@ -27,7 +27,6 @@ from services.robot_calibration_service import RobotCalibrationService
 from services.system_service import SystemService
 from settings import get_settings
 from utils.serial_robot_tools import RobotConnectionManager
-from workers.camera_worker_registry import CameraWorkerRegistry
 from workers.model_worker_registry import ModelWorkerRegistry
 from workers.robot_worker_registry import RobotWorkerRegistry
 
@@ -227,14 +226,6 @@ def get_event_processor_ws(request: HTTPConnection) -> EventProcessor:
     return request.app.state.event_processor
 
 
-def get_camera_registry(request: HTTPConnection) -> CameraWorkerRegistry:
-    """Dependency to get camera worker registry."""
-    registry = getattr(request.app.state, "camera_registry", None)
-    if registry is None:
-        raise RuntimeError("Camera worker registry not initialized")
-    return registry
-
-
 def get_robot_registry(request: HTTPConnection) -> RobotWorkerRegistry:
     """Dependency to get robot worker registry."""
     registry = getattr(request.app.state, "robot_registry", None)
@@ -243,7 +234,6 @@ def get_robot_registry(request: HTTPConnection) -> RobotWorkerRegistry:
     return registry
 
 
-CameraRegistryDep = Annotated[CameraWorkerRegistry, Depends(get_camera_registry)]
 RobotRegistryDep = Annotated[RobotWorkerRegistry, Depends(get_robot_registry)]
 
 

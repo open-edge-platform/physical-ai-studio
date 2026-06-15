@@ -9,7 +9,6 @@ from services.event_processor import EventProcessor
 from settings import get_settings
 from utils.multiprocessing import ensure_spawn_start_method
 from utils.serial_robot_tools import RobotConnectionManager
-from workers.camera_worker_registry import CameraWorkerRegistry
 from workers.model_worker_registry import ModelWorkerRegistry
 from workers.robot_worker_registry import RobotWorkerRegistry
 
@@ -32,10 +31,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # so aliased project rows for the same physical device share one lock.
     app.state.recording_locked_camera_fingerprints = set()
 
-    app.state.camera_registry = CameraWorkerRegistry(
-        max_workers=10,
-        shutdown_timeout_s=10.0,
-    )
     app.state.robot_registry = RobotWorkerRegistry(
         max_workers=10,
         shutdown_timeout_s=10.0,
@@ -62,9 +57,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     # Shutdown
     logger.info(f"Shutting down {settings.app_name} application...")
-
-    camera_registry: CameraWorkerRegistry = app.state.camera_registry
-    await camera_registry.shutdown_all()
 
     robot_registry: RobotWorkerRegistry = app.state.robot_registry
     await robot_registry.shutdown_all()

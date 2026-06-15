@@ -6,16 +6,42 @@ import multiprocessing as mp
 import os
 import signal
 import threading
+import time
 from abc import ABC, abstractmethod
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import AsyncGenerator, Iterable
     from multiprocessing.queues import Queue
     from multiprocessing.synchronize import Event
 
 import loguru
 from loguru import logger
+
+
+@asynccontextmanager
+async def run_at_frequency(frequency: float) -> AsyncGenerator[None]:
+    """Run a function at a specified frequency.
+
+    Note: This is a frequency, not time (1/s vs s).
+    Example:
+
+    fps = 30
+    async with run_at_frequency(fps):
+       get_frame_from_camera()
+    """
+
+    t0 = time.perf_counter()
+    yield
+    target_dt = 1 / frequency
+    elapsed = time.perf_counter() - t0
+    sleep_time = target_dt - elapsed
+    if sleep_time > 0:
+        await asyncio.sleep(sleep_time)
+    else:
+        logger.debug(f"Missed timing on run_at_frequency: {-sleep_time * 1000}ms")
+        await asyncio.sleep(0)
 
 
 def log_threads(log_level="DEBUG") -> None:  # noqa: ANN001
@@ -201,3 +227,7 @@ class BaseThreadWorker(threading.Thread, StoppableMixin, abc.ABC):
                     self.loop.close()
                     log_threads()
                     logger.info(f"Stopped {self.name}")
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        self.join(timeout=10)

@@ -2,18 +2,16 @@ import json
 from collections import defaultdict
 from functools import cache
 from typing import Annotated
-from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Query, WebSocket, status
+from fastapi import APIRouter, Depends, Query, WebSocket
 from fastapi.responses import Response
-from loguru import logger
+from fastapi.websockets import WebSocketDisconnect
 
-from api.dependencies import CameraRegistryDep, RecordingLockedCamerasDep
 from schemas.camera import SupportedCameraFormat
 from schemas.project_camera import Camera as ProjectCamera
 from schemas.project_camera import CameraAdapter
+from workers.base import run_at_frequency
 from workers.camera_worker import CameraWorker
-from workers.transport.websocket_transport import WebSocketTransport
 
 router = APIRouter(prefix="/api/cameras", tags=["Cameras"])
 
@@ -86,52 +84,37 @@ async def camera_websocket_openapi(
 @router.websocket("/ws")
 async def camera_websocket(
     websocket: WebSocket,
-    registry: CameraRegistryDep,
-    locked_camera_fingerprints: RecordingLockedCamerasDep,
     camera: Annotated[ProjectCamera, Depends(get_camera_from_query)],
 ) -> None:
-    """WebSocket endpoint for camera streaming.
+    """
+    WebSocket endpoint for camera streaming.
 
     Query Parameters:
+        None
         camera: JSON serialized ProjectCamera
 
     Protocol:
-        Client sends JSON messages:
-            {"event": "disconnect"} - Request graceful disconnect
-            {"event": "ping"} - Keep-alive check
+        Client sends JSON message on connect:
+            camera: JSON serialized ProjectCamera
 
-        Server sends JSON-encoded messages with status updates:
-            {"event": "status", "state": "running", ...}
+        Server sends jpeg encoded bytes
     """
+    import cv2
+
     await websocket.accept()
 
-    is_locked = camera.fingerprint in locked_camera_fingerprints
-    worker_id = uuid4()
-    camera.id = worker_id
-
-    transport = WebSocketTransport(websocket)
-    worker = CameraWorker(camera, transport, is_locked=is_locked)
-
+    worker = None
     try:
-        await registry.create_and_register(worker_id, worker)
-        await worker.run()
-    except ValueError as e:
-        logger.error(f"Failed to register worker: {e}")
-        try:
-            await websocket.send_json(
-                {
-                    "event": "error",
-                    "message": str(e),
-                }
-            )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        except Exception:
-            logger.error(f"Could not close websocket: {e}")
-    except Exception as e:
-        logger.exception(f"Unexpected error in camera websocket: {e}")
-        try:
-            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
-        except Exception as e:
-            logger.error(f"Could not close websocket: {e}")
+        worker = CameraWorker(camera)
+        worker.start()
+        while True:
+            async with run_at_frequency(camera.payload.fps):
+                frame = worker.get_frame()
+                success, jpeg = cv2.imencode(".jpg", frame)
+                if success and jpeg is not None:
+                    await websocket.send_bytes(jpeg.tobytes())
+    except WebSocketDisconnect:
+        pass
     finally:
-        await registry.unregister(worker_id)
+        if worker:
+            worker.stop()
