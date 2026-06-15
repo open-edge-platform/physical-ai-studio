@@ -6,14 +6,14 @@ import { RobotViewer } from '../../controller/robot-viewer';
 import { RobotModelsProvider } from '../../robot-models-context';
 import { useJointState, useSynchronizeModelJoints } from '../../use-joint-state';
 
-const InnerCell = ({ robot_id }: { robot_id: string }) => {
+const InnerCell = ({ follower_id, leader_id }: { follower_id: string; leader_id?: string }) => {
     const { project_id } = useProjectId();
 
     const { data: robot } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/robots/{robot_id}', {
-        params: { path: { project_id, robot_id } },
+        params: { path: { project_id, robot_id: follower_id } },
     });
 
-    const { joints } = useJointState(project_id, robot_id);
+    const { joints } = useJointState(project_id, follower_id, leader_id);
     useSynchronizeModelJoints(joints, robot.type);
 
     return (
@@ -23,10 +23,10 @@ const InnerCell = ({ robot_id }: { robot_id: string }) => {
     );
 };
 
-export const RobotCell = ({ robot_id }: { robot_id: string }) => {
+export const RobotCell = ({ follower_id, leader_id }: { follower_id: string; leader_id?: string }) => {
     return (
         <RobotModelsProvider>
-            <InnerCell robot_id={robot_id} />
+            <InnerCell follower_id={follower_id} leader_id={leader_id} />
         </RobotModelsProvider>
     );
 };

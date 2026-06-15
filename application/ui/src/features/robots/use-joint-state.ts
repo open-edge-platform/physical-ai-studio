@@ -42,7 +42,7 @@ export const useSynchronizeModelJoints = (joints: JointsState, robotType: Schema
     }, [model, joints, robotType]);
 };
 
-export const useJointState = (project_id: string, robot_id: string) => {
+export const useJointState = (project_id: string, follower_id: string, leader_id?: string) => {
     const [joints, setJoints] = useState<JointsState>([]);
 
     const handleMessage = useCallback((event: WebSocketEventMap['message']) => {
@@ -59,8 +59,8 @@ export const useJointState = (project_id: string, robot_id: string) => {
     }, []);
 
     const socket = useWebSocket(
-        fetchClient.PATH('/api/projects/{project_id}/robots/{robot_id}/ws', {
-            params: { path: { project_id, robot_id } },
+        fetchClient.PATH('/api/projects/{project_id}/robots/ws', {
+            params: { path: { project_id } },
         }),
         {
             queryParams: {
@@ -70,6 +70,12 @@ export const useJointState = (project_id: string, robot_id: string) => {
             shouldReconnect: () => true,
             reconnectAttempts: 5,
             reconnectInterval: 3000,
+            onOpen: () => {
+                socket.sendJsonMessage({
+                    follower_id,
+                    leader_id,
+                });
+            },
             onMessage: handleMessage,
             onError: (error) => console.error('WebSocket error:', error),
             onClose: () => console.info('WebSocket closed'),

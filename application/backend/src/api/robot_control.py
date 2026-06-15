@@ -1,43 +1,43 @@
-from typing import Annotated
-from uuid import UUID, uuid4
+from typing import Annotated, Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, WebSocket, status
 from fastapi.responses import Response
+from fastapi.websockets import WebSocketDisconnect
 from loguru import logger
 
 from api.dependencies import (
     RobotCalibrationServiceDep,
     RobotConnectionManagerDep,
-    RobotRegistryDep,
+    SchedulerDep,
     get_project_id,
     get_robot_id,
     get_robot_service,
 )
+from robots.robot_client_factory import RobotClientFactory
 from services import RobotService
-from workers.robots.robot_worker import RobotWorker
-from workers.transport.websocket_transport import WebSocketTransport
+from workers.base import run_at_frequency
+from workers.teleoperate_worker import ActionWriteState, TeleoperateWorker
 
 router = APIRouter(prefix="/api/projects/{project_id}/robots", tags=["Project Robots"])
 
 ProjectID = Annotated[UUID, Depends(get_project_id)]
 
 
-@router.get("/{robot_id}/ws", tags=["WebSocket"], summary="Robot control (WebSocket)", status_code=426)
-async def robot_websocket_openapi(project_id: UUID, robot_id: UUID) -> Response:  # noqa: ARG001
+@router.get("/ws", tags=["WebSocket"], summary="Robot control (WebSocket)", status_code=426)
+async def robot_websocket_openapi(project_id: UUID) -> Response:  # noqa: ARG001
     """This endpoint requires a WebSocket connection. Use `wss://` to connect."""
     return Response(status_code=426)
 
 
-@router.websocket("/{robot_id}/ws")
-async def robot_websocket(  # noqa: PLR0913
+@router.websocket("/ws")
+async def robot_websocket(
     project_id: Annotated[UUID, Depends(get_project_id)],
-    robot_id: Annotated[UUID, Depends(get_robot_id)],
     robot_service: Annotated[RobotService, Depends(get_robot_service)],
     robot_manager: RobotConnectionManagerDep,
     calibration_service: RobotCalibrationServiceDep,
     websocket: WebSocket,
-    registry: RobotRegistryDep,
-    normalize: bool = True,
+    scheduler: SchedulerDep,
     fps: int = 30,
 ) -> None:
     """
@@ -45,7 +45,6 @@ async def robot_websocket(  # noqa: PLR0913
 
     Args:
         project_id: ID of the project.
-        robot_id: ID of the robot.
         robot_service: Service for robot metadata.
         robot_manager: Connection manager for robot discovery.
         calibration_service: Service for loading calibration.
@@ -55,31 +54,34 @@ async def robot_websocket(  # noqa: PLR0913
         fps: Target frequency for state updates.
     """
     await websocket.accept()
+    settings = await websocket.receive_json("text")
+    follower_id = get_robot_id(settings["follower_id"])
+    robot_client_factory = RobotClientFactory(robot_manager, calibration_service)
+    follower = await robot_service.get_robot_by_id(project_id, follower_id)
+    follower_client = await robot_client_factory.build(follower)
 
-    robot = await robot_service.get_robot_by_id(project_id, robot_id)
-    logger.info("Found robot with websocket {}", robot)
+    leader_client = None
+    if "leader_id" in settings:
+        leader_id = get_robot_id(settings["leader_id"])
+        leader = await robot_service.get_robot_by_id(project_id, leader_id)
+        leader_client = await robot_client_factory.build(leader)
 
-    worker_id = uuid4()
-
+    worker = None
     try:
         # Create worker
-        worker = RobotWorker(
-            robot,
-            WebSocketTransport(websocket),
-            # Manager and calibration service are used to create robot config
-            robot_manager,
-            calibration_service,
-            # Read configuration
-            fps,
-            normalize,
+        worker = TeleoperateWorker(
+            follower=follower_client, leader=leader_client, frequency=fps, mp_stop_event=scheduler.mp_stop_event
         )
-
-        # Register worker
-        await registry.create_and_register(worker_id, worker)
-
-        # Run worker (blocks until complete)
-        await worker.run()
-
+        worker.start()
+        worker.set_action_source(ActionWriteState.FROM_LEADER)
+        while True:
+            async with run_at_frequency(fps):
+                action_keys = follower_client.features()
+                raw_state = worker.get_state()
+                observation: dict[str, Any] = {i: raw_state[k] for k, i in enumerate(action_keys)}
+                await websocket.send_json({"event": "state_was_updated", "state": observation, "is_controlled": True})
+    except WebSocketDisconnect:
+        pass
     except ValueError as e:
         logger.error(f"Failed to register worker: {e}")
         try:
@@ -96,5 +98,5 @@ async def robot_websocket(  # noqa: PLR0913
             logger.error(f"Could not close websocket after Exception: {close_err}")
 
     finally:
-        # Unregister worker
-        await registry.unregister(worker_id)
+        if worker:
+            worker.stop()

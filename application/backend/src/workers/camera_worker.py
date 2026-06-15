@@ -1,5 +1,5 @@
 import ctypes
-from multiprocessing import Array, Event
+from multiprocessing import Array
 from multiprocessing.synchronize import Event as EventClass
 from typing import Any
 
@@ -18,10 +18,10 @@ class CameraWorker(BaseThreadWorker):
     def __init__(
         self,
         config: Camera,
-        stop_event: EventClass | None = None,
+        stop_event: EventClass,
         is_locked: bool = False,
     ) -> None:
-        super().__init__(stop_event=stop_event or Event())
+        super().__init__(stop_event=stop_event)
 
         # TODO explicitly add width, height to ip camera
         self._width = config.payload.width or 640

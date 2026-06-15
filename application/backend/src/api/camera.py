@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query, WebSocket
 from fastapi.responses import Response
 from fastapi.websockets import WebSocketDisconnect
 
+from api.dependencies import SchedulerDep
 from schemas.camera import SupportedCameraFormat
 from schemas.project_camera import Camera as ProjectCamera
 from schemas.project_camera import CameraAdapter
@@ -84,6 +85,7 @@ async def camera_websocket_openapi(
 @router.websocket("/ws")
 async def camera_websocket(
     websocket: WebSocket,
+    scheduler: SchedulerDep,
     camera: Annotated[ProjectCamera, Depends(get_camera_from_query)],
 ) -> None:
     """
@@ -104,7 +106,7 @@ async def camera_websocket(
 
     worker = None
     try:
-        worker = CameraWorker(camera)
+        worker = CameraWorker(camera, scheduler.mp_stop_event)
         worker.start()
         while True:
             async with run_at_frequency(camera.payload.fps):

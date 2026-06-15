@@ -60,9 +60,9 @@ class EnvironmentIntegration:
             self.frame_captures[cam_id] = cam
 
         await asyncio.sleep(1)  # sleep for camera warmup
-        await self.follower.connect()
+        self.follower.connect()
         if self.leader:
-            await self.leader.connect()
+            self.leader.connect()
 
     def build_lerobot_dataset_features(self, use_videos: bool = True) -> dict:
         """Build lerobot dataset features."""
@@ -95,11 +95,11 @@ class EnvironmentIntegration:
     async def set_joints_state(self, actions: dict, goal_time: float) -> None:
         """Set joints on robot"""
         if self.follower:
-            await self.follower.set_joints_state(actions, goal_time)
+            self.follower.set_joints_state(actions, goal_time)
 
     async def get_observation(self) -> dict | None:
         if self.follower and self.frame_captures:
-            observation = (await self.follower.read_state())["state"]
+            observation = (self.follower.read_state())["state"]
 
             for cam_id, cam in self.frame_captures.items():
                 frame = cam.read_latest()  # read_lastest is not blocking
@@ -112,13 +112,13 @@ class EnvironmentIntegration:
     async def set_follower_position_from_leader(self, goal_time: float) -> dict | None:
         """Directly set the follower position based on leader."""
         if self.leader is not None:
-            actions = (await self.leader.read_state())["state"]
+            actions = (self.leader.read_state())["state"]
             await self.set_joints_state(actions, goal_time)
 
             if self.follower and self.leader:
-                forces = await self.follower.read_forces()
+                forces = self.follower.read_forces()
                 if forces and forces["state"] is not None:
-                    await self.leader.set_forces(forces["state"])
+                    self.leader.set_forces(forces["state"])
 
             return actions
         return None
@@ -179,10 +179,10 @@ class EnvironmentIntegration:
 
     async def teardown(self) -> None:
         if self.follower:
-            await self.follower.disconnect()
+            self.follower.disconnect()
 
         if self.leader:
-            await self.leader.disconnect()
+            self.leader.disconnect()
 
         loop = asyncio.get_running_loop()
         for cam in self.frame_captures.values():

@@ -223,20 +223,20 @@ async def handle_command(  # noqa: PLR0911
     """
     match cmd:
         case PingCommand():
-            return await robot_connection.ping()
+            return robot_connection.ping()
 
         # State commands
         case EnableTorqueCommand():
-            return await robot_connection.enable_torque()
+            return robot_connection.enable_torque()
 
         case DisableTorqueCommand():
-            return await robot_connection.disable_torque()
+            return robot_connection.disable_torque()
 
         case SetJointsStateCommand(joints=joints, goal_time=goal_time):
-            return await robot_connection.set_joints_state(joints, goal_time)
+            return robot_connection.set_joints_state(joints, goal_time)
 
         case ReadStateCommand(normalize=normalize):
-            return await robot_connection.read_state(normalize=normalize)
+            return robot_connection.read_state(normalize=normalize)
 
         # Calibration commands
         case GetCalibrationCommand():
