@@ -4,15 +4,6 @@
 
 <!-- What does this PR do? Why is it needed? -->
 
-## Type of Change
-
-- [ ] ✨ `feat` - New feature
-- [ ] 🐞 `fix` - Bug fix
-- [ ] 📚 `docs` - Documentation
-- [ ] ♻️ `refactor` - Code refactoring
-- [ ] 🧪 `test` - Tests
-- [ ] 🔧 `chore` - Maintenance
-
 ## Related Issues
 
 <!-- Link issues: Fixes #123, Relates to #456 -->
