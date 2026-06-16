@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from multiprocessing.synchronize import Event as EventClass
 from unittest.mock import MagicMock, patch
 
-from workers.teleoperate_worker import ActionWriteState, TeleoperateWorker
+from workers.teleoperate_worker import ActionReadState, TeleoperateWorker
 
 FEATURES = ["joint1", "joint2", "joint3"]
 
@@ -63,14 +63,14 @@ class TestTeleoperateWorkerSharedMemory:
 
     def test_action_source_defaults_to_none(self):
         worker = _make_worker()
-        assert worker.get_action_source() == ActionWriteState.NONE
+        assert worker.get_action_source() == ActionReadState.NONE
 
     def test_set_action_source(self):
         worker = _make_worker()
-        worker.set_action_source(ActionWriteState.FROM_LEADER)
-        assert worker.get_action_source() == ActionWriteState.FROM_LEADER
-        worker.set_action_source(ActionWriteState.FROM_ACTIONS)
-        assert worker.get_action_source() == ActionWriteState.FROM_ACTIONS
+        worker.set_action_source(ActionReadState.FROM_LEADER)
+        assert worker.get_action_source() == ActionReadState.FROM_LEADER
+        worker.set_action_source(ActionReadState.FROM_ACTIONS)
+        assert worker.get_action_source() == ActionReadState.FROM_ACTIONS
 
 
 class TestTeleoperateWorkerRunLoop:
@@ -150,7 +150,7 @@ class TestTeleoperateWorkerRunLoop:
         leader = _make_client(state=leader_state)
 
         worker = _make_worker(follower=follower, leader=leader, stop_event=stop_event)
-        worker.set_action_source(ActionWriteState.FROM_LEADER)
+        worker.set_action_source(ActionReadState.FROM_LEADER)
         with patch("workers.teleoperate_worker.run_at_frequency", _noop_frequency):
             asyncio.run(worker.run_loop())
 
@@ -163,7 +163,7 @@ class TestTeleoperateWorkerRunLoop:
         follower.read_state.side_effect = _stop_after(stop_event, 2)
 
         worker = _make_worker(follower=follower, leader=None, stop_event=stop_event)
-        worker.set_action_source(ActionWriteState.FROM_LEADER)
+        worker.set_action_source(ActionReadState.FROM_LEADER)
         with patch("workers.teleoperate_worker.run_at_frequency", _noop_frequency):
             asyncio.run(worker.run_loop())
 
@@ -176,7 +176,7 @@ class TestTeleoperateWorkerRunLoop:
 
         worker = _make_worker(follower=follower, stop_event=stop_event)
         worker._set_actions([7.0, 8.0, 9.0])
-        worker.set_action_source(ActionWriteState.FROM_ACTIONS)
+        worker.set_action_source(ActionReadState.FROM_ACTIONS)
         with patch("workers.teleoperate_worker.run_at_frequency", _noop_frequency):
             asyncio.run(worker.run_loop())
 

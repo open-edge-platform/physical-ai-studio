@@ -12,26 +12,47 @@ from robots.robot_client import RobotClient
 from .base import BaseProcessWorker, run_at_frequency
 
 
-class ActionWriteState(enum.IntEnum):
+class ActionReadState(enum.IntEnum):
     NONE = 0
-    FROM_LEADER = 1
+    TELEOPERATION = 1
     FROM_ACTIONS = 2
 
 
 class TeleoperateWorker(BaseProcessWorker):
+    """Robot control and teleoperate worker
+
+    This Worker Class connects to a robot and if provided a leader robot.
+    Data is stored in mp.SharedMemory.
+
+    The worker can be in 3 ActionReadState modes for the follower:
+    - NONE: follower robot does not receive any actions
+    - TELEOPERATION: follower robot position is set from the leader's robot position
+    - FROM_ACTIONS: follower robot position is set from current _output_actions mp.SharedMemory.
+    This allows control from outside this worker.
+
+    Example:
+      >>> # Start teleoperate worker
+      >>> worker = TeleoperateWorker(
+      ...   follower=follower_client, leader=leader_client, frequency=fps, mp_stop_event=scheduler.mp_stop_event
+      ... )
+      >>> worker.start() # Worker is now in None mode and will only update state shared memory
+      >>> worker.set_action_read_state(ActionReadState.TELEOPERATION) # Worker is now in teleoperate mode
+      >>> worker.set_action_read_state(ActionReadState.FROM_ACTIONS) # Worker now follows actions shared memory.
+    """
+
     ROLE: str = "TeleoperateWorker"
 
     follower: RobotClient
     leader: RobotClient | None
     stop_event: EventClass
-    _action_source: Any
+    _action_read_state: Any
     _output_actions: Any
     _output_state: Any
 
     def __init__(self, follower: RobotClient, leader: RobotClient | None, frequency: float, mp_stop_event: EventClass):
         buffer_length = len(follower.features())
         self.loaded_event = mp.Event()
-        self._action_source = mp.Value(ctypes.c_int, ActionWriteState.NONE)
+        self._action_read_state = mp.Value(ctypes.c_int, ActionReadState.NONE)
         self._output_actions = mp.Array(ctypes.c_double, buffer_length)
         self._output_state = mp.Array(ctypes.c_double, buffer_length)
 
@@ -59,12 +80,12 @@ class TeleoperateWorker(BaseProcessWorker):
         with self._output_actions.get_lock():
             self._output_actions.get_obj()[:] = data
 
-    def get_action_source(self) -> int:
-        return self._action_source.value
+    def get_action_read_state(self) -> int:
+        return self._action_read_state.value
 
-    def set_action_source(self, value: ActionWriteState) -> None:
-        with self._action_source.get_lock():
-            self._action_source.value = value
+    def set_action_read_state(self, value: ActionReadState) -> None:
+        with self._action_read_state.get_lock():
+            self._action_read_state.value = value
 
     async def wait_for_loading_to_complete(self) -> None:
         await asyncio.to_thread(self.loaded_event.wait)
@@ -85,11 +106,11 @@ class TeleoperateWorker(BaseProcessWorker):
                 async with run_at_frequency(self.frequency):
                     state = (self.follower.read_state())["state"]
                     self._set_state([state[key] for key in features])
-                    if self.get_action_source() == ActionWriteState.FROM_LEADER and self.leader is not None:
+                    if self.get_action_read_state() == ActionReadState.TELEOPERATION and self.leader is not None:
                         actions = (self.leader.read_state())["state"]
                         self.follower.set_joints_state(actions, goal_time * 2)
                         self._set_actions([actions[key] for key in features])
-                    elif self.get_action_source() == ActionWriteState.FROM_ACTIONS:
+                    elif self.get_action_read_state() == ActionReadState.FROM_ACTIONS:
                         raw_actions = self.get_actions()
                         actions = {i: raw_actions[k] for k, i in enumerate(features)}
                         self.follower.set_joints_state(actions, goal_time * 3)

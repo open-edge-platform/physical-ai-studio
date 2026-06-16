@@ -17,7 +17,7 @@ from api.dependencies import (
 from robots.robot_client_factory import RobotClientFactory
 from services import RobotService
 from workers.base import run_at_frequency
-from workers.teleoperate_worker import ActionWriteState, TeleoperateWorker
+from workers.teleoperate_worker import TeleoperateWorker
 
 router = APIRouter(prefix="/api/projects/{project_id}/robots", tags=["Project Robots"])
 
@@ -73,7 +73,6 @@ async def robot_websocket(
             follower=follower_client, leader=leader_client, frequency=fps, mp_stop_event=scheduler.mp_stop_event
         )
         worker.start()
-        worker.set_action_source(ActionWriteState.FROM_LEADER)
         while True:
             action_keys = follower_client.features()
             async with run_at_frequency(fps):
