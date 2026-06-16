@@ -36,16 +36,18 @@ const InnerCell = ({ follower_id, leader_id }: { follower_id: string; leader_id?
             position={'relative'}
         >
             <RobotViewer robot={robot} />
-            <View position={'absolute'} right={0} top={0}>
-                <Switch
-                    isSelected={isTeleoperating}
-                    onChange={(b) =>
-                        setFollowerSource(b ? RobotActionReadState.Teleoperation : RobotActionReadState.None)
-                    }
-                >
-                    Teleoperate
-                </Switch>
-            </View>
+            {leader_id !== undefined && (
+                <View position={'absolute'} right={0} top={0}>
+                    <Switch
+                        isSelected={isTeleoperating}
+                        onChange={(b) =>
+                            setFollowerSource(b ? RobotActionReadState.Teleoperation : RobotActionReadState.None)
+                        }
+                    >
+                        Teleoperate
+                    </Switch>
+                </View>
+            )}
         </View>
     );
 };
