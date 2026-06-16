@@ -61,6 +61,7 @@ class TeleoperateWorker(BaseProcessWorker):
             queues_to_cancel=[],
         )
         self.follower = follower
+        self.features = self.follower.features()
         self.leader = leader
         self.frequency = frequency
 
@@ -90,29 +91,34 @@ class TeleoperateWorker(BaseProcessWorker):
     async def wait_for_loading_to_complete(self) -> None:
         await asyncio.to_thread(self.loaded_event.wait)
 
+    async def setup(self) -> None:
+        if self.leader is not None:
+            logger.info(f"Connecting leader: {self.leader}")
+            self.leader.connect()
+        logger.info(f"Connecting follower: {self.follower}")
+        self.follower.connect()
+
+        # Set current actions to current follower state.
+        state = (self.follower.read_state())["state"]
+        self._set_actions([state[key] for key in self.features])
+
+        self.loaded_event.set()
+
     async def run_loop(self) -> None:
         try:
-            features = self.follower.features()
-            if self.leader is not None:
-                logger.info(f"Connecting leader: {self.leader}")
-                self.leader.connect()
-            logger.info(f"Connecting follower: {self.follower}")
-            self.follower.connect()
-            self.loaded_event.set()
-
             # Teleoperate loop until unload is requested
             goal_time = 1 / self.frequency
             while not self.should_stop():
                 async with run_at_frequency(self.frequency):
                     state = (self.follower.read_state())["state"]
-                    self._set_state([state[key] for key in features])
+                    self._set_state([state[key] for key in self.features])
                     if self.get_action_read_state() == ActionReadState.TELEOPERATION and self.leader is not None:
                         actions = (self.leader.read_state())["state"]
                         self.follower.set_joints_state(actions, goal_time * 2)
-                        self._set_actions([actions[key] for key in features])
+                        self._set_actions([actions[key] for key in self.features])
                     elif self.get_action_read_state() == ActionReadState.FROM_ACTIONS:
                         raw_actions = self.get_actions()
-                        actions = {i: raw_actions[k] for k, i in enumerate(features)}
+                        actions = {i: raw_actions[k] for k, i in enumerate(self.features)}
                         self.follower.set_joints_state(actions, goal_time * 3)
         finally:
             logger.info("Teleoperating stopped, disconnecting robots.")

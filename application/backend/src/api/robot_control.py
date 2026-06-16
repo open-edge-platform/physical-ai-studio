@@ -1,3 +1,4 @@
+import asyncio
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -28,6 +29,43 @@ ProjectID = Annotated[UUID, Depends(get_project_id)]
 async def robot_websocket_openapi(project_id: UUID) -> Response:  # noqa: ARG001
     """This endpoint requires a WebSocket connection. Use `wss://` to connect."""
     return Response(status_code=426)
+
+
+def _build_robot_control_state(worker: TeleoperateWorker) -> dict:
+    return {"connected": worker.loaded_event.is_set(), "follower_source": worker.get_action_read_state()}
+
+
+async def handle_outgoing(
+    websocket: WebSocket, worker: TeleoperateWorker, features: list[str], update_frequency: int
+) -> None:
+    """Handle outgoing messages from teleoperate worker."""
+    try:
+        while not worker.should_stop():
+            async with run_at_frequency(update_frequency):
+                raw_state = worker.get_state()
+                observation: dict[str, Any] = {i: raw_state[k] for k, i in enumerate(features)}
+                await websocket.send_json({"event": "observation", "data": observation})
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.error(f"Outgoing task stopped: {e}")
+
+
+async def handle_incoming(websocket: WebSocket, worker: TeleoperateWorker) -> None:
+    """Handle incoming messages from client to teleoperate worker."""
+    try:
+        while not worker.should_stop():
+            data = await websocket.receive_json("text")
+            payload = data.get("data", {})
+            match data["event"]:
+                case "set_follower_source":
+                    worker.set_action_read_state(payload)
+            await websocket.send_json({"event": "state", "data": _build_robot_control_state(worker)})
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.error(f"Incoming task stopped: {type(e).__name__} - {e}")
+        logger.info("Except: disconnected!")
 
 
 @router.websocket("/ws")
@@ -61,6 +99,7 @@ async def robot_websocket(
         robot_client_factory = RobotClientFactory(robot_manager, calibration_service)
         follower = await robot_service.get_robot_by_id(project_id, follower_id)
         follower_client = await robot_client_factory.build(follower)
+        features = follower_client.features()
 
         leader_client = None
         if "leader_id" in settings:
@@ -73,12 +112,20 @@ async def robot_websocket(
             follower=follower_client, leader=leader_client, frequency=fps, mp_stop_event=scheduler.mp_stop_event
         )
         worker.start()
-        while True:
-            action_keys = follower_client.features()
-            async with run_at_frequency(fps):
-                raw_state = worker.get_state()
-                observation: dict[str, Any] = {i: raw_state[k] for k, i in enumerate(action_keys)}
-                await websocket.send_json({"event": "state_was_updated", "state": observation, "is_controlled": True})
+
+        await asyncio.to_thread(worker.loaded_event.wait)
+        await websocket.send_json({"event": "state", "data": _build_robot_control_state(worker)})
+
+        incoming_task = asyncio.create_task(handle_incoming(websocket, worker))
+        outgoing_task = asyncio.create_task(handle_outgoing(websocket, worker, features, fps))
+
+        _, pending = await asyncio.wait(
+            {incoming_task, outgoing_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        for task in pending:
+            task.cancel()
     except WebSocketDisconnect:
         pass
     except Exception as e:

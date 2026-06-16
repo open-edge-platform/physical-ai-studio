@@ -20,7 +20,9 @@ def _make_client(state: dict | None = None):
 def _make_worker(follower=None, leader=None, frequency=30.0, stop_event=None):
     follower = follower or _make_client()
     stop_event = stop_event or mp.Event()
-    return TeleoperateWorker(follower=follower, leader=leader, frequency=frequency, mp_stop_event=stop_event)
+    worker = TeleoperateWorker(follower=follower, leader=leader, frequency=frequency, mp_stop_event=stop_event)
+    asyncio.run(worker.setup())
+    return worker
 
 
 @asynccontextmanager
@@ -52,9 +54,9 @@ class TestTeleoperateWorkerSharedMemory:
         worker._set_state([1.0, 2.0, 3.0])
         assert worker.get_state() == [1.0, 2.0, 3.0]
 
-    def test_actions_are_zeros_initially(self):
+    def test_actions_are_follower_state_initially(self):
         worker = _make_worker()
-        assert worker.get_actions() == [0.0] * len(FEATURES)
+        assert worker.get_actions() == [0.0, 1.0, 2.0]
 
     def test_actions_round_trip(self):
         worker = _make_worker()
@@ -116,9 +118,6 @@ class TestTeleoperateWorkerRunLoop:
         follower.read_state.side_effect = _stop_after(stop_event, 1)
 
         worker = _make_worker(follower=follower, stop_event=stop_event)
-        assert not worker.loaded_event.is_set()
-        with patch("workers.teleoperate_worker.run_at_frequency", _noop_frequency):
-            asyncio.run(worker.run_loop())
         assert worker.loaded_event.is_set()
 
     def test_stores_follower_state_in_shared_memory(self):
@@ -175,8 +174,8 @@ class TestTeleoperateWorkerRunLoop:
         follower.read_state.side_effect = _stop_after(stop_event, 2)
 
         worker = _make_worker(follower=follower, stop_event=stop_event)
-        worker._set_actions([7.0, 8.0, 9.0])
         worker.set_action_read_state(ActionReadState.FROM_ACTIONS)
+        worker._set_actions([7.0, 8.0, 9.0])
         with patch("workers.teleoperate_worker.run_at_frequency", _noop_frequency):
             asyncio.run(worker.run_loop())
 
