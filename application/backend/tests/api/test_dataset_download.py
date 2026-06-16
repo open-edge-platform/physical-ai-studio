@@ -47,7 +47,6 @@ def test_dataset_download_returns_zip_archive(tmp_path: Path, monkeypatch: pytes
     (dataset_dir / "root.txt").write_text("root")
     (dataset_dir / "nested" / "child.txt").write_text("child")
 
-
     app.dependency_overrides[get_dataset_service] = lambda: _StubDatasetService(dataset)
     app.dependency_overrides[get_dataset_download_service] = get_dataset_download_service
 

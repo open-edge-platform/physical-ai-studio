@@ -132,6 +132,3 @@ def test_missing_source_folder_creates_empty_target(tmp_path: Path) -> None:
     target = settings.datasets_dir / "dataset-a"
     assert target.is_dir()
     assert Path(_read_path(settings, "dataset-a")) == target
-
-
-

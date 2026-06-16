@@ -119,6 +119,3 @@ def _relocate(source: Path, target: Path, *, copy: bool) -> None:
         shutil.copytree(source, target)
     else:
         shutil.move(str(source), str(target))
-
-
-
