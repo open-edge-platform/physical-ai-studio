@@ -24,7 +24,7 @@ import { paths } from '../../../router';
 import { NewProjectLink } from '../list/new-project-link.component';
 import { useProjectId } from './../use-project';
 
-import styles from './projects-list.module.scss';
+import styles from './projects-list.module.css';
 
 interface Project {
     name: string;

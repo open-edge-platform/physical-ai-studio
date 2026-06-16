@@ -4,7 +4,7 @@ import { Button, Flex, Grid, Icon, Loading, minmax, repeat, Text, toast, View } 
 import { Play, Close as Stop } from '@geti-ui/ui/icons';
 import { useSuspenseQuery } from '@tanstack/react-query';
 
-import classes from './camera.module.scss';
+import classes from './camera.module.css';
 
 const WebCamView = ({ device }: { device: MediaDeviceInfo }) => {
     const videoRef = useRef<HTMLVideoElement | null>(null);

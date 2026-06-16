@@ -8,7 +8,7 @@ import { SchemaProjectCamera } from '../../../api/types';
 import { useProjectId } from '../../../features/projects/use-project';
 import { CameraConfiguration, useEnvironmentForm, useSetEnvironmentForm } from './provider';
 
-import classes from './form.module.scss';
+import classes from './form.module.css';
 
 export const CameraListItem = ({ camera, onRemove }: { camera: CameraConfiguration; onRemove: () => void }) => {
     const { project_id } = useProjectId();

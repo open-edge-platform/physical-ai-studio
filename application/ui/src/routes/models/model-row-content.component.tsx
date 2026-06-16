@@ -5,7 +5,7 @@ import { ModelFormats } from '../../features/models/formats/model-formats';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
 import { MetricsContent } from './metrics';
 
-import classes from './model-row-content.module.scss';
+import classes from './model-row-content.module.css';
 
 const ComingSoon = () => {
     return (

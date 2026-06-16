@@ -8,7 +8,7 @@ import { useProjectId } from '../../../features/projects/use-project';
 import { isFollower, isLeader } from '../robots-configuration';
 import { RobotConfiguration, useEnvironmentForm, useSetEnvironmentForm } from './provider';
 
-import classes from './form.module.scss';
+import classes from './form.module.css';
 
 const RobotListItem = ({ robot, onRemove }: { robot: RobotConfiguration; onRemove: () => void }) => {
     const { project_id } = useProjectId();

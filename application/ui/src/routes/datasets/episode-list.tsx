@@ -5,7 +5,7 @@ import { fetchClient } from '../../api/client';
 import { EpisodeTag } from '../../features/datasets/episodes/episode-tag';
 import { EpisodeSummary, useDataset } from './dataset-provider';
 
-import classes from './episode-list.module.scss';
+import classes from './episode-list.module.css';
 
 interface EpisodeListProps {
     episodes: EpisodeSummary[];

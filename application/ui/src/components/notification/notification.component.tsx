@@ -3,7 +3,7 @@ import { toast, Toaster } from 'sonner';
 import { ReactComponent as ErrorIcon } from '../../assets/icons/error-icon.svg';
 import { ReactComponent as SuccessIcon } from '../../assets/icons/success-icon.svg';
 
-import classes from './notification.module.scss';
+import classes from './notification.module.css';
 
 type NotificationType = 'success' | 'error' | 'info';
 

@@ -4,7 +4,7 @@ import { Flex, View } from '@geti-ui/ui';
 import { ChevronDownSmallLight, ChevronRightSmallLight } from '@geti-ui/ui/icons';
 import { clsx } from 'clsx';
 
-import classes from './collapsable-row.module.scss';
+import classes from './collapsable-row.module.css';
 
 interface CollapsableRowProps {
     header: ReactNode;

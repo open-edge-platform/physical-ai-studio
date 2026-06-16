@@ -98,7 +98,7 @@ async def camera_websocket(
 
         Server sends jpeg encoded bytes
     """
-    import cv2
+    from utils.jpeg import encode_jpeg_rgb
 
     await websocket.accept()
 
@@ -109,9 +109,7 @@ async def camera_websocket(
         while True:
             async with run_at_frequency(camera.payload.fps):
                 frame = worker.get_frame()
-                success, jpeg = cv2.imencode(".jpg", frame)
-                if success and jpeg is not None:
-                    await websocket.send_bytes(jpeg.tobytes())
+                await websocket.send_bytes(encode_jpeg_rgb(frame))
     except WebSocketDisconnect:
         pass
     finally:
