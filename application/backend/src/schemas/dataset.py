@@ -1,7 +1,9 @@
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
+
+from settings import get_settings
 
 from .base import BaseIDModel
 
@@ -41,10 +43,15 @@ class LeRobotDatasetInfo(BaseModel):
 
 class Dataset(BaseIDModel):
     name: str = "Default Name"
-    path: str
     default_task: str
     project_id: Annotated[UUID, Field(description="Unique identifier")]
     environment_id: Annotated[UUID, Field(description="Unique identifier")]
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def path(self) -> str:
+        """On-disk location, derived from the dataset id under the configured datasets directory."""
+        return str(get_settings().datasets_dir / str(self.id))
 
     model_config = {
         "json_schema_extra": {

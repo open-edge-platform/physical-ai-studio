@@ -4,7 +4,6 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
-import storage_migration
 from db.schema import (
     Base,
     DatasetDB,
@@ -15,9 +14,10 @@ from db.schema import (
     RobotCalibrationDB,
     SnapshotDB,
 )
+from migrations import storage_migration
+from migrations.storage_migration import StorageMigrationError, migrate_default_storage_dir
 from schemas.robot import RobotType
 from settings import Settings
-from storage_migration import StorageMigrationError, migrate_default_storage_dir
 
 
 def _settings(tmp_path: Path) -> Settings:

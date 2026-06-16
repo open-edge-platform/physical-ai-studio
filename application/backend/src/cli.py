@@ -19,8 +19,8 @@ from db.schema import (
     ProjectRobotDB,
     SnapshotDB,
 )
+from migrations import StorageMigrationError, migrate_default_storage_dir
 from settings import get_settings
-from storage_migration import StorageMigrationError, migrate_default_storage_dir
 
 settings = get_settings()
 
@@ -120,6 +120,22 @@ def migrate() -> None:
     else:
         click.echo("✗ Migration failed!")
         sys.exit(1)
+
+
+@cli.command("fix-dataset-paths")
+@click.option("--dry-run", is_flag=True, default=False, help="Show planned changes without modifying anything.")
+def fix_dataset_paths(dry_run: bool) -> None:
+    """Move datasets to unique id-based folders so episodes no longer leak between projects."""
+    from migrations import migrate_dataset_paths
+
+    try:
+        count = migrate_dataset_paths(settings, dry_run=dry_run)
+    except Exception as e:
+        click.echo(f"✗ Dataset path migration failed: {e}", err=True)
+        sys.exit(1)
+
+    verb = "would be migrated" if dry_run else "migrated"
+    click.echo(f"✓ {count} dataset(s) {verb}.")
 
 
 # =============================================================================
