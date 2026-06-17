@@ -147,8 +147,8 @@ export const TrainingRow = ({
                                         primaryActionLabel='Interrupt'
                                         cancelLabel='Cancel'
                                     >
-                                        Are you sure you want to interrupt training for{' '}
-                                        {trainJob.payload.model_name}? This stops the run and cannot be undone.
+                                        Are you sure you want to interrupt training for {trainJob.payload.model_name}?
+                                        This stops the run and cannot be undone.
                                     </AlertDialog>
                                 </DialogTrigger>
                             )}
