@@ -26,7 +26,7 @@ const Datasets = ({ datasets }: DatasetsProps) => {
             <Flex margin={'size-200'} direction={'column'} flex height='100%'>
                 <IllustratedMessage>
                     <EmptyIllustration />
-                    <Content> Currently there are datasets available. </Content>
+                    <Content> Currently there are no datasets available. </Content>
                     <Text>It&apos;s time to begin recording a dataset. </Text>
                     <Heading>No datasets yet</Heading>
                     <Flex gap='size-100' marginTop={'size-200'}>

@@ -1,4 +1,18 @@
-import { ActionButton, Button, Flex, Grid, Item, Key, Menu, MenuTrigger, ProgressBar, Text, View } from '@geti-ui/ui';
+import {
+    ActionButton,
+    AlertDialog,
+    Button,
+    DialogTrigger,
+    Flex,
+    Grid,
+    Item,
+    Key,
+    Menu,
+    MenuTrigger,
+    ProgressBar,
+    Text,
+    View,
+} from '@geti-ui/ui';
 import { MoreMenu } from '@geti-ui/ui/icons';
 
 import { $api } from '../../api/client';
@@ -124,9 +138,19 @@ export const TrainingRow = ({
                         <Text>{trainJob.payload.policy.toUpperCase()}</Text>
                         <View>
                             {trainJob.status === 'running' && (
-                                <Button variant='secondary' onPress={onInterrupt}>
-                                    Interrupt
-                                </Button>
+                                <DialogTrigger>
+                                    <Button variant='secondary'>Interrupt</Button>
+                                    <AlertDialog
+                                        onPrimaryAction={onInterrupt}
+                                        title='Interrupt training'
+                                        variant='warning'
+                                        primaryActionLabel='Interrupt'
+                                        cancelLabel='Cancel'
+                                    >
+                                        Are you sure you want to interrupt training for{' '}
+                                        {trainJob.payload.model_name}? This stops the run and cannot be undone.
+                                    </AlertDialog>
+                                </DialogTrigger>
                             )}
                         </View>
                         <View justifySelf={'end'}>
