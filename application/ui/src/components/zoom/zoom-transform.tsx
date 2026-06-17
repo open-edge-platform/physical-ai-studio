@@ -3,7 +3,7 @@ import { ReactNode, useEffect, useMemo, useRef } from 'react';
 import { useContainerSize } from './use-container-size';
 import { useSetZoom, useZoom } from './zoom';
 
-import classes from './zoom.module.scss';
+import classes from './zoom.module.css';
 
 type Size = { width: number; height: number };
 

@@ -7,10 +7,8 @@
     background-size: cover;
 }
 
-.button {
-    path {
-        fill: currentColor;
-    }
+.button path {
+    fill: currentColor;
 }
 
 .description {
@@ -34,25 +32,25 @@
     transition:
         background-color 100ms ease-in-out 150ms,
         border 100ms ease-in-out 150ms;
+}
 
-    &:hover {
-        transition-delay: 0ms, 0ms;
-        background-color: var(--spectrum-global-color-gray-100);
-        border-color: var(--energy-blue);
-    }
+.card:hover {
+    transition-delay: 0ms, 0ms;
+    background-color: var(--spectrum-global-color-gray-100);
+    border-color: var(--energy-blue);
+}
 
-    img {
-        height: 100%;
-        object-fit: cover;
-    }
+.card img {
+    height: 100%;
+    object-fit: cover;
 }
 
 .activeCard {
     border: var(--spectrum-global-dimension-size-25) solid var(--energy-blue);
+}
 
-    h3 {
-        color: var(--energy-blue);
-    }
+.activeCard h3 {
+    color: var(--energy-blue);
 }
 
 .tag {
@@ -86,10 +84,10 @@
     transition:
         background-color 100ms ease-in-out 150ms,
         border 100ms ease-in-out 150ms;
+}
 
-    &:hover {
-        transition-delay: 0ms, 0ms;
-        background-color: var(--spectrum-global-color-gray-100);
-        border: var(--spectrum-global-dimension-size-25) dashed var(--energy-blue) !important;
-    }
+.link:hover {
+    transition-delay: 0ms, 0ms;
+    background-color: var(--spectrum-global-color-gray-100);
+    border: var(--spectrum-global-dimension-size-25) dashed var(--energy-blue) !important;
 }

@@ -23,7 +23,7 @@ import { PermissionDeniedError } from '../setup-wizard/so101/diagnostics-step-er
 import { buildRobotBodyFromForm, useRobotForm, useSetRobotForm, type RobotForm as RobotFormType } from './provider';
 import { SubmitNewRobotButton } from './submit-new-robot-button';
 
-import classes from './form.module.scss';
+import classes from './form.module.css';
 
 export const SO101FormFields = () => {
     const serialDevicesQuery = $api.useSuspenseQuery('get', '/api/hardware/serial_devices');

@@ -8,7 +8,7 @@ import thumbnailUrl from '../../../assets/mocked-project-thumbnail.png';
 import { paths } from '../../../router';
 import { MenuActions } from './menu-actions.component';
 
-import classes from './project-list.module.scss';
+import classes from './project-list.module.css';
 
 type ProjectCardProps = {
     item: SchemaProjectInput;

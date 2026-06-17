@@ -6,11 +6,11 @@
 
     border-color: var(--spectrum-global-color-gray-500) !important;
     background-color: var(--spectrum-global-color-gray-75) !important;
+}
 
-    &:hover {
-        border-color: var(--spectrum-global-color-gray-600) !important;
-        background-color: var(--spectrum-global-color-gray-100) !important;
-    }
+.addNewRobotButton:hover {
+    border-color: var(--spectrum-global-color-gray-600) !important;
+    background-color: var(--spectrum-global-color-gray-100) !important;
 }
 
 .connectionStatus {
@@ -25,20 +25,20 @@
     line-height: var(--spectrum-global-dimension-size-225);
     height: var(--spectrum-global-dimension-size-250) !important;
     min-block-size: unset !important;
+}
 
-    &::before {
-        margin-inline: var(--spectrum-global-dimension-size-100);
-        margin-block: var(--spectrum-global-dimension-size-50);
-    }
+.connectionStatus::before {
+    margin-inline: var(--spectrum-global-dimension-size-100);
+    margin-block: var(--spectrum-global-dimension-size-50);
 }
 
 .robotListItem {
     border: 2px solid var(--spectrum-global-color-gray-200);
     border-radius: var(--spectrum-global-dimension-size-50);
     background-color: var(--spectrum-global-color-gray-200);
+}
 
-    &.robotListItemActive {
-        border-color: var(--energy-blue);
-        background-color: var(--spectrum-global-color-gray-50);
-    }
+.robotListItem.robotListItemActive {
+    border-color: var(--energy-blue);
+    background-color: var(--spectrum-global-color-gray-50);
 }

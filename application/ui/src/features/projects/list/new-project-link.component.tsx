@@ -19,7 +19,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { $api } from '../../../api/client';
 import { paths } from '../../../router';
 
-import classes from './project-list.module.scss';
+import classes from './project-list.module.css';
 
 export const NewProjectLink = ({ className }: { className?: string }) => {
     const navigate = useNavigate();

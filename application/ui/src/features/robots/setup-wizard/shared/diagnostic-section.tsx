@@ -4,7 +4,7 @@ import { Disclosure, DisclosurePanel, DisclosureTitle, Flex, Text } from '@geti-
 
 import { StatusBadge, type StatusBadgeVariant } from './status-badge';
 
-import classes from './setup-wizard.module.scss';
+import classes from './setup-wizard.module.css';
 
 interface DiagnosticSectionBadge {
     label: string;

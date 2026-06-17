@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-import classes from './setup-wizard.module.scss';
+import classes from './setup-wizard.module.css';
 
 const VARIANT_CLASS = {
     ok: classes.statusOk,
