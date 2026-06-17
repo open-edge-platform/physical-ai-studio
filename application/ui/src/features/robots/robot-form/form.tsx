@@ -282,7 +282,8 @@ export const RobotForm = ({ heading = 'Add new robot', submitButton = <SubmitNew
 
     const submitContainerRef = useRef<HTMLDivElement>(null);
 
-    // Make Enter behave like clicking the submit button. A disabled button ignores the click, so validation still applies.
+    // Make Enter behave like clicking the submit button. A disabled button ignores
+    // the click, so validation still applies.
     const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         submitContainerRef.current?.querySelector('button')?.click();
