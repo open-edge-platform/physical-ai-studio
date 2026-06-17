@@ -68,12 +68,11 @@ class TestObservationCreation:
         assert obs.frame_index.item() == 10
         assert obs.index.item() == 100
 
-    def test_frozen_dataclass(self):
-        """Test that Observation is immutable."""
+    def test_field_assignment_allowed(self):
+        """Test that Observation fields are mutable."""
         obs = Observation(action=torch.tensor([1.0, 2.0]))
-
-        with pytest.raises(AttributeError):
-            obs.action = torch.tensor([3.0, 4.0])
+        obs.action = torch.tensor([3.0, 4.0])
+        assert torch.equal(obs.action, torch.tensor([3.0, 4.0]))
 
 
 class TestObservationToDict:

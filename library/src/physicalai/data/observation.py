@@ -13,7 +13,7 @@ import numpy as np
 import torch
 
 
-@dataclass(frozen=True)
+@dataclass
 class Observation:
     """A single observation or batch of observations from an imitation learning dataset.
 
