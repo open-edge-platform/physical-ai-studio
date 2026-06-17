@@ -23,7 +23,7 @@ import { RobotControlProvider, useRobotControl } from '../../../features/robots/
 import { paths } from '../../../router';
 import { RecordingViewer } from './recording-viewer';
 
-import classes from './index.module.scss';
+import classes from './index.module.css';
 
 const TotalRecordedEpisodes = () => {
     const { dataset_id } = useDatasetId();

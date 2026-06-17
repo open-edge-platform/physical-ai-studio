@@ -24,7 +24,7 @@ import { SchemaEnvironmentOutput } from '../../api/openapi-spec';
 import { useProjectId } from '../../features/projects/use-project';
 import { paths } from '../../router';
 
-import classes from './../../features/robots/robots-list.module.scss';
+import classes from './../../features/robots/robots-list.module.css';
 
 const MenuActions = ({ environment_id }: { environment_id: string }) => {
     const { project_id } = useProjectId();

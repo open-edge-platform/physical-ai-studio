@@ -15,7 +15,7 @@ import { useCenteringAnimation, useRangeOfMotionAnimation } from './use-calibrat
 import { VerificationStep } from './verification-step';
 import { STEP_LABELS, useSetupActions, useSetupState, WizardStep } from './wizard-provider';
 
-import classes from '../shared/setup-wizard.module.scss';
+import classes from '../shared/setup-wizard.module.css';
 
 // ---------------------------------------------------------------------------
 // Motor setup order (gripper first) — matches lerobot's setup flow

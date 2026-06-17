@@ -10,7 +10,7 @@ import { useProjectId } from '../projects/use-project';
 import RobotArm from './../../assets/robot-arm.png';
 import { SchemaRobot } from './robot-types';
 
-import classes from './robots-list.module.scss';
+import classes from './robots-list.module.css';
 
 const MenuActions = ({ robot_id }: { robot_id: string }) => {
     const { project_id } = useProjectId();

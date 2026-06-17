@@ -27,7 +27,7 @@ import { ConnectionStatus } from '../../features/robots/robots-list';
 import { paths } from '../../router';
 import { ReactComponent as CameraIcon } from './../../assets/camera.svg';
 
-import classes from './../../features/robots/robots-list.module.scss';
+import classes from './../../features/robots/robots-list.module.css';
 
 const MenuActions = ({ camera_id }: { camera_id: string }) => {
     const { project_id } = useProjectId();

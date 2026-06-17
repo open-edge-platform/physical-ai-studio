@@ -1,6 +1,5 @@
 import { defineConfig, loadEnv } from '@rsbuild/core';
 import { pluginReact } from '@rsbuild/plugin-react';
-import { pluginSass } from '@rsbuild/plugin-sass';
 import { pluginSvgr } from '@rsbuild/plugin-svgr';
 
 const { publicVars } = loadEnv({ prefixes: ['PUBLIC_'] });
@@ -8,8 +7,6 @@ const { publicVars } = loadEnv({ prefixes: ['PUBLIC_'] });
 export default defineConfig({
     plugins: [
         pluginReact(),
-
-        pluginSass(),
 
         pluginSvgr({
             svgrOptions: {

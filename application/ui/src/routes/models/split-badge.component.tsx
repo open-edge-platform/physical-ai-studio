@@ -1,7 +1,7 @@
 import { Badge } from '@adobe/react-spectrum';
 import { Flex } from '@geti-ui/ui';
 
-import classes from './split-badge.module.scss';
+import classes from './split-badge.module.css';
 
 interface SplitBadgeProps {
     first: string;

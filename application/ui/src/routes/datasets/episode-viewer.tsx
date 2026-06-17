@@ -16,7 +16,7 @@ import { useProjectId } from '../../features/projects/use-project';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 import { TimelineControls } from './timeline-controls';
 
-import classes from './episode-viewer.module.scss';
+import classes from './episode-viewer.module.css';
 
 interface EpisodeViewerProps {
     episode: SchemaEpisode;

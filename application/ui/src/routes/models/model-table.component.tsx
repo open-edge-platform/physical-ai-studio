@@ -11,7 +11,7 @@ import { ModelRowContent } from './model-row-content.component';
 import { StartInferenceDialog } from './start-model-modal.component';
 import { durationBetween } from './utils';
 
-import classes from './model-table.module.scss';
+import classes from './model-table.module.css';
 
 export const ModelHeader = () => {
     return (

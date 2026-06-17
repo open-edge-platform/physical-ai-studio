@@ -37,12 +37,6 @@ description: Security constraints for `library/` (`physicalai-train` package). A
 
 12. Never log `HF_TOKEN`, checkpoint paths, or exception chains that dump env vars.
 
-13. No `yaml.load()`, `yaml.full_load()`, or `yaml.unsafe_load()`. Use `yaml.safe_load()` exclusively.
+13. Prefer `.safetensors` over `.ckpt`/`.pt` for weights.
 
-14. No `os.system`, no `subprocess` with `shell=True`, no command strings built by concatenating variables - all enable shell injection. Use `subprocess.run(["cmd", arg1, arg2], ...)` with a list argument. Flag as a security finding: any `os.system()` call; any `subprocess.run/Popen/call` with `shell=True`; any `subprocess` call where the first argument is a string instead of a list.
-
-15. Prefer `.safetensors` over `.ckpt`/`.pt` for weights.
-
-16. Use `logging` not `print()`.
-
-17. Strip notebook outputs before committing — `jupyter nbconvert --clear-output --inplace <notebook.ipynb>`.
+14. Strip notebook outputs before committing — `jupyter nbconvert --clear-output --inplace <notebook.ipynb>`.

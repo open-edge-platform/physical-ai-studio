@@ -4,10 +4,11 @@
     right: 0;
     height: 100%;
     border: 0;
-    & svg {
-        height: var(--spectrum-global-dimension-font-size-100);
-        width: var(--spectrum-global-dimension-font-size-100);
-    }
+}
+
+.closeButton svg {
+    height: var(--spectrum-global-dimension-font-size-100);
+    width: var(--spectrum-global-dimension-font-size-100);
 }
 
 .icon {

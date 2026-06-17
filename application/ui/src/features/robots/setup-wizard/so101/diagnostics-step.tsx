@@ -8,7 +8,7 @@ import { StatusBadge } from '../shared/status-badge';
 import { DiagnosticsError } from './diagnostics-step-error';
 import { useSetupActions, useSetupState, WizardStep } from './wizard-provider';
 
-import classes from '../shared/setup-wizard.module.scss';
+import classes from '../shared/setup-wizard.module.css';
 
 /**
  * Diagnostics step — shows voltage check + motor probe results.

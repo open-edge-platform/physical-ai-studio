@@ -13,9 +13,9 @@
 
     border-color: var(--spectrum-global-color-gray-500) !important;
     background-color: var(--spectrum-global-color-gray-75) !important;
+}
 
-    &:hover {
-        border-color: var(--spectrum-global-color-gray-600) !important;
-        background-color: var(--spectrum-global-color-gray-100) !important;
-    }
+.addNewButton:hover {
+    border-color: var(--spectrum-global-color-gray-600) !important;
+    background-color: var(--spectrum-global-color-gray-100) !important;
 }
