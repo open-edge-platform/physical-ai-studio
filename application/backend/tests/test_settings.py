@@ -32,3 +32,13 @@ def test_storage_dir_override_expands_user(monkeypatch, tmp_path: Path) -> None:
     settings = Settings(STORAGE_DIR="~/custom-storage")
 
     assert settings.storage_dir == tmp_path / "custom-storage"
+
+
+def test_data_dir_is_storage_backed_even_with_data_dir_env(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    custom_data_dir = tmp_path / "custom-data"
+    monkeypatch.setenv("DATA_DIR", str(custom_data_dir))
+
+    settings = Settings(STORAGE_DIR="~/custom-storage")
+
+    assert settings.data_dir == tmp_path / "custom-storage" / "data"

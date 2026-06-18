@@ -70,6 +70,7 @@ export const NewDatasetForm = ({ project_id, onDone }: NewDatasetFormProps) => {
                 <Divider />
                 <Content>
                     <Picker
+                        isRequired
                         items={environments}
                         selectedKey={environmentId}
                         label='Environment'
@@ -89,20 +90,18 @@ export const NewDatasetForm = ({ project_id, onDone }: NewDatasetFormProps) => {
                         onChange={setName}
                     />
 
-                    <TextField
-                        // eslint-disable-next-line jsx-a11y/no-autofocus
-                        autoFocus
-                        width='100%'
-                        label='Task'
-                        value={defaultTask}
-                        onChange={setDefaultTask}
-                    />
+                    <TextField width='100%' label='Task' value={defaultTask} onChange={setDefaultTask} />
                 </Content>
                 <ButtonGroup>
                     <Button variant='secondary' onPress={() => onDone(undefined)}>
                         Cancel
                     </Button>
-                    <Button variant='accent' type='submit' isDisabled={name === ''} isPending={saveMutation.isPending}>
+                    <Button
+                        variant='accent'
+                        type='submit'
+                        isDisabled={name.trim() === '' || environmentId === undefined}
+                        isPending={saveMutation.isPending}
+                    >
                         Save
                     </Button>
                 </ButtonGroup>

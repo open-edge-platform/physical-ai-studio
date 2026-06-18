@@ -1,0 +1,19 @@
+UI:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "application/ui/**/*"
+
+Backend:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "application/backend/**/*"
+
+Application:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "application/**/*"
+
+Library:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "library/**/*"

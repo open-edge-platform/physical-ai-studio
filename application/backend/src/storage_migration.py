@@ -16,6 +16,7 @@ from db.schema import DatasetDB, ModelDB, RobotCalibrationDB, SnapshotDB
 from settings import Settings
 
 OLD_DEFAULT_STORAGE_DIR = Path("~/.cache/physicalai").expanduser()
+OLD_DEFAULT_DATA_DIR_CANDIDATES = (Path("data"), Path("/app/data"))
 AUTO_MIGRATE_STORAGE_DIR_ENV = "AUTO_MIGRATE_STORAGE_DIR"
 EXPECTED_STORAGE_SUBDIRS = {"models", "cache", "snapshots", "datasets", "robots", "logs"}
 
@@ -25,6 +26,15 @@ class StorageMigrationError(Exception):
 
 
 def migrate_default_storage_dir(settings: Settings, *, interactive: bool | None = None) -> None:
+    """Move legacy storage and database files into the current storage directory."""
+    if interactive is None:
+        interactive = sys.stdin.isatty()
+
+    _migrate_default_storage_dir(settings, interactive=interactive)
+    _migrate_default_database_file(settings, interactive=interactive)
+
+
+def _migrate_default_storage_dir(settings: Settings, *, interactive: bool) -> None:
     """Move data from the old cache-backed default storage directory when safe."""
     old_storage_dir = OLD_DEFAULT_STORAGE_DIR
     new_storage_dir = settings.storage_dir.expanduser()
@@ -44,9 +54,6 @@ def migrate_default_storage_dir(settings: Settings, *, interactive: bool | None 
     if not _is_effectively_empty_storage_dir(new_storage_dir):
         raise StorageMigrationError(_non_empty_destination_message(old_storage_dir, new_storage_dir))
 
-    if interactive is None:
-        interactive = sys.stdin.isatty()
-
     if not auto_migrate:
         if not interactive:
             raise StorageMigrationError(_non_interactive_message(old_storage_dir, new_storage_dir))
@@ -62,6 +69,39 @@ def migrate_default_storage_dir(settings: Settings, *, interactive: bool | None 
     new_storage_dir.parent.mkdir(parents=True, exist_ok=True)
     _move_storage_dir(old_storage_dir, new_storage_dir)
     _rewrite_database_paths(settings, old_storage_dir, new_storage_dir)
+
+
+def _migrate_default_database_file(settings: Settings, *, interactive: bool) -> None:
+    """Move the SQLite database file into the storage-backed data directory."""
+    source_database_path = _resolve_source_database_path(settings)
+    if source_database_path is None:
+        return
+
+    destination_database_path = settings.data_dir / settings.database_file
+    if _same_path(source_database_path, destination_database_path):
+        return
+
+    if destination_database_path.exists():
+        raise StorageMigrationError(
+            _database_destination_exists_message(source_database_path, destination_database_path)
+        )
+
+    auto_migrate = _env_flag(AUTO_MIGRATE_STORAGE_DIR_ENV)
+    if not auto_migrate:
+        if not interactive:
+            raise StorageMigrationError(
+                _database_non_interactive_message(source_database_path, destination_database_path)
+            )
+
+        click.echo("Physical AI Studio database needs to move into the storage directory.")
+        click.echo(f"  from: {source_database_path}")
+        click.echo(f"  to:   {destination_database_path}")
+        if not click.confirm("Move existing database now?", default=False):
+            raise StorageMigrationError(_database_declined_message(source_database_path, destination_database_path))
+
+    logger.info(f"Migrating database from {source_database_path} to {destination_database_path}")
+    destination_database_path.parent.mkdir(parents=True, exist_ok=True)
+    _move_file(source_database_path, destination_database_path)
 
 
 def _env_flag(name: str) -> bool:
@@ -101,13 +141,20 @@ def _move_storage_dir(source: Path, destination: Path) -> None:
         shutil.move(str(source), str(destination))
 
 
+def _move_file(source: Path, destination: Path) -> None:
+    try:
+        source.rename(destination)
+    except OSError:
+        shutil.move(str(source), str(destination))
+
+
 def _rewrite_database_paths(settings: Settings, old_storage_dir: Path, new_storage_dir: Path) -> None:
-    database_path = settings.data_dir / settings.database_file
+    database_path = _resolve_database_path(settings)
     if not database_path.exists():
         return
 
     engine = create_engine(
-        settings.database_url_sync,
+        f"sqlite:///{database_path}",
         connect_args={"check_same_thread": False, "timeout": 30},
         poolclass=NullPool,
     )
@@ -125,6 +172,32 @@ def _rewrite_database_paths(settings: Settings, old_storage_dir: Path, new_stora
             session.rollback()
             raise
     engine.dispose()
+
+
+def _resolve_database_path(settings: Settings) -> Path:
+    configured_database_path = settings.data_dir / settings.database_file
+    if configured_database_path.exists():
+        return configured_database_path
+
+    legacy_database_path = _resolve_source_database_path(settings)
+    if legacy_database_path is not None:
+        return legacy_database_path
+
+    return configured_database_path
+
+
+def _resolve_source_database_path(settings: Settings) -> Path | None:
+    data_dir_env = os.environ.get("DATA_DIR")
+    if data_dir_env:
+        database_path = Path(data_dir_env).expanduser() / settings.database_file
+        if database_path.exists():
+            return database_path
+
+    for data_dir in OLD_DEFAULT_DATA_DIR_CANDIDATES:
+        database_path = data_dir.expanduser() / settings.database_file
+        if database_path.exists():
+            return database_path
+    return None
 
 
 def _rewrite_table_paths(
@@ -174,4 +247,31 @@ def _declined_message(old_storage_dir: Path, new_storage_dir: Path) -> str:
         f"Old storage: {old_storage_dir}\n"
         f"New storage: {new_storage_dir}\n\n"
         f"Move the directory manually or set STORAGE_DIR={old_storage_dir} to keep using the old location."
+    )
+
+
+def _database_destination_exists_message(source_database_path: Path, destination_database_path: Path) -> str:
+    return (
+        "Cannot automatically migrate Physical AI Studio database because the new database file already exists.\n\n"
+        f"Old database: {source_database_path}\n"
+        f"New database: {destination_database_path}\n\n"
+        "Move or merge the database manually."
+    )
+
+
+def _database_non_interactive_message(source_database_path: Path, destination_database_path: Path) -> str:
+    return (
+        "Physical AI Studio database needs to move, but startup is non-interactive.\n\n"
+        f"Old database: {source_database_path}\n"
+        f"New database: {destination_database_path}\n\n"
+        f"Move the file manually or set {AUTO_MIGRATE_STORAGE_DIR_ENV}=true to allow automatic migration."
+    )
+
+
+def _database_declined_message(source_database_path: Path, destination_database_path: Path) -> str:
+    return (
+        "Database migration was declined.\n\n"
+        f"Old database: {source_database_path}\n"
+        f"New database: {destination_database_path}\n\n"
+        "Move the file manually into the new data directory."
     )

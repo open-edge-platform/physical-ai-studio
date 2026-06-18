@@ -1,0 +1,23 @@
+name: "Pull Request Labeler"
+on:
+  pull_request_target:
+    types:
+      - opened
+      - synchronize
+      # The labeler doesn't checkout/execute any contributed code, so it should be safe.
+      - reopened # zizmor: ignore[dangerous-triggers]
+
+permissions: {}
+
+concurrency:
+  group: labeler-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    permissions:
+      contents: read # Read label configuration from repository
+      pull-requests: write # Apply labels on pull requests
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/labeler@634933edcd8ababfe52f92936142cc22ac488b1b # v6.0.1

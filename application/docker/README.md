@@ -183,11 +183,16 @@ sudo usermod -aG render $USER   # Intel XPU only
 
 The compose file defines two named volumes and one bind mount:
 
-| Volume                       | Container path                                         | Purpose                                       |
-|------------------------------|--------------------------------------------------------|-----------------------------------------------|
-| `physical-ai-studio-data`    | `/app/data`                                            | Application database and runtime data         |
-| `physical-ai-studio-storage` | `/app/storage`                                         | Trained models, datasets, and other artifacts |
-| *(bind mount)*               | `~/.cache/huggingface/lerobot/calibration` (read-only) | Shared robot calibration data from the host   |
+| Volume                       | Container path                                         | Purpose                                              |
+|------------------------------|--------------------------------------------------------|------------------------------------------------------|
+| `physical-ai-studio-data`    | `/app/data`                                            | Legacy data-dir mount kept for one-time migration    |
+| `physical-ai-studio-storage` | `/app/storage`                                         | Persistent storage, including app data and artifacts |
+| *(bind mount)*               | `~/.cache/huggingface/lerobot/calibration` (read-only) | Shared robot calibration data from the host          |
+
+Runtime defaults use `STORAGE_DIR=/app/storage`; the application database is stored under `$STORAGE_DIR/data`.
+`/app/data` stays mounted as a legacy database source so existing users can be migrated
+automatically. The container enables non-interactive migration with
+`AUTO_MIGRATE_STORAGE_DIR=true`.
 
 To inspect volume contents:
 
