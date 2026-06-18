@@ -832,8 +832,8 @@ class TestObservationNumpyTensorConversion:
 class TestObservationLightningApplyToCollection:
     """Regression tests for Lightning apply_to_collection interoperability."""
 
-    def test_apply_to_collection_returns_observation_and_halves_tensors(self):
-        """apply_to_collection should transform tensors and preserve Observation type."""
+    def test_apply_to_collection_returns_observation_with_bfloat16_tensors(self):
+        """apply_to_collection should cast tensors to bfloat16 and preserve Observation type."""
         observation = Observation(
             action=torch.tensor([[2.0, 4.0]]),
             state=torch.tensor([[6.0, 8.0]]),
@@ -844,13 +844,16 @@ class TestObservationLightningApplyToCollection:
         transformed = apply_to_collection(
             observation,
             dtype=torch.Tensor,
-            function=lambda tensor: tensor / 2,
+            function=lambda tensor: tensor.to(torch.bfloat16),
         )
 
         assert isinstance(transformed, Observation)
-        torch.testing.assert_close(transformed.action, torch.tensor([[1.0, 2.0]]))
-        torch.testing.assert_close(transformed.state, torch.tensor([[3.0, 4.0]]))
-        torch.testing.assert_close(transformed.images["top"], torch.tensor([[[[5.0, 6.0]]]]))
+        assert transformed.action.dtype == torch.bfloat16
+        assert transformed.state.dtype == torch.bfloat16
+        assert transformed.images["top"].dtype == torch.bfloat16
+        torch.testing.assert_close(transformed.action.float(), torch.tensor([[2.0, 4.0]]))
+        torch.testing.assert_close(transformed.state.float(), torch.tensor([[6.0, 8.0]]))
+        torch.testing.assert_close(transformed.images["top"].float(), torch.tensor([[[[10.0, 12.0]]]]))
         assert transformed.info == {"source": "unit-test"}
 
 
