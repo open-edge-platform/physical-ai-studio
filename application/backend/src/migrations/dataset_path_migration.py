@@ -38,7 +38,7 @@ def migrate_dataset_paths(settings: Settings, *, dry_run: bool = False) -> int:
         logger.info("No database found at {}; nothing to migrate.", database_path)
         return 0
 
-    datasets_dir = settings.datasets_dir
+    datasets_dir = settings.datasets_dir.expanduser().resolve()
     engine = create_engine(
         settings.database_url_sync,
         connect_args={"check_same_thread": False, "timeout": 30},
@@ -59,10 +59,21 @@ def migrate_dataset_paths(settings: Settings, *, dry_run: bool = False) -> int:
 
             for row_id, path_value in rows:
                 target = datasets_dir / row_id
-                source = Path(path_value)
+                # Resolve to the canonical path so symlinks cannot redirect the
+                # relocate outside datasets_dir.
+                source = Path(_resolve(path_value))
 
                 if _resolve(path_value) == _resolve(str(target)):
                     continue  # Already id-based.
+
+                # Refuse to touch anything outside datasets_dir. The path column was
+                # historically client-supplied, so a malicious or corrupt row could
+                # otherwise move/copy arbitrary filesystem locations.
+                if not source.is_relative_to(datasets_dir):
+                    raise ValueError(
+                        f"Refusing to migrate dataset {row_id}: source path {source} escapes datasets_dir "
+                        f"{datasets_dir}"
+                    )
 
                 shared = owners_per_path[_resolve(path_value)] > 1
                 action = "copy" if shared else "move"
@@ -80,14 +91,18 @@ def migrate_dataset_paths(settings: Settings, *, dry_run: bool = False) -> int:
 
                 _relocate(source, target, copy=shared)
                 session.execute(update(DatasetDB).where(DatasetDB.id == row_id).values(path=str(target)))
+                # Commit per dataset so the DB stays consistent with the filesystem.
+                # A later failure leaves already-relocated datasets correctly recorded
+                # instead of rolling back to stale paths.
+                session.commit()
                 migrated += 1
 
             if dry_run:
                 session.rollback()
-            else:
-                session.commit()
     except Exception:
-        logger.exception("Dataset path migration failed; no database changes were committed.")
+        logger.exception(
+            "Dataset path migration failed; committed datasets remain consistent, but unmigrated rows are unchanged."
+        )
         raise
     finally:
         engine.dispose()
