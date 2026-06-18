@@ -99,7 +99,7 @@ export const NewDatasetForm = ({ project_id, onDone }: NewDatasetFormProps) => {
                     <Button
                         variant='accent'
                         type='submit'
-                        isDisabled={name === '' || environmentId === undefined}
+                        isDisabled={name.trim() === '' || environmentId === undefined}
                         isPending={saveMutation.isPending}
                     >
                         Save

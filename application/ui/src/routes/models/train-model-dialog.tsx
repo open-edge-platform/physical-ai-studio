@@ -476,7 +476,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
                 <Button variant='secondary' onPress={() => close(undefined)}>
                     Cancel
                 </Button>
-                <Button variant='accent' onPress={save}>
+                <Button variant='accent' onPress={save} isDisabled={!selectedDataset || !selectedPolicy}>
                     Train
                 </Button>
             </ButtonGroup>
