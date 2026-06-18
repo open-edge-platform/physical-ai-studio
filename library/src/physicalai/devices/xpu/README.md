@@ -40,7 +40,7 @@ source library/scripts/intel_env_combo.sh
 
 ## 2. Using PyTorch Lightning Multi-XPU Strategy
 
-Inside physical-ai-studio, we provide the custom accelerator [XPUAccelerator](library/src/physicalai/devices/xpu/accelerator.py) (registered as `"xpu"`) and custom strategy [XPUDDPStrategy](library/src/physicalai/devices/xpu/strategy.py) (registered as `"xpu_ddp"`). This wraps PyTorch Lightning's standard `DDPStrategy` but overrides the backend communication layer to use Intel's `xccl` collective communication library.
+Inside physical-ai-studio, we provide the custom accelerator [XPUAccelerator](./accelerator.py) (registered as "xpu") and custom strategy [XPUDDPStrategy](./strategy.py) (registered as "xpu_ddp"). This wraps PyTorch Lightning's standard `DDPStrategy` but overrides the backend communication layer to use Intel's `xccl` collective communication library.
 
 These components can be configured through direct Python code or YAML files.
 
