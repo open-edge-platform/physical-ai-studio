@@ -139,11 +139,11 @@ export const TrainingRow = ({
                         <View>
                             {trainJob.status === 'running' && (
                                 <DialogTrigger>
-                                    <Button variant='secondary'>Interrupt</Button>
+                                    <Button variant='secondary'>Stop</Button>
                                     <AlertDialog
                                         onPrimaryAction={onInterrupt}
                                         title='Stop training?'
-                                        variant='warning'
+                                        variant='destructive'
                                         primaryActionLabel='Stop'
                                         cancelLabel='Cancel'
                                     >
