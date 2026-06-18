@@ -87,6 +87,10 @@ class XPUDDPStrategy(DDPStrategy):
                 Defaults to True as Embodied/VLA policies frequently freeze certain components.
             **kwargs (object): Additional options to pass to DDPStrategy.
         """
+        if not torch.xpu.is_available():
+            msg = "`XPUDDPStrategy` requires XPU devices to run"
+            raise MisconfigurationException(msg)
+
         super().__init__(
             process_group_backend=process_group_backend,
             find_unused_parameters=find_unused_parameters,
