@@ -142,13 +142,16 @@ export const TrainingRow = ({
                                     <Button variant='secondary'>Interrupt</Button>
                                     <AlertDialog
                                         onPrimaryAction={onInterrupt}
-                                        title='Interrupt training'
+                                        title='Stop training?'
                                         variant='warning'
-                                        primaryActionLabel='Interrupt'
+                                        primaryActionLabel='Stop'
                                         cancelLabel='Cancel'
                                     >
-                                        Are you sure you want to interrupt training for {trainJob.payload.model_name}?
-                                        This stops the run and cannot be undone.
+                                        Stop training for {trainJob.payload.model_name}?
+                                        <br />
+                                        <br />
+                                        Your model checkpoint will be saved at the current step. You cannot resume
+                                        this run.
                                     </AlertDialog>
                                 </DialogTrigger>
                             )}
