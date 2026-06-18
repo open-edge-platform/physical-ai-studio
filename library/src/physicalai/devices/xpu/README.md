@@ -8,7 +8,7 @@ This document describes how to configure and run multi-device Distributed Data P
 
 On PCIe-only B-series or Arc Pro GPUs (no dedicated XeLink hardware bridges), standard Level-Zero peer-to-peer (P2P) transfers are unsupported. Executing collectives without specific topologies can cause silent corruption, wrong results, or indefinite process hangs.
 
-You **must** source the following 5 environment variables before executing any distributed training via `torchrun`:
+You **must** source the following environment variables before executing any distributed training via `torchrun`:
 
 ```bash
 # Force oneCCL to handle rank synchronization via torchrun's rendezvous env-vars
