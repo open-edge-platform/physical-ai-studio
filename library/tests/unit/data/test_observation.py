@@ -6,6 +6,7 @@
 import numpy as np
 import pytest
 import torch
+from lightning_utilities.core.apply_func import apply_to_collection
 
 from physicalai.data.lerobot import FormatConverter
 from physicalai.data.observation import IMAGES, Observation
@@ -826,6 +827,31 @@ class TestObservationNumpyTensorConversion:
         obs_torch = obs_np.to_torch()
         assert obs_torch.next_success is True
         assert obs_torch.info["key"] == "value"
+
+
+class TestObservationLightningApplyToCollection:
+    """Regression tests for Lightning apply_to_collection interoperability."""
+
+    def test_apply_to_collection_returns_observation_and_halves_tensors(self):
+        """apply_to_collection should transform tensors and preserve Observation type."""
+        observation = Observation(
+            action=torch.tensor([[2.0, 4.0]]),
+            state=torch.tensor([[6.0, 8.0]]),
+            images={"top": torch.tensor([[[[10.0, 12.0]]]])},
+            info={"source": "unit-test"},
+        )
+
+        transformed = apply_to_collection(
+            observation,
+            dtype=torch.Tensor,
+            function=lambda tensor: tensor / 2,
+        )
+
+        assert isinstance(transformed, Observation)
+        torch.testing.assert_close(transformed.action, torch.tensor([[1.0, 2.0]]))
+        torch.testing.assert_close(transformed.state, torch.tensor([[3.0, 4.0]]))
+        torch.testing.assert_close(transformed.images["top"], torch.tensor([[[[5.0, 6.0]]]]))
+        assert transformed.info == {"source": "unit-test"}
 
 
 class TestObservationIndexing:
