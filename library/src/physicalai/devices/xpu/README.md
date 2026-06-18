@@ -31,6 +31,7 @@ export CCL_ZE_SHARED_DEV_POOL=1
 ```
 
 For convenience, these can be saved and sourced from a shell script, e.g.:
+
 ```bash
 source library/scripts/intel_env_combo.sh
 ```
@@ -71,11 +72,11 @@ trainer:
   max_epochs: 30
   accelerator: xpu
   strategy: xpu_ddp
-  devices: 2           # Integer count automatically resolves to the first N XPU indices (e.g., 0, 1)
+  devices: 2 # Integer count automatically resolves to the first N XPU indices (e.g., 0, 1)
   precision: bf16-mixed
 ```
 
-*Note: Our custom `XPUAccelerator.parse_devices` parser has been updated to automatically map an integer number like `devices: 2` into explicit device indexes (e.g. `[0, 1]`), avoiding legacy "device index out of range" issues.*
+_Note: Our custom `XPUAccelerator.parse_devices` parser has been updated to automatically map an integer number like `devices: 2` into explicit device indexes (e.g. `[0, 1]`), avoiding legacy "device index out of range" issues._
 
 ---
 
@@ -85,7 +86,7 @@ When training larger policy networks (like **Pi0.5** with 4.14B parameters), mem
 
 1. **`train_expert_only=true` is strictly required on B70 (32 GB) cards**:
    Full 4.14B trainable parameter configurations require storing multiple fp32 buffers (master weights + moments) per parameter for standard Adam. This overruns 32 GB of card VRAM and causes a driver crash (`UR_RESULT_ERROR_DEVICE_LOST` / `UR_RESULT_ERROR_OUT_OF_DEVICE_MEMORY`). Freeze the core vision-language backbones and train only the expert heads (693M params total) to remain under memory caps:
-   
+
    ```python
    # Pi0.5 parameter adjustments
    model = Pi05(

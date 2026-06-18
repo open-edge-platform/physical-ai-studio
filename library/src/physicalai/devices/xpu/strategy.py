@@ -5,7 +5,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from contextlib import nullcontext
+from typing import TYPE_CHECKING
 
 import torch
 from lightning.pytorch.strategies import StrategyRegistry
@@ -75,7 +76,7 @@ class XPUDDPStrategy(DDPStrategy):
         *,
         process_group_backend: str = "xccl",
         find_unused_parameters: bool = True,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> None:
         """Initialize the XPUDDPStrategy.
 
@@ -84,7 +85,7 @@ class XPUDDPStrategy(DDPStrategy):
                 which is required for multi-XPU communication via Intel oneCCL.
             find_unused_parameters (bool): Whether to find unused parameters during backward pass.
                 Defaults to True as Embodied/VLA policies frequently freeze certain components.
-            **kwargs (Any): Additional options to pass to DDPStrategy.
+            **kwargs (object): Additional options to pass to DDPStrategy.
         """
         super().__init__(
             process_group_backend=process_group_backend,
@@ -98,13 +99,23 @@ class XPUDDPStrategy(DDPStrategy):
         return torch.device("xpu", self.local_rank)
 
     def _setup_model(self, model: torch.nn.Module) -> torch.nn.parallel.DistributedDataParallel:
-        """Wraps the model into a DistributedDataParallel module without forcing CUDA stream setups."""
-        from contextlib import nullcontext
+        """Wrap the model in distributed data parallel without CUDA stream setup.
+
+        Args:
+            model: The model to wrap.
+
+        Returns:
+            The wrapped distributed data parallel module.
+        """
         device_ids = self.determine_ddp_device_ids()
         # For Intel XPU, we bypass the hardcoded `torch.cuda.Stream` requirement in standard PyTorch Lightning.
         # If xpu stream control is needed, we could use torch.xpu.stream(torch.xpu.Stream()),
         # but nullcontext is standard for multi-device wrapping setups on non-CUDA.
-        ctx = torch.xpu.stream(torch.xpu.Stream()) if (device_ids is not None and hasattr(torch, "xpu")) else nullcontext()
+        ctx = (
+            torch.xpu.stream(torch.xpu.Stream())
+            if (device_ids is not None and hasattr(torch, "xpu"))
+            else nullcontext()
+        )
         with ctx:
             return torch.nn.parallel.DistributedDataParallel(
                 module=model,
