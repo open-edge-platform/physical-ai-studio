@@ -150,8 +150,8 @@ export const TrainingRow = ({
                                         Stop training for {trainJob.payload.model_name}?
                                         <br />
                                         <br />
-                                        Your model checkpoint will be saved at the current step. You cannot resume
-                                        this run.
+                                        Your model checkpoint will be saved at the current step. You cannot resume this
+                                        run.
                                     </AlertDialog>
                                 </DialogTrigger>
                             )}
