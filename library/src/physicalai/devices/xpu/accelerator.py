@@ -63,8 +63,14 @@ class XPUAccelerator(Accelerator):
         Returns:
             list: A list containing the device specification(s). If input is already a list,
                 it is returned as-is. Otherwise, the input is wrapped in a list.
+
+        Raises:
+            ValueError: If an integer device count is less than 1.
         """
         if isinstance(devices, int):
+            if devices < 1:
+                msg = "XPU device count must be at least 1"
+                raise ValueError(msg)
             return list(range(devices))
         if isinstance(devices, list):
             return devices
