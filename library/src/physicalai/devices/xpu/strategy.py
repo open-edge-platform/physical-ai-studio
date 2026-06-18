@@ -86,6 +86,9 @@ class XPUDDPStrategy(DDPStrategy):
             find_unused_parameters (bool): Whether to find unused parameters during backward pass.
                 Defaults to True as Embodied/VLA policies frequently freeze certain components.
             **kwargs (object): Additional options to pass to DDPStrategy.
+
+        Raises:
+            MisconfigurationException: If XPU devices are not available on the system.
         """
         if not torch.xpu.is_available():
             msg = "`XPUDDPStrategy` requires XPU devices to run"
