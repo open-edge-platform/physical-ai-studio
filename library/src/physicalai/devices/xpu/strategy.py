@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import torch
 from lightning.pytorch.strategies import StrategyRegistry
@@ -76,7 +76,7 @@ class XPUDDPStrategy(DDPStrategy):
         *,
         process_group_backend: str = "xccl",
         find_unused_parameters: bool = True,
-        **kwargs: object,
+        **kwargs: Any,  # noqa: ANN401 - standard pattern for forwarding to parent
     ) -> None:
         """Initialize the XPUDDPStrategy.
 
@@ -85,7 +85,7 @@ class XPUDDPStrategy(DDPStrategy):
                 which is required for multi-XPU communication via Intel oneCCL.
             find_unused_parameters (bool): Whether to find unused parameters during backward pass.
                 Defaults to True as Embodied/VLA policies frequently freeze certain components.
-            **kwargs (object): Additional options to pass to DDPStrategy.
+            **kwargs (Any): Additional options to pass to DDPStrategy.
 
         Raises:
             MisconfigurationException: If XPU devices are not available on the system.
