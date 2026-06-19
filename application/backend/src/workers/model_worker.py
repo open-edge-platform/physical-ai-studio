@@ -6,7 +6,6 @@ from multiprocessing.synchronize import Event as EventClass
 from typing import TYPE_CHECKING
 
 from loguru import logger
-from physicalai.inference import InferenceModel
 
 from control.inference_result import InferenceResult
 from models.utils import load_inference_model
@@ -14,6 +13,7 @@ from schemas import InferenceDevice, Model
 
 if TYPE_CHECKING:
     from physicalai.data import Observation
+    from physicalai.inference import InferenceModel
 
 from .base import BaseProcessWorker
 
@@ -21,7 +21,7 @@ from .base import BaseProcessWorker
 class ModelWorker(BaseProcessWorker):
     ROLE: str = "ModelWorker"
 
-    inference_model: InferenceModel
+    inference_model: "InferenceModel"
     command_queue: mp.Queue
     observation_queue: mp.Queue
     output_queue: mp.Queue

@@ -16,3 +16,4 @@ After the environment and model load, you will see a screen similar to the recor
 ## Next
 
 - For training, see [Training Policies](./06-training-policies.md).
+- For remote training setup, see [Remote Training Server](./08-remote-training-server.md).

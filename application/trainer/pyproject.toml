@@ -1,0 +1,87 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/trainer"]
+
+[project]
+name = "physical-ai-trainer"
+version = "0.1.0"
+description = "Remote training service for Physical AI Studio"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "fastapi[standard]",
+  "sse-starlette>=2.0.0",
+  "pydantic>=2.12,<2.13",
+  "pydantic-settings>=2.10.1",
+  "loguru>=0.7.3",
+  "huggingface-hub>=0.27",
+  # Training stack (torch resolved via the extras below).
+  "physicalai-train[pi0,smolvla]",
+]
+
+[project.optional-dependencies]
+cpu = ["torch<2.13", "torchvision<0.26.0"]
+cuda = ["torch<2.13", "torchvision<0.26.0"]
+xpu = [
+  "torch<2.13",
+  "torchvision<0.26.0",
+  "pytorch-triton-xpu ; sys_platform == 'linux' or sys_platform == 'win32'",
+]
+tests = ["pytest", "pytest-mock", "httpx"]
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-xpu"
+url = "https://download.pytorch.org/whl/xpu"
+explicit = false
+
+[tool.uv.sources]
+physicalai-train = { path = "../../library", editable = true }
+torch = [
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-cu128", extra = "cuda" },
+  { index = "pytorch-xpu", extra = "xpu" },
+]
+torchvision = [
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-cu128", extra = "cuda" },
+  { index = "pytorch-xpu", extra = "xpu" },
+]
+pytorch-triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
+
+[tool.uv]
+index-strategy = "unsafe-best-match"
+conflicts = [[{ extra = "cpu" }, { extra = "cuda" }, { extra = "xpu" }]]
+
+[tool.ruff]
+extend = "../../pyproject.toml"
+preview = false
+src = ["src"]
+
+[tool.ruff.lint.per-file-ignores]
+"*test*.py" = ["S", "ANN", "D", "ARG", "PLR", "INP001", "SLF001", "TC"]
+"tests/conftest.py" = ["S", "ANN", "D", "ARG", "PLR", "INP001", "SLF001", "TC"]
+
+[tool.pytest.ini_options]
+addopts = ["--strict-markers", "--strict-config", "-ra"]
+testpaths = "tests"
+pythonpath = "src"

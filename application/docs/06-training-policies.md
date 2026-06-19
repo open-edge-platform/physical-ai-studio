@@ -70,6 +70,61 @@ Then start the backend from `application/backend/`:
 
 Never commit real tokens to source control. Store them only in local `.env` files or your secret manager, and rotate the token immediately if it is exposed.
 
+## Remote training
+
+Run training on a separate GPU server while you record datasets on a lightweight machine. Studio supports two training modes, set by the `TRAINING_MODE` environment variable on the backend:
+
+- `local` (default): training runs in the same process as the backend. This requires the `[train]` dependency extra (torch, transformers, ExecuTorch, and the policy weights).
+- `remote`: training runs on a separate **trainer service**. The recording install stays lightweight and does not need the `[train]` extra.
+
+Use `remote` mode when the machine you record on lacks a capable GPU, or when you want one GPU server to serve several recording stations.
+
+The Studio experience is unchanged in `remote` mode. You start training from the Models screen with the same form, and job status, progress, and the live loss curve appear exactly as for local training. Studio shows the dataset upload as an early progress step of the same job. Studio ignores the device you select in the form for remote jobs — the trainer server picks its own accelerator.
+
+### Enable remote mode on the backend
+
+Set these variables on the Studio backend. `TRAINING_MODE=remote` requires `TRAINER_URL`; the backend fails to start with a validation error if it is missing.
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `TRAINING_MODE` | yes | Set to `remote` to offload training. |
+| `TRAINER_URL` | yes (remote) | Base URL of the trainer service, e.g. `https://trainer.internal:8001`. |
+| `TRAINER_HF_NAMESPACE` | no | Hugging Face org or user namespace for the temporary dataset repositories. |
+| `TRAINER_REQUEST_TIMEOUT_S` | no | HTTP timeout for non-streaming trainer calls (default `30`). |
+
+For native backend deployments, add the variables to `application/backend/.env`:
+
+```env
+TRAINING_MODE=remote
+TRAINER_URL=https://trainer.internal:8001
+TRAINER_HF_NAMESPACE=your-hf-namespace
+```
+
+Then start the backend from `application/backend/`:
+
+```bash
+./run.sh
+```
+
+For Docker deployments, add the same variables to `application/docker/.env`, then recreate the stack from `application/docker/`:
+
+```bash
+docker compose up -d --force-recreate
+```
+
+The trainer service must be running and reachable at `TRAINER_URL` before you start a remote job. See [Remote Training Server](./08-remote-training-server.md) to set it up.
+
+### Hugging Face token requirements for remote mode
+
+Remote mode transfers each dataset over Hugging Face Hub. For every training job, the backend pushes the dataset snapshot to a new temporary private dataset repository, pins its exact commit, and the trainer pulls the snapshot from that pinned commit. Studio deletes the temporary repository after it imports the trained model, including on failure.
+
+This reuses the same `HF_TOKEN` described above, but the access level differs:
+
+- **Local mode** needs **read** access (download Hub-backed policy weights).
+- **Remote mode** needs **write** access. The backend creates, uploads to, and deletes private dataset repositories under your namespace.
+
+The trainer service needs an `HF_TOKEN` with **read** access to pull those snapshots. Set tokens through the environment only and never commit them.
+
 ## Monitor training progress
 
 | **Training job in progress**                              | **Open model training logs**             |
@@ -111,4 +166,5 @@ docker compose up -d --force-recreate
 
 ## Next
 
+- Set up remote training: [Remote Training Server](./08-remote-training-server.md).
 - Run/deploy in UI: [Deploying Model Policies](./07-deploying-model-policies.md).
