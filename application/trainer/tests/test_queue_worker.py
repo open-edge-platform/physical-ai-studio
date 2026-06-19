@@ -75,6 +75,22 @@ def test_run_job_honors_cancellation(manager, sample_request: SubmitJobRequest, 
     assert manager.store.get(job_id).status == TrainerJobStatus.CANCELED
 
 
+def test_run_job_canceled_error_marks_canceled_without_failure(
+    manager, sample_request: SubmitJobRequest,
+) -> None:
+    """A JobCanceledError from the runner ends the job CANCELED, not FAILED."""
+    from trainer.runner import JobCanceledError
+
+    job_id = manager.store.create(sample_request)
+    manager._runner.run = MagicMock(side_effect=JobCanceledError("Training canceled"))
+
+    asyncio.run(manager._run_job(job_id))
+
+    state = manager.store.get(job_id)
+    assert state.status == TrainerJobStatus.CANCELED
+    assert "failed" not in state.message.lower()
+
+
 def test_run_job_reports_progress_to_store(manager, sample_request: SubmitJobRequest, tmp_path: Path) -> None:
     job_id = manager.store.create(sample_request)
 

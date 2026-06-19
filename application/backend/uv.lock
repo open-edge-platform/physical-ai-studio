@@ -66,7 +66,7 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "2026-06-11T10:19:32.69643Z"
+exclude-newer = "2026-06-12T09:31:30.304136Z"
 exclude-newer-span = "P7D"
 
 [options.exclude-newer-package]
@@ -2512,6 +2512,7 @@ dependencies = [
     { name = "numpy" },
     { name = "opencv-python" },
     { name = "physicalai", extra = ["capture", "robots"] },
+    { name = "physicalai-train" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyrealsense2", marker = "sys_platform != 'darwin' or (extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-cuda') or (extra == 'extra-18-physical-ai-studio-cpu' and extra == 'extra-18-physical-ai-studio-xpu') or (extra == 'extra-18-physical-ai-studio-cuda' and extra == 'extra-18-physical-ai-studio-xpu')" },
@@ -2585,6 +2586,7 @@ requires-dist = [
     { name = "numpy" },
     { name = "opencv-python" },
     { name = "physicalai", extras = ["robots", "capture"] },
+    { name = "physicalai-train", editable = "../../library" },
     { name = "physicalai-train", extras = ["pi0", "smolvla"], marker = "extra == 'train'", editable = "../../library" },
     { name = "pydantic", specifier = ">=2.12,<2.13" },
     { name = "pydantic-settings", specifier = ">=2.10.1" },

@@ -19,7 +19,7 @@ from services import DatasetService, ModelService
 from services.event_processor import EventType
 from services.job_service import JobService
 from services.snapshot_service import SnapshotService
-from services.training_backends import TrainingContext, get_training_backend
+from services.training_backends import TrainingCanceledError, TrainingContext, get_training_backend
 from services.training_service import TrainingService, TrainingTrackingDispatcher
 from settings import get_settings
 from workers.base import BaseProcessWorker
@@ -123,11 +123,21 @@ class TrainingWorker(BaseProcessWorker):
             dispatcher.start()
             await backend.train(context)
 
+            if self._should_interrupt():
+                # The local backend stops cooperatively without raising; treat a
+                # completed-but-interrupted run as a cancellation, not a success.
+                raise TrainingCanceledError("Training canceled")
+
             job = await JobService.update_job_status(
                 job_id=job.id, status=JobStatus.COMPLETED, message="Training finished"
             )
             model = await ModelService.create_model(model)
             self.queue.put((EventType.MODEL_UPDATE, model))
+        except TrainingCanceledError:
+            logger.info("Training canceled")
+            job = await JobService.update_job_status(
+                job_id=job.id, status=JobStatus.CANCELED, message="Training canceled"
+            )
         except Exception as e:
             logger.exception(f"Training failed: {e}")
             job = await JobService.update_job_status(

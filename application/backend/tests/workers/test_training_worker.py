@@ -164,6 +164,79 @@ class TestTraining:
             assert failed_call.kwargs["status"] == JobStatus.FAILED
 
     @pytest.mark.anyio
+    async def test_cancellation_raised_by_backend_marks_canceled(self, worker, tmp_path):
+        """A TrainingCanceledError ends the job CANCELED, not FAILED, and creates no model."""
+        from services.training_backends import TrainingCanceledError
+
+        payload = _make_payload(compile_model=False)
+        model = _make_model(tmp_path)
+        snapshot = _make_snapshot(tmp_path)
+        job = _make_job(payload)
+
+        backend = MagicMock()
+        backend.train = AsyncMock(side_effect=TrainingCanceledError("Training canceled"))
+
+        dispatcher = MagicMock()
+        dispatcher.is_alive = MagicMock(return_value=False)
+
+        canceled_job = MagicMock()
+        canceled_job.id = job.id
+        canceled_job.status = JobStatus.CANCELED
+
+        with (
+            patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
+            patch(f"{MODULE}.get_training_backend", return_value=backend),
+            patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
+            patch(f"{MODULE}.JobService") as MockJobService,
+            patch(f"{MODULE}.ModelService") as MockModelService,
+        ):
+            MockJobService.update_job_status = AsyncMock(return_value=canceled_job)
+            MockJobService.update_job = AsyncMock(return_value=MagicMock())
+            MockModelService.create_model = AsyncMock()
+
+            await worker._train_model(job, model, snapshot, payload, base_model=None)
+
+            MockModelService.create_model.assert_not_called()
+            canceled_call = MockJobService.update_job_status.call_args_list[0]
+            assert canceled_call.kwargs["status"] == JobStatus.CANCELED
+
+    @pytest.mark.anyio
+    async def test_interrupt_after_silent_stop_marks_canceled(self, worker, interrupt_event, tmp_path):
+        """A backend that stops cooperatively (no raise) while interrupted ends CANCELED."""
+        payload = _make_payload(compile_model=False)
+        model = _make_model(tmp_path)
+        snapshot = _make_snapshot(tmp_path)
+        job = _make_job(payload)
+
+        interrupt_event.set()
+
+        backend = MagicMock()
+        backend.train = AsyncMock()
+
+        dispatcher = MagicMock()
+        dispatcher.is_alive = MagicMock(return_value=False)
+
+        canceled_job = MagicMock()
+        canceled_job.id = job.id
+        canceled_job.status = JobStatus.CANCELED
+
+        with (
+            patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
+            patch(f"{MODULE}.get_training_backend", return_value=backend),
+            patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
+            patch(f"{MODULE}.JobService") as MockJobService,
+            patch(f"{MODULE}.ModelService") as MockModelService,
+        ):
+            MockJobService.update_job_status = AsyncMock(return_value=canceled_job)
+            MockJobService.update_job = AsyncMock(return_value=MagicMock())
+            MockModelService.create_model = AsyncMock()
+
+            await worker._train_model(job, model, snapshot, payload, base_model=None)
+
+            MockModelService.create_model.assert_not_called()
+            assert MockJobService.update_job_status.call_args_list[0].kwargs["status"] == JobStatus.CANCELED
+
+    @pytest.mark.anyio
     async def test_successful_training_creates_model(self, worker, event_queue, tmp_path):
         """A successful backend run completes the job and persists the model."""
         payload = _make_payload(compile_model=True)

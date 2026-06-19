@@ -15,7 +15,7 @@ import asyncio
 
 from loguru import logger
 
-from trainer.runner import TrainerRunner
+from trainer.runner import JobCanceledError, TrainerRunner
 from trainer.schemas import TrainerJobStatus
 from trainer.settings import get_settings
 from trainer.store import JobStore
@@ -104,6 +104,9 @@ class QueueManager:
                     message="Training finished",
                     artifact=str(archive_path),
                 )
+        except JobCanceledError:
+            logger.info("Training job canceled")
+            self.store.update(job_id, status=TrainerJobStatus.CANCELED, message="Canceled")
         except Exception as exc:  # noqa: BLE001  # surface any training failure as a FAILED job, never crash the loop
             logger.exception("Training job failed: {}", exc)
             status = TrainerJobStatus.CANCELED if job_id in self._cancel_requested else TrainerJobStatus.FAILED

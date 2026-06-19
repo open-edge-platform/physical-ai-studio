@@ -16,6 +16,14 @@ if TYPE_CHECKING:
     from schemas.job import TrainJobPayload
 
 
+class TrainingCanceledError(Exception):
+    """Raised by a backend when training stops because cancellation was requested.
+
+    Distinct from a genuine failure: the worker marks the job CANCELED and logs
+    at info level instead of dumping an error traceback.
+    """
+
+
 class ProgressReporter(Protocol):
     """Report training progress back to the job store and event stream."""
 

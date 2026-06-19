@@ -11,6 +11,10 @@ dependencies = [
   'harvesters; sys_platform != "darwin"',
   "fastapi[standard]",
   "physicalai[robots, capture]",
+  # Core training library (policies, export, data, transforms). Recording/remote
+  # nodes need these to drive the Models/Policies screens and OpenVINO inference;
+  # the heavy in-process VLA training weights stay behind the `train` extra below.
+  "physicalai-train",
   "lerobot[feetech]==0.5.1",
   "numpy",
   "websockets",
@@ -35,8 +39,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Local training/inference stack. Heavy: pulls torch, transformers, executorch,
-# and the policy weights. Recording-only nodes (TRAINING_MODE=remote) omit this.
+# In-process VLA training weights. Heavy: pulls transformers, the policy
+# checkpoints, and executorch. The `physicalai-train` core (policies, export,
+# data) already ships in base deps, so recording-only nodes (TRAINING_MODE=remote)
+# omit only this extra.
 train = [
   "physicalai-train[pi0,smolvla]",
   "executorch>=1.1.0",

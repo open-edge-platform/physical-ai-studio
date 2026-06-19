@@ -31,6 +31,14 @@ ProgressFn = Callable[[int, str | None, dict[str, Any] | None], None]
 StopFn = Callable[[], bool]
 
 
+class JobCanceledError(Exception):
+    """Raised when a job stops because cancellation was requested.
+
+    Distinct from a genuine failure: the queue worker marks the job CANCELED and
+    logs at info level instead of dumping an error traceback.
+    """
+
+
 class TrainerRunner:
     """Run a single training job end to end."""
 
@@ -123,7 +131,7 @@ class TrainerRunner:
         trainer.fit(model=policy, datamodule=data_module)
         if should_stop():
             msg = "Training canceled"
-            raise RuntimeError(msg)
+            raise JobCanceledError(msg)
 
         trainer.save_checkpoint(cache_dir / "model.ckpt")
         model_dir.parent.mkdir(parents=True, exist_ok=True)

@@ -24,6 +24,7 @@ import httpx
 from loguru import logger
 
 from services.archive_safety import SafeZipArchive
+from services.training_backends.base import TrainingCanceledError
 from settings import get_settings
 
 if TYPE_CHECKING:
@@ -51,6 +52,58 @@ class RemoteTrainingBackend:
         self._timeout = settings.trainer_request_timeout_s
         # Token from env only; never logged.
         self._hf_token = os.environ.get("HF_TOKEN")
+        # Resolved once by _resolve_trust_env(): True honors proxy env vars,
+        # False bypasses them. None means "not yet probed".
+        self._trust_env: bool | None = None
+        self._trust_env_lock = asyncio.Lock()
+
+    async def _resolve_trust_env(self) -> bool:
+        """Decide once whether proxy env vars should be honored for trainer calls.
+
+        The trainer is an internal endpoint. An outbound proxy usually rejects
+        it (403), so the safe default is to bypass proxies. Some deployments do
+        route the trainer through the proxy, so probe /health once with proxies
+        enabled and cache the verdict for all later clients.
+        """
+        cached = self._trust_env
+        if cached is not None:
+            return cached
+        async with self._trust_env_lock:
+            # Re-check: another coroutine may have resolved it while we waited.
+            cached = self._trust_env
+            if cached is None:
+                cached = await self._probe_proxy()
+                self._trust_env = cached
+        return cached
+
+    async def _probe_proxy(self) -> bool:
+        """Return True if /health is reachable with proxy env vars honored."""
+        try:
+            # AsyncClient honors HTTP_PROXY/HTTPS_PROXY by default (trust_env).
+            async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as client:
+                response = await client.get(f"{self._base_url}/health")
+                response.raise_for_status()
+        except httpx.HTTPError:
+            logger.info("Trainer not reachable via proxy; bypassing proxy for trainer calls")
+            return False
+        logger.info("Trainer reachable via proxy; honoring proxy settings for trainer calls")
+        return True
+
+    async def _client(self, client_timeout: httpx.Timeout | float | None = None) -> httpx.AsyncClient:
+        """Build a client for direct trainer calls.
+
+        Whether HTTP_PROXY/HTTPS_PROXY are honored is decided once by
+        _resolve_trust_env(). The trainer is an explicitly configured internal
+        endpoint; routing it through an outbound web proxy commonly makes the
+        proxy reject the internal host (403), so proxies are bypassed unless the
+        one-time probe confirms they work. Outbound proxies remain in effect for
+        HuggingFace uploads, which use their own client.
+        """
+        trust_env = await self._resolve_trust_env()
+        return httpx.AsyncClient(
+            timeout=client_timeout if client_timeout is not None else self._timeout,
+            trust_env=trust_env,
+        )
 
     async def train(self, context: TrainingContext) -> None:
         """Push snapshot, submit job, mirror progress, and ingest the model."""
@@ -82,12 +135,13 @@ class RemoteTrainingBackend:
 
         api = HfApi(token=self._hf_token)
         repo_name = f"pais-snapshot-{uuid.uuid4().hex[:12]}"
-        repo_id = f"{self._namespace}/{repo_name}" if self._namespace else repo_name
+        requested_repo_id = f"{self._namespace}/{repo_name}" if self._namespace else repo_name
 
-        def _upload() -> str:
-            api.create_repo(repo_id=repo_id, repo_type="dataset", private=True)
+        def _upload() -> tuple[str, str]:
+            repo_url = api.create_repo(repo_id=requested_repo_id, repo_type="dataset", private=True)
+            resolved_repo_id = repo_url.repo_id
             commit = api.upload_folder(
-                repo_id=repo_id,
+                repo_id=resolved_repo_id,
                 repo_type="dataset",
                 folder_path=str(Path(context.snapshot.path)),
                 allow_patterns=_SNAPSHOT_ALLOW_PATTERNS,
@@ -95,9 +149,9 @@ class RemoteTrainingBackend:
             # upload_folder returns a CommitInfo; oid is the concrete commit SHA.
             if not commit.oid:
                 raise RemoteTrainingError("Snapshot upload did not return a commit SHA")
-            return str(commit.oid)
+            return resolved_repo_id, str(commit.oid)
 
-        revision = await asyncio.to_thread(_upload)
+        repo_id, revision = await asyncio.to_thread(_upload)
         logger.info("Snapshot pushed to ephemeral dataset repo (revision pinned)")
         return repo_id, revision
 
@@ -109,7 +163,7 @@ class RemoteTrainingBackend:
             "revision": revision,
             "policy": context.model.policy,
         }
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with await self._client() as client:
             response = await client.post(f"{self._base_url}/jobs", json=body)
             response.raise_for_status()
             data = response.json()
@@ -122,11 +176,11 @@ class RemoteTrainingBackend:
 
     async def _wait_for_completion(self, context: TrainingContext, remote_job_id: str) -> None:
         """Poll the remote job, mirroring progress into the local job."""
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with await self._client() as client:
             while True:
                 if context.should_stop():
                     await self._cancel(client, remote_job_id)
-                    raise RemoteTrainingError("Training canceled")
+                    raise TrainingCanceledError("Training canceled")
 
                 state = await self._fetch_state(client, remote_job_id)
                 status = state.get("status")
@@ -138,9 +192,11 @@ class RemoteTrainingBackend:
                 )
 
                 if status in _TERMINAL_STATES:
-                    if status != "completed":
-                        raise RemoteTrainingError(f"Remote training {status}: {state.get('message')}")
-                    return
+                    if status == "completed":
+                        return
+                    if status == "canceled":
+                        raise TrainingCanceledError("Remote training canceled")
+                    raise RemoteTrainingError(f"Remote training {status}: {state.get('message')}")
 
                 await asyncio.sleep(_POLL_INTERVAL_S)
 
@@ -159,8 +215,9 @@ class RemoteTrainingBackend:
         # No total timeout: artifacts may be large; keep a connect timeout only.
         stream_timeout = httpx.Timeout(self._timeout, read=None)
         try:
+            client = await self._client(stream_timeout)
             async with (
-                httpx.AsyncClient(timeout=stream_timeout) as client,
+                client,
                 client.stream("GET", f"{self._base_url}/jobs/{remote_job_id}/artifact") as response,
             ):
                 response.raise_for_status()

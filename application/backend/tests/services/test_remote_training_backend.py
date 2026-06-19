@@ -26,6 +26,9 @@ if TYPE_CHECKING:
 
 REMOTE = "services.training_backends.remote"
 _SHA = "a" * 40
+# create_repo resolves the bare name to a namespaced id; the backend must use this
+# resolved id for the upload and cleanup, not the requested (possibly bare) id.
+_RESOLVED_REPO_ID = "acme/pais-snapshot-resolved"
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +150,7 @@ def _context(tmp_path: Path, *, should_stop: bool = False) -> TrainingContext:
 
 def _hf_api_mock() -> MagicMock:
     api_instance = MagicMock()
-    api_instance.create_repo = MagicMock()
+    api_instance.create_repo = MagicMock(return_value=MagicMock(repo_id=_RESOLVED_REPO_ID))
     api_instance.upload_folder = MagicMock(return_value=MagicMock(oid=_SHA))
     api_instance.delete_repo = MagicMock()
     return MagicMock(return_value=api_instance)
@@ -192,6 +195,9 @@ class TestRemoteTrainingBackend:
         # Snapshot pushed to an ephemeral repo and submitted with the pinned SHA.
         api_cls.return_value.create_repo.assert_called_once()
         api_cls.return_value.upload_folder.assert_called_once()
+        # Upload and cleanup use the resolved repo id, not the requested bare name.
+        assert api_cls.return_value.upload_folder.call_args.kwargs["repo_id"] == _RESOLVED_REPO_ID
+        assert api_cls.return_value.delete_repo.call_args.kwargs["repo_id"] == _RESOLVED_REPO_ID
         assert any(url.endswith("/jobs") for url in controller.posted_urls)
 
         # Artifact extracted safely and ephemeral repo deleted.
@@ -210,7 +216,7 @@ class TestRemoteTrainingBackend:
         controller = _Controller(states=[{"status": "running", "progress": 10}])
         api_cls = _hf_api_mock()
 
-        from services.training_backends.remote import RemoteTrainingError
+        from services.training_backends.base import TrainingCanceledError
 
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
@@ -219,7 +225,7 @@ class TestRemoteTrainingBackend:
             patch(f"{REMOTE}._POLL_INTERVAL_S", 0),
         ):
             backend = _backend(settings)
-            with pytest.raises(RemoteTrainingError, match="canceled"):
+            with pytest.raises(TrainingCanceledError, match="canceled"):
                 await backend.train(context)
 
         assert controller.cancelled is True
@@ -242,6 +248,28 @@ class TestRemoteTrainingBackend:
         ):
             backend = _backend(settings)
             with pytest.raises(RemoteTrainingError, match="OOM"):
+                await backend.train(context)
+
+        api_cls.return_value.delete_repo.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_remote_canceled_status_raises_cancellation(self, tmp_path):
+        """A remote terminal 'canceled' state surfaces as cancellation, not a failure."""
+        settings = _settings()
+        context = _context(tmp_path)
+        controller = _Controller(states=[{"status": "canceled", "progress": 40, "message": "stopped"}])
+        api_cls = _hf_api_mock()
+
+        from services.training_backends.base import TrainingCanceledError
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch("huggingface_hub.HfApi", api_cls),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+            patch(f"{REMOTE}._POLL_INTERVAL_S", 0),
+        ):
+            backend = _backend(settings)
+            with pytest.raises(TrainingCanceledError):
                 await backend.train(context)
 
         api_cls.return_value.delete_repo.assert_called_once()
