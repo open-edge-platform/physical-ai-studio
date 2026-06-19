@@ -126,6 +126,9 @@ class TrainerRunner:
             auto_scale_batch_size=bool(payload.get("auto_scale_batch_size", False)),
             precision=str(payload.get("precision", "bf16-mixed")),
             check_val_every_n_epoch=1,
+            # Headless service: the live Rich progress bar interleaves with uvicorn
+            # access logs on the shared stdout. Progress is tracked via _ProgressCallback.
+            enable_progress_bar=False,
         )
 
         trainer.fit(model=policy, datamodule=data_module)
@@ -153,6 +156,11 @@ class TrainerRunner:
             try:
                 report(100, f"Exporting to {backend_name}", None)
                 policy.export(model_dir / "exports" / backend_name, backend=backend)
+            except ImportError as exc:
+                # An optional backend dependency is not installed (e.g. executorch
+                # on xpu builds). Skip it without a traceback so the job isn't
+                # mistaken for a failure; other backends still export.
+                logger.warning("Skipping {} export: optional dependency missing ({})", backend_name, exc)
             except Exception as exc:  # noqa: BLE001  # export is best-effort; one backend failing must not abort the job
                 logger.error("Export to {} failed", backend_name)
                 logger.exception(exc)

@@ -20,6 +20,10 @@ cd application/trainer
 uv sync --extra cuda   # or --extra cpu / --extra xpu
 ```
 
+The `cpu` and `cuda` extras include `executorch`, enabling the ExecuTorch
+export backend. The `xpu` extra omits it: executorch conflicts with the xpu
+torch build, so ExecuTorch export is skipped on xpu installs.
+
 ## Configure
 
 Set environment variables (or an `.env` file):

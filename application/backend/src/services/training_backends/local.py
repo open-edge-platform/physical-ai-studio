@@ -213,6 +213,10 @@ class LocalTrainingBackend:
                 export_dir = output_dir / "exports" / backend_name
                 policy.export(export_dir, backend=backend)
                 logger.info("Model export to {} completed", backend_name)
+            except ImportError as exc:
+                # Optional backend dependency not installed; skip without a
+                # traceback so the run isn't mistaken for a failure.
+                logger.warning("Skipping {} export: optional dependency missing ({})", backend_name, exc)
             except Exception as exc:
                 logger.error("Failed exporting model to {} format", backend_name)
                 logger.exception(exc)
