@@ -18,6 +18,10 @@ set -euo pipefail
 # additionally installs the `train` extra (the in-process torch training stack);
 # `remote` and `trainer` omit it where it is not needed.
 #
+# Before computing defaults, each command loads a matching .env file (backend
+# dir for local/remote, trainer dir for trainer). Variables already set in the
+# shell take precedence over .env, matching Pydantic settings precedence.
+#
 # DEVICE defaults to cpu. On a `remote` (recording) node that is the right choice:
 # training is offloaded, and recording + OpenVINO inference need only cpu torch.
 # Set DEVICE=cuda/xpu there only to run local `torch`-backend GPU inference.
@@ -51,6 +55,41 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Load KEY=VALUE pairs from a .env file into the environment. Variables already
+# set in the shell are left untouched, so explicitly-passed env vars win — this
+# matches how Pydantic settings treat real env vars as higher priority than
+# .env. Blank lines and # comments are ignored; surrounding quotes are stripped.
+load_env_file() {
+	local env_file="$1"
+	[[ -f "$env_file" ]] || return 0
+	echo "Loading environment from ${env_file}"
+	while IFS= read -r raw || [[ -n "$raw" ]]; do
+		local line="${raw#"${raw%%[![:space:]]*}"}" # left-trim
+		[[ -z "$line" || "$line" == \#* ]] && continue
+		line="${line#export }"
+		local key="${line%%=*}"
+		local val="${line#*=}"
+		# Trim whitespace around the key and validate it as a shell name.
+		key="${key#"${key%%[![:space:]]*}"}"
+		key="${key%"${key##*[![:space:]]}"}"
+		[[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+		# Strip a single layer of matching surrounding quotes.
+		if [[ ("$val" == \"*\" || "$val" == \'*\') && ${#val} -ge 2 ]]; then
+			val="${val:1:${#val}-2}"
+		fi
+		# Only set when unset/empty so the caller's environment takes precedence.
+		[[ -n "${!key:-}" ]] || export "$key=$val"
+	done <"$env_file"
+}
+
+# Load the .env that matches the chosen command before computing defaults, so
+# DEVICE, SYNC, TRAINER_URL, HF_TOKEN, etc. can all be supplied via .env.
+COMMAND=${1:-local}
+case "$COMMAND" in
+	trainer) load_env_file "${SCRIPT_DIR}/../trainer/.env" ;;
+	local | remote) load_env_file "${SCRIPT_DIR}/.env" ;;
+esac
+
 # Track whether the user explicitly chose a DEVICE so commands can pick sensible
 # defaults (e.g. remote/recording nodes default to cpu — training is offloaded).
 if [[ -n "${DEVICE:-}" ]]; then DEVICE_EXPLICIT=true; else DEVICE_EXPLICIT=false; fi
@@ -61,7 +100,7 @@ APP_MODULE=${APP_MODULE:-src/main.py}
 UV_CMD=${UV_CMD:-uv run --no-sync}
 
 usage() {
-	sed -n '5,49p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+	sed -n '5,53p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 # Sync dependencies in the current directory with the given extras.
@@ -149,7 +188,6 @@ run_trainer() {
 	exec $UV_CMD python -m trainer.main
 }
 
-COMMAND=${1:-local}
 case "$COMMAND" in
 	local) run_backend local ;;
 	remote) run_backend remote ;;

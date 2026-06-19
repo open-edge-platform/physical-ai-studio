@@ -26,7 +26,7 @@ Set environment variables (or an `.env` file):
 
 | Variable                     | Required | Description                                  |
 | ---------------------------- | -------- | -------------------------------------------- |
-| `HF_TOKEN`                   | yes      | Read access to the snapshot repos.           |
+| `HF_TOKEN`                   | yes      | **Read** access to the snapshot repos. The Studio backend that pushes them needs **write** access. See [token permissions](../backend/docs/huggingface_integration.md#required-token-permissions). |
 | `STORAGE_DIR`                | no       | Working directory for jobs and artifacts.    |
 | `TRAINER_MAX_CONCURRENT_JOBS`| no       | Queue concurrency (default 1).               |
 | `TRAINER_DEVICE`             | no       | Force `cuda`/`xpu`/`cpu` (auto if unset).    |

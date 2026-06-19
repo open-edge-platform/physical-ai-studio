@@ -22,7 +22,7 @@ Studio mirrors the trainer's progress into the same training job, so the Models 
 ## Prerequisites
 
 - A GPU machine (NVIDIA CUDA or Intel XPU) reachable from the Studio backend at the URL you set as `TRAINER_URL`. CPU works for testing but is impractical for real training.
-- A Hugging Face token (`HF_TOKEN`) with **read** access to pull dataset snapshots. The Studio backend needs a token with **write** access to create and upload the snapshots — see [Training Policies](./06-training-policies.md#hugging-face-token-requirements-for-remote-mode).
+- A Hugging Face token (`HF_TOKEN`) with **read** access to pull dataset snapshots. The Studio backend needs a token with **write** access (create, upload, delete) to manage the temporary snapshot repos — see [Hugging Face Integration](../backend/docs/huggingface_integration.md#required-token-permissions).
 - [uv](https://docs.astral.sh/uv/) installed on the GPU machine.
 
 ## Install
@@ -42,7 +42,7 @@ Set these environment variables on the trainer service, for example in `applicat
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `HF_TOKEN` | yes | — | Hugging Face token with read access to dataset snapshots. |
+| `HF_TOKEN` | yes | — | Hugging Face token with **read** access to dataset snapshots. See [token permissions](../backend/docs/huggingface_integration.md#required-token-permissions). |
 | `STORAGE_DIR` | no | platform default | Working directory for snapshots, checkpoints, and model archives. |
 | `TRAINER_MAX_CONCURRENT_JOBS` | no | `1` | Number of jobs to run at once. `1` keeps a single GPU job at a time. |
 | `TRAINER_DEVICE` | no | auto | Force `cuda`, `xpu`, or `cpu`. Auto-detected when unset. |

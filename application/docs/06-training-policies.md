@@ -121,9 +121,11 @@ Remote mode transfers each dataset over Hugging Face Hub. For every training job
 This reuses the same `HF_TOKEN` described above, but the access level differs:
 
 - **Local mode** needs **read** access (download Hub-backed policy weights).
-- **Remote mode** needs **write** access. The backend creates, uploads to, and deletes private dataset repositories under your namespace.
+- **Remote mode** needs **write** access. The backend creates, uploads to, and deletes private dataset repositories under your namespace, so the token must allow creating and deleting repos, not just writing content.
 
 The trainer service needs an `HF_TOKEN` with **read** access to pull those snapshots. Set tokens through the environment only and never commit them.
+
+For exact classic and fine-grained token permissions, see [Hugging Face Integration](../backend/docs/huggingface_integration.md#required-token-permissions).
 
 ## Monitor training progress
 
