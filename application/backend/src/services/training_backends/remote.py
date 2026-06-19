@@ -130,11 +130,9 @@ class RemoteTrainingBackend:
 
                 state = await self._fetch_state(client, remote_job_id)
                 status = state.get("status")
-                # Map remote 0-100 into the local 10-95 window reserved for training.
                 remote_progress = self._coerce_progress(state.get("progress"))
-                local_progress = 10 + round(remote_progress * 0.85)
                 context.progress(
-                    min(95, local_progress),
+                    self._to_local_progress(remote_progress),
                     message=state.get("message"),
                     extra_info=state.get("extra_info") if isinstance(state.get("extra_info"), dict) else None,
                 )
@@ -204,3 +202,12 @@ class RemoteTrainingBackend:
         if isinstance(value, int | float):
             return max(0, min(100, int(value)))
         return 0
+
+    @staticmethod
+    def _to_local_progress(remote_progress: int) -> int:
+        """Map the trainer's raw 0-100 progress into the local 10-95 window.
+
+        0-10 is reserved for snapshot upload and 95-100 for model download, so
+        training occupies 10-95. Applied once here; the trainer reports raw.
+        """
+        return min(95, 10 + round(remote_progress * 0.85))

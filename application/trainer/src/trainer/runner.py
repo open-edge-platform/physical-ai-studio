@@ -45,13 +45,13 @@ class TrainerRunner:
 
         self._train(request, snapshot_dir, model_dir, cache_dir, should_stop=should_stop, report=report)
 
-        report(96, "Archiving model", None)
+        report(100, "Archiving model", None)
         return self._archive_model(job_id, model_dir)
 
     def _pull_snapshot(self, request: SubmitJobRequest, report: ProgressFn) -> Path:
         from huggingface_hub import snapshot_download
 
-        report(5, "Pulling dataset snapshot", None)
+        report(0, "Pulling dataset snapshot", None)
         # Pinned revision + allowlist: never resolve HEAD, never pull executable formats.
         local_dir = snapshot_download(
             repo_id=request.repo_id,
@@ -60,7 +60,7 @@ class TrainerRunner:
             allow_patterns=_SNAPSHOT_ALLOW_PATTERNS,
             token=os.environ.get("HF_TOKEN"),
         )
-        report(10, "Snapshot ready", None)
+        report(0, "Snapshot ready", None)
         return Path(local_dir)
 
     def _train(
@@ -104,8 +104,7 @@ class TrainerRunner:
                     if loss_tensor is not None:
                         loss_val = loss_tensor.detach().cpu().item()
                 progress = round(trainer.global_step / max(1, trainer.max_steps) * 100)
-                # Map raw training progress into the 10-95 window.
-                report(min(95, 10 + round(progress * 0.85)), None, {"train/loss_step": loss_val})
+                report(min(100, progress), None, {"train/loss_step": loss_val})
                 if should_stop():
                     trainer.should_stop = True
 
@@ -144,7 +143,7 @@ class TrainerRunner:
         for backend in policy.get_supported_export_backends():
             backend_name = backend.value if hasattr(backend, "value") else str(backend)
             try:
-                report(95, f"Exporting to {backend_name}", None)
+                report(100, f"Exporting to {backend_name}", None)
                 policy.export(model_dir / "exports" / backend_name, backend=backend)
             except Exception as exc:  # noqa: BLE001  # export is best-effort; one backend failing must not abort the job
                 logger.error("Export to {} failed", backend_name)

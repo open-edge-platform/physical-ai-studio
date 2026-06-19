@@ -54,3 +54,14 @@ def test_dispatcher_report_defaults_message_and_extra_to_none() -> None:
     dispatcher.report(10)
 
     assert dispatcher.queue.get(timeout=1) == (10, None, None)
+
+
+def test_remote_progress_maps_raw_0_100_into_10_95_window() -> None:
+    """The trainer reports raw 0-100; the backend windows it exactly once."""
+    to_local = RemoteTrainingBackend._to_local_progress
+
+    assert to_local(0) == 10
+    assert to_local(100) == 95
+    assert to_local(50) == 52
+    # Monotonic and clamped within the reserved window.
+    assert all(10 <= to_local(p) <= 95 for p in range(101))
