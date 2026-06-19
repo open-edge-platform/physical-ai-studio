@@ -121,8 +121,8 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
     const [dataset, setDataset] = useState<SchemaDatasetOutput | undefined>(props.dataset);
     const [environment, setEnvironment] = useState<SchemaEnvironmentWithRelations>(props.environment);
 
-    const onOpen = () => {
-        loadEnvironment.mutate(props.environment);
+    const onOpen = async () => {
+        await loadEnvironment.mutateAsync(props.environment);
         if (model && inferenceDevice) {
             loadModel.mutate({ model, inference_device: inferenceDevice });
         }
@@ -150,6 +150,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
 
     const onMessage = ({ data }: WebSocketEventMap['message']) => {
         const message = JSON.parse(data) as RobotControlApiJsonResponse<unknown>;
+        console.log(message);
         if (message['event'] === 'observations') {
             observation.current = message['data'] as Observation;
         }
@@ -167,7 +168,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         mutationFn: async (datasetConfig: SchemaDatasetOutput) => {
             const result = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'load_dataset', data: { dataset: datasetConfig } },
-                (data) => data['data']['dataset_loaded']
+                (data) => data['event'] === 'dataset_loaded'
             );
             setDataset(datasetConfig);
             return result;
@@ -179,7 +180,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         mutationFn: async (env: SchemaEnvironmentWithRelations) => {
             const result = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'load_environment', data: { environment: env } },
-                (data) => data['data']['environment_loaded']
+                (data) => data['event'] === "environment_loaded"
             );
             setEnvironment(env);
             return result;

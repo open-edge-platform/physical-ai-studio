@@ -9,7 +9,6 @@ from services.event_processor import EventProcessor
 from settings import get_settings
 from utils.multiprocessing import ensure_spawn_start_method
 from utils.serial_robot_tools import RobotConnectionManager
-from workers.model_worker_registry import ModelWorkerRegistry
 
 from .scheduler import Scheduler
 
@@ -34,10 +33,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app_scheduler = Scheduler()
     app_scheduler.start_workers()
 
-    app.state.model_registry = ModelWorkerRegistry(
-        max_workers=1,
-        stop_event=app_scheduler.mp_stop_event,
-    )
     app.state.scheduler = app_scheduler
     app.state.event_processor = EventProcessor(app_scheduler.event_queue)
     logger.info("Application startup completed")

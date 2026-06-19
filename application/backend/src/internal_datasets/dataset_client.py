@@ -22,6 +22,10 @@ class DatasetClient(ABC):
         """Processes for writing episodes."""
 
     @abstractmethod
+    def get_fps(self) -> int | None:
+        """Get fps of dataset."""
+
+    @abstractmethod
     def get_episodes(self) -> list[Episode]:
         """Get episodes of dataset."""
 

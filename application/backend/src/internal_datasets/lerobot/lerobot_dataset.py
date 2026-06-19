@@ -84,6 +84,11 @@ class InternalLeRobotDataset(DatasetClient):
         lerobot_delete_episodes(dataset=self._dataset, episode_indices=episode_indices, output_dir=output_path)
         return InternalLeRobotDataset(output_path, streaming_encoding_settings=self._streaming_encoding_settings)
 
+    def get_fps(self) -> int | None:
+        if hasattr(self, "_dataset"):
+            return self._dataset.fps
+        return None
+
     def get_tasks(self) -> list[str]:
         """Get Tasks in dataset."""
         if not self.exists_on_disk:

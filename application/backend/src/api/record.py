@@ -1,6 +1,7 @@
+from fastapi import WebSocketDisconnect
+from workers.base import run_at_frequency
+from workers.robot_control_orchestrator_worker import RobotControlOrchestrator
 import asyncio
-import multiprocessing as mp
-from queue import Empty
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, WebSocket
@@ -8,7 +9,6 @@ from fastapi.responses import Response
 from loguru import logger
 
 from api.dependencies import (
-    ModelRegistryDep,
     RecordingLockedCamerasDep,
     RobotCalibrationServiceDep,
     RobotConnectionManagerDep,
@@ -18,7 +18,6 @@ from core.scheduler import Scheduler
 from robots.robot_client_factory import RobotClientFactory
 from schemas import Dataset, InferenceDevice, Model
 from schemas.environment import EnvironmentWithRelations
-from workers.robot_control_worker import RobotControlWorker
 
 router = APIRouter(prefix="/api/record")
 
@@ -31,7 +30,7 @@ async def robot_control_websocket_openapi() -> Response:
 
 async def handle_incoming(
     websocket: WebSocket,
-    process: RobotControlWorker,
+    process: RobotControlOrchestrator,
     locked_camera_fingerprints: set[str],
 ) -> None:
     """Handle incoming messages for robot control."""
@@ -63,28 +62,50 @@ async def handle_incoming(
                 case "start_task":
                     process.start_task(payload["task"])
                 case "stop_task":
-                    process.stop()
-                case "disconnect":
-                    process.disconnect()
-                    break
+                    process.stop_task()
+            await asyncio.sleep(0.005)
+    except WebSocketDisconnect:
+        pass
     except Exception as e:
         logger.error(f"Incoming task stopped: {e}")
         logger.info("Except: disconnected!")
 
 
-async def handle_outgoing(websocket: WebSocket, queue: mp.Queue) -> None:
+async def handle_outgoing(websocket: WebSocket, queue: asyncio.Queue) -> None:
     """Handle outgoing messages for robot control."""
     try:
         while True:
             try:
-                loop = asyncio.get_running_loop()
-
-                message = await loop.run_in_executor(None, queue.get)
-                await websocket.send_json(message)
-            except Empty:
+                data = await queue.get()
+                if data is None:
+                    break
+                await websocket.send_json(data)
+            except asyncio.QueueEmpty:
                 await asyncio.sleep(0.05)
+    except WebSocketDisconnect:
+        pass
     except Exception as e:
         logger.error(f"Outgoing task stopped: {e}")
+
+async def observation_update_loop(websocket: WebSocket, robot_control: RobotControlOrchestrator) -> None:
+    """Handle outgoing messages for robot control."""
+    try:
+        while True:
+            async with run_at_frequency(30):
+                observation = robot_control.get_observation()
+                if observation:
+                    await websocket.send_json(
+                        {
+                            "event": "observations",
+                            "data": observation,
+                        }
+                    )
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.error(f"Observation update loop stopped: {e}")
+        raise
+
 
 
 @router.websocket("/robot_control/ws")
@@ -93,42 +114,28 @@ async def robot_control_websocket(
     robot_manager: RobotConnectionManagerDep,
     calibration_service: RobotCalibrationServiceDep,
     scheduler: Annotated[Scheduler, Depends(get_scheduler_ws)],
-    model_registry: ModelRegistryDep,
     locked_camera_fingerprints: RecordingLockedCamerasDep,
 ) -> None:
     """Robot control websocket."""
     await websocket.accept()
-    queue: mp.Queue = mp.Queue()
-    process = RobotControlWorker(
-        stop_event=scheduler.mp_stop_event,
-        robot_client_factory=RobotClientFactory(
-            robot_manager=robot_manager,
-            calibration_service=calibration_service,
-        ),
-        queue=queue,
-        model_worker_registry=model_registry,
+    queue: asyncio.Queue = asyncio.Queue()
+    robot_control = RobotControlOrchestrator(
+        message_queue=queue,
+        robot_client_factory=RobotClientFactory(robot_manager=robot_manager, calibration_service=calibration_service),
+        mp_terminate_event=scheduler.mp_stop_event,
     )
-    process.start()
-
-    incoming_task = asyncio.create_task(handle_incoming(websocket, process, locked_camera_fingerprints))
-    outgoing_task = asyncio.create_task(handle_outgoing(websocket, queue))
-
+    robot_control.start()
     try:
+        incoming_task = asyncio.create_task(handle_incoming(websocket, robot_control, locked_camera_fingerprints))
+        outgoing_task = asyncio.create_task(handle_outgoing(websocket, queue))
+        observation_update_task = asyncio.create_task(observation_update_loop(websocket, robot_control))
+
         _, pending = await asyncio.wait(
-            {incoming_task, outgoing_task},
+            {incoming_task, outgoing_task, observation_update_task},
             return_when=asyncio.FIRST_COMPLETED,
         )
 
         for task in pending:
             task.cancel()
-
-        if process is not None:
-            process.disconnect()
-            process.join(10)
     finally:
-        queue.close()
-        # NOTE: this clears ALL locks, not just this session's. Safe today
-        # because only one recording websocket runs at a time. If concurrent
-        # sessions are added, scope locks per session instead.
-        locked_camera_fingerprints.clear()
-    logger.info("websocket handling done...")
+        robot_control.stop()

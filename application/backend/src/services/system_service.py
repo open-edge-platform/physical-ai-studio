@@ -5,7 +5,7 @@
 
 import os
 from importlib import import_module
-from typing import Any
+from typing import Any, ClassVar
 
 import torch
 from loguru import logger
@@ -15,6 +15,8 @@ from schemas.hardware import DeviceInfo, DeviceType, InferenceBackend, Inference
 
 class SystemService:
     """Service to discover and report available compute hardware."""
+
+    _openvino_devices_cache: ClassVar[list[InferenceDeviceInfo] | None] = None
 
     @classmethod
     def get_inference_devices(cls) -> list[InferenceDeviceInfo]:
@@ -76,13 +78,18 @@ class SystemService:
     @classmethod
     def _get_openvino_inference_devices(cls) -> list[InferenceDeviceInfo]:
         """Get compute devices available to the OpenVINO backend for inference."""
+        if cls._openvino_devices_cache is not None:
+            return cls._openvino_devices_cache
+
         try:
             openvino = import_module("openvino")
         except ImportError:
             logger.debug("OpenVINO is not installed; skipping OpenVINO inference devices.")
+            cls._openvino_devices_cache = []
             return []
 
         core = openvino.Core()
+        available_devices = core.available_devices
         system_memory = cls._get_system_memory()
         devices: list[InferenceDeviceInfo] = [
             InferenceDeviceInfo(
@@ -95,7 +102,7 @@ class SystemService:
             ),
         ]
 
-        for device in core.available_devices:
+        for device in available_devices:
             device_lower = device.lower()
             if device_lower.startswith("cpu"):
                 continue
@@ -126,6 +133,7 @@ class SystemService:
             else:
                 logger.debug("Unsupported OpenVINO inference device '{}'; skipping.", device)
 
+        cls._openvino_devices_cache = devices
         return devices
 
     @staticmethod

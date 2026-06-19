@@ -27,7 +27,6 @@ from services.robot_calibration_service import RobotCalibrationService
 from services.system_service import SystemService
 from settings import get_settings
 from utils.serial_robot_tools import RobotConnectionManager
-from workers.model_worker_registry import ModelWorkerRegistry
 
 
 def is_valid_uuid(identifier: str) -> bool:
@@ -237,14 +236,3 @@ def get_recording_locked_camera_fingerprints(request: HTTPConnection) -> set[str
 
 
 RecordingLockedCamerasDep = Annotated[set[str], Depends(get_recording_locked_camera_fingerprints)]
-
-
-def get_model_registry(request: HTTPConnection) -> ModelWorkerRegistry:
-    """Dependency to get model worker registry."""
-    registry = getattr(request.app.state, "model_registry", None)
-    if registry is None:
-        raise RuntimeError("Model worker registry not initialized")
-    return registry
-
-
-ModelRegistryDep = Annotated[ModelWorkerRegistry, Depends(get_model_registry)]
