@@ -234,7 +234,6 @@ ENV PATH="/app/application/backend/.venv/bin:$PATH" \
     CXX=/usr/bin/g++ \
     UV_NO_SYNC=1 \
     STATIC_FILES_DIR="/app/application/ui/" \
-    DATA_DIR="/app/data" \
     STORAGE_DIR="/app/storage" \
     AUTO_MIGRATE_STORAGE_DIR="true" \
     PYTHONPATH="/app/application/backend"

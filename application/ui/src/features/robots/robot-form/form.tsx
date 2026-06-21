@@ -1,3 +1,5 @@
+import { useRef, type FormEvent } from 'react';
+
 import {
     ActionButton,
     Button,
@@ -278,6 +280,15 @@ export const RobotForm = ({ heading = 'Add new robot', submitButton = <SubmitNew
     const robotForm = useRobotForm();
     const setRobotForm = useSetRobotForm();
 
+    const submitContainerRef = useRef<HTMLDivElement>(null);
+
+    // Make Enter behave like clicking the submit button. A disabled button ignores
+    // the click, so validation still applies.
+    const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        submitContainerRef.current?.querySelector('button')?.click();
+    };
+
     return (
         <Flex direction='column' gap='size-200'>
             <Flex alignItems={'center'} gap='size-200'>
@@ -294,7 +305,9 @@ export const RobotForm = ({ heading = 'Add new robot', submitButton = <SubmitNew
                 <Heading>{heading}</Heading>
             </Flex>
             <Divider orientation='horizontal' size='S' />
-            <Form>
+            {/* Prevent native form submission, which reloads the page and discards form state.
+                Advancing to the next step is handled by the submit button's onPress. */}
+            <Form onSubmit={handleSubmit}>
                 <Flex direction='column' gap='size-200'>
                     <Flex direction='column' gap='size-200' width='100%'>
                         <TextField
@@ -314,7 +327,7 @@ export const RobotForm = ({ heading = 'Add new robot', submitButton = <SubmitNew
                         <FormFields robotType={robotForm.type} />
                     </Flex>
                     <Divider orientation='horizontal' size='S' />
-                    <View>{submitButton}</View>
+                    <div ref={submitContainerRef}>{submitButton}</div>
                 </Flex>
             </Form>
         </Flex>

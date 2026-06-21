@@ -43,9 +43,10 @@ export const EnvironmentForm = ({ heading = 'Add new environment', submitButton 
                         </Text>
                     </View>
                     <TextField
+                        // eslint-disable-next-line jsx-a11y/no-autofocus
+                        autoFocus
                         isRequired
-                        necessityIndicator='label'
-                        label='name'
+                        label='Name'
                         width='100%'
                         onChange={(name) => {
                             setEnvironmentForm((oldForm) => {

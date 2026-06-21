@@ -157,7 +157,7 @@ export const RobotViewer = ({ robot = { type: 'SO101_Follower' }, featureValues,
                     <directionalLight position={[-5, 5, -5]} intensity={0.3} />
                     <directionalLight position={[0, -3, 5]} intensity={0.2} />
                     <PerspectiveCamera makeDefault position={[2.0, 1, 1]} />
-                    <OrbitControls />
+                    <OrbitControls enableDamping={false} />
                     <Grid infiniteGrid cellSize={0.25} sectionColor={'rgb(0, 199, 253)'} fadeDistance={10} />
                     {model && (
                         <group key={model.uuid} position={[0, 0, 0]} rotation={[0, angle, 0]}>
