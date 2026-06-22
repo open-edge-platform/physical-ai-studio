@@ -106,6 +106,9 @@ class TrainingWorker(BaseProcessWorker):
             event_queue=self.queue,
             interrupt_event=self.interrupt_event,
         )
+        interrupted = False
+        error: Exception | None = None
+        dispatcher.start()
         try:
             context = TrainingContext(
                 job=job,
@@ -120,32 +123,39 @@ class TrainingWorker(BaseProcessWorker):
             )
 
             backend = get_training_backend()
-            dispatcher.start()
             await backend.train(context)
+            # The local backend stops cooperatively without raising; treat a
+            # completed-but-interrupted run as a cancellation, not a success.
+            interrupted = self._should_interrupt()
+        except TrainingCanceledError:
+            interrupted = True
+        except Exception as e:  # surface any training failure as a FAILED job
+            error = e
+            logger.exception(f"Training failed: {e}")
+        finally:
+            # Stop the dispatcher and let it flush queued progress BEFORE writing
+            # the terminal status. Otherwise a late RUNNING progress update can
+            # land after the terminal write and revert the job (stuck at 95%).
+            self.interrupt_event.set()
+            if dispatcher.is_alive():
+                dispatcher.join(timeout=10)
 
-            if self._should_interrupt():
-                # The local backend stops cooperatively without raising; treat a
-                # completed-but-interrupted run as a cancellation, not a success.
-                raise TrainingCanceledError("Training canceled")
-
+        if error is not None:
+            job = await JobService.update_job_status(
+                job_id=job.id, status=JobStatus.FAILED, message=f"Training failed: {error}"
+            )
+        elif interrupted:
+            logger.info("Training canceled")
+            job = await JobService.update_job_status(
+                job_id=job.id, status=JobStatus.CANCELED, message="Training canceled"
+            )
+        else:
             job = await JobService.update_job_status(
                 job_id=job.id, status=JobStatus.COMPLETED, message="Training finished"
             )
             model = await ModelService.create_model(model)
             self.queue.put((EventType.MODEL_UPDATE, model))
-        except TrainingCanceledError:
-            logger.info("Training canceled")
-            job = await JobService.update_job_status(
-                job_id=job.id, status=JobStatus.CANCELED, message="Training canceled"
-            )
-        except Exception as e:
-            logger.exception(f"Training failed: {e}")
-            job = await JobService.update_job_status(
-                job_id=job.id, status=JobStatus.FAILED, message=f"Training failed: {e}"
-            )
-        self.interrupt_event.set()
-        if dispatcher.is_alive():
-            dispatcher.join(timeout=10)
+
         self.queue.put((EventType.JOB_UPDATE, job))
 
     def _should_interrupt(self) -> bool:
