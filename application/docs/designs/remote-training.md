@@ -14,7 +14,6 @@ Remote training moves GPU-heavy policy training from a recording station to a de
 ## Non-goals
 
 - **Authenticated or multi-tenant trainer access.** The trainer trusts callers on its network. It has no per-station auth, authorization, or request signing. Deploy it on a private network; do not expose it publicly.
-- **Distributed or multi-GPU training.** One job runs on one device. Scaling across nodes or sharding one job across GPUs is out of scope.
 - **Resumable transfers or jobs.** If snapshot upload, job submission, or artifact download fails, the job fails and the user retrains. There is no checkpoint-level resume across the HTTP boundary.
 - **Dataset transfer without Hugging Face Hub.** The snapshot always moves through an ephemeral HF dataset repo. Direct backend-to-trainer upload is not supported.
 
