@@ -7,7 +7,7 @@ def test_worker_log_info_references_existing_worker_classes() -> None:
     worker_modules = {
         "TrainingWorker": "workers.training_worker",
         "ModelWorker": "workers.model_worker",
-        "RobotControlWorker": "workers.robot_control_worker",
+        "RobotControlOrchestrator": "workers.robot_control_orchestrator_worker",
         "DatasetImportWorker": "workers.dataset_import_worker",
     }
 

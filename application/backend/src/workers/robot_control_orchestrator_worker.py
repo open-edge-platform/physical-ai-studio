@@ -8,7 +8,7 @@ from typing import Coroutine
 from schemas import InferenceDevice, Model
 
 from control.utils import get_observation_from_manifest, format_observation_for_reporting
-from workers.model_integration import ModelIntegration
+from workers.model_integration_worker import ModelIntegrationWorker
 from workers.base import run_at_frequency
 from typing import Any
 from pydantic import BaseModel
@@ -37,15 +37,12 @@ class RobotControlOrchestrator(BaseThreadWorker):
     ROLE = "RobotControlOrchestrator"
 
     recording: RecordingWorker | None = None
-    model_integration: ModelIntegration | None = None
+    model_integration: ModelIntegrationWorker | None = None
     environment_integration: EnvironmentIntegration | None = None
-    background_tasks: set[asyncio.Task]
-
     def __init__(
         self, message_queue: asyncio.Queue, robot_client_factory: RobotClientFactory, mp_terminate_event: EventClass
     ):
         super().__init__(stop_event=mp_terminate_event)
-        self.background_tasks = set()
         self.event_queue = mp.Queue()
         self._mp_terminate_event = mp_terminate_event
         self.robot_client_factory = robot_client_factory
@@ -122,7 +119,7 @@ class RobotControlOrchestrator(BaseThreadWorker):
 
     def load_model(self, model: Model, inference_device: InferenceDevice) -> None:
         if self.environment_integration and self.environment_integration.manifest:
-            self.model_integration = ModelIntegration(
+            self.model_integration = ModelIntegrationWorker(
                 model=model,
                 inference_device=inference_device,
                 data_manifest=self.environment_integration.manifest,
@@ -201,11 +198,11 @@ class RobotControlOrchestrator(BaseThreadWorker):
             self._report_update("environment_loaded", result)
             self._report_state()
 
-    def fire_and_track(self, coro: Coroutine, on_done: Callable[[asyncio.Task],None])-> None:
-        task = asyncio.create_task(coro)
-        self.background_tasks.add(task)
-        task.add_done_callback(on_done)
-        task.add_done_callback(self.background_tasks.discard)
+    def fire_and_track(self, coro: Coroutine, on_done: Callable) -> None:
+        self._loop_ready.wait(timeout=10)
+        assert self.loop is not None and self.loop.is_running(), "Worker event loop is not running"
+        future = asyncio.run_coroutine_threadsafe(coro, self.loop)
+        future.add_done_callback(on_done)
 
 
     def _report_update(self, event: str, message: Any)-> None:
@@ -223,6 +220,9 @@ class RobotControlOrchestrator(BaseThreadWorker):
                 "data": self.state.model_dump(),
             }
         )
+
+    def disconnect(self) -> None:
+        self._stop_event.set()
 
     async def teardown(self) -> None:
         if self.environment_integration:

@@ -63,6 +63,9 @@ async def handle_incoming(
                     process.start_task(payload["task"])
                 case "stop_task":
                     process.stop_task()
+                case "disconnect":
+                    process.disconnect()
+                    break
             await asyncio.sleep(0.005)
     except WebSocketDisconnect:
         pass

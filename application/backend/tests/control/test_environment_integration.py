@@ -1,109 +1,161 @@
 import asyncio
-from unittest.mock import MagicMock, Mock, patch
+import ctypes
+import multiprocessing as mp
+from multiprocessing import Array as MPArray
+from unittest.mock import MagicMock, patch
 
-import numpy as np
 import pytest
-import torch
-from physicalai.capture import SharedCamera
 
+from control.data_registry import CameraRegistryEntry, EnvironmentDataRegistry, RobotRegistryEntry
 from control.environment_integration import EnvironmentIntegration
+from control.utils import format_observation_for_model, format_observation_for_reporting, get_observation_from_manifest
+
+FEATURES = [
+    "shoulder_pan.pos",
+    "shoulder_lift.pos",
+    "elbow_flex.pos",
+    "wrist_flex.pos",
+    "wrist_roll.pos",
+    "gripper.pos",
+]
+CAM_ID_1 = "3ed60255-04ae-407b-8e2c-c3281847a4e0"
+CAM_ID_2 = "4629e172-2aa7-4fde-86b1-e19eb1d210ff"
 
 
-def _make_mock_camera():
-    camera = MagicMock(spec=SharedCamera)
-    camera.connect = Mock()
-    camera.disconnect = Mock()
-    mock_frame = MagicMock()
-    mock_frame.data = np.zeros([480, 640, 3], dtype=np.uint8)
-    camera.read_latest = Mock(return_value=mock_frame)
-    return camera
+def _make_manifest():
+    n = len(FEATURES)
+    robot = RobotRegistryEntry(
+        name="Khaos",
+        type="SO101_Follower",
+        features=list(FEATURES),
+        state=MPArray(ctypes.c_double, n),
+        actions=MPArray(ctypes.c_double, n),
+        action_read_state=mp.Value(ctypes.c_int, 0),
+    )
+    cameras = [
+        CameraRegistryEntry(
+            id=CAM_ID_1, name="grabber", width=640, height=480, frame_data=MPArray(ctypes.c_uint8, 640 * 480 * 3)
+        ),
+        CameraRegistryEntry(
+            id=CAM_ID_2, name="front", width=640, height=480, frame_data=MPArray(ctypes.c_uint8, 640 * 480 * 3)
+        ),
+    ]
+    return EnvironmentDataRegistry(robot=robot, cameras=cameras)
+
+
+def _make_worker_mock():
+    worker = MagicMock()
+    worker.loaded_event = mp.Event()
+    worker.loaded_event.set()
+    return worker
 
 
 @pytest.fixture
-def mock_camera():
-    return _make_mock_camera()
+def stop_event():
+    return mp.Event()
 
 
 @pytest.fixture
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
+def manifest():
+    return _make_manifest()
 
 
-@pytest.fixture
-def inference_environment_integration(event_loop, mock_robot_client_factory, mock_camera, test_environment):
-    factory = mock_robot_client_factory
+class TestEnvironmentIntegration:
+    def _make_env(self, test_environment, mock_robot_client_factory, stop_event):
+        teleop_mock = _make_worker_mock()
+        teleop_mock._output_state = MagicMock()
+        teleop_mock._output_actions = MagicMock()
+        teleop_mock._action_read_state = MagicMock()
 
-    with patch(
-        "control.environment_integration.build_shared_camera",
-        return_value=mock_camera,
-    ) as mock_build:
-        subject = EnvironmentIntegration(test_environment, factory)
-        event_loop.run_until_complete(subject.setup())
-        for call_args in mock_build.call_args_list:
-            assert call_args.kwargs.get("validate_on_connect") is True
-            assert call_args.kwargs.get("overwrite_settings") is True
-        yield subject
-        event_loop.run_until_complete(subject.teardown())
+        cam_mock = _make_worker_mock()
+        cam_mock._width = 640
+        cam_mock._height = 480
+        cam_mock._frame_data = MagicMock()
+
+        subject = EnvironmentIntegration(test_environment, mock_robot_client_factory, stop_event)
+
+        with (
+            patch("control.environment_integration.TeleoperateWorker", return_value=teleop_mock),
+            patch("control.environment_integration.CameraWorker", return_value=cam_mock),
+        ):
+            asyncio.run(subject.setup_environment())
+
+        return subject, teleop_mock, cam_mock
+
+    def test_manifest_is_none_before_setup(self, mock_robot_client_factory, test_environment, stop_event):
+        subject = EnvironmentIntegration(test_environment, mock_robot_client_factory, stop_event)
+        assert subject.manifest is None
+
+    def test_manifest_created_after_setup(self, mock_robot_client_factory, test_environment, stop_event):
+        subject, _, _ = self._make_env(test_environment, mock_robot_client_factory, stop_event)
+        assert subject.manifest is not None
+
+    def test_manifest_has_robot_features(self, mock_robot_client_factory, test_environment, stop_event):
+        subject, _, _ = self._make_env(test_environment, mock_robot_client_factory, stop_event)
+        assert "shoulder_pan.pos" in subject.manifest.robot.features
+
+    def test_manifest_has_two_cameras(self, mock_robot_client_factory, test_environment, stop_event):
+        subject, _, _ = self._make_env(test_environment, mock_robot_client_factory, stop_event)
+        assert len(subject.manifest.cameras) == 2
+
+    def test_teardown_stops_workers(self, mock_robot_client_factory, test_environment, stop_event):
+        subject, teleop_mock, cam_mock = self._make_env(test_environment, mock_robot_client_factory, stop_event)
+        subject.teardown()
+        teleop_mock.stop.assert_called()
+        cam_mock.stop.assert_called()
 
 
-class TestInferenceEnvironmentIntegration:
-    def test_get_observation(self, inference_environment_integration: EnvironmentIntegration, event_loop):
-        observation = event_loop.run_until_complete(inference_environment_integration.get_observation())
-        assert observation is not None
-        assert "shoulder_pan.pos" in observation
-        assert "3ed60255-04ae-407b-8e2c-c3281847a4e0" in observation  # camera id 1
-        assert "4629e172-2aa7-4fde-86b1-e19eb1d210ff" in observation  # camera id 2
+class TestGetObservationFromRegistry:
+    def test_returns_expected_keys(self, manifest):
+        obs = get_observation_from_manifest(manifest)
+        assert "state" in obs
+        assert "action" in obs
+        assert "images" in obs
+        assert "timestamp" in obs
 
-    def test_transform_observation_to_model_input(
-        self, inference_environment_integration: EnvironmentIntegration, event_loop
-    ):
-        observation = event_loop.run_until_complete(inference_environment_integration.get_observation())
-        assert observation is not None
-        phy_ai_obs = inference_environment_integration.format_model_input_observation(observation)
-        assert phy_ai_obs.state is not None
-        assert phy_ai_obs.state.shape == torch.Size([1, 6])
-        assert phy_ai_obs.images is not None
-        assert "front" in phy_ai_obs.images
-        assert "grabber" in phy_ai_obs.images
+    def test_images_keyed_by_camera_id(self, manifest):
+        obs = get_observation_from_manifest(manifest)
+        assert CAM_ID_1 in obs["images"]
+        assert CAM_ID_2 in obs["images"]
 
-    def test_state_values_follow_action_keys_order_not_dict_insertion_order(
-        self, inference_environment_integration: EnvironmentIntegration
-    ):
-        action_keys = inference_environment_integration.action_keys
-        unique_values = {key: float(i) for i, key in enumerate(action_keys)}
+    def test_state_length_matches_features(self, manifest):
+        obs = get_observation_from_manifest(manifest)
+        assert len(obs["state"]) == len(FEATURES)
 
-        # Build observation with joint keys in reversed insertion order — differs from action_keys order.
-        # The old code (iterating observation.items()) would have produced reversed state values.
-        observation = {
-            **{key: unique_values[key] for key in reversed(action_keys)},
-            "3ed60255-04ae-407b-8e2c-c3281847a4e0": np.zeros([480, 640, 3], dtype=np.uint8),
-            "4629e172-2aa7-4fde-86b1-e19eb1d210ff": np.zeros([480, 640, 3], dtype=np.uint8),
-        }
 
-        result = inference_environment_integration.format_model_input_observation(observation)
+class TestFormatObservationForModel:
+    def test_state_shape(self, manifest):
+        obs = get_observation_from_manifest(manifest)
+        result = format_observation_for_model(obs, manifest, task="")
+        assert result.state is not None
+        assert result.state.shape == (1, len(FEATURES))
 
-        expected = [unique_values[k] for k in action_keys]
-        np.testing.assert_array_equal(result.state[0], expected)
+    def test_images_keyed_by_camera_name(self, manifest):
+        obs = get_observation_from_manifest(manifest)
+        result = format_observation_for_model(obs, manifest, task="")
+        assert result.images is not None
+        assert "grabber" in result.images
+        assert "front" in result.images
 
-    def test_transform_observation_to_report_to_ui(
-        self, inference_environment_integration: EnvironmentIntegration, event_loop
-    ):
-        observation = event_loop.run_until_complete(inference_environment_integration.get_observation())
-        assert observation is not None
-        report_obs = inference_environment_integration.format_observation_for_reporting(observation, 0)
-        assert "shoulder_pan.pos" in report_obs["state"]
-        assert "3ed60255-04ae-407b-8e2c-c3281847a4e0" in report_obs["cameras"]  # camera id 1
-        assert "4629e172-2aa7-4fde-86b1-e19eb1d210ff" in report_obs["cameras"]  # camera id 2
 
-    def test_teardown_disconnects_robot_and_stops_cameras(
-        self,
-        inference_environment_integration,
-        mock_robot_client,
-        mock_camera,
-        event_loop,
-    ):
-        event_loop.run_until_complete(inference_environment_integration.teardown())
-        mock_robot_client.disconnect.assert_called_once()
-        assert mock_camera.disconnect.call_count == 2  # one per camera
+class TestFormatObservationForReporting:
+    def test_returns_expected_keys(self, manifest):
+        obs = get_observation_from_manifest(manifest)
+        result = format_observation_for_reporting(obs, manifest)
+        assert "state" in result
+        assert "actions" in result
+        assert "cameras" in result
+        assert "timestamp" in result
+
+    def test_state_and_actions_keyed_by_feature_names(self, manifest):
+        obs = get_observation_from_manifest(manifest)
+        result = format_observation_for_reporting(obs, manifest)
+        for feature in FEATURES:
+            assert feature in result["state"]
+            assert feature in result["actions"]
+
+    def test_cameras_keyed_by_camera_id(self, manifest):
+        obs = get_observation_from_manifest(manifest)
+        result = format_observation_for_reporting(obs, manifest)
+        assert CAM_ID_1 in result["cameras"]
+        assert CAM_ID_2 in result["cameras"]

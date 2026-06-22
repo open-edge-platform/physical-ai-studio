@@ -215,6 +215,7 @@ class BaseThreadWorker(threading.Thread, StoppableMixin, abc.ABC):
         self._stop_event = Event()
         self.name = f"{self.ROLE}-{os.getpid()}-thread"
         self.loop: asyncio.AbstractEventLoop | None = None
+        self._loop_ready = threading.Event()
 
     # hooks
     def setup(self) -> None:
@@ -232,6 +233,7 @@ class BaseThreadWorker(threading.Thread, StoppableMixin, abc.ABC):
             logger.info(f"Starting {self.name}")
             self.loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self.loop)
+            self._loop_ready.set()
 
             try:
                 self.setup()

@@ -12,7 +12,7 @@ from schemas.model import Model
 from workers.base import BaseProcessWorker, run_at_frequency
 
 
-class ModelIntegration(BaseProcessWorker):
+class ModelIntegrationWorker(BaseProcessWorker):
     ROLE = "ModelIntegrationWorker"
 
     _child_workers: list[BaseProcessWorker] = []

@@ -1,4 +1,3 @@
-import asyncio
 import multiprocessing as mp
 from multiprocessing import Event
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -7,14 +6,14 @@ import pytest
 from tests.queue_utils import clear_queue, wait_until_message_from_queue
 
 from control.environment_integration import EnvironmentIntegration
-from workers.model_integration_worker import ModelIntegration
+from workers.model_integration_worker import ModelIntegrationWorker
 from workers.recording_worker import RecordingWorker
 from workers.robot_control_orchestrator_worker import RobotControlOrchestrator
 
 
 @pytest.fixture
 def model_integration():
-    mock = MagicMock(spec=ModelIntegration)
+    mock = MagicMock(spec=ModelIntegrationWorker)
     mock.loaded_event = mp.Event()
     mock.loaded_event.set()
     return mock
@@ -60,7 +59,7 @@ def loaded_environment_worker(robot_control_worker, environment_integration, tes
     with patch(
         "workers.robot_control_orchestrator_worker.EnvironmentIntegration", return_value=environment_integration
     ):
-        asyncio.run(robot_control_worker.load_environment(test_environment))
+        robot_control_worker.load_environment(test_environment)
 
     state = wait_until_message_from_queue(robot_control_worker.message_queue, "state")
     assert state["data"]["environment_loaded"]
@@ -72,8 +71,8 @@ def loaded_environment_worker(robot_control_worker, environment_integration, tes
 @pytest.fixture
 def loaded_inference_worker(loaded_environment_worker, model_integration, test_model):
     worker = loaded_environment_worker
-    with patch("workers.robot_control_orchestrator_worker.ModelIntegration", return_value=model_integration):
-        asyncio.run(worker.load_model(test_model, "torch"))
+    with patch("workers.robot_control_orchestrator_worker.ModelIntegrationWorker", return_value=model_integration):
+        worker.load_model(test_model, "torch")
 
     state = wait_until_message_from_queue(worker.message_queue, "state")
     assert state["data"]["model_loaded"]
@@ -86,7 +85,7 @@ def loaded_inference_worker(loaded_environment_worker, model_integration, test_m
 def loaded_teleoperation_worker(loaded_environment_worker, recording_worker, test_dataset):
     worker = loaded_environment_worker
     with patch("workers.robot_control_orchestrator_worker.RecordingWorker", return_value=recording_worker):
-        asyncio.run(worker.load_dataset(test_dataset))
+        worker.load_dataset(test_dataset)
 
     state = wait_until_message_from_queue(worker.message_queue, "state")
     assert state["data"]["dataset_loaded"]
@@ -109,15 +108,15 @@ class TestRobotControlOrchestrator:
         with patch(
             "workers.robot_control_orchestrator_worker.EnvironmentIntegration", return_value=environment_integration
         ):
-            asyncio.run(robot_control_worker.load_environment(test_environment))
+            robot_control_worker.load_environment(test_environment)
 
         state = wait_until_message_from_queue(robot_control_worker.message_queue, "state")
         assert state["data"]["environment_loaded"]
 
     def test_load_model(self, loaded_environment_worker, model_integration, test_model):
         worker = loaded_environment_worker
-        with patch("workers.robot_control_orchestrator_worker.ModelIntegration", return_value=model_integration):
-            asyncio.run(worker.load_model(test_model, "torch"))
+        with patch("workers.robot_control_orchestrator_worker.ModelIntegrationWorker", return_value=model_integration):
+            worker.load_model(test_model, "torch")
 
         state = wait_until_message_from_queue(worker.message_queue, "state")
         assert state["data"]["model_loaded"]
@@ -125,7 +124,7 @@ class TestRobotControlOrchestrator:
     def test_load_dataset(self, loaded_environment_worker, recording_worker, test_dataset):
         worker = loaded_environment_worker
         with patch("workers.robot_control_orchestrator_worker.RecordingWorker", return_value=recording_worker):
-            asyncio.run(worker.load_dataset(test_dataset))
+            worker.load_dataset(test_dataset)
 
         state = wait_until_message_from_queue(worker.message_queue, "state")
         assert state["data"]["dataset_loaded"]
