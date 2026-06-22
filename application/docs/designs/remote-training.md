@@ -23,7 +23,7 @@ Remote training moves GPU-heavy policy training from a recording station to a de
 Two services deploy independently:
 
 - **Studio backend** (`application/backend/`, `physicalai` *not* required in remote mode) - orchestrates the job and owns the user-facing job record.
-- **Trainer service** (`application/trainer/`, `trainer` package) - standalone FastAPI app that queues and runs training with `physicalai` + Lightning.
+- **Trainer service** (`application/trainer/`, `trainer` package) - standalone FastAPI app that queues and runs training with `physicalai` + Lightning. Only deployed in remote training mode.
 
 The dataset moves through Hugging Face Hub. Everything else moves over HTTP.
 
