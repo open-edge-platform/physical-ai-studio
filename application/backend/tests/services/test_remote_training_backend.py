@@ -37,9 +37,16 @@ _RESOLVED_REPO_ID = "acme/pais-snapshot-resolved"
 
 
 class _FakeResponse:
-    def __init__(self, *, json_data: dict | None = None, chunks: list[bytes] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        json_data: dict | None = None,
+        chunks: list[bytes] | None = None,
+        headers: dict | None = None,
+    ) -> None:
         self._json = json_data
         self._chunks = chunks or []
+        self.headers = headers or {}
 
     def raise_for_status(self) -> None:
         return None
@@ -70,6 +77,7 @@ class _Controller:
         self.remote_job_id = remote_job_id
         self._states = states
         self.artifact_chunks = [b"zip-bytes"]
+        self.artifact_headers: dict = {}
         self.posted_urls: list[str] = []
         self.cancelled = False
 
@@ -100,7 +108,7 @@ class _FakeClient:
         return _FakeResponse(json_data=self._c.next_state())
 
     def stream(self, method: str, url: str) -> _FakeStreamCtx:
-        return _FakeStreamCtx(_FakeResponse(chunks=self._c.artifact_chunks))
+        return _FakeStreamCtx(_FakeResponse(chunks=self._c.artifact_chunks, headers=self._c.artifact_headers))
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +121,7 @@ def _settings() -> MagicMock:
     settings.trainer_url = "https://trainer.test"
     settings.trainer_hf_namespace = "acme"
     settings.trainer_request_timeout_s = 5.0
+    settings.trainer_download_read_timeout_s = 120.0
     settings.data_import_max_uncompressed_bytes = 10 * 1024 * 1024
     settings.data_import_min_free_bytes = 0
     return settings
@@ -272,6 +281,33 @@ class TestRemoteTrainingBackend:
             with pytest.raises(TrainingCanceledError):
                 await backend.train(context)
 
+        api_cls.return_value.delete_repo.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_truncated_artifact_download_raises(self, tmp_path):
+        """A short read versus Content-Length must fail loudly, not hang or extract garbage."""
+        settings = _settings()
+        context = _context(tmp_path)
+        controller = _Controller(states=[{"status": "completed", "progress": 100, "message": "Done"}])
+        # Server advertises more bytes than it streams (connection dropped mid-transfer).
+        controller.artifact_chunks = [b"partial"]
+        controller.artifact_headers = {"content-length": "999"}
+        api_cls = _hf_api_mock()
+
+        from services.training_backends.remote import RemoteTrainingError
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch("huggingface_hub.HfApi", api_cls),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+            patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
+            patch(f"{REMOTE}._POLL_INTERVAL_S", 0),
+        ):
+            backend = _backend(settings)
+            with pytest.raises(RemoteTrainingError, match="truncated"):
+                await backend.train(context)
+
+        # Ephemeral repo is still cleaned up on the failure path.
         api_cls.return_value.delete_repo.assert_called_once()
 
     @pytest.mark.anyio

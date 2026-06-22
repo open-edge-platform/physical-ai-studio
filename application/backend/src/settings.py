@@ -121,6 +121,10 @@ class Settings(BaseSettings):
     trainer_hf_namespace: str | None = Field(default=None, alias="TRAINER_HF_NAMESPACE")
     # Seconds to wait for trainer HTTP requests (excludes long-poll/SSE streams).
     trainer_request_timeout_s: float = Field(default=30.0, alias="TRAINER_REQUEST_TIMEOUT_S")
+    # Seconds to wait between chunks while streaming the model artifact. A stalled
+    # transfer (e.g. a proxy holding the connection open) must fail instead of
+    # hanging the job forever; this is a per-read gap, not a total transfer cap.
+    trainer_download_read_timeout_s: float = Field(default=120.0, alias="TRAINER_DOWNLOAD_READ_TIMEOUT_S")
 
     @model_validator(mode="after")
     def validate_remote_training_config(self) -> "Settings":

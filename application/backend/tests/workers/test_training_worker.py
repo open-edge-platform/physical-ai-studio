@@ -114,7 +114,10 @@ def worker(stop_event, interrupt_event, event_queue):
     from workers.training_worker import TrainingWorker
 
     w = object.__new__(TrainingWorker)
+    # Mirror BaseProcessWorker/TrainingWorker wiring: should_stop() reads the
+    # private events; _should_interrupt() also reads the public interrupt_event.
     w._stop_event = stop_event
+    w._interrupt_event = interrupt_event
     w.interrupt_event = interrupt_event
     w.queue = event_queue
     return w

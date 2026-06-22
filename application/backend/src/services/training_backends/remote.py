@@ -212,28 +212,63 @@ class RemoteTrainingBackend:
         """Stream the model archive and extract it into the model directory."""
         settings = get_settings()
         tmp_archive = Path(tempfile.gettempdir()) / f"remote-model-{remote_job_id}.zip"
-        # No total timeout: artifacts may be large; keep a connect timeout only.
-        stream_timeout = httpx.Timeout(self._timeout, read=None)
+        # Finite per-read timeout, not a total cap: artifacts may be large and
+        # take a while, but a stalled transfer (proxy/firewall holding the
+        # connection open) must fail instead of hanging the job at 95% forever.
+        stream_timeout = httpx.Timeout(self._timeout, read=settings.trainer_download_read_timeout_s)
         try:
-            client = await self._client(stream_timeout)
-            async with (
-                client,
-                client.stream("GET", f"{self._base_url}/jobs/{remote_job_id}/artifact") as response,
-            ):
-                response.raise_for_status()
-                with tmp_archive.open("wb") as fobj:
-                    async for chunk in response.aiter_bytes():
-                        fobj.write(chunk)
+            received = await self._stream_archive(remote_job_id, tmp_archive, stream_timeout)
+            logger.info("Downloaded model artifact ({} bytes)", received)
 
-            archive = SafeZipArchive(
+            # Validation and extraction are blocking (zip CRC + disk writes); keep
+            # them off the worker event loop so progress/cancellation stay live.
+            await asyncio.to_thread(
+                self._extract_archive,
                 tmp_archive,
-                max_uncompressed_bytes=settings.data_import_max_uncompressed_bytes,
+                context.output_dir,
+                settings.data_import_max_uncompressed_bytes,
+                settings.data_import_min_free_bytes,
             )
-            archive.validate()
-            context.output_dir.mkdir(parents=True, exist_ok=True)
-            archive.extract_to(context.output_dir, min_free_bytes=settings.data_import_min_free_bytes)
         finally:
             tmp_archive.unlink(missing_ok=True)
+
+    async def _stream_archive(self, remote_job_id: str, tmp_archive: Path, stream_timeout: httpx.Timeout) -> int:
+        """Stream the artifact to ``tmp_archive``; return the byte count.
+
+        Verifies the transfer against ``Content-Length`` so a connection dropped
+        mid-stream surfaces as an error instead of a silently truncated archive.
+        """
+        client = await self._client(stream_timeout)
+        async with (
+            client,
+            client.stream("GET", f"{self._base_url}/jobs/{remote_job_id}/artifact") as response,
+        ):
+            response.raise_for_status()
+            expected = response.headers.get("content-length")
+            expected_bytes = int(expected) if expected is not None and expected.isdigit() else None
+
+            received = 0
+            with tmp_archive.open("wb") as fobj:
+                async for chunk in response.aiter_bytes():
+                    fobj.write(chunk)
+                    received += len(chunk)
+
+        if expected_bytes is not None and received != expected_bytes:
+            raise RemoteTrainingError(f"Artifact download truncated: received {received} of {expected_bytes} bytes")
+        return received
+
+    @staticmethod
+    def _extract_archive(
+        tmp_archive: Path,
+        output_dir: Path,
+        max_uncompressed_bytes: int,
+        min_free_bytes: int,
+    ) -> None:
+        """Validate and extract the archive into ``output_dir`` (blocking)."""
+        archive = SafeZipArchive(tmp_archive, max_uncompressed_bytes=max_uncompressed_bytes)
+        archive.validate()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        archive.extract_to(output_dir, min_free_bytes=min_free_bytes)
 
     async def _cancel(self, client: httpx.AsyncClient, remote_job_id: str) -> None:
         try:
