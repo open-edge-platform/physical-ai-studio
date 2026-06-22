@@ -29,18 +29,26 @@ class TrainingTrackingDispatcher(BaseThreadWorker):
 
     async def run_loop(self) -> None:
         while not self.interrupt_event.is_set():
-            try:
-                progress, message, extra_info = self.queue.get_nowait()
-                job = await JobService.update_job_status(
-                    self.job_id,
-                    JobStatus.RUNNING,
-                    message=message,
-                    progress=progress,
-                    extra_info=extra_info,
-                )
-                self.event_queue.put((EventType.JOB_UPDATE, job))
-            except Empty:
+            if not await self._drain_one():
                 await asyncio.sleep(0.05)
+        while await self._drain_one():
+            pass
+
+    async def _drain_one(self) -> bool:
+        """Apply one queued progress update. Return False when the queue is empty."""
+        try:
+            progress, message, extra_info = self.queue.get_nowait()
+        except Empty:
+            return False
+        job = await JobService.update_job_status(
+            self.job_id,
+            JobStatus.RUNNING,
+            message=message,
+            progress=progress,
+            extra_info=extra_info,
+        )
+        self.event_queue.put((EventType.JOB_UPDATE, job))
+        return True
 
     def report(self, progress: int, *, message: str | None = None, extra_info: dict | None = None) -> None:
         """`ProgressReporter`-compatible entry point used by training backends."""
