@@ -141,6 +141,11 @@ override-dependencies = [
     # Safe to override because executorch
     # production code does not import pytest at runtime.
     "pytest>=9.0.3",
+    # lerobot==0.5.1 caps diffusers at <0.36.0, 0.38.0 contains CVE-2026-44827 fix
+    "diffusers>=0.38.0",
+    # lerobot==0.5.1 pins draccus==0.10.0,
+    # 0.11.6 version removes pyyaml-include (GPL-3.0) dependency
+    "draccus>=0.11.6",
 ]
 conflicts = [
     [
