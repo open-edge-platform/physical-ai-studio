@@ -62,8 +62,7 @@ def format_observation_for_dataset(observation: dict, manifest: EnvironmentDataR
     actions = {i: observation["action"][k] for k, i in enumerate(manifest.robot.features)}
     for camera in manifest.cameras:
         camera_name = camera.name.lower()
-        # RGB2BGR
-        result[camera_name] = np.ascontiguousarray(observation["images"][camera.id][..., ::-1])
+        result[camera_name] = np.ascontiguousarray(observation["images"][camera.id])
 
     return result, actions
 
@@ -75,9 +74,9 @@ def format_observation_for_model(observation: dict, manifest: EnvironmentDataReg
     images: dict = {}
     for camera in manifest.cameras:
         camera_name = camera.name.lower()
-        # SWAP HWC, RGB2BGR and in float 0..1 range.
+        # HWC → CHW, float 0..1 range.
         images[camera_name] = np.ascontiguousarray(
-            observation["images"][camera.id][..., ::-1].transpose(2, 0, 1).astype(np.float32)[np.newaxis] / 255
+            observation["images"][camera.id].transpose(2, 0, 1).astype(np.float32)[np.newaxis] / 255
         )
 
     return Observation(
@@ -93,7 +92,7 @@ def format_observation_for_reporting(observation: dict, manifest: EnvironmentDat
     state = {i: observation["state"][k] for k, i in enumerate(manifest.robot.features)}
     camera_images = {}
     for camera in manifest.cameras:
-        frame = observation["images"][camera.id]
+        frame = np.ascontiguousarray(observation["images"][camera.id][..., ::-1])  # RGB→BGR for cv2
         success, imagebytes = cv2.imencode(".jpg", frame)
         if success:
             camera_images[camera.id] = base64.b64encode(imagebytes).decode()
