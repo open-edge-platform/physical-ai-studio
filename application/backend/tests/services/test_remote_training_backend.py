@@ -4,12 +4,13 @@
 """Integration tests for RemoteTrainingBackend.
 
 Network and HuggingFace boundaries are mocked; the orchestration in
-``RemoteTrainingBackend.train`` (push -> submit -> poll -> download -> cleanup)
+``RemoteTrainingBackend.train`` (push -> submit -> stream -> download -> cleanup)
 runs for real.
 """
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -36,16 +37,28 @@ _RESOLVED_REPO_ID = "acme/pais-snapshot-resolved"
 # ---------------------------------------------------------------------------
 
 
+def _sse_lines(states: list[dict]) -> list[str]:
+    """Render job states as Server-Sent Events frames, matching the trainer."""
+    lines: list[str] = []
+    for state in states:
+        lines.append("event: state")
+        lines.append(f"data: {json.dumps(state)}")
+        lines.append("")
+    return lines
+
+
 class _FakeResponse:
     def __init__(
         self,
         *,
         json_data: dict | None = None,
         chunks: list[bytes] | None = None,
+        lines: list[str] | None = None,
         headers: dict | None = None,
     ) -> None:
         self._json = json_data
         self._chunks = chunks or []
+        self._lines = lines or []
         self.headers = headers or {}
 
     def raise_for_status(self) -> None:
@@ -57,6 +70,10 @@ class _FakeResponse:
     async def aiter_bytes(self):
         for chunk in self._chunks:
             yield chunk
+
+    async def aiter_lines(self):
+        for line in self._lines:
+            yield line
 
 
 class _FakeStreamCtx:
@@ -75,16 +92,23 @@ class _Controller:
 
     def __init__(self, states: list[dict], *, remote_job_id: str = "rj-123") -> None:
         self.remote_job_id = remote_job_id
-        self._states = states
+        # Each entry is one connection's worth of frames. A reconnect pops the next
+        # entry; the last entry repeats. Defaults to a single batch of all states.
+        self._event_batches: list[list[dict]] = [list(states)]
         self.artifact_chunks = [b"zip-bytes"]
         self.artifact_headers: dict = {}
         self.posted_urls: list[str] = []
         self.cancelled = False
+        self.event_stream_opens = 0
 
-    def next_state(self) -> dict:
-        if len(self._states) > 1:
-            return self._states.pop(0)
-        return self._states[0]
+    def set_event_batches(self, batches: list[list[dict]]) -> None:
+        """Serve a distinct set of frames per connection to exercise reconnection."""
+        self._event_batches = batches
+
+    def event_lines(self) -> list[str]:
+        self.event_stream_opens += 1
+        batch = self._event_batches.pop(0) if len(self._event_batches) > 1 else self._event_batches[0]
+        return _sse_lines(batch)
 
 
 class _FakeClient:
@@ -105,9 +129,12 @@ class _FakeClient:
         return _FakeResponse(json_data={"remote_job_id": self._c.remote_job_id})
 
     async def get(self, url: str) -> _FakeResponse:
-        return _FakeResponse(json_data=self._c.next_state())
+        # Only the /health proxy probe uses GET now; job state arrives via SSE.
+        return _FakeResponse(json_data={})
 
-    def stream(self, method: str, url: str) -> _FakeStreamCtx:
+    def stream(self, method: str, url: str, headers: dict | None = None) -> _FakeStreamCtx:
+        if url.endswith("/events"):
+            return _FakeStreamCtx(_FakeResponse(lines=self._c.event_lines()))
         return _FakeStreamCtx(_FakeResponse(chunks=self._c.artifact_chunks, headers=self._c.artifact_headers))
 
 
@@ -179,7 +206,7 @@ def _backend(settings: MagicMock):
 
 class TestRemoteTrainingBackend:
     @pytest.mark.anyio
-    async def test_happy_path_pushes_polls_downloads_and_cleans_up(self, tmp_path):
+    async def test_happy_path_pushes_streams_downloads_and_cleans_up(self, tmp_path):
         settings = _settings()
         context = _context(tmp_path)
         controller = _Controller(
@@ -196,7 +223,7 @@ class TestRemoteTrainingBackend:
             patch("huggingface_hub.HfApi", api_cls),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
             patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
-            patch(f"{REMOTE}._POLL_INTERVAL_S", 0),
+            patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
         ):
             backend = _backend(settings)
             await backend.train(context)
@@ -214,9 +241,11 @@ class TestRemoteTrainingBackend:
         safe_zip.extract_to.assert_called_once()
         api_cls.return_value.delete_repo.assert_called_once()
 
+        # Streamed states drove progress: the mid-run 50% maps into the 10-95 window.
+        reported = [call.args[0] for call in context.progress.call_args_list]
+        assert 52 in reported  # 10 + round(50 * 0.85)
         # Progress reached the final 99% before the worker marks completion.
-        final_progress = [call.args[0] for call in context.progress.call_args_list]
-        assert max(final_progress) == 99
+        assert max(reported) == 99
 
     @pytest.mark.anyio
     async def test_cancellation_requests_remote_cancel_and_cleans_up(self, tmp_path):
@@ -231,7 +260,7 @@ class TestRemoteTrainingBackend:
             patch(f"{REMOTE}.get_settings", return_value=settings),
             patch("huggingface_hub.HfApi", api_cls),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
-            patch(f"{REMOTE}._POLL_INTERVAL_S", 0),
+            patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
         ):
             backend = _backend(settings)
             with pytest.raises(TrainingCanceledError, match="canceled"):
@@ -253,7 +282,7 @@ class TestRemoteTrainingBackend:
             patch(f"{REMOTE}.get_settings", return_value=settings),
             patch("huggingface_hub.HfApi", api_cls),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
-            patch(f"{REMOTE}._POLL_INTERVAL_S", 0),
+            patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
         ):
             backend = _backend(settings)
             with pytest.raises(RemoteTrainingError, match="OOM"):
@@ -275,7 +304,7 @@ class TestRemoteTrainingBackend:
             patch(f"{REMOTE}.get_settings", return_value=settings),
             patch("huggingface_hub.HfApi", api_cls),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
-            patch(f"{REMOTE}._POLL_INTERVAL_S", 0),
+            patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
         ):
             backend = _backend(settings)
             with pytest.raises(TrainingCanceledError):
@@ -301,13 +330,45 @@ class TestRemoteTrainingBackend:
             patch("huggingface_hub.HfApi", api_cls),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
             patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
-            patch(f"{REMOTE}._POLL_INTERVAL_S", 0),
+            patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
         ):
             backend = _backend(settings)
             with pytest.raises(RemoteTrainingError, match="truncated"):
                 await backend.train(context)
 
         # Ephemeral repo is still cleaned up on the failure path.
+        api_cls.return_value.delete_repo.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_event_stream_reconnects_when_closed_before_terminal(self, tmp_path):
+        """A stream that drops before a terminal state reconnects and finishes the job."""
+        settings = _settings()
+        context = _context(tmp_path)
+        controller = _Controller(states=[])
+        # First connection ends after a non-terminal state (drop); second completes.
+        controller.set_event_batches(
+            [
+                [{"status": "running", "progress": 20, "message": "Training"}],
+                [{"status": "completed", "progress": 100, "message": "Done"}],
+            ]
+        )
+        api_cls = _hf_api_mock()
+        safe_zip = MagicMock()
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch("huggingface_hub.HfApi", api_cls),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+            patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
+            patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
+            patch(f"{REMOTE}._RECONNECT_BACKOFF_S", 0),
+        ):
+            backend = _backend(settings)
+            await backend.train(context)
+
+        # The backend opened the stream twice: initial connection plus one reconnect.
+        assert controller.event_stream_opens == 2
+        safe_zip.extract_to.assert_called_once()
         api_cls.return_value.delete_repo.assert_called_once()
 
     @pytest.mark.anyio

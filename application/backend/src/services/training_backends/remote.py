@@ -14,6 +14,8 @@ recording-only install.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import json
 import os
 import tempfile
 import uuid
@@ -32,7 +34,15 @@ if TYPE_CHECKING:
 
 # Only these patterns are pulled by the trainer; mirrors snapshot_download allowlists.
 _SNAPSHOT_ALLOW_PATTERNS = ["*.safetensors", "*.json", "*.txt", "*.md", "*.parquet", "*.mp4", "*.png", "*.jpg"]
-_POLL_INTERVAL_S = 3.0
+# Upper bound on how long the stream may sit idle before we wake to re-check
+# local cancellation. The trainer pushes a state event on every change, so this
+# only bounds cancellation latency during stable stretches.
+_EVENT_WAIT_TIMEOUT_S = 3.0
+# Backoff before reconnecting an event stream that closed before a terminal state.
+_RECONNECT_BACKOFF_S = 2.0
+# Give up after this many consecutive reconnects that yield no event, so a broken
+# trainer cannot hold the job open forever.
+_MAX_STREAM_RECONNECTS = 5
 _TERMINAL_STATES = {"completed", "failed", "canceled"}
 
 
@@ -175,38 +185,144 @@ class RemoteTrainingBackend:
         return remote_job_id
 
     async def _wait_for_completion(self, context: TrainingContext, remote_job_id: str) -> None:
-        """Poll the remote job, mirroring progress into the local job."""
-        async with await self._client() as client:
-            while True:
-                if context.should_stop():
-                    await self._cancel(client, remote_job_id)
-                    raise TrainingCanceledError("Training canceled")
+        """Consume the trainer's SSE event stream, mirroring progress into the local job.
 
-                state = await self._fetch_state(client, remote_job_id)
-                status = state.get("status")
-                remote_progress = self._coerce_progress(state.get("progress"))
-                context.progress(
-                    self._to_local_progress(remote_progress),
-                    message=state.get("message"),
-                    extra_info=state.get("extra_info") if isinstance(state.get("extra_info"), dict) else None,
-                )
+        The trainer streams a ``state`` event on every change at
+        ``/jobs/{id}/events`` and closes the stream on a terminal state. A dropped
+        stream before a terminal state (idle timeout, network blip) is transient:
+        reconnect, and the trainer re-emits the current state on the fresh
+        connection. A run of reconnects that never delivers an event aborts the
+        job rather than looping forever.
+        """
+        stalled_reconnects = 0
+        while True:
+            try:
+                completed, received_event = await self._consume_event_stream(context, remote_job_id)
+            except httpx.HTTPError as exc:
+                # Connection-level failure while opening or reading the stream.
+                logger.warning("Trainer event stream connection failed, reconnecting: {}", exc)
+                completed, received_event = False, False
 
-                if status in _TERMINAL_STATES:
-                    if status == "completed":
-                        return
-                    if status == "canceled":
-                        raise TrainingCanceledError("Remote training canceled")
-                    raise RemoteTrainingError(f"Remote training {status}: {state.get('message')}")
+            if completed:
+                return
 
-                await asyncio.sleep(_POLL_INTERVAL_S)
+            if context.should_stop():
+                await self._cancel(remote_job_id)
+                raise TrainingCanceledError("Training canceled")
 
-    async def _fetch_state(self, client: httpx.AsyncClient, remote_job_id: str) -> dict[str, Any]:
-        response = await client.get(f"{self._base_url}/jobs/{remote_job_id}")
-        response.raise_for_status()
-        data = response.json()
-        if not isinstance(data, dict):
+            stalled_reconnects = 0 if received_event else stalled_reconnects + 1
+            if stalled_reconnects > _MAX_STREAM_RECONNECTS:
+                raise RemoteTrainingError("Trainer event stream closed repeatedly without a terminal state")
+            await asyncio.sleep(_RECONNECT_BACKOFF_S)
+
+    async def _consume_event_stream(self, context: TrainingContext, remote_job_id: str) -> tuple[bool, bool]:
+        """Open one SSE connection and mirror state until it closes.
+
+        Returns ``(completed, received_event)``. ``completed`` is True only when
+        the job reached the ``completed`` terminal state. Raises
+        ``TrainingCanceledError`` on local/remote cancellation and
+        ``RemoteTrainingError`` on remote failure.
+        """
+        queue: asyncio.Queue[tuple[str, object]] = asyncio.Queue()
+        received_event = False
+        url = f"{self._base_url}/jobs/{remote_job_id}/events"
+        client = await self._client()
+        async with (
+            client,
+            client.stream("GET", url, headers={"Accept": "text/event-stream"}) as response,
+        ):
+            response.raise_for_status()
+            reader = asyncio.create_task(self._read_sse_events(response, queue))
+            try:
+                while True:
+                    if context.should_stop():
+                        await self._cancel(remote_job_id)
+                        raise TrainingCanceledError("Training canceled")
+
+                    try:
+                        kind, payload = await asyncio.wait_for(queue.get(), timeout=_EVENT_WAIT_TIMEOUT_S)
+                    except TimeoutError:
+                        # No event yet; loop back to re-check cancellation.
+                        continue
+
+                    if kind == "end":
+                        return False, received_event
+                    if kind == "error":
+                        # Transient read error: surface to the reconnect loop.
+                        logger.warning("Trainer event stream read error: {}", payload)
+                        return False, received_event
+
+                    received_event = True
+                    if self._apply_state(context, self._parse_state(payload)):
+                        return True, received_event
+            finally:
+                reader.cancel()
+                with contextlib.suppress(BaseException):
+                    await reader
+
+    @staticmethod
+    async def _read_sse_events(response: httpx.Response, queue: asyncio.Queue[tuple[str, object]]) -> None:
+        """Parse SSE frames from ``response`` and push them onto ``queue``.
+
+        Emits ``("event", data)`` per complete frame, ``("end", None)`` when the
+        stream closes, and ``("error", exc)`` on a read failure. Comment lines
+        (keep-alive pings) and non-``state`` events are dropped.
+        """
+        event: str | None = None
+        data_lines: list[str] = []
+        try:
+            async for line in response.aiter_lines():
+                if line == "":
+                    if data_lines and event == "state":
+                        await queue.put(("event", "\n".join(data_lines)))
+                    event, data_lines = None, []
+                    continue
+                if line.startswith(":"):
+                    continue  # Comment / keep-alive ping.
+                field, _, value = line.partition(":")
+                value = value[1:] if value.startswith(" ") else value
+                if field == "event":
+                    event = value
+                elif field == "data":
+                    data_lines.append(value)
+            await queue.put(("end", None))
+        except httpx.HTTPError as exc:
+            await queue.put(("error", exc))
+
+    def _apply_state(self, context: TrainingContext, state: dict[str, Any]) -> bool:
+        """Mirror a job state into the local job; return True if completed.
+
+        Raises ``TrainingCanceledError`` / ``RemoteTrainingError`` on terminal
+        cancellation / failure.
+        """
+        status = state.get("status")
+        remote_progress = self._coerce_progress(state.get("progress"))
+        context.progress(
+            self._to_local_progress(remote_progress),
+            message=state.get("message"),
+            extra_info=state.get("extra_info") if isinstance(state.get("extra_info"), dict) else None,
+        )
+
+        if status in _TERMINAL_STATES:
+            if status == "completed":
+                return True
+            if status == "canceled":
+                raise TrainingCanceledError("Remote training canceled")
+            raise RemoteTrainingError(f"Remote training {status}: {state.get('message')}")
+        return False
+
+    @staticmethod
+    def _parse_state(payload: object) -> dict[str, Any]:
+        """Parse an SSE ``state`` data payload into a job-state dict."""
+        if not isinstance(payload, str) or not payload:
+            raise RemoteTrainingError("Trainer event stream sent an empty state payload")
+        try:
+            parsed = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            raise RemoteTrainingError("Trainer event stream sent malformed JSON") from exc
+        if not isinstance(parsed, dict):
             raise RemoteTrainingError("Trainer returned a malformed job state")
-        return data
+        return parsed
 
     async def _download_and_extract(self, context: TrainingContext, remote_job_id: str) -> None:
         """Stream the model archive and extract it into the model directory."""
@@ -270,9 +386,15 @@ class RemoteTrainingBackend:
         output_dir.mkdir(parents=True, exist_ok=True)
         archive.extract_to(output_dir, min_free_bytes=min_free_bytes)
 
-    async def _cancel(self, client: httpx.AsyncClient, remote_job_id: str) -> None:
+    async def _cancel(self, remote_job_id: str) -> None:
+        """Request remote cancellation; best effort.
+
+        Opens a dedicated client rather than reusing the event-stream client,
+        which may be mid-read.
+        """
         try:
-            await client.post(f"{self._base_url}/jobs/{remote_job_id}/cancel")
+            async with await self._client() as client:
+                await client.post(f"{self._base_url}/jobs/{remote_job_id}/cancel")
         except httpx.HTTPError as exc:
             logger.warning("Failed to cancel remote job: {}", exc)
 
