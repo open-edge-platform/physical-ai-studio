@@ -65,7 +65,7 @@ Heavy imports are deferred so `TRAINING_MODE=remote` never imports `torch`. `Rem
 
 Local training remains the default and is unchanged. With `TRAINING_MODE=local`, `get_training_backend()` returns `LocalTrainingBackend` (`services/training_backends/local.py`), which trains in the worker process with `torch`/Lightning. This requires the `[train]` extra on the recording station. No trainer service, Hugging Face transfer, or `TRAINER_URL` is involved.
 
-Because both backends satisfy the same protocol and produce the same `output_dir` layout, the training worker, job record, API, and Models screen are agnostic to backend choice. In local mode, progress uses the full 0-99 range (no 0-10 upload or 95-100 download windows), cancellation is checked directly inside the Lightning callback instead of over HTTP, and the device comes from the payload.
+Because both backends satisfy the same protocol and produce the same `output_dir` layout, the training worker, job record, API, and Models screen are agnostic to backend choice. In local mode, progress uses the full 0-100 range, cancellation is checked directly inside the Lightning callback instead of over HTTP, and the device comes from the payload.
 
 ```mermaid
 flowchart LR
