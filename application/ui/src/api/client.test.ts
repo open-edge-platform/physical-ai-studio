@@ -128,12 +128,12 @@ describe('fetchClient.PATH', () => {
             expect(fetchClient.PATH('/api/record/robot_control/ws')).toBe('/api/record/robot_control/ws');
         });
 
-        it('resolves /api/projects/{project_id}/robots/{robot_id}/ws with params', () => {
+        it('resolves /api/projects/{project_id}/robots/ws with params', () => {
             expect(
-                fetchClient.PATH('/api/projects/{project_id}/robots/{robot_id}/ws', {
-                    params: { path: { project_id: 'p1', robot_id: 'r1' } },
+                fetchClient.PATH('/api/projects/{project_id}/robots/ws', {
+                    params: { path: { project_id: 'p1' } },
                 })
-            ).toBe('/api/projects/p1/robots/r1/ws');
+            ).toBe('/api/projects/p1/robots/ws');
         });
 
         it('throws when robot WebSocket path params are missing', () => {

@@ -29,11 +29,8 @@ const EmptyPreview = () => {
 };
 
 const components = {
-    leader: (props: IDockviewPanelProps<{ title: string; robot_id: string }>) => {
-        return <RobotCell robot_id={props.params.robot_id} />;
-    },
-    follower: (props: IDockviewPanelProps<{ title: string; robot_id: string }>) => {
-        return <RobotCell robot_id={props.params.robot_id} />;
+    follower: (props: IDockviewPanelProps<{ title: string; follower_id: string; leader_id: string | undefined }>) => {
+        return <RobotCell follower_id={props.params.follower_id} leader_id={props.params.leader_id} />;
     },
     camera: (props: IDockviewPanelProps<{ camera_id: string }>) => {
         return <CameraCell camera_id={props.params.camera_id} />;
@@ -71,11 +68,16 @@ const buildDockviewPanels = (api: DockviewReadyEvent['api'], environment: Enviro
     });
 
     environment.robots.forEach((robot) => {
+        const teleoperator_id = robot.teleoperator.type === 'robot' ? robot.teleoperator.robot_id : undefined;
         panels.add(robot.robot_id);
         if (!api.panels.some((panel) => panel.id === robot.robot_id)) {
             api.addPanel({
                 id: robot.robot_id,
-                params: { title: 'Follower', robot_id: robot.robot_id },
+                params: {
+                    title: 'Follower',
+                    follower_id: robot.robot_id,
+                    leader_id: teleoperator_id,
+                },
                 title: 'Follower',
                 component: 'follower',
 
@@ -84,25 +86,6 @@ const buildDockviewPanels = (api: DockviewReadyEvent['api'], environment: Enviro
                     referencePanel: '',
                 },
             });
-        }
-
-        if (robot.teleoperator.type === 'robot') {
-            const teleoperator_id = robot.teleoperator.robot_id;
-            panels.add(teleoperator_id);
-
-            if (!api.panels.some((panel) => panel.id === teleoperator_id)) {
-                api.addPanel({
-                    id: teleoperator_id,
-                    params: { title: 'Leader', robot_id: robot.teleoperator.robot_id },
-                    component: 'leader',
-                    title: 'Leader',
-
-                    position: {
-                        direction: 'right',
-                        referencePanel: robot.robot_id,
-                    },
-                });
-            }
         }
     });
 

@@ -21,9 +21,9 @@ def mock_robot_client():
         "wrist_roll.pos",
         "gripper.pos",
     ]
-    client.connect = AsyncMock()
-    client.disconnect = AsyncMock()
-    client.read_state = AsyncMock(
+    client.connect = MagicMock()
+    client.disconnect = MagicMock()
+    client.read_state = MagicMock(
         return_value={
             "state": {
                 "shoulder_pan.pos": -8.705526116578355,
@@ -133,7 +133,6 @@ def test_dataset():
     return Dataset.model_validate(
         {
             "name": "Collect blocks",
-            "path": "/some/path/to/dataset",
             "default_task": "Collect blocks",
             "project_id": "35b48dc9-31df-40be-b295-08ae1d5378b1",
             "environment_id": "7656679b-25fe-4af5-a19d-73e7df16f384",

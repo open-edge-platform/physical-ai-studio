@@ -12,7 +12,6 @@ from starlette.middleware.base import RequestResponseEndpoint
 from api.camera import router as camera_router
 from api.dataset import router as dataset_router
 from api.dataset_import import router as imports_router
-from api.dependencies import RobotRegistryDep
 from api.environments import router as project_environments_router
 from api.hardware import router as hardware_router
 from api.job import router as job_router
@@ -72,11 +71,10 @@ async def _upload_size_guard(request: Request, call_next: RequestResponseEndpoin
 
 
 @app.get("/api/health")
-async def health_check(robot_registry: RobotRegistryDep) -> dict:
+async def health_check() -> dict:
     """Health check endpoint."""
     return {
         "status": "healthy",
-        "robot_workers": robot_registry.get_status_summary(),
     }
 
 

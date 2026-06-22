@@ -12,14 +12,7 @@ type JointsState = Array<{
     value: number;
 }>;
 
-type StateWasUpdatedEvent = {
-    name: 'state_was_updated';
-    is_controlled: boolean;
-    // [joint_name]: robot state in degrees
-    state: Record<string, number>;
-};
-
-const getNewJointState = (newJoints: StateWasUpdatedEvent['state']) => {
+const getNewJointState = (newJoints: Record<string, number>) => {
     return Object.keys(newJoints).map((joint_name) => {
         return {
             name: joint_name,
@@ -42,16 +35,33 @@ export const useSynchronizeModelJoints = (joints: JointsState, robotType: Schema
     }, [model, joints, robotType]);
 };
 
-export const useJointState = (project_id: string, robot_id: string) => {
+export enum RobotActionReadState {
+    None = 0,
+    Teleoperation = 1,
+    FromActions = 2,
+}
+
+interface RobotControlState {
+    connected: boolean;
+    follower_source: RobotActionReadState;
+}
+
+export const useJointState = (project_id: string, follower_id: string, leader_id?: string) => {
     const [joints, setJoints] = useState<JointsState>([]);
+    const [state, setState] = useState<RobotControlState>({
+        connected: false,
+        follower_source: RobotActionReadState.None,
+    });
 
     const handleMessage = useCallback((event: WebSocketEventMap['message']) => {
         try {
             const payload = JSON.parse(event.data);
 
-            if (payload['event'] === 'state_was_updated') {
-                const newJoints = getNewJointState(payload['state']);
+            if (payload['event'] === 'observation') {
+                const newJoints = getNewJointState(payload['data']);
                 setJoints(newJoints);
+            } else if (payload['event'] === 'state') {
+                setState(payload['data']);
             }
         } catch (error) {
             console.error('Failed to parse WebSocket message:', error);
@@ -59,8 +69,8 @@ export const useJointState = (project_id: string, robot_id: string) => {
     }, []);
 
     const socket = useWebSocket(
-        fetchClient.PATH('/api/projects/{project_id}/robots/{robot_id}/ws', {
-            params: { path: { project_id, robot_id } },
+        fetchClient.PATH('/api/projects/{project_id}/robots/ws', {
+            params: { path: { project_id } },
         }),
         {
             queryParams: {
@@ -70,11 +80,24 @@ export const useJointState = (project_id: string, robot_id: string) => {
             shouldReconnect: () => true,
             reconnectAttempts: 5,
             reconnectInterval: 3000,
+            onOpen: () => {
+                socket.sendJsonMessage({
+                    follower_id,
+                    leader_id,
+                });
+            },
             onMessage: handleMessage,
             onError: (error) => console.error('WebSocket error:', error),
             onClose: () => console.info('WebSocket closed'),
         }
     );
 
-    return { joints, socket };
+    const setFollowerSourceRequest = (value: RobotActionReadState) => {
+        socket.sendJsonMessage({
+            event: 'set_follower_source',
+            data: value,
+        });
+    };
+
+    return { joints, socket, state, setFollowerSource: setFollowerSourceRequest };
 };

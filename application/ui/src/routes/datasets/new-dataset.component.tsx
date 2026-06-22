@@ -17,8 +17,6 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { $api } from '../../api/client';
 import { SchemaDatasetOutput } from '../../api/openapi-spec';
-import { useSettings } from '../../components/settings/use-settings';
-import { makeNameSafeForPath } from './record/utils';
 
 interface NewDatasetFormProps {
     project_id: string;
@@ -32,7 +30,6 @@ export const NewDatasetForm = ({ project_id, onDone }: NewDatasetFormProps) => {
     });
     const [name, setName] = useState<string>('');
     const [defaultTask, setDefaultTask] = useState<string>('');
-    const { geti_action_dataset_path } = useSettings();
 
     const { data: environments } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/environments', {
         params: {
@@ -56,7 +53,6 @@ export const NewDatasetForm = ({ project_id, onDone }: NewDatasetFormProps) => {
                     project_id,
                     environment_id: environmentId,
                     default_task: defaultTask,
-                    path: `${geti_action_dataset_path}/${makeNameSafeForPath(name)}`,
                 },
             });
             onDone(result);

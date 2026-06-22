@@ -53,8 +53,10 @@ export const EnvironmentShow = () => {
     };
     return (
         <EnvironmentFormProvider environment={environmentForm}>
-            <Header />
-            <Preview />
+            <Flex height='100%' direction={'column'}>
+                <Header />
+                <Preview />
+            </Flex>
         </EnvironmentFormProvider>
     );
 };
