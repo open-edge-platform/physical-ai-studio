@@ -1,5 +1,5 @@
 [project]
-name = "physical-ai-studio"
+name = "physicalai-studio"
 version = "0.1.0"
 description = "Physical AI Studio server"
 readme = "README.md"
@@ -35,6 +35,19 @@ dependencies = [
   # uv doesn't select XPU local-version wheels (e.g. 0.15.0+xpu) for CUDA runs.
   "torchao===0.15.0",
 ]
+
+[project.scripts]
+physicalai-studio = "cli:cli"
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [project.optional-dependencies]
 cpu = [
@@ -124,6 +137,7 @@ all = [
 ]
 
 [tool.uv]
+package = true
 default-groups = ["all"]
 exclude-newer = "7 days"
 exclude-newer-package = { physicalai = false }
