@@ -21,8 +21,8 @@ Remote training moves GPU-heavy policy training from a recording station to a de
 
 Two services deploy independently:
 
-- **Studio backend** (`application/backend/`, `physicalai` *not* required in remote mode) - orchestrates the job and owns the user-facing job record.
-- **Trainer service** (`application/trainer/`, `trainer` package) - standalone FastAPI app that queues and runs training with `physicalai` + Lightning. Only deployed in remote training mode.
+- **Studio backend** (`application/backend/`) - orchestrates the job and owns the user-facing job record.
+- **Trainer service** (`application/trainer/`) - standalone FastAPI app that queues and runs training with `physicalai` + Lightning. Only deployed in remote training mode.
 
 The dataset moves through Hugging Face Hub. Everything else moves over HTTP.
 
@@ -51,19 +51,19 @@ flowchart LR
 
 ## Backend integration
 
-The training worker is backend-agnostic. `get_training_backend()` (`services/training_backends/__init__.py`) returns `LocalTrainingBackend` or `RemoteTrainingBackend` based on `settings.training_mode`. Both implement the `TrainingBackend` protocol:
+The training worker is backend-agnostic. `get_training_backend()` returns `LocalTrainingBackend` or `RemoteTrainingBackend` based on `settings.training_mode`. Both implement the `TrainingBackend` protocol:
 
 ```python
 async def train(self, context: TrainingContext) -> None: ...
 ```
 
-`TrainingContext` (`services/training_backends/base.py`) includes the `Job`, `Model`, `Snapshot`, `TrainJobPayload`, optional `base_model`, an `output_dir`, a `progress` reporter, and a `should_stop` callback. Backends must leave a fully populated model directory at `output_dir` (checkpoint, logger output, `exports/`), report progress, and stop quickly when `should_stop()` returns `True`. This contract is the interchange point between local and remote.
+`TrainingContext` includes the `Job`, `Model`, `Snapshot`, `TrainJobPayload`, optional `base_model`, an `output_dir`, a `progress` reporter, and a `should_stop` callback. Backends must leave a fully populated model directory at `output_dir` (checkpoint, logger output, `exports/`), report progress, and stop quickly when `should_stop()` returns `True`. This contract is the interchange point between local and remote.
 
-Heavy imports are deferred so `TRAINING_MODE=remote` never imports `torch`. `RemoteTrainingBackend` (`services/training_backends/remote.py`) lazily imports `huggingface_hub` and never imports `physicalai`.
+Heavy imports are deferred so `TRAINING_MODE=remote` never imports `torch`. `RemoteTrainingBackend` lazily imports `huggingface_hub` and never imports `physicalai`.
 
 ## Local training (default)
 
-Local training remains the default and is unchanged. With `TRAINING_MODE=local`, `get_training_backend()` returns `LocalTrainingBackend` (`services/training_backends/local.py`), which trains in the worker process with `torch`/Lightning. This requires the `[train]` extra on the recording station. No trainer service, Hugging Face transfer, or `TRAINER_URL` is involved.
+Local training remains the default and is unchanged. With `TRAINING_MODE=local`, `get_training_backend()` returns `LocalTrainingBackend`, which trains in the worker process with `torch`/Lightning. This requires the `[train]` extra on the recording station. No trainer service, Hugging Face transfer, or `TRAINER_URL` is involved.
 
 Because both backends satisfy the same protocol and produce the same `output_dir` layout, the training worker, job record, API, and Models screen are agnostic to backend choice. In local mode, progress uses the full 0-100 range, cancellation is checked directly inside the Lightning callback instead of over HTTP, and the device comes from the payload.
 
@@ -115,7 +115,7 @@ sequenceDiagram
 
 ## Trainer service
 
-### HTTP API (`trainer/api.py`)
+### HTTP API
 
 | Method | Path                  | Purpose                                                                                    |
 |--------|-----------------------|--------------------------------------------------------------------------------------------|
@@ -127,19 +127,19 @@ sequenceDiagram
 | `GET` | `/health`             | Liveness probe.                                                                            |
 | `GET` | `/info`               | Trainer information for the UI.                                                            |
 
-### Schemas (`trainer/schemas.py`)
+### Schemas
 
 `SubmitJobRequest` validates untrusted input at the edge: `repo_id` against a conservative regex, `revision` as a 40-char hex SHA, and `policy` against an allowlist (`act`, `pi0`, `pi05`, `smolvla`). `TrainerJobStatus` is `queued | running | completed | failed | canceled`.
 
-### Queue and dispatch (`trainer/queue_worker.py`)
+### Queue and dispatch
 
 `QueueManager` owns `JobStore` and one asyncio `_dispatch_loop`. The loop takes the oldest queued job, marks it `running`, and runs it in a worker thread (training is blocking). Cancellation is cooperative through an in-memory `_cancel_requested` set checked by runner `should_stop`. On startup, `reset_orphans()` marks any job left `running` by a crashed process as `failed`.
 
-### Persistence (`trainer/store.py`)
+### Persistence
 
 One SQLite `jobs` table (`id`, `status`, `progress`, `message`, `extra_info`, `request`, `artifact`, `created_at`) makes the queue restart-safe. Access is serialized with a lock.
 
-### Execution (`trainer/runner.py`)
+### Execution
 
 `TrainerRunner.run()`:
 
