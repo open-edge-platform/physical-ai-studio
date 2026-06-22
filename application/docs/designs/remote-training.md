@@ -118,27 +118,27 @@ sequenceDiagram
 
 ### HTTP API (`trainer/api.py`)
 
-| Method | Path                  | Purpose                                                       |
-|--------|-----------------------|---------------------------------------------------------------|
-| `POST` | `/jobs`               | Enqueue a job; returns `remote_job_id` + `queued` (HTTP 202). |
-| `GET` | `/jobs/{id}`          | Current `JobState` (one-off query).                          |
+| Method | Path                  | Purpose                                                                                    |
+|--------|-----------------------|--------------------------------------------------------------------------------------------|
+| `POST` | `/jobs`               | Enqueue a job; returns `remote_job_id` + `queued`.                              |
+| `GET` | `/jobs/{id}`          | Current `JobState` (one-off query).                                                        |
 | `GET` | `/jobs/{id}/events`   | SSE stream of state changes until terminal. Primary progress channel the backend consumes. |
-| `GET` | `/jobs/{id}/artifact` | Download the model zip (409 until completed).                 |
-| `POST` | `/jobs/{id}/cancel`   | Cooperative cancel; returns the resolved status.              |
-| `GET` | `/health`             | Liveness probe.                                               |
-| `GET` | `/info`               | Trainer information for the UI.                               |
+| `GET` | `/jobs/{id}/artifact` | Download the model zip.                                                                    |
+| `POST` | `/jobs/{id}/cancel`   | Cancel the job.                                                                            |
+| `GET` | `/health`             | Liveness probe.                                                                            |
+| `GET` | `/info`               | Trainer information for the UI.                                                            |
 
 ### Schemas (`trainer/schemas.py`)
 
-`SubmitJobRequest` validates untrusted input at the edge: `repo_id` against a conservative regex, `revision` as a 40-char hex SHA (branch names and `main` are rejected - pulls are always pinned), and `policy` against an allowlist (`act`, `pi0`, `pi05`, `smolvla`). `TrainerJobStatus` is `queued | running | completed | failed | canceled`.
+`SubmitJobRequest` validates untrusted input at the edge: `repo_id` against a conservative regex, `revision` as a 40-char hex SHA, and `policy` against an allowlist (`act`, `pi0`, `pi05`, `smolvla`). `TrainerJobStatus` is `queued | running | completed | failed | canceled`.
 
 ### Queue and dispatch (`trainer/queue_worker.py`)
 
-`QueueManager` owns `JobStore` and one asyncio `_dispatch_loop`. The loop takes the oldest queued job, acquires a semaphore capped at `TRAINER_MAX_CONCURRENT_JOBS` (default 1), marks it `running`, and runs it in a worker thread (training is blocking). Cancellation is cooperative through an in-memory `_cancel_requested` set checked by runner `should_stop`. On startup, `reset_orphans()` marks any job left `running` by a crashed process as `failed`.
+`QueueManager` owns `JobStore` and one asyncio `_dispatch_loop`. The loop takes the oldest queued job, marks it `running`, and runs it in a worker thread (training is blocking). Cancellation is cooperative through an in-memory `_cancel_requested` set checked by runner `should_stop`. On startup, `reset_orphans()` marks any job left `running` by a crashed process as `failed`.
 
 ### Persistence (`trainer/store.py`)
 
-One SQLite `jobs` table (`id`, `status`, `progress`, `message`, `extra_info`, `request`, `artifact`, `created_at`) makes the queue restart-safe. Access is serialized with a lock. The store is small and write-light, so a lock is simpler than a connection pool.
+One SQLite `jobs` table (`id`, `status`, `progress`, `message`, `extra_info`, `request`, `artifact`, `created_at`) makes the queue restart-safe. Access is serialized with a lock.
 
 ### Execution (`trainer/runner.py`)
 
