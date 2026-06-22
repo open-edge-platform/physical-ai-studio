@@ -206,6 +206,21 @@ class TestObservationFromDict:
         assert torch.equal(restored.state, original.state)
         assert torch.equal(restored.episode_index, original.episode_index)
 
+    def test_from_dict_restores_flattened_image_keys(self):
+        """Test from_dict rebuilds nested image mappings from flattened keys."""
+        top = torch.rand(3, 64, 64)
+        wrist = torch.rand(3, 64, 64)
+
+        obs = Observation.from_dict({
+            "images.top": top,
+            "images.wrist": wrist,
+            "_images_keys": ["images.top", "images.wrist"],
+        })
+
+        assert obs.images is not None
+        assert torch.equal(obs.images["top"], top)
+        assert torch.equal(obs.images["wrist"], wrist)
+
 
 class TestObservationBatching:
     """Test Observation works for both single and batched data."""
