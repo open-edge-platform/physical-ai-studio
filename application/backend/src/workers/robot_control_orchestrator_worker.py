@@ -47,8 +47,13 @@ class RobotControlOrchestrator(BaseThreadWorker):
         self.robot_client_factory = robot_client_factory
         self.message_queue = message_queue
         self.state = RobotControlState()
+        try:
+            self._message_loop: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
+        except RuntimeError:
+            self._message_loop = None  # test context: message_queue is a thread-safe mp.Queue
 
     async def run_loop(self) -> None:
+        self._loop_ready.set()
         while not self.should_stop():
             async with run_at_frequency(MESSAGE_QUEUE_FREQUENCY):
                 while not self.event_queue.empty():
@@ -69,7 +74,7 @@ class RobotControlOrchestrator(BaseThreadWorker):
             self.state.follower_source = "model" if event["state"]["is_running"] else "teleoperation"
             self._report_state()
         if event["event"] == "stop_task":
-            self.state.follower_source = "model" if event["state"]["is_running"] else "teleoperation"
+            self.state.follower_source = None
             self._report_state()
 
     def start_recording(self, task: str) -> None:
@@ -175,6 +180,9 @@ class RobotControlOrchestrator(BaseThreadWorker):
             self._report_state()
 
     def load_environment(self, environment: EnvironmentWithRelations) -> None:
+        if self.environment_integration:
+            self.environment_integration.teardown()
+        self.state.environment_loaded = False
         self.environment_integration = EnvironmentIntegration(
             environment=environment,
             robot_client_factory=self.robot_client_factory,
@@ -203,24 +211,20 @@ class RobotControlOrchestrator(BaseThreadWorker):
         else:
             raise Exception("Worker event loop is not running")
 
-    def _report_update(self, event: str, message: Any) -> None:
-        self.message_queue.put_nowait(
-            {
-                "event": event,
-                "data": message,
-            }
-        )
+    def _put_message(self, data: dict) -> None:
+        if self._message_loop is not None:
+            self._message_loop.call_soon_threadsafe(self.message_queue.put_nowait, data)
+        else:
+            self.message_queue.put_nowait(data)
 
-    def _report_state(self):
-        self.message_queue.put_nowait(
-            {
-                "event": "state",
-                "data": self.state.model_dump(),
-            }
-        )
+    def _report_update(self, event: str, message: Any) -> None:
+        self._put_message({"event": event, "data": message})
+
+    def _report_state(self) -> None:
+        self._put_message({"event": "state", "data": self.state.model_dump()})
 
     def disconnect(self) -> None:
-        self._stop_event.set()
+        pass  # cleanup is handled by stop() in the websocket finally block
 
     async def teardown(self) -> None:
         if self.environment_integration:

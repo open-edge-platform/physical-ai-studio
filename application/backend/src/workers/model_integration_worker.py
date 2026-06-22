@@ -16,8 +16,6 @@ from workers.base import BaseProcessWorker, run_at_frequency
 class ModelIntegrationWorker(BaseProcessWorker):
     ROLE = "ModelIntegrationWorker"
 
-    _child_workers: list[BaseProcessWorker] = []
-
     def __init__(
         self,
         model: Model,
@@ -27,6 +25,7 @@ class ModelIntegrationWorker(BaseProcessWorker):
         event_queue: mp.Queue,
     ):
         super().__init__(stop_event=mp_terminate_event, queues_to_cancel=[])
+        self._child_workers: list[BaseProcessWorker] = []
         self.loaded_event = mp.Event()
         self.data_manifest = data_manifest
         self.inference_device = inference_device
@@ -82,9 +81,6 @@ class ModelIntegrationWorker(BaseProcessWorker):
     async def teardown(self) -> None:
         for worker in self._child_workers:
             worker.stop()
-
-        if self.model_integration:
-            self.model_integration.teardown()
 
     async def _handle_start_task(self) -> None:
         if self._start_task_event.is_set():

@@ -77,13 +77,10 @@ async def handle_outgoing(websocket: WebSocket, queue: asyncio.Queue) -> None:
     """Handle outgoing messages for robot control."""
     try:
         while True:
-            try:
-                data = await queue.get()
-                if data is None:
-                    break
-                await websocket.send_json(data)
-            except asyncio.QueueEmpty:
-                await asyncio.sleep(0.05)
+            data = await queue.get()
+            if data is None:
+                break
+            await websocket.send_json(data)
     except WebSocketDisconnect:
         pass
     except Exception as e:
@@ -95,19 +92,14 @@ async def observation_update_loop(websocket: WebSocket, robot_control: RobotCont
     try:
         while True:
             async with run_at_frequency(30):
-                observation = robot_control.get_observation()
-                if observation:
-                    await websocket.send_json(
-                        {
-                            "event": "observations",
-                            "data": observation,
-                        }
-                    )
+                try:
+                    observation = robot_control.get_observation()
+                    if observation:
+                        await websocket.send_json({"event": "observations", "data": observation})
+                except Exception as e:
+                    logger.error(f"Observation update error: {e}")
     except WebSocketDisconnect:
         pass
-    except Exception as e:
-        logger.error(f"Observation update loop stopped: {e}")
-        raise
 
 
 @router.websocket("/robot_control/ws")
@@ -141,3 +133,4 @@ async def robot_control_websocket(
             task.cancel()
     finally:
         robot_control.stop()
+        locked_camera_fingerprints.clear()
