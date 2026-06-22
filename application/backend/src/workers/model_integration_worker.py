@@ -1,4 +1,3 @@
-from schemas.hardware import InferenceDevice
 import asyncio
 import ctypes
 import multiprocessing as mp
@@ -6,8 +5,10 @@ import time
 from multiprocessing.synchronize import Event as EventClass
 
 from loguru import logger
+
 from control.data_registry import EnvironmentDataRegistry
 from control.utils import format_observation_for_model, get_observation_from_manifest
+from schemas.hardware import InferenceDevice
 from schemas.model import Model
 from workers.base import BaseProcessWorker, run_at_frequency
 
@@ -65,7 +66,9 @@ class ModelIntegrationWorker(BaseProcessWorker):
                         obs = get_observation_from_manifest(self.data_manifest)
                         observation = format_observation_for_model(obs, self.data_manifest, self.get_task())
                         start = time.perf_counter()
-                        self.chunk = list(self.inference_model.predict_action_chunk(observation.to_numpy().to_dict(flatten=False)))
+                        self.chunk = list(
+                            self.inference_model.predict_action_chunk(observation.to_numpy().to_dict(flatten=False))
+                        )
                         elapsed = time.perf_counter() - start
                         logger.info(f"Inference: ({elapsed})")
 

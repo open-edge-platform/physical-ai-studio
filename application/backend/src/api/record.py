@@ -1,10 +1,7 @@
-from fastapi import WebSocketDisconnect
-from workers.base import run_at_frequency
-from workers.robot_control_orchestrator_worker import RobotControlOrchestrator
 import asyncio
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, WebSocket
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
 from loguru import logger
 
@@ -18,6 +15,8 @@ from core.scheduler import Scheduler
 from robots.robot_client_factory import RobotClientFactory
 from schemas import Dataset, InferenceDevice, Model
 from schemas.environment import EnvironmentWithRelations
+from workers.base import run_at_frequency
+from workers.robot_control_orchestrator_worker import RobotControlOrchestrator
 
 router = APIRouter(prefix="/api/record")
 
@@ -28,7 +27,7 @@ async def robot_control_websocket_openapi() -> Response:
     return Response(status_code=426)
 
 
-async def handle_incoming(
+async def handle_incoming(  # noqa: PLR0912
     websocket: WebSocket,
     process: RobotControlOrchestrator,
     locked_camera_fingerprints: set[str],
@@ -90,6 +89,7 @@ async def handle_outgoing(websocket: WebSocket, queue: asyncio.Queue) -> None:
     except Exception as e:
         logger.error(f"Outgoing task stopped: {e}")
 
+
 async def observation_update_loop(websocket: WebSocket, robot_control: RobotControlOrchestrator) -> None:
     """Handle outgoing messages for robot control."""
     try:
@@ -108,7 +108,6 @@ async def observation_update_loop(websocket: WebSocket, robot_control: RobotCont
     except Exception as e:
         logger.error(f"Observation update loop stopped: {e}")
         raise
-
 
 
 @router.websocket("/robot_control/ws")

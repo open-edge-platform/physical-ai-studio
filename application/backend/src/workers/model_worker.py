@@ -1,4 +1,3 @@
-from schemas.hardware import InferenceDevice
 import asyncio
 import multiprocessing as mp
 import queue
@@ -9,6 +8,7 @@ from loguru import logger
 
 from control.inference_result import InferenceResult
 from schemas import Model
+from schemas.hardware import InferenceDevice
 
 from .base import BaseProcessWorker
 

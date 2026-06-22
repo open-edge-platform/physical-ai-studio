@@ -83,7 +83,7 @@ def format_observation_for_model(observation: dict, manifest: EnvironmentDataReg
     return Observation(
         state=np.array([observation["state"]], dtype=np.float32),
         images=images,
-        task=task, # TODO: Implement tasks.
+        task=task,  # type: ignore[bad-argument-type]  # TODO: Implement tasks.
     )
 
 

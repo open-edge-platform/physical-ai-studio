@@ -183,7 +183,7 @@ export const SetupRobotViewer = ({ robotType, highlights = [] }: SetupRobotViewe
                         shadow-mapSize-height={1024}
                     />
                     <PerspectiveCamera makeDefault position={[2.0, 1, 1]} />
-                    <OrbitControls ref={controlsRef} />
+                    <OrbitControls ref={controlsRef} enableDamping={false} />
                     <CameraController controlsRef={controlsRef} model={model} highlights={highlights} />
                     <Grid infiniteGrid cellSize={0.25} sectionColor={'rgb(0, 199, 253)'} fadeDistance={10} />
                     {model && (

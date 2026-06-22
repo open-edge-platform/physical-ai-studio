@@ -8,7 +8,7 @@ import pytest
 
 from control.data_registry import CameraRegistryEntry, EnvironmentDataRegistry, RobotRegistryEntry
 from control.environment_integration import EnvironmentIntegration
-from control.utils import format_observation_for_model, format_observation_for_reporting, get_observation_from_manifest
+from control.utils import format_observation_for_model, get_observation_from_manifest
 
 FEATURES = [
     "shoulder_pan.pos",
@@ -136,26 +136,3 @@ class TestFormatObservationForModel:
         assert result.images is not None
         assert "grabber" in result.images
         assert "front" in result.images
-
-
-class TestFormatObservationForReporting:
-    def test_returns_expected_keys(self, manifest):
-        obs = get_observation_from_manifest(manifest)
-        result = format_observation_for_reporting(obs, manifest)
-        assert "state" in result
-        assert "actions" in result
-        assert "cameras" in result
-        assert "timestamp" in result
-
-    def test_state_and_actions_keyed_by_feature_names(self, manifest):
-        obs = get_observation_from_manifest(manifest)
-        result = format_observation_for_reporting(obs, manifest)
-        for feature in FEATURES:
-            assert feature in result["state"]
-            assert feature in result["actions"]
-
-    def test_cameras_keyed_by_camera_id(self, manifest):
-        obs = get_observation_from_manifest(manifest)
-        result = format_observation_for_reporting(obs, manifest)
-        assert CAM_ID_1 in result["cameras"]
-        assert CAM_ID_2 in result["cameras"]

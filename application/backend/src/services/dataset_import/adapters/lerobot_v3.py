@@ -300,7 +300,6 @@ class LeRobotV3Adapter(DatasetImportAdapter):
             dataset = Dataset(
                 id=dataset_id,
                 name=payload.dataset_name or "Imported Dataset",
-                path=str(destination_dir),
                 default_task=payload.finalize_input.default_task,
                 project_id=project_id,
                 environment_id=payload.finalize_input.environment_id,

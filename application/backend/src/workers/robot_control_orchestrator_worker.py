@@ -1,25 +1,22 @@
-
-
-from typing import Literal
-from schemas.dataset import Dataset
-from workers.recording_worker import RecordingWorker
-from typing import Callable
-from typing import Coroutine
-from schemas import InferenceDevice, Model
-
-from control.utils import get_observation_from_manifest, format_observation_for_reporting
-from workers.model_integration_worker import ModelIntegrationWorker
-from workers.base import run_at_frequency
-from typing import Any
-from pydantic import BaseModel
-from control.environment_integration import EnvironmentIntegration
-from schemas.environment import EnvironmentWithRelations
-import multiprocessing as mp
-from multiprocessing.synchronize import Event as EventClass
-from robots.robot_client_factory import RobotClientFactory
 import asyncio
-from workers.base import BaseThreadWorker
+import multiprocessing as mp
+from collections.abc import Callable, Coroutine
+from multiprocessing.synchronize import Event as EventClass
+from typing import Any, Literal
+
 from loguru import logger
+from pydantic import BaseModel
+
+from control.environment_integration import EnvironmentIntegration
+from control.utils import format_observation_for_reporting, get_observation_from_manifest
+from robots.robot_client_factory import RobotClientFactory
+from schemas import InferenceDevice, Model
+from schemas.dataset import Dataset
+from schemas.environment import EnvironmentWithRelations
+from workers.base import BaseThreadWorker, run_at_frequency
+from workers.model_integration_worker import ModelIntegrationWorker
+from workers.recording_worker import RecordingWorker
+
 
 class RobotControlState(BaseModel):
     task: str | None = None
@@ -30,6 +27,7 @@ class RobotControlState(BaseModel):
     episodes_recorded: int = 0
     follower_source: Literal["model", "teleoperation"] | None = None
 
+
 MESSAGE_QUEUE_FREQUENCY = 10
 
 
@@ -39,11 +37,12 @@ class RobotControlOrchestrator(BaseThreadWorker):
     recording: RecordingWorker | None = None
     model_integration: ModelIntegrationWorker | None = None
     environment_integration: EnvironmentIntegration | None = None
+
     def __init__(
         self, message_queue: asyncio.Queue, robot_client_factory: RobotClientFactory, mp_terminate_event: EventClass
     ):
         super().__init__(stop_event=mp_terminate_event)
-        self.event_queue = mp.Queue()
+        self.event_queue: mp.Queue = mp.Queue()
         self._mp_terminate_event = mp_terminate_event
         self.robot_client_factory = robot_client_factory
         self.message_queue = message_queue
@@ -93,6 +92,7 @@ class RobotControlOrchestrator(BaseThreadWorker):
         if self.model_integration:
             self.model_integration.start_task(task)
             self.set_follower_source("model")
+
     def stop_task(self) -> None:
         """Start task on model."""
         if self.model_integration:
@@ -130,7 +130,6 @@ class RobotControlOrchestrator(BaseThreadWorker):
             self.fire_and_track(asyncio.to_thread(self.model_integration.loaded_event.wait), self._on_model_load)
         else:
             self._report_update("model_error", "cannot load model without environment")
-
 
     def _on_model_load(self, task: asyncio.Task) -> None:
         if task.cancelled():
@@ -175,8 +174,6 @@ class RobotControlOrchestrator(BaseThreadWorker):
             self._report_update("dataset_loaded", result)
             self._report_state()
 
-
-
     def load_environment(self, environment: EnvironmentWithRelations) -> None:
         self.environment_integration = EnvironmentIntegration(
             environment=environment,
@@ -200,12 +197,13 @@ class RobotControlOrchestrator(BaseThreadWorker):
 
     def fire_and_track(self, coro: Coroutine, on_done: Callable) -> None:
         self._loop_ready.wait(timeout=10)
-        assert self.loop is not None and self.loop.is_running(), "Worker event loop is not running"
-        future = asyncio.run_coroutine_threadsafe(coro, self.loop)
-        future.add_done_callback(on_done)
+        if self.loop is not None and self.loop.is_running():
+            future = asyncio.run_coroutine_threadsafe(coro, self.loop)
+            future.add_done_callback(on_done)
+        else:
+            raise Exception("Worker event loop is not running")
 
-
-    def _report_update(self, event: str, message: Any)-> None:
+    def _report_update(self, event: str, message: Any) -> None:
         self.message_queue.put_nowait(
             {
                 "event": event,
