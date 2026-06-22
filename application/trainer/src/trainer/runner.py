@@ -126,9 +126,6 @@ class TrainerRunner:
             auto_scale_batch_size=bool(payload.get("auto_scale_batch_size", False)),
             precision=str(payload.get("precision", "bf16-mixed")),
             check_val_every_n_epoch=1,
-            # Headless service: the live Rich progress bar interleaves with uvicorn
-            # access logs on the shared stdout. Progress is tracked via _ProgressCallback.
-            enable_progress_bar=False,
         )
 
         trainer.fit(model=policy, datamodule=data_module)
