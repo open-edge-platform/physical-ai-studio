@@ -190,7 +190,8 @@ class TestObservationFromDict:
         assert "top" in obs.images
         assert "wrist" in obs.images
 
-    def test_roundtrip_to_dict_from_dict(self):
+    @pytest.mark.parametrize("flatten", [True, False])
+    def test_roundtrip_to_dict_from_dict(self, flatten):
         """Test to_dict → from_dict roundtrip."""
         original = Observation(
             action=torch.tensor([1.0, 2.0]),
@@ -199,7 +200,7 @@ class TestObservationFromDict:
             episode_index=torch.tensor(5),
         )
 
-        obs_dict = original.to_dict()
+        obs_dict = original.to_dict(flatten=flatten)
         restored = Observation.from_dict(obs_dict)
 
         assert torch.equal(restored.action, original.action)
