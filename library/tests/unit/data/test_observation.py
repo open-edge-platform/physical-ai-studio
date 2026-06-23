@@ -206,6 +206,8 @@ class TestObservationFromDict:
         assert torch.equal(restored.action, original.action)
         assert torch.equal(restored.state, original.state)
         assert torch.equal(restored.episode_index, original.episode_index)
+        assert restored.images is not None
+        assert torch.equal(restored.images["top"], original.images["top"])
 
     def test_from_dict_restores_flattened_image_keys(self):
         """Test from_dict rebuilds nested image mappings from flattened keys."""
