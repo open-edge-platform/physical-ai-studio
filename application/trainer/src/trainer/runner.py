@@ -105,14 +105,42 @@ class TrainerRunner:
         csv_logger = CSVLogger(cache_dir.parent, name=cache_dir.stem)
 
         class _ProgressCallback(Callback):
+            def __init__(self) -> None:
+                super().__init__()
+                # Cadence for emitting the detailed log fields; set on fit start.
+                self._every_n_steps = 1
+
+            def on_fit_start(self, trainer, pl_module) -> None:  # noqa: ANN001, ARG002
+                self._every_n_steps = self._auto_every_n_steps(trainer.max_steps)
+
+            @staticmethod
+            def _auto_every_n_steps(total_steps: int) -> int:
+                """Log at least every 100 steps, targeting ~1000 entries overall."""
+                if total_steps <= 0:
+                    return 1
+                return min(100, max(1, total_steps // 1000))
+
             def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx) -> None:  # noqa: ANN001, ARG002
                 loss_val = None
                 if isinstance(outputs, dict):
                     loss_tensor = outputs.get("loss")
                     if loss_tensor is not None:
                         loss_val = loss_tensor.detach().cpu().item()
-                progress = round(trainer.global_step / max(1, trainer.max_steps) * 100)
-                report(min(100, progress), None, {"train/loss_step": loss_val})
+                global_step = trainer.global_step
+                max_steps = max(1, trainer.max_steps)
+                progress = round(global_step / max_steps * 100)
+
+                # Progress + loss every batch keeps the studio bar and loss fresh.
+                extra_info: dict[str, Any] = {"train/loss_step": loss_val}
+                # Throttle the detailed log fields so the studio writes a job-log
+                # line on the same cadence as a local run.
+                is_first_step = global_step <= 1
+                if is_first_step or global_step % self._every_n_steps == 0:
+                    extra_info["global_step"] = global_step
+                    extra_info["max_steps"] = max_steps
+                    extra_info["epoch"] = trainer.current_epoch
+
+                report(min(100, progress), None, extra_info)
                 if should_stop():
                     trainer.should_stop = True
 

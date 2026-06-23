@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from models.utils import load_policy, setup_policy
+from services.training_backends._log_format import format_training_progress
 from utils.device import get_lightning_strategy, get_torch_device
 
 if TYPE_CHECKING:
@@ -184,14 +185,12 @@ class LocalTrainingBackend:
                     if loss_tensor is not None:
                         loss_val = loss_tensor.detach().cpu().item()
 
-                max_steps = max(1, trainer.max_steps)
-                progress = min(100, round(global_step / max_steps * 100))
                 logger.info(
-                    "Training progress: step={}/{} ({}%), train/loss_step={}",
-                    global_step,
-                    max_steps,
-                    progress,
-                    loss_val,
+                    format_training_progress(
+                        global_step=global_step,
+                        max_steps=trainer.max_steps,
+                        loss=loss_val,
+                    )
                 )
 
         return _TrainingLogCallback()
