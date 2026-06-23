@@ -51,7 +51,7 @@ class _FakeResponse:
     def __init__(
         self,
         *,
-        json_data: dict | None = None,
+        json_data: dict | list | None = None,
         chunks: list[bytes] | None = None,
         lines: list[str] | None = None,
         headers: dict | None = None,
@@ -64,8 +64,8 @@ class _FakeResponse:
     def raise_for_status(self) -> None:
         return None
 
-    def json(self) -> dict:
-        return self._json or {}
+    def json(self) -> dict | list:
+        return self._json if self._json is not None else {}
 
     async def aiter_bytes(self):
         for chunk in self._chunks:
@@ -100,6 +100,8 @@ class _Controller:
         self.posted_urls: list[str] = []
         self.cancelled = False
         self.event_stream_opens = 0
+        # Payload served by GET /devices; tests override as needed.
+        self.devices_response: dict | list = [{"type": "cpu", "name": "CPU", "memory": None, "index": None}]
 
     def set_event_batches(self, batches: list[list[dict]]) -> None:
         """Serve a distinct set of frames per connection to exercise reconnection."""
@@ -129,7 +131,9 @@ class _FakeClient:
         return _FakeResponse(json_data={"remote_job_id": self._c.remote_job_id})
 
     async def get(self, url: str) -> _FakeResponse:
-        # Only the /health proxy probe uses GET now; job state arrives via SSE.
+        # /health is the proxy probe; /devices reports trainer hardware; job state arrives via SSE.
+        if url.endswith("/devices"):
+            return _FakeResponse(json_data=self._c.devices_response)
         return _FakeResponse(json_data={})
 
     def stream(self, method: str, url: str, headers: dict | None = None) -> _FakeStreamCtx:
@@ -370,6 +374,46 @@ class TestRemoteTrainingBackend:
         assert controller.event_stream_opens == 2
         safe_zip.extract_to.assert_called_once()
         api_cls.return_value.delete_repo.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_get_training_devices_returns_remote_hardware(self):
+        """The backend parses the trainer's /devices report into DeviceInfo."""
+        settings = _settings()
+        controller = _Controller(states=[])
+        controller.devices_response = [
+            {"type": "cpu", "name": "CPU", "memory": None, "index": None},
+            {"type": "cuda", "name": "NVIDIA A100", "memory": 42949672960, "index": 0},
+        ]
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+        ):
+            backend = _backend(settings)
+            devices = await backend.get_training_devices()
+
+        assert [d.type for d in devices] == ["cpu", "cuda"]
+        gpu = devices[1]
+        assert gpu.name == "NVIDIA A100"
+        assert gpu.memory == 42949672960
+        assert gpu.index == 0
+
+    @pytest.mark.anyio
+    async def test_get_training_devices_raises_on_invalid_payload(self):
+        """A non-list devices payload surfaces as RemoteTrainingError."""
+        settings = _settings()
+        controller = _Controller(states=[])
+        controller.devices_response = {"unexpected": "shape"}
+
+        from services.training_backends.remote import RemoteTrainingError
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+        ):
+            backend = _backend(settings)
+            with pytest.raises(RemoteTrainingError):
+                await backend.get_training_devices()
 
     @pytest.mark.anyio
     async def test_missing_config_raises_on_construction(self):

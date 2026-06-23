@@ -30,6 +30,19 @@ class TrainerJobStatus(StrEnum):
     CANCELED = "canceled"
 
 
+class DeviceInfo(BaseModel):
+    """Information about a compute device available on the trainer for training.
+
+    Mirrors the studio backend's ``DeviceInfo`` schema so the studio can ingest
+    the trainer's hardware report without translation.
+    """
+
+    type: str = Field(..., description="Device type (cpu, xpu, cuda)")
+    name: str = Field(..., description="Human-readable device name")
+    memory: int | None = Field(default=None, description="Total device memory in bytes (null for CPU)")
+    index: int | None = Field(default=None, description="Device index among those of the same type (null for CPU)")
+
+
 class SubmitJobRequest(BaseModel):
     """Job submission payload sent by the studio backend."""
 

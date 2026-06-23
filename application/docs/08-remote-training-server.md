@@ -99,6 +99,7 @@ You can cancel a queued or running job. Cancellation is cooperative: a running j
 | `GET` | `/jobs/{id}/events` | Stream job progress as server-sent events. |
 | `GET` | `/jobs/{id}/artifact` | Download the trained model archive. |
 | `POST` | `/jobs/{id}/cancel` | Cancel a queued or running job. |
+| `GET` | `/devices` | Report the trainer's training devices (CPU, Intel XPU, NVIDIA CUDA). |
 | `GET` | `/health` | Liveness probe. |
 
 The Studio backend drives these routes for you. Call them directly only for diagnostics.

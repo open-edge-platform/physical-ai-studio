@@ -24,7 +24,9 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 from loguru import logger
+from pydantic import ValidationError
 
+from schemas.hardware import DeviceInfo
 from services.archive_safety import SafeZipArchive
 from services.training_backends.base import TrainingCanceledError
 from settings import get_settings
@@ -114,6 +116,29 @@ class RemoteTrainingBackend:
             timeout=client_timeout if client_timeout is not None else self._timeout,
             trust_env=trust_env,
         )
+
+    async def get_training_devices(self) -> list[DeviceInfo]:
+        """Fetch the compute devices available on the trainer service.
+
+        Lets the studio surface the remote server's real hardware (typically a
+        GPU) instead of the studio host's local CPU. Raises RemoteTrainingError
+        on any transport or parsing failure so callers can fall back.
+        """
+        try:
+            async with await self._client() as client:
+                response = await client.get(f"{self._base_url}/devices")
+                response.raise_for_status()
+                data = response.json()
+        except httpx.HTTPError as exc:
+            raise RemoteTrainingError(f"Failed to query trainer devices: {exc}") from exc
+
+        if not isinstance(data, list):
+            raise RemoteTrainingError("Trainer returned an invalid devices payload")
+
+        try:
+            return [DeviceInfo.model_validate(item) for item in data]
+        except ValidationError as exc:
+            raise RemoteTrainingError(f"Trainer returned malformed device info: {exc}") from exc
 
     async def train(self, context: TrainingContext) -> None:
         """Push snapshot, submit job, mirror progress, and ingest the model."""

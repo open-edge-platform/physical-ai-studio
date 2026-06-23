@@ -228,6 +228,24 @@ class SystemService:
         return devices
 
     @classmethod
+    async def get_available_training_devices(cls) -> list[DeviceInfo]:
+        """Return training devices for the active training mode."""
+        from settings import get_settings
+
+        settings = get_settings()
+        if settings.training_mode != "remote":
+            return cls.get_training_devices()
+
+        from services.training_backends.remote import RemoteTrainingBackend, RemoteTrainingError
+
+        try:
+            backend = RemoteTrainingBackend()
+            return await backend.get_training_devices()
+        except RemoteTrainingError as exc:
+            logger.warning("Falling back to local training devices; remote trainer query failed: {}", exc)
+            return cls.get_training_devices()
+
+    @classmethod
     def is_device_supported_for_training(cls, device_type: str) -> bool:
         """Check whether a device type is available for training.
 

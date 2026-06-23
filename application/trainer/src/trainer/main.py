@@ -14,7 +14,9 @@ from fastapi import FastAPI
 from loguru import logger
 
 from trainer.api import router as jobs_router
+from trainer.devices import get_training_devices
 from trainer.queue_worker import QueueManager
+from trainer.schemas import DeviceInfo
 from trainer.settings import get_settings
 
 if TYPE_CHECKING:
@@ -46,6 +48,12 @@ app.include_router(jobs_router)
 async def health() -> dict:
     """Liveness probe."""
     return {"status": "healthy"}
+
+
+@app.get("/devices", response_model=list[DeviceInfo])
+async def devices() -> list[DeviceInfo]:
+    """Report the compute devices this trainer can use for training."""
+    return get_training_devices()
 
 
 if __name__ == "__main__":
