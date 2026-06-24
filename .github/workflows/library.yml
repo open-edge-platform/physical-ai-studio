@@ -223,6 +223,7 @@ jobs:
   integration-tests-robocasa:
     runs-on: [self-hosted, Linux, X64, gpu]
     needs: check-paths
+    if: needs.check-paths.outputs.run_workflow == 'true'    
     permissions:
       contents: read
     steps:
