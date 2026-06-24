@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from services.training_backends import get_training_backend
 from services.training_backends.local import LocalTrainingBackend
-from services.training_backends.remote import RemoteTrainingBackend
+from services.training_backends.remote import SNAPSHOT_UPLOAD_PROGRESS, TRAINING_PROGRESS_END, RemoteTrainingBackend
 from services.training_service import TrainingTrackingDispatcher
 
 
@@ -56,12 +56,13 @@ def test_dispatcher_report_defaults_message_and_extra_to_none() -> None:
     assert dispatcher.queue.get(timeout=1) == (10, None, None)
 
 
-def test_remote_progress_maps_raw_0_100_into_10_95_window() -> None:
+def test_remote_progress_maps_raw_0_100_into_training_window() -> None:
     """The trainer reports raw 0-100; the backend windows it exactly once."""
     to_local = RemoteTrainingBackend._to_local_progress
 
-    assert to_local(0) == 10
-    assert to_local(100) == 95
-    assert to_local(50) == 52
+    assert to_local(0) == SNAPSHOT_UPLOAD_PROGRESS
+    assert to_local(100) == TRAINING_PROGRESS_END
+    span = TRAINING_PROGRESS_END - SNAPSHOT_UPLOAD_PROGRESS
+    assert to_local(50) == SNAPSHOT_UPLOAD_PROGRESS + round(50 * span / 100)
     # Monotonic and clamped within the reserved window.
-    assert all(10 <= to_local(p) <= 95 for p in range(101))
+    assert all(SNAPSHOT_UPLOAD_PROGRESS <= to_local(p) <= TRAINING_PROGRESS_END for p in range(101))

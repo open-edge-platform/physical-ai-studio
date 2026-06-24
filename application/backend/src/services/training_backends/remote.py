@@ -33,6 +33,8 @@ from services.training_backends.base import TrainingCanceledError
 from settings import get_settings
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from services.training_backends.base import TrainingContext
 
 # Only these patterns are pulled by the trainer; mirrors snapshot_download allowlists.
@@ -47,6 +49,15 @@ _RECONNECT_BACKOFF_S = 2.0
 # trainer cannot hold the job open forever.
 _MAX_STREAM_RECONNECTS = 5
 _TERMINAL_STATES = {"completed", "failed", "canceled"}
+
+# Job progress (0-100) is partitioned across three sub-steps. These boundaries
+# separate them and are the single place to retune how much of the bar each
+# phase owns:
+#   - snapshot upload: 0 .. SNAPSHOT_UPLOAD_PROGRESS
+#   - remote training: SNAPSHOT_UPLOAD_PROGRESS .. TRAINING_PROGRESS_END
+#   - model download:  TRAINING_PROGRESS_END .. 100
+SNAPSHOT_UPLOAD_PROGRESS = 10
+TRAINING_PROGRESS_END = 95
 
 
 class RemoteTrainingError(RuntimeError):
@@ -148,16 +159,16 @@ class RemoteTrainingBackend:
             # Sub-step 1: push the snapshot to an ephemeral private dataset repo (0-10%).
             context.progress(0, message="Uploading dataset snapshot")
             repo_id, revision = await self._push_snapshot(context)
-            context.progress(10, message="Snapshot uploaded")
+            context.progress(SNAPSHOT_UPLOAD_PROGRESS, message="Snapshot uploaded")
 
             # Sub-step 2: submit and wait for the remote job (10-95%).
             remote_job_id = await self._submit_job(context, repo_id=repo_id, revision=revision)
             await self._wait_for_completion(context, remote_job_id)
 
             # Sub-step 3: download and extract the trained model (95-100%).
-            context.progress(95, message="Downloading trained model")
+            context.progress(TRAINING_PROGRESS_END, message="Downloading trained model")
             await self._download_and_extract(context, remote_job_id)
-            context.progress(99, message="Model downloaded")
+            context.progress(100, message="Model downloaded")
         finally:
             if repo_id is not None:
                 await self._delete_repo(repo_id)
@@ -165,7 +176,10 @@ class RemoteTrainingBackend:
     async def _push_snapshot(self, context: TrainingContext) -> tuple[str, str]:
         """Create an ephemeral private dataset repo and upload the snapshot.
 
-        Returns the repo id and the concrete commit SHA to pin on the server.
+        Uses a single batched ``upload_folder`` commit (parallelized, xet-
+        deduplicated) so upload throughput is not penalized by per-file commits.
+        Real byte progress is mirrored into the job's reserved 0-10% window by
+        :meth:`_mirror_upload_progress`. Returns the repo id and the commit SHA.
         """
         from huggingface_hub import HfApi
 
@@ -176,12 +190,13 @@ class RemoteTrainingBackend:
         def _upload() -> tuple[str, str]:
             repo_url = api.create_repo(repo_id=requested_repo_id, repo_type="dataset", private=True)
             resolved_repo_id = repo_url.repo_id
-            commit = api.upload_folder(
-                repo_id=resolved_repo_id,
-                repo_type="dataset",
-                folder_path=str(Path(context.snapshot.path)),
-                allow_patterns=_SNAPSHOT_ALLOW_PATTERNS,
-            )
+            with self._mirror_upload_progress(context):
+                commit = api.upload_folder(
+                    repo_id=resolved_repo_id,
+                    repo_type="dataset",
+                    folder_path=str(Path(context.snapshot.path)),
+                    allow_patterns=_SNAPSHOT_ALLOW_PATTERNS,
+                )
             # upload_folder returns a CommitInfo; oid is the concrete commit SHA.
             if not commit.oid:
                 raise RemoteTrainingError("Snapshot upload did not return a commit SHA")
@@ -190,6 +205,65 @@ class RemoteTrainingBackend:
         repo_id, revision = await asyncio.to_thread(_upload)
         logger.info("Snapshot pushed to ephemeral dataset repo (revision pinned)")
         return repo_id, revision
+
+    @contextlib.contextmanager
+    def _mirror_upload_progress(self, context: TrainingContext) -> Iterator[None]:
+        """Mirror huggingface_hub's internal upload bytes into the 0-10% window.
+
+        huggingface_hub renders upload progress with its own tqdm bars. The
+        aggregate "Processing Files" bar tracks total bytes processed, so we
+        subclass it to forward byte progress to the job without slowing the
+        upload. Best-effort: if huggingface_hub reshapes its progress internals,
+        the upload still runs and progress simply stays coarse (0 then 10).
+        """
+        try:
+            from huggingface_hub.utils import _xet_progress_reporting as xet_mod
+        except ImportError:
+            yield
+            return
+
+        base_tqdm = getattr(xet_mod, "tqdm", None)
+        if base_tqdm is None:
+            yield
+            return
+
+        report = context.progress
+        to_percent = self._upload_progress
+        last_percent = -1
+
+        class _ProgressTqdm(base_tqdm):  # type: ignore[valid-type, misc]
+            """tqdm that forwards the aggregate processing bar's bytes to the job."""
+
+            def update(self, n: float = 1) -> bool | None:
+                result = super().update(n)
+                nonlocal last_percent
+                desc = self.desc or ""
+                if "Processing Files" in desc and self.total:
+                    percent = to_percent(int(self.n), int(self.total))
+                    if percent != last_percent:
+                        last_percent = percent
+                        report(percent, message="Uploading dataset snapshot")
+                return result
+
+        setattr(xet_mod, "tqdm", _ProgressTqdm)
+        try:
+            yield
+        finally:
+            setattr(xet_mod, "tqdm", base_tqdm)
+
+    @staticmethod
+    def _upload_progress(uploaded_bytes: int, total_bytes: int) -> int:
+        """Map uploaded bytes into the reserved snapshot-upload window.
+
+        Capped one below SNAPSHOT_UPLOAD_PROGRESS so the explicit "Snapshot
+        uploaded" step owns that mark.
+        """
+        if total_bytes <= 0:
+            return 0
+        return min(
+            SNAPSHOT_UPLOAD_PROGRESS - 1,
+            round(uploaded_bytes / total_bytes * SNAPSHOT_UPLOAD_PROGRESS),
+        )
 
     async def _submit_job(self, context: TrainingContext, *, repo_id: str, revision: str) -> str:
         """Submit the training job and return the remote job id."""
@@ -471,9 +545,11 @@ class RemoteTrainingBackend:
 
     @staticmethod
     def _to_local_progress(remote_progress: int) -> int:
-        """Map the trainer's raw 0-100 progress into the local 10-95 window.
+        """Map the trainer's raw 0-100 progress into the local training window.
 
-        0-10 is reserved for snapshot upload and 95-100 for model download, so
-        training occupies 10-95. Applied once here; the trainer reports raw.
+        Snapshot upload reserves 0..SNAPSHOT_UPLOAD_PROGRESS and model download
+        reserves TRAINING_PROGRESS_END..100, so training occupies the span
+        between them. Applied once here; the trainer reports raw.
         """
-        return min(95, 10 + round(remote_progress * 0.85))
+        span = TRAINING_PROGRESS_END - SNAPSHOT_UPLOAD_PROGRESS
+        return min(TRAINING_PROGRESS_END, SNAPSHOT_UPLOAD_PROGRESS + round(remote_progress * span / 100))

@@ -3,9 +3,14 @@
 
 import inspect
 import logging
+import re
 from typing import Literal
 
 from loguru import logger
+
+# Matches ANSI escape sequences (colors, cursor movement such as the "\x1b[A"
+# cursor-up codes that tqdm emits when redrawing multi-line progress bars).
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
 
 class InterceptHandler(logging.Handler):
@@ -39,7 +44,13 @@ class LoggerStdoutWriter:
         self.level = level
 
     def write(self, msg: str) -> None:
-        msg = msg.rstrip("\n")
+        # Progress bars (tqdm, HuggingFace uploads) redraw in place using
+        # carriage returns and ANSI cursor codes. Keep only the final rendered
+        # segment and strip control codes so logs aren't flooded with garbled
+        # "[A" lines and repeated "0.00B / 0.00B" redraws.
+        msg = msg.rsplit("\r", 1)[-1]
+        msg = _ANSI_ESCAPE.sub("", msg)
+        msg = msg.strip()
         if msg:
             if self.level == "INFO":
                 logger.info(msg)

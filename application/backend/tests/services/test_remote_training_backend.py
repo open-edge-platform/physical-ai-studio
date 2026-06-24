@@ -21,6 +21,7 @@ from schemas.dataset import Snapshot
 from schemas.job import TrainJobPayload
 from schemas.model import Model
 from services.training_backends.base import TrainingContext
+from services.training_backends.remote import SNAPSHOT_UPLOAD_PROGRESS, TRAINING_PROGRESS_END
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -245,11 +246,12 @@ class TestRemoteTrainingBackend:
         safe_zip.extract_to.assert_called_once()
         api_cls.return_value.delete_repo.assert_called_once()
 
-        # Streamed states drove progress: the mid-run 50% maps into the 10-95 window.
+        # Streamed states drove progress: the mid-run 50% maps into the training window.
+        span = TRAINING_PROGRESS_END - SNAPSHOT_UPLOAD_PROGRESS
         reported = [call.args[0] for call in context.progress.call_args_list]
-        assert 52 in reported  # 10 + round(50 * 0.85)
-        # Progress reached the final 99% before the worker marks completion.
-        assert max(reported) == 99
+        assert SNAPSHOT_UPLOAD_PROGRESS + round(50 * span / 100) in reported
+        # Progress reached 100% before the worker marks completion.
+        assert max(reported) == 100
 
     @pytest.mark.anyio
     async def test_cancellation_requests_remote_cancel_and_cleans_up(self, tmp_path):
@@ -425,3 +427,67 @@ class TestRemoteTrainingBackend:
             from services.training_backends.remote import RemoteTrainingBackend
 
             RemoteTrainingBackend()
+
+
+class TestSnapshotUploadProgress:
+    """The upload mirrors huggingface_hub's byte progress into the snapshot-upload window."""
+
+    class _BaseTqdm:
+        """Minimal stand-in for the aggregate "Processing Files" tqdm bar."""
+
+        def __init__(self, *_args, desc: str = "", total: float = 0, initial: float = 0, **_kwargs):
+            self.desc = desc
+            self.total = total
+            self.n = initial
+
+        def update(self, n: float = 1) -> None:
+            self.n += n
+
+    def test_processing_bar_drives_progress_and_caps_below_window(self, tmp_path):
+        import huggingface_hub.utils._xet_progress_reporting as xet_mod
+
+        backend = _backend(_settings())
+        context = _context(tmp_path)
+        context.progress = MagicMock()
+
+        cap = SNAPSHOT_UPLOAD_PROGRESS - 1  # the explicit "Snapshot uploaded" step owns the mark
+        with patch.object(xet_mod, "tqdm", self._BaseTqdm):
+            with backend._mirror_upload_progress(context):
+                patched_tqdm = xet_mod.tqdm  # replaced with the forwarding subclass
+                bar = patched_tqdm(desc="Processing Files (0 / 4)", total=1000, initial=0)
+                bar.update(500)  # 50% -> round(0.5 * window)
+                bar.update(450)  # 95% -> rounds up to the window, capped just below it
+                bar.update(50)  # 100% -> still capped (the reserved mark is the explicit step)
+            # The base class is restored on exit so later uploads are unaffected.
+            assert xet_mod.tqdm is self._BaseTqdm
+
+        reported = [call.args[0] for call in context.progress.call_args_list]
+        # Duplicates suppressed; never reaches the reserved upload mark.
+        assert reported == [round(0.5 * SNAPSHOT_UPLOAD_PROGRESS), cap]
+
+    def test_per_file_bars_do_not_drive_progress(self, tmp_path):
+        import huggingface_hub.utils._xet_progress_reporting as xet_mod
+
+        backend = _backend(_settings())
+        context = _context(tmp_path)
+        context.progress = MagicMock()
+
+        with patch.object(xet_mod, "tqdm", self._BaseTqdm), backend._mirror_upload_progress(context):
+            # A per-file bar is keyed by filename, not the aggregate label.
+            bar = xet_mod.tqdm(desc="data/chunk-000/file-000.mp4", total=1000, initial=0)
+            bar.update(1000)
+
+        context.progress.assert_not_called()
+
+    def test_degrades_gracefully_when_internals_change(self, tmp_path):
+        import huggingface_hub.utils._xet_progress_reporting as xet_mod
+
+        backend = _backend(_settings())
+        context = _context(tmp_path)
+        context.progress = MagicMock()
+
+        # huggingface_hub no longer exposes a tqdm bar to wrap: upload still runs.
+        with patch.object(xet_mod, "tqdm", None), backend._mirror_upload_progress(context):
+            pass
+
+        context.progress.assert_not_called()
