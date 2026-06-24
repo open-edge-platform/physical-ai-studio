@@ -95,6 +95,21 @@ class TrainingTrackingCallback(Callback):
         if self.shutdown_event.is_set() or self.interrupt_event.is_set():
             trainer.should_stop = True
 
+    def on_validation_batch_end(
+        self,
+        trainer: "pl.Trainer",
+        pl_module: "pl.LightningModule",  # noqa ARG002
+        outputs: STEP_OUTPUT,  # noqa ARG002
+        batch: Any,  # noqa ARG002
+        batch_idx: int,  # noqa ARG002
+        dataloader_idx: int = 0,  # noqa ARG002
+    ) -> None:
+        """Keep job progress fresh and honor interrupts during validation."""
+        progress = round((trainer.global_step) / trainer.max_steps * 100)
+        self.dispatcher.update_progress(progress, extra_info={"stage": "validation"})
+        if self.shutdown_event.is_set() or self.interrupt_event.is_set():
+            trainer.should_stop = True
+
 
 class TrainingLogCallback(Callback):
     """Mirror training progress/metrics to loguru as regular log lines."""
@@ -147,6 +162,34 @@ class TrainingLogCallback(Callback):
         max_steps = max(1, trainer.max_steps)
         progress = min(100, round(global_step / max_steps * 100))
         logger.info(f"Training progress: step={global_step}/{max_steps} ({progress}%), train/loss_step={loss_val}")
+
+    def on_validation_batch_end(
+        self,
+        trainer: "pl.Trainer",
+        pl_module: "pl.LightningModule",  # noqa ARG002
+        outputs: STEP_OUTPUT,  # noqa ARG002
+        batch: Any,  # noqa ARG002
+        batch_idx: int,
+        dataloader_idx: int = 0,  # noqa ARG002
+    ) -> None:
+        total_batches = self._val_total_batches(trainer)
+        current = batch_idx + 1
+        is_first = current <= 1
+        is_last = total_batches is not None and current >= total_batches
+        if not (is_first or is_last) and current % self.every_n_steps != 0:
+            return
+        total_str = total_batches if total_batches is not None else "?"
+        logger.info(f"Validation progress: batch={current}/{total_str}")
+
+    @staticmethod
+    def _val_total_batches(trainer: "pl.Trainer") -> int | None:
+        """Return the number of validation batches when Lightning knows it."""
+        batches = trainer.num_val_batches
+        if not batches:
+            return None
+        total = batches[0]
+        # Lightning uses float('inf') for unsized/iterable dataloaders.
+        return int(total) if total != float("inf") else None
 
 
 class TrainingService:
