@@ -206,7 +206,7 @@ class TrainingLogCallback(Callback):
         logger.info(f"Training progress: step={global_step}/{max_steps} ({progress}%), train/loss_step={loss_val}")
 
     def on_validation_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:  # noqa ARG002
-        """Mark the start of validation so the following silence is explained."""
+        """Mark the start of validation."""
         self._val_start_t = time.monotonic()
         logger.info(f"Validation started at step={trainer.global_step}/{max(1, trainer.max_steps)}")
 
