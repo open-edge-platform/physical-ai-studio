@@ -121,15 +121,7 @@ class TrainingTrackingCallback(Callback):
         batch: Any,  # noqa ARG002
         batch_idx: int,  # noqa ARG002
     ) -> None:
-        if isinstance(outputs, Mapping):
-            loss_tensor = outputs.get("loss")
-            if loss_tensor is not None:
-                loss_val = loss_tensor.detach().cpu().item()
-            else:
-                loss_val = None  # safety fallback
-        else:
-            loss_val = None  # safety fallback
-
+        loss_val = _extract_loss(outputs)
         progress = _safe_progress(trainer.global_step, trainer.max_steps)
         self.dispatcher.update_progress(progress, extra_info={"train/loss_step": loss_val})
         self._should_stop(trainer)
