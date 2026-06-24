@@ -1,5 +1,6 @@
 import asyncio
 import multiprocessing as mp
+import time
 from collections.abc import Mapping
 from multiprocessing.synchronize import Event
 from queue import Empty
@@ -16,6 +17,40 @@ from schemas.base_job import JobStatus, JobType
 from services.event_processor import EventType
 from services.job_service import JobService
 from workers.base import BaseThreadWorker
+
+
+def _safe_progress(global_step: int, max_steps: int) -> int:
+    """Compute step-based training progress clamped to ``[0, 100]``.
+
+    ``trainer.max_steps`` is ``-1`` when unset (epoch-driven runs) and may be ``0``;
+    both would otherwise produce a negative value or a ``ZeroDivisionError``.
+
+    Args:
+        global_step: Current optimizer step.
+        max_steps: Configured maximum number of steps.
+
+    Returns:
+        Progress percentage in ``[0, 100]``; ``0`` when ``max_steps`` is unset.
+    """
+    if max_steps <= 0:
+        return 0
+    return min(100, max(0, round(global_step / max_steps * 100)))
+
+
+def _extract_loss(outputs: Any) -> float | None:
+    """Best-effort scalar loss from a Lightning step output.
+
+    Handles a ``{"loss": tensor}`` mapping (training) or a bare loss tensor
+    (eval-loss validation). Returns ``None`` when no scalar loss is available.
+    """
+    candidate = outputs.get("loss") if isinstance(outputs, Mapping) else outputs
+    detach = getattr(candidate, "detach", None)
+    if detach is None:
+        return None
+    try:
+        return detach().cpu().item()
+    except (RuntimeError, ValueError):
+        return None
 
 
 class ProgressCallback(ProgressBar):
@@ -72,6 +107,11 @@ class TrainingTrackingCallback(Callback):
         self.shutdown_event = shutdown_event  # global stop event in case of shutdown
         self.interrupt_event = interrupt_event  # event for interrupting training gracefully
         self.dispatcher = dispatcher
+        self._last_val_progress: int | None = None
+
+    def _should_stop(self, trainer: "pl.Trainer") -> None:
+        if self.shutdown_event.is_set() or self.interrupt_event.is_set():
+            trainer.should_stop = True
 
     def on_train_batch_end(
         self,
@@ -90,10 +130,9 @@ class TrainingTrackingCallback(Callback):
         else:
             loss_val = None  # safety fallback
 
-        progress = round((trainer.global_step) / trainer.max_steps * 100)
+        progress = _safe_progress(trainer.global_step, trainer.max_steps)
         self.dispatcher.update_progress(progress, extra_info={"train/loss_step": loss_val})
-        if self.shutdown_event.is_set() or self.interrupt_event.is_set():
-            trainer.should_stop = True
+        self._should_stop(trainer)
 
     def on_validation_batch_end(
         self,
@@ -104,11 +143,17 @@ class TrainingTrackingCallback(Callback):
         batch_idx: int,  # noqa ARG002
         dataloader_idx: int = 0,  # noqa ARG002
     ) -> None:
-        """Keep job progress fresh and honor interrupts during validation."""
-        progress = round((trainer.global_step) / trainer.max_steps * 100)
-        self.dispatcher.update_progress(progress, extra_info={"stage": "validation"})
-        if self.shutdown_event.is_set() or self.interrupt_event.is_set():
-            trainer.should_stop = True
+        """Honor interrupts during validation and refresh job progress on change.
+
+        ``global_step`` does not advance during validation, so the step-based
+        progress is constant. Dispatch only when it changes to avoid redundant
+        identical job updates.
+        """
+        progress = _safe_progress(trainer.global_step, trainer.max_steps)
+        if progress != self._last_val_progress:
+            self._last_val_progress = progress
+            self.dispatcher.update_progress(progress, extra_info={"stage": "validation"})
+        self._should_stop(trainer)
 
 
 class TrainingLogCallback(Callback):
@@ -117,6 +162,7 @@ class TrainingLogCallback(Callback):
     def __init__(self):
         super().__init__()
         self.every_n_steps = 1
+        self._val_start_t: float | None = None
 
     def on_fit_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:  # noqa ARG002
         """Resolve logging interval once trainer values are available."""
@@ -153,43 +199,39 @@ class TrainingLogCallback(Callback):
         if not is_first_step and global_step % self.every_n_steps != 0:
             return
 
-        loss_val: float | None = None
-        if isinstance(outputs, Mapping):
-            loss_tensor = outputs.get("loss")
-            if loss_tensor is not None:
-                loss_val = loss_tensor.detach().cpu().item()
+        loss_val = _extract_loss(outputs)
 
         max_steps = max(1, trainer.max_steps)
-        progress = min(100, round(global_step / max_steps * 100))
+        progress = _safe_progress(trainer.global_step, trainer.max_steps)
         logger.info(f"Training progress: step={global_step}/{max_steps} ({progress}%), train/loss_step={loss_val}")
+
+    def on_validation_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:  # noqa ARG002
+        """Mark the start of validation so the following silence is explained."""
+        self._val_start_t = time.monotonic()
+        logger.info(f"Validation started at step={trainer.global_step}/{max(1, trainer.max_steps)}")
 
     def on_validation_batch_end(
         self,
-        trainer: "pl.Trainer",
+        trainer: "pl.Trainer",  # noqa ARG002
         pl_module: "pl.LightningModule",  # noqa ARG002
-        outputs: STEP_OUTPUT,  # noqa ARG002
+        outputs: STEP_OUTPUT,
         batch: Any,  # noqa ARG002
         batch_idx: int,
         dataloader_idx: int = 0,  # noqa ARG002
     ) -> None:
-        total_batches = self._val_total_batches(trainer)
         current = batch_idx + 1
-        is_first = current <= 1
-        is_last = total_batches is not None and current >= total_batches
-        if not (is_first or is_last) and current % self.every_n_steps != 0:
+        if current > 1 and current % self.every_n_steps != 0:
             return
-        total_str = total_batches if total_batches is not None else "?"
-        logger.info(f"Validation progress: batch={current}/{total_str}")
+        logger.info(f"Validation progress: batch={current}, val/loss_step={_extract_loss(outputs)}")
 
-    @staticmethod
-    def _val_total_batches(trainer: "pl.Trainer") -> int | None:
-        """Return the number of validation batches when Lightning knows it."""
-        batches = trainer.num_val_batches
-        if not batches:
-            return None
-        total = batches[0]
-        # Lightning uses float('inf') for unsized/iterable dataloaders.
-        return int(total) if total != float("inf") else None
+    def on_validation_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:  # noqa ARG002
+        """Summarize validation with the aggregated loss and elapsed time."""
+        val_loss = trainer.callback_metrics.get("val/loss")
+        val_loss_val = val_loss.item() if val_loss is not None else None
+        elapsed = time.monotonic() - self._val_start_t if self._val_start_t is not None else 0.0
+        logger.info(
+            f"Validation finished at step={trainer.global_step}, val/loss={val_loss_val}, elapsed={elapsed:.1f}s"
+        )
 
 
 class TrainingService:
