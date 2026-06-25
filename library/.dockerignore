@@ -1,0 +1,26 @@
+# =============================================================================
+# library/.dockerignore — allow-list approach for `libs` build context
+#
+# Ignore everything by default, then include only files required to build the
+# `physicalai-train` package in Docker builder stages.
+# =============================================================================
+
+# Ignore everything
+*
+
+# ---- Files required for packaging/installing physicalai-train ----
+!pyproject.toml
+!README.md
+!LICENSE
+!src/
+
+# Re-exclude artifacts that may appear inside allowed directories
+**/__pycache__/
+**/*.py[cod]
+**/.venv/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.pytest_cache/
+**/.ipynb_checkpoints/
+**/node_modules/
+**/.DS_Store

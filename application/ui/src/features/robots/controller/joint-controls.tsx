@@ -127,8 +127,10 @@ export const JointControls = ({
     return (
         <View
             gridArea='controls'
+            zIndex={1}
             backgroundColor={'gray-100'}
             padding='size-100'
+            margin='size-400'
             UNSAFE_style={{
                 border: '1px solid var(--spectrum-global-color-gray-200)',
                 borderRadius: '8px',

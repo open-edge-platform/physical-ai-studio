@@ -1,5 +1,5 @@
 [project]
-name = "physical-ai-studio"
+name = "physicalai-studio"
 version = "0.1.0"
 description = "Physical AI Studio server"
 readme = "README.md"
@@ -67,6 +67,19 @@ xpu = [
 tests = [
     "pytest",
 ]
+
+[project.scripts]
+physicalai-studio = "cli:cli"
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 # --- PyTorch index configuration ---
 # torch/torchvision are transitive dependencies of the base install via lerobot
@@ -142,6 +155,7 @@ all = [
 ]
 
 [tool.uv]
+package = true
 default-groups = ["all"]
 exclude-newer = "7 days"
 exclude-newer-package = { physicalai = false }
@@ -159,6 +173,8 @@ override-dependencies = [
     # Safe to override because executorch
     # production code does not import pytest at runtime.
     "pytest>=9.0.3",
+    # lerobot==0.5.1 caps diffusers at <0.36.0, 0.38.0 contains CVE-2026-44827 fix
+    "diffusers>=0.38.0",
 ]
 conflicts = [
     [

@@ -57,7 +57,7 @@ export const New = () => {
                     <RobotForm submitButton={<NewRobotSubmitButton />} />
                 </Suspense>
             </View>
-            <View gridArea='controls' backgroundColor={'gray-50'} padding='size-400'>
+            <View gridArea='controls'>
                 <Preview />
             </View>
         </Grid>

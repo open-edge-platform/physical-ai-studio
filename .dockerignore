@@ -26,6 +26,7 @@
 # ---- Application: Backend ----
 !application/backend/pyproject.toml
 !application/backend/uv.lock
+!application/backend/README.md
 !application/backend/run.sh
 !application/backend/src/
 

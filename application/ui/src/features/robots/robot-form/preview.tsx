@@ -26,18 +26,7 @@ export const Preview = () => {
     const form = useRobotForm();
 
     return (
-        <View
-            backgroundColor={'gray-200'}
-            height={'100%'}
-            padding='size-200'
-            UNSAFE_style={{
-                borderRadius: 'var(--spectrum-alias-border-radius-regular)',
-                borderColor: 'var(--spectrum-global-color-gray-700)',
-                borderWidth: '1px',
-                borderStyle: 'dashed',
-            }}
-            position={'relative'}
-        >
+        <View backgroundColor={'gray-200'} height={'100%'}>
             {form.type !== null ? <RobotViewer robot={form} /> : <EmptyPreview />}
         </View>
     );

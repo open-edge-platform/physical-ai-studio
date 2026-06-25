@@ -51,6 +51,7 @@ COPY --link pyproject.toml uv.lock LICENSE README.md /app/
 COPY --link application/backend/src /app/application/backend/src
 COPY --link application/backend/pyproject.toml application/backend/uv.lock \
     /app/application/backend/
+COPY --link application/backend/README.md /app/application/backend/README.md
 COPY --link application/backend/run.sh /app/application/backend/run.sh
 
 # Built UI assets
@@ -64,7 +65,7 @@ COPY --link --from=web-ui /home/app/web_ui/dist /app/application/ui/
 # This separation ensures that source-only changes do not invalidate
 # the expensive uv sync layers in the device-specific builders below.
 # ===========================================================================
-FROM python:${PYTHON_VERSION}-slim@sha256:f82c96458eedc847b233e582eb31336f4954b39cae020b6dcf5b3ed0e5cbcd74 AS builder-base
+FROM python:${PYTHON_VERSION}-slim@sha256:c33f0bc4364a6881bed1ec0cc2665e6c53c87a43e774aaeab88e6f17af105e4f AS builder-base
 
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0
@@ -126,7 +127,7 @@ FROM builder-base AS builder-cpu
 
 RUN --mount=type=cache,id=uv-cpu,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
-    uv sync --frozen --no-dev --no-editable --extra cpu
+    uv sync --frozen --no-dev --no-editable --no-install-project --extra cpu
 
 # Remove test-only packages that executorch ships as unconditional runtime dependencies.
 RUN uv pip uninstall --python .venv/bin/python \
@@ -143,7 +144,7 @@ FROM builder-base AS builder-xpu
 
 RUN --mount=type=cache,id=uv-xpu,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
-    uv sync --frozen --no-dev --no-editable --extra xpu
+    uv sync --frozen --no-dev --no-editable --no-install-project --extra xpu
 
 # Remove test-only packages that executorch ships as unconditional runtime dependencies.
 RUN uv pip uninstall --python .venv/bin/python \
@@ -171,7 +172,7 @@ FROM builder-base AS builder-cuda
 
 RUN --mount=type=cache,id=uv-cuda,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
-    uv sync --frozen --no-dev --no-editable --extra cuda
+    uv sync --frozen --no-dev --no-editable --no-install-project --extra cuda
 
 # Remove test-only packages that executorch ships as unconditional runtime dependencies.
 RUN uv pip uninstall --python .venv/bin/python \
@@ -188,7 +189,7 @@ RUN uv pip uninstall --python .venv/bin/python \
 # variables, and directory structure. Healthcheck is defined in
 # docker-compose.yaml (not here) so it can reference runtime PORT.
 # ===========================================================================
-FROM python:${PYTHON_VERSION}-slim@sha256:f82c96458eedc847b233e582eb31336f4954b39cae020b6dcf5b3ed0e5cbcd74 AS runtime-base
+FROM python:${PYTHON_VERSION}-slim@sha256:c33f0bc4364a6881bed1ec0cc2665e6c53c87a43e774aaeab88e6f17af105e4f AS runtime-base
 
 # uv is needed at runtime for `uv run` in run.sh
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
@@ -236,7 +237,7 @@ ENV PATH="/app/application/backend/.venv/bin:$PATH" \
     STATIC_FILES_DIR="/app/application/ui/" \
     STORAGE_DIR="/app/storage" \
     AUTO_MIGRATE_STORAGE_DIR="true" \
-    PYTHONPATH="/app/application/backend"
+    PYTHONPATH="/app/application/backend/src:/app/application/backend"
 
 EXPOSE 8000
 
@@ -257,6 +258,7 @@ ARG APP_GID=1000
 COPY --link --from=builder-cpu --chown=${APP_UID}:${APP_GID} \
     /app/application/backend/.venv /app/application/backend/.venv
 COPY --link --from=app-source --chown=${APP_UID}:${APP_GID} /app /app
+RUN uv pip install --python /app/application/backend/.venv/bin/python --no-deps /app/application/backend
 
 WORKDIR /app/application/backend
 USER appuser
@@ -309,6 +311,7 @@ ARG APP_GID=1000
 COPY --link --from=builder-xpu --chown=${APP_UID}:${APP_GID} \
     /app/application/backend/.venv /app/application/backend/.venv
 COPY --link --from=app-source --chown=${APP_UID}:${APP_GID} /app /app
+RUN uv pip install --python /app/application/backend/.venv/bin/python --no-deps /app/application/backend
 
 WORKDIR /app/application/backend
 USER appuser
@@ -380,6 +383,7 @@ ARG APP_GID=1000
 COPY --link --from=builder-cuda --chown=${APP_UID}:${APP_GID} \
     /app/application/backend/.venv /app/application/backend/.venv
 COPY --link --from=app-source --chown=${APP_UID}:${APP_GID} /app /app
+RUN uv pip install --python /app/application/backend/.venv/bin/python --no-deps /app/application/backend
 
 WORKDIR /app/application/backend
 USER appuser

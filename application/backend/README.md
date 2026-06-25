@@ -61,15 +61,6 @@ source .venv/bin/activate
 
 Server starts at `http://localhost:8000`
 
-### Seed Database (Development)
-
-```bash
-# Seed with sample data and pre-trained model
-SEED_DB=true ./run.sh
-```
-
-**Note**: Ensure model artifacts are uploaded before seeding.
-
 ### Database Migrations
 
 ```bash
@@ -87,10 +78,10 @@ uv run alembic downgrade -1
 
 ```bash
 # Initialize database
-uv run src/cli.py init-db
+uv run physicalai-studio db init
 
-# Seed database with sample data
-uv run src/cli.py seed --with-model=True
+# Run migrations
+uv run physicalai-studio db migrate
 ```
 
 ## API Documentation

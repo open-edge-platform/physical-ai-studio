@@ -1,4 +1,5 @@
 import { defineConfig, loadEnv } from '@rsbuild/core';
+import { pluginBabel } from '@rsbuild/plugin-babel';
 import { pluginReact } from '@rsbuild/plugin-react';
 import { pluginSvgr } from '@rsbuild/plugin-svgr';
 
@@ -7,6 +8,13 @@ const { publicVars } = loadEnv({ prefixes: ['PUBLIC_'] });
 export default defineConfig({
     plugins: [
         pluginReact(),
+        pluginBabel({
+            include: /\.[jt]sx?$/,
+            exclude: [/[\\/]node_modules[\\/]/],
+            babelLoaderOptions(opts) {
+                opts.plugins?.unshift('babel-plugin-react-compiler');
+            },
+        }),
 
         pluginSvgr({
             svgrOptions: {
