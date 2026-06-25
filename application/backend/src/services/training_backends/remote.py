@@ -28,7 +28,7 @@ from pydantic import ValidationError
 
 from schemas.hardware import DeviceInfo
 from services.archive_safety import SafeZipArchive
-from services.training_backends._log_format import format_training_progress
+from services.training_backends._log_format import render_progress_log
 from services.training_backends.base import TrainingCanceledError
 from settings import get_settings
 
@@ -405,7 +405,9 @@ class RemoteTrainingBackend:
             extra_info=extra_info,
         )
         if extra_info is not None:
-            self._log_training_progress(extra_info)
+            line = render_progress_log(extra_info)
+            if line is not None:
+                logger.info(line)
 
         if status in _TERMINAL_STATES:
             if status == "completed":
@@ -414,28 +416,6 @@ class RemoteTrainingBackend:
                 raise TrainingCanceledError("Remote training canceled")
             raise RemoteTrainingError(f"Remote training {status}: {state.get('message')}")
         return False
-
-    @staticmethod
-    def _log_training_progress(extra_info: dict[str, Any]) -> None:
-        """Mirror the trainer's step/loss into the job log, identical to local.
-
-        The trainer throttles which states carry ``global_step`` (trainer-side
-        cadence), so a state with that field is one we log. Fields arrive from
-        remote JSON and are coerced defensively; a malformed payload is skipped
-        rather than crashing the job.
-        """
-        if "global_step" not in extra_info:
-            return
-        try:
-            global_step = int(extra_info["global_step"])
-            max_steps = int(extra_info["max_steps"])
-        except (KeyError, TypeError, ValueError):
-            return
-
-        loss = extra_info.get("train/loss_step")
-        loss_val = float(loss) if isinstance(loss, int | float) else None
-
-        logger.info(format_training_progress(global_step=global_step, max_steps=max_steps, loss=loss_val))
 
     @staticmethod
     def _parse_state(payload: object) -> dict[str, Any]:

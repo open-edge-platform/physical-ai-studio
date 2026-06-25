@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from models.utils import load_policy, setup_policy
-from services.training_backends._log_format import format_training_progress
+from services.training_backends._log_format import render_progress_log
 from utils.device import get_lightning_strategy, get_torch_device
 
 if TYPE_CHECKING:
@@ -74,8 +74,7 @@ class LocalTrainingBackend:
             logger=csv_logger,
             callbacks=[
                 checkpoint_callback,
-                self._tracking_callback(context),
-                self._log_callback(),
+                self._progress_callback(context),
             ],
             accelerator=accelerator,
             strategy=strategy,
@@ -105,95 +104,26 @@ class LocalTrainingBackend:
 
         self._export_policy(policy=export_policy, output_dir=output_dir, context=context)
 
-    def _tracking_callback(self, context: TrainingContext) -> Callback:
-        """Build a Lightning callback that forwards progress to the reporter."""
-        from collections.abc import Mapping
-        from typing import Any
+    def _progress_callback(self, context: TrainingContext) -> Callback:
+        """Build the shared progress callback wired to this job's reporter.
 
-        from lightning.pytorch.callbacks import Callback
+        Reuses `physicalai.train.ProgressReportingCallback` so local runs emit
+        the same telemetry as remote ones. The reporter both mirrors loggable
+        telemetry to the job log (via the shared renderer) and updates job
+        progress, reserving 100% for the terminal completion update.
+        """
+        from physicalai.train import ProgressReportingCallback
 
         reporter = context.progress
-        should_stop = context.should_stop
 
-        class _ProgressForwardingCallback(Callback):
-            def on_train_batch_end(
-                self,
-                trainer: Any,
-                pl_module: Any,  # noqa: ARG002
-                outputs: Any,
-                batch: Any,  # noqa: ARG002
-                batch_idx: int,  # noqa: ARG002
-            ) -> None:
-                loss_val: float | None = None
-                if isinstance(outputs, Mapping):
-                    loss_tensor = outputs.get("loss")
-                    if loss_tensor is not None:
-                        loss_val = loss_tensor.detach().cpu().item()
+        def report(progress: int, message: str | None, extra_info: dict) -> None:
+            line = render_progress_log(extra_info)
+            if line is not None:
+                logger.info(line)
+            # Cap running progress at 99; the worker writes 100 on completion.
+            reporter(min(99, progress), message=message, extra_info=extra_info)
 
-                progress = round(trainer.global_step / max(1, trainer.max_steps) * 100)
-                reporter(min(99, progress), extra_info={"train/loss_step": loss_val})
-                if should_stop():
-                    trainer.should_stop = True
-
-        return _ProgressForwardingCallback()
-
-    def _log_callback(self) -> Callback:
-        """Build a Lightning callback that mirrors progress/loss to the logs."""
-        from collections.abc import Mapping
-        from typing import Any
-
-        from lightning.pytorch.callbacks import Callback
-
-        class _TrainingLogCallback(Callback):
-            """Mirror training progress/metrics to loguru as regular log lines."""
-
-            def __init__(self) -> None:
-                super().__init__()
-                self.every_n_steps = 1
-
-            def on_fit_start(self, trainer: Any, pl_module: Any) -> None:  # noqa: ARG002
-                self.every_n_steps = self._auto_every_n_steps(trainer.max_steps)
-                logger.info(
-                    "Training log cadence configured: every_n_steps={}, max_steps={}",
-                    self.every_n_steps,
-                    trainer.max_steps,
-                )
-
-            @staticmethod
-            def _auto_every_n_steps(total_steps: int) -> int:
-                """Log at least every 100 steps, targeting ~1000 entries overall."""
-                if total_steps <= 0:
-                    return 1
-                return min(100, max(1, total_steps // 1000))
-
-            def on_train_batch_end(
-                self,
-                trainer: Any,
-                pl_module: Any,  # noqa: ARG002
-                outputs: Any,
-                batch: Any,  # noqa: ARG002
-                batch_idx: int,  # noqa: ARG002
-            ) -> None:
-                global_step = trainer.global_step
-                is_first_step = global_step <= 1
-                if not is_first_step and global_step % self.every_n_steps != 0:
-                    return
-
-                loss_val: float | None = None
-                if isinstance(outputs, Mapping):
-                    loss_tensor = outputs.get("loss")
-                    if loss_tensor is not None:
-                        loss_val = loss_tensor.detach().cpu().item()
-
-                logger.info(
-                    format_training_progress(
-                        global_step=global_step,
-                        max_steps=trainer.max_steps,
-                        loss=loss_val,
-                    )
-                )
-
-        return _TrainingLogCallback()
+        return ProgressReportingCallback(report=report, should_stop=context.should_stop)
 
     def _export_policy(self, *, policy: object, output_dir: Path, context: TrainingContext) -> None:
         """Export the trained policy to every backend the policy supports."""
