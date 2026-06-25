@@ -20,6 +20,8 @@ class EnvironmentIntegration:
         robot_client_factory: RobotClientFactory,
         mp_terminate_event: EventClass,
     ):
+        if len(environment.robots) == 0:
+            raise ValueError("No robots supplied with environment.")
         self.robot = environment.robots[0]
         self.cameras = environment.cameras
         self.robot_client_factory = robot_client_factory

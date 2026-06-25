@@ -1,10 +1,10 @@
 import base64
 from typing import Any
 
-import cv2
 import numpy as np
 
 from control.data_registry import EnvironmentDataRegistry
+from utils.jpeg import encode_jpeg_rgb
 from workers.camera_worker import CameraWorker
 
 
@@ -82,7 +82,7 @@ def format_observation_for_model(observation: dict, manifest: EnvironmentDataReg
     return Observation(
         state=np.array([observation["state"]], dtype=np.float32),
         images=images,
-        task=task,  # type: ignore[bad-argument-type]  # TODO: Implement tasks.
+        task=task,  # type: ignore[bad-argument-type]
     )
 
 
@@ -92,10 +92,8 @@ def format_observation_for_reporting(observation: dict, manifest: EnvironmentDat
     state = {i: observation["state"][k] for k, i in enumerate(manifest.robot.features)}
     camera_images = {}
     for camera in manifest.cameras:
-        frame = np.ascontiguousarray(observation["images"][camera.id][..., ::-1])  # RGB→BGR for cv2
-        success, imagebytes = cv2.imencode(".jpg", frame)
-        if success:
-            camera_images[camera.id] = base64.b64encode(imagebytes).decode()
+        imagebytes = encode_jpeg_rgb(observation["images"][camera.id])
+        camera_images[camera.id] = base64.b64encode(imagebytes).decode()
 
     return {
         "state": state,

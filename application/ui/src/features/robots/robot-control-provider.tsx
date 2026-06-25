@@ -150,7 +150,6 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
 
     const onMessage = ({ data }: WebSocketEventMap['message']) => {
         const message = JSON.parse(data) as RobotControlApiJsonResponse<unknown>;
-        console.log(message);
         if (message['event'] === 'observations') {
             observation.current = message['data'] as Observation;
         }
@@ -180,7 +179,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         mutationFn: async (env: SchemaEnvironmentWithRelations) => {
             const result = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'load_environment', data: { environment: env } },
-                (data) => data['event'] === "environment_loaded"
+                (data) => data['event'] === 'environment_loaded'
             );
             setEnvironment(env);
             return result;

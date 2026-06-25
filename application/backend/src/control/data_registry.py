@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any
+from multiprocessing.sharedctypes import Synchronized, SynchronizedArray
 
 
 @dataclass
@@ -8,17 +8,17 @@ class CameraRegistryEntry:
     name: str
     width: int
     height: int
-    frame_data: Any  # mp.Array[c_uint8], shared with CameraWorker
+    frame_data: SynchronizedArray  # mp.Array[c_uint8], shared with CameraWorker
 
 
 @dataclass
 class RobotRegistryEntry:
     name: str
     type: str
-    action_read_state: Any  # mp.Value[c_int], shared with TeleoperateWorker
+    action_read_state: Synchronized  # mp.Value[c_int], shared with TeleoperateWorker
     features: list[str]
-    state: Any  # mp.Array[c_double], shared with TeleoperateWorker
-    actions: Any  # mp.Array[c_double], shared with TeleoperateWorker
+    state: SynchronizedArray  # mp.Array[c_double], shared with TeleoperateWorker
+    actions: SynchronizedArray  # mp.Array[c_double], shared with TeleoperateWorker
 
 
 @dataclass

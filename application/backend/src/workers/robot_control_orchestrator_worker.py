@@ -34,10 +34,6 @@ MESSAGE_QUEUE_FREQUENCY = 10
 class RobotControlOrchestrator(BaseThreadWorker):
     ROLE = "RobotControlOrchestrator"
 
-    recording: RecordingWorker | None = None
-    model_integration: ModelIntegrationWorker | None = None
-    environment_integration: EnvironmentIntegration | None = None
-
     def __init__(
         self, message_queue: asyncio.Queue, robot_client_factory: RobotClientFactory, mp_terminate_event: EventClass
     ):
@@ -47,6 +43,11 @@ class RobotControlOrchestrator(BaseThreadWorker):
         self.robot_client_factory = robot_client_factory
         self.message_queue = message_queue
         self.state = RobotControlState()
+
+        self.recording: RecordingWorker | None = None
+        self.model_integration: ModelIntegrationWorker | None = None
+        self.environment_integration: EnvironmentIntegration | None = None
+
         try:
             self._message_loop: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
         except RuntimeError:
@@ -80,6 +81,7 @@ class RobotControlOrchestrator(BaseThreadWorker):
     def start_recording(self, task: str) -> None:
         """Start recording of specified task."""
         if self.recording:
+            self.state.task = task
             self.recording.start_episode(task)
 
     def save_episode(self) -> None:
@@ -95,6 +97,7 @@ class RobotControlOrchestrator(BaseThreadWorker):
     def start_task(self, task: str) -> None:
         """Start task on model."""
         if self.model_integration:
+            self.state.task = task
             self.model_integration.start_task(task)
             self.set_follower_source("model")
 
@@ -104,7 +107,7 @@ class RobotControlOrchestrator(BaseThreadWorker):
             self.model_integration.stop_task()
             self.set_follower_source(None)
 
-    def get_observation(self) -> dict | None:
+    def get_observation_report(self) -> dict | None:
         if self.environment_integration and self.environment_integration.manifest:
             obs = get_observation_from_manifest(self.environment_integration.manifest)
             return format_observation_for_reporting(obs, self.environment_integration.manifest)

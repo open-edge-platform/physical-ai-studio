@@ -93,7 +93,7 @@ async def observation_update_loop(websocket: WebSocket, robot_control: RobotCont
         while True:
             async with run_at_frequency(30):
                 try:
-                    observation = robot_control.get_observation()
+                    observation = robot_control.get_observation_report()
                     if observation:
                         await websocket.send_json({"event": "observations", "data": observation})
                 except Exception as e:

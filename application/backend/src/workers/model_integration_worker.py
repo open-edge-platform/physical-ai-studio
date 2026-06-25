@@ -12,6 +12,8 @@ from schemas.hardware import InferenceDevice
 from schemas.model import Model
 from workers.base import BaseProcessWorker, run_at_frequency
 
+INFERENCE_FPS = 50
+
 
 class ModelIntegrationWorker(BaseProcessWorker):
     ROLE = "ModelIntegrationWorker"
@@ -33,7 +35,6 @@ class ModelIntegrationWorker(BaseProcessWorker):
         self.event_queue = event_queue
         self.model_integration = None
         self.is_running = False
-        self.fps = 30  # TODO FPS
         self._task_buf = mp.Array(ctypes.c_char, 256)
         self._start_task_event = mp.Event()
         self._stop_task_event = mp.Event()
@@ -54,7 +55,7 @@ class ModelIntegrationWorker(BaseProcessWorker):
 
     async def run_loop(self) -> None:
         while not self.should_stop():
-            async with run_at_frequency(self.fps):
+            async with run_at_frequency(INFERENCE_FPS):
                 await asyncio.gather(
                     self._handle_start_task(),
                     self._handle_stop_task(),
