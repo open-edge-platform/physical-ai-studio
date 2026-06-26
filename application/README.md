@@ -39,6 +39,7 @@ The application provides a graphical interface to:
 | [Recording Datasets](./docs/05-recording-datasets.md)                     | Record, review, import, and export demonstration datasets.                        |
 | [Training Policies](./docs/06-training-policies.md)                       | Train model policies from recorded datasets.                                      |
 | [Deploying Model Policies](./docs/07-deploying-model-policies.md)         | Run trained policies in Studio or deploy them externally.                         |
+| [Remote Training Server](./docs/08-remote-training-server.md)             | Offload training to a separate GPU server.                                        |
 
 ## Components
 
