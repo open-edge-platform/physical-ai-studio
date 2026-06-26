@@ -39,14 +39,8 @@ if TYPE_CHECKING:
 
 # Only these patterns are pulled by the trainer; mirrors snapshot_download allowlists.
 _SNAPSHOT_ALLOW_PATTERNS = ["*.safetensors", "*.json", "*.txt", "*.md", "*.parquet", "*.mp4", "*.png", "*.jpg"]
-# Upper bound on how long the stream may sit idle before we wake to re-check
-# local cancellation. The trainer pushes a state event on every change, so this
-# only bounds cancellation latency during stable stretches.
 _EVENT_WAIT_TIMEOUT_S = 3.0
-# Backoff before reconnecting an event stream that closed before a terminal state.
 _RECONNECT_BACKOFF_S = 2.0
-# Give up after this many consecutive reconnects that yield no event, so a broken
-# trainer cannot hold the job open forever.
 _MAX_STREAM_RECONNECTS = 5
 _TERMINAL_STATES = {"completed", "failed", "canceled"}
 
@@ -108,21 +102,13 @@ class RemoteTrainingBackend:
                 response = await client.get(f"{self._base_url}/health")
                 response.raise_for_status()
         except httpx.HTTPError:
-            logger.info("Trainer not reachable via proxy; bypassing proxy for trainer calls")
+            logger.debug("Trainer not reachable via proxy; bypassing proxy for trainer calls")
             return False
-        logger.info("Trainer reachable via proxy; honoring proxy settings for trainer calls")
+        logger.debug("Trainer reachable via proxy; honoring proxy settings for trainer calls")
         return True
 
     async def _client(self, client_timeout: httpx.Timeout | float | None = None) -> httpx.AsyncClient:
-        """Build a client for direct trainer calls.
-
-        Whether HTTP_PROXY/HTTPS_PROXY are honored is decided once by
-        _resolve_trust_env(). The trainer is an explicitly configured internal
-        endpoint; routing it through an outbound web proxy commonly makes the
-        proxy reject the internal host (403), so proxies are bypassed unless the
-        one-time probe confirms they work. Outbound proxies remain in effect for
-        HuggingFace uploads, which use their own client.
-        """
+        """Build a client for direct trainer calls."""
         trust_env = await self._resolve_trust_env()
         return httpx.AsyncClient(
             timeout=client_timeout if client_timeout is not None else self._timeout,
@@ -132,9 +118,8 @@ class RemoteTrainingBackend:
     async def get_training_devices(self) -> list[DeviceInfo]:
         """Fetch the compute devices available on the trainer service.
 
-        Lets the studio surface the remote server's real hardware (typically a
-        GPU) instead of the studio host's local CPU. Raises RemoteTrainingError
-        on any transport or parsing failure so callers can fall back.
+        Lets the studio surface the remote server's real hardware (GPU/XPU) instead of the studio host's local device.
+        Raises RemoteTrainingError on any transport or parsing failure so callers can fall back.
         """
         try:
             async with await self._client() as client:
@@ -176,9 +161,7 @@ class RemoteTrainingBackend:
     async def _push_snapshot(self, context: TrainingContext) -> tuple[str, str]:
         """Create an ephemeral private dataset repo and upload the snapshot.
 
-        Uses a single batched ``upload_folder`` commit (parallelized, xet-
-        deduplicated) so upload throughput is not penalized by per-file commits.
-        Real byte progress is mirrored into the job's reserved 0-10% window by
+        Real byte progress is mirrored into the job's reserved progress window by
         :meth:`_mirror_upload_progress`. Returns the repo id and the commit SHA.
         """
         from huggingface_hub import HfApi
@@ -434,16 +417,11 @@ class RemoteTrainingBackend:
         """Stream the model archive and extract it into the model directory."""
         settings = get_settings()
         tmp_archive = Path(tempfile.gettempdir()) / f"remote-model-{remote_job_id}.zip"
-        # Finite per-read timeout, not a total cap: artifacts may be large and
-        # take a while, but a stalled transfer (proxy/firewall holding the
-        # connection open) must fail instead of hanging the job at 95% forever.
         stream_timeout = httpx.Timeout(self._timeout, read=settings.trainer_download_read_timeout_s)
         try:
             received = await self._stream_archive(remote_job_id, tmp_archive, stream_timeout)
             logger.info("Downloaded model artifact ({} bytes)", received)
 
-            # Validation and extraction are blocking (zip CRC + disk writes); keep
-            # them off the worker event loop so progress/cancellation stay live.
             await asyncio.to_thread(
                 self._extract_archive,
                 tmp_archive,
@@ -493,11 +471,7 @@ class RemoteTrainingBackend:
         archive.extract_to(output_dir, min_free_bytes=min_free_bytes)
 
     async def _cancel(self, remote_job_id: str) -> None:
-        """Request remote cancellation; best effort.
-
-        Opens a dedicated client rather than reusing the event-stream client,
-        which may be mid-read.
-        """
+        """Request remote cancellation; best effort."""
         try:
             async with await self._client() as client:
                 await client.post(f"{self._base_url}/jobs/{remote_job_id}/cancel")

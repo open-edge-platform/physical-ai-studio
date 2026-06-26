@@ -8,8 +8,7 @@ from typing import Literal
 
 from loguru import logger
 
-# Matches ANSI escape sequences (colors, cursor movement such as the "\x1b[A"
-# cursor-up codes that tqdm emits when redrawing multi-line progress bars).
+# Matches ANSI escape sequences (which tqdm emits when redrawing multi-line progress bars).
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
 
@@ -44,10 +43,6 @@ class LoggerStdoutWriter:
         self.level = level
 
     def write(self, msg: str) -> None:
-        # Progress bars (tqdm, HuggingFace uploads) redraw in place using
-        # carriage returns and ANSI cursor codes. Keep only the final rendered
-        # segment and strip control codes so logs aren't flooded with garbled
-        # "[A" lines and repeated "0.00B / 0.00B" redraws.
         msg = msg.rsplit("\r", 1)[-1]
         msg = _ANSI_ESCAPE.sub("", msg)
         msg = msg.strip()

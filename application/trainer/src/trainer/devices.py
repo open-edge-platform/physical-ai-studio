@@ -16,11 +16,7 @@ from trainer.schemas import DeviceInfo
 
 
 def get_training_devices() -> list[DeviceInfo]:
-    """Enumerate CPU, Intel XPU and NVIDIA CUDA devices available for training.
-
-    torch is imported lazily and any detection error is tolerated so the
-    endpoint never fails the service; the CPU entry is always present.
-    """
+    """Enumerate CPU, Intel XPU and NVIDIA CUDA devices available for training."""
     devices: list[DeviceInfo] = [DeviceInfo(type="cpu", name="CPU", memory=None, index=None)]
 
     try:
