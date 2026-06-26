@@ -102,5 +102,6 @@ async def cancel_job(job_id: str, request: Request) -> CancelResponse:
     if state.status not in _TERMINAL:
         manager.request_cancel(job_id)
     final = manager.store.get(job_id)
-    resolved = final.status if final and final.status in _TERMINAL else TrainerJobStatus.CANCELED
-    return CancelResponse(remote_job_id=job_id, status=resolved)  # type: ignore[arg-type]
+    if final is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    return CancelResponse(remote_job_id=job_id, status=final.status)

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -96,7 +96,7 @@ class JobState(BaseModel):
 
 
 class CancelResponse(BaseModel):
-    """Resolved status after a cancellation request."""
+    """Status reported after a cancellation request."""
 
     remote_job_id: str
-    status: Literal[TrainerJobStatus.CANCELED, TrainerJobStatus.COMPLETED, TrainerJobStatus.FAILED]
+    status: TrainerJobStatus

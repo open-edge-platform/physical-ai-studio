@@ -95,9 +95,13 @@ class ProgressReportingCallback(Callback):
             trainer: The active Lightning trainer.
 
         Returns:
-            Completion percentage clamped to 0-100.
+            Completion percentage clamped to 0-100. Returns 0 when ``max_steps``
+            is unset (-1) or otherwise non-positive.
         """
-        return min(100, round(trainer.global_step / max(1, trainer.max_steps) * 100))
+        max_steps = trainer.max_steps
+        if max_steps <= 0:
+            return 0
+        return min(100, round(trainer.global_step / max_steps * 100))
 
     def _check_stop(self, trainer: L.Trainer) -> None:
         """Stop the trainer cooperatively when cancellation was requested."""
